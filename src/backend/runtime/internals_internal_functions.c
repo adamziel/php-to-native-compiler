@@ -90191,6 +90191,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getPrototype")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "getShortName")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
@@ -94108,6 +94109,7 @@ static char *ptn_reflection_class_required_class_arg_name(
 typedef struct {
     char *class_name;
     char *name;
+    char *reflected_class_name;
 } PtnReflectionMethodData;
 
 typedef struct PtnSensitiveParameterValueData {
@@ -94139,6 +94141,7 @@ static void ptn_reflection_method_data_free(void *data) {
     }
     free(method_data->class_name);
     free(method_data->name);
+    free(method_data->reflected_class_name);
     free(method_data);
 }
 
@@ -94155,10 +94158,31 @@ static PtnReflectionMethodData *ptn_reflection_method_data(PtnRuntime *runtime, 
     return (PtnReflectionMethodData *)receiver.as.object->native_data;
 }
 
+static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *reflected_class_name
+);
+
 static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     PtnRuntime *runtime,
     const char *class_name,
     const char *method_name
+) {
+    return ptn_reflection_method_object_from_name_with_reflected(
+        runtime,
+        class_name,
+        method_name,
+        class_name
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *reflected_class_name
 ) {
     PtnReflectionMethodData *data = malloc(sizeof(PtnReflectionMethodData));
     if (data == NULL) {
@@ -94166,6 +94190,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     }
     data->class_name = ptn_duplicate_string(class_name);
     data->name = ptn_duplicate_string(method_name);
+    data->reflected_class_name = ptn_duplicate_string(reflected_class_name);
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionMethod");
     object.as.object->native_data = data;
@@ -94379,7 +94404,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         return ptn_null();
     }
 
-    if (ptn_declared_class_exists(resolved_class_name) || ptn_declared_interface_exists(resolved_class_name)) {
+    if (ptn_declared_class_exists(resolved_class_name) ||
+        ptn_declared_interface_exists(resolved_class_name) ||
+        ptn_declared_trait_exists(resolved_class_name)) {
         PtnValue method = ptn_declared_class_reflection_method(runtime, resolved_class_name, method_name);
         if (ptn_value_deref(method).type != PTN_NULL) {
             free(method_name);
@@ -94389,10 +94416,11 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         const char *parent_class_name = ptn_declared_class_parent_name(resolved_class_name);
         while (parent_class_name != NULL) {
             if (ptn_internal_class_method_exists(parent_class_name, method_name)) {
-                PtnValue inherited_method = ptn_reflection_method_object_from_name(
+                PtnValue inherited_method = ptn_reflection_method_object_from_name_with_reflected(
                     runtime,
                     ptn_reflection_method_internal_declaring_class(parent_class_name, method_name),
-                    method_name
+                    method_name,
+                    resolved_class_name
                 );
                 free(method_name);
                 free(class_name);
@@ -94401,10 +94429,11 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             parent_class_name = ptn_declared_class_parent_name(parent_class_name);
         }
     } else if (ptn_internal_class_method_exists(resolved_class_name, method_name)) {
-        PtnValue method = ptn_reflection_method_object_from_name(
+        PtnValue method = ptn_reflection_method_object_from_name_with_reflected(
             runtime,
             ptn_reflection_method_internal_declaring_class(resolved_class_name, method_name),
-            method_name
+            method_name,
+            resolved_class_name
         );
         free(method_name);
         free(class_name);
@@ -94848,6 +94877,30 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
             0
         );
     }
+    if (
+        ptn_internal_class_name_is_reflection_property(data->class_name) &&
+        ptn_ascii_case_equal(data->name, "__construct")
+    ) {
+        static const PtnParameterMetadata PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS[] = {
+            { "class", "object|string", "object|string", 0, 0, 0, 0, 1, NULL, NULL },
+            { "property", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+        };
+        return ptn_function_metadata_found(
+            "ReflectionProperty::__construct",
+            1,
+            sizeof(PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS[0]),
+            sizeof(PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS[0]),
+            0,
+            PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
     int needed = snprintf(NULL, 0, "%s::%s", data->class_name, data->name);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -94876,6 +94929,89 @@ static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     const PtnValue *args,
     size_t line
 );
+
+static PtnValue ptn_reflection_internal_method_to_string(
+    PtnReflectionMethodData *data,
+    PtnFunctionMetadata metadata,
+    int is_static,
+    int visibility,
+    int is_final,
+    int is_abstract
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    const char *extension_name = NULL;
+    if (metadata.name != NULL) {
+        extension_name = ptn_internal_function_extension_name(metadata.name);
+    } else if (ptn_internal_reflection_metadata_class_exists(data->class_name)) {
+        extension_name = "Reflection";
+    }
+    ptn_string_buffer_append_format(
+        &buffer,
+        "Method [ <internal:%s",
+        extension_name == NULL ? "Core" : extension_name
+    );
+    if (ptn_ascii_case_equal(data->name, "__construct")) {
+        ptn_string_buffer_append(&buffer, ", ctor");
+    }
+    ptn_string_buffer_append(&buffer, "> ");
+    if (is_final) {
+        ptn_string_buffer_append(&buffer, "final ");
+    }
+    if (is_abstract) {
+        ptn_string_buffer_append(&buffer, "abstract ");
+    }
+    if (is_static) {
+        ptn_string_buffer_append(&buffer, "static ");
+    }
+    ptn_string_buffer_append_format(
+        &buffer,
+        "%s method %s ] {\n",
+        ptn_callback_visibility_name(visibility),
+        data->name
+    );
+    if (metadata.parameter_count > 0) {
+        ptn_string_buffer_append(&buffer, "\n");
+        ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
+        for (size_t i = 0; i < metadata.parameter_count; i++) {
+            char fallback[32];
+            const char *parameter_name = ptn_function_metadata_parameter_name(
+                metadata,
+                i,
+                fallback,
+                sizeof(fallback)
+            );
+            const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, i);
+            const char *default_display = ptn_function_metadata_parameter_default_display(metadata, i);
+            ptn_string_buffer_append_format(
+                &buffer,
+                "    Parameter #%zu [ <%s> ",
+                i,
+                i < metadata.required_parameter_count ? "required" : "optional"
+            );
+            if (type_display != NULL) {
+                ptn_string_buffer_append_format(&buffer, "%s ", type_display);
+            }
+            if (ptn_function_metadata_parameter_is_variadic(metadata, i)) {
+                ptn_string_buffer_append(&buffer, "...");
+            }
+            if (ptn_function_metadata_parameter_by_ref(metadata, i)) {
+                ptn_string_buffer_append(&buffer, "&");
+            }
+            ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
+            if (default_display != NULL && i >= metadata.required_parameter_count) {
+                ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+            }
+            ptn_string_buffer_append(&buffer, " ]\n");
+        }
+        ptn_string_buffer_append(&buffer, "  }\n");
+    }
+    if (metadata.return_type_display_name != NULL) {
+        ptn_string_buffer_append_format(&buffer, "  - Return [ %s ]\n", metadata.return_type_display_name);
+    }
+    ptn_string_buffer_append(&buffer, "}\n");
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
 
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     PtnRuntime *runtime,
@@ -95071,19 +95207,16 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
         if (!is_internal) {
-            return ptn_declared_class_reflection_method_to_string(runtime, data->class_name, data->name);
+            return ptn_declared_class_reflection_method_to_string(runtime, data->reflected_class_name, data->name);
         }
-        char message[256];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Method [ <internal> public method %s ] {\n}\n",
-            data->name
+        return ptn_reflection_internal_method_to_string(
+            data,
+            ptn_reflection_method_function_metadata(data),
+            is_static,
+            visibility,
+            is_final,
+            is_abstract
         );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        return ptn_string(message);
     }
     if (ptn_ascii_case_equal(name, "hasPrototype")) {
         if (is_internal) {
@@ -95135,6 +95268,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
+        return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getShortName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {

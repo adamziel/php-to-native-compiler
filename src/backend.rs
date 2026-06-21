@@ -11720,10 +11720,12 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
-            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str("            return ptn_reflection_method_object_from_name_with_reflected(runtime, \"");
             out.push_str(&c_string(entry.declaring_class));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
             out.push_str("\");\n");
             out.push_str("        }\n");
         }
@@ -12646,10 +12648,12 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(", ");
             out.push_str(c_method_visibility(method.visibility));
             out.push_str(", filter_present, filter)) {\n");
-            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name_with_reflected(runtime, \"");
             out.push_str(&c_string(entry.declaring_class));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&class.name));
             out.push_str("\"));\n");
             out.push_str("        }\n");
         }
@@ -13640,7 +13644,13 @@ fn reflection_class_to_string_methods_tail(
     functions: &[FunctionDecl],
 ) -> String {
     let mut out = String::new();
-    reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
+    let visible_properties = reflection_class_visible_property_entries(class, classes);
+    let static_properties = visible_properties
+        .iter()
+        .copied()
+        .filter(|entry| entry.is_static)
+        .collect::<Vec<_>>();
+    reflection_class_properties_to_string(&mut out, "Static properties", &static_properties);
 
     let visible_methods = reflection_class_visible_method_entries(class, classes);
     let static_methods = visible_methods
@@ -13663,8 +13673,9 @@ fn reflection_class_to_string_methods_tail(
     );
     out.push('\n');
 
-    let properties = reflection_class_visible_property_entries(class, classes)
-        .into_iter()
+    let properties = visible_properties
+        .iter()
+        .copied()
         .filter(|entry| !entry.is_static)
         .collect::<Vec<_>>();
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
@@ -13855,6 +13866,14 @@ fn reflection_user_method_qualifiers(
     if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
         out.push_str(", inherits ");
         out.push_str(entry.declaring_class);
+        if let Some(declaring_class) = class_by_name(classes, entry.declaring_class) {
+            if let Some(prototype_class) =
+                reflection_method_effective_prototype_class(declaring_class, &method.name, classes)
+            {
+                out.push_str(", prototype ");
+                out.push_str(prototype_class);
+            }
+        }
     } else if let Some((prototype_class, _prototype_method)) =
         reflection_method_prototype(class, &method.name, classes)
     {
@@ -13865,12 +13884,34 @@ fn reflection_user_method_qualifiers(
             out.push_str(", overwrites ");
             out.push_str(prototype_class);
             out.push_str(", prototype ");
-            out.push_str(prototype_class);
+            out.push_str(
+                reflection_method_effective_prototype_class(class, &method.name, classes)
+                    .unwrap_or(prototype_class),
+            );
         }
     }
     if method.name.eq_ignore_ascii_case("__construct") {
         out.push_str(", ctor");
     }
+}
+
+fn reflection_user_method_modifiers(
+    out: &mut String,
+    is_final: bool,
+    is_abstract: bool,
+    is_static: bool,
+    visibility: PropertyVisibility,
+) {
+    if is_final {
+        out.push_str("final ");
+    }
+    if is_abstract {
+        out.push_str("abstract ");
+    }
+    if is_static {
+        out.push_str("static ");
+    }
+    out.push_str(method_visibility_name(visibility));
 }
 
 fn reflection_user_method_entry_to_string(
@@ -13885,10 +13926,13 @@ fn reflection_user_method_entry_to_string(
     out.push_str("    Method [ <user");
     reflection_user_method_qualifiers(out, class, entry, classes);
     out.push_str("> ");
-    out.push_str(method_visibility_name(method.visibility));
-    if method.is_static {
-        out.push_str(" static");
-    }
+    reflection_user_method_modifiers(
+        out,
+        method.is_final,
+        method.is_abstract,
+        method.is_static,
+        method.visibility,
+    );
     out.push_str(" method ");
     out.push_str(&method.name);
     out.push_str(" ] {\n");
@@ -13898,13 +13942,19 @@ fn reflection_user_method_entry_to_string(
     out.push_str(&method.line.to_string());
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
-    out.push_str("\n\n");
-    reflection_parameters_to_string(
-        out,
-        &function.parameters,
-        function_required_parameter_count(function),
-    );
+    out.push('\n');
+    if !function.parameters.is_empty() {
+        out.push('\n');
+        reflection_parameters_to_string(
+            out,
+            &function.parameters,
+            function_required_parameter_count(function),
+        );
+    }
     if let Some(return_type) = &function.return_type {
+        if function.parameters.is_empty() {
+            out.push('\n');
+        }
         out.push_str("      - Return [ ");
         out.push_str(&type_hint_label(return_type));
         out.push_str(" ]\n");
@@ -14211,10 +14261,13 @@ fn reflection_class_methods_to_string(
         out.push_str("    Method [ <user");
         reflection_user_method_qualifiers(out, class, *entry, classes);
         out.push_str("> ");
-        out.push_str(method_visibility_name(method.visibility));
-        if method.is_static {
-            out.push_str(" static");
-        }
+        reflection_user_method_modifiers(
+            out,
+            method.is_final,
+            method.is_abstract,
+            method.is_static,
+            method.visibility,
+        );
         out.push_str(" method ");
         out.push_str(&method.name);
         out.push_str(" ] {\n");
@@ -14224,13 +14277,19 @@ fn reflection_class_methods_to_string(
         out.push_str(&method.line.to_string());
         out.push_str(" - ");
         out.push_str(&method.end_line.to_string());
-        out.push_str("\n\n");
-        reflection_parameters_to_string(
-            out,
-            &function.parameters,
-            function_required_parameter_count(function),
-        );
+        out.push('\n');
+        if !function.parameters.is_empty() {
+            out.push('\n');
+            reflection_parameters_to_string(
+                out,
+                &function.parameters,
+                function_required_parameter_count(function),
+            );
+        }
         if let Some(return_type) = &function.return_type {
+            if function.parameters.is_empty() {
+                out.push('\n');
+            }
             out.push_str("      - Return [ ");
             out.push_str(&type_hint_label(return_type));
             out.push_str(" ]\n");
@@ -14255,10 +14314,13 @@ fn reflection_method_to_string(
     out.push_str("Method [ <user");
     reflection_user_method_qualifiers(&mut out, reflected_class, entry, classes);
     out.push_str("> ");
-    out.push_str(method_visibility_name(method.visibility));
-    if method.is_static {
-        out.push_str(" static");
-    }
+    reflection_user_method_modifiers(
+        &mut out,
+        method.is_final,
+        method.is_abstract,
+        method.is_static,
+        method.visibility,
+    );
     out.push_str(" method ");
     out.push_str(&method.name);
     out.push_str(" ] {\n");
@@ -14376,10 +14438,13 @@ fn reflection_trait_method_to_string(
 ) -> String {
     let mut out = String::new();
     out.push_str("Method [ <user> ");
-    out.push_str(method_visibility_name(method.visibility));
-    if method.is_static {
-        out.push_str(" static");
-    }
+    reflection_user_method_modifiers(
+        &mut out,
+        false,
+        method.is_abstract,
+        method.is_static,
+        method.visibility,
+    );
     out.push_str(" method ");
     out.push_str(&method.name);
     out.push_str(" ] {\n");
@@ -14421,6 +14486,20 @@ fn reflection_method_prototype<'a>(
         }
     }
     None
+}
+
+fn reflection_method_effective_prototype_class<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<&'a str> {
+    let (nearest_class_name, _) = reflection_method_prototype(class, method_name, classes)?;
+    if class_by_name(classes, nearest_class_name).is_some_and(|class| class.is_interface) {
+        return Some(nearest_class_name);
+    }
+    let nearest_class = class_by_name(classes, nearest_class_name)?;
+    reflection_method_effective_prototype_class(nearest_class, method_name, classes)
+        .or(Some(nearest_class_name))
 }
 
 fn reflection_parameters_to_string(
@@ -15288,6 +15367,7 @@ fn class_public_method_lookup_chain<'a>(
         .collect()
 }
 
+#[derive(Clone, Copy)]
 struct ClassPropertyExistsEntry<'a> {
     declaring_class: &'a str,
     name: &'a str,
