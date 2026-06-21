@@ -13020,6 +13020,98 @@ var_dump((array) $object);
 }
 
 #[test]
+fn compile_array_object_serialized_storage_hydration_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-serialized-storage-hydration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-serialized-storage-hydration.php");
+    let output = root.join("array-object-serialized-storage-hydration-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+
+class Name extends ArrayObject
+{
+    public $var = 'a';
+    protected $bar = 'b';
+    private $foo = 'c';
+}
+
+$name = unserialize(serialize(new Name()));
+var_dump($name);
+
+$nested = unserialize(serialize(new ArrayObject(new ArrayObject([1, 2]))));
+print_r($nested);
+
+class ObjA
+{
+    private $_varA;
+
+    public function __construct(Iterator $source)
+    {
+        $this->_varA = $source;
+    }
+}
+
+class ObjB extends ObjA
+{
+    private $_varB;
+
+    public function __construct(ArrayObject $keys)
+    {
+        $this->_varB = $keys;
+        parent::__construct($keys->getIterator());
+    }
+}
+
+var_dump(new ObjB(new ArrayObject()) == unserialize(serialize(new ObjB(new ArrayObject()))));
+
+class SelfArray extends ArrayObject
+{
+    public function __construct()
+    {
+        parent::__construct($this);
+    }
+}
+
+$self = new SelfArray();
+$self['foo'] = 'bar';
+$serialized = serialize($self);
+echo $serialized, "\n";
+unset($self);
+$self = unserialize($serialized);
+var_dump($self);
+var_dump($self['foo']);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Name)#1 (4)"), "{stdout}");
+    assert!(!stdout.contains("[\"0\"]=>"), "{stdout}");
+    assert!(!stdout.contains("[0] => 0"), "{stdout}");
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "O:9:\"SelfArray\":4:{i:0;i:16777216;i:1;N;i:2;a:1:{s:3:\"foo\";s:3:\"bar\";}i:3;N;}"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(SelfArray)#"), "{stdout}");
+    assert!(stdout.ends_with("string(3) \"bar\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_append_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-append");
     fs::create_dir_all(&root).unwrap();

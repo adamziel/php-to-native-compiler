@@ -5439,6 +5439,9 @@ typedef struct {
 
 #define PTN_ARRAY_OBJECT_STD_PROP_LIST 1
 #define PTN_ARRAY_OBJECT_ARRAY_AS_PROPS 2
+#define PTN_ARRAY_OBJECT_IS_SELF 0x01000000
+#define PTN_ARRAY_OBJECT_INTERNAL_MASK 0xFFFF0000
+#define PTN_ARRAY_OBJECT_CLONE_MASK 0x0100FFFF
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH 3
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_PRIORITY 2
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_DATA 1
@@ -7779,7 +7782,7 @@ static int ptn_serialize_object_is_spl_array_backed(PtnObject *object) {
         ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject");
 }
 
-static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
+static PtnValue ptn_serialize_spl_raw_storage_value(PtnObject *object) {
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
         object->native_data != NULL) {
         PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
@@ -7793,7 +7796,44 @@ static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
     return ptn_array_from_literal_entries(0, NULL);
 }
 
+static int ptn_serialize_spl_storage_is_self(PtnObject *object) {
+    PtnValue storage = ptn_serialize_spl_raw_storage_value(object);
+    PtnValue resolved = ptn_value_deref(storage);
+    int is_self = resolved.type == PTN_OBJECT && resolved.as.object == object;
+    ptn_value_destroy(&storage);
+    return is_self;
+}
+
+static int64_t ptn_serialize_spl_array_backed_flags(PtnObject *object) {
+    int64_t flags = 0;
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
+        object->native_data != NULL) {
+        PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
+        flags = data->flags;
+    } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") &&
+               object->native_data != NULL) {
+        PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+        flags = data->flags;
+    }
+    flags &= PTN_ARRAY_OBJECT_CLONE_MASK;
+    if (ptn_serialize_spl_storage_is_self(object)) {
+        flags |= PTN_ARRAY_OBJECT_IS_SELF;
+    }
+    return flags;
+}
+
+static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
+    if (ptn_serialize_spl_storage_is_self(object)) {
+        return ptn_null();
+    }
+    return ptn_serialize_spl_raw_storage_value(object);
+}
+
 static const char *ptn_serialize_spl_array_object_iterator_class(PtnObject *object) {
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
+        object->native_data != NULL) {
+        return NULL;
+    }
     if (!ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") ||
         object->native_data == NULL) {
         return NULL;
@@ -7839,7 +7879,11 @@ static void ptn_serialize_append_spl_array_backed_object(
         strlen(object->class_name),
         object->class_name
     );
-    ptn_string_buffer_append(buffer, "i:0;i:0;i:1;");
+    ptn_string_buffer_append_format(
+        buffer,
+        "i:0;i:%lld;i:1;",
+        (long long)ptn_serialize_spl_array_backed_flags(object)
+    );
     PtnValue storage = ptn_serialize_spl_storage_value(object);
     ptn_serialize_append_value_with_id(buffer, storage, state, 0);
     ptn_value_destroy(&storage);
@@ -10697,7 +10741,8 @@ static int ptn_unserialize_store_object_property_entry(
     PtnUnserializeState *state,
     PtnObject *object,
     PtnArrayKey key,
-    PtnUnserializeValue parsed
+    PtnUnserializeValue parsed,
+    int allow_spl_member_key
 ) {
     if (object == NULL || object->properties == NULL) {
         ptn_array_key_free(key);
@@ -10705,7 +10750,8 @@ static int ptn_unserialize_store_object_property_entry(
         return 0;
     }
 
-    if (ptn_unserialize_spl_array_backed_requires_string_property_keys(object) &&
+    if (!allow_spl_member_key &&
+        ptn_unserialize_spl_array_backed_requires_string_property_keys(object) &&
         !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, key)) {
         ptn_array_key_free(key);
         ptn_value_destroy(&parsed.value);
@@ -11044,7 +11090,8 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                             state,
                             result.value.as.object,
                             key,
-                            parsed
+                            parsed,
+                            0
                         )) {
                         return result;
                     }
@@ -103813,6 +103860,16 @@ static char *ptn_spl_array_object_iterator_class_arg(
     return NULL;
 }
 
+static PtnValue ptn_spl_prepare_backing_storage(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int emit_object_deprecation
+);
+
 static const PtnValue *ptn_unserialize_spl_array_backed_slot(PtnObject *object, char slot) {
     int64_t integer_slot = (int64_t)(slot - '0');
     for (size_t i = 0; i < object->properties->len; i++) {
@@ -103849,7 +103906,21 @@ static int64_t ptn_unserialize_spl_array_backed_flags(PtnObject *object) {
     return ptn_value_to_integer(*slot);
 }
 
-static PtnValue ptn_unserialize_spl_array_backed_storage(PtnObject *object) {
+static int64_t ptn_unserialize_spl_array_backed_public_flags(int64_t flags) {
+    return flags & ~((int64_t)PTN_ARRAY_OBJECT_INTERNAL_MASK);
+}
+
+static PtnValue ptn_unserialize_spl_array_backed_storage(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnObject *object,
+    const char *class_name,
+    int64_t flags,
+    size_t line
+) {
+    if ((flags & PTN_ARRAY_OBJECT_IS_SELF) != 0) {
+        return ptn_value_borrow(receiver);
+    }
     const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(object, '1');
     if (slot == NULL) {
         return ptn_array_from_literal_entries(0, NULL);
@@ -103858,7 +103929,15 @@ static PtnValue ptn_unserialize_spl_array_backed_storage(PtnObject *object) {
     if (storage.type != PTN_ARRAY && storage.type != PTN_OBJECT) {
         return ptn_array_from_literal_entries(0, NULL);
     }
-    return ptn_value_clone(storage);
+    return ptn_spl_prepare_backing_storage(
+        runtime,
+        class_name,
+        "__unserialize",
+        "data",
+        *slot,
+        line,
+        storage.type == PTN_OBJECT
+    );
 }
 
 static char *ptn_unserialize_spl_array_object_iterator_class(
@@ -103915,6 +103994,47 @@ static void ptn_unserialize_replace_native_data(
     object->native_data_free = free_fn;
 }
 
+static int ptn_unserialize_store_object_property_entry(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    PtnObject *object,
+    PtnArrayKey key,
+    PtnUnserializeValue parsed,
+    int allow_spl_member_key
+);
+
+static void ptn_unserialize_load_spl_array_backed_members(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnObject *instance,
+    PtnUnserializeState *state
+) {
+    const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(instance, '2');
+    if (slot == NULL) {
+        return;
+    }
+    PtnValue members = ptn_value_deref(*slot);
+    if (members.type != PTN_ARRAY) {
+        return;
+    }
+    for (size_t i = 0; i < members.as.array->len; i++) {
+        PtnArrayEntry *entry = &members.as.array->entries[i];
+        PtnUnserializeValue parsed;
+        parsed.value = ptn_value_clone(entry->value);
+        parsed.id = 0;
+        if (!ptn_unserialize_store_object_property_entry(
+                runtime,
+                state,
+                instance,
+                ptn_array_key_clone(entry->key),
+                parsed,
+                1
+            )) {
+            return;
+        }
+    }
+}
+
 static void ptn_unserialize_hydrate_spl_array_backed_object(
     PtnRuntime *runtime,
     PtnValue object,
@@ -103950,21 +104070,56 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
     if (ptn_internal_class_name_is_array_iterator(instance->class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(instance->class_name) ||
         ptn_declared_class_is_same_or_descendant(instance->class_name, "ArrayIterator")) {
+        int64_t flags = ptn_unserialize_spl_array_backed_flags(instance);
+        PtnValue storage = ptn_unserialize_spl_array_backed_storage(
+            runtime,
+            object,
+            instance,
+            "ArrayIterator",
+            flags,
+            line
+        );
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&storage);
+            return;
+        }
         PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
         if (data == NULL) {
             ptn_abort_out_of_memory();
         }
-        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
+        data->storage = storage;
         data->index = 0;
-        data->flags = ptn_unserialize_spl_array_backed_flags(instance);
+        data->flags = ptn_unserialize_spl_array_backed_public_flags(flags);
         ptn_unserialize_replace_native_data(instance, data, ptn_array_iterator_data_free);
+        PtnUnserializeState *state = runtime == NULL
+            ? NULL
+            : (PtnUnserializeState *)runtime->active_unserialize_state;
+        ptn_unserialize_load_spl_array_backed_members(runtime, object, instance, state);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return;
+        }
         ptn_spl_declare_storage_property(runtime, object, "ArrayIterator", data->storage, line);
+        ptn_unserialize_remove_spl_array_backed_slots(instance, "0123");
         return;
     }
     if (ptn_internal_class_name_is_array_object(instance->class_name) ||
         ptn_declared_class_is_same_or_descendant(instance->class_name, "ArrayObject")) {
+        int64_t flags = ptn_unserialize_spl_array_backed_flags(instance);
         char *iterator_class = ptn_unserialize_spl_array_object_iterator_class(runtime, instance, line);
         if (iterator_class == NULL) {
+            return;
+        }
+        PtnValue storage = ptn_unserialize_spl_array_backed_storage(
+            runtime,
+            object,
+            instance,
+            "ArrayObject",
+            flags,
+            line
+        );
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&storage);
+            free(iterator_class);
             return;
         }
         PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
@@ -103972,19 +104127,31 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
             free(iterator_class);
             ptn_abort_out_of_memory();
         }
-        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
-        data->flags = ptn_unserialize_spl_array_backed_flags(instance);
+        data->storage = storage;
+        data->flags = ptn_unserialize_spl_array_backed_public_flags(flags);
         data->iterator_class = iterator_class;
         data->sorting = 0;
         ptn_unserialize_replace_native_data(instance, data, ptn_array_object_data_free);
+        PtnUnserializeState *state = runtime == NULL
+            ? NULL
+            : (PtnUnserializeState *)runtime->active_unserialize_state;
+        ptn_unserialize_load_spl_array_backed_members(runtime, object, instance, state);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return;
+        }
         ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+        ptn_unserialize_remove_spl_array_backed_slots(instance, "0123");
+        return;
     }
     if (ptn_class_name_is_spl_dllist_family(instance->class_name)) {
         PtnSplDoublyLinkedListData *data = malloc(sizeof(PtnSplDoublyLinkedListData));
         if (data == NULL) {
             ptn_abort_out_of_memory();
         }
-        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
+        const PtnValue *storage_slot = ptn_unserialize_spl_array_backed_slot(instance, '1');
+        data->storage = storage_slot == NULL
+            ? ptn_array_from_literal_entries(0, NULL)
+            : ptn_value_clone_deref(*storage_slot);
         if (ptn_value_deref(data->storage).type != PTN_ARRAY) {
             ptn_value_destroy(&data->storage);
             data->storage = ptn_array_from_literal_entries(0, NULL);
@@ -104050,9 +104217,7 @@ static PtnValue ptn_spl_prepare_backing_storage(
             }
             ptn_throw_exception(
                 runtime,
-                ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)
-                    ? "InvalidArgumentException"
-                    : "Exception",
+                "InvalidArgumentException",
                 message
             );
             return ptn_null();
@@ -106298,6 +106463,21 @@ static PtnSplFileObjectData *ptn_spl_file_object_data_from_value(PtnValue value)
     return (PtnSplFileObjectData *)value.as.object->native_data;
 }
 
+static void ptn_spl_normalize_self_storage(PtnValue object, PtnValue *storage) {
+    if (storage == NULL) {
+        return;
+    }
+    PtnValue resolved_object = ptn_value_deref(object);
+    PtnValue resolved_storage = ptn_value_deref(*storage);
+    if (resolved_object.type != PTN_OBJECT ||
+        resolved_storage.type != PTN_OBJECT ||
+        resolved_object.as.object != resolved_storage.as.object) {
+        return;
+    }
+    ptn_value_destroy(storage);
+    *storage = ptn_value_borrow(resolved_object);
+}
+
 static void ptn_spl_array_object_set_storage(
     PtnRuntime *runtime,
     PtnValue object,
@@ -106306,6 +106486,7 @@ static void ptn_spl_array_object_set_storage(
     size_t line
 ) {
     PtnValue new_storage = ptn_value_clone_deref(storage);
+    ptn_spl_normalize_self_storage(object, &new_storage);
     ptn_value_destroy(&data->storage);
     data->storage = new_storage;
     ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
@@ -106444,6 +106625,7 @@ static void ptn_array_object_install_data(
         ptn_array_object_data_free(data);
         return;
     }
+    ptn_spl_normalize_self_storage(resolved, &data->storage);
     if (resolved.as.object->native_data != NULL &&
         resolved.as.object->native_data_free != NULL) {
         resolved.as.object->native_data_free(resolved.as.object->native_data);
