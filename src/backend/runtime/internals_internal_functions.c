@@ -13567,7 +13567,12 @@ static PTN_UNUSED PtnValue ptn_runtime_array_arsort_path(
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "natsort",
@@ -13576,7 +13581,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natsort_variable(PtnRuntime *runtim
         name,
         value
     );
-    ptn_array_natsort_values(array);
+    ptn_array_natsort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
@@ -13597,11 +13602,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natsort_path(
         segment_count,
         line
     );
-    ptn_array_natsort_values(array);
+    ptn_array_natsort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "natcasesort",
@@ -13610,7 +13620,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_variable(PtnRuntime *ru
         name,
         value
     );
-    ptn_array_natcasesort_values(array);
+    ptn_array_natcasesort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
@@ -13631,7 +13641,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_natcasesort_path(
         segment_count,
         line
     );
-    ptn_array_natcasesort_values(array);
+    ptn_array_natcasesort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
@@ -14818,17 +14828,15 @@ static PtnValue ptn_internal_shuffle(PtnRuntime *runtime, size_t argc, const Ptn
 
 static PtnValue ptn_internal_natsort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "natsort", 1, "array", args[0]);
-    ptn_array_natsort_values(array);
+    ptn_array_natsort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_natcasesort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "natcasesort", 1, "array", args[0]);
-    ptn_array_natcasesort_values(array);
+    ptn_array_natcasesort_values(runtime, array, line);
     return ptn_bool(1);
 }
 
@@ -15246,8 +15254,8 @@ static int ptn_array_multisort_compare_operand(
             break;
         case PTN_SORT_NATURAL:
             compared = operand->case_insensitive
-                ? ptn_array_value_compare_natural_case(left, right, NULL, 0)
-                : ptn_array_value_compare_natural(left, right, NULL, 0);
+                ? ptn_array_value_compare_natural_case(left, right, runtime, line)
+                : ptn_array_value_compare_natural(left, right, runtime, line);
             break;
         case PTN_SORT_REGULAR:
         default:
@@ -33640,6 +33648,24 @@ static int ptn_natcompare_bytes(
 ) {
     size_t left_index = 0;
     size_t right_index = 0;
+
+    while (
+        left_index < left_len &&
+        left[left_index] == (unsigned char)'0' &&
+        left_index + 1 < left_len &&
+        isdigit(left[left_index + 1])
+    ) {
+        left_index++;
+    }
+    while (
+        right_index < right_len &&
+        right[right_index] == (unsigned char)'0' &&
+        right_index + 1 < right_len &&
+        isdigit(right[right_index + 1])
+    ) {
+        right_index++;
+    }
+
     while (left_index < left_len || right_index < right_len) {
         if (left_index >= left_len) {
             return right_index >= right_len ? 0 : -1;
@@ -105501,9 +105527,9 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             }
             ptn_array_ksort_entries_with_flags(array, flags);
         } else if (ptn_ascii_case_equal(name, "natsort")) {
-            ptn_array_natsort_values(array);
+            ptn_array_natsort_values(runtime, array, line);
         } else {
-            ptn_array_natcasesort_values(array);
+            ptn_array_natcasesort_values(runtime, array, line);
         }
         if (storage_object != NULL && storage_object->properties == array) {
             ptn_spl_reorder_object_metadata_like_properties(storage_object);
@@ -106211,9 +106237,9 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
                 ptn_array_ksort_entries_with_flags(array, flags);
             }
         } else if (ptn_ascii_case_equal(name, "natsort")) {
-            ptn_array_natsort_values(array);
+            ptn_array_natsort_values(runtime, array, line);
         } else if (ptn_ascii_case_equal(name, "natcasesort")) {
-            ptn_array_natcasesort_values(array);
+            ptn_array_natcasesort_values(runtime, array, line);
         } else {
             PtnValue callback = ptn_internal_expect_callback_arg(
                 runtime,

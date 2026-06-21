@@ -13792,6 +13792,7 @@ var_dump(strspn(\"hello\" . chr(0) . \"world\", \"helowrd\" . chr(0)));\n\
 var_dump(strcspn(\"hello\" . chr(0) . \"world\", chr(0)));\n\
 var_dump(strnatcmp(\"abc2\", \"abc10\"));\n\
 var_dump(strnatcmp(\" 00\", \" 0\"));\n\
+var_dump(strnatcmp(\"00\", \"0\"));\n\
 var_dump(strnatcasecmp(\"Rfc822.txt\", \"rfc822.TXT\"));\n\
 var_dump(strnatcasecmp(\"acc \", \"acc\"));\n\
 var_dump(strnatcasecmp(\"Hello\" . chr(0) . \"world\", \"Helloworld\"));\n\
@@ -13820,6 +13821,7 @@ int(11)\n\
 int(5)\n\
 int(-1)\n\
 int(1)\n\
+int(0)\n\
 int(0)\n\
 int(1)\n\
 int(-1)\n\
@@ -39521,6 +39523,11 @@ natsort($leading);\n\
 foreach ($leading as $key => $value) {\n\
     echo $key, \"~\", $value, \"\\n\";\n\
 }\n\
+$zeroes = ['001','008','005','00011','03','000014','-123','0.002','00','0','0_0','0-0'];\n\
+natsort($zeroes);\n\
+foreach ($zeroes as $key => $value) {\n\
+    echo $key, \":\", $value, \"\\n\";\n\
+}\n\
 $dynamic = \"natsort\";\n\
 $dynamic_source = [\"x2\" => \"x2\", \"x10\" => \"x10\", \"x1\" => \"x1\"];\n\
 $dynamic_copy = $dynamic_source;\n\
@@ -39555,6 +39562,18 @@ var_dump(function_exists(\"natsort\"), function_exists(\"NATSORT\"));",
             "z1~a1\n",
             "z2~a2\n",
             "z10~a10\n",
+            "6:-123\n",
+            "8:00\n",
+            "9:0\n",
+            "11:0-0\n",
+            "7:0.002\n",
+            "10:0_0\n",
+            "0:001\n",
+            "4:03\n",
+            "2:005\n",
+            "1:008\n",
+            "3:00011\n",
+            "5:000014\n",
             "bool(true)\n",
             "dx1=x1\n",
             "dx2=x2\n",
@@ -39580,6 +39599,11 @@ fn compile_natcasesort_mutates_direct_variable_preserves_keys_and_detaches_cow_t
     fs::write(
         &input,
         "<?php\n\
+class NatCaseBox {\n\
+    public $value;\n\
+    function __construct($value) { $this->value = $value; }\n\
+    function __toString() { return (string) $this->value; }\n\
+}\n\
 $source = [\"b\" => \"file2\", \"a\" => \"File10\", \"c\" => \"FILE1\"];\n\
 $copy = $source;\n\
 var_dump(natcasesort($copy));\n\
@@ -39596,6 +39620,11 @@ $ties = [\"z\" => \"a\", \"y\" => \"A\", \"x\" => \"a2\", \"w\" => \"A10\", \"v\
 natcasesort($ties);\n\
 foreach ($ties as $key => $value) {\n\
     echo $key, \"~\", $value, \"\\n\";\n\
+}\n\
+$objects = [new NatCaseBox(\"axx\"), new NatCaseBox(\"t\"), new NatCaseBox(\"w\"), new NatCaseBox(\"py\"), new NatCaseBox(\"apple\"), new NatCaseBox(\"Orange\"), new NatCaseBox(\"Lemon\"), new NatCaseBox(\"aPPle\")];\n\
+natcasesort($objects);\n\
+foreach ($objects as $key => $value) {\n\
+    echo $key, \"#\", $value->value, \"\\n\";\n\
 }\n\
 $dynamic = \"natcasesort\";\n\
 $dynamic_source = [\"xB2\" => \"XB2\", \"xa10\" => \"xa10\", \"xA1\" => \"xA1\"];\n\
@@ -39630,6 +39659,14 @@ var_dump(function_exists(\"natcasesort\"), function_exists(\"NATCASESORT\"));",
             "v~a1\n",
             "x~a2\n",
             "w~A10\n",
+            "4#apple\n",
+            "7#aPPle\n",
+            "0#axx\n",
+            "6#Lemon\n",
+            "5#Orange\n",
+            "3#py\n",
+            "1#t\n",
+            "2#w\n",
             "bool(true)\n",
             "dxA1=xA1\n",
             "dxa10=xa10\n",

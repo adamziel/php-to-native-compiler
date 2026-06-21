@@ -39554,6 +39554,10 @@ impl ValueEmitter {
             name.to_ascii_lowercase().as_str(),
             "arsort" | "asort" | "krsort" | "ksort" | "rsort" | "sort"
         );
+        let natural_sort_mutator = matches!(
+            name.to_ascii_lowercase().as_str(),
+            "natcasesort" | "natsort"
+        );
         let sort_flag_argument = arguments.len() == 2 && sort_mutator_with_flags;
         let helper = if arguments.len() == 1 || sort_flag_argument {
             if name.eq_ignore_ascii_case("array_pop") {
@@ -39619,6 +39623,9 @@ impl ValueEmitter {
                     } else {
                         out.push_str("ptn_int(PTN_SORT_REGULAR)");
                     }
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                } else if natural_sort_mutator {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                 }

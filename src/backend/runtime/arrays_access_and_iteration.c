@@ -13181,6 +13181,23 @@ static int ptn_compare_natural_string_operands(PtnStringOperand left_operand, Pt
     size_t left_offset = 0;
     size_t right_offset = 0;
 
+    while (
+        left_offset < left_operand.len &&
+        left[left_offset] == (unsigned char)'0' &&
+        left_offset + 1 < left_operand.len &&
+        ptn_ascii_is_natural_digit(left[left_offset + 1])
+    ) {
+        left_offset++;
+    }
+    while (
+        right_offset < right_operand.len &&
+        right[right_offset] == (unsigned char)'0' &&
+        right_offset + 1 < right_operand.len &&
+        ptn_ascii_is_natural_digit(right[right_offset + 1])
+    ) {
+        right_offset++;
+    }
+
     while (1) {
         while (left_offset < left_operand.len && ptn_ascii_is_natural_space(left[left_offset])) {
             left_offset++;
@@ -13696,11 +13713,11 @@ static PTN_UNUSED void ptn_array_arsort_values(PtnArray *array) {
     ptn_array_arsort_values_with_flags(array, PTN_SORT_REGULAR);
 }
 
-static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
+static PTN_UNUSED void ptn_array_natsort_values(PtnRuntime *runtime, PtnArray *array, size_t line) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
-        while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value, NULL, 0) > 0) {
+        while (j > 0 && ptn_array_value_compare_natural(array->entries[j - 1].value, moving.value, runtime, line) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }
@@ -13710,11 +13727,11 @@ static PTN_UNUSED void ptn_array_natsort_values(PtnArray *array) {
     ptn_array_rebuild_index(array);
 }
 
-static PTN_UNUSED void ptn_array_natcasesort_values(PtnArray *array) {
+static PTN_UNUSED void ptn_array_natcasesort_values(PtnRuntime *runtime, PtnArray *array, size_t line) {
     for (size_t i = 1; i < array->len; i++) {
         PtnArrayEntry moving = array->entries[i];
         size_t j = i;
-        while (j > 0 && ptn_array_value_compare_natural_case(array->entries[j - 1].value, moving.value, NULL, 0) > 0) {
+        while (j > 0 && ptn_array_value_compare_natural_case(array->entries[j - 1].value, moving.value, runtime, line) > 0) {
             array->entries[j] = array->entries[j - 1];
             j--;
         }
