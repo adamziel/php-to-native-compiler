@@ -33573,8 +33573,12 @@ try {\n\
     [[]] === $a;\n\
 } catch (Error $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
-}\n\
-var_dump($a === $a);\n",
+	}\n\
+	var_dump($a === $a);\n\
+	$n = 0;\n\
+	$left = [[$n]];\n\
+	$right = [&$left];\n\
+	var_dump($left === $right);\n",
     )
     .unwrap();
 
@@ -33588,6 +33592,7 @@ var_dump($a === $a);\n",
             "Nesting level too deep - recursive dependency?\n",
             "Nesting level too deep - recursive dependency?\n",
             "bool(true)\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

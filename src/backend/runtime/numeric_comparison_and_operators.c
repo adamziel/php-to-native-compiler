@@ -35,49 +35,64 @@ typedef struct {
     PtnArray **items;
     size_t len;
     size_t capacity;
+} PtnComparisonArrayStackSide;
+
+typedef struct {
+    PtnComparisonArrayStackSide left;
+    PtnComparisonArrayStackSide right;
 } PtnComparisonArrayStack;
 
+static void ptn_comparison_array_stack_side_init(PtnComparisonArrayStackSide *side) {
+    side->items = NULL;
+    side->len = 0;
+    side->capacity = 0;
+}
+
 static void ptn_comparison_array_stack_init(PtnComparisonArrayStack *stack) {
-    stack->items = NULL;
-    stack->len = 0;
-    stack->capacity = 0;
+    ptn_comparison_array_stack_side_init(&stack->left);
+    ptn_comparison_array_stack_side_init(&stack->right);
+}
+
+static void ptn_comparison_array_stack_side_free(PtnComparisonArrayStackSide *side) {
+    free(side->items);
+    side->items = NULL;
+    side->len = 0;
+    side->capacity = 0;
 }
 
 static void ptn_comparison_array_stack_free(PtnComparisonArrayStack *stack) {
-    free(stack->items);
-    stack->items = NULL;
-    stack->len = 0;
-    stack->capacity = 0;
+    ptn_comparison_array_stack_side_free(&stack->left);
+    ptn_comparison_array_stack_side_free(&stack->right);
 }
 
-static int ptn_comparison_array_stack_contains(PtnComparisonArrayStack *stack, PtnArray *array) {
-    for (size_t i = 0; i < stack->len; i++) {
-        if (stack->items[i] == array) {
+static int ptn_comparison_array_stack_side_contains(PtnComparisonArrayStackSide *side, PtnArray *array) {
+    for (size_t i = 0; i < side->len; i++) {
+        if (side->items[i] == array) {
             return 1;
         }
     }
     return 0;
 }
 
-static void ptn_comparison_array_stack_push(PtnComparisonArrayStack *stack, PtnArray *array) {
-    if (stack->len == stack->capacity) {
-        size_t new_capacity = stack->capacity == 0 ? 8 : stack->capacity * 2;
-        if (new_capacity < stack->capacity) {
+static void ptn_comparison_array_stack_side_push(PtnComparisonArrayStackSide *side, PtnArray *array) {
+    if (side->len == side->capacity) {
+        size_t new_capacity = side->capacity == 0 ? 8 : side->capacity * 2;
+        if (new_capacity < side->capacity) {
             ptn_abort_out_of_memory();
         }
-        PtnArray **new_items = realloc(stack->items, new_capacity * sizeof(PtnArray *));
+        PtnArray **new_items = realloc(side->items, new_capacity * sizeof(PtnArray *));
         if (new_items == NULL) {
             ptn_abort_out_of_memory();
         }
-        stack->items = new_items;
-        stack->capacity = new_capacity;
+        side->items = new_items;
+        side->capacity = new_capacity;
     }
-    stack->items[stack->len++] = array;
+    side->items[side->len++] = array;
 }
 
-static void ptn_comparison_array_stack_pop(PtnComparisonArrayStack *stack) {
-    if (stack->len > 0) {
-        stack->len--;
+static void ptn_comparison_array_stack_side_pop(PtnComparisonArrayStackSide *side) {
+    if (side->len > 0) {
+        side->len--;
     }
 }
 
@@ -103,16 +118,16 @@ static int ptn_compare_arrays_enter(
     int *right_pushed
 ) {
     if (
-        ptn_comparison_array_stack_contains(stack, left) ||
-        ptn_comparison_array_stack_contains(stack, right)
+        ptn_comparison_array_stack_side_contains(&stack->left, left) ||
+        ptn_comparison_array_stack_side_contains(&stack->right, right)
     ) {
         ptn_compare_throw_recursive_dependency(runtime, line);
         return 0;
     }
-    ptn_comparison_array_stack_push(stack, left);
+    ptn_comparison_array_stack_side_push(&stack->left, left);
     *right_pushed = 0;
     if (right != left) {
-        ptn_comparison_array_stack_push(stack, right);
+        ptn_comparison_array_stack_side_push(&stack->right, right);
         *right_pushed = 1;
     }
     return 1;
@@ -120,9 +135,9 @@ static int ptn_compare_arrays_enter(
 
 static void ptn_compare_arrays_leave(PtnComparisonArrayStack *stack, int right_pushed) {
     if (right_pushed) {
-        ptn_comparison_array_stack_pop(stack);
+        ptn_comparison_array_stack_side_pop(&stack->right);
     }
-    ptn_comparison_array_stack_pop(stack);
+    ptn_comparison_array_stack_side_pop(&stack->left);
 }
 
 static int ptn_compare_equal_inner(
