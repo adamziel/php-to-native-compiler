@@ -3687,6 +3687,7 @@ static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
+static int ptn_declared_class_has_enum_cases(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
 static int ptn_declared_class_constant_value(PtnRuntime *runtime, const char *class_name, const char *constant_name, PtnValue *value_out);
@@ -87571,6 +87572,7 @@ static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *na
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
+static int ptn_declared_class_has_enum_cases(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static const char *ptn_declared_class_enum_backing_type_name(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
@@ -99528,7 +99530,12 @@ static void ptn_reflection_object_append_class_text(
 }
 
 static PtnValue ptn_reflection_object_to_string(PtnRuntime *runtime, PtnReflectionClassData *data) {
-    PtnValue class_string = ptn_declared_class_reflection_to_string(runtime, data->name, 0);
+    int include_enum_cases = ptn_declared_class_has_enum_cases(data->name);
+    PtnValue class_string = ptn_declared_class_reflection_to_string(
+        runtime,
+        data->name,
+        include_enum_cases
+    );
     PtnValue resolved = ptn_value_deref(class_string);
     if (resolved.type != PTN_STRING) {
         return class_string;
@@ -99760,7 +99767,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             ptn_internal_class_name_is_reflection_object(resolved_receiver.as.object->class_name)) {
             return ptn_reflection_object_to_string(runtime, data);
         }
-        int include_enum_cases = ptn_declared_class_is_enum(class_name);
+        int include_enum_cases = ptn_declared_class_has_enum_cases(class_name);
         return ptn_declared_class_reflection_to_string(runtime, class_name, include_enum_cases);
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {

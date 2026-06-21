@@ -25550,9 +25550,14 @@ enum Suit: string implements MyStringable {
     }
 }
 
+enum EmptySuit {}
+
 echo new ReflectionClass(Suit::class);
 echo \"---\\n\";
 echo new ReflectionEnum(Suit::class);
+$empty = new ReflectionClass(EmptySuit::class);
+echo \"===empty===\\n\";
+echo $empty;
 ",
     )
     .unwrap();
@@ -25579,6 +25584,16 @@ echo new ReflectionEnum(Suit::class);
     );
     assert_eq!(stdout.matches("Case Hearts = H").count(), 2, "{stdout}");
     assert_eq!(stdout.matches("Case Spades = S").count(), 2, "{stdout}");
+    assert!(
+        stdout.contains("Enum [ <user> enum EmptySuit implements UnitEnum ]"),
+        "{stdout}"
+    );
+    let empty_tail = stdout
+        .split("===empty===\n")
+        .nth(1)
+        .unwrap_or_else(|| panic!("missing empty enum reflection marker in {stdout}"));
+    assert!(!empty_tail.contains("  - Enum cases [0] {"), "{stdout}");
+    assert!(empty_tail.contains("  - Constants [0] {"), "{stdout}");
     assert_eq!(
         stdout
             .matches("Method [ <user, prototype MyStringable> public method toString ]")

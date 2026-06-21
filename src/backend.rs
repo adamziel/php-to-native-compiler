@@ -5570,6 +5570,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
+    out.push_str("static int ptn_declared_class_has_enum_cases(const char *name);\n");
     out.push_str(
         "static const char *ptn_declared_class_enum_backing_type_name(const char *name);\n",
     );
@@ -5930,6 +5931,19 @@ fn emit_class_metadata_helpers(
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_has_enum_cases(const char *name) {\n");
+    for class in classes.iter().filter(|class| {
+        class.is_enum && class.constants.iter().any(|constant| constant.is_enum_case)
+    }) {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -13457,7 +13471,7 @@ fn emit_reflection_enum_to_string_runtime(
     out.push_str("        if (");
     out.push_str(include_enum_cases);
     out.push_str(") {\n");
-    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str("            ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&enum_cases));
     out.push_str("\");\n");
     out.push_str("        }\n");
