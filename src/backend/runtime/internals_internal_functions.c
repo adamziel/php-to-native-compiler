@@ -1948,8 +1948,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_header(
 ) {
     size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
     int display_lazy = object->lazy_uninitialized && !object->lazy_initializing;
+    int dump_as_plain_object = display_lazy &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "stdClass");
     const char *prefix = display_lazy
-        ? (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object")
+        ? (dump_as_plain_object
+            ? "object"
+            : (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object"))
         : (object->lazy_is_proxy ? "lazy proxy object" : "object");
     ptn_direct_dump_printf(
         runtime,
@@ -5990,8 +5994,12 @@ static void ptn_var_dump_object_header(
 ) {
     size_t class_name_len = ptn_class_name_dump_len(object->class_name);
     int display_lazy = object->lazy_uninitialized && !object->lazy_initializing;
+    int dump_as_plain_object = display_lazy &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "stdClass");
     const char *prefix = display_lazy
-        ? (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object")
+        ? (dump_as_plain_object
+            ? "object"
+            : (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object"))
         : (object->lazy_is_proxy ? "lazy proxy object" : "object");
     if (debug) {
         printf(
@@ -90655,6 +90663,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getFileName")
         || ptn_ascii_case_equal(method_name, "getInterfaceNames")
         || ptn_ascii_case_equal(method_name, "getInterfaces")
+        || ptn_ascii_case_equal(method_name, "getLazyInitializer")
         || ptn_ascii_case_equal(method_name, "getEndLine")
         || ptn_ascii_case_equal(method_name, "getMethod")
         || ptn_ascii_case_equal(method_name, "getMethods")
@@ -93226,6 +93235,7 @@ static const char *ptn_reflection_class_canonical_method_name(const char *method
     if (ptn_ascii_case_equal(method_name, "getFileName")) return "getFileName";
     if (ptn_ascii_case_equal(method_name, "getInterfaceNames")) return "getInterfaceNames";
     if (ptn_ascii_case_equal(method_name, "getInterfaces")) return "getInterfaces";
+    if (ptn_ascii_case_equal(method_name, "getLazyInitializer")) return "getLazyInitializer";
     if (ptn_ascii_case_equal(method_name, "getEndLine")) return "getEndLine";
     if (ptn_ascii_case_equal(method_name, "getMethod")) return "getMethod";
     if (ptn_ascii_case_equal(method_name, "getMethods")) return "getMethods";
@@ -98327,6 +98337,22 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ptn_throw_exception(runtime, "TypeError", message);
             return ptn_null();
         }
+        if (data->is_dynamic) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Can not use %s on dynamic property %s::$%s",
+                name,
+                property_owner,
+                data->name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
         const char *compatibility_class = data->is_dynamic ? data->class_name : property_owner;
         if (!ptn_reflection_property_target_is_compatible(target, compatibility_class)) {
             ptn_throw_exception(
@@ -99221,6 +99247,50 @@ static PtnValue ptn_reflection_class_lazy_object_arg(
     return ptn_null();
 }
 
+static int ptn_reflection_class_validate_lazy_class(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    if (ptn_internal_class_exists_name(class_name) &&
+        !ptn_internal_class_name_is_stdclass_name(class_name)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot make instance of internal class lazy: %s is internal",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return 0;
+    }
+
+    const char *parent_name = ptn_declared_class_parent_name(class_name);
+    while (parent_name != NULL) {
+        if (ptn_internal_class_exists_name(parent_name) &&
+            !ptn_internal_class_name_is_stdclass_name(parent_name)) {
+            char message[320];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot make instance of internal class lazy: %s inherits internal class %s",
+                class_name,
+                parent_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "Error", message);
+            return 0;
+        }
+        parent_name = ptn_declared_class_parent_name(parent_name);
+    }
+
+    return 1;
+}
+
 static PtnValue ptn_reflection_class_create_lazy_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -99236,6 +99306,9 @@ static PtnValue ptn_reflection_class_create_lazy_object(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    if (!ptn_reflection_class_validate_lazy_class(runtime, class_name)) {
         return ptn_null();
     }
     PtnValue object = ptn_null();
@@ -99280,6 +99353,21 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    if (!ptn_reflection_class_validate_lazy_class(runtime, class_name)) {
+        return ptn_null();
+    }
+    if (object.as.object->lazy_initializing) {
+        ptn_throw_exception(
+            runtime,
+            "Error",
+            "Can not reset an object while it is being initialized"
+        );
+        return ptn_null();
+    }
+    if (object.as.object->lazy_uninitialized) {
+        ptn_throw_exception(runtime, "ReflectionException", "Object is already lazy");
         return ptn_null();
     }
     if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
@@ -99522,6 +99610,20 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             }
         }
         return ptn_value_clone_deref(object);
+    }
+    if (ptn_ascii_case_equal(name, "getLazyInitializer")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object = ptn_reflection_class_lazy_object_arg(runtime, name, 1, "object", args[0]);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!object.as.object->lazy_uninitialized) {
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(object.as.object->lazy_initializer);
     }
     if (ptn_ascii_case_equal(name, "isUninitializedLazyObject")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);

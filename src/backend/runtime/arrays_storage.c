@@ -840,6 +840,17 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     if (object == NULL || !object->destructor_enabled || object->destructor_called) {
         return;
     }
+    if (object->lazy_uninitialized && !object->lazy_initializing) {
+        return;
+    }
+    if (object->lazy_is_proxy && !object->lazy_uninitialized) {
+        PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
+        if (real.type == PTN_OBJECT && real.as.object != NULL && real.as.object != object) {
+            object->destructor_called = 1;
+            ptn_object_run_destructor_ex(real.as.object, during_shutdown);
+            return;
+        }
+    }
     PtnRuntime *runtime = object->lifecycle_runtime;
     if (runtime == NULL) {
         return;
@@ -1312,6 +1323,13 @@ static PTN_UNUSED void ptn_lazy_object_mark(
     object->lazy_initializing = 0;
     object->lazy_initializer = ptn_value_clone_deref(initializer);
     object->lazy_proxy_instance = ptn_null();
+    if (object->property_metadata_len == 0) {
+        object->lazy_uninitialized = 0;
+        object->lazy_is_proxy = 0;
+        object->lazy_options = 0;
+        ptn_value_destroy(&object->lazy_initializer);
+        object->lazy_initializer = ptn_null();
+    }
 }
 
 static int ptn_reference_property_type_matches_metadata(
