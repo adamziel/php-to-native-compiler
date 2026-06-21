@@ -62841,6 +62841,58 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_uri_objects_hide_virtual_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-virtual-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-virtual-properties.php");
+    let output = root.join("uri-virtual-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$uri = new Uri\Rfc3986\Uri("https://username:password@www.example.com:8080/pathname1/pathname2/pathname3?query=true#hash-exists");
+$url = new Uri\WhatWg\Url("https://username:password@www.example.com:8080/pathname1/pathname2/pathname3?query=true#hash-exists");
+
+var_dump($uri->getHost(), $url->getHost());
+var_dump(json_encode($uri), json_encode($url));
+var_export($uri);
+echo "\n";
+var_export($url);
+echo "\n";
+var_dump((array) $uri, (array) $url);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(15) \"www.example.com\"\n",
+            "string(15) \"www.example.com\"\n",
+            "string(2) \"{}\"\n",
+            "string(2) \"{}\"\n",
+            "\\Uri\\Rfc3986\\Uri::__set_state(array(\n",
+            "))\n",
+            "\\Uri\\WhatWg\\Url::__set_state(array(\n",
+            "))\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

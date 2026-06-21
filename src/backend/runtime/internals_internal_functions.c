@@ -11054,6 +11054,13 @@ static void ptn_var_export_append_value(
     size_t line
 );
 
+static PTN_UNUSED int ptn_uri_object_uses_virtual_debug_properties(PtnObject *object) {
+    return object != NULL &&
+        object->native_data != NULL &&
+        (strcmp(object->class_name, "Uri\\Rfc3986\\Uri") == 0 ||
+         strcmp(object->class_name, "Uri\\WhatWg\\Url") == 0);
+}
+
 static void ptn_var_export_append_single_quoted_string(
     PtnStringBuffer *buffer,
     const char *data,
@@ -11159,6 +11166,11 @@ static void ptn_var_export_append_object_state_array(
 ) {
     PtnArray *properties = object->properties;
     ptn_string_buffer_append(buffer, "array(\n");
+    if (ptn_uri_object_uses_virtual_debug_properties(object)) {
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append_char(buffer, ')');
+        return;
+    }
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
@@ -11807,6 +11819,10 @@ static int ptn_json_encode_append_object(
             return 0;
         }
         return ptn_json_encode_append_value(buffer, value_entry->value, seen, depth - 1, flags, error);
+    }
+    if (ptn_uri_object_uses_virtual_debug_properties(object)) {
+        ptn_string_buffer_append(buffer, "{}");
+        return 1;
     }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
@@ -101662,6 +101678,11 @@ static PtnValue ptn_spl_object_public_properties_array_copy(PtnObject *object) {
 
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT &&
+        ptn_uri_object_uses_virtual_debug_properties(value.as.object)) {
+        *array_out = ptn_array_from_literal_entries(0, NULL);
+        return 1;
+    }
     if (ptn_bcmath_number_cast_array(value, array_out)) {
         return 1;
     }
