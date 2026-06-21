@@ -21240,6 +21240,51 @@ echo $call($items), \":\", count($items), \":\", $items[1], \"\\n\";",
 }
 
 #[test]
+fn compile_dynamic_array_item_callable_null_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-array-item-callable-null-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-array-item-callable-null-error.php");
+    let output = root.join("dynamic-array-item-callable-null-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arr = array('strtoupper', 'strtolower');\n\
+$k = 0;\n\
+var_dump($arr[0]('foo') == 'FOO');\n\
+var_dump($arr[$k]('foo') == 'FOO');\n\
+var_dump($arr[++$k]('FOO') == 'foo');\n\
+try {\n\
+    var_dump($arr[++$k]('FOO') == 'foo');\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+\n\
+Warning: Undefined array key 2 in {} on line 8\n\
+Value of type null is not callable\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
+    assert!(c_source.contains("Value of type %s is not callable"));
+}
+
+#[test]
 fn compile_static_method_callable_value_call_to_native_binary() {
     let root = temp_dir("ptn-native-static-method-callable-value-call");
     fs::create_dir_all(&root).unwrap();

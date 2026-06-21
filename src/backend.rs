@@ -17841,6 +17841,15 @@ fn emit_callable_dispatch(
     out.push_str("                exit(255);\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
+    out.push_str("    if (resolved.type != PTN_STRING) {\n");
+    out.push_str("        char ptn_not_callable_message[128];\n");
+    out.push_str("        int ptn_not_callable_written = snprintf(ptn_not_callable_message, sizeof(ptn_not_callable_message), \"Value of type %s is not callable\", ptn_offset_container_type_name(resolved));\n");
+    out.push_str("        if (ptn_not_callable_written < 0 || (size_t)ptn_not_callable_written >= sizeof(ptn_not_callable_message)) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_not_callable_message, runtime->source_path, line);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
     out.push_str(
