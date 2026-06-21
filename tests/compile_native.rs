@@ -59178,7 +59178,7 @@ $example::$dynamicStatic();
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_property_name(&runtime"));
-    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property_len(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
 }
 
@@ -70846,6 +70846,150 @@ var_dump((array) $uri, (array) $url);
             "}\n",
             "array(0) {\n",
             "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_assign_op_false_root_warns_nested_missing_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-array-assign-op-false-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-assign-op-false-root.php");
+    let output = root.join("array-assign-op-false-root-bin");
+    fs::write(
+        &input,
+        "<?php
+function f($a) {
+    $a[2][3] += 1;
+    var_dump($a);
+}
+f(false);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let false_to_array = stdout
+        .find("Automatic conversion of false to array is deprecated")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let missing_two = stdout
+        .find("Undefined array key 2")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let missing_three = stdout
+        .find("Undefined array key 3")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(false_to_array < missing_two, "{stdout}");
+    assert!(missing_two < missing_three, "{stdout}");
+    assert!(
+        stdout.contains("  [2]=>\n  array(1) {\n    [3]=>\n    int(1)\n  }\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_property_compound_creation_precedes_read_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-compound-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-compound-order.php");
+    let output = root.join("dynamic-property-compound-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {}
+$obj = new Test;
+$obj->prop2 += 1;
+$obj->prop3++;
+(function () { $this->y .= []; })->call($obj);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let prop2_deprecated = stdout
+        .find("Creation of dynamic property Test::$prop2 is deprecated")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let prop2_undefined = stdout
+        .find("Undefined property: Test::$prop2")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let prop3_deprecated = stdout
+        .find("Creation of dynamic property Test::$prop3 is deprecated")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let prop3_undefined = stdout
+        .find("Undefined property: Test::$prop3")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let y_deprecated = stdout
+        .find("Creation of dynamic property Test::$y is deprecated")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let y_undefined = stdout
+        .find("Undefined property: Test::$y")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let array_to_string = stdout
+        .find("Array to string conversion")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(prop2_deprecated < prop2_undefined, "{stdout}");
+    assert!(prop3_deprecated < prop3_undefined, "{stdout}");
+    assert!(y_deprecated < y_undefined, "{stdout}");
+    assert!(y_undefined < array_to_string, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_property_reference_creation_rechecks_invalidated_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-reference-invalidation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-reference-invalidation.php");
+    let output = root.join("dynamic-property-reference-invalidation-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function ($code, $msg) {
+    echo \"Err: $msg\\n\";
+    $GLOBALS['a'] = null;
+});
+$a = new class {};
+try {
+    [&$a->y];
+} catch (Throwable $ex) {
+    echo \"Exception: \" . $ex->getMessage() . \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Err: Creation of dynamic property class@anonymous::$y is deprecated\n",
+            "Exception: Cannot create dynamic property class@anonymous::$y\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

@@ -1876,6 +1876,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_class_constant_initializing_constant_name = NULL;
     runtime->class_constant_deprecation_suppress_class = NULL;
     runtime->class_constant_deprecation_suppress_constant = NULL;
+    runtime->dynamic_property_deprecation_suppress_object = NULL;
+    runtime->dynamic_property_deprecation_suppress_property = NULL;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = &runtime->owned_static_properties;
     ptn_symbols_init(&runtime->owned_static_property_initialized);

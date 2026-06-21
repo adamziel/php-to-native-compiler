@@ -4276,6 +4276,47 @@ static PTN_UNUSED void ptn_emit_dynamic_property_deprecation(
     ptn_emit_runtime_deprecation(runtime, message, line);
 }
 
+static PTN_UNUSED void ptn_runtime_clear_dynamic_property_deprecation_suppression(
+    PtnRuntime *runtime
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    free(runtime->dynamic_property_deprecation_suppress_property);
+    runtime->dynamic_property_deprecation_suppress_property = NULL;
+    runtime->dynamic_property_deprecation_suppress_object = NULL;
+}
+
+static PTN_UNUSED void ptn_runtime_suppress_next_dynamic_property_deprecation(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property
+) {
+    if (runtime == NULL || object == NULL || property == NULL) {
+        return;
+    }
+    ptn_runtime_clear_dynamic_property_deprecation_suppression(runtime);
+    runtime->dynamic_property_deprecation_suppress_object = object;
+    runtime->dynamic_property_deprecation_suppress_property = ptn_duplicate_string(property);
+}
+
+static PTN_UNUSED int ptn_runtime_consume_dynamic_property_deprecation_suppression(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property
+) {
+    if (runtime == NULL ||
+        object == NULL ||
+        property == NULL ||
+        runtime->dynamic_property_deprecation_suppress_object != object ||
+        runtime->dynamic_property_deprecation_suppress_property == NULL ||
+        strcmp(runtime->dynamic_property_deprecation_suppress_property, property) != 0) {
+        return 0;
+    }
+    ptn_runtime_clear_dynamic_property_deprecation_suppression(runtime);
+    return 1;
+}
+
 #define PTN_PROPERTY_ACCESS_READ 0
 #define PTN_PROPERTY_ACCESS_WRITE 1
 #define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
@@ -4808,6 +4849,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             (access_mode == PTN_PROPERTY_ACCESS_WRITE ||
              access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE) &&
             (object->enum_case_name != NULL ||
+             ptn_object_is_generator(object) ||
              ptn_ascii_case_equal(object->class_name, "BcMath\\Number") ||
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
              ptn_internal_class_name_is_sensitive_parameter_value(object->class_name) ||
@@ -4899,6 +4941,123 @@ static PTN_UNUSED int ptn_object_indirect_write_targets_overloaded_property(
     ptn_array_key_free(key);
     free(storage_key);
     return entry == NULL;
+}
+
+static PTN_UNUSED int ptn_object_missing_dynamic_property_for_creation(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    size_t line,
+    PtnObject **object_out
+) {
+    receiver = ptn_value_deref(receiver);
+    if (property == NULL ||
+        receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        ptn_object_is_incomplete_class(receiver.as.object) ||
+        receiver.as.object->lazy_uninitialized ||
+        ptn_object_metadata_for_display_name(receiver.as.object, property) != NULL) {
+        return 0;
+    }
+    PtnObjectPropertyMetadata *blocked_metadata =
+        ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
+    if (blocked_metadata != NULL) {
+        return 0;
+    }
+    if (runtime != NULL &&
+        runtime->magic_property_set != NULL &&
+        !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_SET)) {
+        return 0;
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        access_mode,
+        1,
+        line
+    );
+    if (storage_key == NULL) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    if (metadata != NULL || entry != NULL) {
+        return 0;
+    }
+    if (object_out != NULL) {
+        *object_out = receiver.as.object;
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_object_emit_dynamic_property_creation_deprecation(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    size_t line,
+    int suppress_following_write
+) {
+    if (object == NULL || property == NULL) {
+        return 1;
+    }
+    size_t refcount_before = object->refcount;
+    ptn_object_retain(object);
+    ptn_emit_dynamic_property_deprecation(runtime, object, property, line);
+    int receiver_invalidated = object->refcount <= refcount_before;
+    int active_exception = runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL;
+    if (receiver_invalidated && !active_exception) {
+        ptn_throw_dynamic_property_readonly_class_error(
+            runtime,
+            object->class_name,
+            property,
+            line
+        );
+        active_exception = 1;
+    }
+    if (!active_exception && !receiver_invalidated && suppress_following_write) {
+        ptn_runtime_suppress_next_dynamic_property_deprecation(runtime, object, property);
+    }
+    ptn_object_release(object);
+    return !active_exception && !receiver_invalidated;
+}
+
+static PTN_UNUSED int ptn_object_preflight_dynamic_property_creation(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    size_t line
+) {
+    PtnObject *object = NULL;
+    if (!ptn_object_missing_dynamic_property_for_creation(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            access_mode,
+            line,
+            &object
+        )) {
+        return 1;
+    }
+    return ptn_object_emit_dynamic_property_creation_deprecation(
+        runtime,
+        object,
+        property,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_undefined_exception_property_warning(
@@ -5433,6 +5592,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         return array_object_value;
     }
 #endif
+    if (!ptn_object_preflight_dynamic_property_creation(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+            line
+        )) {
+        return ptn_null();
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -5686,6 +5855,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
             line
         ) &&
         !ptn_lazy_object_initialize_for_dynamic_property_compound(runtime, receiver, line)) {
+        return ptn_null();
+    }
+    if (!ptn_object_preflight_dynamic_property_creation(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_WRITE,
+            line
+        )) {
         return ptn_null();
     }
     return ptn_object_read_property(runtime, receiver, property, access_scope, line);
@@ -6380,6 +6559,12 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
     PtnObjectPropertyMetadata *mutable_metadata = metadata == NULL
         ? NULL
         : ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    int suppress_dynamic_property_deprecation =
+        ptn_runtime_consume_dynamic_property_deprecation_suppression(
+            runtime,
+            receiver.as.object,
+            property
+        );
     if (
         metadata != NULL &&
         metadata->is_unset &&
@@ -6489,7 +6674,15 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
             return ptn_null();
         }
     }
-    if (metadata == NULL && entry == NULL) {
+    if (metadata == NULL && entry == NULL &&
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        return ptn_null();
+    }
+    if (metadata == NULL && entry == NULL && !suppress_dynamic_property_deprecation) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
     }
     if (metadata != NULL && !hook_set_deprecation_emitted) {
@@ -7241,6 +7434,18 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     if (entry == NULL) {
+        if (metadata == NULL &&
+            !ptn_object_emit_dynamic_property_creation_deprecation(
+                runtime,
+                receiver.as.object,
+                property,
+                line,
+                0
+            )) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
         if (metadata != NULL &&
             ptn_property_type_is_declared(metadata->type_kind) &&
             !metadata->type_allows_null) {
@@ -14184,6 +14389,12 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         ptn_throw_cannot_use_object_as_array(runtime, slot_value, line);
         return ptn_null();
     }
+    if (slot_value.type == PTN_BOOL && !slot_value.as.boolean) {
+        PtnValue *slot_target = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        (void)ptn_value_replace_with_empty_array(slot_target);
+        ptn_emit_false_array_conversion_deprecation(runtime, line);
+        slot_value = ptn_value_deref(*slot);
+    }
 
     PtnValue container = ptn_value_borrow(slot_value);
     for (size_t i = 0; i < segment_count; i++) {
@@ -14204,7 +14415,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
             if (entry == NULL) {
                 ptn_emit_undefined_array_key_warning(runtime, key, line);
                 ptn_array_key_free(key);
-                return ptn_null();
+                if (i + 1 == segment_count) {
+                    return ptn_null();
+                }
+                container = ptn_null();
+                continue;
             }
             ptn_array_key_free(key);
             if (i + 1 == segment_count) {
@@ -14216,12 +14431,33 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         if (container.type == PTN_NULL) {
             ptn_emit_undefined_array_key_warning(runtime, key, line);
             ptn_array_key_free(key);
-            return ptn_null();
+            if (i + 1 == segment_count) {
+                return ptn_null();
+            }
+            container = ptn_null();
+            continue;
         }
         ptn_array_key_free(key);
         return ptn_null();
     }
     return ptn_null();
+}
+
+static PTN_UNUSED int ptn_runtime_array_path_root_false_converted_for_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue pre_eval_root
+) {
+    PtnValue root = ptn_value_deref(pre_eval_root);
+    if (root.type != PTN_BOOL || root.as.boolean) {
+        return 0;
+    }
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
+    if (slot == NULL) {
+        return 0;
+    }
+    PtnValue current = ptn_value_deref(*slot);
+    return current.type == PTN_ARRAY;
 }
 
 static PTN_UNUSED int ptn_runtime_array_path_read_overloaded_base_for_assign_op(
@@ -14700,13 +14936,21 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
         if (container.type == PTN_NULL) {
             ptn_emit_undefined_array_key_warning(runtime, key, line);
             ptn_array_key_free(key);
-            return ptn_null();
+            if (i + 1 == segment_count) {
+                return ptn_null();
+            }
+            container = ptn_null();
+            continue;
         }
         PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
         if (entry == NULL) {
             ptn_emit_undefined_array_key_warning(runtime, key, line);
             ptn_array_key_free(key);
-            return ptn_null();
+            if (i + 1 == segment_count) {
+                return ptn_null();
+            }
+            container = ptn_null();
+            continue;
         }
         ptn_array_key_free(key);
         if (i + 1 == segment_count) {

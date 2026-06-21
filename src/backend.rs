@@ -20109,7 +20109,13 @@ fn emit_instruction(
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
                 out.push_str(&root_temp);
-                out.push_str("))) {\n");
+                out.push_str(
+                    ")) && !ptn_runtime_array_path_root_false_converted_for_assign_op(&runtime, \"",
+                );
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&root_temp);
+                out.push_str(")) {\n");
                 out.push_str(
                     "        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ",
                 );
@@ -31424,7 +31430,7 @@ impl ValueEmitter {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_object_read_property(&runtime, ");
+                out.push_str(" = ptn_object_read_property_for_compound_assignment(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", ");
                 out.push_str(&name_temp);
@@ -31698,7 +31704,13 @@ impl ValueEmitter {
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&root_temp);
-        out.push_str("))) {\n");
+        out.push_str(
+            ")) && !ptn_runtime_array_path_root_false_converted_for_assign_op(&runtime, \"",
+        );
+        out.push_str(&c_string(array));
+        out.push_str("\", ");
+        out.push_str(&root_temp);
+        out.push_str(")) {\n");
         out.push_str("        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ");
         out.push_str(&root_temp);
         out.push_str(", ");

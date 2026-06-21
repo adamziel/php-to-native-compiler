@@ -26,6 +26,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->class_constant_deprecation_suppress_class;
     runtime->class_constant_deprecation_suppress_constant =
         caller_runtime->class_constant_deprecation_suppress_constant;
+    runtime->dynamic_property_deprecation_suppress_object = NULL;
+    runtime->dynamic_property_deprecation_suppress_property = NULL;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = caller_runtime->static_properties;
     ptn_symbols_init(&runtime->owned_static_property_initialized);
@@ -487,6 +489,9 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
 #endif
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    free(runtime->dynamic_property_deprecation_suppress_property);
+    runtime->dynamic_property_deprecation_suppress_property = NULL;
+    runtime->dynamic_property_deprecation_suppress_object = NULL;
     if (runtime->lifecycle_root == runtime) {
         ptn_runtime_session_shutdown(runtime);
         ptn_runtime_run_shutdown_functions(runtime);

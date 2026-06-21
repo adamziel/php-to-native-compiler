@@ -1287,6 +1287,8 @@ struct PtnRuntime {
     const char *current_class_constant_initializing_constant_name;
     const char *class_constant_deprecation_suppress_class;
     const char *class_constant_deprecation_suppress_constant;
+    PtnObject *dynamic_property_deprecation_suppress_object;
+    char *dynamic_property_deprecation_suppress_property;
     PtnSymbolTable owned_static_properties;
     PtnSymbolTable *static_properties;
     PtnSymbolTable owned_static_property_initialized;
