@@ -690,6 +690,7 @@ typedef struct {
 struct PtnClosure {
     size_t refcount;
     size_t object_id;
+    size_t gc_mark_epoch;
     PtnRuntime *lifecycle_runtime;
     size_t function_index;
     const char *display_name;
@@ -3248,6 +3249,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     }
     closure->refcount = 1;
     closure->object_id = ptn_runtime_alloc_object_id(runtime);
+    closure->gc_mark_epoch = 0;
     closure->lifecycle_runtime = ptn_runtime_root(runtime);
     closure->function_index = function_index;
     closure->display_name = display_name;

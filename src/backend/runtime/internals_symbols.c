@@ -136,6 +136,21 @@ static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth) {
     if (value.type == PTN_ARRAY) {
         return ptn_array_contains_pending_destructor(value.as.array, depth + 1);
     }
+    if (value.type == PTN_CLOSURE && value.as.closure != NULL) {
+        if (value.as.closure->has_wrapped_callable &&
+            ptn_value_contains_pending_destructor(value.as.closure->wrapped_callable, depth + 1)) {
+            return 1;
+        }
+        for (size_t i = 0; i < value.as.closure->captures.len; i++) {
+            if (ptn_value_contains_pending_destructor(
+                value.as.closure->captures.items[i].value,
+                depth + 1
+            )) {
+                return 1;
+            }
+        }
+        return 0;
+    }
     if (value.type != PTN_OBJECT || value.as.object == NULL) {
         return 0;
     }

@@ -1058,6 +1058,18 @@ static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t de
     if (value.type == PTN_ARRAY) {
         return ptn_array_reaches_object(value.as.array, target, depth + 1);
     }
+    if (value.type == PTN_CLOSURE && value.as.closure != NULL) {
+        PtnClosure *closure = value.as.closure;
+        if (closure->has_wrapped_callable &&
+            ptn_value_reaches_object(closure->wrapped_callable, target, depth + 1)) {
+            return 1;
+        }
+        for (size_t i = 0; i < closure->captures.len; i++) {
+            if (ptn_value_reaches_object(closure->captures.items[i].value, target, depth + 1)) {
+                return 1;
+            }
+        }
+    }
     return 0;
 }
 

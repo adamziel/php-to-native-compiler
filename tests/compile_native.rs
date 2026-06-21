@@ -11561,6 +11561,115 @@ var_dump($map);
 }
 
 #[test]
+fn compile_gc_collects_object_closure_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-object-closure-cycles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-object-closure-cycles.php");
+    let output = root.join("gc-object-closure-cycles-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $x;
+
+    public function __construct() {
+        $this->x = function() {};
+    }
+}
+
+class Bar {
+    public $x;
+
+    public function __construct() {
+        $self = $this;
+        $this->x = function() use ($self) {};
+    }
+}
+
+gc_collect_cycles();
+new Foo;
+var_dump(gc_collect_cycles());
+new Bar;
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_unreachable_destructor_cycle_resurrection_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-cycle-resurrection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-cycle-resurrection.php");
+    let output = root.join("gc-destructor-cycle-resurrection-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $a;
+    function __destruct() {
+        echo \"destruct\\n\";
+    }
+}
+
+$a = new Foo();
+$a->a = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+
+$bar = null;
+class Bad {
+    private $_private = array();
+
+    public function __construct() {
+        $this->_private[] = 'php';
+    }
+
+    public function __destruct() {
+        global $bar;
+        $bar = $this;
+    }
+
+    public function check() {
+        return $this->_private[0];
+    }
+}
+
+$foo = new stdClass;
+$foo->foo = $foo;
+$foo->bad = new Bad;
+
+gc_disable();
+unserialize(serialize($foo));
+gc_collect_cycles();
+var_dump($bar instanceof Bad);
+echo $bar->check(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "destruct\nint(1)\nbool(true)\nphp\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_reentrant_global_unset_preserves_symbols_to_native_binary() {
     let root = temp_dir("ptn-native-gc-reentrant-global-unset");
     fs::create_dir_all(&root).unwrap();
