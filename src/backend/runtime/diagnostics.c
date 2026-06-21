@@ -2194,7 +2194,13 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->suppress_user_argument_count_location = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
+    runtime->gc_enabled = 1;
+    int configured_zend_enable_gc = 1;
+    if (ptn_parse_bool_env("PTN_ZEND_ENABLE_GC", &configured_zend_enable_gc)) {
+        runtime->gc_enabled = configured_zend_enable_gc ? 1 : 0;
+    }
     runtime->gc_running = 0;
+    runtime->gc_mark_epoch = 0;
     runtime->gc_runs = 0;
     runtime->gc_collected = 0;
     runtime->gc_roots = 0;

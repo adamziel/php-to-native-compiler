@@ -7225,10 +7225,7 @@ impl Parser<'_> {
                             let name_expr = self.parse_expr()?;
                             let right_span = self.expect_right_brace()?;
                             let member_span = combine_spans(member.span, right_span);
-                            match literal_member_name_from_expr(&name_expr) {
-                                Some(name) => (Some(name), None, member_span),
-                                None => (None, Some(name_expr), member_span),
-                            }
+                            (None, Some(name_expr), member_span)
                         }
                         kind => match object_member_name_from_token(&kind) {
                             Some(name) => (Some(name), None, member.span),
@@ -19308,6 +19305,9 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "vfprintf"
             | "json_encode"
             | "gc_collect_cycles"
+            | "gc_disable"
+            | "gc_enable"
+            | "gc_enabled"
             | "gc_status"
             | "ceil"
             | "clamp"

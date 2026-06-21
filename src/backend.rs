@@ -40695,12 +40695,27 @@ impl ValueEmitter {
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let name_temp = self.emit_materialized_value(out, name);
+        let method_value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&method_value_temp);
+        out.push_str(" = ptn_value_deref(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        out.push_str("    if (");
+        out.push_str(&method_value_temp);
+        out.push_str(".type != PTN_STRING) {\n");
+        emit_value_cleanup(out, "        ", &name_temp);
+        emit_value_cleanup(out, "        ", &receiver_temp);
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"Method name must be a string\", runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         let method_name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&method_name_temp);
-        out.push_str(" = ptn_value_to_string(ptn_value_deref(");
-        out.push_str(&name_temp);
-        out.push_str("));\n");
+        out.push_str(" = ptn_value_to_string(");
+        out.push_str(&method_value_temp);
+        out.push_str(");\n");
         let result_temp = self.next_temp();
         if argument_unpacks.iter().any(|unpack| *unpack) {
             let args_temp = self.emit_call_arguments_builder(

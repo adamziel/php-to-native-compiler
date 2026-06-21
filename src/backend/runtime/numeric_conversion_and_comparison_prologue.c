@@ -214,7 +214,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->suppress_user_argument_count_location;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
+    runtime->gc_enabled = caller_runtime->gc_enabled;
     runtime->gc_running = caller_runtime->gc_running;
+    runtime->gc_mark_epoch = caller_runtime->gc_mark_epoch;
     runtime->gc_runs = caller_runtime->gc_runs;
     runtime->gc_collected = caller_runtime->gc_collected;
     runtime->gc_roots = caller_runtime->gc_roots;

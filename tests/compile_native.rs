@@ -20689,6 +20689,32 @@ echo $dynamic(\"three\"), \"\\n\";
 }
 
 #[test]
+fn compile_dynamic_method_call_rejects_non_string_names_before_magic_call() {
+    let root = temp_dir("ptn-native-dynamic-method-non-string-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-method-non-string-name.php");
+    let output = root.join("dynamic-method-non-string-name-bin");
+    fs::write(
+        &input,
+        "<?php class DynMethodName { public function __call($name, $args) { echo \"bad\\n\"; } } $d = new DynMethodName(); $d->{0}(); echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Method name must be a string in {} on line 1\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_magic_call_static_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-magic-call-static-dispatch");
     fs::create_dir_all(&root).unwrap();
@@ -44954,6 +44980,32 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_zend_enable_gc_ini_controls_gc_enabled_state() {
+    let root = temp_dir("ptn-phpc-zend-enable-gc-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-enable-gc-ini.php");
+    fs::write(
+        &input,
+        "<?php var_dump(gc_enabled(), ini_get('zend.enable_gc')); gc_enable(); var_dump(gc_enabled(), ini_get('zend.enable_gc')); gc_disable(); var_dump(gc_enabled(), ini_get('zend.enable_gc'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.enable_gc=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nstring(0) \"\"\nbool(true)\nstring(1) \"1\"\nbool(false)\nstring(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_html_errors_ini_formats_internal_warnings_as_html() {
     let root = temp_dir("ptn-phpc-html-errors-ini");
     fs::create_dir_all(&root).unwrap();
@@ -49104,6 +49156,54 @@ var_dump($source, $result);
     assert!(main_body.contains("ptn_runtime_array_shift_variable(&runtime, \"d\""));
     assert!(main_body.contains("ptn_value_share(ptn_tmp_"));
     assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
+}
+
+#[test]
+fn compile_destructor_global_cycle_release_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-global-cycle-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-global-cycle-release.php");
+    let output = root.join("destructor-global-cycle-release-bin");
+    fs::write(
+        &input,
+        "<?php
+class CycleA { public $b; }
+class CycleB { public $a; }
+class CycleDestructor {
+    public function __destruct() {
+        if (isset($GLOBALS['a'])) {
+            unset($GLOBALS['array']);
+            unset($GLOBALS['a']);
+        }
+    }
+}
+$a = new CycleA;
+$a->b = new CycleB;
+$a->b->a = $a;
+$c = new CycleA;
+$array = [$c];
+unset($c);
+for ($i = 0; $i < 8; $i++) {
+    $t = [];
+    $t[] = &$t;
+    unset($t);
+}
+$t = [new CycleDestructor];
+$t[] = &$t;
+unset($t);
+$e = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

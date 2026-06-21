@@ -233,6 +233,7 @@ struct RuntimeIni {
     mbstring_detect_order: Option<String>,
     mbstring_substitute_character: Option<String>,
     zend_assertions: Option<String>,
+    zend_enable_gc: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
     variables_order: Option<String>,
@@ -457,6 +458,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.mbstring_substitute_character = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend.enable_gc") {
+        ini.zend_enable_gc = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
         ini.exception_ignore_args = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_string_param_max_len") {
@@ -897,6 +900,7 @@ fn compile_and_run(
         mbstring_detect_order: ini.mbstring_detect_order.clone(),
         mbstring_substitute_character: ini.mbstring_substitute_character.clone(),
         zend_assertions: ini.zend_assertions.clone(),
+        zend_enable_gc: ini.zend_enable_gc.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
         variables_order: ini.variables_order.clone(),
@@ -1064,6 +1068,9 @@ fn compile_and_run(
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
+    }
+    if let Some(zend_enable_gc) = &ini.zend_enable_gc {
+        command.env("PTN_ZEND_ENABLE_GC", zend_enable_gc);
     }
     if let Some(exception_ignore_args) = &ini.exception_ignore_args {
         command.env("PTN_EXCEPTION_IGNORE_ARGS", exception_ignore_args);

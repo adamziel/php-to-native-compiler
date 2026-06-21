@@ -54577,6 +54577,159 @@ static PtnValue ptn_internal_memory_reset_peak_usage(PtnRuntime *runtime, size_t
     return ptn_null();
 }
 
+typedef struct {
+    PtnValue *items;
+    size_t len;
+    size_t capacity;
+} PtnGcMarkStack;
+
+static void ptn_gc_mark_stack_push(PtnGcMarkStack *stack, PtnValue value) {
+    if (stack == NULL) {
+        return;
+    }
+    if (stack->len == stack->capacity) {
+        size_t new_capacity = stack->capacity == 0 ? 64 : stack->capacity * 2;
+        if (new_capacity < stack->capacity || new_capacity > SIZE_MAX / sizeof(PtnValue)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue *new_items = realloc(stack->items, new_capacity * sizeof(PtnValue));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        stack->items = new_items;
+        stack->capacity = new_capacity;
+    }
+    stack->items[stack->len++] = value;
+}
+
+static void ptn_gc_mark_symbol_table(PtnGcMarkStack *stack, PtnSymbolTable *symbols) {
+    if (symbols == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        ptn_gc_mark_stack_push(stack, symbols->items[i].value);
+    }
+}
+
+static void ptn_gc_mark_static_locals(PtnGcMarkStack *stack, PtnRuntime *root) {
+    if (root == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        PtnReference *reference = root->static_local_slots[i].reference;
+        if (reference != NULL) {
+            ptn_gc_mark_stack_push(stack, ptn_reference_value(reference));
+        }
+    }
+}
+
+static PtnValue ptn_gc_borrowed_array_value(PtnArray *array) {
+    PtnValue value = ptn_null();
+    value.type = PTN_ARRAY;
+    value.owned = 0;
+    value.as.array = array;
+    return value;
+}
+
+static size_t ptn_runtime_next_gc_mark_epoch(PtnRuntime *root) {
+    if (root == NULL) {
+        return 0;
+    }
+    if (root->gc_mark_epoch == SIZE_MAX) {
+        root->gc_mark_epoch = 0;
+    }
+    root->gc_mark_epoch++;
+    if (root->gc_mark_epoch == 0) {
+        root->gc_mark_epoch = 1;
+    }
+    return root->gc_mark_epoch;
+}
+
+static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
+    if (stack == NULL || epoch == 0) {
+        return;
+    }
+    while (stack->len > 0) {
+        PtnValue value = stack->items[stack->len - 1];
+        stack->len--;
+        while (value.type == PTN_REFERENCE && value.as.reference != NULL) {
+            value = value.as.reference->value;
+        }
+        if (value.type == PTN_ARRAY) {
+            PtnArray *array = value.as.array;
+            if (array == NULL || array->gc_mark_epoch == epoch) {
+                continue;
+            }
+            array->gc_mark_epoch = epoch;
+            for (size_t i = 0; i < array->len; i++) {
+                ptn_gc_mark_stack_push(stack, array->entries[i].value);
+            }
+            continue;
+        }
+        if (value.type == PTN_OBJECT) {
+            PtnObject *object = value.as.object;
+            if (object == NULL || object->gc_mark_epoch == epoch) {
+                continue;
+            }
+            object->gc_mark_epoch = epoch;
+            ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(object->properties));
+            ptn_gc_mark_stack_push(stack, object->lazy_initializer);
+            ptn_gc_mark_stack_push(stack, object->lazy_proxy_instance);
+        }
+    }
+}
+
+static size_t ptn_runtime_count_unreachable_objects(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return 0;
+    }
+
+    size_t epoch = ptn_runtime_next_gc_mark_epoch(root);
+    PtnGcMarkStack stack;
+    stack.items = NULL;
+    stack.len = 0;
+    stack.capacity = 0;
+
+    ptn_gc_mark_symbol_table(&stack, &root->symbols);
+    PtnSymbolTable *root_globals = ptn_runtime_global_symbol_table(root);
+    if (root_globals != &root->symbols) {
+        ptn_gc_mark_symbol_table(&stack, root_globals);
+    }
+    if (runtime != NULL && runtime != root) {
+        ptn_gc_mark_symbol_table(&stack, &runtime->symbols);
+        PtnSymbolTable *runtime_globals = ptn_runtime_global_symbol_table(runtime);
+        if (runtime_globals != &runtime->symbols && runtime_globals != root_globals) {
+            ptn_gc_mark_symbol_table(&stack, runtime_globals);
+        }
+    }
+    PtnSymbolTable *static_properties = root->static_properties == NULL
+        ? &root->owned_static_properties
+        : root->static_properties;
+    ptn_gc_mark_symbol_table(&stack, static_properties);
+    ptn_gc_mark_static_locals(&stack, root);
+
+    ptn_gc_mark_reachable_values(&stack, epoch);
+    free(stack.items);
+
+    size_t unreachable = 0;
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (
+            object != NULL &&
+            object->refcount > 0 &&
+            object->gc_mark_epoch != epoch &&
+            !ptn_object_has_pending_declared_destructor(object)
+        ) {
+            unreachable++;
+        }
+    }
+    return unreachable;
+}
+
 static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -54585,15 +54738,23 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     if (root == NULL) {
         root = runtime;
     }
+    if (root == NULL || !root->gc_enabled) {
+        return ptn_int(0);
+    }
     root->gc_running = 1;
+    size_t object_cycles = ptn_runtime_count_unreachable_objects(runtime);
     ptn_runtime_run_unreferenced_object_destructors(root);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
     int64_t collected = 0;
-    if (weak_map_cycles > 0) {
-        if (weak_map_cycles > (size_t)INT64_MAX) {
+    if (weak_map_cycles > 0 || object_cycles > 0) {
+        if (object_cycles > SIZE_MAX - weak_map_cycles) {
             ptn_abort_out_of_memory();
         }
-        collected = (int64_t)weak_map_cycles;
+        size_t total_cycles = weak_map_cycles + object_cycles;
+        if (total_cycles > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        collected = (int64_t)total_cycles;
     } else if (ptn_intl_cycle_collection_pending) {
         ptn_intl_cycle_collection_pending = 0;
         collected = 1;
@@ -54605,6 +54766,45 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     }
     root->gc_running = 0;
     return ptn_int(collected);
+}
+
+static PtnValue ptn_internal_gc_enabled(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    return ptn_bool(root == NULL || root->gc_enabled);
+}
+
+static PtnValue ptn_internal_gc_enable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root != NULL) {
+        root->gc_enabled = 1;
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_gc_disable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root != NULL) {
+        root->gc_enabled = 0;
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_gc_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -58183,6 +58383,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        *out = ptn_ini_bool_string(root == NULL || root->gc_enabled);
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
         *out = ptn_ini_int_string(ptn_runtime_exception_ignore_args(runtime));
         return 1;
@@ -58546,6 +58751,14 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->zend_assertions = root->initial_zend_assertions;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        if (root != NULL) {
+            root->gc_enabled = 1;
+        }
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -58923,6 +59136,15 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         ptn_runtime_set_zend_assertions(runtime, ptn_value_to_integer(args[1]), line);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        PtnValue previous = ptn_ini_bool_string(root == NULL || root->gc_enabled);
+        if (root != NULL) {
+            root->gc_enabled = ptn_is_truthy(args[1]) ? 1 : 0;
+        }
         ptn_string_operand_free(option);
         return previous;
     }
@@ -81584,6 +81806,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "fwrite", 2, 3, ptn_internal_fwrite },
         { "gc_collect_cycles", 0, 0, ptn_internal_gc_collect_cycles },
+        { "gc_disable", 0, 0, ptn_internal_gc_disable },
+        { "gc_enable", 0, 0, ptn_internal_gc_enable },
+        { "gc_enabled", 0, 0, ptn_internal_gc_enabled },
         { "gc_status", 0, 0, ptn_internal_gc_status },
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },

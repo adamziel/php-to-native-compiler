@@ -545,6 +545,8 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     }
     ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
+    array->destructing = 0;
+    array->gc_mark_epoch = 0;
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
@@ -1005,6 +1007,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     PtnValue properties = ptn_array_from_literal_entries(0, NULL);
     object->refcount = 1;
     object->object_id = ptn_runtime_alloc_object_id(root);
+    object->gc_mark_epoch = 0;
     object->class_name = ptn_duplicate_string(class_name);
     object->enum_case_name = NULL;
     object->properties = properties.as.array;
@@ -2146,6 +2149,8 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_cow_debug_note_array_alloc();
     ptn_cow_debug_note_array_clone();
     array->refcount = 1;
+    array->destructing = 0;
+    array->gc_mark_epoch = 0;
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;

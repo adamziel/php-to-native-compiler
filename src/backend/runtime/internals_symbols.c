@@ -245,14 +245,22 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
         return;
     }
+    if (array->destructing) {
+        ptn_cow_debug_note_array_release();
+        if (array->refcount > 0) {
+            array->refcount--;
+        }
+        return;
+    }
     ptn_cow_debug_assert_array_refcount(array, "release");
     ptn_cow_debug_note_array_release();
     if (array->refcount > 1) {
         array->refcount--;
         return;
     }
-    array->refcount = 0;
+    array->destructing = 1;
     if (array->iterator_refcount != 0) {
+        array->refcount = 0;
         return;
     }
     ptn_array_destroy_storage(array);

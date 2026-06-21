@@ -828,6 +828,8 @@ struct PtnGenerator {
 
 struct PtnArray {
     size_t refcount;
+    int destructing;
+    size_t gc_mark_epoch;
     size_t debug_hidden_refcount;
     int debug_reference_wrapped;
     size_t iterator_refcount;
@@ -848,6 +850,7 @@ struct PtnArray {
 struct PtnObject {
     size_t refcount;
     size_t object_id;
+    size_t gc_mark_epoch;
     char *class_name;
     char *enum_case_name;
     PtnArray *properties;
@@ -1353,7 +1356,9 @@ struct PtnRuntime {
     int suppress_user_argument_count_location;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
+    int gc_enabled;
     int gc_running;
+    size_t gc_mark_epoch;
     size_t gc_runs;
     size_t gc_collected;
     size_t gc_roots;
@@ -1389,6 +1394,7 @@ static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
+static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
