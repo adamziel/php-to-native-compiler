@@ -75806,7 +75806,9 @@ static const char *ptn_dom_canonical_class_name(const char *class_name) {
         ptn_ascii_case_equal(class_name, "DOMCdataSection")) {
         return "DOMCdataSection";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMDocument")) {
+    if (ptn_ascii_case_equal(class_name, "DOMDocument") ||
+        ptn_ascii_case_equal(class_name, "Dom\\XMLDocument") ||
+        ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument")) {
         return "DOMDocument";
     }
     if (ptn_ascii_case_equal(class_name, "DOMDocumentFragment")) {
@@ -75818,13 +75820,16 @@ static const char *ptn_dom_canonical_class_name(const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "DOMImplementation")) {
         return "DOMImplementation";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMElement")) {
+    if (ptn_ascii_case_equal(class_name, "DOMElement") ||
+        ptn_ascii_case_equal(class_name, "Dom\\Element")) {
         return "DOMElement";
     }
     if (ptn_ascii_case_equal(class_name, "DOMAttr")) {
         return "DOMAttr";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMEntityReference")) {
+    if (ptn_ascii_case_equal(class_name, "DOMEntityReference") ||
+        ptn_ascii_case_equal(class_name, "Dom\\EntityReference") ||
+        ptn_ascii_case_equal(class_name, "Dom\\Entity")) {
         return "DOMEntityReference";
     }
     if (ptn_ascii_case_equal(class_name, "DOMCharacterData")) {
@@ -75836,13 +75841,15 @@ static const char *ptn_dom_canonical_class_name(const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "DOMComment")) {
         return "DOMComment";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMNodeList")) {
+    if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
+        ptn_ascii_case_equal(class_name, "Dom\\NodeList")) {
         return "DOMNodeList";
     }
     if (ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
         return "DOMNamedNodeMap";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMNode")) {
+    if (ptn_ascii_case_equal(class_name, "DOMNode") ||
+        ptn_ascii_case_equal(class_name, "Dom\\Node")) {
         return "DOMNode";
     }
     return class_name;
@@ -75967,15 +75974,19 @@ static const char *ptn_dom_xmlns_namespace_uri(void) {
     return "http://www.w3.org/2000/xmlns/";
 }
 
-static void ptn_xml_node_ensure_object(PtnRuntime *runtime, PtnXmlNode *node) {
+static void ptn_xml_node_ensure_object_as(PtnRuntime *runtime, PtnXmlNode *node, const char *class_name) {
     if (node == NULL || node->object != NULL) {
         return;
     }
-    PtnValue object = ptn_object_new_shell(runtime, ptn_xml_node_class_name(node));
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = node;
     object.as.object->native_data_free = ptn_xml_node_native_data_free;
     node->object = object.as.object;
     ptn_object_retain(node->object);
+}
+
+static void ptn_xml_node_ensure_object(PtnRuntime *runtime, PtnXmlNode *node) {
+    ptn_xml_node_ensure_object_as(runtime, node, ptn_xml_node_class_name(node));
 }
 
 static void ptn_xml_line_map_init(PtnXmlLineMap *map, const char *data, size_t len) {
@@ -80661,6 +80672,73 @@ static PtnValue ptn_dom_save_html_file_method(PtnRuntime *runtime, PtnValue rece
     return ptn_dom_write_serialized_file(runtime, "DOMDocument::saveHTMLFile", args[0], serialized, line);
 }
 
+static int ptn_dom_modern_document_class(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Dom\\XMLDocument") ||
+        ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument");
+}
+
+static int ptn_dom_modern_html_document_class(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument");
+}
+
+static PtnValue ptn_dom_modern_document_create_empty(PtnRuntime *runtime, const char *class_name, size_t argc) {
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::createEmpty() expects exactly 0 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    ptn_xml_node_ensure_object_as(runtime, document, class_name);
+    return ptn_xml_node_value(document);
+}
+
+static PtnValue ptn_dom_modern_document_create_from_string(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::createFromString() expects 1 or 2 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue document = ptn_dom_modern_document_create_empty(runtime, class_name, 0);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue loaded = ptn_dom_modern_html_document_class(class_name)
+        ? ptn_dom_load_html_method(runtime, document, argc, args, line)
+        : ptn_dom_load_xml_method(runtime, document, argc, args, line);
+    ptn_value_destroy(&loaded);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&document);
+        return ptn_null();
+    }
+    return document;
+}
+
 static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver, const char *class_name, const char *name, size_t argc, const PtnValue *args, size_t line) {
     PtnXmlNode *node = ptn_xml_node_data(receiver);
     if (node == NULL || node->uninitialized) {
@@ -82003,6 +82081,7 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
 }
 
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
+    class_name = ptn_dom_canonical_class_name(class_name);
     if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
         ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
         return ptn_ascii_case_equal(method_name, "item")
@@ -88549,6 +88628,14 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "parse")) {
         return ptn_uri_parse_static(runtime, class_name, argc, args, line);
     }
+    if (ptn_dom_modern_document_class(class_name)) {
+        if (ptn_ascii_case_equal(name, "createEmpty")) {
+            return ptn_dom_modern_document_create_empty(runtime, class_name, argc);
+        }
+        if (ptn_ascii_case_equal(name, "createFromString")) {
+            return ptn_dom_modern_document_create_from_string(runtime, class_name, argc, args, line);
+        }
+    }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return ptn_xmlwriter_static_call_method(runtime, class_name, name, argc, args, line);
@@ -92946,13 +93033,19 @@ static PTN_UNUSED int ptn_internal_class_name_is_libxml_error(const char *class_
 
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "DOMNode")
+        || ptn_ascii_case_equal(class_name, "Dom\\Node")
         || ptn_ascii_case_equal(class_name, "DOMDocument")
+        || ptn_ascii_case_equal(class_name, "Dom\\XMLDocument")
+        || ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument")
         || ptn_ascii_case_equal(class_name, "DOMDocumentFragment")
         || ptn_ascii_case_equal(class_name, "DOMDocumentType")
         || ptn_ascii_case_equal(class_name, "DOMImplementation")
         || ptn_ascii_case_equal(class_name, "DOMElement")
+        || ptn_ascii_case_equal(class_name, "Dom\\Element")
         || ptn_ascii_case_equal(class_name, "DOMAttr")
         || ptn_ascii_case_equal(class_name, "DOMEntityReference")
+        || ptn_ascii_case_equal(class_name, "Dom\\EntityReference")
+        || ptn_ascii_case_equal(class_name, "Dom\\Entity")
         || ptn_ascii_case_equal(class_name, "DOMProcessingInstruction")
         || ptn_ascii_case_equal(class_name, "DOMCharacterData")
         || ptn_ascii_case_equal(class_name, "DOMText")
@@ -92960,6 +93053,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DOMCDataSection")
         || ptn_ascii_case_equal(class_name, "DOMComment")
         || ptn_ascii_case_equal(class_name, "DOMNodeList")
+        || ptn_ascii_case_equal(class_name, "Dom\\NodeList")
         || ptn_ascii_case_equal(class_name, "DOMNamedNodeMap");
 }
 
@@ -95049,6 +95143,10 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) ||
         ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
         return ptn_ascii_case_equal(method_name, "parse");
+    }
+    if (ptn_dom_modern_document_class(class_name)) {
+        return ptn_ascii_case_equal(method_name, "createEmpty")
+            || ptn_ascii_case_equal(method_name, "createFromString");
     }
     if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
         return ptn_ascii_case_equal(method_name, "parse");
