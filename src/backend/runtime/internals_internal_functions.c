@@ -59623,8 +59623,8 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     }
     root->gc_running = 1;
     size_t object_cycles = ptn_runtime_collect_unreachable_objects(runtime);
-    ptn_runtime_run_unreferenced_object_destructors(root);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
+    ptn_runtime_run_unreferenced_object_destructors(root);
     size_t array_cycles = ptn_pending_array_cycle_collections;
     ptn_pending_array_cycle_collections = 0;
     ptn_pending_array_cycle_auto_flushed = 0;
@@ -86286,7 +86286,7 @@ static void ptn_weak_map_remove_at(PtnWeakMapData *map, size_t index) {
     if (map == NULL || index >= map->len) {
         return;
     }
-    ptn_value_destroy(&map->values[index]);
+    PtnValue removed = map->values[index];
     for (size_t i = index + 1; i < map->len; i++) {
         map->objects[i - 1] = map->objects[i];
         map->object_ids[i - 1] = map->object_ids[i];
@@ -86294,9 +86294,14 @@ static void ptn_weak_map_remove_at(PtnWeakMapData *map, size_t index) {
         map->value_reference_visible[i - 1] = map->value_reference_visible[i];
     }
     map->len--;
+    map->objects[map->len] = NULL;
+    map->object_ids[map->len] = 0;
+    map->values[map->len] = ptn_null();
+    map->value_reference_visible[map->len] = 0;
     if (map->index > map->len) {
         map->index = map->len;
     }
+    ptn_value_destroy(&removed);
 }
 
 static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnValue value) {

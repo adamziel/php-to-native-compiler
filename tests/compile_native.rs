@@ -11606,6 +11606,46 @@ var_dump($map);
 }
 
 #[test]
+fn compile_weak_map_value_key_cycle_destructs_value_before_key_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-value-key-cycle-destruct-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-value-key-cycle-destruct-order.php");
+    let output = root.join("weak-map-value-key-cycle-destruct-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Canary extends stdClass {
+    public function __construct(public string $name) {}
+    function __destruct() { echo $this->name.\"\\n\"; }
+}
+
+$container = new Canary('container');
+$canary = new Canary('canary');
+$container->canary = $canary;
+
+$map = new \\WeakMap();
+$map[$canary] = $container;
+
+echo 1;
+unset($container, $canary);
+gc_collect_cycles();
+echo 2;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1container\ncanary\n2"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_collects_object_closure_cycles_to_native_binary() {
     let root = temp_dir("ptn-native-gc-object-closure-cycles");
     fs::create_dir_all(&root).unwrap();
