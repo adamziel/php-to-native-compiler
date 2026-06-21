@@ -24018,6 +24018,114 @@ var_dump(method_exists('ReflectionFunction', '__toString'));
 }
 
 #[test]
+fn compile_reflection_parameter_internal_datetime_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-internal-datetime-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-internal-datetime-defaults.php");
+    let output = root.join("reflection-parameter-internal-datetime-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+$setTime = new ReflectionMethod('DateTime', 'setTime');
+foreach ($setTime->getParameters() as $parameter) {
+    echo $parameter, \"\\n\";
+    var_dump($parameter->isDefaultValueAvailable());
+    if ($parameter->isDefaultValueAvailable()) {
+        var_dump($parameter->getDefaultValue(), $parameter->getDefaultValueConstantName());
+    } else {
+        try {
+            $parameter->getDefaultValue();
+        } catch (ReflectionException $exception) {
+            echo $exception->getMessage(), \"\\n\";
+        }
+    }
+}
+try {
+    $setTime->getParameters()[0]->isDefaultValueConstant();
+} catch (ReflectionException $exception) {
+    echo \"constant:\", $exception->getMessage(), \"\\n\";
+}
+
+echo \"---\\n\";
+$getTransitions = new ReflectionMethod('DateTimeZone', 'getTransitions');
+foreach ($getTransitions->getParameters() as $parameter) {
+    echo $parameter, \"\\n\";
+    var_dump($parameter->isDefaultValueConstant());
+    var_dump($parameter->getDefaultValueConstantName(), $parameter->getDefaultValue());
+}
+
+echo \"---\\n\";
+$listIdentifiers = new ReflectionMethod('DateTimeZone', 'listIdentifiers');
+foreach ($listIdentifiers->getParameters() as $parameter) {
+    echo $parameter, \"\\n\";
+    var_dump($parameter->isDefaultValueAvailable(), $parameter->isDefaultValueConstant());
+    var_dump($parameter->getDefaultValueConstantName(), $parameter->getDefaultValue());
+}
+
+echo \"---\\n\";
+$procedural = new ReflectionFunction('timezone_identifiers_list');
+foreach ($procedural->getParameters() as $parameter) {
+    echo $parameter, \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Parameter #0 [ <required> int $hour ]\n",
+            "bool(false)\n",
+            "Internal error: Failed to retrieve the default value\n",
+            "Parameter #1 [ <required> int $minute ]\n",
+            "bool(false)\n",
+            "Internal error: Failed to retrieve the default value\n",
+            "Parameter #2 [ <optional> int $second = 0 ]\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "NULL\n",
+            "Parameter #3 [ <optional> int $microsecond = 0 ]\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "NULL\n",
+            "constant:Internal error: Failed to retrieve the default value\n",
+            "---\n",
+            "Parameter #0 [ <optional> int $timestampBegin = PHP_INT_MIN ]\n",
+            "bool(true)\n",
+            "string(11) \"PHP_INT_MIN\"\n",
+            "int(-9223372036854775808)\n",
+            "Parameter #1 [ <optional> int $timestampEnd = PHP_INT_MAX ]\n",
+            "bool(false)\n",
+            "NULL\n",
+            "int(9223372036854775807)\n",
+            "---\n",
+            "Parameter #0 [ <optional> int $timezoneGroup = DateTimeZone::ALL ]\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(17) \"DateTimeZone::ALL\"\n",
+            "int(2047)\n",
+            "Parameter #1 [ <optional> ?string $countryCode = null ]\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "NULL\n",
+            "NULL\n",
+            "---\n",
+            "Parameter #0 [ <optional> int $timezoneGroup = DateTimeZone::ALL ]\n",
+            "Parameter #1 [ <optional> ?string $countryCode = null ]\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS"));
+    assert!(c_source.contains("PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS"));
+}
+
+#[test]
 fn compile_reflection_function_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-function-predicates");
     fs::create_dir_all(&root).unwrap();
