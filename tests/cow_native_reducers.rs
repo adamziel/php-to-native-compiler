@@ -1364,6 +1364,106 @@ echo \"done\\n\";",
     assert!(c_source.contains("ptn_value_reference_for_array_path(&runtime, &"));
 }
 
+#[test]
+fn compile_serialize_identity_boundary_reducers_to_native_binary() {
+    let root = temp_dir("ptn-native-serialize-identity-boundaries");
+    fs::create_dir_all(&root).unwrap();
+
+    let incomplete = root.join("incomplete-class-serialize.php");
+    let incomplete_bin = root.join("incomplete-class-serialize-bin");
+    fs::write(
+        &incomplete,
+        "<?php\n\
+$value = unserialize('O:9:\"TestClass\":0:{}');\n\
+echo serialize($value), \"\\n\";",
+    )
+    .unwrap();
+    compile_file(
+        &incomplete,
+        &incomplete_bin,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let execution = Command::new(&incomplete_bin).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "O:9:\"TestClass\":0:{}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let numeric_keys = root.join("unserialize-numeric-string-keys.php");
+    let numeric_keys_bin = root.join("unserialize-numeric-string-keys-bin");
+    fs::write(
+        &numeric_keys,
+        "<?php\n\
+$value = unserialize('a:2:{s:2:\"10\";i:1;s:2:\"01\";i:2;}');\n\
+var_dump($value);\n\
+var_dump($value[10]);\n\
+var_dump($value['01']);",
+    )
+    .unwrap();
+    compile_file(
+        &numeric_keys,
+        &numeric_keys_bin,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let execution = Command::new(&numeric_keys_bin).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [10]=>\n  int(1)\n  [\"01\"]=>\n  int(2)\n}\nint(1)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let anonymous = root.join("anonymous-class-serialize.php");
+    let anonymous_bin = root.join("anonymous-class-serialize-bin");
+    fs::write(
+        &anonymous,
+        "<?php\n\
+$value = new class {};\n\
+serialize($value);",
+    )
+    .unwrap();
+    compile_file(&anonymous, &anonymous_bin, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&anonymous_bin).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "anonymous class serialization should throw fatally"
+    );
+    let combined_output = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        combined_output.contains("Serialization of 'class@anonymous' is not allowed"),
+        "fatal output mismatch:\n{combined_output}"
+    );
+
+    let bad_float = root.join("unserialize-bad-float.php");
+    let bad_float_bin = root.join("unserialize-bad-float-bin");
+    fs::write(
+        &bad_float,
+        "<?php\n\
+var_dump(unserialize('d:2e+2;'));\n\
+var_dump(unserialize('d:2e++2;'));",
+    )
+    .unwrap();
+    compile_file(&bad_float, &bad_float_bin, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&bad_float_bin).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("float(200)")
+            && stdout.contains("Warning: unserialize(): Error at offset 0 of 8 bytes")
+            && stdout.contains("bool(false)"),
+        "stdout mismatch:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let unique = SystemTime::now()

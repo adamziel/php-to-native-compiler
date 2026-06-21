@@ -7399,6 +7399,29 @@ static void ptn_serialize_append_key(PtnStringBuffer *buffer, PtnArrayKey key) {
     }
 }
 
+static int ptn_serialize_object_class_name_is_anonymous(const char *class_name) {
+    return class_name != NULL && strstr(class_name, "@anonymous") != NULL;
+}
+
+static void ptn_serialize_throw_not_allowed(PtnRuntime *runtime, const char *class_name) {
+    PtnStringBuffer message;
+    ptn_string_buffer_init(&message);
+    ptn_string_buffer_append_format(
+        &message,
+        "Serialization of '%s' is not allowed",
+        class_name
+    );
+    ptn_throw_exception(runtime, "Exception", message.data);
+    free(message.data);
+}
+
+static int ptn_serialize_key_is_incomplete_class_name_marker(PtnArrayKey key) {
+    static const char marker[] = "__PHP_Incomplete_Class_Name";
+    return key.type == PTN_ARRAY_KEY_STRING &&
+        key.string_len == sizeof(marker) - 1 &&
+        memcmp(key.as.string, marker, sizeof(marker) - 1) == 0;
+}
+
 static void ptn_serialize_append_object_property_key(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -7472,6 +7495,51 @@ static void ptn_serialize_append_array(
     }
     ptn_dump_seen_arrays_pop(&state->seen);
     ptn_string_buffer_append_char(buffer, '}');
+}
+
+static int ptn_serialize_append_incomplete_class_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    if (object == NULL ||
+        object->properties == NULL ||
+        !ptn_ascii_case_equal(object->class_name, "__PHP_Incomplete_Class")) {
+        return 0;
+    }
+
+    const char *class_name = "__PHP_Incomplete_Class";
+    size_t class_name_len = strlen(class_name);
+    size_t property_count = object->properties->len;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (!ptn_serialize_key_is_incomplete_class_name_marker(entry->key)) {
+            continue;
+        }
+        PtnValue name = ptn_value_deref(entry->value);
+        if (name.type == PTN_STRING) {
+            class_name = (const char *)name.as.string.data;
+            class_name_len = name.as.string.len;
+        }
+        property_count--;
+        break;
+    }
+
+    ptn_string_buffer_append_format(buffer, "O:%zu:\"", class_name_len);
+    ptn_string_buffer_append_len(buffer, class_name, class_name_len);
+    ptn_string_buffer_append_format(buffer, "\":%zu:{", property_count);
+    ptn_dump_seen_objects_push(&state->seen, object);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (ptn_serialize_key_is_incomplete_class_name_marker(entry->key)) {
+            continue;
+        }
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_dump_seen_objects_pop(&state->seen);
+    ptn_string_buffer_append_char(buffer, '}');
+    return 1;
 }
 
 static int ptn_serialize_object_is_spl_array_backed(PtnObject *object) {
@@ -8098,6 +8166,9 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
             return 0;
         }
     }
+    if (ptn_serialize_append_incomplete_class_object(buffer, object, state)) {
+        return 1;
+    }
     if (object != NULL && object->enum_case_name != NULL) {
         size_t class_len = strlen(object->class_name);
         size_t case_len = strlen(object->enum_case_name);
@@ -8230,42 +8301,16 @@ static int ptn_serialize_append_value_with_id(
             ptn_serialize_append_array(buffer, value.as.array, state, existing_id != 0);
             break;
         case PTN_OBJECT: {
-            if (ptn_ascii_case_equal(value.as.object->class_name, "ReflectionReference") ||
-                ptn_ascii_case_equal(value.as.object->class_name, "Generator") ||
-                ptn_ascii_case_equal(value.as.object->class_name, "SensitiveParameterValue")) {
-                char message[96];
-                int written = snprintf(
-                    message,
-                    sizeof(message),
-                    "Serialization of '%s' is not allowed",
-                    value.as.object->class_name
-                );
-                if (written < 0 || (size_t)written >= sizeof(message)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_throw_exception(
-                    state->runtime,
-                    "Exception",
-                    message
-                );
-                ptn_string_buffer_append(buffer, "N;");
-                return 0;
-            }
-            if (ptn_internal_class_name_is_weak_reference(value.as.object->class_name) ||
-                ptn_internal_class_name_is_weak_map(value.as.object->class_name) ||
-                ptn_internal_class_name_is_sensitive_parameter_value(value.as.object->class_name) ||
-                ptn_internal_class_name_is_xml_parser(value.as.object->class_name)) {
-                char message[96];
-                int written = snprintf(
-                    message,
-                    sizeof(message),
-                    "Serialization of '%s' is not allowed",
-                    value.as.object->class_name
-                );
-                if (written < 0 || (size_t)written >= sizeof(message)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_throw_exception(state->runtime, "Exception", message);
+            const char *class_name = value.as.object->class_name;
+            if (ptn_serialize_object_class_name_is_anonymous(class_name) ||
+                ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+                ptn_ascii_case_equal(class_name, "Generator") ||
+                ptn_ascii_case_equal(class_name, "SensitiveParameterValue") ||
+                ptn_internal_class_name_is_weak_reference(class_name) ||
+                ptn_internal_class_name_is_weak_map(class_name) ||
+                ptn_internal_class_name_is_sensitive_parameter_value(class_name) ||
+                ptn_internal_class_name_is_xml_parser(class_name)) {
+                ptn_serialize_throw_not_allowed(state->runtime, class_name);
                 ptn_string_buffer_append(buffer, "N;");
                 return 0;
             }
@@ -8785,7 +8830,12 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
             !ptn_unserialize_consume(state, ';')) {
             return 0;
         }
-        *key = ptn_array_string_key_len(string, len);
+        int64_t integer = 0;
+        if (ptn_string_is_integer_array_key_len(string, len, &integer)) {
+            *key = ptn_array_int_key(integer);
+        } else {
+            *key = ptn_array_string_key_len(string, len);
+        }
         return 1;
     }
     if (type == 'a') {
@@ -10467,7 +10517,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             double value = strtod(number, &end);
             if (end == number || *end != '\0') {
                 free(number);
-                ptn_unserialize_fail_at(state, start);
+                ptn_unserialize_fail_at(state, value_start);
                 return result;
             }
             free(number);

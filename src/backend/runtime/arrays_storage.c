@@ -122,10 +122,40 @@ static PTN_UNUSED int ptn_string_is_integer_array_key(const char *string, int64_
 }
 
 static PTN_UNUSED int ptn_string_is_integer_array_key_len(const char *string, size_t len, int64_t *integer) {
-    if (memchr(string, '\0', len) != NULL) {
+    if (string == NULL || len == 0 || string[0] == '+' || memchr(string, '\0', len) != NULL) {
         return 0;
     }
-    return ptn_string_is_integer_array_key(string, integer);
+
+    size_t digit_start = 0;
+    if (string[0] == '-') {
+        digit_start = 1;
+    }
+    if (digit_start == len) {
+        return 0;
+    }
+    if (string[digit_start] == '0' && digit_start + 1 < len) {
+        return 0;
+    }
+    if (len == 2 && string[0] == '-' && string[1] == '0') {
+        return 0;
+    }
+    for (size_t i = digit_start; i < len; i++) {
+        if (!isdigit((unsigned char)string[i])) {
+            return 0;
+        }
+    }
+
+    char *copy = ptn_duplicate_string_len(string, len);
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(copy, &end, 10);
+    int ok = errno != ERANGE && end != copy && *end == '\0';
+    free(copy);
+    if (!ok) {
+        return 0;
+    }
+    *integer = (int64_t)parsed;
+    return 1;
 }
 
 static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
