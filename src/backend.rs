@@ -29645,7 +29645,6 @@ impl ValueEmitter {
                 return result_temp;
             }
 
-            let value_temp = self.emit_materialized_value(out, value);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -29657,6 +29656,7 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str("));\n");
+                let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.emit_compound_binary_value(
                     out,
                     &current_temp,
@@ -29688,6 +29688,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &value_temp);
                 return assigned_temp;
             }
+            let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             return result_temp;
@@ -29696,7 +29697,6 @@ impl ValueEmitter {
         if let AssignmentTarget::DynamicVariable { name, line } = target {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
-            let value_temp = self.emit_materialized_value(out, value);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -29708,6 +29708,7 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str("));\n");
+                let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.emit_compound_binary_value(
                     out,
                     &current_temp,
@@ -29742,6 +29743,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &value_temp);
                 return assigned_temp;
             }
+            let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
