@@ -1123,6 +1123,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
     }
+    if (ptn_internal_class_name_is_simplexml(lookup_class_name)) {
+        return ptn_simplexml_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_dom(lookup_class_name)) {
         return ptn_dom_new(runtime, lookup_class_name, argc, args, line);
     }
@@ -1300,6 +1303,7 @@ static PTN_UNUSED void ptn_lazy_object_copy_clone_state(
 }
 
 static PTN_UNUSED PtnValue ptn_dom_clone(PtnRuntime *runtime, PtnValue value, size_t line);
+static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue value, size_t line);
 
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
@@ -1373,6 +1377,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_internal_class_name_is_dom(source->class_name)) {
         return ptn_dom_clone(runtime, resolved, line);
+    }
+    if (ptn_internal_class_name_is_simplexml(source->class_name)) {
+        return ptn_simplexml_clone(runtime, resolved, line);
     }
 #endif
     if (source->enum_case_name != NULL || source->native_data != NULL) {
@@ -5386,6 +5393,10 @@ static PTN_UNUSED int ptn_object_property_is_set(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int internal_simplexml_isset = 0;
+    if (ptn_internal_simplexml_property_isset(runtime, receiver, property, line, &internal_simplexml_isset)) {
+        return internal_simplexml_isset;
+    }
     PtnValue internal_value = ptn_null();
     if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
         int is_set = ptn_value_deref(internal_value).type != PTN_NULL;

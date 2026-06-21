@@ -1744,6 +1744,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *cl
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spoofchecker(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uconverter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_simplexml(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
@@ -2443,6 +2444,14 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED int ptn_simplexml_object_is_truthy(PtnValue value, int *truthy_out);
+static PTN_UNUSED int ptn_internal_simplexml_property_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    int *isset_out
+);
 static PTN_UNUSED int ptn_bcmath_number_cast_array(PtnValue value, PtnValue *array_out);
 static PTN_UNUSED int ptn_bcmath_number_is_truthy(PtnValue value, int *truthy_out);
 static PTN_UNUSED int ptn_bcmath_number_compare(
@@ -2527,6 +2536,12 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_xmlwriter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_simplexml_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -2649,6 +2664,14 @@ static PTN_UNUSED PtnValue ptn_php_token_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_dom_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

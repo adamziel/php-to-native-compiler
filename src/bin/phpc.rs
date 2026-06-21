@@ -66,6 +66,7 @@ fn print_modules() {
         "Phar",
         "Reflection",
         "session",
+        "SimpleXML",
         "sockets",
         "soap",
         "SPL",

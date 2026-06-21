@@ -29053,7 +29053,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache,session,SimpleXML\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -29476,6 +29476,89 @@ echo $writer->flush();
     assert!(c_source.contains("PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF"));
     assert!(c_source.contains("PTN_LIBXML_XML_PARSER_BOUNDARY"));
     assert!(c_source.contains("PTN_LIBXML_XML_WRITER_BOUNDARY"));
+}
+
+#[test]
+fn compile_simplexml_libxml2_tree_integration_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-libxml2-tree");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-libxml2-tree.php");
+    let output = root.join("simplexml-libxml2-tree-bin");
+    let xml_file = root.join("simplexml.xml");
+    fs::write(
+        &xml_file,
+        "<root id=\"7\"><a>one</a><a q=\"z\"/><b><![CDATA[two]]></b></root>",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$xml = '<root id=\"7\"><a>one</a><a q=\"z\"/><b><![CDATA[two]]></b></root>';\n\
+$s = simplexml_load_string($xml);\n\
+var_dump(extension_loaded('simplexml'), class_exists('SimpleXMLElement'), function_exists('simplexml_load_string'));\n\
+var_dump($s instanceof SimpleXMLElement);\n\
+var_dump(get_class($s));\n\
+var_dump((string)$s->a[0]);\n\
+var_dump((string)$s['id']);\n\
+var_dump(count($s->a));\n\
+var_dump((string)$s->b);\n\
+var_dump(isset($s->missing), (bool)$s->missing);\n\
+$clone = clone $s;\n\
+var_dump((string)$clone->a[1]['q']);\n\
+$dom = new DOMDocument();\n\
+$dom->loadXML($xml);\n\
+$import = simplexml_import_dom($dom);\n\
+var_dump((string)$import->a[0]);\n\
+$file = simplexml_load_file('{}');\n\
+var_dump((string)$file->a[0]);\n\
+$extension = new ReflectionExtension('simplexml');\n\
+$class = new ReflectionClass('SimpleXMLElement');\n\
+var_dump($extension->getName());\n\
+var_dump(in_array('SimpleXMLElement', $extension->getClassNames(), true));\n\
+var_dump(isset($extension->getFunctions()['simplexml_load_string']));\n\
+var_dump($class->getExtensionName());\n\
+var_dump(method_exists('SimpleXMLElement', 'attributes'));\n",
+            xml_file.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(16) \"SimpleXMLElement\"\n",
+            "string(3) \"one\"\n",
+            "string(1) \"7\"\n",
+            "int(2)\n",
+            "string(3) \"two\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(1) \"z\"\n",
+            "string(3) \"one\"\n",
+            "string(3) \"one\"\n",
+            "string(9) \"SimpleXML\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(9) \"SimpleXML\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("xmlReadMemory"));
+    assert!(c_source.contains("xmlDocGetRootElement"));
+    assert!(c_source.contains("PTN_LIBXML_BACKEND_NATIVE_LIBXML"));
+    assert!(c_source.contains("ptn_simplexml_call_method"));
 }
 
 #[test]

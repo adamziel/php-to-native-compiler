@@ -35,6 +35,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Fiber",
     "WeakMap",
     "WeakReference",
+    "SimpleXMLElement",
     "ZipArchive",
     "SoapClient",
     "SoapServer",
@@ -1020,6 +1021,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMEntityReference\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMProcessingInstruction\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SimpleXMLElement\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -5630,6 +5636,7 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "SimpleXMLElement",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -6124,6 +6131,7 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "SimpleXMLElement",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -15438,6 +15446,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domcomment" => Some("DOMComment"),
         "domnodelist" => Some("DOMNodeList"),
         "domnamednodemap" => Some("DOMNamedNodeMap"),
+        "simplexmlelement" => Some("SimpleXMLElement"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),
         "xmlparser" => Some("XMLParser"),
@@ -25707,6 +25716,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let mut command = Command::new("cc");
     command.arg("-std=c11");
     add_pcre2_default_library_define(&mut command);
+    add_libxml2_default_library_define(&mut command);
     for arg in warning_args {
         command.arg(arg);
     }
@@ -25753,6 +25763,7 @@ fn compile_c_with_ada_url(
     let mut c_command = Command::new("cc");
     c_command.arg("-std=c11");
     add_pcre2_default_library_define(&mut c_command);
+    add_libxml2_default_library_define(&mut c_command);
     for arg in warning_args {
         c_command.arg(arg);
     }
@@ -25847,6 +25858,17 @@ fn add_pcre2_default_library_define(command: &mut Command) {
     ));
 }
 
+fn add_libxml2_default_library_define(command: &mut Command) {
+    let Some(path) = discover_libxml2_library() else {
+        return;
+    };
+    let path = path.to_string_lossy();
+    command.arg(format!(
+        "-DPTN_LIBXML2_DEFAULT_LIBRARY=\"{}\"",
+        c_string(&path)
+    ));
+}
+
 fn discover_pcre2_library() -> Option<PathBuf> {
     if let Some(path) = env::var_os("PTN_PCRE2_LIBRARY").map(PathBuf::from) {
         if path.exists() {
@@ -25868,6 +25890,35 @@ fn discover_pcre2_library() -> Option<PathBuf> {
                 continue;
             }
             let path = entry.path().join("lib/libpcre2-8.so.0");
+            if path.exists() {
+                candidates.push(path);
+            }
+        }
+    }
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn discover_libxml2_library() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("PTN_LIBXML2_LIBRARY").map(PathBuf::from) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut candidates = vec![
+        PathBuf::from("/lib/x86_64-linux-gnu/libxml2.so.2"),
+        PathBuf::from("/usr/lib/x86_64-linux-gnu/libxml2.so.2"),
+        PathBuf::from("/usr/lib64/libxml2.so.2"),
+        PathBuf::from("/usr/local/lib/libxml2.so.2"),
+    ];
+    if let Ok(entries) = fs::read_dir("/nix/store") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.contains("libxml2-") {
+                continue;
+            }
+            let path = entry.path().join("lib/libxml2.so");
             if path.exists() {
                 candidates.push(path);
             }
