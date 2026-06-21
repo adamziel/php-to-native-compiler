@@ -56747,6 +56747,66 @@ var_dump($sameReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_closure_from_callable_object_method_call_rebinds_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-from-callable-object-method-rebind");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-from-callable-object-method-rebind.php");
+    let output = root.join("closure-from-callable-object-method-rebind-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+class Counter {
+    public $value;
+
+    public function __construct($value) {
+        $this->value = $value;
+    }
+
+    public function value() {
+        return $this->value;
+    }
+}
+
+$first = new Counter(10);
+$second = new Counter(30);
+$method = Closure::fromCallable([$first, 'value']);
+var_dump($method());
+var_dump($method->call($second));
+var_dump($method());
+
+$timestamp = Closure::fromCallable([new DateTime(), 'getTimestamp']);
+var_dump($timestamp->call(new DateTime('@123')));
+var_dump((new DateTime('@456'))->getTimestamp());
+var_dump((new DateTimeImmutable('@789'))->getTimestamp());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(10)\n",
+            "int(30)\n",
+            "int(10)\n",
+            "int(123)\n",
+            "int(456)\n",
+            "int(789)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_wrapped_callable_is_temporary"));
+    assert!(c_source.contains("getTimestamp"));
+}
+
+#[test]
 fn compile_closure_from_invokable_preserves_method_deprecated_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invokable-deprecated-metadata");
     fs::create_dir_all(&root).unwrap();

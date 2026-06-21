@@ -72999,6 +72999,23 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         }
         return ptn_datetime_timezone_object(runtime, receiver, line);
     }
+    if (ptn_ascii_case_equal(name, "getTimestamp")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "%s::getTimestamp() expects exactly 0 arguments, %zu given", class_name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnDateTimeData *data = ptn_datetime_data_from_value(receiver);
+        if (data == NULL) {
+            ptn_throw_exception(runtime, "Error", "The DateTime object has not been correctly initialized by its constructor");
+            return ptn_null();
+        }
+        return ptn_int((int64_t)data->timestamp);
+    }
     if (ptn_ascii_case_equal(name, "setTimezone")) {
         if (argc != 1) {
             char message[128];
@@ -93180,6 +93197,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "add")
             || ptn_ascii_case_equal(method_name, "diff")
             || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "getTimestamp")
             || ptn_ascii_case_equal(method_name, "getTimezone")
             || ptn_ascii_case_equal(method_name, "modify")
             || ptn_ascii_case_equal(method_name, "sub")
@@ -94388,6 +94406,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "createFromTimestamp");
         ptn_append_method_name(result, &index, "diff");
         ptn_append_method_name(result, &index, "format");
+        ptn_append_method_name(result, &index, "getTimestamp");
         ptn_append_method_name(result, &index, "getTimezone");
         ptn_append_method_name(result, &index, "modify");
         ptn_append_method_name(result, &index, "sub");
@@ -94408,6 +94427,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "createFromTimestamp");
         ptn_append_method_name(result, &index, "diff");
         ptn_append_method_name(result, &index, "format");
+        ptn_append_method_name(result, &index, "getTimestamp");
         ptn_append_method_name(result, &index, "getTimezone");
         ptn_append_method_name(result, &index, "modify");
         ptn_append_method_name(result, &index, "sub");

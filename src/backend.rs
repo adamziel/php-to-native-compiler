@@ -19149,11 +19149,51 @@ fn emit_callable_dispatch(
     );
     out.push_str("            PtnValue previous_current_receiver = runtime->current_receiver;\n");
     out.push_str("            PtnValue ptn_wrapped_bound_this;\n");
+    out.push_str("            int ptn_wrapped_has_bound_this = 0;\n");
     out.push_str("            if (ptn_symbols_get(&resolved.as.closure->captures, \"this\", &ptn_wrapped_bound_this)) {\n");
+    out.push_str("                ptn_wrapped_has_bound_this = 1;\n");
     out.push_str("                runtime->has_current_receiver = 1;\n");
     out.push_str("                runtime->current_receiver = ptn_wrapped_bound_this;\n");
     out.push_str("            }\n");
-    out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line, from_call_user_func);\n");
+    out.push_str(
+        "            PtnValue ptn_wrapped_callable = resolved.as.closure->wrapped_callable;\n",
+    );
+    out.push_str("            int ptn_wrapped_callable_is_temporary = 0;\n");
+    out.push_str("            if (ptn_wrapped_has_bound_this) {\n");
+    out.push_str("                PtnValue ptn_wrapped_resolved = ptn_value_deref(resolved.as.closure->wrapped_callable);\n");
+    out.push_str("                if (ptn_wrapped_resolved.type == PTN_ARRAY && ptn_wrapped_resolved.as.array->len == 2) {\n");
+    out.push_str(
+        "                    PtnArrayKey ptn_wrapped_receiver_key = ptn_array_int_key(0);\n",
+    );
+    out.push_str(
+        "                    PtnArrayKey ptn_wrapped_method_key = ptn_array_int_key(1);\n",
+    );
+    out.push_str("                    PtnArrayEntry *ptn_wrapped_receiver_entry = ptn_array_entry_for_key(ptn_wrapped_resolved.as.array, ptn_wrapped_receiver_key);\n");
+    out.push_str("                    PtnArrayEntry *ptn_wrapped_method_entry = ptn_array_entry_for_key(ptn_wrapped_resolved.as.array, ptn_wrapped_method_key);\n");
+    out.push_str("                    ptn_array_key_free(ptn_wrapped_receiver_key);\n");
+    out.push_str("                    ptn_array_key_free(ptn_wrapped_method_key);\n");
+    out.push_str("                    if (ptn_wrapped_receiver_entry != NULL && ptn_wrapped_method_entry != NULL) {\n");
+    out.push_str("                        PtnValue ptn_wrapped_receiver = ptn_value_deref(ptn_wrapped_receiver_entry->value);\n");
+    out.push_str("                        PtnValue ptn_wrapped_method = ptn_value_deref(ptn_wrapped_method_entry->value);\n");
+    out.push_str("                        PtnValue ptn_bound_this = ptn_value_deref(ptn_wrapped_bound_this);\n");
+    out.push_str("                        if ((ptn_wrapped_receiver.type == PTN_OBJECT || ptn_wrapped_receiver.type == PTN_EXCEPTION) && ptn_wrapped_method.type == PTN_STRING && (ptn_bound_this.type == PTN_OBJECT || ptn_bound_this.type == PTN_EXCEPTION)) {\n");
+    out.push_str("                            const char *ptn_wrapped_class = ptn_wrapped_receiver.type == PTN_OBJECT ? ptn_wrapped_receiver.as.object->class_name : ptn_wrapped_receiver.as.exception->class_name;\n");
+    out.push_str("                            const char *ptn_bound_class = ptn_bound_this.type == PTN_OBJECT ? ptn_bound_this.as.object->class_name : ptn_bound_this.as.exception->class_name;\n");
+    out.push_str("                            if (ptn_ascii_case_equal(ptn_bound_class, ptn_wrapped_class) || ptn_declared_class_is_same_or_descendant(ptn_bound_class, ptn_wrapped_class)) {\n");
+    out.push_str("                                PtnValue ptn_bound_callable = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("                                ptn_array_set_entry(ptn_bound_callable.as.array, ptn_array_int_key(0), ptn_value_clone(ptn_bound_this));\n");
+    out.push_str("                                ptn_array_set_entry(ptn_bound_callable.as.array, ptn_array_int_key(1), ptn_value_clone(ptn_wrapped_method_entry->value));\n");
+    out.push_str("                                ptn_wrapped_callable = ptn_bound_callable;\n");
+    out.push_str("                                ptn_wrapped_callable_is_temporary = 1;\n");
+    out.push_str("                            }\n");
+    out.push_str("                        }\n");
+    out.push_str("                    }\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue result = ptn_call_callable(runtime, ptn_wrapped_callable, argc, args, line, from_call_user_func);\n");
+    out.push_str("            if (ptn_wrapped_callable_is_temporary) {\n");
+    out.push_str("                ptn_value_destroy(&ptn_wrapped_callable);\n");
+    out.push_str("            }\n");
     out.push_str("            runtime->current_receiver = previous_current_receiver;\n");
     out.push_str("            runtime->has_current_receiver = previous_has_current_receiver;\n");
     out.push_str("            runtime->current_called_class_name = previous_called_class_name;\n");
