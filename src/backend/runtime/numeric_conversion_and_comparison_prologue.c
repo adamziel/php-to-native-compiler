@@ -171,6 +171,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->autoloading_class_names = NULL;
     runtime->autoloading_class_names_len = 0;
     runtime->autoloading_class_names_capacity = 0;
+    runtime->last_opened_directory = NULL;
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
@@ -468,6 +469,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_aliases, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
+    if (runtime->lifecycle_root == runtime && runtime->last_opened_directory != NULL) {
+        ptn_resource_release(runtime->last_opened_directory);
+        runtime->last_opened_directory = NULL;
+    }
     for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
         free(runtime->magic_property_frames[i].property);
     }

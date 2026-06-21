@@ -1986,6 +1986,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->autoloading_class_names = NULL;
     runtime->autoloading_class_names_len = 0;
     runtime->autoloading_class_names_capacity = 0;
+    runtime->last_opened_directory = NULL;
     runtime->open_basedir = ptn_duplicate_string("");
     const char *configured_max_memory_limit = getenv("PTN_MAX_MEMORY_LIMIT");
     const char *configured_memory_limit = getenv("PTN_MEMORY_LIMIT");

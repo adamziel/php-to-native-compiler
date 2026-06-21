@@ -2085,7 +2085,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
                 runtime,
                 "resource(%lld) of type (%s)\n",
                 (long long)value.as.resource->id,
-                value.as.resource->type_name
+                ptn_resource_display_type(value.as.resource)
             );
             break;
         case PTN_REFERENCE:
@@ -3274,7 +3274,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                 runtime,
                 "resource(%lld) of type (%s)\n",
                 (long long)value.as.resource->id,
-                value.as.resource->type_name
+                ptn_resource_display_type(value.as.resource)
             );
             break;
         case PTN_REFERENCE:
@@ -6299,7 +6299,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE:
-            printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
+            printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, ptn_resource_display_type(value.as.resource));
             break;
         case PTN_REFERENCE:
             fputs("NULL\n", stdout);
@@ -6491,7 +6491,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             printf(
                 "resource(%lld) of type (%s) refcount(%zu)\n",
                 (long long)value.as.resource->id,
-                value.as.resource->type_name,
+                ptn_resource_display_type(value.as.resource),
                 value.as.resource->refcount
             );
             break;
@@ -41934,6 +41934,64 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     return resource;
 }
 
+static PtnRuntime *ptn_directory_runtime_root(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return NULL;
+    }
+    return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static void ptn_runtime_set_last_directory(PtnRuntime *runtime, PtnResource *resource) {
+    PtnRuntime *root = ptn_directory_runtime_root(runtime);
+    if (root == NULL || root->last_opened_directory == resource) {
+        return;
+    }
+    if (resource != NULL) {
+        ptn_resource_retain(resource);
+    }
+    if (root->last_opened_directory != NULL) {
+        ptn_resource_release(root->last_opened_directory);
+    }
+    root->last_opened_directory = resource;
+}
+
+static void ptn_runtime_clear_last_directory_if(PtnRuntime *runtime, PtnResource *resource) {
+    PtnRuntime *root = ptn_directory_runtime_root(runtime);
+    if (root == NULL || root->last_opened_directory != resource) {
+        return;
+    }
+    root->last_opened_directory = NULL;
+    ptn_resource_release(resource);
+}
+
+static PtnResource *ptn_runtime_last_directory(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_directory_runtime_root(runtime);
+    if (root == NULL || root->last_opened_directory == NULL) {
+        return NULL;
+    }
+    if (root->last_opened_directory->directory == NULL) {
+        PtnResource *stale = root->last_opened_directory;
+        root->last_opened_directory = NULL;
+        ptn_resource_release(stale);
+        return NULL;
+    }
+    return root->last_opened_directory;
+}
+
+static void ptn_emit_directory_null_deprecation(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Passing null is deprecated, instead the last opened directory stream should be provided",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_deprecation(runtime, message, line);
+}
+
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
@@ -41956,7 +42014,9 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_bool(0);
     }
 
-    PtnValue resource = ptn_resource(ptn_resource_new_directory(directory, path));
+    PtnResource *directory_resource = ptn_resource_new_directory(directory, path);
+    ptn_runtime_set_last_directory(runtime, directory_resource);
+    PtnValue resource = ptn_resource(directory_resource);
     free(path);
     return resource;
 #endif
@@ -42026,7 +42086,9 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
         return ptn_bool(0);
     }
 
-    PtnValue handle = ptn_resource(ptn_resource_new_directory(directory, path));
+    PtnResource *directory_resource = ptn_resource_new_directory(directory, path);
+    ptn_runtime_set_last_directory(runtime, directory_resource);
+    PtnValue handle = ptn_resource(directory_resource);
     PtnValue object = ptn_directory_object_from_resource(runtime, handle, path, line);
     free(path);
     return object;
@@ -42034,10 +42096,15 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
 }
 
 static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
-    PtnValue value = ptn_value_deref(args[0]);
+    PtnValue value = argc == 0 ? ptn_null() : ptn_value_deref(args[0]);
     if (value.type == PTN_NULL) {
+        ptn_emit_directory_null_deprecation(runtime, "closedir", line);
+        PtnResource *last_directory = ptn_runtime_last_directory(runtime);
+        if (last_directory != NULL) {
+            ptn_resource_close(last_directory);
+            ptn_runtime_clear_last_directory_if(runtime, last_directory);
+            return ptn_null();
+        }
         ptn_throw_exception(runtime, "TypeError", "No resource supplied");
         return ptn_null();
     }
@@ -42056,6 +42123,14 @@ static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const Pt
         return ptn_null();
     }
     if (value.as.resource->directory == NULL) {
+        if (value.as.resource->closed) {
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "closedir(): Argument #1 ($dir_handle) must be an open stream resource"
+            );
+            return ptn_null();
+        }
         ptn_throw_exception(
             runtime,
             "TypeError",
@@ -42064,6 +42139,7 @@ static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const Pt
         return ptn_null();
     }
     ptn_resource_close(value.as.resource);
+    ptn_runtime_clear_last_directory_if(runtime, value.as.resource);
     return ptn_null();
 }
 
@@ -42142,16 +42218,26 @@ static PtnResource *ptn_internal_expect_open_stream_arg(
 static PtnResource *ptn_internal_expect_open_directory_arg(
     PtnRuntime *runtime,
     const char *function_name,
-    PtnValue value,
+    size_t argc,
+    const PtnValue *args,
     size_t line
 ) {
-    value = ptn_value_deref(value);
+    PtnValue value = argc == 0 ? ptn_null() : ptn_value_deref(args[0]);
+    if (value.type == PTN_NULL) {
+        ptn_emit_directory_null_deprecation(runtime, function_name, line);
+        PtnResource *last_directory = ptn_runtime_last_directory(runtime);
+        if (last_directory != NULL) {
+            return last_directory;
+        }
+        ptn_throw_exception(runtime, "TypeError", "No resource supplied");
+        return NULL;
+    }
     if (value.type != PTN_RESOURCE) {
         char message[192];
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): Argument #1 ($dir_handle) must be of type resource, %s given",
+            "%s(): Argument #1 ($dir_handle) must be of type resource or null, %s given",
             function_name,
             ptn_offset_container_type_name(value)
         );
@@ -42166,7 +42252,9 @@ static PtnResource *ptn_internal_expect_open_directory_arg(
         int written = snprintf(
             message,
             sizeof(message),
-            "%s(): Argument #1 ($dir_handle) must be a valid Directory resource",
+            value.as.resource->closed
+                ? "%s(): Argument #1 ($dir_handle) must be an open stream resource"
+                : "%s(): Argument #1 ($dir_handle) must be a valid Directory resource",
             function_name
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -43474,8 +43562,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnResource *resource = ptn_internal_expect_open_directory_arg(runtime, "readdir", args[0], line);
+    PtnResource *resource = ptn_internal_expect_open_directory_arg(runtime, "readdir", argc, args, line);
     if (resource == NULL) {
         return ptn_null();
     }
@@ -43492,8 +43579,7 @@ static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnResource *resource = ptn_internal_expect_open_directory_arg(runtime, "rewinddir", args[0], line);
+    PtnResource *resource = ptn_internal_expect_open_directory_arg(runtime, "rewinddir", argc, args, line);
     if (resource == NULL) {
         return ptn_null();
     }
@@ -47757,7 +47843,7 @@ static PtnValue ptn_internal_get_resource_type(PtnRuntime *runtime, size_t argc,
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
-    return ptn_string(ptn_resource_is_open(value.as.resource) ? value.as.resource->type_name : "Unknown");
+    return ptn_string(ptn_resource_display_type(value.as.resource));
 }
 
 static PtnValue ptn_internal_get_resource_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -83468,7 +83554,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_uses", 1, 2, ptn_internal_class_uses },
         { "clamp", 3, 3, ptn_internal_clamp },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
-        { "closedir", 1, 1, ptn_internal_closedir },
+        { "closedir", 0, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Collator::create", 1, 1, ptn_internal_collator_create },
@@ -83924,7 +84010,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "range", 2, 3, ptn_internal_range },
         { "register_shutdown_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_shutdown_function },
         { "register_tick_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_tick_function },
-        { "readdir", 1, 1, ptn_internal_readdir },
+        { "readdir", 0, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },
         { "realpath_cache_get", 0, 0, ptn_internal_realpath_cache_get },
@@ -83946,7 +84032,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "restore_exception_handler", 0, 0, ptn_internal_restore_exception_handler },
         { "rewind", 1, 1, ptn_internal_rewind },
-        { "rewinddir", 1, 1, ptn_internal_rewinddir },
+        { "rewinddir", 0, 1, ptn_internal_rewinddir },
         { "rmdir", 1, 2, ptn_internal_rmdir },
         { "rsort", 1, 2, ptn_internal_rsort },
         { "rtrim", 1, 2, ptn_internal_rtrim },
@@ -86617,7 +86703,9 @@ static int ptn_attribute_metadata_method_exists(const char *method_name) {
 }
 
 static int ptn_directory_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "close");
+    return ptn_ascii_case_equal(method_name, "close")
+        || ptn_ascii_case_equal(method_name, "read")
+        || ptn_ascii_case_equal(method_name, "rewind");
 }
 
 static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
@@ -88129,7 +88217,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_directory(class_name)) {
-        ptn_append_method_name(result, &index, "close");
+        static const char *const names[] = { "close", "read", "rewind" };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
@@ -99286,7 +99375,9 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
     size_t line
 ) {
     (void)args;
-    if (ptn_ascii_case_equal(name, "close")) {
+    if (ptn_ascii_case_equal(name, "read") ||
+        ptn_ascii_case_equal(name, "rewind") ||
+        ptn_ascii_case_equal(name, "close")) {
         ptn_reflection_check_no_arguments(runtime, "Directory", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
@@ -99297,7 +99388,30 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
             ptn_throw_exception(runtime, "Error", "Invalid Directory object");
             return ptn_null();
         }
-        PtnValue result = ptn_internal_closedir(runtime, 1, &handle.value, line);
+        PtnValue value = ptn_value_deref(handle.value);
+        if (value.type == PTN_RESOURCE && value.as.resource->closed && value.as.resource->directory == NULL) {
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Directory::%s(): cannot use Directory resource after it has been closed",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_value_destroy(&handle.value);
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        PtnValue result = ptn_null();
+        if (ptn_ascii_case_equal(name, "read")) {
+            result = ptn_internal_readdir(runtime, 1, &handle.value, line);
+        } else if (ptn_ascii_case_equal(name, "rewind")) {
+            result = ptn_internal_rewinddir(runtime, 1, &handle.value, line);
+        } else {
+            result = ptn_internal_closedir(runtime, 1, &handle.value, line);
+        }
         ptn_value_destroy(&handle.value);
         return result;
     }

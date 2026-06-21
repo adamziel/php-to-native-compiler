@@ -1303,6 +1303,7 @@ struct PtnRuntime {
     char **autoloading_class_names;
     size_t autoloading_class_names_len;
     size_t autoloading_class_names_capacity;
+    PtnResource *last_opened_directory;
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
@@ -3305,6 +3306,10 @@ static PTN_UNUSED int ptn_resource_is_open(PtnResource *resource) {
         resource->directory != NULL ||
         resource->memory_stream != NULL ||
         strcmp(resource->type_name, "stream") != 0;
+}
+
+static PTN_UNUSED const char *ptn_resource_display_type(PtnResource *resource) {
+    return ptn_resource_is_open(resource) ? resource->type_name : "Unknown";
 }
 
 static PTN_UNUSED int ptn_stream_resource_is_open(PtnResource *resource) {
