@@ -12257,6 +12257,46 @@ var_dump($c);
 }
 
 #[test]
+fn compile_array_object_sort_methods_observe_disabled_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-disabled-sort-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-disabled-sort-method.php");
+    let output = root.join("array-object-disabled-sort-method-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$items = new ArrayObject(["b", "a"]);
+$items->uasort(fn($left, $right) => $left <=> $right);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_DISABLE_FUNCTIONS", "uasort")
+        .output()
+        .unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("Fatal error: Uncaught Error: Cannot call method uasort when function uasort is disabled in "),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("ArrayObject->uasort(Object(Closure))"),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_array_object_declared_offsets_for_array_as_props_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-declared-offsets-array-as-props");
     fs::create_dir_all(&root).unwrap();

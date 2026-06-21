@@ -106124,6 +106124,37 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         ptn_ascii_case_equal(name, "natcasesort") ||
         ptn_ascii_case_equal(name, "uasort") ||
         ptn_ascii_case_equal(name, "uksort")) {
+        if (ptn_runtime_function_disabled(runtime, name)) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot call method %s when function %s is disabled",
+                name,
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            char frame_name[64];
+            written = snprintf(frame_name, sizeof(frame_name), "ArrayObject->%s", name);
+            if (written < 0 || (size_t)written >= sizeof(frame_name)) {
+                ptn_abort_out_of_memory();
+            }
+            PtnTraceFrame trace_frame;
+            ptn_runtime_push_trace_frame(
+                runtime,
+                &trace_frame,
+                frame_name,
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+            ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+            return ptn_null();
+        }
         int takes_callback = ptn_ascii_case_equal(name, "uasort") || ptn_ascii_case_equal(name, "uksort");
         int takes_flags = ptn_ascii_case_equal(name, "asort") || ptn_ascii_case_equal(name, "ksort");
         if ((ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc != 0) {
