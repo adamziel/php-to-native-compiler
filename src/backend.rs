@@ -19998,6 +19998,7 @@ fn emit_instruction(
 
                 let root_lookup_temp = values.next_temp();
                 let root_temp = values.next_temp();
+                let root_epoch_temp = values.next_temp();
                 let root_is_arrayaccess_temp = values.next_temp();
                 out.push_str("    PtnLookupResult ");
                 out.push_str(&root_lookup_temp);
@@ -20011,6 +20012,11 @@ fn emit_instruction(
                 out.push_str(".exists ? ptn_value_clone_deref(");
                 out.push_str(&root_lookup_temp);
                 out.push_str(".value) : ptn_null();\n");
+                out.push_str("    uint64_t ");
+                out.push_str(&root_epoch_temp);
+                out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
                 out.push_str("    int ");
                 out.push_str(&root_is_arrayaccess_temp);
                 out.push_str(" = ");
@@ -20082,7 +20088,29 @@ fn emit_instruction(
                 out.push_str(");\n");
                 let result_temp =
                     values.emit_compound_binary_value(out, &current_temp, &value_temp, *line, *op);
-                out.push_str("    if (");
+                out.push_str("    if (!");
+                out.push_str(&root_is_arrayaccess_temp);
+                out.push_str(" && (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\") != ");
+                out.push_str(&root_epoch_temp);
+                out.push_str(" || !ptn_runtime_array_path_root_matches_snapshot(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&root_temp);
+                out.push_str("))) {\n");
+                out.push_str(
+                    "        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ",
+                );
+                out.push_str(&root_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    } else if (");
                 out.push_str(&split_temp);
                 out.push_str(") {\n");
                 out.push_str(
@@ -20142,31 +20170,34 @@ fn emit_instruction(
                 let has_deferred_dimension_warnings = dimensions
                     .iter()
                     .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
-                let pre_eval_root = if dimensions.len() > 1 {
-                    let root_lookup_temp = values.next_temp();
-                    let root_temp = values.next_temp();
-                    let root_epoch_temp = values.next_temp();
-                    out.push_str("    PtnLookupResult ");
-                    out.push_str(&root_lookup_temp);
-                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
-                    out.push_str(&c_string(array));
-                    out.push_str("\");\n");
-                    out.push_str("    PtnValue ");
-                    out.push_str(&root_temp);
-                    out.push_str(" = ");
-                    out.push_str(&root_lookup_temp);
-                    out.push_str(".exists ? ptn_value_clone_deref(");
-                    out.push_str(&root_lookup_temp);
-                    out.push_str(".value) : ptn_null();\n");
-                    out.push_str("    uint64_t ");
-                    out.push_str(&root_epoch_temp);
-                    out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
-                    out.push_str(&c_string(array));
-                    out.push_str("\");\n");
-                    Some((root_temp, root_epoch_temp))
-                } else {
-                    None
-                };
+                let value_may_emit_undefined_variable_warning =
+                    value_expr_is_direct_variable_read(value);
+                let pre_eval_root =
+                    if dimensions.len() > 1 || value_may_emit_undefined_variable_warning {
+                        let root_lookup_temp = values.next_temp();
+                        let root_temp = values.next_temp();
+                        let root_epoch_temp = values.next_temp();
+                        out.push_str("    PtnLookupResult ");
+                        out.push_str(&root_lookup_temp);
+                        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                        out.push_str(&c_string(array));
+                        out.push_str("\");\n");
+                        out.push_str("    PtnValue ");
+                        out.push_str(&root_temp);
+                        out.push_str(" = ");
+                        out.push_str(&root_lookup_temp);
+                        out.push_str(".exists ? ptn_value_clone_deref(");
+                        out.push_str(&root_lookup_temp);
+                        out.push_str(".value) : ptn_null();\n");
+                        out.push_str("    uint64_t ");
+                        out.push_str(&root_epoch_temp);
+                        out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                        out.push_str(&c_string(array));
+                        out.push_str("\");\n");
+                        Some((root_temp, root_epoch_temp))
+                    } else {
+                        None
+                    };
                 let path = if pre_eval_root.is_some() || has_deferred_dimension_warnings {
                     emit_array_path_segments_with_deferred_variable_warnings(
                         out, values, dimensions,
@@ -22714,6 +22745,13 @@ fn emit_deferred_missing_variable_null_key_deprecation_flag(
         out.push_str(&warning.missing_temp);
     }
     out.push(')');
+}
+
+fn value_expr_is_direct_variable_read(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::Load { .. } | ValueExpr::LegacyDollarBraceStringVariable { .. }
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30958,7 +30996,10 @@ impl ValueEmitter {
             let has_deferred_dimension_warnings = dimensions
                 .iter()
                 .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
-            let pre_eval_root = if dimensions.len() > 1 {
+            let value_may_emit_undefined_variable_warning =
+                value_expr_is_direct_variable_read(value);
+            let pre_eval_root = if dimensions.len() > 1 || value_may_emit_undefined_variable_warning
+            {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
                 let root_epoch_temp = self.next_temp();
@@ -31547,6 +31588,7 @@ impl ValueEmitter {
 
         let root_lookup_temp = self.next_temp();
         let root_temp = self.next_temp();
+        let root_epoch_temp = self.next_temp();
         let root_is_arrayaccess_temp = self.next_temp();
         out.push_str("    PtnLookupResult ");
         out.push_str(&root_lookup_temp);
@@ -31560,6 +31602,11 @@ impl ValueEmitter {
         out.push_str(".exists ? ptn_value_clone_deref(");
         out.push_str(&root_lookup_temp);
         out.push_str(".value) : ptn_null();\n");
+        out.push_str("    uint64_t ");
+        out.push_str(&root_epoch_temp);
+        out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\");\n");
         out.push_str("    int ");
         out.push_str(&root_is_arrayaccess_temp);
         out.push_str(" = ");
@@ -31630,7 +31677,27 @@ impl ValueEmitter {
         let result_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
 
-        out.push_str("    if (");
+        out.push_str("    if (!");
+        out.push_str(&root_is_arrayaccess_temp);
+        out.push_str(" && (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\") != ");
+        out.push_str(&root_epoch_temp);
+        out.push_str(" || !ptn_runtime_array_path_root_matches_snapshot(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\", ");
+        out.push_str(&root_temp);
+        out.push_str("))) {\n");
+        out.push_str("        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ");
+        out.push_str(&root_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    } else if (");
         out.push_str(&split_temp);
         out.push_str(") {\n");
         out.push_str("        ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &");

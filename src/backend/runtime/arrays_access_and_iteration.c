@@ -11352,6 +11352,54 @@ static PTN_UNUSED uint64_t ptn_runtime_symbol_table_epoch_for_name(PtnRuntime *r
     return ptn_runtime_variable_symbol_table(runtime, name)->mutation_epoch;
 }
 
+static PTN_UNUSED int ptn_runtime_is_globals_name(const char *name);
+
+static PTN_UNUSED int ptn_array_path_root_values_match(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type != right.type) {
+        return 0;
+    }
+    switch (left.type) {
+        case PTN_NULL:
+            return 1;
+        case PTN_BOOL:
+            return left.as.boolean == right.as.boolean;
+        case PTN_INT:
+            return left.as.integer == right.as.integer;
+        case PTN_FLOAT:
+            return left.as.floating == right.as.floating;
+        case PTN_STRING:
+            return left.as.string.len == right.as.string.len &&
+                memcmp(left.as.string.data, right.as.string.data, left.as.string.len) == 0;
+        case PTN_ARRAY:
+            return left.as.array == right.as.array;
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+            return left.as.object == right.as.object;
+        case PTN_EXCEPTION:
+            return left.as.exception == right.as.exception;
+        case PTN_RESOURCE:
+            return left.as.resource == right.as.resource;
+        case PTN_REFERENCE:
+            return left.as.reference == right.as.reference;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_runtime_array_path_root_matches_snapshot(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue pre_eval_root
+) {
+    if (runtime == NULL || name == NULL || ptn_runtime_is_globals_name(name)) {
+        return 1;
+    }
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
+    PtnValue current = slot == NULL ? ptn_null() : ptn_value_deref(*slot);
+    return ptn_array_path_root_values_match(current, pre_eval_root);
+}
+
 static PTN_UNUSED void ptn_emit_invalidated_array_path_write_diagnostics(
     PtnRuntime *runtime,
     PtnValue root,
@@ -12970,7 +13018,8 @@ static PTN_UNUSED int ptn_array_path_write_guard_invalidated(
     if (!guard_enabled) {
         return 0;
     }
-    if (ptn_runtime_symbol_table_epoch_for_name(runtime, name) == guarded_epoch) {
+    if (ptn_runtime_symbol_table_epoch_for_name(runtime, name) == guarded_epoch &&
+        ptn_runtime_array_path_root_matches_snapshot(runtime, name, pre_eval_root)) {
         return 0;
     }
     ptn_emit_invalidated_array_path_write_diagnostics(
@@ -13661,7 +13710,8 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     int emit_null_key_deprecation
 ) {
     uint64_t current_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
-    if (current_epoch != pre_eval_epoch) {
+    if (current_epoch != pre_eval_epoch ||
+        !ptn_runtime_array_path_root_matches_snapshot(runtime, name, pre_eval_root)) {
         ptn_emit_invalidated_array_path_write_diagnostics(
             runtime,
             pre_eval_root,
@@ -13717,7 +13767,8 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_after_dimension_eva
     int emit_null_key_deprecation
 ) {
     uint64_t current_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
-    if (current_epoch != pre_eval_epoch) {
+    if (current_epoch != pre_eval_epoch ||
+        !ptn_runtime_array_path_root_matches_snapshot(runtime, name, pre_eval_root)) {
         ptn_emit_invalidated_array_path_write_diagnostics(
             runtime,
             pre_eval_root,

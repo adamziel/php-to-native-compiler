@@ -38316,6 +38316,48 @@ var_dump($items[10]);",
 }
 
 #[test]
+fn compile_array_dim_assignment_rhs_missing_variable_handler_invalidates_root_to_native_binary() {
+    let root = temp_dir("ptn-native-array-dim-rhs-missing-variable-handler-invalidates-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-dim-rhs-missing-variable-handler-invalidates-root.php");
+    let output = root.join("array-dim-rhs-missing-variable-handler-invalidates-root-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$my_var = null;\n\
+set_error_handler(function($code, $msg) use (&$my_var) { echo \"Error: $msg\\n\"; $my_var = 0; });\n\
+$my_var[] = $y;\n\
+var_dump($my_var);\n\
+$a = [];\n\
+function mutate_root(&$root) { $root = 0; return 1; }\n\
+try { $a[] = mutate_root($a); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($a);\n\
+$compound = null;\n\
+set_error_handler(function() use (&$compound) { $compound = 0; });\n\
+$compound[0000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000] .= \"xyz\";\n\
+var_dump($compound);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: Undefined variable $y\n\
+int(0)\n\
+Cannot use a scalar value as an array\n\
+int(0)\n\
+int(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval"));
+}
+
+#[test]
 fn compile_false_array_offset_unset_deprecates_to_native_binary() {
     let root = temp_dir("ptn-native-false-array-offset-unset-deprecates");
     fs::create_dir_all(&root).unwrap();
@@ -63921,7 +63963,8 @@ try { var_dump(+\"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\
 try { var_dump(-\"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $object = new stdClass;\n\
 try { var_dump($object + [1]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { var_dump([1] + $object); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+try { var_dump([1] + $object); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump([1] + false); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -63956,7 +63999,8 @@ float(7)\n\
 Unsupported operand types: string * int\n\
 Unsupported operand types: string * int\n\
 Unsupported operand types: stdClass + array\n\
-Unsupported operand types: array + stdClass\n"
+Unsupported operand types: array + stdClass\n\
+Unsupported operand types: array + bool\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -64292,10 +64336,41 @@ fn compile_unary_bitwise_not_array_operand_fatals() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: Cannot perform bitwise not on array in {} on line 3\n",
+            "\nFatal error: Uncaught TypeError: Cannot perform bitwise not on array in {}:3\nStack trace:\n#0 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
             input.display()
         )
     );
+}
+
+#[test]
+fn compile_unary_bitwise_not_rejects_null_and_bool_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-not-null-bool");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-not-null-bool.php");
+    let output = root.join("bitwise-not-null-bool-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([null, false, true] as $value) {\n\
+    try { var_dump(~$value); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+}\n\
+try { @var_dump(~$missing); } catch (\\TypeError $e) { echo \"suppressed: \", $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot perform bitwise not on null\n\
+Cannot perform bitwise not on bool\n\
+Cannot perform bitwise not on bool\n\
+suppressed: Cannot perform bitwise not on null\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

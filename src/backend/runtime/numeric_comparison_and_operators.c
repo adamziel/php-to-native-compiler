@@ -852,8 +852,9 @@ static PTN_UNUSED const char *ptn_arithmetic_operand_type_name(PtnValue value) {
             return value.as.exception->class_name;
         case PTN_CLOSURE:
             return "Closure";
-        case PTN_NULL:
         case PTN_BOOL:
+            return "bool";
+        case PTN_NULL:
         case PTN_INT:
         case PTN_FLOAT:
         case PTN_STRING:

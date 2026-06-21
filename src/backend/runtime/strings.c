@@ -90,6 +90,14 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(
         };
         return ptn_bitwise_string_not(string);
     }
+    if (value.type == PTN_NULL) {
+        ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on null", path, line);
+        return ptn_null();
+    }
+    if (value.type == PTN_BOOL) {
+        ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on bool", path, line);
+        return ptn_null();
+    }
     if (value.type == PTN_ARRAY) {
         ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on array", path, line);
         return ptn_null();
