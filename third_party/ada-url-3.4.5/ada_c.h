@@ -54,6 +54,7 @@ void ada_free_owned_string(ada_owned_string owned);
 ada_url ada_copy(ada_url input);
 
 bool ada_is_valid(ada_url result);
+const char* ada_get_parse_error(ada_url result);
 
 // url_aggregator getters
 // if ada_is_valid(result)) is false, an empty string is returned

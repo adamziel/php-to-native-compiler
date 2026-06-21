@@ -1493,6 +1493,12 @@ enum url_host_type : uint8_t {
   IPV6 = 2,
 };
 
+enum class url_parse_error : uint8_t {
+  NONE = 0,
+  MISSING_SCHEME_NON_RELATIVE_URL,
+  HOST_MISSING,
+};
+
 /**
  * @brief Abstract base class for URL representations.
  *
@@ -1515,6 +1521,8 @@ struct url_base {
    * Set to `false` if parsing failed (e.g., invalid URL syntax).
    */
   bool is_valid{true};
+
+  url_parse_error parse_error{url_parse_error::NONE};
 
   /**
    * Indicates whether the URL has an opaque path (non-hierarchical).

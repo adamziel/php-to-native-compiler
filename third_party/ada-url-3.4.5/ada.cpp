@@ -13387,6 +13387,7 @@ result_type parse_url_impl(std::string_view user_input,
         if (base_url == nullptr ||
             (base_url->has_opaque_path && !fragment.has_value())) {
           ada_log("NO_SCHEME validation error");
+          url.parse_error = url_parse_error::MISSING_SCHEME_NON_RELATIVE_URL;
           url.is_valid = false;
           return url;
         }
@@ -13796,6 +13797,7 @@ result_type parse_url_impl(std::string_view user_input,
           // If url is special and host_view is the empty string, validation
           // error, return failure.
           if (host_view.empty() && url.is_special()) {
+            url.parse_error = url_parse_error::HOST_MISSING;
             url.is_valid = false;
             return url;
           }
@@ -17430,8 +17432,24 @@ bool std_regex_provider::regex_match(std::string_view input,
 // NOLINTBEGIN(bugprone-exception-escape,
 // bugprone-suspicious-stringview-data-usage)
 
+struct ada_url_handle {
+  ada::result<ada::url_aggregator> result;
+  ada::url_parse_error parse_error{ada::url_parse_error::NONE};
+};
+
 ada::result<ada::url_aggregator>& get_instance(void* result) noexcept {
-  return *(ada::result<ada::url_aggregator>*)result;
+  return ((ada_url_handle*)result)->result;
+}
+
+ada_url_handle* ada_make_url_handle(ada::url_aggregator parsed) noexcept {
+  auto* handle = new ada_url_handle();
+  handle->parse_error = parsed.parse_error;
+  if (parsed.is_valid) {
+    handle->result = std::move(parsed);
+  } else {
+    handle->result = tl::unexpected(ada::errors::type_error);
+  }
+  return handle;
 }
 
 extern "C" {
@@ -17495,21 +17513,23 @@ struct ada_url_components {
 };
 
 ada_url ada_parse(const char* input, size_t length) noexcept {
-  return new ada::result<ada::url_aggregator>(
-      ada::parse<ada::url_aggregator>(std::string_view(input, length)));
+  return ada_make_url_handle(
+      ada::parser::parse_url_impl<ada::url_aggregator, true>(
+          std::string_view(input, length), nullptr));
 }
 
 ada_url ada_parse_with_base(const char* input, size_t input_length,
                             const char* base, size_t base_length) noexcept {
-  auto base_out =
-      ada::parse<ada::url_aggregator>(std::string_view(base, base_length));
+  auto base_out = ada::parser::parse_url_impl<ada::url_aggregator, true>(
+      std::string_view(base, base_length), nullptr);
 
-  if (!base_out) {
-    return new ada::result<ada::url_aggregator>(base_out);
+  if (!base_out.is_valid) {
+    return ada_make_url_handle(std::move(base_out));
   }
 
-  return new ada::result<ada::url_aggregator>(ada::parse<ada::url_aggregator>(
-      std::string_view(input, input_length), &base_out.value()));
+  return ada_make_url_handle(
+      ada::parser::parse_url_impl<ada::url_aggregator, true>(
+          std::string_view(input, input_length), &base_out));
 }
 
 bool ada_can_parse(const char* input, size_t length) noexcept {
@@ -17523,18 +17543,34 @@ bool ada_can_parse_with_base(const char* input, size_t input_length,
 }
 
 void ada_free(ada_url result) noexcept {
-  auto* r = (ada::result<ada::url_aggregator>*)result;
-  delete r;
+  auto* handle = (ada_url_handle*)result;
+  delete handle;
 }
 
 ada_url ada_copy(ada_url input) noexcept {
-  ada::result<ada::url_aggregator>& r = get_instance(input);
-  return new ada::result<ada::url_aggregator>(r);
+  auto* handle = (ada_url_handle*)input;
+  return new ada_url_handle(*handle);
 }
 
 bool ada_is_valid(ada_url result) noexcept {
   ada::result<ada::url_aggregator>& r = get_instance(result);
   return r.has_value();
+}
+
+const char* ada_get_parse_error(ada_url result) noexcept {
+  if (result == nullptr) {
+    return nullptr;
+  }
+  auto* handle = (ada_url_handle*)result;
+  switch (handle->parse_error) {
+    case ada::url_parse_error::MISSING_SCHEME_NON_RELATIVE_URL:
+      return "MissingSchemeNonRelativeUrl";
+    case ada::url_parse_error::HOST_MISSING:
+      return "HostMissing";
+    case ada::url_parse_error::NONE:
+      return nullptr;
+  }
+  return nullptr;
 }
 
 // caller must free the result with ada_free_owned_string

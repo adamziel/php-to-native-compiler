@@ -22644,6 +22644,10 @@ static int ptn_uri_ada_parse_whatwg(
     ada_url url = ptn_uri_ada_parse_bytes(input.data, input.len);
     if (url == NULL || !ada_is_valid(url)) {
         if (url != NULL) {
+            const char *parse_error = ada_get_parse_error(url);
+            if (parse_error != NULL && parse_error[0] != '\0') {
+                *reason_out = parse_error;
+            }
             ada_free(url);
         }
         return 0;
