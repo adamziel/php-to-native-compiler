@@ -3603,6 +3603,7 @@ fn emit_class_constant_initializer_helper(
         out.push_str("\")) {\n");
         let previous_class_name = values.current_class_name.replace(class.name.clone());
         for constant in &class.constants {
+            let emit_constant_expression_trace = !class.is_enum || constant.is_enum_case;
             out.push_str("        if (strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
@@ -3648,12 +3649,16 @@ fn emit_class_constant_initializer_helper(
             out.push_str("            PtnTraceFrame *");
             out.push_str(&suppressed_constant_trace_frame_temp);
             out.push_str(" = NULL;\n");
-            out.push_str("            if (runtime.trace_frame != NULL && runtime.trace_frame->function_name != NULL && strcmp(runtime.trace_frame->function_name, \"[constant expression]\") == 0) {\n");
-            out.push_str("                ");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str(" = runtime.trace_frame;\n");
-            out.push_str("                runtime.trace_frame = runtime.trace_frame->previous;\n");
-            out.push_str("            }\n");
+            if emit_constant_expression_trace {
+                out.push_str("            if (runtime.trace_frame != NULL && runtime.trace_frame->function_name != NULL && strcmp(runtime.trace_frame->function_name, \"[constant expression]\") == 0) {\n");
+                out.push_str("                ");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str(" = runtime.trace_frame;\n");
+                out.push_str(
+                    "                runtime.trace_frame = runtime.trace_frame->previous;\n",
+                );
+                out.push_str("            }\n");
+            }
             out.push_str("            PtnTryFrame ");
             out.push_str(&initializing_frame_temp);
             out.push_str(";\n");
@@ -3666,19 +3671,21 @@ fn emit_class_constant_initializer_helper(
             out.push_str("                ptn_try_frame_pop(&runtime, &");
             out.push_str(&initializing_frame_temp);
             out.push_str(");\n");
-            out.push_str("                ptn_runtime_pop_trace_frame(&runtime, &");
-            out.push_str(&initializing_trace_frame_temp);
-            out.push_str(");\n");
-            out.push_str("                if (");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str(" != NULL) {\n");
-            out.push_str("                    ");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str("->previous = runtime.trace_frame;\n");
-            out.push_str("                    runtime.trace_frame = ");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str(";\n");
-            out.push_str("                }\n");
+            if emit_constant_expression_trace {
+                out.push_str("                ptn_runtime_pop_trace_frame(&runtime, &");
+                out.push_str(&initializing_trace_frame_temp);
+                out.push_str(");\n");
+                out.push_str("                if (");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str(" != NULL) {\n");
+                out.push_str("                    ");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str("->previous = runtime.trace_frame;\n");
+                out.push_str("                    runtime.trace_frame = ");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str(";\n");
+                out.push_str("                }\n");
+            }
             out.push_str("                ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
             out.push_str(", ");
@@ -3700,15 +3707,17 @@ fn emit_class_constant_initializer_helper(
             out.push_str("                ptn_rethrow_exception(&runtime);\n");
             out.push_str("                return 0;\n");
             out.push_str("            }\n");
-            out.push_str("            ptn_runtime_push_trace_frame(&runtime, &");
-            out.push_str(&initializing_trace_frame_temp);
-            out.push_str(", \"[constant expression]\", runtime.source_path, ");
-            out.push_str(
-                &value_expr_runtime_line(&constant.value)
-                    .unwrap_or(0)
-                    .to_string(),
-            );
-            out.push_str(", 0, NULL);\n");
+            if emit_constant_expression_trace {
+                out.push_str("            ptn_runtime_push_trace_frame(&runtime, &");
+                out.push_str(&initializing_trace_frame_temp);
+                out.push_str(", \"[constant expression]\", runtime.source_path, ");
+                out.push_str(
+                    &value_expr_runtime_line(&constant.value)
+                        .unwrap_or(0)
+                        .to_string(),
+                );
+                out.push_str(", 0, NULL);\n");
+            }
             let mut extra_cleanup_temps = Vec::new();
             let value_temp = if constant.is_enum_case {
                 if let Some(message) = enum_duplicate_message(class) {
@@ -3832,19 +3841,21 @@ fn emit_class_constant_initializer_helper(
             out.push_str("            ptn_try_frame_pop(&runtime, &");
             out.push_str(&initializing_frame_temp);
             out.push_str(");\n");
-            out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
-            out.push_str(&initializing_trace_frame_temp);
-            out.push_str(");\n");
-            out.push_str("            if (");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str(" != NULL) {\n");
-            out.push_str("                ");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str("->previous = runtime.trace_frame;\n");
-            out.push_str("                runtime.trace_frame = ");
-            out.push_str(&suppressed_constant_trace_frame_temp);
-            out.push_str(";\n");
-            out.push_str("            }\n");
+            if emit_constant_expression_trace {
+                out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
+                out.push_str(&initializing_trace_frame_temp);
+                out.push_str(");\n");
+                out.push_str("            if (");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str(" != NULL) {\n");
+                out.push_str("                ");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str("->previous = runtime.trace_frame;\n");
+                out.push_str("                runtime.trace_frame = ");
+                out.push_str(&suppressed_constant_trace_frame_temp);
+                out.push_str(";\n");
+                out.push_str("            }\n");
+            }
             out.push_str("            ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
             out.push_str(", ");

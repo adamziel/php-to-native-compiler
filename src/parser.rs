@@ -1583,10 +1583,13 @@ impl Parser<'_> {
         let mut abstract_span = None;
         let mut is_final = false;
         let mut final_span = None;
+        let mut is_readonly = false;
+        let mut readonly_span = None;
         loop {
             if token_is_identifier_named(self.peek(), "abstract")
                 && (token_is_identifier_named(self.peek_next(), "class")
                     || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
                     || token_is_identifier_named(self.peek_next(), "readonly"))
             {
                 if is_abstract {
@@ -1602,7 +1605,8 @@ impl Parser<'_> {
             if token_is_identifier_named(self.peek(), "final")
                 && (token_is_identifier_named(self.peek_next(), "class")
                     || token_is_identifier_named(self.peek_next(), "abstract")
-                    || token_is_identifier_named(self.peek_next(), "final"))
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly"))
             {
                 if is_final {
                     return Err(Diagnostic::new(
@@ -1614,6 +1618,25 @@ impl Parser<'_> {
                 final_span = Some(self.advance().span);
                 continue;
             }
+            if token_is_identifier_named(self.peek(), "readonly")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly")
+                    || token_is_identifier_named(self.peek_next(), "interface")
+                    || token_is_identifier_named(self.peek_next(), "trait")
+                    || token_is_identifier_named(self.peek_next(), "enum"))
+            {
+                if is_readonly {
+                    return Err(Diagnostic::new(
+                        "Multiple readonly modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                is_readonly = true;
+                readonly_span = Some(self.advance().span);
+                continue;
+            }
             break;
         }
         if is_abstract && is_final {
@@ -1622,13 +1645,15 @@ impl Parser<'_> {
                 final_span.or(abstract_span),
             ));
         }
-        let readonly_span = if token_is_identifier_named(self.peek(), "readonly")
-            && token_is_identifier_named(self.peek_next(), "class")
-        {
-            Some(self.advance().span)
-        } else {
-            None
-        };
+        if is_readonly && !token_is_identifier_named(self.peek(), "class") {
+            let unexpected = class_modifier_unexpected_token_text(self.peek());
+            return Err(Diagnostic::parse_error(
+                format!(
+                    "syntax error, unexpected token \"{unexpected}\", expecting \"abstract\" or \"final\" or \"readonly\" or \"class\""
+                ),
+                Some(self.peek().span),
+            ));
+        }
         let class_token = self.advance().clone();
         let declaration_start_span = [
             abstract_span,
@@ -1660,8 +1685,6 @@ impl Parser<'_> {
                 final_span.or(Some(class_token.span)),
             ));
         }
-        let is_readonly = readonly_span.is_some();
-
         let (class_name, _) = self.parse_declaration_name("expected class name")?;
         self.reject_tight_class_clause_keyword_name("extends")?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
@@ -2086,6 +2109,15 @@ impl Parser<'_> {
                         Some(span),
                     ));
                 }
+                if self.peek_is_identifier("readonly") {
+                    let span = self.peek().span;
+                    self.advance();
+                    self.expect_semicolon()?;
+                    return Err(Diagnostic::new(
+                        "Cannot use the readonly modifier on a method",
+                        Some(span),
+                    ));
+                }
                 let mut visibility = None;
                 let mut is_final = false;
                 let mut alias = None;
@@ -2333,6 +2365,12 @@ impl Parser<'_> {
                     modifiers.abstract_span,
                 ));
             }
+            if modifiers.is_readonly {
+                return Err(Diagnostic::new(
+                    "Cannot use the readonly modifier on a class constant",
+                    modifiers.readonly_span,
+                ));
+            }
             if modifiers.is_static {
                 return Err(Diagnostic::new(
                     "Cannot use the static modifier on a class constant",
@@ -2450,6 +2488,12 @@ impl Parser<'_> {
             return Err(Diagnostic::new(
                 "unsupported class member",
                 Some(self.peek().span),
+            ));
+        }
+        if modifiers.is_readonly {
+            return Err(Diagnostic::new(
+                "Cannot use the readonly modifier on a method",
+                modifiers.readonly_span,
             ));
         }
         if modifiers.is_abstract && modifiers.is_final {
@@ -2630,7 +2674,7 @@ impl Parser<'_> {
                 "readonly" => {
                     if modifiers.is_readonly {
                         return Err(Diagnostic::new(
-                            "duplicate readonly modifier",
+                            "Multiple readonly modifiers are not allowed",
                             Some(self.peek().span),
                         ));
                     }
@@ -4484,6 +4528,12 @@ impl Parser<'_> {
                         "Property with asymmetric visibility {class_name}::${name} must have type"
                     ),
                     modifiers.set_visibility_span,
+                ));
+            }
+            if is_readonly && type_hint.is_none() {
+                return Err(Diagnostic::new(
+                    format!("Readonly property {class_name}::${name} must have type"),
+                    Some(token.span),
                 ));
             }
             validate_asymmetric_property_visibility(
@@ -9439,15 +9489,23 @@ impl Parser<'_> {
         token_is_identifier_named(self.peek(), "class")
             || token_is_identifier_named(self.peek(), "interface")
             || (token_is_identifier_named(self.peek(), "readonly")
-                && token_is_identifier_named(self.peek_next(), "class"))
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly")
+                    || token_is_identifier_named(self.peek_next(), "interface")
+                    || token_is_identifier_named(self.peek_next(), "trait")
+                    || token_is_identifier_named(self.peek_next(), "enum")))
             || (token_is_identifier_named(self.peek(), "abstract")
                 && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
                     || token_is_identifier_named(self.peek_next(), "final")
                     || token_is_identifier_named(self.peek_next(), "readonly")))
             || (token_is_identifier_named(self.peek(), "final")
                 && (token_is_identifier_named(self.peek_next(), "class")
                     || token_is_identifier_named(self.peek_next(), "abstract")
-                    || token_is_identifier_named(self.peek_next(), "final")))
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly")))
     }
 
     fn peek_starts_function_decl(&self) -> bool {
@@ -10683,6 +10741,13 @@ fn describe_unexpected_token(token: &Token) -> String {
         TokenKind::Float(value) => format!("floating-point number \"{value}\""),
         TokenKind::Eof => "end of file".to_string(),
         _ => format!("token \"{}\"", token_text(&token.kind)),
+    }
+}
+
+fn class_modifier_unexpected_token_text(token: &Token) -> String {
+    match &token.kind {
+        TokenKind::Identifier(name) => name.clone(),
+        _ => token_text(&token.kind).to_string(),
     }
 }
 
@@ -12951,6 +13016,15 @@ fn import_trait_members_into_class(
     global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     for property in &trait_decl.properties {
+        if class.is_readonly && !property.is_readonly {
+            return Err(Diagnostic::new(
+                format!(
+                    "Readonly class {} cannot use trait with a non-readonly property {}::${}",
+                    class.name, trait_decl.name, property.name
+                ),
+                Some(class.span),
+            ));
+        }
         if let Some(existing) = class
             .properties
             .iter()
@@ -17127,9 +17201,24 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
                     Some(property.span),
                 ));
             }
+            if parent_property.is_readonly != property.is_readonly {
+                let message = if parent_property.is_readonly {
+                    format!(
+                        "Cannot redeclare readonly property {}::${} as non-readonly {}::${}",
+                        parent.name, parent_property.name, class.name, property.name
+                    )
+                } else {
+                    format!(
+                        "Cannot redeclare non-readonly property {}::${} as readonly {}::${}",
+                        parent.name, parent_property.name, class.name, property.name
+                    )
+                };
+                return Err(Diagnostic::new(message, Some(property.span)));
+            }
             if parent_property.set_visibility == parent_property.visibility
                 && !parent_property.has_hooks
                 && property.set_visibility != property.visibility
+                && !(parent_property.is_readonly && property.is_readonly)
             {
                 return Err(Diagnostic::new(
                     format!(

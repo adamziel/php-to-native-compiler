@@ -66933,6 +66933,145 @@ try {
 }
 
 #[test]
+fn parser_rejects_invalid_readonly_modifier_targets() {
+    let cases = [
+        (
+            "<?php class C { readonly function f() {} }",
+            DiagnosticKind::Fatal,
+            "Cannot use the readonly modifier on a method",
+        ),
+        (
+            "<?php class C { readonly const X = 1; }",
+            DiagnosticKind::Fatal,
+            "Cannot use the readonly modifier on a class constant",
+        ),
+        (
+            "<?php readonly readonly class C {}",
+            DiagnosticKind::Fatal,
+            "Multiple readonly modifiers are not allowed",
+        ),
+        (
+            "<?php readonly interface I {}",
+            DiagnosticKind::ParseError,
+            "unexpected token \"interface\"",
+        ),
+        (
+            "<?php class C { public function __construct(public readonly $x) {} }",
+            DiagnosticKind::Fatal,
+            "Readonly property C::$x must have type",
+        ),
+        (
+            "<?php class C { use T { foo as readonly; } }",
+            DiagnosticKind::Fatal,
+            "Cannot use the readonly modifier on a method",
+        ),
+    ];
+
+    for (source, kind, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, kind, "{source}");
+        assert!(
+            error.message.contains(expected),
+            "{source}\n{}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn compile_readonly_override_trait_and_enum_constant_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-override-trait-enum-edges");
+    fs::create_dir_all(&root).unwrap();
+
+    let visibility_input = root.join("readonly-visibility-override.php");
+    let visibility_output = root.join("readonly-visibility-override-bin");
+    fs::write(
+        &visibility_input,
+        "<?php
+class A {
+    protected readonly int $prop;
+    public function __construct() { $this->prop = 42; }
+}
+class B extends A {
+    public readonly int $prop;
+}
+$a = new A();
+try {
+    var_dump($a->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$b = new B();
+var_dump($b->prop);
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &visibility_input,
+        &visibility_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let visibility_execution = Command::new(&visibility_output).output().unwrap();
+    assert!(visibility_execution.status.success());
+    assert_eq!(
+        String::from_utf8(visibility_execution.stdout).unwrap(),
+        "Cannot access protected property A::$prop\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(visibility_execution.stderr).unwrap(), "");
+
+    let trait_input = root.join("readonly-trait-nonreadonly-property.php");
+    let trait_output = root.join("readonly-trait-nonreadonly-property-bin");
+    fs::write(
+        &trait_input,
+        "<?php
+trait T { public $prop; }
+readonly class C { use T; }
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &trait_input,
+        &trait_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let trait_execution = Command::new(&trait_output).output().unwrap();
+    assert!(!trait_execution.status.success());
+    assert_eq!(String::from_utf8(trait_execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(trait_execution.stderr)
+        .unwrap()
+        .contains("Readonly class C cannot use trait with a non-readonly property T::$prop"));
+
+    let enum_input = root.join("enum-constant-error-trace.php");
+    let enum_output = root.join("enum-constant-error-trace-bin");
+    fs::write(
+        &enum_input,
+        "<?php
+enum Foo: string {
+    const Bar = NONEXISTENT;
+}
+var_dump(Foo::Bar);
+",
+    )
+    .unwrap();
+
+    compile_file(&enum_input, &enum_output, CompileOptions { emit_c: false }).unwrap();
+    let enum_execution = Command::new(&enum_output).output().unwrap();
+    assert!(!enum_execution.status.success());
+    assert_eq!(String::from_utf8(enum_execution.stdout).unwrap(), "");
+    let enum_stderr = String::from_utf8(enum_execution.stderr).unwrap();
+    assert!(enum_stderr.contains("Undefined constant \"NONEXISTENT\""));
+    assert!(enum_stderr.contains("#0 {main}"), "{enum_stderr}");
+    assert!(
+        !enum_stderr.contains("[constant expression]()"),
+        "{enum_stderr}"
+    );
+}
+
+#[test]
 fn compile_reflection_new_instance_without_constructor_preserves_readonly_set_visibility_to_native_binary(
 ) {
     let root = temp_dir("ptn-native-reflection-readonly-set-visibility");
