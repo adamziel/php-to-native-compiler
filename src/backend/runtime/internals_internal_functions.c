@@ -22460,8 +22460,12 @@ static PtnArray **ptn_array_collect_variadic_array_args_at(
     const char *function_name,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    int *exceeded_out
 ) {
+    if (exceeded_out != NULL) {
+        *exceeded_out = 0;
+    }
     PtnArray **arrays = NULL;
     if (argc != 0) {
         arrays = malloc(argc * sizeof(PtnArray *));
@@ -22482,6 +22486,9 @@ static PtnArray **ptn_array_collect_variadic_array_args_at(
             line
         );
         if (ptn_array_total_elements_would_exceed_limit(runtime, total, arrays[i]->len, line)) {
+            if (exceeded_out != NULL) {
+                *exceeded_out = 1;
+            }
             return arrays;
         }
         total += arrays[i]->len;
@@ -22491,7 +22498,19 @@ static PtnArray **ptn_array_collect_variadic_array_args_at(
 }
 
 static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(runtime, "array_merge", argc, args, line);
+    int exceeded = 0;
+    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(
+        runtime,
+        "array_merge",
+        argc,
+        args,
+        line,
+        &exceeded
+    );
+    if (exceeded) {
+        free(arrays);
+        return ptn_null();
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < argc; i++) {
         ptn_array_merge_into(result.as.array, arrays[i]);
@@ -22643,7 +22662,19 @@ static void ptn_array_merge_recursive_into(
 }
 
 static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(runtime, "array_merge_recursive", argc, args, line);
+    int exceeded = 0;
+    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(
+        runtime,
+        "array_merge_recursive",
+        argc,
+        args,
+        line,
+        &exceeded
+    );
+    if (exceeded) {
+        free(arrays);
+        return ptn_null();
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {

@@ -45916,7 +45916,10 @@ fn compile_array_total_elements_limit_to_native_binary() {
 $huge = range(0, 1048576);\n\
 echo count($huge), \"\\n\";\n\
 try { array_merge($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { array_diff($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+try { array_merge_recursive($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff_key($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_intersect($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -45928,6 +45931,9 @@ try { array_diff($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "1048577\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
         )
