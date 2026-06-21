@@ -4400,6 +4400,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 continue;
             }
             PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+            if (visibility == PTN_PROPERTY_PRIVATE &&
+                !ptn_property_class_names_equal(target_class_name, declaring_class)) {
+                free(key);
+                lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                continue;
+            }
             if (
                 enforce_visibility &&
                 !ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)
@@ -4475,6 +4481,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                     continue;
                 }
                 PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+                if (visibility == PTN_PROPERTY_PRIVATE &&
+                    !ptn_property_class_names_equal(target_class_name, declaring_class)) {
+                    free(key);
+                    lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                    continue;
+                }
                 if (
                     enforce_visibility &&
                     !ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)

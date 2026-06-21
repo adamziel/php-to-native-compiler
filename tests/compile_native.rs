@@ -6005,11 +6005,18 @@ fn parser_accepts_semi_reserved_class_constant_names() {
 
 #[test]
 fn parser_rejects_unsupported_class_constant_boundaries() {
-    let cases = [(
-        "dynamic constant expression",
-        "<?php $foo = 'test'; const C = $foo::BAR;",
-        "Dynamic class names are not allowed in compile-time class constant references",
-    )];
+    let cases = [
+        (
+            "dynamic constant expression",
+            "<?php $foo = 'test'; const C = $foo::BAR;",
+            "Dynamic class names are not allowed in compile-time class constant references",
+        ),
+        (
+            "static class constant declaration",
+            "<?php class StaticConstantBox { static const X = 1; }",
+            "Cannot use the static modifier on a class constant",
+        ),
+    ];
 
     for (name, source, message) in cases {
         let error = parser::parse(source).unwrap_err();
@@ -25349,6 +25356,57 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
 }
 
 #[test]
+fn compile_reflection_constant_rejects_missing_global_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-constant-missing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-constant-missing.php");
+    let output = root.join("reflection-constant-missing-bin");
+    fs::write(
+        &input,
+        "<?php
+const REFLECT_OK_CONST = 1;
+
+class ReflectClassConstantBox {
+    public const VALUE = 2;
+}
+
+try {
+    new ReflectionConstant(\"REFLECT_MISSING_CONST\");
+} catch (ReflectionException $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+
+try {
+    new ReflectionConstant(\"ReflectClassConstantBox::VALUE\");
+} catch (ReflectionException $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+
+var_dump((new ReflectionConstant(\"\\\\REFLECT_OK_CONST\"))->getName());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ReflectionException: Constant \"REFLECT_MISSING_CONST\" does not exist\n",
+            "ReflectionException: Constant \"ReflectClassConstantBox::VALUE\" does not exist\n",
+            "string(17) \"\\REFLECT_OK_CONST\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Constant \\\"%s\\\" does not exist"));
+    assert!(c_source.contains("ptn_reflection_constant_new"));
+}
+
+#[test]
 fn compile_reflection_parameter_type_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-parameter-type-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -26249,6 +26307,95 @@ var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECT
     assert!(c_source.contains("ptn_declared_class_reflection_constants"));
     assert!(c_source.contains("ptn_declared_class_reflection_constant_modifiers"));
     assert!(c_source.contains("ptn_declared_class_reflection_constant_is_deprecated"));
+}
+
+#[test]
+fn compile_inherited_private_class_constants_are_not_child_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-private-class-constant-inheritance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-class-constant-inheritance.php");
+    let output = root.join("private-class-constant-inheritance-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstantPrivateBase {
+    public const PUB = 1;
+    protected const PROT = 2;
+    private const PRIV = 3;
+
+    public static function baseDefined() {
+        var_dump(defined(\"ConstantPrivateBase::PRIV\"));
+    }
+}
+
+class ConstantPrivateChild extends ConstantPrivateBase {
+    public static function childDefined() {
+        var_dump(defined(\"ConstantPrivateChild::PUB\"));
+        var_dump(defined(\"ConstantPrivateChild::PROT\"));
+        var_dump(defined(\"ConstantPrivateChild::PRIV\"));
+        var_dump(defined(\"ConstantPrivateBase::PRIV\"));
+    }
+
+    public static function checkConstants() {
+        var_dump(self::PUB);
+        var_dump(self::PROT);
+        try {
+            var_dump(self::PRIV);
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+}
+
+var_dump(defined(\"ConstantPrivateBase::PUB\"));
+var_dump(defined(\"ConstantPrivateBase::PROT\"));
+var_dump(defined(\"ConstantPrivateBase::PRIV\"));
+ConstantPrivateBase::baseDefined();
+ConstantPrivateChild::childDefined();
+ConstantPrivateChild::checkConstants();
+
+try {
+    var_dump(ConstantPrivateChild::PRIV);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump(ConstantPrivateBase::PRIV);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "Undefined constant ConstantPrivateChild::PRIV\n",
+            "Undefined constant ConstantPrivateChild::PRIV\n",
+            "Cannot access private constant ConstantPrivateBase::PRIV\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope"));
+    assert!(c_source.contains("ptn_runtime_constant_is_defined"));
 }
 
 #[test]

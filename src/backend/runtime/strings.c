@@ -2964,21 +2964,40 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         free(class_name);
         return 0;
     }
-    const char *lookup_class_name = ptn_declared_class_canonical_name(resolved_class_name);
+    const char *target_class_name = ptn_declared_class_canonical_name(resolved_class_name);
+    const char *lookup_class_name = target_class_name;
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     while (lookup_class_name != NULL) {
         const char *metadata_declaring_class = lookup_class_name;
         int metadata_visibility_int = (int)PTN_PROPERTY_PUBLIC;
-        (void)metadata_visibility_int;
         int lookup_has_metadata = ptn_declared_class_constant_metadata(
             lookup_class_name,
             constant_name,
             &metadata_declaring_class,
             &metadata_visibility_int
         );
-        (void)lookup_has_metadata;
         char *key = ptn_class_constant_key(metadata_declaring_class, constant_name);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+            const char *declaring_class = lookup_has_metadata ? metadata_declaring_class : lookup_class_name;
+            int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
+            if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+                free(key);
+                lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                continue;
+            }
+            PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+            if (visibility == PTN_PROPERTY_PRIVATE &&
+                !ptn_property_class_names_equal(target_class_name, declaring_class)) {
+                free(key);
+                lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                continue;
+            }
+            if (!ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
+                free(key);
+                free(class_name);
+                return 0;
+            }
             *out = ptn_value_borrow(value);
             free(key);
             free(class_name);
@@ -2992,6 +3011,25 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
                 return 0;
             }
             if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+                const char *declaring_class = lookup_has_metadata ? metadata_declaring_class : lookup_class_name;
+                int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
+                if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+                    free(key);
+                    lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                    continue;
+                }
+                PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+                if (visibility == PTN_PROPERTY_PRIVATE &&
+                    !ptn_property_class_names_equal(target_class_name, declaring_class)) {
+                    free(key);
+                    lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
+                    continue;
+                }
+                if (!ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
+                    free(key);
+                    free(class_name);
+                    return 0;
+                }
                 *out = ptn_value_borrow(value);
                 free(key);
                 free(class_name);

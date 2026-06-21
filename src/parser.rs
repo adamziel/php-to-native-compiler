@@ -2286,7 +2286,7 @@ impl Parser<'_> {
             }
             if modifiers.is_static {
                 return Err(Diagnostic::new(
-                    "static class constants are unsupported",
+                    "Cannot use the static modifier on a class constant",
                     Some(self.peek().span),
                 ));
             }
@@ -16431,7 +16431,7 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
                             "{}::{} cannot override final constant {}::{}",
                             class.name, constant.name, parent.name, parent_constant.name
                         ),
-                        Some(constant.span),
+                        Some(class.span),
                     ));
                 }
                 if visibility_rank(constant.visibility)
@@ -16451,7 +16451,7 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
                             parent.name,
                             suffix
                         ),
-                        Some(constant.span),
+                        Some(class.span),
                     ));
                 }
                 break;
@@ -16480,7 +16480,7 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
                             property_visibility_name(interface_constant.visibility),
                             interface.name
                         ),
-                        Some(constant.span),
+                        Some(class.span),
                     ));
                 }
             }

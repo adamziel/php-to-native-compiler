@@ -91906,6 +91906,25 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_new(
     }
     char *owned_name = ptn_duplicate_string_len(name.data, name.len);
     ptn_string_operand_free(name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(owned_name);
+    PtnValue constant_value;
+    if (strstr(lookup_name, "::") != NULL ||
+        !ptn_runtime_constant_value(runtime, lookup_name, &constant_value)) {
+        int needed = snprintf(NULL, 0, "Constant \"%s\" does not exist", owned_name);
+        if (needed < 0) {
+            free(owned_name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(owned_name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Constant \"%s\" does not exist", owned_name);
+        free(owned_name);
+        ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
     PtnValue object = ptn_reflection_constant_object_from_name(runtime, owned_name);
     free(owned_name);
     return object;

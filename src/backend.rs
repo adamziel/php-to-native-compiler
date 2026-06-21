@@ -36580,18 +36580,11 @@ impl ValueEmitter {
                     out.push_str(");\n");
                     out.push_str("    }\n");
                 } else {
-                    if class_name.eq_ignore_ascii_case("self") {
-                        out.push_str(" = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"");
-                    } else {
-                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
-                    }
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
                     out.push_str(&c_string(&resolved_class_name));
                     out.push_str("\", \"");
                     out.push_str(&c_string(name));
                     out.push_str("\", ");
-                    if class_name.eq_ignore_ascii_case("self") {
-                        out.push_str("\"self\", ");
-                    }
                     self.emit_access_scope(out);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
@@ -36677,20 +36670,11 @@ impl ValueEmitter {
                 out.push_str("    } else {\n");
                 out.push_str("        ");
                 out.push_str(&result_temp);
-                if class_name.eq_ignore_ascii_case("self") {
-                    out.push_str(
-                        " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
-                    );
-                } else {
-                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
-                }
+                out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                if class_name.eq_ignore_ascii_case("self") {
-                    out.push_str("\"self\", ");
-                }
                 self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
