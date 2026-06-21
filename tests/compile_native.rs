@@ -29945,6 +29945,83 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_libxml_external_entity_loader_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-external-entity-loader");
+    fs::create_dir_all(&root).unwrap();
+    let dtd_file = root.join("external.dtd");
+    let input = root.join("libxml-external-entity-loader.php");
+    let output = root.join("libxml-external-entity-loader-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$dtdFile = {};
+$dtd = '<!ELEMENT foo (#PCDATA)>';
+$xml = '<!DOCTYPE foo PUBLIC "-//FOO/BAR" "http://example.com/foobar"><foo>bar</foo>';
+
+var_dump(libxml_get_external_entity_loader());
+libxml_set_external_entity_loader(function ($public, $system, $context) use ($dtd) {{
+    var_dump($public, $system, $context['directory'], $context['intSubName']);
+    $stream = fopen('php://temp', 'r+');
+    fwrite($stream, $dtd);
+    rewind($stream);
+    return $stream;
+}});
+var_dump(is_callable(libxml_get_external_entity_loader()));
+
+$doc = new DOMDocument();
+$doc->loadXML($xml);
+var_dump($doc->validate());
+
+libxml_set_external_entity_loader(function ($public, $system, $context) {{
+    return null;
+}});
+var_dump($doc->validate());
+
+libxml_set_external_entity_loader(null);
+file_put_contents($dtdFile, $dtd);
+$local = new DOMDocument();
+$local->loadXML('<!DOCTYPE foo SYSTEM "' . $dtdFile . '"><foo>bar</foo>');
+var_dump($local->validate());
+var_dump(libxml_get_external_entity_loader());
+"#,
+            php_string_literal(&dtd_file)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("NULL\nbool(true)\n"), "{stdout}");
+    assert!(stdout.contains("string(10) \"-//FOO/BAR\"\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(25) \"http://example.com/foobar\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("DOMDocument::validate(): Failed to load external entity \"-//FOO/BAR\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("DOMDocument::validate(): Could not load the external subset \"http://example.com/foobar\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nbool(true)\nNULL\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_libxml_set_external_entity_loader"));
+    assert!(c_source.contains("ptn_dom_validate_external_subset"));
+}
+
+#[test]
 fn compile_xmlreader_default_attributes_to_native_binary() {
     let root = temp_dir("ptn-native-xmlreader-default-attributes");
     fs::create_dir_all(&root).unwrap();

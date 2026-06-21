@@ -72825,6 +72825,476 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos) {
     return result;
 }
 
+static int ptn_libxml_external_entity_loader_is_configured = 0;
+static PtnValue ptn_libxml_external_entity_loader;
+
+typedef void *PtnLibxml2DocPtr;
+typedef void *PtnLibxml2ValidCtxtPtr;
+typedef void *PtnLibxml2ParserCtxtPtr;
+typedef void *PtnLibxml2ParserInputPtr;
+typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
+
+typedef struct {
+    int attempted;
+    int available;
+    void *handle;
+    PtnLibxml2DocPtr (*xmlReadMemory)(const char *, int, const char *, const char *, int);
+    void (*xmlFreeDoc)(PtnLibxml2DocPtr);
+    PtnLibxml2ValidCtxtPtr (*xmlNewValidCtxt)(void);
+    void (*xmlFreeValidCtxt)(PtnLibxml2ValidCtxtPtr);
+    int (*xmlValidateDocument)(PtnLibxml2ValidCtxtPtr, PtnLibxml2DocPtr);
+    PtnLibxml2ExternalEntityLoader (*xmlGetExternalEntityLoader)(void);
+    void (*xmlSetExternalEntityLoader)(PtnLibxml2ExternalEntityLoader);
+    PtnLibxml2ParserInputPtr (*xmlNewStringInputStream)(PtnLibxml2ParserCtxtPtr, const unsigned char *);
+    void (*xmlSetGenericErrorFunc)(void *, void (*)(void *, const char *, ...));
+} PtnLibxml2Api;
+
+typedef struct {
+    PtnRuntime *runtime;
+    PtnXmlNode *document;
+    PtnXmlNode *doctype;
+    int include_document_context;
+    size_t line;
+    PtnLibxml2Api *api;
+    int returned_null;
+    int callback_exception;
+    char **owned_inputs;
+    size_t owned_input_count;
+    size_t owned_input_capacity;
+} PtnLibxml2LoaderBridgeState;
+
+static PtnLibxml2Api ptn_libxml2_api = {0};
+static PtnLibxml2LoaderBridgeState *ptn_libxml2_active_loader_bridge = NULL;
+
+static void ptn_libxml_external_entity_loader_reset(void) {
+    if (ptn_libxml_external_entity_loader_is_configured) {
+        ptn_value_destroy(&ptn_libxml_external_entity_loader);
+        ptn_libxml_external_entity_loader_is_configured = 0;
+    }
+}
+
+static char *ptn_libxml_source_directory_or_dot(PtnRuntime *runtime) {
+    char *directory = ptn_runtime_source_dir_alloc(runtime);
+    if (directory != NULL) {
+        return directory;
+    }
+    return ptn_duplicate_string(".");
+}
+
+static int ptn_dom_document_external_context_enabled(PtnXmlNode *document) {
+    if (document == NULL || document->object == NULL) {
+        return 0;
+    }
+    PtnValue value = ptn_null();
+    if (ptn_xml_object_stored_property_read(document->object, "resolveExternals", &value)) {
+        int enabled = ptn_is_truthy(value);
+        ptn_value_destroy(&value);
+        if (enabled) {
+            return 1;
+        }
+    }
+    if (ptn_xml_object_stored_property_read(document->object, "substituteEntities", &value)) {
+        int enabled = ptn_is_truthy(value);
+        ptn_value_destroy(&value);
+        if (enabled) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_libxml_external_entity_context(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    PtnXmlNode *doctype,
+    int include_document_context
+) {
+    PtnValue context = ptn_array_from_literal_entries(0, NULL);
+    if (!include_document_context || document == NULL || doctype == NULL) {
+        ptn_array_set_entry(context.as.array, ptn_array_string_key("directory"), ptn_null());
+        ptn_array_set_entry(context.as.array, ptn_array_string_key("intSubName"), ptn_null());
+        ptn_array_set_entry(context.as.array, ptn_array_string_key("extSubURI"), ptn_null());
+        ptn_array_set_entry(context.as.array, ptn_array_string_key("extSubSystem"), ptn_null());
+        return context;
+    }
+    char *directory = ptn_libxml_source_directory_or_dot(runtime);
+    ptn_array_set_entry(context.as.array, ptn_array_string_key("directory"), ptn_owned_string(directory));
+    ptn_array_set_entry(
+        context.as.array,
+        ptn_array_string_key("intSubName"),
+        doctype->name != NULL && doctype->name[0] != '\0'
+            ? ptn_owned_string(ptn_duplicate_string(doctype->name))
+            : ptn_null()
+    );
+    ptn_array_set_entry(
+        context.as.array,
+        ptn_array_string_key("extSubURI"),
+        doctype->system_id != NULL && doctype->system_id[0] != '\0'
+            ? ptn_owned_string(ptn_duplicate_string(doctype->system_id))
+            : ptn_null()
+    );
+    ptn_array_set_entry(
+        context.as.array,
+        ptn_array_string_key("extSubSystem"),
+        doctype->public_id != NULL && doctype->public_id[0] != '\0'
+            ? ptn_owned_string(ptn_duplicate_string(doctype->public_id))
+            : ptn_null()
+    );
+    return context;
+}
+
+static PtnValue ptn_libxml_external_entity_arg(const char *value) {
+    return value != NULL && value[0] != '\0'
+        ? ptn_owned_string(ptn_duplicate_string(value))
+        : ptn_null();
+}
+
+static void ptn_libxml2_generic_error_noop(void *ctx, const char *message, ...) {
+    (void)ctx;
+    (void)message;
+}
+
+static int ptn_libxml2_load_symbol(void *handle, const char *name, void *out, size_t out_size) {
+#if defined(_WIN32)
+    (void)handle;
+    (void)name;
+    (void)out;
+    (void)out_size;
+    return 0;
+#else
+    void *symbol = handle == NULL ? NULL : dlsym(handle, name);
+    if (symbol == NULL) {
+        return 0;
+    }
+    memcpy(out, &symbol, out_size);
+    return 1;
+#endif
+}
+
+static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
+    api->available = 0;
+#define PTN_LIBXML2_LOAD_REQUIRED(field, symbol) \
+    do { \
+        if (!ptn_libxml2_load_symbol(api->handle, symbol, &api->field, sizeof(api->field))) { \
+            return; \
+        } \
+    } while (0)
+#define PTN_LIBXML2_LOAD_OPTIONAL(field, symbol) \
+    do { \
+        (void)ptn_libxml2_load_symbol(api->handle, symbol, &api->field, sizeof(api->field)); \
+    } while (0)
+    PTN_LIBXML2_LOAD_REQUIRED(xmlReadMemory, "xmlReadMemory");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlFreeDoc, "xmlFreeDoc");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlNewValidCtxt, "xmlNewValidCtxt");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlFreeValidCtxt, "xmlFreeValidCtxt");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlValidateDocument, "xmlValidateDocument");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlGetExternalEntityLoader, "xmlGetExternalEntityLoader");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlSetExternalEntityLoader, "xmlSetExternalEntityLoader");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlNewStringInputStream, "xmlNewStringInputStream");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSetGenericErrorFunc, "xmlSetGenericErrorFunc");
+    api->available = 1;
+#undef PTN_LIBXML2_LOAD_REQUIRED
+#undef PTN_LIBXML2_LOAD_OPTIONAL
+}
+
+static void *ptn_libxml2_open_known_name(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    const char *env_library = getenv("PTN_LIBXML2_LIBRARY");
+    const char *names[] = {
+        env_library == NULL ? "" : env_library,
+#ifdef PTN_LIBXML2_DEFAULT_LIBRARY
+        PTN_LIBXML2_DEFAULT_LIBRARY,
+#endif
+        "libxml2.so.2",
+        "libxml2.so",
+        NULL
+    };
+    for (size_t i = 0; names[i] != NULL; i++) {
+        if (names[i][0] == '\0') {
+            continue;
+        }
+        void *handle = dlopen(names[i], RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+#endif
+}
+
+static void *ptn_libxml2_open_nix_store(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    glob_t matches;
+    memset(&matches, 0, sizeof(matches));
+    void *handle = NULL;
+    if (glob("/nix/store/*-libxml2-*/lib/libxml2.so", 0, NULL, &matches) == 0) {
+        for (size_t i = 0; i < matches.gl_pathc; i++) {
+            handle = dlopen(matches.gl_pathv[i], RTLD_LAZY | RTLD_LOCAL);
+            if (handle != NULL) {
+                break;
+            }
+        }
+    }
+    globfree(&matches);
+    return handle;
+#endif
+}
+
+static PtnLibxml2Api *ptn_libxml2_api_load(void) {
+    if (ptn_libxml2_api.attempted) {
+        return ptn_libxml2_api.available ? &ptn_libxml2_api : NULL;
+    }
+    ptn_libxml2_api.attempted = 1;
+    ptn_libxml2_api.handle = ptn_libxml2_open_known_name();
+    if (ptn_libxml2_api.handle == NULL) {
+        ptn_libxml2_api.handle = ptn_libxml2_open_nix_store();
+    }
+    ptn_libxml2_load_function_symbols(&ptn_libxml2_api);
+    return ptn_libxml2_api.available ? &ptn_libxml2_api : NULL;
+}
+
+static void ptn_libxml2_bridge_state_append_input(PtnLibxml2LoaderBridgeState *state, char *input) {
+    if (state->owned_input_count == state->owned_input_capacity) {
+        size_t new_capacity = state->owned_input_capacity == 0 ? 4 : state->owned_input_capacity * 2;
+        if (new_capacity < state->owned_input_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_inputs = realloc(state->owned_inputs, new_capacity * sizeof(char *));
+        if (new_inputs == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        state->owned_inputs = new_inputs;
+        state->owned_input_capacity = new_capacity;
+    }
+    state->owned_inputs[state->owned_input_count++] = input;
+}
+
+static void ptn_libxml2_bridge_state_free_inputs(PtnLibxml2LoaderBridgeState *state) {
+    for (size_t i = 0; i < state->owned_input_count; i++) {
+        free(state->owned_inputs[i]);
+    }
+    free(state->owned_inputs);
+    state->owned_inputs = NULL;
+    state->owned_input_count = 0;
+    state->owned_input_capacity = 0;
+}
+
+static int ptn_libxml_external_entity_result_bytes(
+    PtnRuntime *runtime,
+    PtnValue result,
+    char **data_out,
+    size_t *len_out,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(result);
+    if (resolved.type == PTN_RESOURCE && ptn_stream_resource_is_open(resolved.as.resource)) {
+        PtnValue contents = ptn_stream_read_remaining(
+            runtime,
+            "libxml external entity loader",
+            resolved.as.resource,
+            -1,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&contents);
+            return 0;
+        }
+        PtnValue contents_value = ptn_value_deref(contents);
+        if (contents_value.type != PTN_STRING) {
+            ptn_value_destroy(&contents);
+            return 0;
+        }
+        *data_out = ptn_duplicate_string_len((const char *)contents_value.as.string.data, contents_value.as.string.len);
+        *len_out = contents_value.as.string.len;
+        ptn_value_destroy(&contents);
+        return 1;
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, result, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return 0;
+    }
+    *data_out = ptn_duplicate_string_len(string.data, string.len);
+    *len_out = string.len;
+    ptn_string_operand_free(string);
+    return 1;
+}
+
+static int ptn_libxml_call_external_entity_loader(
+    PtnRuntime *runtime,
+    const char *public_id,
+    const char *system_id,
+    PtnValue context,
+    size_t line,
+    char **data_out,
+    size_t *len_out,
+    int *returned_null_out
+) {
+    *data_out = NULL;
+    *len_out = 0;
+    *returned_null_out = 0;
+    if (!ptn_libxml_external_entity_loader_is_configured) {
+        ptn_value_destroy(&context);
+        return 0;
+    }
+    PtnValue callback_args[3] = {
+        ptn_libxml_external_entity_arg(public_id),
+        ptn_libxml_external_entity_arg(system_id),
+        context
+    };
+    PtnValue result = ptn_null();
+    int callback_ok = ptn_internal_call_callback_capturing_exception(
+        runtime,
+        ptn_libxml_external_entity_loader,
+        3,
+        callback_args,
+        line,
+        &result
+    );
+    for (size_t i = 0; i < 3; i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+    if (!callback_ok || runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    if (ptn_value_deref(result).type == PTN_NULL) {
+        *returned_null_out = 1;
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    int ok = ptn_libxml_external_entity_result_bytes(runtime, result, data_out, len_out, line);
+    ptn_value_destroy(&result);
+    return ok;
+}
+
+static PtnLibxml2ParserInputPtr ptn_libxml2_external_entity_loader_bridge(
+    const char *url,
+    const char *id,
+    PtnLibxml2ParserCtxtPtr context
+) {
+    PtnLibxml2LoaderBridgeState *state = ptn_libxml2_active_loader_bridge;
+    if (state == NULL || state->api == NULL || state->api->xmlNewStringInputStream == NULL) {
+        return NULL;
+    }
+    char *data = NULL;
+    size_t len = 0;
+    int returned_null = 0;
+    int ok = ptn_libxml_call_external_entity_loader(
+        state->runtime,
+        id,
+        url,
+        ptn_libxml_external_entity_context(state->runtime, state->document, state->doctype, state->include_document_context),
+        state->line,
+        &data,
+        &len,
+        &returned_null
+    );
+    if (returned_null) {
+        state->returned_null = 1;
+    }
+    if (state->runtime->exceptions->active_exception != NULL) {
+        state->callback_exception = 1;
+    }
+    if (!ok || data == NULL) {
+        free(data);
+        return NULL;
+    }
+    (void)len;
+    ptn_libxml2_bridge_state_append_input(state, data);
+    return state->api->xmlNewStringInputStream(context, (const unsigned char *)data);
+}
+
+static int ptn_dom_validate_external_subset(PtnRuntime *runtime, PtnXmlNode *document, size_t line) {
+    PtnXmlNode *element = ptn_xml_document_element(document);
+    if (element == NULL) {
+        return 0;
+    }
+    PtnXmlNode *doctype = ptn_xml_document_doctype(document);
+    if (doctype == NULL || doctype->system_id == NULL || doctype->system_id[0] == '\0') {
+        return 1;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL) {
+        return 0;
+    }
+    PtnValue serialized = ptn_xml_serialized_value(runtime, document, 1, line);
+    PtnValue serialized_value = ptn_value_deref(serialized);
+    if (serialized_value.type != PTN_STRING || serialized_value.as.string.len > (size_t)INT_MAX) {
+        ptn_value_destroy(&serialized);
+        return 0;
+    }
+    PtnLibxml2ExternalEntityLoader previous_loader = NULL;
+    PtnLibxml2LoaderBridgeState bridge_state;
+    memset(&bridge_state, 0, sizeof(bridge_state));
+    bridge_state.runtime = runtime;
+    bridge_state.document = document;
+    bridge_state.doctype = doctype;
+    bridge_state.include_document_context = ptn_dom_document_external_context_enabled(document);
+    bridge_state.line = line;
+    bridge_state.api = api;
+    if (ptn_libxml_external_entity_loader_is_configured) {
+        previous_loader = api->xmlGetExternalEntityLoader();
+        ptn_libxml2_active_loader_bridge = &bridge_state;
+        api->xmlSetExternalEntityLoader(ptn_libxml2_external_entity_loader_bridge);
+    }
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    PtnLibxml2DocPtr doc = api->xmlReadMemory(
+        (const char *)serialized_value.as.string.data,
+        (int)serialized_value.as.string.len,
+        runtime->source_path,
+        NULL,
+        0
+    );
+    PtnLibxml2ValidCtxtPtr valid = doc == NULL ? NULL : api->xmlNewValidCtxt();
+    int ok = (doc != NULL && valid != NULL) ? api->xmlValidateDocument(valid, doc) : 0;
+    if (valid != NULL) {
+        api->xmlFreeValidCtxt(valid);
+    }
+    if (doc != NULL) {
+        api->xmlFreeDoc(doc);
+    }
+    if (ptn_libxml_external_entity_loader_is_configured) {
+        api->xmlSetExternalEntityLoader(previous_loader);
+        ptn_libxml2_active_loader_bridge = NULL;
+    }
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    ptn_libxml2_bridge_state_free_inputs(&bridge_state);
+    ptn_value_destroy(&serialized);
+    if (bridge_state.callback_exception || runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+        return 0;
+    }
+    if (!ok && bridge_state.returned_null) {
+        char message[256];
+        snprintf(
+            message,
+            sizeof(message),
+            "DOMDocument::validate(): Failed to load external entity \"%s\"",
+            doctype->public_id != NULL && doctype->public_id[0] != '\0'
+                ? doctype->public_id
+                : (doctype->system_id == NULL ? "" : doctype->system_id)
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        snprintf(
+            message,
+            sizeof(message),
+            "DOMDocument::validate(): Could not load the external subset \"%s\"",
+            doctype->system_id == NULL ? "" : doctype->system_id
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+    return ok;
+}
+
 static void ptn_xml_element_add_attribute(PtnXmlNode *element, PtnXmlNode *attr) {
     if (element == NULL || attr == NULL) {
         return;
@@ -74601,6 +75071,46 @@ static PtnValue ptn_dom_load_html_file_method(PtnRuntime *runtime, PtnValue rece
     unsigned char *data = NULL;
     size_t data_len = 0;
     int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0 && ptn_libxml_external_entity_loader_is_configured) {
+        free(data);
+        data = NULL;
+        char *loader_data = NULL;
+        size_t loader_len = 0;
+        int returned_null = 0;
+        int resolved = ptn_libxml_call_external_entity_loader(
+            runtime,
+            NULL,
+            path,
+            ptn_libxml_external_entity_context(runtime, NULL, NULL, 0),
+            line,
+            &loader_data,
+            &loader_len,
+            &returned_null
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            free(loader_data);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
+        if (!resolved) {
+            free(path);
+            free(loader_data);
+            if (returned_null) {
+                ptn_emit_warning(
+                    &runtime->diagnostics,
+                    "DOMDocument::loadHTMLFile(): Failed to load external entity because the resolver function returned null",
+                    line
+                );
+            } else {
+                ptn_emit_warning(&runtime->diagnostics, "DOMDocument::loadHTMLFile(): I/O warning : failed to load external entity", line);
+            }
+            return ptn_bool(0);
+        }
+        data = (unsigned char *)loader_data;
+        data_len = loader_len;
+        read_result = 1;
+    }
     free(path);
     if (read_result <= 0) {
         free(data);
@@ -75130,7 +75640,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (argc != 0) {
             return ptn_dom_throw_count(runtime, "DOMDocument::validate", "exactly 0 arguments", argc);
         }
-        return ptn_bool(ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        return ptn_bool(ptn_dom_validate_external_subset(runtime, ptn_xml_node_data(receiver), line));
     }
     if (ptn_ascii_case_equal(name, "schemaValidate") ||
         ptn_ascii_case_equal(name, "relaxNGValidate")) {
@@ -79727,6 +80237,42 @@ static PtnValue ptn_internal_libxml_clear_errors(PtnRuntime *runtime, size_t arg
     (void)args;
     (void)line;
     return ptn_null();
+}
+
+static PtnValue ptn_internal_libxml_get_external_entity_loader(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_DOM_TREE));
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_libxml_external_entity_loader_is_configured
+        ? ptn_value_clone_deref(ptn_libxml_external_entity_loader)
+        : ptn_null();
+}
+
+static PtnValue ptn_internal_libxml_set_external_entity_loader(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_DOM_TREE));
+    (void)argc;
+    (void)line;
+    if (ptn_value_deref(args[0]).type == PTN_NULL) {
+        ptn_libxml_external_entity_loader_reset();
+        return ptn_bool(1);
+    }
+    PtnValue checked = ptn_internal_expect_callback_arg_impl(
+        runtime,
+        "libxml_set_external_entity_loader",
+        1,
+        "resolver_function",
+        args[0],
+        1
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_libxml_external_entity_loader_reset();
+    ptn_libxml_external_entity_loader = checked;
+    ptn_libxml_external_entity_loader_is_configured = 1;
+    return ptn_bool(1);
 }
 
 static void ptn_reflection_modifier_names_append(PtnValue result, int64_t *index, const char *name) {
@@ -84626,7 +85172,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "levenshtein", 2, 5, ptn_internal_levenshtein },
         { "libxml_clear_errors", 0, 0, ptn_internal_libxml_clear_errors },
         { "libxml_get_errors", 0, 0, ptn_internal_libxml_get_errors },
+        { "libxml_get_external_entity_loader", 0, 0, ptn_internal_libxml_get_external_entity_loader },
         { "libxml_get_last_error", 0, 0, ptn_internal_libxml_get_last_error },
+        { "libxml_set_external_entity_loader", 1, 1, ptn_internal_libxml_set_external_entity_loader },
         { "libxml_use_internal_errors", 0, 1, ptn_internal_libxml_use_internal_errors },
         { "link", 2, 2, ptn_internal_link },
         { "linkinfo", 1, 1, ptn_internal_linkinfo },
