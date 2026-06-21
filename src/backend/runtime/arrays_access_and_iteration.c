@@ -1714,7 +1714,8 @@ static PTN_UNUSED void ptn_validate_property_write_receiver(
     const char *property,
     size_t line
 ) {
-    if (ptn_value_deref(receiver).type != PTN_OBJECT) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
     }
 }
@@ -1725,7 +1726,8 @@ static PTN_UNUSED void ptn_validate_property_modify_receiver(
     const char *property,
     size_t line
 ) {
-    if (ptn_value_deref(receiver).type != PTN_OBJECT) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
     }
 }
@@ -1736,7 +1738,8 @@ static PTN_UNUSED void ptn_validate_property_increment_receiver(
     const char *property,
     size_t line
 ) {
-    if (ptn_value_deref(receiver).type != PTN_OBJECT) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_increment_on_non_object(runtime, property, receiver, line);
     }
 }
@@ -4188,7 +4191,72 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     return NULL;
 }
 
-static PTN_UNUSED int ptn_exception_public_property_read(
+static PTN_UNUSED void ptn_emit_undefined_exception_property_warning(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    const char *property,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Undefined property: %s::$%s",
+        exception->class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
+    ptn_diagnostic_printf(
+        &runtime->diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_emit_dynamic_exception_property_deprecation(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    const char *property,
+    size_t line
+) {
+    if (runtime == NULL ||
+        exception == NULL ||
+        ptn_object_class_allows_dynamic_properties(runtime, exception->class_name) ||
+        !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Creation of dynamic property %s::$%s is deprecated",
+        exception->class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_deprecation(runtime, message, line);
+}
+
+static PTN_UNUSED int ptn_exception_property_read(
     PtnValue receiver,
     const char *property,
     PtnValue *out
@@ -4210,7 +4278,46 @@ static PTN_UNUSED int ptn_exception_public_property_read(
         *out = ptn_value_clone_deref(receiver.as.exception->soap_fault_headerfault);
         return 1;
     }
+    if (
+        receiver.type == PTN_EXCEPTION &&
+        receiver.as.exception->dynamic_properties.type == PTN_ARRAY
+    ) {
+        PtnArrayKey key = ptn_array_string_key(property);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(
+            receiver.as.exception->dynamic_properties.as.array,
+            key
+        );
+        ptn_array_key_free(key);
+        if (entry != NULL) {
+            *out = ptn_value_clone_deref(entry->value);
+            return 1;
+        }
+    }
     return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_write_dynamic_property(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    const char *property,
+    PtnValue value,
+    size_t line
+) {
+    if (exception == NULL || exception->dynamic_properties.type != PTN_ARRAY) {
+        return ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key(property);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(
+        exception->dynamic_properties.as.array,
+        key
+    );
+    if (entry == NULL) {
+        ptn_emit_dynamic_exception_property_deprecation(runtime, exception, property, line);
+    }
+    PtnValue stored = ptn_value_clone_deref(value);
+    PtnValue result = ptn_value_clone(stored);
+    ptn_array_set_entry_publish_first(exception->dynamic_properties.as.array, key, stored);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_object_read_property(
@@ -4222,8 +4329,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
 ) {
     receiver = ptn_value_deref(receiver);
     PtnValue exception_property = ptn_null();
-    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+    if (ptn_exception_property_read(receiver, property, &exception_property)) {
         return exception_property;
+    }
+    if (receiver.type == PTN_EXCEPTION) {
+        ptn_emit_undefined_exception_property_warning(runtime, receiver.as.exception, property, line);
+        return ptn_null();
     }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
@@ -4720,8 +4831,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
 ) {
     receiver = ptn_value_deref(receiver);
     PtnValue exception_property = ptn_null();
-    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+    if (ptn_exception_property_read(receiver, property, &exception_property)) {
         return exception_property;
+    }
+    if (receiver.type == PTN_EXCEPTION) {
+        ptn_emit_undefined_exception_property_warning(runtime, receiver.as.exception, property, line);
+        return ptn_null();
     }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
@@ -4801,7 +4916,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
 ) {
     receiver = ptn_value_deref(receiver);
     PtnValue exception_property = ptn_null();
-    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+    if (ptn_exception_property_read(receiver, property, &exception_property)) {
         return ptn_lookup_found(exception_property);
     }
     if (receiver.type != PTN_OBJECT) {
@@ -4882,7 +4997,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
 ) {
     receiver = ptn_value_deref(receiver);
     PtnValue exception_property = ptn_null();
-    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+    if (ptn_exception_property_read(receiver, property, &exception_property)) {
         return ptn_lookup_found(exception_property);
     }
     if (receiver.type != PTN_OBJECT) {
@@ -4940,7 +5055,7 @@ static PTN_UNUSED int ptn_object_property_is_set(
 ) {
     receiver = ptn_value_deref(receiver);
     PtnValue exception_property = ptn_null();
-    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+    if (ptn_exception_property_read(receiver, property, &exception_property)) {
         int is_set = ptn_value_deref(exception_property).type != PTN_NULL;
         ptn_value_destroy(&exception_property);
         return is_set;
@@ -5020,6 +5135,15 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     int indirect_write
 ) {
     receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        return ptn_exception_write_dynamic_property(
+            runtime,
+            receiver.as.exception,
+            property,
+            value,
+            line
+        );
+    }
     if (receiver.type != PTN_OBJECT) {
         if (indirect_write) {
             ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);

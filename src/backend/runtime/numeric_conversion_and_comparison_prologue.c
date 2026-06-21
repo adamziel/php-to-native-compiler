@@ -1702,6 +1702,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->trace = ptn_exception_capture_trace(runtime);
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
+    exception->dynamic_properties = ptn_array_from_literal_entries(0, NULL);
     exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
         ? ptn_array_from_literal_entries(0, NULL)
         : ptn_null();

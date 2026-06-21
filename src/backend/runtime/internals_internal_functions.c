@@ -4366,6 +4366,14 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, siz
 static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
     PtnOutputBuffer buffer;
     if (!ptn_output_buffer_pop(runtime, &buffer)) {
+        ptn_emit_notice_with_handler_frame(
+            &runtime->diagnostics,
+            flush
+                ? "ob_end_flush(): Failed to delete and flush buffer. No buffer to delete or flush"
+                : "ob_end_clean(): Failed to delete and clean buffer. No buffer to delete or clean",
+            line,
+            1
+        );
         return 0;
     }
     PtnValue output = ptn_output_buffer_apply_callback(runtime, &buffer, line);

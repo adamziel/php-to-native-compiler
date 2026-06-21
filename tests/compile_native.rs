@@ -10268,6 +10268,67 @@ var_dump($contents);\n",
 }
 
 #[test]
+fn compile_exception_handler_ob_end_clean_notice_reenters_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-ob-end-clean-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-ob-end-clean-handler.php");
+    let output = root.join("exception-ob-end-clean-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_end_flush();\n\
+\n\
+class ExceptionHandler {\n\
+    public function __invoke(Exception $e) {\n\
+        ob_end_clean();\n\
+    }\n\
+}\n\
+\n\
+set_exception_handler(new ExceptionHandler());\n\
+set_error_handler(function() {\n\
+    $e = new Exception;\n\
+    $e->_trace = debug_backtrace();\n\
+    throw $e;\n\
+});\n\
+\n\
+$a['waa'];\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains(
+            "Notice: ob_end_flush(): Failed to delete and flush buffer. No buffer to delete or flush"
+        ),
+        "{combined}"
+    );
+    assert_eq!(
+        combined
+            .matches("Deprecated: Creation of dynamic property Exception::$_trace is deprecated")
+            .count(),
+        2,
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Fatal error: Uncaught Exception"),
+        "{combined}"
+    );
+    assert!(combined.contains("ob_end_clean()"), "{combined}");
+    assert!(
+        combined.contains("ExceptionHandler->__invoke(Object(Exception))"),
+        "{combined}"
+    );
+    assert!(!combined.contains("TypeError"), "{combined}");
+    assert!(!combined.contains("Object(Error)"), "{combined}");
+}
+
+#[test]
 fn compile_ob_start_compact_handler_rejects_dynamic_compact_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-compact-handler");
     fs::create_dir_all(&root).unwrap();

@@ -1532,6 +1532,34 @@ static PTN_UNUSED void ptn_emit_notice_with_path(
     );
 }
 
+static PTN_UNUSED void ptn_emit_notice_with_handler_frame(
+    PtnDiagnosticSink *diagnostics,
+    const char *message,
+    size_t line,
+    int suppress_user_call_frame_location
+) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    if (ptn_diagnostics_try_error_handler_with_frame(
+        diagnostics,
+        PTN_E_NOTICE,
+        message,
+        NULL,
+        line,
+        suppress_user_call_frame_location
+    )) {
+        return;
+    }
+    ptn_diagnostic_printf(
+        diagnostics,
+        "Notice: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_emit_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     ptn_emit_notice_with_path(diagnostics, message, NULL, line, 0);
 }

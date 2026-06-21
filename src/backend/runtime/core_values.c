@@ -966,6 +966,7 @@ struct PtnException {
     PtnValue trace;
     PtnValue previous;
     int64_t severity;
+    PtnValue dynamic_properties;
     PtnValue errors;
     PtnValue soap_fault_headerfault;
 };
