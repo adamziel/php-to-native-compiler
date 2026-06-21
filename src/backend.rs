@@ -12386,6 +12386,12 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    PtnValue ptn_internal_reflection_string;\n");
+    out.push_str("    if (ptn_internal_reflection_class_to_string(class_name, &ptn_internal_reflection_string)) {\n");
+    out.push_str("        return ptn_internal_reflection_string;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return ptn_string(\"Object\");\n");
     out.push_str("}\n");
 
@@ -14312,12 +14318,14 @@ fn reflection_user_method_entry_to_string(
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
     out.push('\n');
-    out.push('\n');
-    reflection_parameters_to_string(
-        out,
-        &function.parameters,
-        function_required_parameter_count(function),
-    );
+    if !function.parameters.is_empty() || function.return_type.is_some() {
+        out.push('\n');
+        reflection_parameters_to_string(
+            out,
+            &function.parameters,
+            function_required_parameter_count(function),
+        );
+    }
     if let Some(return_type) = &function.return_type {
         out.push_str("      - Return [ ");
         out.push_str(&type_hint_label(return_type));
@@ -14658,12 +14666,14 @@ fn reflection_class_methods_to_string(
         out.push_str(" - ");
         out.push_str(&method.end_line.to_string());
         out.push('\n');
-        out.push('\n');
-        reflection_parameters_to_string(
-            out,
-            &function.parameters,
-            function_required_parameter_count(function),
-        );
+        if !function.parameters.is_empty() || function.return_type.is_some() {
+            out.push('\n');
+            reflection_parameters_to_string(
+                out,
+                &function.parameters,
+                function_required_parameter_count(function),
+            );
+        }
         if let Some(return_type) = &function.return_type {
             out.push_str("      - Return [ ");
             out.push_str(&type_hint_label(return_type));
@@ -14706,14 +14716,16 @@ fn reflection_method_to_string(
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
     out.push('\n');
-    out.push('\n');
-    reflection_parameters_to_string_with_indent(
-        &mut out,
-        &function.parameters,
-        function_required_parameter_count(function),
-        "  ",
-        "    ",
-    );
+    if !function.parameters.is_empty() || function.return_type.is_some() {
+        out.push('\n');
+        reflection_parameters_to_string_with_indent(
+            &mut out,
+            &function.parameters,
+            function_required_parameter_count(function),
+            "  ",
+            "    ",
+        );
+    }
     if let Some(return_type) = &function.return_type {
         out.push_str("  - Return [ ");
         out.push_str(&type_hint_label(return_type));

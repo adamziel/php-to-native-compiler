@@ -4245,6 +4245,7 @@ impl Parser<'_> {
         self.return_by_ref_stack.pop();
         let body = body?;
         validate_closure_use_static_names(&captures, &body)?;
+        let span = combine_spans(span, self.previous_span());
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             attributes,
             doc_comment,

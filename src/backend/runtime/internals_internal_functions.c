@@ -101273,9 +101273,281 @@ static void ptn_reflection_object_append_class_text(
     ptn_string_buffer_append_len(buffer, data, len);
 }
 
+typedef struct {
+    const char *name;
+    const char *type_display;
+    int required;
+    int variadic;
+    const char *default_display;
+} PtnInternalReflectionParameterDescriptor;
+
+typedef struct {
+    const char *name;
+    int64_t value;
+} PtnInternalReflectionConstantDescriptor;
+
+typedef struct {
+    const char *name;
+    const char *visibility;
+    const char *qualifier;
+    const PtnInternalReflectionParameterDescriptor *parameters;
+    size_t parameter_count;
+    const char *return_type_display;
+    int tentative_return;
+} PtnInternalReflectionMethodDescriptor;
+
+static void ptn_internal_reflection_append_parameters(
+    PtnStringBuffer *buffer,
+    const PtnInternalReflectionParameterDescriptor *parameters,
+    size_t parameter_count
+) {
+    ptn_string_buffer_append_format(buffer, "      - Parameters [%zu] {\n", parameter_count);
+    for (size_t i = 0; i < parameter_count; i++) {
+        const PtnInternalReflectionParameterDescriptor *parameter = &parameters[i];
+        ptn_string_buffer_append_format(
+            buffer,
+            "        Parameter #%zu [ <%s> ",
+            i,
+            parameter->required ? "required" : "optional"
+        );
+        if (parameter->type_display != NULL) {
+            ptn_string_buffer_append(buffer, parameter->type_display);
+            ptn_string_buffer_append_char(buffer, ' ');
+        }
+        if (parameter->variadic) {
+            ptn_string_buffer_append(buffer, "...");
+        }
+        ptn_string_buffer_append_char(buffer, '$');
+        ptn_string_buffer_append(buffer, parameter->name);
+        if (parameter->default_display != NULL) {
+            ptn_string_buffer_append(buffer, " = ");
+            ptn_string_buffer_append(buffer, parameter->default_display);
+        }
+        ptn_string_buffer_append(buffer, " ]\n");
+    }
+    ptn_string_buffer_append(buffer, "      }\n");
+}
+
+static void ptn_internal_reflection_append_method(
+    PtnStringBuffer *buffer,
+    const PtnInternalReflectionMethodDescriptor *method
+) {
+    ptn_string_buffer_append(buffer, "    Method [ <internal:Reflection");
+    if (method->qualifier != NULL) {
+        ptn_string_buffer_append(buffer, ", ");
+        ptn_string_buffer_append(buffer, method->qualifier);
+    }
+    ptn_string_buffer_append_format(
+        buffer,
+        "> %s method %s ] {\n\n",
+        method->visibility,
+        method->name
+    );
+    ptn_internal_reflection_append_parameters(buffer, method->parameters, method->parameter_count);
+    if (method->return_type_display != NULL) {
+        ptn_string_buffer_append_format(
+            buffer,
+            "      - %s [ %s ]\n",
+            method->tentative_return ? "Tentative return" : "Return",
+            method->return_type_display
+        );
+    }
+    ptn_string_buffer_append(buffer, "    }");
+}
+
+static int ptn_internal_reflection_class_to_string(
+    const char *class_name,
+    PtnValue *result_out
+) {
+    if (!ptn_ascii_case_equal(class_name, "ReflectionClass")) {
+        return 0;
+    }
+
+    static const PtnInternalReflectionConstantDescriptor constants[] = {
+        { "IS_IMPLICIT_ABSTRACT", 16 },
+        { "IS_EXPLICIT_ABSTRACT", 64 },
+        { "IS_FINAL", 32 },
+        { "IS_READONLY", 65536 },
+        { "SKIP_INITIALIZATION_ON_SERIALIZE", PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE },
+        { "SKIP_DESTRUCTOR", PTN_LAZY_OBJECT_SKIP_DESTRUCTOR },
+    };
+    static const PtnInternalReflectionParameterDescriptor object_or_class_parameters[] = {
+        { "objectOrClass", "object|string", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor name_parameters[] = {
+        { "name", "string", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor nullable_filter_parameters[] = {
+        { "filter", "?int", 0, 0, "null" },
+    };
+    static const PtnInternalReflectionParameterDescriptor object_parameters[] = {
+        { "object", "object", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor variadic_args_parameters[] = {
+        { "args", "mixed", 0, 1, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor new_instance_args_parameters[] = {
+        { "args", "array", 0, 0, "[]" },
+    };
+    static const PtnInternalReflectionParameterDescriptor lazy_ghost_parameters[] = {
+        { "initializer", "callable", 1, 0, NULL },
+        { "options", "int", 0, 0, "0" },
+    };
+    static const PtnInternalReflectionParameterDescriptor lazy_proxy_parameters[] = {
+        { "factory", "callable", 1, 0, NULL },
+        { "options", "int", 0, 0, "0" },
+    };
+    static const PtnInternalReflectionParameterDescriptor reset_lazy_ghost_parameters[] = {
+        { "object", "object", 1, 0, NULL },
+        { "initializer", "callable", 1, 0, NULL },
+        { "options", "int", 0, 0, "0" },
+    };
+    static const PtnInternalReflectionParameterDescriptor reset_lazy_proxy_parameters[] = {
+        { "object", "object", 1, 0, NULL },
+        { "factory", "callable", 1, 0, NULL },
+        { "options", "int", 0, 0, "0" },
+    };
+    static const PtnInternalReflectionParameterDescriptor subclass_parameters[] = {
+        { "class", "ReflectionClass|string", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor get_static_property_value_parameters[] = {
+        { "name", "string", 1, 0, NULL },
+        { "default", "mixed", 0, 0, "<default>" },
+    };
+    static const PtnInternalReflectionParameterDescriptor set_static_property_value_parameters[] = {
+        { "name", "string", 1, 0, NULL },
+        { "value", "mixed", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor implements_interface_parameters[] = {
+        { "interface", "ReflectionClass|string", 1, 0, NULL },
+    };
+    static const PtnInternalReflectionParameterDescriptor get_attributes_parameters[] = {
+        { "name", "?string", 0, 0, "null" },
+        { "flags", "int", 0, 0, "0" },
+    };
+
+    static const PtnInternalReflectionMethodDescriptor methods[] = {
+        { "__clone", "private", NULL, NULL, 0, "void", 0 },
+        { "__construct", "public", "ctor", object_or_class_parameters, 1, NULL, 0 },
+        { "__toString", "public", "prototype Stringable", NULL, 0, "string", 0 },
+        { "getName", "public", NULL, NULL, 0, "string", 1 },
+        { "isInternal", "public", NULL, NULL, 0, "bool", 1 },
+        { "isUserDefined", "public", NULL, NULL, 0, "bool", 1 },
+        { "isAnonymous", "public", NULL, NULL, 0, "bool", 1 },
+        { "isInstantiable", "public", NULL, NULL, 0, "bool", 1 },
+        { "isCloneable", "public", NULL, NULL, 0, "bool", 1 },
+        { "getFileName", "public", NULL, NULL, 0, "string|false", 1 },
+        { "getStartLine", "public", NULL, NULL, 0, "int|false", 1 },
+        { "getEndLine", "public", NULL, NULL, 0, "int|false", 1 },
+        { "getDocComment", "public", NULL, NULL, 0, "string|false", 1 },
+        { "getConstructor", "public", NULL, NULL, 0, "?ReflectionMethod", 1 },
+        { "hasMethod", "public", NULL, name_parameters, 1, "bool", 1 },
+        { "getMethod", "public", NULL, name_parameters, 1, "ReflectionMethod", 1 },
+        { "getMethods", "public", NULL, nullable_filter_parameters, 1, "array", 1 },
+        { "hasProperty", "public", NULL, name_parameters, 1, "bool", 1 },
+        { "getProperty", "public", NULL, name_parameters, 1, "ReflectionProperty", 1 },
+        { "getProperties", "public", NULL, nullable_filter_parameters, 1, "array", 1 },
+        { "hasConstant", "public", NULL, name_parameters, 1, "bool", 1 },
+        { "getConstants", "public", NULL, nullable_filter_parameters, 1, "array", 1 },
+        { "getReflectionConstants", "public", NULL, nullable_filter_parameters, 1, "array", 1 },
+        { "getConstant", "public", NULL, name_parameters, 1, "mixed", 1 },
+        { "getReflectionConstant", "public", NULL, name_parameters, 1, "ReflectionClassConstant|false", 1 },
+        { "getInterfaces", "public", NULL, NULL, 0, "array", 1 },
+        { "getInterfaceNames", "public", NULL, NULL, 0, "array", 1 },
+        { "isInterface", "public", NULL, NULL, 0, "bool", 1 },
+        { "getTraits", "public", NULL, NULL, 0, "array", 1 },
+        { "getTraitNames", "public", NULL, NULL, 0, "array", 1 },
+        { "getTraitAliases", "public", NULL, NULL, 0, "array", 1 },
+        { "isTrait", "public", NULL, NULL, 0, "bool", 1 },
+        { "isEnum", "public", NULL, NULL, 0, "bool", 0 },
+        { "isAbstract", "public", NULL, NULL, 0, "bool", 1 },
+        { "isFinal", "public", NULL, NULL, 0, "bool", 1 },
+        { "isReadOnly", "public", NULL, NULL, 0, "bool", 0 },
+        { "getModifiers", "public", NULL, NULL, 0, "int", 1 },
+        { "isInstance", "public", NULL, object_parameters, 1, "bool", 1 },
+        { "newInstance", "public", NULL, variadic_args_parameters, 1, "object", 1 },
+        { "newInstanceWithoutConstructor", "public", NULL, NULL, 0, "object", 1 },
+        { "newInstanceArgs", "public", NULL, new_instance_args_parameters, 1, "?object", 1 },
+        { "newLazyGhost", "public", NULL, lazy_ghost_parameters, 2, "object", 0 },
+        { "newLazyProxy", "public", NULL, lazy_proxy_parameters, 2, "object", 0 },
+        { "resetAsLazyGhost", "public", NULL, reset_lazy_ghost_parameters, 3, "void", 0 },
+        { "resetAsLazyProxy", "public", NULL, reset_lazy_proxy_parameters, 3, "void", 0 },
+        { "initializeLazyObject", "public", NULL, object_parameters, 1, "object", 0 },
+        { "isUninitializedLazyObject", "public", NULL, object_parameters, 1, "bool", 0 },
+        { "markLazyObjectAsInitialized", "public", NULL, object_parameters, 1, "object", 0 },
+        { "getLazyInitializer", "public", NULL, object_parameters, 1, "?callable", 0 },
+        { "getParentClass", "public", NULL, NULL, 0, "ReflectionClass|false", 1 },
+        { "isSubclassOf", "public", NULL, subclass_parameters, 1, "bool", 1 },
+        { "getStaticProperties", "public", NULL, NULL, 0, "array", 1 },
+        { "getStaticPropertyValue", "public", NULL, get_static_property_value_parameters, 2, "mixed", 1 },
+        { "setStaticPropertyValue", "public", NULL, set_static_property_value_parameters, 2, "void", 1 },
+        { "getDefaultProperties", "public", NULL, NULL, 0, "array", 1 },
+        { "isIterable", "public", NULL, NULL, 0, "bool", 1 },
+        { "isIterateable", "public", NULL, NULL, 0, "bool", 1 },
+        { "implementsInterface", "public", NULL, implements_interface_parameters, 1, "bool", 1 },
+        { "getExtension", "public", NULL, NULL, 0, "?ReflectionExtension", 1 },
+        { "getExtensionName", "public", NULL, NULL, 0, "string|false", 1 },
+        { "inNamespace", "public", NULL, NULL, 0, "bool", 1 },
+        { "getNamespaceName", "public", NULL, NULL, 0, "string", 1 },
+        { "getShortName", "public", NULL, NULL, 0, "string", 1 },
+        { "getAttributes", "public", NULL, get_attributes_parameters, 2, "array", 0 },
+    };
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append(&buffer, "Class [ <internal:Reflection> class ReflectionClass implements Stringable, Reflector ] {\n\n");
+    ptn_string_buffer_append_format(
+        &buffer,
+        "  - Constants [%zu] {\n",
+        sizeof(constants) / sizeof(constants[0])
+    );
+    for (size_t i = 0; i < sizeof(constants) / sizeof(constants[0]); i++) {
+        ptn_string_buffer_append_format(
+            &buffer,
+            "    Constant [ public int %s ] { %lld }\n",
+            constants[i].name,
+            (long long)constants[i].value
+        );
+    }
+    ptn_string_buffer_append(&buffer, "  }\n\n");
+    ptn_string_buffer_append(&buffer, "  - Static properties [0] {\n  }\n\n");
+    ptn_string_buffer_append(&buffer, "  - Static methods [0] {\n  }\n\n");
+    ptn_string_buffer_append(&buffer, "  - Properties [1] {\n");
+    ptn_string_buffer_append(&buffer, "    Property [ public string $name ]\n");
+    ptn_string_buffer_append(&buffer, "  }\n\n");
+    ptn_string_buffer_append_format(
+        &buffer,
+        "  - Methods [%zu] {\n",
+        sizeof(methods) / sizeof(methods[0])
+    );
+    for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) {
+        ptn_internal_reflection_append_method(&buffer, &methods[i]);
+        if (i + 1 < sizeof(methods) / sizeof(methods[0])) {
+            ptn_string_buffer_append(&buffer, "\n\n");
+        } else {
+            ptn_string_buffer_append_char(&buffer, '\n');
+        }
+    }
+    ptn_string_buffer_append(&buffer, "  }\n}\n");
+    *result_out = ptn_owned_string_len(buffer.data, buffer.len);
+    return 1;
+}
+
+static PtnValue ptn_reflection_class_to_string(
+    PtnRuntime *runtime,
+    const char *class_name,
+    int include_enum_cases
+) {
+    PtnValue internal_reflection_string;
+    if (ptn_internal_reflection_class_to_string(class_name, &internal_reflection_string)) {
+        return internal_reflection_string;
+    }
+    return ptn_declared_class_reflection_to_string(runtime, class_name, include_enum_cases);
+}
+
 static PtnValue ptn_reflection_object_to_string(PtnRuntime *runtime, PtnReflectionClassData *data) {
     int include_enum_cases = ptn_declared_class_has_enum_cases(data->name);
-    PtnValue class_string = ptn_declared_class_reflection_to_string(
+    PtnValue class_string = ptn_reflection_class_to_string(
         runtime,
         data->name,
         include_enum_cases
@@ -101512,7 +101784,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_reflection_object_to_string(runtime, data);
         }
         int include_enum_cases = ptn_declared_class_has_enum_cases(class_name);
-        return ptn_declared_class_reflection_to_string(runtime, class_name, include_enum_cases);
+        return ptn_reflection_class_to_string(runtime, class_name, include_enum_cases);
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -105478,9 +105750,19 @@ static const char *ptn_reflection_function_extension_name(PtnFunctionMetadata me
     return ptn_internal_function_extension_name(metadata.name);
 }
 
-static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) {
+static PtnValue ptn_reflection_function_to_string(
+    PtnRuntime *runtime,
+    PtnReflectionFunctionData *data,
+    PtnFunctionMetadata metadata
+) {
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    PtnValue reflected_closure_value = data != NULL && data->has_closure
+        ? ptn_value_deref(data->closure)
+        : ptn_null();
+    PtnClosure *reflected_closure = reflected_closure_value.type == PTN_CLOSURE
+        ? reflected_closure_value.as.closure
+        : NULL;
 
     if (metadata.is_internal) {
         const char *extension_name = ptn_reflection_function_extension_name(metadata);
@@ -105497,8 +105779,11 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
         }
         ptn_string_buffer_append_format(
             &buffer,
-            "Function [ <user> function %s ] {\n",
-            metadata.name
+            "%s [ <user> function %s ] {\n",
+            reflected_closure == NULL ? "Function" : "Closure",
+            reflected_closure != NULL && reflected_closure->display_name != NULL
+                ? reflected_closure->display_name
+                : metadata.name
         );
         if (metadata.source_file != NULL) {
             ptn_string_buffer_append_format(
@@ -105509,6 +105794,39 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
                 metadata.end_line
             );
         }
+    }
+
+    if (reflected_closure != NULL) {
+        PtnValue bound_variables = ptn_closure_static_variables(runtime, reflected_closure);
+        PtnValue resolved_bound_variables = ptn_value_deref(bound_variables);
+        if (resolved_bound_variables.type == PTN_ARRAY && resolved_bound_variables.as.array->len > 0) {
+            PtnArray *array = resolved_bound_variables.as.array;
+            ptn_string_buffer_append_format(
+                &buffer,
+                "\n  - Bound Variables [%zu] {\n",
+                array->len
+            );
+            for (size_t i = 0; i < array->len; i++) {
+                PtnArrayEntry *entry = &array->entries[i];
+                if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+                    ptn_string_buffer_append_format(
+                        &buffer,
+                        "      Variable #%zu [ $%s ]\n",
+                        i,
+                        entry->key.as.string
+                    );
+                } else {
+                    ptn_string_buffer_append_format(
+                        &buffer,
+                        "      Variable #%zu [ $%lld ]\n",
+                        i,
+                        (long long)entry->key.as.integer
+                    );
+                }
+            }
+            ptn_string_buffer_append(&buffer, "  }\n");
+        }
+        ptn_value_destroy(&bound_variables);
     }
 
     if (metadata.parameter_count > 0) {
@@ -115062,7 +115380,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
-        return ptn_reflection_function_to_string(metadata);
+        return ptn_reflection_function_to_string(runtime, data, metadata);
     }
     if (ptn_ascii_case_equal(name, "getClosureScopeClass")) {
         return data->closure_scope_class_name == NULL

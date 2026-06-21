@@ -26886,6 +26886,115 @@ var_dump(method_exists('ReflectionFunction', '__toString'));
 }
 
 #[test]
+fn compile_reflection_function_to_string_closure_bound_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-to-string-closure-bound-vars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-to-string-closure-bound-vars.php");
+    let output = root.join("reflection-function-to-string-closure-bound-vars-bin");
+    fs::write(
+        &input,
+        "<?php
+$global = 1;
+$plain = function () {};
+$counter = 0;
+$bound = function () use ($global, &$counter) {
+    $counter++;
+    return $global + $counter;
+};
+echo new ReflectionFunction($plain);
+echo new ReflectionFunction($bound);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_display = input.display().to_string();
+    assert!(
+        stdout.contains(&format!(
+            "Closure [ <user> function {{closure:{input_display}:3}} ]"
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Closure [ <user> function {{closure:{input_display}:5}} ]"
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("  @@ {input_display} 5 - 8")),
+        "{stdout}"
+    );
+    assert!(stdout.contains("  - Bound Variables [2] {"), "{stdout}");
+    assert!(stdout.contains("      Variable #0 [ $global ]"), "{stdout}");
+    assert!(
+        stdout.contains("      Variable #1 [ $counter ]"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_static_variables"));
+    assert!(c_source.contains("ptn_reflection_function_to_string(runtime, data, metadata)"));
+}
+
+#[test]
+fn compile_internal_reflection_class_to_string_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-reflection-class-to-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-reflection-class-to-string.php");
+    let output = root.join("internal-reflection-class-to-string-bin");
+    fs::write(
+        &input,
+        "<?php
+$rc = new ReflectionClass(\"ReflectionClass\");
+var_dump(method_exists($rc, \"__toString\"));
+echo $rc->__toString();
+echo \"--echo--\\n\";
+echo $rc;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(concat!(
+        "bool(true)\n",
+        "Class [ <internal:Reflection> class ReflectionClass implements Stringable, Reflector ]"
+    )));
+    assert!(stdout.contains("--echo--\nClass [ <internal:Reflection> class ReflectionClass"));
+    assert_eq!(stdout.matches("  - Constants [6] {").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("  - Methods [64] {").count(), 2, "{stdout}");
+    assert_eq!(
+        stdout.matches("public method newLazyGhost").count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches(
+                "Method [ <internal:Reflection, prototype Stringable> public method __toString ]"
+            )
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Object--echo--"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_reflection_class_to_string"));
+    assert!(c_source.contains("ReflectionClass implements Stringable, Reflector"));
+}
+
+#[test]
 fn compile_reflection_parameter_internal_datetime_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-parameter-internal-datetime-defaults");
     fs::create_dir_all(&root).unwrap();
