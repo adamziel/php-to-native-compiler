@@ -10308,12 +10308,29 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         return;
     }
 
+    int switched_from_mutated_array = 0;
+    size_t mutation_resume_index = 0;
+    if (
+        iterator->live &&
+        iterator->watched_slot != NULL &&
+        iterator->array != NULL &&
+        iterator->array->iterator_mutation_epoch != iterator->seen_mutation_epoch
+    ) {
+        PtnArray *watched_array = ptn_array_iterator_watched_slot_array(iterator);
+        if (watched_array != NULL && watched_array != iterator->array) {
+            switched_from_mutated_array = 1;
+            mutation_resume_index = iterator->array->iterator_mutation_resume_index;
+        }
+    }
+
     if (!ptn_array_iterator_refresh_watched_array(iterator)) {
         return;
     }
 
     size_t next_index = iterator->index + 1;
-    if (iterator->has_current_key && !iterator->spl_dllist_reverse) {
+    if (switched_from_mutated_array) {
+        next_index = mutation_resume_index;
+    } else if (iterator->has_current_key && !iterator->spl_dllist_reverse) {
         size_t current_index = ptn_array_find_key(iterator->array, iterator->current_key);
         int current_identity_matches = current_index < iterator->array->len &&
             (iterator->object_property_iterator ||
