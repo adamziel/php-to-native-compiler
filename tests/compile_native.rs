@@ -34424,6 +34424,82 @@ var_dump($detachedAttr->ownerElement);
 }
 
 #[test]
+fn compile_dom_attribute_node_namespace_conflicts_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-attribute-node-namespace-conflicts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-attribute-node-namespace-conflicts.php");
+    let output = root.join("dom-attribute-node-namespace-conflicts-bin");
+    fs::write(
+        &input,
+        "<?php
+$doc = new DOMDocument();
+$doc->appendChild($doc->createElement('container'));
+var_dump($doc->documentElement->setAttributeNode($doc->createAttributeNS('http://php.net/ns1', 'hello'))?->namespaceURI);
+echo $doc->saveXML();
+var_dump($doc->documentElement->setAttributeNode($doc->createAttributeNS('http://php.net/ns2', 'hello'))?->namespaceURI);
+echo $doc->saveXML();
+
+$doc = new DOMDocument();
+$doc->appendChild($doc->createElement('container'));
+$attr = $doc->createAttributeNS('http://php.net/ns1', 'foo:hello');
+$attr->nodeValue = '1';
+var_dump($doc->documentElement->setAttributeNodeNS($attr)?->nodeValue);
+$attr = $doc->createAttributeNS('http://php.net/ns1', 'bar:hello');
+$attr->nodeValue = '2';
+var_dump($doc->documentElement->setAttributeNodeNS($attr)?->nodeValue);
+echo $doc->saveXML();
+
+$dom = new DOMDocument();
+$dom->loadXML('<?xml version=\"1.0\"?><container xmlns:foo=\"http://php.net\" foo:bar=\"yes\"/>');
+$dom->documentElement->setAttributeNS('http://php.net/2', 'foo:bar', 'no1');
+$dom->documentElement->setAttributeNS('http://php.net/2', 'bar', 'no2');
+echo $dom->saveXML();
+
+$source = new DOMDocument();
+$dest = new DOMDocument();
+$source->loadXML('<?xml version=\"1.0\"?><container xmlns:foo=\"http://php.net\" foo:bar=\"yes\"/>');
+$dest->loadXML('<?xml version=\"1.0\"?><container xmlns=\"http://php.net\" xmlns:foo=\"http://php.net/2\"/>');
+$imported = $dest->importNode($source->documentElement->getAttributeNode('foo:bar'));
+var_dump($imported->prefix, $imported->namespaceURI);
+$dest->documentElement->setAttributeNodeNS($imported);
+echo $dest->saveXML();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:default=\"http://php.net/ns1\" default:hello=\"\"/>\n",
+            "string(18) \"http://php.net/ns1\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:default=\"http://php.net/ns1\" xmlns:default1=\"http://php.net/ns2\" default1:hello=\"\"/>\n",
+            "NULL\n",
+            "string(1) \"1\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"http://php.net/ns1\" foo:hello=\"2\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"http://php.net\" xmlns:default=\"http://php.net/2\" foo:bar=\"yes\" default:bar=\"no2\"/>\n",
+            "string(7) \"default\"\n",
+            "string(14) \"http://php.net\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns=\"http://php.net\" xmlns:foo=\"http://php.net/2\" xmlns:default=\"http://php.net\" default:bar=\"yes\"/>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_set_attribute_node_method"));
+    assert!(c_source.contains("ptn_dom_element_attach_attribute"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();
