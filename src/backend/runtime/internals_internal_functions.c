@@ -52221,6 +52221,15 @@ static int ptn_iconv_encoding_operand_is_utf8(PtnStringOperand encoding) {
         ptn_string_operand_ascii_case_equal(encoding, "UTF8");
 }
 
+static char *ptn_iconv_resolve_encoding_alloc(PtnStringOperand encoding);
+static char *ptn_mb_iconv_convert_alloc(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t *output_len
+);
+
 static int ptn_iconv_optional_encoding_is_utf8(
     PtnRuntime *runtime,
     const char *function_name,
@@ -52272,6 +52281,129 @@ static int ptn_iconv_optional_encoding_is_utf8(
     return is_utf8;
 }
 
+static void ptn_iconv_emit_wrong_encoding_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand encoding,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Wrong encoding, conversion from \"%.*s\" to \"UCS-4LE\" is not allowed",
+        function_name,
+        (int)encoding.len,
+        encoding.data
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static char *ptn_iconv_optional_encoding_alloc(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const PtnValue *value,
+    const char *fallback,
+    size_t line,
+    int *ok
+) {
+    *ok = 1;
+    PtnStringOperand encoding = (value == NULL || ptn_value_deref(*value).type == PTN_NULL)
+        ? ptn_string_operand_borrowed(fallback == NULL ? "" : fallback)
+        : ptn_internal_expect_string_arg(runtime, function_name, position, "encoding", *value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(encoding);
+        *ok = 0;
+        return NULL;
+    }
+    if (encoding.len > 64) {
+        char *message = NULL;
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Encoding parameter exceeds the maximum allowed length of 64 characters",
+            function_name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Encoding parameter exceeds the maximum allowed length of 64 characters",
+            function_name
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        ptn_string_operand_free(encoding);
+        *ok = 0;
+        return NULL;
+    }
+    char *resolved = ptn_iconv_resolve_encoding_alloc(encoding);
+    if (resolved == NULL) {
+        ptn_iconv_emit_wrong_encoding_warning(runtime, function_name, encoding, line);
+        *ok = 0;
+    }
+    ptn_string_operand_free(encoding);
+    return resolved;
+}
+
+static char *ptn_iconv_operand_to_utf8_alloc(PtnStringOperand string, const char *encoding, size_t *utf8_len) {
+    return ptn_mb_iconv_convert_alloc(string.data, string.len, encoding, "UTF-8", utf8_len);
+}
+
+static int ptn_iconv_normalize_offset(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int64_t raw_offset,
+    size_t char_count,
+    size_t *offset_out
+) {
+    if (raw_offset < 0) {
+        uint64_t distance = raw_offset == INT64_MIN ? ((uint64_t)INT64_MAX + 1) : (uint64_t)(-raw_offset);
+        if (distance > (uint64_t)char_count) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return 0;
+        }
+        *offset_out = char_count - (size_t)distance;
+        return 1;
+    }
+    if ((uint64_t)raw_offset > (uint64_t)char_count) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *offset_out = (size_t)raw_offset;
+    return 1;
+}
+
 static PtnValue ptn_iconv_substr_units(PtnStringOperand string, int64_t offset, int has_length, int64_t length, int use_utf8_units) {
     size_t unit_count = use_utf8_units
         ? ptn_text_utf8_char_count(string.data, string.len)
@@ -52316,7 +52448,7 @@ static PtnValue ptn_iconv_substr_units(PtnStringOperand string, int64_t offset, 
 static PtnValue ptn_internal_iconv_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "iconv_strlen", 1, "string", args[0], line);
     int ok = 1;
-    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+    char *encoding = ptn_iconv_optional_encoding_alloc(
         runtime,
         "iconv_strlen",
         2,
@@ -52333,7 +52465,11 @@ static PtnValue ptn_internal_iconv_strlen(PtnRuntime *runtime, size_t argc, cons
         ptn_string_operand_free(string);
         return ptn_bool(0);
     }
-    PtnValue result = ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_count(string.data, string.len) : string.len));
+    size_t utf8_len = 0;
+    char *utf8 = ptn_iconv_operand_to_utf8_alloc(string, encoding, &utf8_len);
+    PtnValue result = ptn_int((int64_t)ptn_text_utf8_char_count(utf8, utf8_len));
+    free(utf8);
+    free(encoding);
     ptn_string_operand_free(string);
     return result;
 }
@@ -52343,7 +52479,7 @@ static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, cons
     PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "iconv_strpos", 2, "needle", args[1], line);
     int64_t offset = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
     int ok = 1;
-    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+    char *encoding = ptn_iconv_optional_encoding_alloc(
         runtime,
         "iconv_strpos",
         4,
@@ -52358,23 +52494,33 @@ static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, cons
         return ptn_null();
     }
     if (!ok || needle.len == 0) {
+        free(encoding);
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         return ptn_bool(0);
     }
-    size_t char_count = use_utf8_units ? ptn_text_utf8_char_count(haystack.data, haystack.len) : haystack.len;
-    if (offset < 0 || (size_t)offset > char_count) {
+    size_t hay_utf8_len = 0;
+    size_t needle_utf8_len = 0;
+    char *hay_utf8 = ptn_iconv_operand_to_utf8_alloc(haystack, encoding, &hay_utf8_len);
+    char *needle_utf8 = ptn_iconv_operand_to_utf8_alloc(needle, encoding, &needle_utf8_len);
+    size_t char_count = ptn_text_utf8_char_count(hay_utf8, hay_utf8_len);
+    size_t start_char = 0;
+    if (!ptn_iconv_normalize_offset(runtime, "iconv_strpos", offset, char_count, &start_char)) {
+        free(hay_utf8);
+        free(needle_utf8);
+        free(encoding);
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
-        return ptn_bool(0);
+        return ptn_null();
     }
-    size_t start = use_utf8_units
-        ? ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)offset)
-        : (size_t)offset;
-    size_t found = ptn_text_find_bytes(haystack.data, haystack.len, needle.data, needle.len, start);
+    size_t start = ptn_text_utf8_byte_offset_for_char(hay_utf8, hay_utf8_len, start_char);
+    size_t found = ptn_text_find_bytes(hay_utf8, hay_utf8_len, needle_utf8, needle_utf8_len, start);
     PtnValue result = found == SIZE_MAX
         ? ptn_bool(0)
-        : ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_index_for_byte(haystack.data, haystack.len, found) : found));
+        : ptn_int((int64_t)ptn_text_utf8_char_index_for_byte(hay_utf8, hay_utf8_len, found));
+    free(hay_utf8);
+    free(needle_utf8);
+    free(encoding);
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
     return result;
@@ -52384,7 +52530,7 @@ static PtnValue ptn_internal_iconv_strrpos(PtnRuntime *runtime, size_t argc, con
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 1, "haystack", args[0], line);
     PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 2, "needle", args[1], line);
     int ok = 1;
-    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+    char *encoding = ptn_iconv_optional_encoding_alloc(
         runtime,
         "iconv_strrpos",
         3,
@@ -52399,14 +52545,22 @@ static PtnValue ptn_internal_iconv_strrpos(PtnRuntime *runtime, size_t argc, con
         return ptn_null();
     }
     if (!ok || needle.len == 0) {
+        free(encoding);
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         return ptn_bool(0);
     }
-    size_t found = ptn_text_find_last_bytes(haystack.data, haystack.len, needle.data, needle.len);
+    size_t hay_utf8_len = 0;
+    size_t needle_utf8_len = 0;
+    char *hay_utf8 = ptn_iconv_operand_to_utf8_alloc(haystack, encoding, &hay_utf8_len);
+    char *needle_utf8 = ptn_iconv_operand_to_utf8_alloc(needle, encoding, &needle_utf8_len);
+    size_t found = ptn_text_find_last_bytes(hay_utf8, hay_utf8_len, needle_utf8, needle_utf8_len);
     PtnValue result = found == SIZE_MAX
         ? ptn_bool(0)
-        : ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_index_for_byte(haystack.data, haystack.len, found) : found));
+        : ptn_int((int64_t)ptn_text_utf8_char_index_for_byte(hay_utf8, hay_utf8_len, found));
+    free(hay_utf8);
+    free(needle_utf8);
+    free(encoding);
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
     return result;
@@ -52418,7 +52572,7 @@ static PtnValue ptn_internal_iconv_substr(PtnRuntime *runtime, size_t argc, cons
     int has_length = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL;
     int64_t length = has_length ? ptn_value_to_integer(args[2]) : 0;
     int ok = 1;
-    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+    char *encoding = ptn_iconv_optional_encoding_alloc(
         runtime,
         "iconv_substr",
         4,
@@ -52435,7 +52589,22 @@ static PtnValue ptn_internal_iconv_substr(PtnRuntime *runtime, size_t argc, cons
         ptn_string_operand_free(string);
         return ptn_bool(0);
     }
-    PtnValue result = ptn_iconv_substr_units(string, offset, has_length, length, use_utf8_units);
+    size_t utf8_len = 0;
+    char *utf8 = ptn_iconv_operand_to_utf8_alloc(string, encoding, &utf8_len);
+    PtnStringOperand utf8_operand = ptn_string_operand_borrowed_len(utf8, utf8_len);
+    PtnValue utf8_result = ptn_iconv_substr_units(utf8_operand, offset, has_length, length, 1);
+    size_t output_len = 0;
+    char *output = ptn_mb_iconv_convert_alloc(
+        (const char *)utf8_result.as.string.data,
+        utf8_result.as.string.len,
+        "UTF-8",
+        encoding,
+        &output_len
+    );
+    PtnValue result = ptn_owned_string_len(output, output_len);
+    ptn_value_destroy(&utf8_result);
+    free(utf8);
+    free(encoding);
     ptn_string_operand_free(string);
     return result;
 }
@@ -52536,6 +52705,52 @@ static PtnValue ptn_internal_iconv_set_encoding(PtnRuntime *runtime, size_t argc
     return ptn_bool(known);
 }
 
+static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding);
+static const char *ptn_mb_iconv_encoding_name(const char *encoding);
+static char *ptn_mb_iconv_convert_alloc(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    size_t *output_len
+);
+
+static char *ptn_iconv_resolve_encoding_alloc(PtnStringOperand encoding) {
+    size_t suffix_offset = encoding.len;
+    for (size_t i = 0; i + 1 < encoding.len; i++) {
+        if (encoding.data[i] == '/' && encoding.data[i + 1] == '/') {
+            suffix_offset = i;
+            break;
+        }
+    }
+
+    PtnStringOperand base = ptn_string_operand_borrowed_len(encoding.data, suffix_offset);
+    const char *canonical = ptn_mb_canonical_encoding_name(base);
+    if (canonical == NULL) {
+        return NULL;
+    }
+    const char *iconv_name = ptn_mb_iconv_encoding_name(canonical);
+    if (iconv_name == NULL) {
+        return NULL;
+    }
+
+    size_t iconv_len = strlen(iconv_name);
+    size_t suffix_len = encoding.len - suffix_offset;
+    if (iconv_len > SIZE_MAX - suffix_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *resolved = malloc(iconv_len + suffix_len + 1);
+    if (resolved == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(resolved, iconv_name, iconv_len);
+    if (suffix_len > 0) {
+        memcpy(resolved + iconv_len, encoding.data + suffix_offset, suffix_len);
+    }
+    resolved[iconv_len + suffix_len] = '\0';
+    return resolved;
+}
+
 static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand from = ptn_internal_expect_string_arg(runtime, "iconv", 1, "from_encoding", args[0], line);
@@ -52547,40 +52762,38 @@ static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnVa
         ptn_string_operand_free(input);
         return ptn_null();
     }
-    int ignore = strstr(to.data, "//IGNORE") != NULL || strstr(to.data, "//ignore") != NULL;
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    int failed = 0;
-    for (size_t i = 0; i < input.len;) {
-        uint32_t codepoint = 0;
-        size_t consumed = 0;
-        if (ptn_text_utf8_decode_at(input.data, input.len, i, &codepoint, &consumed)) {
-            ptn_string_buffer_append_len(&output, input.data + i, consumed);
-            i += consumed;
-            continue;
+    char *from_encoding = ptn_iconv_resolve_encoding_alloc(from);
+    char *to_encoding = ptn_iconv_resolve_encoding_alloc(to);
+    if (from_encoding == NULL || to_encoding == NULL) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "iconv(): Wrong encoding, conversion from \"%.*s\" to \"%.*s\" is not allowed",
+            (int)from.len,
+            from.data,
+            (int)to.len,
+            to.data
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
         }
-        if (!ignore) {
-            ptn_emit_notice(&runtime->diagnostics, "iconv(): Detected an illegal character in input string", line);
-            failed = 1;
-            break;
-        }
-        if (ptn_text_utf8_invalid_is_incomplete(input.data, input.len, i)) {
-            ptn_output_write_cstr(runtime, "\n");
-            ptn_emit_notice(&runtime->diagnostics, "iconv(): Detected an incomplete multibyte character in input string", line);
-            output.len = 0;
-            output.data[0] = '\0';
-            break;
-        }
-        i++;
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(from_encoding);
+        free(to_encoding);
+        ptn_string_operand_free(from);
+        ptn_string_operand_free(to);
+        ptn_string_operand_free(input);
+        return ptn_bool(0);
     }
+    size_t output_len = 0;
+    char *output = ptn_mb_iconv_convert_alloc(input.data, input.len, from_encoding, to_encoding, &output_len);
+    free(from_encoding);
+    free(to_encoding);
     ptn_string_operand_free(from);
     ptn_string_operand_free(to);
     ptn_string_operand_free(input);
-    if (failed) {
-        free(output.data);
-        return ptn_bool(0);
-    }
-    return ptn_owned_string_buffer_value(&output);
+    return ptn_owned_string_len(output, output_len);
 }
 
 enum {
@@ -55110,6 +55323,31 @@ static char *ptn_mb_iconv_convert_alloc(
         out_left--;
         in_ptr++;
         in_left--;
+    }
+    for (;;) {
+        size_t converted = iconv(cd, NULL, NULL, &out_ptr, &out_left);
+        if (converted != (size_t)-1) {
+            break;
+        }
+        if (errno != E2BIG) {
+            break;
+        }
+        size_t used = (size_t)(out_ptr - output);
+        if (out_cap > SIZE_MAX / 2) {
+            iconv_close(cd);
+            free(output);
+            ptn_abort_out_of_memory();
+        }
+        out_cap *= 2;
+        char *grown = realloc(output, out_cap);
+        if (grown == NULL) {
+            iconv_close(cd);
+            free(output);
+            ptn_abort_out_of_memory();
+        }
+        output = grown;
+        out_ptr = output + used;
+        out_left = out_cap - used - 1;
     }
     *out_ptr = '\0';
     *output_len = (size_t)(out_ptr - output);
