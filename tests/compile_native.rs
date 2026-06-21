@@ -11692,6 +11692,119 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_reference_assignment_counts_only_nested_array_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-reference-assignment-nested-cycles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-reference-assignment-nested-cycles.php");
+    let output = root.join("gc-reference-assignment-nested-cycles-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = array();
+$a[0] =& $a;
+$a[1] = array();
+$a[1][0] =& $a[1];
+$a = 1;
+var_dump(gc_collect_cycles());
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\nok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_reentrant_destructor_collection_defers_pending_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-reentrant-destructor-collection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-reentrant-destructor-collection.php");
+    let output = root.join("gc-reentrant-destructor-collection-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $a;
+    function __destruct() {
+        echo \"-> \";
+        $a = array();
+        $a[] =& $a;
+        unset($a);
+        var_dump(gc_collect_cycles());
+    }
+}
+$a = new Foo();
+$a->a = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "-> int(0)\nint(2)\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_object_cycle_counts_component_once_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-object-cycle-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-object-cycle-count.php");
+    let output = root.join("gc-destructor-object-cycle-count-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $bar;
+    public $x = array(1, 2, 3);
+    function __destruct() {
+        if ($this->bar !== null) {
+            $this->x = null;
+            unset($this->bar);
+        }
+    }
+}
+class Bar {
+    public $foo;
+    function __destruct() {
+        if ($this->foo !== null) {
+            unset($this->foo);
+        }
+    }
+}
+$foo = new Foo();
+$bar = new Bar();
+$foo->bar = $bar;
+$bar->foo = $foo;
+unset($foo);
+unset($bar);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_unreachable_destructor_cycle_resurrection_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-cycle-resurrection");
     fs::create_dir_all(&root).unwrap();

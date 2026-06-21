@@ -38,6 +38,13 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     return reference;
 }
 
+static PTN_UNUSED void ptn_gc_begin_replaced_reference_cycle_suppression(
+    PtnReference *reference
+);
+static PTN_UNUSED void ptn_gc_end_replaced_reference_cycle_suppression(
+    PtnReference *reference
+);
+
 static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out) {
     PtnValue stored_value = ptn_null();
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
@@ -45,7 +52,9 @@ static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnRefere
     }
     PtnValue result = ptn_value_clone(stored_value);
     ptn_array_note_value_replacement(reference->value, stored_value);
+    ptn_gc_begin_replaced_reference_cycle_suppression(reference);
     ptn_value_destroy_with_runtime_scope(runtime, &reference->value);
+    ptn_gc_end_replaced_reference_cycle_suppression(reference);
     reference->value = stored_value;
     *result_out = result;
     return 1;
@@ -185,6 +194,8 @@ static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnRefer
 
 static size_t ptn_pending_array_cycle_collections = 0;
 static int ptn_pending_array_cycle_auto_flushed = 0;
+static PtnReference *ptn_replaced_reference_cycle_suppressed_reference = NULL;
+static size_t ptn_replaced_reference_cycle_suppression_depth = 0;
 
 /* Approximate Zend's root-buffer auto collection for many short-lived array cycles. */
 #define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 9998
@@ -203,6 +214,42 @@ static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
     }
 }
 
+static PTN_UNUSED void ptn_gc_begin_replaced_reference_cycle_suppression(
+    PtnReference *reference
+) {
+    if (reference == NULL) {
+        return;
+    }
+    if (ptn_replaced_reference_cycle_suppression_depth == 0) {
+        ptn_replaced_reference_cycle_suppressed_reference = reference;
+    }
+    ptn_replaced_reference_cycle_suppression_depth++;
+}
+
+static PTN_UNUSED void ptn_gc_end_replaced_reference_cycle_suppression(
+    PtnReference *reference
+) {
+    if (
+        reference == NULL ||
+        ptn_replaced_reference_cycle_suppression_depth == 0 ||
+        ptn_replaced_reference_cycle_suppressed_reference != reference
+    ) {
+        return;
+    }
+    ptn_replaced_reference_cycle_suppression_depth--;
+    if (ptn_replaced_reference_cycle_suppression_depth == 0) {
+        ptn_replaced_reference_cycle_suppressed_reference = NULL;
+    }
+}
+
+static PTN_UNUSED int ptn_gc_suppresses_replaced_reference_cycle(
+    PtnReference *reference
+) {
+    return reference != NULL &&
+        ptn_replaced_reference_cycle_suppression_depth != 0 &&
+        ptn_replaced_reference_cycle_suppressed_reference == reference;
+}
+
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference == NULL) {
         return;
@@ -217,6 +264,7 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
         if (
             internal_refs > 0 &&
             reference->refcount == internal_refs + 1 &&
+            !ptn_gc_suppresses_replaced_reference_cycle(reference) &&
             !ptn_array_contains_pending_destructor(reference->value.as.array, 0)
         ) {
             ptn_gc_note_array_reference_cycles(internal_refs);

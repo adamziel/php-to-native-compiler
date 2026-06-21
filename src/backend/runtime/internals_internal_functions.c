@@ -59558,11 +59558,10 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
         ) {
             continue;
         }
-        size_t nested = ptn_gc_count_unreachable_contained_values_in_object_properties(object, epoch);
-        if (collected > SIZE_MAX - 1 || collected + 1 > SIZE_MAX - nested) {
+        if (collected > SIZE_MAX - 1) {
             ptn_abort_out_of_memory();
         }
-        collected += 1 + nested;
+        collected += 1;
         ptn_gc_collected_object_push(
             &destructed_objects,
             &destructed_objects_len,
@@ -59619,6 +59618,9 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         root = runtime;
     }
     if (root == NULL) {
+        return ptn_int(0);
+    }
+    if (root->gc_running) {
         return ptn_int(0);
     }
     root->gc_running = 1;
