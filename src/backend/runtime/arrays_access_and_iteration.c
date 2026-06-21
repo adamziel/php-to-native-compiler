@@ -9832,6 +9832,22 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_object_is_internal_or_descendant(value, "SplFixedArray")) {
+        PtnArrayIterator iterator = ptn_array_iterator_empty();
+        if (ptn_spl_fixed_array_iterator_from_object(
+            runtime,
+            value,
+            access_scope,
+            line,
+            &iterator
+        )) {
+            return iterator;
+        }
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return iterator;
+        }
+    }
+
     if (ptn_object_is_internal_or_descendant(value, "SplDoublyLinkedList")) {
         PtnArrayIterator iterator = ptn_array_iterator_empty();
         if (ptn_spl_doubly_linked_list_iterator_from_object(

@@ -487,6 +487,13 @@ $fixed[1] = "b";
 foreach ($fixed as $key => $value) {
     echo "$key:$value\n";
 }
+foreach ($fixed as $outerKey => $outerValue) {
+    foreach ($fixed as $innerKey => $innerValue) {
+        echo "$outerKey:$innerKey=$innerValue\n";
+    }
+}
+unset($fixed["1"]);
+var_dump($fixed);
 var_dump($fixed->getArrayCopy());
 $fixed->setSize(1);
 var_dump(count($fixed), isset($fixed[1]), $fixed->toArray());
@@ -534,11 +541,21 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
             "bool(false)\n",
             "0:a\n",
             "1:b\n",
+            "0:0=a\n",
+            "0:1=b\n",
+            "1:0=a\n",
+            "1:1=b\n",
+            "object(SplFixedArray)#1 (2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  NULL\n",
+            "}\n",
             "array(2) {\n",
             "  [0]=>\n",
             "  string(1) \"a\"\n",
             "  [1]=>\n",
-            "  string(1) \"b\"\n",
+            "  NULL\n",
             "}\n",
             "int(1)\n",
             "bool(false)\n",
@@ -719,6 +736,43 @@ try {
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spl_dllist_offset_type_error_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-dllist-offset-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-dllist-offset-trace.php");
+    let output = root.join("spl-dllist-offset-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$list = new SplDoublyLinkedList();
+$list->offsetGet("bad");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("SplDoublyLinkedList::offsetGet(): Argument #1 ($index) must be of type int, string given"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("SplDoublyLinkedList->offsetGet"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("#1 {main}"), "{stderr}");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
 }
 
 #[test]

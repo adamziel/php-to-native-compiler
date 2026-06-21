@@ -2296,6 +2296,13 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    size_t line,
+    PtnArrayIterator *out
+);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 static PTN_UNUSED PtnValue ptn_spl_object_storage_new(
     PtnRuntime *runtime,
