@@ -38518,7 +38518,16 @@ var_dump($a);\n\
 $compound = null;\n\
 set_error_handler(function() use (&$compound) { $compound = 0; });\n\
 $compound[0000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000] .= \"xyz\";\n\
-var_dump($compound);\n",
+var_dump($compound);\n\
+set_error_handler(function($code, $msg) {\n\
+    echo \"Err: $msg\\n\";\n\
+    $GLOBALS[''] = $GLOBALS['y'];\n\
+});\n\
+function write_large_offset(&$s) {\n\
+    $s[100000000000000000000] = 1;\n\
+}\n\
+write_large_offset($y);\n\
+var_dump($y);\n",
     )
     .unwrap();
 
@@ -38532,7 +38541,10 @@ var_dump($compound);\n",
 int(0)\n\
 Cannot use a scalar value as an array\n\
 int(0)\n\
-int(0)\n"
+int(0)\n\
+Err: The float 1.0E+20 is not representable as an int, cast occurred\n\
+array(0) {\n\
+}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

@@ -11609,6 +11609,30 @@ static PTN_UNUSED int ptn_runtime_array_path_root_matches_snapshot(
     return ptn_array_path_root_values_match(current, pre_eval_root);
 }
 
+static PTN_UNUSED size_t ptn_array_path_root_snapshot_array_refcount(PtnValue root) {
+    root = ptn_value_deref(root);
+    if (root.type != PTN_ARRAY || root.as.array == NULL) {
+        return 0;
+    }
+    return root.as.array->refcount;
+}
+
+static PTN_UNUSED int ptn_runtime_array_path_root_matches_guard_snapshot(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue pre_eval_root,
+    size_t guarded_array_refcount
+) {
+    if (!ptn_runtime_array_path_root_matches_snapshot(runtime, name, pre_eval_root)) {
+        return 0;
+    }
+    PtnValue root = ptn_value_deref(pre_eval_root);
+    if (root.type != PTN_ARRAY || root.as.array == NULL) {
+        return 1;
+    }
+    return root.as.array->refcount == guarded_array_refcount;
+}
+
 static PTN_UNUSED void ptn_emit_invalidated_array_path_write_diagnostics(
     PtnRuntime *runtime,
     PtnValue root,
@@ -13252,6 +13276,7 @@ static PTN_UNUSED int ptn_array_path_write_guard_invalidated(
     const char *name,
     PtnValue pre_eval_root,
     uint64_t guarded_epoch,
+    size_t guarded_array_refcount,
     int guard_enabled,
     const PtnArrayPathSegment *segments,
     size_t segment_count,
@@ -13261,7 +13286,12 @@ static PTN_UNUSED int ptn_array_path_write_guard_invalidated(
         return 0;
     }
     (void)guarded_epoch;
-    if (ptn_runtime_array_path_root_matches_snapshot(runtime, name, pre_eval_root)) {
+    if (ptn_runtime_array_path_root_matches_guard_snapshot(
+        runtime,
+        name,
+        pre_eval_root,
+        guarded_array_refcount
+    )) {
         return 0;
     }
     ptn_emit_invalidated_array_path_write_diagnostics(
@@ -13294,6 +13324,9 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
         return ptn_value_clone_deref(value);
     }
 
+    size_t guarded_array_refcount = guard_enabled
+        ? ptn_array_path_root_snapshot_array_refcount(pre_eval_root)
+        : 0;
     PtnArray *current = array;
     for (size_t i = 0; i + 1 < segment_count; i++) {
         const PtnArrayPathSegment *segment = &segments[i];
@@ -13311,6 +13344,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
             guarded_name,
             pre_eval_root,
             guarded_epoch,
+            guarded_array_refcount,
             guard_enabled,
             segments,
             segment_count,
@@ -13359,6 +13393,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
                 guarded_name,
                 pre_eval_root,
                 guarded_epoch,
+                guarded_array_refcount,
                 guard_enabled,
                 segments,
                 segment_count,
@@ -13379,6 +13414,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
                 guarded_name,
                 pre_eval_root,
                 guarded_epoch,
+                guarded_array_refcount,
                 guard_enabled,
                 segments,
                 segment_count,
@@ -13397,6 +13433,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
                 guarded_name,
                 pre_eval_root,
                 guarded_epoch,
+                guarded_array_refcount,
                 guard_enabled,
                 segments,
                 segment_count,
@@ -13443,6 +13480,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
         guarded_name,
         pre_eval_root,
         guarded_epoch,
+        guarded_array_refcount,
         guard_enabled,
         segments,
         segment_count,
@@ -13968,6 +14006,86 @@ static PTN_UNUSED void ptn_runtime_array_path_set_with_key_diagnostics(
     );
 }
 
+static PTN_UNUSED int ptn_runtime_array_path_prepare_guarded_root_after_dimension_eval(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    PtnArray **array_out,
+    PtnValue *guard_root_out,
+    uint64_t *guarded_epoch_out
+) {
+    *array_out = NULL;
+    *guard_root_out = ptn_null();
+    *guarded_epoch_out = 0;
+    if (runtime == NULL ||
+        name == NULL ||
+        ptn_runtime_is_globals_name(name) ||
+        segment_count == 0) {
+        return 0;
+    }
+
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    PtnValue *slot = ptn_symbols_value_slot(symbols, name);
+    if (slot == NULL) {
+        PtnValue array_value = ptn_array_from_literal_entries(0, NULL);
+        ptn_runtime_write_variable(runtime, name, array_value);
+        ptn_value_destroy(&array_value);
+        slot = ptn_symbols_value_slot(symbols, name);
+        if (slot == NULL) {
+            return 2;
+        }
+    }
+
+    PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+    PtnValue resolved = ptn_value_deref(*slot_value);
+    int emitted_false_conversion_diagnostic = 0;
+    PtnArray *array = NULL;
+    if (resolved.type == PTN_ARRAY) {
+        array = ptn_array_detach_value(slot_value);
+    } else if (resolved.type == PTN_NULL) {
+        array = ptn_array_root_slot_for_write(runtime, slot, line);
+    } else if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+        (void)ptn_value_replace_with_empty_array(slot_value);
+        array = ptn_array_detach_value(slot_value);
+        emitted_false_conversion_diagnostic = 1;
+    } else {
+        return 0;
+    }
+    if (array == NULL) {
+        return 2;
+    }
+
+    *array_out = array;
+    *guard_root_out = ptn_value_clone_deref(*slot_value);
+    *guarded_epoch_out = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
+
+    if (emitted_false_conversion_diagnostic) {
+        size_t guarded_array_refcount =
+            ptn_array_path_root_snapshot_array_refcount(*guard_root_out);
+        ptn_emit_false_array_conversion_deprecation(runtime, line);
+        if (ptn_array_path_write_guard_invalidated(
+            runtime,
+            name,
+            *guard_root_out,
+            *guarded_epoch_out,
+            guarded_array_refcount,
+            1,
+            segments,
+            segment_count,
+            line
+        )) {
+            ptn_value_destroy(guard_root_out);
+            *guard_root_out = ptn_null();
+            *array_out = NULL;
+            return 2;
+        }
+    }
+
+    return 1;
+}
+
 static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     PtnRuntime *runtime,
     const char *name,
@@ -13990,31 +14108,37 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
         );
         return;
     }
-    if (!ptn_runtime_is_globals_name(name) && segment_count > 0) {
-        PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
-        if (slot != NULL) {
-            PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
-            PtnValue resolved = ptn_value_deref(*slot_value);
-            if (resolved.type == PTN_ARRAY) {
-                PtnArray *array = ptn_array_detach_value(slot_value);
-                PtnValue guard_root = ptn_value_clone_deref(*slot_value);
-                uint64_t guarded_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
-                ptn_array_path_set_from_root_after_dimension_eval(
-                    runtime,
-                    name,
-                    guard_root,
-                    guarded_epoch,
-                    array,
-                    segments,
-                    segment_count,
-                    value,
-                    line,
-                    emit_null_key_deprecation
-                );
-                ptn_value_destroy(&guard_root);
-                return;
-            }
-        }
+    PtnArray *array = NULL;
+    PtnValue guard_root = ptn_null();
+    uint64_t guarded_epoch = 0;
+    int guard_state = ptn_runtime_array_path_prepare_guarded_root_after_dimension_eval(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        line,
+        &array,
+        &guard_root,
+        &guarded_epoch
+    );
+    if (guard_state == 1) {
+        ptn_array_path_set_from_root_after_dimension_eval(
+            runtime,
+            name,
+            guard_root,
+            guarded_epoch,
+            array,
+            segments,
+            segment_count,
+            value,
+            line,
+            emit_null_key_deprecation
+        );
+        ptn_value_destroy(&guard_root);
+        return;
+    }
+    if (guard_state == 2) {
+        return;
     }
     ptn_runtime_array_path_set_impl(
         runtime,
@@ -14049,31 +14173,37 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_after_dimension_eva
         );
         return ptn_null();
     }
-    if (!ptn_runtime_is_globals_name(name) && segment_count > 0) {
-        PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
-        if (slot != NULL) {
-            PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
-            PtnValue resolved = ptn_value_deref(*slot_value);
-            if (resolved.type == PTN_ARRAY) {
-                PtnArray *array = ptn_array_detach_value(slot_value);
-                PtnValue guard_root = ptn_value_clone_deref(*slot_value);
-                uint64_t guarded_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
-                PtnValue result = ptn_array_path_set_result_from_root_after_dimension_eval(
-                    runtime,
-                    name,
-                    guard_root,
-                    guarded_epoch,
-                    array,
-                    segments,
-                    segment_count,
-                    value,
-                    line,
-                    emit_null_key_deprecation
-                );
-                ptn_value_destroy(&guard_root);
-                return result;
-            }
-        }
+    PtnArray *array = NULL;
+    PtnValue guard_root = ptn_null();
+    uint64_t guarded_epoch = 0;
+    int guard_state = ptn_runtime_array_path_prepare_guarded_root_after_dimension_eval(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        line,
+        &array,
+        &guard_root,
+        &guarded_epoch
+    );
+    if (guard_state == 1) {
+        PtnValue result = ptn_array_path_set_result_from_root_after_dimension_eval(
+            runtime,
+            name,
+            guard_root,
+            guarded_epoch,
+            array,
+            segments,
+            segment_count,
+            value,
+            line,
+            emit_null_key_deprecation
+        );
+        ptn_value_destroy(&guard_root);
+        return result;
+    }
+    if (guard_state == 2) {
+        return ptn_null();
     }
     return ptn_runtime_array_path_set_result_impl(
         runtime,

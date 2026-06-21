@@ -20199,7 +20199,11 @@ fn emit_instruction(
                     .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
                 let value_may_emit_undefined_variable_warning =
                     value_expr_is_direct_variable_read(value);
-                let pre_eval_root = if value_may_emit_undefined_variable_warning {
+                let dimensions_may_emit_key_conversion_diagnostic =
+                    array_dimensions_may_emit_key_conversion_diagnostic(dimensions);
+                let pre_eval_root = if value_may_emit_undefined_variable_warning
+                    || dimensions_may_emit_key_conversion_diagnostic
+                {
                     let root_lookup_temp = values.next_temp();
                     let root_temp = values.next_temp();
                     let root_epoch_temp = values.next_temp();
@@ -22778,6 +22782,20 @@ fn value_expr_is_direct_variable_read(value: &ValueExpr) -> bool {
         value,
         ValueExpr::Load { .. } | ValueExpr::LegacyDollarBraceStringVariable { .. }
     )
+}
+
+fn array_dimension_may_emit_key_conversion_diagnostic(dimension: &Option<ValueExpr>) -> bool {
+    match dimension {
+        None => false,
+        Some(ValueExpr::Int(_) | ValueExpr::String(_) | ValueExpr::Bool(_)) => false,
+        Some(_) => true,
+    }
+}
+
+fn array_dimensions_may_emit_key_conversion_diagnostic(dimensions: &[Option<ValueExpr>]) -> bool {
+    dimensions
+        .iter()
+        .any(array_dimension_may_emit_key_conversion_diagnostic)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31130,7 +31148,11 @@ impl ValueEmitter {
                 .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
             let value_may_emit_undefined_variable_warning =
                 value_expr_is_direct_variable_read(value);
-            let pre_eval_root = if value_may_emit_undefined_variable_warning {
+            let dimensions_may_emit_key_conversion_diagnostic =
+                array_dimensions_may_emit_key_conversion_diagnostic(dimensions);
+            let pre_eval_root = if value_may_emit_undefined_variable_warning
+                || dimensions_may_emit_key_conversion_diagnostic
+            {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
                 let root_epoch_temp = self.next_temp();
