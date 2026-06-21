@@ -24056,13 +24056,23 @@ echo new ReflectionEnum(Suit::class);
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert_eq!(
-        stdout.matches("  - Enum cases [2] {").count(),
-        2,
+    let reflection_outputs = stdout.split("---\n").collect::<Vec<_>>();
+    assert_eq!(reflection_outputs.len(), 2, "{stdout}");
+    assert!(
+        !reflection_outputs[0].contains("  - Enum cases [2] {"),
         "{stdout}"
     );
-    assert_eq!(stdout.matches("Case Hearts = H").count(), 2, "{stdout}");
-    assert_eq!(stdout.matches("Case Spades = S").count(), 2, "{stdout}");
+    assert!(
+        reflection_outputs[1].contains("  - Enum cases [2] {"),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout.matches("  - Enum cases [2] {").count(),
+        1,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("Case Hearts = H").count(), 1, "{stdout}");
+    assert_eq!(stdout.matches("Case Spades = S").count(), 1, "{stdout}");
     assert_eq!(
         stdout
             .matches("Method [ <user, prototype MyStringable> public method toString ]")
