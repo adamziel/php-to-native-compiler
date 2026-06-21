@@ -5539,17 +5539,20 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     const char *access_scope,
     size_t line
 ) {
-    receiver = ptn_value_deref(receiver);
+    PtnValue stable_receiver = ptn_value_clone_deref(receiver);
+    receiver = stable_receiver;
+    PtnLookupResult result = ptn_lookup_missing();
     PtnValue exception_property = ptn_null();
     if (ptn_exception_property_read(receiver, property, &exception_property)) {
-        return ptn_lookup_found(exception_property);
+        result = ptn_lookup_found(exception_property);
+        goto done;
     }
     if (receiver.type != PTN_OBJECT) {
-        return ptn_lookup_missing();
+        goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
-            return ptn_lookup_missing();
+            goto done;
         }
     }
     char *storage_key = ptn_object_resolve_property_storage_key(
@@ -5568,9 +5571,10 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            result = ptn_lookup_found(magic_value);
+            goto done;
         }
-        return ptn_lookup_missing();
+        goto done;
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
@@ -5609,7 +5613,8 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             );
             ptn_array_key_free(key);
             free(storage_key);
-            return ptn_lookup_found(hook_value);
+            result = ptn_lookup_found(hook_value);
+            goto done;
         }
     }
     ptn_array_key_free(key);
@@ -5621,11 +5626,16 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            result = ptn_lookup_found(magic_value);
+            goto done;
         }
-        return ptn_lookup_missing();
+        goto done;
     }
-    return ptn_lookup_found(ptn_value_clone_deref(entry->value));
+    result = ptn_lookup_found(ptn_value_clone_deref(entry->value));
+
+done:
+    ptn_value_destroy(&stable_receiver);
+    return result;
 }
 
 static PTN_UNUSED int ptn_object_property_is_set(
@@ -5635,31 +5645,34 @@ static PTN_UNUSED int ptn_object_property_is_set(
     const char *access_scope,
     size_t line
 ) {
-    receiver = ptn_value_deref(receiver);
+    PtnValue stable_receiver = ptn_value_clone_deref(receiver);
+    receiver = stable_receiver;
+    int result = 0;
     PtnValue exception_property = ptn_null();
     if (ptn_exception_property_read(receiver, property, &exception_property)) {
-        int is_set = ptn_value_deref(exception_property).type != PTN_NULL;
+        result = ptn_value_deref(exception_property).type != PTN_NULL;
         ptn_value_destroy(&exception_property);
-        return is_set;
+        goto done;
     }
     if (receiver.type != PTN_OBJECT) {
-        return 0;
+        goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
-            return 0;
+            goto done;
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     int simplexml_isset = 0;
     if (ptn_simplexml_property_is_set(receiver, property, &simplexml_isset)) {
-        return simplexml_isset;
+        result = simplexml_isset;
+        goto done;
     }
     PtnValue internal_value = ptn_null();
     if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
-        int is_set = ptn_value_deref(internal_value).type != PTN_NULL;
+        result = ptn_value_deref(internal_value).type != PTN_NULL;
         ptn_value_destroy(&internal_value);
-        return is_set;
+        goto done;
     }
     int array_object_isset = 0;
     if (ptn_internal_array_object_property_isset(
@@ -5670,7 +5683,8 @@ static PTN_UNUSED int ptn_object_property_is_set(
         line,
         &array_object_isset
     )) {
-        return array_object_isset;
+        result = array_object_isset;
+        goto done;
     }
 #endif
     char *storage_key = ptn_object_resolve_property_storage_key(
@@ -5685,9 +5699,10 @@ static PTN_UNUSED int ptn_object_property_is_set(
     if (storage_key == NULL) {
         int magic_isset = 0;
         if (ptn_magic_property_isset(runtime, receiver, property, line, &magic_isset)) {
-            return magic_isset;
+            result = magic_isset;
+            goto done;
         }
-        return 0;
+        goto done;
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
@@ -5724,11 +5739,11 @@ static PTN_UNUSED int ptn_object_property_is_set(
                 1,
                 line
             );
-            int is_set = ptn_value_deref(hook_value).type != PTN_NULL;
+            result = ptn_value_deref(hook_value).type != PTN_NULL;
             ptn_value_destroy(&hook_value);
             ptn_array_key_free(key);
             free(storage_key);
-            return is_set;
+            goto done;
         }
     }
     ptn_array_key_free(key);
@@ -5736,17 +5751,22 @@ static PTN_UNUSED int ptn_object_property_is_set(
     if (entry == NULL) {
         if (ptn_property_is_set_only_virtual(metadata)) {
             ptn_throw_set_only_virtual_property_read_error(runtime, metadata, line);
-            return 0;
+            goto done;
         }
         if (metadata == NULL || metadata->is_unset) {
             int magic_isset = 0;
             if (ptn_magic_property_isset(runtime, receiver, property, line, &magic_isset)) {
-                return magic_isset;
+                result = magic_isset;
+                goto done;
             }
         }
-        return 0;
+        goto done;
     }
-    return ptn_value_deref(entry->value).type != PTN_NULL;
+    result = ptn_value_deref(entry->value).type != PTN_NULL;
+
+done:
+    ptn_value_destroy(&stable_receiver);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
@@ -10983,10 +11003,14 @@ static PTN_UNUSED void ptn_arrayaccess_unset(
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
-    container = ptn_value_deref(container);
-    key_value = ptn_value_deref(key_value);
+    PtnValue stable_container = ptn_value_clone_deref(container);
+    PtnValue stable_key = ptn_value_clone_deref(key_value);
+    container = stable_container;
+    key_value = stable_key;
+    PtnLookupResult result = ptn_lookup_missing();
     if (container.type == PTN_STRING) {
-        return ptn_string_offset_lookup(runtime, container, key_value, line, quiet);
+        result = ptn_string_offset_lookup(runtime, container, key_value, line, quiet);
+        goto done;
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -10999,23 +11023,25 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
                 line,
                 &internal_result
             )) {
-            return internal_result;
+            result = internal_result;
+            goto done;
         }
     }
 #endif
 
     if (quiet && ptn_arrayaccess_can_dispatch(runtime, container, "offsetExists") &&
         !ptn_arrayaccess_exists(runtime, container, key_value, line)) {
-        return ptn_lookup_missing();
+        goto done;
     }
 
     if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
-        return ptn_lookup_found(ptn_arrayaccess_read(runtime, container, key_value, line));
+        result = ptn_lookup_found(ptn_arrayaccess_read(runtime, container, key_value, line));
+        goto done;
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
         ptn_throw_cannot_use_object_as_array(runtime, container, line);
-        return ptn_lookup_missing();
+        goto done;
     }
 
     if (container.type != PTN_ARRAY) {
@@ -11029,7 +11055,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
             }
             ptn_emit_array_runtime_warning(runtime, message, line);
         }
-        return ptn_lookup_missing();
+        goto done;
     }
 
     ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
@@ -11042,10 +11068,10 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
             "Cannot access offset of type %s on array",
             line
         );
-        return ptn_lookup_missing();
+        goto done;
     }
     if (!ptn_array_offset_key_from_value(runtime, key_value, line, quiet, &key)) {
-        return ptn_lookup_missing();
+        goto done;
     }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
@@ -11053,11 +11079,16 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
             ptn_emit_undefined_array_key_warning(runtime, key, line);
         }
         ptn_array_key_free(key);
-        return ptn_lookup_missing();
+        goto done;
     }
     PtnValue value = ptn_value_clone_deref(entry->value);
     ptn_array_key_free(key);
-    return ptn_lookup_found(value);
+    result = ptn_lookup_found(value);
+
+done:
+    ptn_value_destroy(&stable_key);
+    ptn_value_destroy(&stable_container);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
@@ -11122,32 +11153,38 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
 }
 
 static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
-    container = ptn_value_deref(container);
-    key_value = ptn_value_deref(key_value);
+    PtnValue stable_container = ptn_value_clone_deref(container);
+    PtnValue stable_key = ptn_value_clone_deref(key_value);
+    container = stable_container;
+    key_value = stable_key;
+    int result = 0;
     if (container.type == PTN_STRING) {
         int64_t offset = 0;
         size_t index = 0;
-        return ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) &&
+        result = ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) &&
             ptn_string_offset_index(container.as.string.len, offset, &index);
+        goto done;
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_arrayaccess_value_is_weak_map(container)) {
-        return ptn_weak_map_offset_isset(runtime, container, key_value, line);
+        result = ptn_weak_map_offset_isset(runtime, container, key_value, line);
+        goto done;
     }
 #endif
 
     if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetExists")) {
-        return ptn_arrayaccess_exists(runtime, container, key_value, line);
+        result = ptn_arrayaccess_exists(runtime, container, key_value, line);
+        goto done;
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
         ptn_throw_cannot_use_object_as_array(runtime, container, line);
-        return 0;
+        goto done;
     }
 
     if (container.type != PTN_ARRAY) {
-        return 0;
+        goto done;
     }
     ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
 
@@ -11159,28 +11196,36 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
             "Cannot access offset of type %s in isset or empty",
             line
         );
-        return 0;
+        goto done;
     }
     if (!ptn_array_offset_key_from_value(runtime, key_value, line, 1, &key)) {
-        return 0;
+        goto done;
     }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
-    int result = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
+    result = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
     ptn_array_key_free(key);
+
+done:
+    ptn_value_destroy(&stable_key);
+    ptn_value_destroy(&stable_container);
     return result;
 }
 
 static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
-    container = ptn_value_deref(container);
-    key_value = ptn_value_deref(key_value);
+    PtnValue stable_container = ptn_value_clone_deref(container);
+    PtnValue stable_key = ptn_value_clone_deref(key_value);
+    container = stable_container;
+    key_value = stable_key;
+    int result = 1;
     if (container.type == PTN_STRING) {
         int64_t offset = 0;
         size_t index = 0;
         if (!ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) ||
             !ptn_string_offset_index(container.as.string.len, offset, &index)) {
-            return 1;
+            goto done;
         }
-        return container.as.string.data[index] == '0';
+        result = container.as.string.data[index] == '0';
+        goto done;
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -11194,35 +11239,36 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
                 &internal_result
             )) {
             if (!internal_result.exists) {
-                return 1;
+                goto done;
             }
-            int result = !ptn_is_truthy(ptn_value_deref(internal_result.value));
+            result = !ptn_is_truthy(ptn_value_deref(internal_result.value));
             ptn_value_destroy(&internal_result.value);
-            return result;
+            goto done;
         }
     }
 #endif
 
     if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetExists")) {
         if (!ptn_arrayaccess_exists(runtime, container, key_value, line)) {
-            return 1;
+            goto done;
         }
         if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
             PtnValue value = ptn_arrayaccess_read(runtime, container, key_value, line);
-            int result = !ptn_is_truthy(ptn_value_deref(value));
+            result = !ptn_is_truthy(ptn_value_deref(value));
             ptn_value_destroy(&value);
-            return result;
+            goto done;
         }
-        return 0;
+        result = 0;
+        goto done;
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
         ptn_throw_cannot_use_object_as_array(runtime, container, line);
-        return 1;
+        goto done;
     }
 
     if (container.type != PTN_ARRAY) {
-        return 1;
+        goto done;
     }
     ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
 
@@ -11234,14 +11280,18 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
             "Cannot access offset of type %s in isset or empty",
             line
         );
-        return 1;
+        goto done;
     }
     if (!ptn_array_offset_key_from_value(runtime, key_value, line, 1, &key)) {
-        return 1;
+        goto done;
     }
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
-    int result = entry == NULL || !ptn_is_truthy(ptn_value_deref(entry->value));
+    result = entry == NULL || !ptn_is_truthy(ptn_value_deref(entry->value));
     ptn_array_key_free(key);
+
+done:
+    ptn_value_destroy(&stable_key);
+    ptn_value_destroy(&stable_container);
     return result;
 }
 

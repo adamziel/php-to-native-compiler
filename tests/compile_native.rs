@@ -55953,6 +55953,129 @@ var_dump(isset($declared->secret), empty($declared->secret), $declared->secret ?
 }
 
 #[test]
+fn compile_overloaded_isset_empty_preserves_evaluated_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-isset-empty-preserve-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-isset-empty-preserve-operands.php");
+    let output = root.join("overloaded-isset-empty-preserve-operands-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicProbe {
+    public function __isset($name) {
+        $GLOBALS['obj'] = 24;
+        return true;
+    }
+
+    public function __get($name) {
+        echo 'magic:';
+        var_dump($name, get_class($this));
+        return 42;
+    }
+}
+
+class OffsetProbe implements ArrayAccess {
+    public function offsetExists($offset): bool {
+        $GLOBALS['name'] = 24;
+        return true;
+    }
+
+    public function offsetGet($offset): mixed {
+        echo 'offset-name:';
+        var_dump($offset);
+        return 42;
+    }
+
+    public function offsetSet($offset, $value): void {
+    }
+
+    public function offsetUnset($offset): void {
+    }
+}
+
+class OffsetReceiverProbe implements ArrayAccess {
+    public function offsetExists($offset): bool {
+        $GLOBALS['obj'] = 24;
+        return true;
+    }
+
+    public function offsetGet($offset): mixed {
+        echo 'offset-receiver:';
+        var_dump($offset, get_class($this));
+        return 42;
+    }
+
+    public function offsetSet($offset, $value): void {
+    }
+
+    public function offsetUnset($offset): void {
+    }
+}
+
+$obj = new MagicProbe();
+$name = 'foo';
+var_dump($obj->$name ?? 12);
+var_dump($obj);
+
+$obj = new MagicProbe();
+$name = 'bar';
+var_dump(empty($obj->$name));
+var_dump($obj);
+
+$obj = new OffsetProbe();
+$name = 'foo';
+var_dump($obj[$name] ?? 12);
+var_dump($name);
+
+$obj = new OffsetProbe();
+$name = 'bar';
+var_dump(empty($obj[$name]));
+var_dump($name);
+
+$obj = new OffsetReceiverProbe();
+$name = 'foo';
+var_dump($obj[$name] ?? 12);
+var_dump($obj);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "magic:string(3) \"foo\"\n",
+            "string(10) \"MagicProbe\"\n",
+            "int(42)\n",
+            "int(24)\n",
+            "magic:string(3) \"bar\"\n",
+            "string(10) \"MagicProbe\"\n",
+            "bool(false)\n",
+            "int(24)\n",
+            "offset-name:string(3) \"foo\"\n",
+            "int(42)\n",
+            "int(24)\n",
+            "offset-name:string(3) \"bar\"\n",
+            "bool(false)\n",
+            "int(24)\n",
+            "offset-receiver:string(3) \"foo\"\n",
+            "string(19) \"OffsetReceiverProbe\"\n",
+            "int(42)\n",
+            "int(24)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_property_probe_quiet(&runtime"));
+    assert!(c_source.contains("ptn_offset_lookup(&runtime"));
+    assert!(c_source.contains("ptn_offset_is_empty(&runtime"));
+}
+
+#[test]
 fn compile_class_constant_reads_to_native_binary() {
     let root = temp_dir("ptn-native-class-constant-reads");
     fs::create_dir_all(&root).unwrap();
