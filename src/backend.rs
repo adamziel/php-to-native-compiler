@@ -39,6 +39,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SoapClient",
     "SoapServer",
     "SoapHeader",
+    "LibXMLError",
     "XMLWriter",
     "SimpleXMLElement",
     "PDO",
@@ -6041,6 +6042,7 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "LibXMLError",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -6549,6 +6551,7 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "LibXMLError",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -16533,6 +16536,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domcomment" => Some("DOMComment"),
         "domnodelist" => Some("DOMNodeList"),
         "domnamednodemap" => Some("DOMNamedNodeMap"),
+        "libxmlerror" => Some("LibXMLError"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),
         "xmlparser" => Some("XMLParser"),
@@ -25008,6 +25012,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Collator")
                 || class_name.eq_ignore_ascii_case("Spoofchecker")
                 || class_name.eq_ignore_ascii_case("UConverter")
+                || class_name.eq_ignore_ascii_case("LibXMLError")
                 || class_name.eq_ignore_ascii_case("DOMNode")
                 || class_name.eq_ignore_ascii_case("DOMDocument")
                 || class_name.eq_ignore_ascii_case("DOMDocumentFragment")

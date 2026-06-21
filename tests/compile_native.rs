@@ -33000,6 +33000,59 @@ var_dump($streamReader->depth);
 }
 
 #[test]
+fn compile_libxml_error_buffer_and_dom_line_numbers_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-errors-dom-lines");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("libxml-errors-dom-lines.php");
+    let output = root.join("libxml-errors-dom-lines-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_errors_once() {
+    foreach (libxml_get_errors() as $error) {
+        echo get_class($error), ':', $error->message;
+    }
+    libxml_clear_errors();
+}
+
+var_dump(class_exists('LibXMLError'));
+libxml_use_internal_errors(true);
+$reader = new XMLReader();
+$reader->XML('<root att/>');
+var_dump($reader->read());
+dump_errors_once();
+var_dump(libxml_get_last_error());
+libxml_use_internal_errors(false);
+
+$foos = str_repeat('<foo/>' . PHP_EOL, 65535);
+$xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+$foos
+<bar/>
+</root>
+XML;
+$dom = new DOMDocument();
+var_dump($dom->loadXML($xml, LIBXML_BIGLINES));
+var_dump($dom->getElementsByTagName('bar')->item(0)->getLineNo());
+"#,
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(false)\nLibXMLError:Specification mandate"));
+    assert!(
+        stdout.contains("bool(false)\nbool(true)\nint(65540)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dom_element_node_value_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-node-value");
     fs::create_dir_all(&root).unwrap();
