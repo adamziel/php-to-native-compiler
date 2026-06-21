@@ -54786,6 +54786,97 @@ exercise_lazy_proxy_success_ref_source($okProxy);
 }
 
 #[test]
+fn compile_lazy_property_reference_fetch_initializes_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-property-reference-fetch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-property-reference-fetch.php");
+    let output = root.join("lazy-property-reference-fetch-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyFetchBox {
+    public $a;
+    public int $b = 1;
+    public int $c;
+
+    public function __construct() {
+        echo \"ctor\\n\";
+    }
+}
+
+function exercise_lazy_fetch(string $label, object $obj): void {
+    echo \"#\", $label, \"\\n\";
+    $ref =& $obj->a;
+    $ref =& $obj->b;
+    try {
+        $ref =& $obj->c;
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+    $ref = 9;
+    var_dump($obj->a);
+    var_dump($obj->b);
+}
+
+$reflector = new ReflectionClass(LazyFetchBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo \"ghost init\\n\";
+    $obj->__construct();
+});
+exercise_lazy_fetch('ghost', $ghost);
+
+$proxy = $reflector->newLazyProxy(function () {
+    echo \"proxy init\\n\";
+    return new LazyFetchBox();
+});
+exercise_lazy_fetch('proxy', $proxy);
+
+ob_start();
+var_dump($proxy);
+$dump = ob_get_clean();
+echo strpos($dump, \"&NULL\") === false ? \"proxy-a-plain\\n\" : \"proxy-a-ref\\n\";
+echo substr_count($dump, \"[\\\"instance\\\"]=>\") === 1 ? \"proxy-instance-once\\n\" : \"proxy-instance-count-mismatch\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "#ghost\n",
+            "ghost init\n",
+            "ctor\n",
+            "Cannot access uninitialized non-nullable property LazyFetchBox::$c by reference\n",
+            "NULL\n",
+            "int(9)\n",
+            "#proxy\n",
+            "proxy init\n",
+            "ctor\n",
+            "Cannot access uninitialized non-nullable property LazyFetchBox::$c by reference\n",
+            "NULL\n",
+            "int(9)\n",
+            "proxy-a-plain\n",
+            "proxy-instance-once\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_reference_for_property"));
+    assert!(c_source.contains("ptn_lazy_object_sync_proxy_instance_properties"));
+}
+
+#[test]
 fn compile_property_and_static_property_inc_dec_to_native_binary() {
     let root = temp_dir("ptn-native-property-static-inc-dec");
     fs::create_dir_all(&root).unwrap();

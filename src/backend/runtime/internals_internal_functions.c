@@ -1542,6 +1542,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_uninitialized_properties
     PtnObject *object,
     size_t indent
 ) {
+    if (object != NULL &&
+        object->lazy_is_proxy &&
+        !object->lazy_uninitialized &&
+        ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
+        return;
+    }
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
         if (!ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
@@ -1830,6 +1836,11 @@ static PTN_UNUSED int ptn_direct_value_var_dump_object_proxy_instance(
         return 0;
     }
     PtnValue instance = ptn_value_deref(object->lazy_proxy_instance);
+    if (instance.type != PTN_OBJECT) {
+        return 0;
+    }
+    ptn_lazy_object_sync_proxy_instance_properties(object);
+    instance = ptn_value_deref(object->lazy_proxy_instance);
     if (instance.type != PTN_OBJECT) {
         return 0;
     }
@@ -4874,6 +4885,12 @@ static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
 }
 
 static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size_t indent) {
+    if (object != NULL &&
+        object->lazy_is_proxy &&
+        !object->lazy_uninitialized &&
+        ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
+        return;
+    }
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
         if (!ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
@@ -5251,6 +5268,11 @@ static int ptn_var_dump_object_proxy_instance(
         return 0;
     }
     PtnValue instance = ptn_value_deref(object->lazy_proxy_instance);
+    if (instance.type != PTN_OBJECT) {
+        return 0;
+    }
+    ptn_lazy_object_sync_proxy_instance_properties(object);
+    instance = ptn_value_deref(object->lazy_proxy_instance);
     if (instance.type != PTN_OBJECT) {
         return 0;
     }

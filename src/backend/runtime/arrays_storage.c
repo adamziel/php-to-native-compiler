@@ -1627,6 +1627,45 @@ static PTN_UNUSED void ptn_lazy_object_copy_properties_from_instance(
     target->properties = copied;
 }
 
+static PtnValue ptn_lazy_object_proxy_sync_property_value_clone(PtnValue value) {
+    if (value.type == PTN_REFERENCE &&
+        value.as.reference != NULL &&
+        value.as.reference->refcount <= 2 &&
+        value.as.reference->property_type_kind == PTN_PROPERTY_TYPE_NONE &&
+        value.as.reference->property_type_source_len == 0) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_value_clone(value);
+}
+
+static PtnArray *ptn_lazy_object_proxy_sync_properties_clone(PtnArray *source) {
+    PtnArray *clone = ptn_array_clone(source);
+    if (clone == NULL || source == NULL) {
+        return clone;
+    }
+    for (size_t i = 0; i < clone->len && i < source->len; i++) {
+        PtnValue replacement =
+            ptn_lazy_object_proxy_sync_property_value_clone(source->entries[i].value);
+        ptn_value_destroy(&clone->entries[i].value);
+        clone->entries[i].value = replacement;
+    }
+    return clone;
+}
+
+static void ptn_lazy_object_sync_properties_to_proxy_instance(
+    PtnObject *target,
+    PtnObject *source
+) {
+    if (target == NULL || source == NULL || source->properties == NULL) {
+        return;
+    }
+    ptn_object_forget_property_reference_sources(target);
+    PtnArray *old_properties = target->properties;
+    target->properties = NULL;
+    ptn_array_free(old_properties);
+    target->properties = ptn_lazy_object_proxy_sync_properties_clone(source->properties);
+}
+
 static void ptn_lazy_object_sync_proxy_instance_properties_depth(PtnObject *proxy, size_t depth) {
     if (proxy == NULL || proxy->lazy_uninitialized || !proxy->lazy_is_proxy) {
         return;
@@ -1641,7 +1680,7 @@ static void ptn_lazy_object_sync_proxy_instance_properties_depth(PtnObject *prox
     if (real.as.object == proxy) {
         return;
     }
-    ptn_lazy_object_copy_properties_from_instance(real.as.object, proxy);
+    ptn_lazy_object_sync_properties_to_proxy_instance(real.as.object, proxy);
     ptn_lazy_object_sync_proxy_instance_properties_depth(real.as.object, depth + 1);
 }
 

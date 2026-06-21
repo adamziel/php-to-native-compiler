@@ -4359,6 +4359,48 @@ static PTN_UNUSED PtnValue ptn_exception_write_dynamic_property(
     return result;
 }
 
+static PTN_UNUSED int ptn_lazy_object_property_reference_needs_initialization(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !receiver.as.object->lazy_uninitialized ||
+        receiver.as.object->lazy_initializing) {
+        return 0;
+    }
+
+    int local_lazy_slot = 0;
+    char *lazy_storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+        1,
+        line
+    );
+    if (lazy_storage_key != NULL) {
+        PtnArrayKey lazy_key = ptn_array_string_key(lazy_storage_key);
+        PtnArrayEntry *lazy_entry =
+            ptn_array_entry_for_key(receiver.as.object->properties, lazy_key);
+        const PtnObjectPropertyMetadata *lazy_metadata =
+            ptn_object_property_metadata(receiver.as.object, lazy_storage_key);
+        ptn_array_key_free(lazy_key);
+        local_lazy_slot = lazy_metadata != NULL &&
+            lazy_metadata->lazy_skip &&
+            (lazy_entry != NULL ||
+             (lazy_metadata->is_unset &&
+              ptn_property_type_is_declared(lazy_metadata->type_kind)));
+        free(lazy_storage_key);
+    }
+
+    return !local_lazy_slot;
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -5820,6 +5862,16 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
     }
+    if (ptn_lazy_object_property_reference_needs_initialization(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        ) &&
+        !ptn_lazy_object_initialize(runtime, receiver, line)) {
+        return;
+    }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
     if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
@@ -5975,6 +6027,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         ptn_reference_adopt_property_type(reference.as.reference, metadata);
     }
     ptn_array_set_entry_publish_first(receiver.as.object->properties, key, ptn_value_clone(reference));
+    ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {
@@ -5995,6 +6048,16 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    if (ptn_lazy_object_property_reference_needs_initialization(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        ) &&
+        !ptn_lazy_object_initialize(runtime, receiver, line)) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     PtnObjectPropertyMetadata *blocked_metadata =
@@ -6254,6 +6317,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             mutable_metadata->is_unset = 0;
             ptn_object_metadata_remember_value_type(mutable_metadata, reference);
         }
+        ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
         free(storage_key);
         return reference;
     }
@@ -6266,6 +6330,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     if (metadata != NULL) {
         ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
     }
+    ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     return ptn_value_clone(entry->value);
 }
 
