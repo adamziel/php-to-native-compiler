@@ -53500,19 +53500,32 @@ static void ptn_iconv_emit_wrong_encoding_warning(
     PtnStringOperand encoding,
     size_t line
 ) {
-    char message[256];
-    int written = snprintf(
-        message,
-        sizeof(message),
+    int precision = encoding.len > (size_t)INT_MAX ? INT_MAX : (int)encoding.len;
+    int needed = snprintf(
+        NULL,
+        0,
         "%s(): Wrong encoding, conversion from \"%.*s\" to \"UCS-4LE\" is not allowed",
         function_name,
-        (int)encoding.len,
+        precision,
         encoding.data
     );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
+    if (needed < 0) {
         ptn_abort_out_of_memory();
     }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Wrong encoding, conversion from \"%.*s\" to \"UCS-4LE\" is not allowed",
+        function_name,
+        precision,
+        encoding.data
+    );
     ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static char *ptn_iconv_optional_encoding_alloc(
@@ -53525,15 +53538,16 @@ static char *ptn_iconv_optional_encoding_alloc(
     int *ok
 ) {
     *ok = 1;
-    PtnStringOperand encoding = (value == NULL || ptn_value_deref(*value).type == PTN_NULL)
-        ? ptn_string_operand_borrowed(fallback == NULL ? "" : fallback)
-        : ptn_internal_expect_string_arg(runtime, function_name, position, "encoding", *value, line);
+    int explicit_encoding = value != NULL && ptn_value_deref(*value).type != PTN_NULL;
+    PtnStringOperand encoding = explicit_encoding
+        ? ptn_internal_expect_string_arg(runtime, function_name, position, "encoding", *value, line)
+        : ptn_string_operand_borrowed(fallback == NULL ? "" : fallback);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(encoding);
         *ok = 0;
         return NULL;
     }
-    if (encoding.len > 64) {
+    if (explicit_encoding && encoding.len > 64) {
         char *message = NULL;
         int needed = snprintf(
             NULL,
