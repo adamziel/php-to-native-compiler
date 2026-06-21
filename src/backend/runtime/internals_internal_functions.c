@@ -75955,6 +75955,8 @@ static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node);
 static PtnXmlReaderEvent *ptn_xml_reader_current_event(PtnXmlReaderData *data);
 static PtnXmlNode *ptn_xml_reader_current_element_for_attributes(PtnXmlReaderData *data);
 static PtnXmlNode *ptn_xml_reader_current_node(PtnXmlReaderData *data);
+static PtnXmlNode *ptn_xml_create_element(PtnRuntime *runtime, PtnXmlNode *document, const char *name, const char *value);
+static const char *ptn_xml_local_name(const char *name);
 static const char *ptn_xml_reader_local_name(const char *name);
 static char *ptn_xml_reader_prefix_copy(const char *name);
 static const char *ptn_xml_reader_namespace_for_prefixed_name(PtnXmlNode *owner, const char *name);
@@ -76297,6 +76299,40 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
         }
     }
     return clone;
+}
+
+static PtnXmlNode *ptn_dom_find_element_by_local_name(PtnXmlNode *node, const char *local_name) {
+    if (node == NULL || local_name == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), local_name)) {
+        return node;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *found = ptn_dom_find_element_by_local_name(node->children[i], local_name);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_dom_html_document_body_value(PtnRuntime *runtime, PtnXmlNode *document) {
+    PtnXmlNode *body = ptn_dom_find_element_by_local_name(document, "body");
+    if (body != NULL) {
+        return ptn_xml_node_value(body);
+    }
+    body = ptn_xml_create_element(runtime, document, "body", "");
+    for (size_t i = 0; document != NULL && i < document->child_count; i++) {
+        PtnXmlNode *child = document->children[i];
+        if (child == NULL || child->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        PtnXmlNode *clone = ptn_xml_clone_node_recursive(runtime, child, 1);
+        ptn_xml_append_child(body, clone);
+    }
+    return ptn_xml_node_value(body);
 }
 
 static PtnXmlNode *ptn_xml_insert_child_at(PtnXmlNode *parent, PtnXmlNode *child, size_t index) {
@@ -81394,7 +81430,9 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "prefix") ||
         ptn_ascii_case_equal(property, "namespaceURI") ||
         ptn_ascii_case_equal(property, "className") ||
+        ptn_ascii_case_equal(property, "classList") ||
         ptn_ascii_case_equal(property, "id") ||
+        ptn_ascii_case_equal(property, "body") ||
         ptn_ascii_case_equal(property, "value") ||
         ptn_ascii_case_equal(property, "ownerElement");
 }
@@ -81633,8 +81671,14 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         *value_out = ptn_null();
         return 1;
     }
-    if (ptn_ascii_case_equal(receiver.as.object->class_name, "DOMDocument")) {
+    if (ptn_ascii_case_equal(receiver.as.object->class_name, "DOMDocument") ||
+        ptn_dom_modern_document_class(receiver.as.object->class_name)) {
         int default_bool = 0;
+        if (ptn_dom_modern_html_document_class(receiver.as.object->class_name) &&
+            ptn_ascii_case_equal(property, "body")) {
+            *value_out = ptn_dom_html_document_body_value(runtime, node);
+            return 1;
+        }
         if (ptn_ascii_case_equal(property, "version")) {
             *value_out = ptn_owned_string(ptn_duplicate_string(node->version == NULL ? "1.0" : node->version));
             return 1;
@@ -81725,6 +81769,12 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             ? ptn_xml_element_attribute_value(node, "class")
             : NULL;
         *value_out = ptn_owned_string(ptn_duplicate_string(value == NULL ? "" : value));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "classList")) {
+        *value_out = node->type == PTN_XML_NODE_ELEMENT
+            ? ptn_xml_node_list_object(runtime, NULL)
+            : ptn_null();
         return 1;
     }
     if (ptn_ascii_case_equal(property, "id")) {
