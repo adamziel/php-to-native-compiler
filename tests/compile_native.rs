@@ -59912,6 +59912,76 @@ var_dump($object->plain, $vars['plain']);
 }
 
 #[test]
+fn compile_get_mangled_object_vars_to_native_binary() {
+    let root = temp_dir("ptn-native-get-mangled-object-vars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-mangled-object-vars.php");
+    let output = root.join("get-mangled-object-vars-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class A {
+    public $pub = 1;
+    protected $prot = 2;
+    private $priv = 3;
+}
+class B extends A {
+    private $priv = 4;
+}
+
+$obj = new B;
+$obj->dyn = 5;
+$obj->{\"6\"} = 6;
+var_export(get_mangled_object_vars($obj));
+echo \"\\n\";
+
+#[AllowDynamicProperties]
+class AO extends ArrayObject {
+    private $priv = 1;
+}
+
+$ao = new AO(['x' => 'y']);
+$ao->dyn = 2;
+var_export(get_mangled_object_vars($ao));
+echo \"\\n\";
+var_export((array) $ao);
+echo \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  'pub' => 1,\n",
+            "  '' . \"\\0\" . '*' . \"\\0\" . 'prot' => 2,\n",
+            "  '' . \"\\0\" . 'A' . \"\\0\" . 'priv' => 3,\n",
+            "  '' . \"\\0\" . 'B' . \"\\0\" . 'priv' => 4,\n",
+            "  'dyn' => 5,\n",
+            "  6 => 6,\n",
+            ")\n",
+            "array (\n",
+            "  '' . \"\\0\" . 'AO' . \"\\0\" . 'priv' => 1,\n",
+            "  'dyn' => 2,\n",
+            ")\n",
+            "array (\n",
+            "  'x' => 'y',\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_mangled_object_vars"));
+}
+
+#[test]
 fn compile_jsonserializable_anonymous_class_interface_to_native_binary() {
     let root = temp_dir("ptn-native-jsonserializable-anonymous-interface");
     fs::create_dir_all(&root).unwrap();

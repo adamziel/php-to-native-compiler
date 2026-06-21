@@ -9677,6 +9677,17 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayEntry *entry = &iterator->array->entries[physical_index];
     if (iterator->object != NULL && iterator->generator == NULL) {
+        const PtnObjectPropertyMetadata *metadata =
+            entry->key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
+                : NULL;
+        if (metadata == NULL && iterator->object->properties != NULL) {
+            PtnArrayEntry *property_entry =
+                ptn_array_entry_for_key(iterator->object->properties, entry->key);
+            if (property_entry != NULL) {
+                return ptn_value_borrow(property_entry->value);
+            }
+        }
         char *property_name = ptn_object_foreach_property_name(iterator->object, entry->key);
         PtnValue receiver = ptn_value_borrow(ptn_object(iterator->object));
         PtnValue value = ptn_object_read_property(
@@ -9717,9 +9728,23 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayEntry *entry = &iterator->array->entries[physical_index];
     if (iterator->object != NULL && iterator->generator == NULL) {
+        const PtnObjectPropertyMetadata *metadata =
+            entry->key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
+                : NULL;
+        if (metadata == NULL && iterator->object->properties != NULL) {
+            PtnArrayEntry *property_entry =
+                ptn_array_entry_for_key(iterator->object->properties, entry->key);
+            if (property_entry != NULL) {
+                if (property_entry->value.type != PTN_REFERENCE) {
+                    PtnValue current = property_entry->value;
+                    property_entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+                }
+                iterator->current_reference = property_entry->value.as.reference;
+                return ptn_value_clone(property_entry->value);
+            }
+        }
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
-            const PtnObjectPropertyMetadata *metadata =
-                ptn_object_property_metadata(iterator->object, entry->key.as.string);
             if (metadata != NULL && metadata->is_readonly) {
                 ptn_throw_readonly_property_reference_error(
                     iterator->runtime,

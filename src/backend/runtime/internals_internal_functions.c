@@ -112999,6 +112999,52 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static PtnArrayKey ptn_mangled_object_property_array_key(const PtnObjectPropertyMetadata *metadata) {
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        const char *name = metadata == NULL ? "" : metadata->display_name;
+        return ptn_public_object_property_array_key_from_name_len(name, strlen(name));
+    }
+
+    size_t property_len = strlen(metadata->display_name);
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        if (property_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t key_len = property_len + 3;
+        char *storage = malloc(key_len);
+        if (storage == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        storage[0] = '\0';
+        storage[1] = '*';
+        storage[2] = '\0';
+        memcpy(storage + 3, metadata->display_name, property_len);
+        PtnArrayKey key = ptn_array_string_key_len(storage, key_len);
+        free(storage);
+        return key;
+    }
+
+    const char *declaring_class = metadata->declaring_class == NULL
+        ? ""
+        : metadata->declaring_class;
+    size_t declaring_len = strlen(declaring_class);
+    if (declaring_len > SIZE_MAX - property_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t key_len = declaring_len + property_len + 2;
+    char *storage = malloc(key_len);
+    if (storage == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    storage[0] = '\0';
+    memcpy(storage + 1, declaring_class, declaring_len);
+    storage[declaring_len + 1] = '\0';
+    memcpy(storage + declaring_len + 2, metadata->display_name, property_len);
+    PtnArrayKey key = ptn_array_string_key_len(storage, key_len);
+    free(storage);
+    return key;
+}
+
 static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -113025,9 +113071,18 @@ static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t
     }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            continue;
+        }
+        PtnArrayKey key = metadata == NULL
+            ? ptn_public_object_property_array_key(entry->key)
+            : ptn_mangled_object_property_array_key(metadata);
         ptn_array_set_entry(
             result.as.array,
-            ptn_array_key_clone(entry->key),
+            key,
             ptn_value_clone_deref(entry->value)
         );
     }
