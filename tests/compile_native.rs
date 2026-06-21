@@ -11250,6 +11250,118 @@ var_dump(unserialize($encoded . 'tail'));
 }
 
 #[test]
+fn compile_magic_serialize_hooks_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-serialize-hooks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-serialize-hooks.php");
+    let output = root.join("magic-serialize-hooks-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Magic {
+    public $prop;
+    public $prop2;
+    public function __serialize(): array {
+        echo "__serialize\n";
+        return ["value" => $this->prop, 42 => $this->prop2];
+    }
+    public function __unserialize(array $data): void {
+        echo "__unserialize\n";
+        $this->prop = $data["value"];
+        $this->prop2 = $data[42];
+    }
+}
+
+class Legacy {
+    public $a;
+    public $b;
+    public $c;
+    public function __sleep(): array {
+        echo "__sleep\n";
+        return ["a", "c"];
+    }
+    public function __wakeup(): void {
+        echo "__wakeup\n";
+        $this->b = "wake";
+    }
+}
+
+class BadMagic {
+    public function __serialize() {
+        return $this;
+    }
+}
+
+$magic = new Magic;
+$magic->prop = "foobar";
+$magic->prop2 = "barfoo";
+$encoded = serialize($magic);
+var_dump($encoded);
+var_dump(unserialize($encoded));
+
+$legacy = new Legacy;
+$legacy->a = "left";
+$legacy->b = "middle";
+$legacy->c = "right";
+$encoded = serialize($legacy);
+var_dump($encoded);
+var_dump(unserialize($encoded));
+
+try {
+    serialize(new BadMagic);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("__serialize\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "string(59) \"O:5:\"Magic\":2:{s:5:\"value\";s:6:\"foobar\";i:42;s:6:\"barfoo\";}\""
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("__unserialize\n"), "{stdout}");
+    assert!(
+        stdout.contains("[\"prop\"]=>\n  string(6) \"foobar\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"prop2\"]=>\n  string(6) \"barfoo\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("__sleep\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "string(56) \"O:6:\"Legacy\":2:{s:1:\"a\";s:4:\"left\";s:1:\"c\";s:5:\"right\";}\""
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("__wakeup\n"), "{stdout}");
+    assert!(
+        stdout.contains("[\"b\"]=>\n  string(4) \"wake\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("BadMagic::__serialize() must return an array"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_null_payloads_do_not_leave_reference_ids_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-null-reference-ids");
     fs::create_dir_all(&root).unwrap();

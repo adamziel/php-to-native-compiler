@@ -21225,7 +21225,8 @@ fn magic_declaration_fatal_message(
     let expected_arity = match method_key.as_str() {
         "__get" | "__isset" | "__unset" | "__set_state" => Some(1),
         "__set" | "__call" | "__callstatic" => Some(2),
-        "__tostring" | "__debuginfo" => Some(0),
+        "__tostring" | "__debuginfo" | "__sleep" | "__wakeup" | "__serialize" => Some(0),
+        "__unserialize" => Some(1),
         _ => None,
     };
     if let Some(expected) = expected_arity {
@@ -21253,6 +21254,7 @@ fn magic_declaration_fatal_message(
             ));
         }
         "__call" | "__get" | "__set" | "__isset" | "__unset" | "__tostring" | "__debuginfo"
+        | "__sleep" | "__wakeup" | "__serialize" | "__unserialize"
             if method.is_static =>
         {
             return Some(format!(
@@ -21300,6 +21302,14 @@ fn magic_declaration_fatal_message(
             "__debuginfo" if !magic_return_type_is_debug_info_compatible(return_type) => {
                 Some("?array")
             }
+            "__sleep" | "__serialize"
+                if !magic_return_type_is_exact_or_never(return_type, &TypeHint::Array) =>
+            {
+                Some("array")
+            }
+            "__wakeup" | "__unserialize" if !magic_return_type_is_void_compatible(return_type) => {
+                Some("void")
+            }
             "__set_state" if !magic_return_type_is_object_compatible(return_type) => Some("object"),
             _ => None,
         };
@@ -21326,6 +21336,9 @@ fn magic_declaration_fatal_message(
             magic_parameter_type_fatal(class, method, function, 1, TypeHint::Array, "array")
         }
         "__set_state" => {
+            magic_parameter_type_fatal(class, method, function, 0, TypeHint::Array, "array")
+        }
+        "__unserialize" => {
             magic_parameter_type_fatal(class, method, function, 0, TypeHint::Array, "array")
         }
         _ => None,
@@ -24771,8 +24784,10 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")
         || name.eq_ignore_ascii_case("register_shutdown_function")
+        || name.eq_ignore_ascii_case("serialize")
         || name.eq_ignore_ascii_case("spl_autoload_call")
         || name.eq_ignore_ascii_case("spl_autoload_register")
+        || name.eq_ignore_ascii_case("unserialize")
 }
 
 fn collect_control_warnings_in(

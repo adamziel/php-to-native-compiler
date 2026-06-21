@@ -6990,6 +6990,323 @@ static int ptn_serialize_append_serializable_object(
     return 1;
 }
 
+static int ptn_serialize_declared_magic_method_exists(
+    PtnSerializeState *state,
+    PtnObject *object,
+    const char *method_name
+) {
+    return state != NULL &&
+        state->runtime != NULL &&
+        state->runtime->method_dispatch != NULL &&
+        object != NULL &&
+        ptn_declared_class_method_exists(object->class_name, method_name);
+}
+
+static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
+    PtnObject *object,
+    const char *name,
+    size_t name_len
+) {
+    if (object == NULL || object->properties == NULL || name == NULL) {
+        return NULL;
+    }
+
+    const char *declaring_class = NULL;
+    size_t declaring_len = 0;
+    const char *display_name = name;
+    size_t display_len = name_len;
+    PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
+    if (name_len >= 3 && name[0] == '\0') {
+        if (name[1] == '*' && name[2] == '\0') {
+            display_name = name + 3;
+            display_len = name_len - 3;
+            visibility = PTN_PROPERTY_PROTECTED;
+        } else {
+            const char *separator = memchr(name + 1, '\0', name_len - 1);
+            if (separator != NULL && separator + 1 <= name + name_len) {
+                declaring_class = name + 1;
+                declaring_len = (size_t)(separator - declaring_class);
+                display_name = separator + 1;
+                display_len = (size_t)((name + name_len) - display_name);
+                visibility = PTN_PROPERTY_PRIVATE;
+            }
+        }
+    }
+
+    PtnArrayKey key = ptn_array_string_key_len(name, name_len);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    if (entry != NULL) {
+        return entry;
+    }
+
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (strlen(metadata->display_name) != display_len ||
+            memcmp(metadata->display_name, display_name, display_len) != 0) {
+            continue;
+        }
+        if (visibility != PTN_PROPERTY_PUBLIC && metadata->read_visibility != visibility) {
+            continue;
+        }
+        if (visibility == PTN_PROPERTY_PUBLIC &&
+            metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+            !ptn_ascii_case_equal(metadata->declaring_class, object->class_name)) {
+            continue;
+        }
+        if (visibility == PTN_PROPERTY_PRIVATE &&
+            (strlen(metadata->declaring_class) != declaring_len ||
+             memcmp(metadata->declaring_class, declaring_class, declaring_len) != 0)) {
+            continue;
+        }
+        entry = ptn_object_property_entry_for_metadata(object, metadata);
+        if (entry != NULL) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_serialize_emit_sleep_return_warning(
+    PtnSerializeState *state,
+    PtnObject *object
+) {
+    char message[512];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "serialize(): %s::__sleep() should return an array only containing the names of instance-variables to serialize",
+        object == NULL ? "" : object->class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(state->runtime, message, state->line);
+}
+
+static char *ptn_serialize_sleep_display_name(
+    PtnObject *object,
+    PtnArrayEntry *property_entry,
+    const char *fallback,
+    size_t fallback_len
+) {
+    if (object != NULL &&
+        property_entry != NULL &&
+        property_entry->key.type == PTN_ARRAY_KEY_STRING) {
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, property_entry->key.as.string);
+        if (metadata != NULL) {
+            return ptn_duplicate_string(metadata->display_name);
+        }
+    }
+    if (fallback_len >= 3 && fallback != NULL && fallback[0] == '\0') {
+        if (fallback[1] == '*' && fallback[2] == '\0') {
+            return ptn_duplicate_string_len(fallback + 3, fallback_len - 3);
+        }
+        const char *separator = memchr(fallback + 1, '\0', fallback_len - 1);
+        if (separator != NULL && separator + 1 <= fallback + fallback_len) {
+            return ptn_duplicate_string_len(
+                separator + 1,
+                (size_t)((fallback + fallback_len) - (separator + 1))
+            );
+        }
+    }
+    return ptn_duplicate_string_len(fallback == NULL ? "" : fallback, fallback_len);
+}
+
+static int ptn_serialize_append_magic_serialize_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state,
+    int *handled
+) {
+    *handled = 0;
+    if (!ptn_serialize_declared_magic_method_exists(state, object, "__serialize")) {
+        return 0;
+    }
+    *handled = 1;
+
+    PtnValue receiver = ptn_object(object);
+    PtnValue payload = state->runtime->method_dispatch(
+        state->runtime,
+        receiver,
+        "__serialize",
+        0,
+        NULL,
+        state->line
+    );
+    if (state->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&payload);
+        ptn_string_buffer_append(buffer, "N;");
+        return 0;
+    }
+
+    PtnValue payload_value = ptn_value_deref(payload);
+    if (payload_value.type != PTN_ARRAY) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__serialize() must return an array",
+            object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_value_destroy(&payload);
+        ptn_throw_exception(state->runtime, "TypeError", message);
+        ptn_string_buffer_append(buffer, "N;");
+        return 0;
+    }
+
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        payload_value.as.array->len
+    );
+    for (size_t i = 0; i < payload_value.as.array->len; i++) {
+        PtnArrayEntry *entry = &payload_value.as.array->entries[i];
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+    ptn_value_destroy(&payload);
+    return 1;
+}
+
+static int ptn_serialize_append_sleep_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state,
+    int *handled
+) {
+    *handled = 0;
+    if (!ptn_serialize_declared_magic_method_exists(state, object, "__sleep")) {
+        return 0;
+    }
+    *handled = 1;
+
+    PtnValue receiver = ptn_object(object);
+    PtnValue names = state->runtime->method_dispatch(
+        state->runtime,
+        receiver,
+        "__sleep",
+        0,
+        NULL,
+        state->line
+    );
+    if (state->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&names);
+        ptn_string_buffer_append(buffer, "N;");
+        return 0;
+    }
+
+    PtnValue names_value = ptn_value_deref(names);
+    if (names_value.type != PTN_ARRAY) {
+        ptn_serialize_emit_sleep_return_warning(state, object);
+        ptn_value_destroy(&names);
+        ptn_string_buffer_append(buffer, "N;");
+        return 0;
+    }
+
+    PtnStringBuffer body;
+    ptn_string_buffer_init(&body);
+    PtnValue seen = ptn_array_from_literal_entries(0, NULL);
+    size_t emitted = 0;
+    for (size_t i = 0; i < names_value.as.array->len; i++) {
+        PtnValue name_value = ptn_value_deref(names_value.as.array->entries[i].value);
+        PtnStringOperand name_operand;
+        if (name_value.type == PTN_STRING) {
+            name_operand = ptn_string_operand_borrowed_len(
+                (const char *)name_value.as.string.data,
+                name_value.as.string.len
+            );
+        } else {
+            ptn_serialize_emit_sleep_return_warning(state, object);
+            name_operand = ptn_value_to_string_operand_with_runtime(
+                state->runtime,
+                name_value,
+                state->line
+            );
+            if (state->runtime != NULL && state->runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(name_operand);
+                continue;
+            }
+        }
+        PtnArrayEntry *property_entry =
+            ptn_serialize_object_property_entry_for_name(object, name_operand.data, name_operand.len);
+        if (property_entry == NULL) {
+            char *property_name = ptn_serialize_sleep_display_name(
+                object,
+                NULL,
+                name_operand.data,
+                name_operand.len
+            );
+            char message[512];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "serialize(): \"%s\" returned as member variable from __sleep() but does not exist",
+                property_name
+            );
+            free(property_name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_runtime_warning(state->runtime, message, state->line);
+            ptn_string_operand_free(name_operand);
+            continue;
+        }
+        if (ptn_array_entry_for_key(seen.as.array, property_entry->key) != NULL) {
+            char *property_name = ptn_serialize_sleep_display_name(
+                object,
+                property_entry,
+                name_operand.data,
+                name_operand.len
+            );
+            char message[512];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "serialize(): \"%s\" is returned from __sleep() multiple times",
+                property_name
+            );
+            free(property_name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_runtime_warning(state->runtime, message, state->line);
+            ptn_string_operand_free(name_operand);
+            continue;
+        }
+        ptn_array_set_entry(
+            seen.as.array,
+            ptn_array_key_clone(property_entry->key),
+            ptn_bool(1)
+        );
+        ptn_serialize_append_object_property_key(&body, object, property_entry->key);
+        ptn_serialize_append_value_with_id(&body, property_entry->value, state, 0);
+        ptn_string_operand_free(name_operand);
+        emitted++;
+    }
+
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        emitted
+    );
+    ptn_string_buffer_append_len(buffer, body.data, body.len);
+    ptn_string_buffer_append_char(buffer, '}');
+    ptn_value_destroy(&seen);
+    free(body.data);
+    ptn_value_destroy(&names);
+    return 1;
+}
+
 static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
     if (object != NULL &&
         object->lazy_uninitialized &&
@@ -7015,6 +7332,18 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     if (object != NULL && ptn_internal_class_name_is_bcmath_number(object->class_name)) {
         ptn_serialize_append_bcmath_number_object(buffer, object, state);
         return 1;
+    }
+    int handled_magic_serialize = 0;
+    int magic_serialize_referenceable =
+        ptn_serialize_append_magic_serialize_object(buffer, object, state, &handled_magic_serialize);
+    if (handled_magic_serialize) {
+        return magic_serialize_referenceable;
+    }
+    int handled_sleep = 0;
+    int sleep_referenceable =
+        ptn_serialize_append_sleep_object(buffer, object, state, &handled_sleep);
+    if (handled_sleep) {
+        return sleep_referenceable;
     }
     int handled_serializable = 0;
     int serializable_referenceable =
@@ -8355,6 +8684,38 @@ static PtnValue ptn_unserialize_new_object_shell(
     return ptn_unserialize_new_incomplete_object_shell(runtime, class_name);
 }
 
+static int ptn_unserialize_declared_magic_method_exists(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *method_name
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    return runtime != NULL &&
+        runtime->method_dispatch != NULL &&
+        resolved.type == PTN_OBJECT &&
+        !ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class") &&
+        ptn_declared_class_method_exists(resolved.as.object->class_name, method_name);
+}
+
+static void ptn_unserialize_call_magic_method(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *method_name,
+    size_t argc,
+    PtnValue *args,
+    size_t line
+) {
+    PtnValue result = runtime->method_dispatch(
+        runtime,
+        object,
+        method_name,
+        argc,
+        args,
+        line
+    );
+    ptn_value_destroy(&result);
+}
+
 static const PtnObjectPropertyMetadata *ptn_unserialize_find_metadata_by_declared_name(
     PtnObject *object,
     const char *declaring_class,
@@ -9146,21 +9507,55 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 result.value.type != PTN_OBJECT) {
                 return result;
             }
-            for (size_t i = 0; i < property_count; i++) {
-                PtnArrayKey key;
-                if (!ptn_unserialize_parse_key(state, &key)) {
+            int use_magic_unserialize =
+                ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
+            if (use_magic_unserialize) {
+                PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+                for (size_t i = 0; i < property_count; i++) {
+                    PtnArrayKey key;
+                    if (!ptn_unserialize_parse_key(state, &key)) {
+                        ptn_value_destroy(&payload);
+                        return result;
+                    }
+                    PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
+                    if (state->failed ||
+                        !ptn_unserialize_store_entry(runtime, state, payload.as.array, key, parsed)) {
+                        ptn_value_destroy(&payload);
+                        return result;
+                    }
+                }
+                ptn_unserialize_update_slot(state, result.id, &result.value);
+                if (!ptn_unserialize_consume(state, '}')) {
+                    ptn_value_destroy(&payload);
                     return result;
                 }
-                PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
-                if (state->failed ||
-                    !ptn_unserialize_store_object_property_entry(
-                        runtime,
-                        state,
-                        result.value.as.object,
-                        key,
-                        parsed
-                    )) {
-                    return result;
+                ptn_unserialize_call_magic_method(
+                    runtime,
+                    result.value,
+                    "__unserialize",
+                    1,
+                    &payload,
+                    state->line
+                );
+                ptn_value_destroy(&payload);
+                return result;
+            } else {
+                for (size_t i = 0; i < property_count; i++) {
+                    PtnArrayKey key;
+                    if (!ptn_unserialize_parse_key(state, &key)) {
+                        return result;
+                    }
+                    PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
+                    if (state->failed ||
+                        !ptn_unserialize_store_object_property_entry(
+                            runtime,
+                            state,
+                            result.value.as.object,
+                            key,
+                            parsed
+                        )) {
+                        return result;
+                    }
                 }
             }
             ptn_unserialize_update_slot(state, result.id, &result.value);
@@ -9170,6 +9565,16 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
             ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
             ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
+            if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
+                ptn_unserialize_call_magic_method(
+                    runtime,
+                    result.value,
+                    "__wakeup",
+                    0,
+                    NULL,
+                    state->line
+                );
+            }
             return result;
         }
         case 'C': {
