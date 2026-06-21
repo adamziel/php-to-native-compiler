@@ -30,6 +30,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub declaration_fatals: Vec<ClassDeclarationFatal>,
     pub attributes: AttributeMetadata,
     pub doc_comment: Option<String>,
     pub is_conditionally_declared: bool,
@@ -44,6 +45,12 @@ pub struct ClassDecl {
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassDeclarationFatal {
+    pub message: String,
     pub span: SourceSpan,
 }
 

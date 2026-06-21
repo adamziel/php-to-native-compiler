@@ -5,13 +5,13 @@ use crate::ast::{
     AssignmentTarget, AttributeArgument, AttributeArgumentArrayElement,
     AttributeArgumentExpression, AttributeArgumentKind, AttributeArgumentValue,
     AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp, CastKind,
-    CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
-    CompileWarningKind, ConstDeclaration, EnumBackingType, Expr, FunctionDecl, FunctionParameter,
-    GlobalTarget, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
-    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, ListExpr,
-    ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program,
-    PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
-    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
+    CatchClause, ClassConstantDecl, ClassDecl, ClassDeclarationFatal, ClosureUseCapture,
+    CompileWarning, CompileWarningKind, ConstDeclaration, EnumBackingType, Expr, FunctionDecl,
+    FunctionParameter, GlobalTarget, IncDecOp, IncDecResult, IncDecTarget, IncludeKind,
+    InstanceOfTarget, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl,
+    Program, PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind,
+    PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
     StringInterpolationIndex, StringPart, SwitchCase, TraitAdaptation, TraitAliasAdaptation,
     TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
     UnsetTarget,
@@ -1722,6 +1722,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
+            declaration_fatals: Vec::new(),
             attributes,
             doc_comment,
             is_conditionally_declared: false,
@@ -1930,6 +1931,7 @@ impl Parser<'_> {
             parent_name: None,
             interfaces,
             trait_uses,
+            declaration_fatals: Vec::new(),
             attributes,
             doc_comment,
             is_conditionally_declared: false,
@@ -8492,6 +8494,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
+            declaration_fatals: Vec::new(),
             attributes,
             doc_comment: self.doc_comment_before(start_span.byte_start),
             is_conditionally_declared: false,
@@ -12460,32 +12463,44 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             .map(|constant| (constant.name.to_ascii_lowercase(), class.name.clone()))
             .collect::<HashMap<_, _>>();
         let trait_uses = class.trait_uses.clone();
-        let mut used_traits = Vec::new();
+        let mut used_trait_pairs = Vec::new();
         for trait_use in &trait_uses {
             let Some(trait_decl) = traits
                 .iter()
                 .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
             else {
-                let message = if non_trait_names.contains(&trait_use.name.to_ascii_lowercase()) {
-                    format!(
-                        "{} cannot use {} - it is not a trait",
-                        class.name, trait_use.name
-                    )
-                } else {
-                    format!("Trait \"{}\" not found", trait_use.name)
-                };
-                return Err(Diagnostic::uncaught_fatal(
-                    "Error",
-                    message,
-                    Some(trait_use.span),
-                    None,
-                ));
+                let lowered_trait_name = trait_use.name.to_ascii_lowercase();
+                let message =
+                    if let Some(reserved_name) = reserved_class_name_segment(&lowered_trait_name) {
+                        format!("Cannot use \"{reserved_name}\" as trait name, as it is reserved")
+                    } else if non_trait_names.contains(&lowered_trait_name) {
+                        format!(
+                            "{} cannot use {} - it is not a trait",
+                            class.name, trait_use.name
+                        )
+                    } else {
+                        format!("Trait \"{}\" not found", trait_use.name)
+                    };
+                defer_class_declaration_fatal(
+                    class,
+                    Diagnostic::uncaught_fatal("Error", message, Some(trait_use.span), None),
+                );
+                continue;
             };
-            used_traits.push(trait_decl);
+            used_trait_pairs.push((trait_use, trait_decl));
         }
-        validate_trait_use_adaptations(&class.name, &trait_uses, traits, &used_traits)?;
-        for (trait_use, trait_decl) in trait_uses.iter().zip(used_traits.iter()) {
-            import_trait_members_into_class(
+        let used_traits = used_trait_pairs
+            .iter()
+            .map(|(_, trait_decl)| *trait_decl)
+            .collect::<Vec<_>>();
+        if let Err(diagnostic) =
+            validate_trait_use_adaptations(&class.name, &trait_uses, traits, &used_traits)
+        {
+            defer_class_declaration_fatal(class, diagnostic);
+            continue;
+        }
+        for (trait_use, trait_decl) in used_trait_pairs {
+            if let Err(diagnostic) = import_trait_members_into_class(
                 class,
                 trait_decl,
                 trait_use,
@@ -12494,10 +12509,20 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
                 &mut property_origins,
                 &mut static_property_origins,
                 &mut constant_origins,
-            )?;
+            ) {
+                defer_class_declaration_fatal(class, diagnostic);
+            }
         }
     }
     Ok(())
+}
+
+fn defer_class_declaration_fatal(class: &mut ClassDecl, diagnostic: Diagnostic) {
+    let span = diagnostic.span.unwrap_or(class.span);
+    class.declaration_fatals.push(ClassDeclarationFatal {
+        message: diagnostic.message,
+        span,
+    });
 }
 
 fn import_trait_members_into_class(
@@ -12609,6 +12634,7 @@ fn import_trait_method_into_method_list(
         parent_name: None,
         interfaces: Vec::new(),
         trait_uses: Vec::new(),
+        declaration_fatals: Vec::new(),
         attributes: AttributeMetadata::default(),
         doc_comment: None,
         is_conditionally_declared: false,

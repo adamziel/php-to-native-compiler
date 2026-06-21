@@ -4260,9 +4260,18 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
 ) {
     char message[256];
     int written;
-    if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name) &&
-        !ptn_declared_runtime_interface_exists(runtime, lookup_class_name) &&
-        !ptn_declared_trait_exists(lookup_class_name)
+    if (ptn_declared_trait_exists(lookup_class_name)) {
+        const char *display_class_name =
+            message_class_name == NULL ? lookup_class_name : message_class_name;
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot access trait constant %s::%s directly",
+            display_class_name,
+            constant
+        );
+    } else if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name) &&
+        !ptn_declared_runtime_interface_exists(runtime, lookup_class_name)
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         && !ptn_internal_class_exists_name(lookup_class_name)
         && !ptn_internal_interface_exists_name(lookup_class_name)

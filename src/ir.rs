@@ -78,6 +78,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub declaration_fatals: Vec<ClassDeclarationFatal>,
     pub attributes: AttributeMetadata,
     pub doc_comment: Option<String>,
     pub line: usize,
@@ -94,6 +95,12 @@ pub struct ClassDecl {
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassDeclarationFatal {
+    pub message: String,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1953,6 +1960,14 @@ impl<'a> LoweringContext<'a> {
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
             trait_uses: lower_trait_uses(&class.trait_uses),
+            declaration_fatals: class
+                .declaration_fatals
+                .iter()
+                .map(|fatal| ClassDeclarationFatal {
+                    message: fatal.message.clone(),
+                    line: fatal.span.line,
+                })
+                .collect(),
             attributes: class_attributes,
             doc_comment: class.doc_comment.clone(),
             line: class.span.line,

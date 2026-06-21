@@ -89430,6 +89430,15 @@ static PtnValue ptn_reflection_class_instantiate(
     const PtnValue *args,
     size_t line
 ) {
+    if (ptn_declared_trait_exists(class_name)) {
+        char message[256];
+        int written = snprintf(message, sizeof(message), "Cannot instantiate trait %s", class_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        return ptn_null();
+    }
     if (ptn_reflection_class_is_interface_name(class_name) || ptn_declared_class_is_abstract(class_name)) {
         char message[256];
         int written = snprintf(message, sizeof(message), "Class %s is not instantiable", class_name);

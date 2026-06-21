@@ -107,7 +107,7 @@ pub fn emit_c(module: &Module) -> String {
     let serializable_deprecations = collect_module_serializable_deprecations(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
     trait_use_deprecations.sort_by_key(|deprecation| deprecation.line);
-    let declaration_fatals = collect_module_declaration_fatals(module);
+    let declaration_fatals = collect_module_startup_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let magic_debug_info_deprecations = collect_module_magic_debug_info_return_deprecations(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -18338,11 +18338,13 @@ fn emit_declare_interface_dependency_check(
 fn emit_class_declaration_validation(
     out: &mut String,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
     class_index: usize,
     line: usize,
     source_path: &str,
 ) {
     let class = &classes[class_index];
+    emit_class_declaration_fatals(out, class, classes, functions, source_path);
     if !class.is_interface
         && class
             .interfaces
@@ -18756,6 +18758,7 @@ fn emit_instruction(
             emit_class_declaration_validation(
                 out,
                 &values.classes,
+                &values.user_functions,
                 *class_index,
                 *line,
                 source_path,
@@ -18778,6 +18781,7 @@ fn emit_instruction(
             emit_class_declaration_validation(
                 out,
                 &values.classes,
+                &values.user_functions,
                 *class_index,
                 *line,
                 source_path,
@@ -18878,6 +18882,7 @@ fn emit_instruction(
             emit_class_declaration_validation(
                 out,
                 &values.classes,
+                &values.user_functions,
                 *class_index,
                 *line,
                 source_path,
@@ -21386,47 +21391,8 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
     }
 }
 
-fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
+fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
     let mut fatals = Vec::new();
-    for class in &module.classes {
-        if let Some(message) = reserved_declaration_name_fatal_message(
-            &class.name,
-            if class.is_interface {
-                ("an", "interface")
-            } else {
-                ("a", "class")
-            },
-        ) {
-            fatals.push(DeclarationFatal {
-                message,
-                line: class.line,
-            });
-        }
-        if let Some(message) = enum_class_declaration_fatal_message(class, &module.classes) {
-            fatals.push(DeclarationFatal {
-                message,
-                line: class.line,
-            });
-        }
-        for method in &class.methods {
-            let Some(function) = module.functions.get(method.function_index) else {
-                continue;
-            };
-            if let Some(message) = enum_method_declaration_fatal_message(class, method) {
-                fatals.push(DeclarationFatal {
-                    message,
-                    line: method.line,
-                });
-            }
-            if let Some(message) = magic_declaration_fatal_message(class, method, function) {
-                fatals.push(DeclarationFatal {
-                    message,
-                    line: method.line,
-                });
-            }
-        }
-        collect_property_hook_attribute_declaration_fatals(&mut fatals, &class.properties);
-    }
     for trait_decl in &module.traits {
         if let Some(message) =
             reserved_declaration_name_fatal_message(&trait_decl.name, ("a", "trait"))
@@ -21438,6 +21404,83 @@ fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
         }
         collect_property_hook_attribute_declaration_fatals(&mut fatals, &trait_decl.properties);
     }
+    fatals
+}
+
+fn emit_class_declaration_fatals(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    source_path: &str,
+) {
+    let Some(fatal) = collect_class_declaration_fatals(class, classes, functions)
+        .into_iter()
+        .next()
+    else {
+        return;
+    };
+    out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
+    out.push_str(&c_string(&fatal.message));
+    out.push_str("\", \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&fatal.line.to_string());
+    out.push_str(");\n");
+}
+
+fn collect_class_declaration_fatals(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> Vec<DeclarationFatal> {
+    let mut fatals = Vec::new();
+    fatals.extend(
+        class
+            .declaration_fatals
+            .iter()
+            .map(|fatal| DeclarationFatal {
+                message: fatal.message.clone(),
+                line: fatal.line,
+            }),
+    );
+    if let Some(message) = reserved_declaration_name_fatal_message(
+        &class.name,
+        if class.is_interface {
+            ("an", "interface")
+        } else {
+            ("a", "class")
+        },
+    ) {
+        fatals.push(DeclarationFatal {
+            message,
+            line: class.line,
+        });
+    }
+    if let Some(message) = enum_class_declaration_fatal_message(class, classes) {
+        fatals.push(DeclarationFatal {
+            message,
+            line: class.line,
+        });
+    }
+    for method in &class.methods {
+        let Some(function) = functions.get(method.function_index) else {
+            continue;
+        };
+        if let Some(message) = enum_method_declaration_fatal_message(class, method) {
+            fatals.push(DeclarationFatal {
+                message,
+                line: method.line,
+            });
+        }
+        if let Some(message) = magic_declaration_fatal_message(class, method, function) {
+            fatals.push(DeclarationFatal {
+                message,
+                line: method.line,
+            });
+        }
+    }
+    collect_property_hook_attribute_declaration_fatals(&mut fatals, &class.properties);
     fatals
 }
 
@@ -33460,6 +33503,7 @@ impl ValueEmitter {
                 emit_class_declaration_validation(
                     out,
                     &self.classes,
+                    &self.user_functions,
                     declared_class_index,
                     line,
                     &self.source_file,
@@ -33519,6 +33563,7 @@ impl ValueEmitter {
                     emit_class_declaration_validation(
                         out,
                         &self.classes,
+                        &self.user_functions,
                         declared_class_index,
                         line,
                         &self.source_file,
@@ -34290,6 +34335,64 @@ impl ValueEmitter {
         emit_value_cleanup(out, "    ", &parent_temp);
     }
 
+    fn emit_runtime_new_object_assignment(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name_expr: &str,
+        argc_expr: &str,
+        args_expr: &str,
+        line: usize,
+        declare_result: bool,
+    ) {
+        out.push_str("    ");
+        if declare_result {
+            out.push_str("PtnValue ");
+        }
+        out.push_str(result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_declared_trait_exists(");
+        out.push_str(class_name_expr);
+        out.push_str(")) {\n");
+        out.push_str(
+            "        int ptn_trait_new_needed = snprintf(NULL, 0, \"Cannot instantiate trait %s\", ",
+        );
+        out.push_str(class_name_expr);
+        out.push_str(");\n");
+        out.push_str("        if (ptn_trait_new_needed < 0) {\n");
+        out.push_str("            ptn_abort_out_of_memory();\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        char *ptn_trait_new_message = malloc((size_t)ptn_trait_new_needed + 1);\n",
+        );
+        out.push_str("        if (ptn_trait_new_message == NULL) {\n");
+        out.push_str("            ptn_abort_out_of_memory();\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        snprintf(ptn_trait_new_message, (size_t)ptn_trait_new_needed + 1, \"Cannot instantiate trait %s\", ",
+        );
+        out.push_str(class_name_expr);
+        out.push_str(");\n");
+        out.push_str(
+            "        ptn_throw_exception_owned_message_at(&runtime, \"Error\", ptn_trait_new_message, runtime.source_path, ",
+        );
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_new_object(&runtime, ");
+        out.push_str(class_name_expr);
+        out.push_str(", ");
+        out.push_str(argc_expr);
+        out.push_str(", ");
+        out.push_str(args_expr);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+
     fn emit_runtime_new_object(
         &mut self,
         out: &mut String,
@@ -34300,6 +34403,11 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        let class_name_expr = if declare_result {
+            format!("\"{}\"", c_string(class_name))
+        } else {
+            class_name.to_string()
+        };
         if argument_unpacks.iter().any(|unpack| *unpack) {
             let args_temp = self.emit_call_arguments_builder(
                 out,
@@ -34311,26 +34419,15 @@ impl ValueEmitter {
                 true,
                 None,
             );
-            out.push_str("    ");
-            if declare_result {
-                out.push_str("PtnValue ");
-            }
-            out.push_str(result_temp);
-            out.push_str(" = ptn_new_object(&runtime, ");
-            if declare_result {
-                out.push('"');
-                out.push_str(&c_string(class_name));
-                out.push('"');
-            } else {
-                out.push_str(class_name);
-            }
-            out.push_str(", ");
-            out.push_str(&args_temp);
-            out.push_str(".len, ");
-            out.push_str(&args_temp);
-            out.push_str(".values, ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            self.emit_runtime_new_object_assignment(
+                out,
+                result_temp,
+                &class_name_expr,
+                &format!("{args_temp}.len"),
+                &format!("{args_temp}.values"),
+                line,
+                declare_result,
+            );
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -34342,22 +34439,15 @@ impl ValueEmitter {
             argument_temps.push(self.emit_materialized_value(out, argument));
         }
         if argument_temps.is_empty() {
-            out.push_str("    ");
-            if declare_result {
-                out.push_str("PtnValue ");
-            }
-            out.push_str(result_temp);
-            out.push_str(" = ptn_new_object(&runtime, ");
-            if declare_result {
-                out.push('"');
-                out.push_str(&c_string(class_name));
-                out.push('"');
-            } else {
-                out.push_str(class_name);
-            }
-            out.push_str(", 0, NULL, ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            self.emit_runtime_new_object_assignment(
+                out,
+                result_temp,
+                &class_name_expr,
+                "0",
+                "NULL",
+                line,
+                declare_result,
+            );
         } else {
             let args_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -34365,26 +34455,15 @@ impl ValueEmitter {
             out.push_str("[] = { ");
             out.push_str(&argument_temps.join(", "));
             out.push_str(" };\n");
-            out.push_str("    ");
-            if declare_result {
-                out.push_str("PtnValue ");
-            }
-            out.push_str(result_temp);
-            out.push_str(" = ptn_new_object(&runtime, ");
-            if declare_result {
-                out.push('"');
-                out.push_str(&c_string(class_name));
-                out.push('"');
-            } else {
-                out.push_str(class_name);
-            }
-            out.push_str(", ");
-            out.push_str(&argument_temps.len().to_string());
-            out.push_str(", ");
-            out.push_str(&args_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            self.emit_runtime_new_object_assignment(
+                out,
+                result_temp,
+                &class_name_expr,
+                &argument_temps.len().to_string(),
+                &args_temp,
+                line,
+                declare_result,
+            );
         }
         for argument_temp in argument_temps {
             emit_value_cleanup(out, "    ", &argument_temp);
