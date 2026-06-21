@@ -30543,6 +30543,19 @@ echo $html->saveHTML();
 var_dump($html->saveHTMLFile($savedHtmlFile) > 0);
 echo file_get_contents($savedHtmlFile);
 
+$impl = new DOMImplementation();
+var_dump($impl->hasFeature('XML', '2.0'));
+$doctype = $impl->createDocumentType('html');
+$made = $impl->createDocument(null, 'html', $doctype);
+echo $made->saveHTML();
+
+$replace = new DOMDocument();
+$replace->loadHTML("<!DOCTYPE html><p>hello</p>");
+$newType = $impl->createDocumentType('html_replace', '', '');
+$replace->replaceChild($newType, $replace->doctype);
+var_dump($replace->doctype->name);
+echo $replace->saveXML();
+
 try {{
     $doc->load('');
 }} catch (ValueError $exception) {{
@@ -30599,6 +30612,13 @@ try {{
             "bool(true)\n",
             "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\" \"http://www.w3.org/TR/REC-html40/loose.dtd\">\n",
             "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a<br></p></body></html>\n",
+            "bool(true)\n",
+            "<!DOCTYPE html>\n",
+            "<html></html>\n",
+            "string(12) \"html_replace\"\n",
+            "<?xml version=\"1.0\" standalone=\"yes\"?>\n",
+            "<!DOCTYPE html_replace>\n",
+            "<html><body><p>hello</p></body></html>\n",
             "DOMDocument::load(): Argument #1 ($filename) must not be empty\n",
         )
     );
@@ -30607,6 +30627,9 @@ try {{
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dom_call_method"));
     assert!(c_source.contains("ptn_dom_save_html_file_method"));
+    assert!(c_source.contains("ptn_dom_implementation_create_document_method"));
+    assert!(c_source.contains("ptn_dom_replace_child_method"));
+    assert!(c_source.contains("ptn_xml_document_wrap_implied_html_body"));
     assert!(c_source.contains("PTN_LIBXML_NOXMLDECL"));
 }
 
