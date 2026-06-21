@@ -1338,7 +1338,17 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_simplexml_debug_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnValue *properties_out
+);
 #endif
+static PTN_UNUSED void ptn_direct_value_var_dump_object_header(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t properties_count
+);
 
 static const char *const PTN_XML_READER_VAR_DUMP_PROPERTIES[] = {
     "attributeCount",
@@ -1779,6 +1789,45 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_map_object(
     return 1;
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_simplexml_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+#else
+    PtnValue properties_value = ptn_null();
+    if (!ptn_simplexml_debug_properties(runtime, object, &properties_value)) {
+        return 0;
+    }
+    PtnValue resolved = ptn_value_deref(properties_value);
+    if (resolved.type != PTN_ARRAY) {
+        ptn_value_destroy(&properties_value);
+        return 0;
+    }
+
+    PtnArray *properties = resolved.as.array;
+    ptn_direct_value_var_dump_object_header(runtime, object, properties->len);
+    ptn_direct_value_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_value_var_dump_value_indented(runtime, properties->entries[i].value, indent + 1, seen);
+    }
+    ptn_direct_value_dump_seen_object_pop(seen);
+    ptn_direct_value_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&properties_value);
+    return 1;
+#endif
+}
+
 static PTN_UNUSED size_t ptn_direct_object_initialized_property_dump_count(PtnObject *object) {
     if (object == NULL || object->properties == NULL) {
         return ptn_xml_reader_var_dump_virtual_property_count(object) +
@@ -2050,6 +2099,9 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
                 break;
             }
             if (ptn_direct_var_dump_weak_map_object(runtime, object, indent, seen)) {
+                break;
+            }
+            if (ptn_direct_var_dump_simplexml_object(runtime, object, indent, seen)) {
                 break;
             }
             ptn_direct_value_var_dump_object_header(
@@ -6194,6 +6246,52 @@ static int ptn_var_dump_weak_map_object(
     return 1;
 }
 
+static int ptn_var_dump_simplexml_object(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)debug;
+    return 0;
+#else
+    PtnRuntime *runtime = ptn_var_dump_active_runtime != NULL
+        ? ptn_var_dump_active_runtime
+        : (object == NULL ? NULL : object->lifecycle_runtime);
+    PtnValue properties_value = ptn_null();
+    if (!ptn_simplexml_debug_properties(runtime, object, &properties_value)) {
+        return 0;
+    }
+    PtnValue resolved = ptn_value_deref(properties_value);
+    if (resolved.type != PTN_ARRAY) {
+        ptn_value_destroy(&properties_value);
+        return 0;
+    }
+
+    PtnArray *properties = resolved.as.array;
+    ptn_var_dump_object_header(object, properties->len, debug);
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_array_key(properties->entries[i].key);
+        if (debug) {
+            ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        } else {
+            ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+    ptn_value_destroy(&properties_value);
+    return 1;
+#endif
+}
+
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
@@ -6268,6 +6366,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 break;
             }
             if (ptn_var_dump_weak_map_object(object, indent, seen, 0)) {
+                break;
+            }
+            if (ptn_var_dump_simplexml_object(object, indent, seen, 0)) {
                 break;
             }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 0)) {
@@ -6432,6 +6533,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 break;
             }
             if (ptn_var_dump_weak_map_object(object, indent, seen, 1)) {
+                break;
+            }
+            if (ptn_var_dump_simplexml_object(object, indent, seen, 1)) {
                 break;
             }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 1)) {
@@ -59745,6 +59849,9 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "soap")) {
         return "soap";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "simplexml")) {
+        return "simplexml";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "SPL")) {
         return "SPL";
     }
@@ -62698,6 +62805,7 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(37), ptn_string("odbc"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(38), ptn_string("Zend OPcache"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(39), ptn_string("session"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(40), ptn_string("simplexml"));
     return result;
 }
 
@@ -70383,6 +70491,16 @@ typedef struct {
 
 typedef struct {
     const PtnLibxmlBoundary *boundary;
+    PtnXmlNode **items;
+    size_t item_count;
+    size_t item_capacity;
+    size_t position;
+    int attributes;
+    int property_view;
+} PtnSimpleXmlData;
+
+typedef struct {
+    const PtnLibxmlBoundary *boundary;
     PtnXmlNode *node;
     PtnXmlNode *attribute;
     int node_type;
@@ -70631,6 +70749,9 @@ static const char *ptn_xml_reader_current_name(PtnXmlReaderData *data);
 static const char *ptn_xml_reader_current_value(PtnXmlReaderData *data);
 static int ptn_xml_reader_node_has_value(PtnXmlReaderData *data);
 static int ptn_xml_reader_property_known(const char *property);
+static PtnSimpleXmlData *ptn_simplexml_data(PtnValue value);
+static PtnValue ptn_simplexml_property_value(PtnRuntime *runtime, PtnValue receiver, const char *property);
+static int ptn_simplexml_method_exists(const char *method_name);
 static const char *ptn_xml_element_attribute_value(PtnXmlNode *element, const char *name);
 static void ptn_xml_reader_apply_default_attributes(PtnRuntime *runtime, PtnXmlReaderData *data);
 static void ptn_xml_parser_collect_attlist_defaults(PtnXmlParserData *parser, const char *data, size_t len);
@@ -72330,8 +72451,9 @@ static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document
             while (end + 1 < len && !(data[end] == '?' && data[end + 1] == '>')) {
                 end++;
             }
-            if (ptn_ascii_case_equal_n(data + pos + 2, "xml", 3)) {
-                size_t scan = pos + 5;
+            size_t scan = pos + 2;
+            char *target = ptn_xml_read_name(data, end, &scan);
+            if (ptn_ascii_case_equal(target, "xml")) {
                 while (scan < end) {
                     ptn_xml_skip_ws(data, end, &scan);
                     char *name = ptn_xml_read_name(data, end, &scan);
@@ -72355,7 +72477,15 @@ static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document
                     }
                     free(name);
                 }
+            } else {
+                ptn_xml_skip_ws(data, end, &scan);
+                PtnXmlNode *pi = ptn_xml_node_alloc(PTN_XML_NODE_PROCESSING_INSTRUCTION, target, "");
+                free(pi->value);
+                pi->value = ptn_duplicate_string_len(data + scan, end - scan);
+                ptn_xml_node_ensure_object(runtime, pi);
+                ptn_xml_append_child(stack[stack_len - 1], pi);
             }
+            free(target);
             pos = end + 2 <= len ? end + 2 : len;
             continue;
         }
@@ -74747,6 +74877,10 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return 0;
+    }
+    if (ptn_simplexml_data(receiver) != NULL) {
+        *value_out = ptn_simplexml_property_value(runtime, receiver, property);
+        return 1;
     }
     if (ptn_ascii_case_equal(receiver.as.object->class_name, "XMLReader") ||
         ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "XMLReader")) {
@@ -84071,6 +84205,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "shell_exec", 1, 1, ptn_internal_shell_exec },
         { "shuffle", 1, 1, ptn_internal_shuffle },
         { "similar_text", 2, 3, ptn_internal_similar_text },
+        { "simplexml_load_file", 1, 5, ptn_internal_simplexml_load_file },
+        { "simplexml_load_string", 1, 5, ptn_internal_simplexml_load_string },
         { "sin", 1, 1, ptn_internal_sin },
         { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
@@ -84402,6 +84538,10 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "session_")) {
         return "session";
+    }
+    if (ptn_ascii_case_equal(name, "simplexml_load_file") ||
+        ptn_ascii_case_equal(name, "simplexml_load_string")) {
+        return "simplexml";
     }
     if (ptn_internal_function_name_has_prefix(name, "xmlwriter_")) {
         return "xmlwriter";
@@ -85343,6 +85483,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_na
     return ptn_ascii_case_equal(class_name, "XMLParser");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_simplexml(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SimpleXMLElement");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\Uri");
 }
@@ -85461,6 +85605,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_xml_reader(class_name)
         || ptn_internal_class_name_is_xml_writer(class_name)
         || ptn_internal_class_name_is_xml_parser(class_name)
+        || ptn_internal_class_name_is_simplexml(class_name)
         || ptn_internal_class_name_is_uri_rfc3986_uri(class_name)
         || ptn_internal_class_name_is_uri_rfc3986_uri_type(class_name)
         || ptn_internal_class_name_is_uri_whatwg_url(class_name)
@@ -87127,6 +87272,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_dom(class_name)) {
         return ptn_dom_method_exists(class_name, method_name);
+    }
+    if (ptn_internal_class_name_is_simplexml(class_name)) {
+        return ptn_simplexml_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_xml_reader(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLReader")) {
@@ -94063,6 +94211,9 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return "xmlwriter";
     }
+    if (ptn_internal_class_name_is_simplexml(class_name)) {
+        return "simplexml";
+    }
     return "Core";
 }
 
@@ -100416,6 +100567,10 @@ static PtnValue ptn_reflection_extension_classes(
         }
         return result;
     }
+    if (ptn_ascii_case_equal(extension_name, "simplexml")) {
+        ptn_reflection_extension_add_class(runtime, result, &index, "SimpleXMLElement", objects);
+        return result;
+    }
     if (ptn_ascii_case_equal(extension_name, "intl")) {
         static const char *const names[] = {
             "IntlBreakIterator",
@@ -101665,6 +101820,684 @@ static PTN_UNUSED int ptn_internal_array_object_property_write(
     }
     ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
     *value_out = ptn_value_clone_deref(value);
+    return 1;
+}
+
+static PtnSimpleXmlData *ptn_simplexml_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_simplexml(value.as.object->class_name) ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnSimpleXmlData *)value.as.object->native_data;
+}
+
+static void ptn_simplexml_data_free(void *native_data) {
+    PtnSimpleXmlData *data = (PtnSimpleXmlData *)native_data;
+    if (data == NULL) {
+        return;
+    }
+    free(data->items);
+    free(data);
+}
+
+static PtnValue ptn_simplexml_object_from_items(
+    PtnRuntime *runtime,
+    PtnXmlNode **items,
+    size_t item_count,
+    int attributes,
+    int property_view
+) {
+    PtnSimpleXmlData *data = calloc(1, sizeof(PtnSimpleXmlData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->boundary = ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF);
+    data->items = NULL;
+    data->item_count = item_count;
+    data->item_capacity = item_count;
+    data->position = 0;
+    data->attributes = attributes;
+    data->property_view = property_view;
+    if (item_count > 0) {
+        data->items = malloc(item_count * sizeof(PtnXmlNode *));
+        if (data->items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(data->items, items, item_count * sizeof(PtnXmlNode *));
+    }
+    PtnValue object = ptn_object_new_shell(runtime, "SimpleXMLElement");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_simplexml_data_free;
+    return object;
+}
+
+static PtnValue ptn_simplexml_object_from_node(
+    PtnRuntime *runtime,
+    PtnXmlNode *node,
+    int attributes,
+    int property_view
+) {
+    if (node == NULL) {
+        return ptn_simplexml_object_from_items(runtime, NULL, 0, attributes, property_view);
+    }
+    PtnXmlNode *items[1] = { node };
+    return ptn_simplexml_object_from_items(runtime, items, 1, attributes, property_view);
+}
+
+static const char *ptn_simplexml_debug_child_name(PtnXmlNode *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT || node->type == PTN_XML_NODE_ENTITY_REFERENCE) {
+        return node->name == NULL ? "" : node->name;
+    }
+    if (node->type == PTN_XML_NODE_COMMENT) {
+        return "comment";
+    }
+    if (node->type == PTN_XML_NODE_PROCESSING_INSTRUCTION) {
+        return node->name == NULL ? "" : node->name;
+    }
+    return NULL;
+}
+
+static int ptn_simplexml_node_matches_property(PtnXmlNode *node, const char *property) {
+    const char *name = ptn_simplexml_debug_child_name(node);
+    return name != NULL && property != NULL && strcmp(name, property) == 0;
+}
+
+static size_t ptn_simplexml_visible_child_count(PtnXmlNode *node) {
+    size_t count = 0;
+    for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+        if (node->children[i] != NULL && node->children[i]->type == PTN_XML_NODE_ELEMENT) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void ptn_simplexml_collect_named_children(
+    PtnXmlNode *node,
+    const char *property,
+    PtnXmlNode ***items,
+    size_t *item_count,
+    size_t *item_capacity
+) {
+    if (node == NULL || property == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (ptn_simplexml_node_matches_property(child, property)) {
+            ptn_xml_node_array_push(items, item_count, item_capacity, child);
+        }
+    }
+}
+
+static int ptn_simplexml_property_exists(PtnValue receiver, const char *property) {
+    PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
+    if (data == NULL || data->attributes || data->item_count == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < data->item_count; i++) {
+        PtnXmlNode *node = data->items[i];
+        for (size_t j = 0; node != NULL && j < node->child_count; j++) {
+            if (ptn_simplexml_node_matches_property(node->children[j], property)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_simplexml_property_is_set(PtnValue receiver, const char *property, int *isset_out) {
+    if (ptn_simplexml_data(receiver) == NULL) {
+        return 0;
+    }
+    *isset_out = ptn_simplexml_property_exists(receiver, property);
+    return 1;
+}
+
+static PtnValue ptn_simplexml_property_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property
+) {
+    PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (data->attributes || data->item_count == 0) {
+        return ptn_null();
+    }
+    PtnXmlNode **items = NULL;
+    size_t item_count = 0;
+    size_t item_capacity = 0;
+    for (size_t i = 0; i < data->item_count; i++) {
+        ptn_simplexml_collect_named_children(data->items[i], property, &items, &item_count, &item_capacity);
+    }
+    PtnValue result = ptn_simplexml_object_from_items(runtime, items, item_count, 0, 1);
+    free(items);
+    return result;
+}
+
+static PtnXmlNode *ptn_simplexml_find_attribute(PtnXmlNode *node, const char *name) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < node->attribute_count; i++) {
+        PtnXmlNode *attr = node->attributes[i];
+        if (attr != NULL &&
+            !ptn_xml_attribute_is_namespace_declaration(attr) &&
+            strcmp(attr->name == NULL ? "" : attr->name, name) == 0) {
+            return attr;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_simplexml_offset_index(PtnValue key_value, int64_t *index_out) {
+    PtnValue key = ptn_value_deref(key_value);
+    if (key.type == PTN_STRING) {
+        return 0;
+    }
+    int64_t index = ptn_value_to_integer(key);
+    if (index < 0) {
+        return 0;
+    }
+    *index_out = index;
+    return 1;
+}
+
+static PtnValue ptn_simplexml_offset_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue key_value,
+    int *exists_out
+) {
+    if (exists_out != NULL) {
+        *exists_out = 0;
+    }
+    PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
+    if (data == NULL || data->item_count == 0) {
+        return ptn_null();
+    }
+    PtnValue key = ptn_value_deref(key_value);
+    if (key.type == PTN_STRING) {
+        char *name = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+        PtnXmlNode *attr = ptn_simplexml_find_attribute(data->items[0], name);
+        free(name);
+        if (attr == NULL) {
+            return ptn_null();
+        }
+        if (exists_out != NULL) {
+            *exists_out = 1;
+        }
+        return ptn_simplexml_object_from_node(runtime, attr, 1, 0);
+    }
+    int64_t index = 0;
+    if (!ptn_simplexml_offset_index(key, &index) || (size_t)index >= data->item_count) {
+        return ptn_null();
+    }
+    if (exists_out != NULL) {
+        *exists_out = 1;
+    }
+    return ptn_simplexml_object_from_node(runtime, data->items[(size_t)index], data->attributes, 0);
+}
+
+static void ptn_simplexml_append_direct_text(PtnStringBuffer *buffer, PtnXmlNode *node) {
+    if (node == NULL) {
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ATTRIBUTE ||
+        node->type == PTN_XML_NODE_TEXT ||
+        node->type == PTN_XML_NODE_CDATA) {
+        ptn_string_buffer_append(buffer, node->value == NULL ? "" : node->value);
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ENTITY_REFERENCE) {
+        for (size_t i = 0; i < node->child_count; i++) {
+            ptn_simplexml_append_direct_text(buffer, node->children[i]);
+        }
+        return;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (child != NULL &&
+            (child->type == PTN_XML_NODE_TEXT ||
+             child->type == PTN_XML_NODE_CDATA ||
+             child->type == PTN_XML_NODE_ENTITY_REFERENCE)) {
+            ptn_simplexml_append_direct_text(buffer, child);
+        }
+    }
+}
+
+static PtnStringOperand ptn_simplexml_text_operand(PtnSimpleXmlData *data) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (data != NULL && data->item_count > 0) {
+        ptn_simplexml_append_direct_text(&buffer, data->items[0]);
+    }
+    return ptn_string_operand_owned_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_simplexml_text_value(PtnSimpleXmlData *data) {
+    PtnStringOperand operand = ptn_simplexml_text_operand(data);
+    return ptn_owned_string_len(operand.owned, operand.len);
+}
+
+static size_t ptn_simplexml_count_data(PtnSimpleXmlData *data) {
+    if (data == NULL || data->attributes || data->item_count == 0) {
+        return 0;
+    }
+    if (data->property_view || data->item_count > 1) {
+        return data->item_count;
+    }
+    return ptn_simplexml_visible_child_count(data->items[0]);
+}
+
+static int ptn_simplexml_node_has_direct_text(PtnXmlNode *node) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_simplexml_append_direct_text(&buffer, node);
+    int result = buffer.len > 0;
+    free(buffer.data);
+    return result;
+}
+
+static PtnValue ptn_simplexml_debug_child_value(PtnRuntime *runtime, PtnXmlNode *node, size_t group_count) {
+    if (group_count > 1 && ptn_simplexml_node_has_direct_text(node)) {
+        PtnSimpleXmlData data;
+        memset(&data, 0, sizeof(data));
+        data.items = &node;
+        data.item_count = 1;
+        return ptn_simplexml_text_value(&data);
+    }
+    return ptn_simplexml_object_from_node(runtime, node, node != NULL && node->type == PTN_XML_NODE_ATTRIBUTE, 0);
+}
+
+static int ptn_simplexml_child_name_seen_before(PtnXmlNode *node, size_t child_index, const char *name) {
+    for (size_t i = 0; node != NULL && i < child_index; i++) {
+        const char *candidate = ptn_simplexml_debug_child_name(node->children[i]);
+        if (candidate != NULL && strcmp(candidate, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static size_t ptn_simplexml_child_group_count(PtnXmlNode *node, const char *name) {
+    size_t count = 0;
+    for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+        const char *candidate = ptn_simplexml_debug_child_name(node->children[i]);
+        if (candidate != NULL && strcmp(candidate, name) == 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void ptn_simplexml_debug_attributes(PtnValue result, PtnXmlNode *node) {
+    size_t attr_count = ptn_xml_visible_attribute_count(node);
+    if (attr_count == 0) {
+        return;
+    }
+    PtnValue attrs = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < attr_count; i++) {
+        PtnXmlNode *attr = ptn_xml_visible_attribute_item(node, i);
+        ptn_array_set_entry(
+            attrs.as.array,
+            ptn_array_string_key(attr->name == NULL ? "" : attr->name),
+            ptn_owned_string(ptn_duplicate_string(attr->value == NULL ? "" : attr->value))
+        );
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("@attributes"), attrs);
+}
+
+static PTN_UNUSED int ptn_simplexml_debug_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnValue *properties_out
+) {
+    if (object == NULL || !ptn_internal_class_name_is_simplexml(object->class_name)) {
+        return 0;
+    }
+    PtnSimpleXmlData *data = (PtnSimpleXmlData *)object->native_data;
+    if (data == NULL) {
+        return 0;
+    }
+    if (runtime == NULL) {
+        runtime = object->lifecycle_runtime;
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (data->attributes) {
+        for (size_t i = 0; i < data->item_count; i++) {
+            PtnXmlNode *attr = data->items[i];
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_owned_string(ptn_duplicate_string(attr == NULL || attr->value == NULL ? "" : attr->value))
+            );
+        }
+        *properties_out = result;
+        return 1;
+    }
+    if (data->item_count == 0) {
+        *properties_out = result;
+        return 1;
+    }
+
+    PtnXmlNode *node = data->items[0];
+    ptn_simplexml_debug_attributes(result, node);
+    for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        const char *name = ptn_simplexml_debug_child_name(child);
+        if (name == NULL || ptn_simplexml_child_name_seen_before(node, i, name)) {
+            continue;
+        }
+        size_t group_count = ptn_simplexml_child_group_count(node, name);
+        if (group_count == 1) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key(name),
+                ptn_simplexml_debug_child_value(runtime, child, group_count)
+            );
+            continue;
+        }
+        PtnValue group = ptn_array_from_literal_entries(0, NULL);
+        int64_t index = 0;
+        for (size_t j = i; j < node->child_count; j++) {
+            PtnXmlNode *candidate = node->children[j];
+            const char *candidate_name = ptn_simplexml_debug_child_name(candidate);
+            if (candidate_name != NULL && strcmp(candidate_name, name) == 0) {
+                ptn_array_set_entry(
+                    group.as.array,
+                    ptn_array_int_key(index++),
+                    ptn_simplexml_debug_child_value(runtime, candidate, group_count)
+                );
+            }
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_string_key(name), group);
+    }
+    *properties_out = result;
+    return 1;
+}
+
+static PtnValue ptn_simplexml_from_bytes(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    const char *class_name
+) {
+    PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    int ok = ptn_xml_parse_document_into(runtime, document, data, len);
+    if (!ok) {
+        return ptn_bool(0);
+    }
+    PtnXmlNode *root = ptn_xml_document_element(document);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue object = ptn_simplexml_object_from_node(runtime, root, 0, 0);
+    if (class_name != NULL && !ptn_ascii_case_equal(class_name, "SimpleXMLElement")) {
+        free(object.as.object->class_name);
+        object.as.object->class_name = ptn_duplicate_string(class_name);
+    }
+    return object;
+}
+
+static char *ptn_simplexml_class_name_arg(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 2 || ptn_value_deref(args[1]).type == PTN_NULL) {
+        return ptn_duplicate_string("SimpleXMLElement");
+    }
+    PtnStringOperand class_name = ptn_internal_expect_string_arg(runtime, function_name, 2, "class_name", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(class_name);
+        return NULL;
+    }
+    char *copy = ptn_duplicate_string_len(class_name.data, class_name.len);
+    ptn_string_operand_free(class_name);
+    return copy;
+}
+
+static PtnValue ptn_internal_simplexml_load_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "simplexml_load_string", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    char *class_name = ptn_simplexml_class_name_arg(runtime, "simplexml_load_string", argc, args, line);
+    if (class_name == NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    PtnValue result = ptn_simplexml_from_bytes(runtime, source.data, source.len, class_name);
+    free(class_name);
+    ptn_string_operand_free(source);
+    return result;
+}
+
+static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *path = ptn_dom_path_arg_c_string_or_value_error(
+        runtime,
+        "simplexml_load_file",
+        1,
+        "filename",
+        args[0],
+        line
+    );
+    if (path == NULL) {
+        return ptn_null();
+    }
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    free(path);
+    if (read_result <= 0) {
+        free(bytes);
+        return ptn_bool(0);
+    }
+    char *class_name = ptn_simplexml_class_name_arg(runtime, "simplexml_load_file", argc, args, line);
+    if (class_name == NULL) {
+        free(bytes);
+        return ptn_null();
+    }
+    PtnValue result = ptn_simplexml_from_bytes(runtime, (const char *)bytes, len, class_name);
+    free(class_name);
+    free(bytes);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_simplexml_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 5) {
+        return ptn_dom_throw_count(runtime, "SimpleXMLElement::__construct", argc < 1 ? "at least 1 argument" : "at most 5 arguments", argc);
+    }
+    int data_is_url = argc >= 3 && ptn_is_truthy(args[2]);
+    if (data_is_url) {
+        PtnValue forwarded[2] = { args[0], ptn_string(class_name == NULL ? "SimpleXMLElement" : class_name) };
+        return ptn_internal_simplexml_load_file(runtime, 2, forwarded, line);
+    }
+    PtnValue forwarded[2] = { args[0], ptn_string(class_name == NULL ? "SimpleXMLElement" : class_name) };
+    return ptn_internal_simplexml_load_string(runtime, 2, forwarded, line);
+}
+
+static void ptn_simplexml_replace_receiver_data(PtnValue receiver, PtnValue replacement) {
+    receiver = ptn_value_deref(receiver);
+    replacement = ptn_value_deref(replacement);
+    if (receiver.type != PTN_OBJECT || replacement.type != PTN_OBJECT) {
+        return;
+    }
+    if (receiver.as.object->native_data_free != NULL) {
+        receiver.as.object->native_data_free(receiver.as.object->native_data);
+    }
+    receiver.as.object->native_data = replacement.as.object->native_data;
+    receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+    replacement.as.object->native_data = NULL;
+    replacement.as.object->native_data_free = NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnSimpleXmlData *data = ptn_simplexml_data(source);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnXmlNode **items = NULL;
+    size_t item_count = 0;
+    size_t item_capacity = 0;
+    for (size_t i = 0; i < data->item_count; i++) {
+        PtnXmlNode *clone = ptn_xml_clone_node_recursive(runtime, data->items[i], 1);
+        ptn_xml_node_array_push(&items, &item_count, &item_capacity, clone);
+    }
+    PtnValue result = ptn_simplexml_object_from_items(runtime, items, item_count, data->attributes, data->property_view);
+    free(items);
+    return result;
+}
+
+static int ptn_simplexml_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "asXML")
+        || ptn_ascii_case_equal(method_name, "saveXML")
+        || ptn_ascii_case_equal(method_name, "attributes")
+        || ptn_ascii_case_equal(method_name, "children")
+        || ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "offsetExists")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "valid")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next");
+}
+
+static PTN_UNUSED PtnValue ptn_simplexml_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSimpleXmlData *data = ptn_simplexml_data(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_simplexml_new(runtime, "SimpleXMLElement", argc, args, line);
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_simplexml_replace_receiver_data(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_simplexml_text_value(data);
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        return ptn_int((int64_t)ptn_simplexml_count_data(data));
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        if (data->item_count == 0) {
+            return ptn_string("");
+        }
+        return ptn_owned_string(ptn_duplicate_string(data->items[0]->name == NULL ? "" : data->items[0]->name));
+    }
+    if (ptn_ascii_case_equal(name, "attributes")) {
+        if (data->item_count == 0 || data->attributes) {
+            return ptn_simplexml_object_from_items(runtime, NULL, 0, 1, 0);
+        }
+        PtnXmlNode **items = NULL;
+        size_t item_count = 0;
+        size_t item_capacity = 0;
+        size_t count = ptn_xml_visible_attribute_count(data->items[0]);
+        for (size_t i = 0; i < count; i++) {
+            ptn_xml_node_array_push(&items, &item_count, &item_capacity, ptn_xml_visible_attribute_item(data->items[0], i));
+        }
+        PtnValue result = ptn_simplexml_object_from_items(runtime, items, item_count, 1, 0);
+        free(items);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "children")) {
+        if (data->item_count == 0 || data->attributes) {
+            return ptn_simplexml_object_from_items(runtime, NULL, 0, 0, 1);
+        }
+        PtnXmlNode **items = NULL;
+        size_t item_count = 0;
+        size_t item_capacity = 0;
+        PtnXmlNode *node = data->items[0];
+        for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+            if (ptn_simplexml_debug_child_name(node->children[i]) != NULL) {
+                ptn_xml_node_array_push(&items, &item_count, &item_capacity, node->children[i]);
+            }
+        }
+        PtnValue result = ptn_simplexml_object_from_items(runtime, items, item_count, 0, 1);
+        free(items);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "asXML") || ptn_ascii_case_equal(name, "saveXML")) {
+        if (data->item_count == 0) {
+            return ptn_bool(0);
+        }
+        return ptn_xml_serialized_value(runtime, data->items[0], 0, line);
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SimpleXMLElement::offsetExists() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int exists = 0;
+        PtnValue ignored = ptn_simplexml_offset_value(runtime, receiver, args[0], &exists);
+        ptn_value_destroy(&ignored);
+        return ptn_bool(exists);
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SimpleXMLElement::offsetGet() expects exactly 1 argument");
+            return ptn_null();
+        }
+        return ptn_simplexml_offset_value(runtime, receiver, args[0], NULL);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->position = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(data->position < data->item_count);
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        if (data->position >= data->item_count) {
+            return ptn_null();
+        }
+        return ptn_simplexml_object_from_node(runtime, data->items[data->position], data->attributes, data->property_view);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        return ptn_int((int64_t)data->position);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        if (data->position < data->item_count) {
+            data->position++;
+        }
+        return ptn_null();
+    }
+    ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
+    return ptn_null();
+}
+
+static PTN_UNUSED int ptn_simplexml_is_truthy(PtnValue value, int *truthy_out) {
+    PtnSimpleXmlData *data = ptn_simplexml_data(value);
+    if (data == NULL) {
+        return 0;
+    }
+    *truthy_out = data->item_count > 0;
     return 1;
 }
 

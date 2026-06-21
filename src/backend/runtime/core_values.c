@@ -1755,6 +1755,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_simplexml(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_comparison_mode(const char *class_name);
@@ -2566,6 +2567,13 @@ static PTN_UNUSED PtnValue ptn_xml_parser_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_simplexml_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_uri_whatwg_url_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -2671,6 +2679,19 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_simplexml_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue source, size_t line);
+static PTN_UNUSED int ptn_simplexml_is_truthy(PtnValue value, int *truthy_out);
+static PTN_UNUSED int ptn_simplexml_property_is_set(PtnValue receiver, const char *property, int *isset_out);
+static PtnValue ptn_internal_simplexml_load_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_uri_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

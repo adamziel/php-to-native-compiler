@@ -1126,6 +1126,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_dom(lookup_class_name)) {
         return ptn_dom_new(runtime, lookup_class_name, argc, args, line);
     }
+    if (ptn_internal_class_name_is_simplexml(lookup_class_name)) {
+        return ptn_simplexml_new(runtime, lookup_class_name, argc, args, line);
+    }
     if (ptn_internal_class_name_is_xml_reader(lookup_class_name)) {
         return ptn_xml_reader_new(runtime, argc, args, line);
     }
@@ -1373,6 +1376,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_internal_class_name_is_dom(source->class_name)) {
         return ptn_dom_clone(runtime, resolved, line);
+    }
+    if (ptn_internal_class_name_is_simplexml(source->class_name)) {
+        return ptn_simplexml_clone(runtime, resolved, line);
     }
 #endif
     if (source->enum_case_name != NULL || source->native_data != NULL) {
@@ -5478,6 +5484,10 @@ static PTN_UNUSED int ptn_object_property_is_set(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int simplexml_isset = 0;
+    if (ptn_simplexml_property_is_set(receiver, property, &simplexml_isset)) {
+        return simplexml_isset;
+    }
     PtnValue internal_value = ptn_null();
     if (ptn_internal_xml_property_read(runtime, receiver, property, line, &internal_value)) {
         int is_set = ptn_value_deref(internal_value).type != PTN_NULL;

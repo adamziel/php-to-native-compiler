@@ -5824,6 +5824,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_simplexml(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_simplexml_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "XMLReader")
         && ptn_internal_class_method_exists("XMLReader", name)
     ) {
@@ -6081,6 +6088,9 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             int truthy = 1;
             if (ptn_bcmath_number_is_truthy(value, &truthy)) {
+                return truthy;
+            }
+            if (ptn_simplexml_is_truthy(value, &truthy)) {
                 return truthy;
             }
 #endif

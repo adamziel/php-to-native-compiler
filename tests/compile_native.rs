@@ -29328,6 +29328,80 @@ while ($reader->read()) {
 }
 
 #[test]
+fn compile_simplexml_dom_backed_basics_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-dom-backed-basics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-dom-backed-basics.php");
+    let output = root.join("simplexml-dom-backed-basics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sxe = simplexml_load_string('<root id="123"><item a="first">one<child>two</child>three</item><item a="second"/></root>');
+var_dump(
+    extension_loaded('simplexml'),
+    function_exists('simplexml_load_string'),
+    class_exists('SimpleXMLElement'),
+    method_exists('SimpleXMLElement', 'children')
+);
+
+$reflection = new ReflectionExtension('simplexml');
+$class = new ReflectionClass('SimpleXMLElement');
+var_dump(
+    in_array('SimpleXMLElement', $reflection->getClassNames(), true),
+    isset($reflection->getFunctions()['simplexml_load_string']),
+    $class->getExtensionName()
+);
+
+var_dump(isset($sxe->item));
+var_dump(count($sxe));
+var_dump(count($sxe->item));
+var_dump(count($sxe->item[0]));
+var_dump(trim((string)$sxe->item[0]));
+var_dump((string)$sxe->item[0]['a']);
+var_dump(isset($sxe->missing));
+var_dump($sxe->missing->child);
+
+$copy = clone $sxe;
+var_dump((string)$copy->item[0]['a']);
+var_dump($copy->item[2]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(9) \"simplexml\"\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "string(8) \"onethree\"\n",
+            "string(5) \"first\"\n",
+            "bool(false)\n",
+            "NULL\n",
+            "string(5) \"first\"\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_simplexml_load_string"));
+    assert!(c_source.contains("ptn_simplexml_call_method"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();
