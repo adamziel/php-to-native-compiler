@@ -32557,7 +32557,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp =
+        let computed_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -32569,16 +32569,16 @@ impl ValueEmitter {
         out.push_str("\", ");
         self.emit_access_scope(out);
         out.push_str(", ");
-        out.push_str(&result_temp);
+        out.push_str(&computed_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         emit_value_cleanup(out, "    ", &receiver_temp);
-        result_temp
+        assigned_temp
     }
 
     fn emit_static_property_compound_assignment(
@@ -32639,9 +32639,9 @@ impl ValueEmitter {
         out.push_str("    ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        out.push_str(&computed_temp);
+        out.push_str(&assigned_temp);
         out.push_str(";\n");
-        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         out.push_str("    }\n");
@@ -32707,9 +32707,9 @@ impl ValueEmitter {
         out.push_str("    ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        out.push_str(&computed_temp);
+        out.push_str(&assigned_temp);
         out.push_str(";\n");
-        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         out.push_str("    }\n");

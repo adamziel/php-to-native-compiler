@@ -62379,9 +62379,11 @@ fn compile_property_and_static_property_compound_assignments_to_native_binary() 
 class Box {
     public $value = 1;
     public $label = \"a\";
+    public string $typed = \"1\";
     private $secret = 3;
     public static $count = 1;
     public static $text = \"s\";
+    public static string $typedStatic = \"1\";
 
     public function bump($rhs) {
         var_dump($this->secret += $rhs);
@@ -62406,6 +62408,9 @@ function mutate_static() {
     return 2;
 }
 
+function null_value() {
+}
+
 $box = new Box();
 var_dump($box->value += mutate_object($box));
 var_dump($box->value);
@@ -62415,6 +62420,10 @@ var_dump(Box::$count += mutate_static());
 var_dump(Box::$count);
 var_dump(Box::$text .= \"u\");
 Box::bumpStatic();
+var_dump($box->typed -= null_value());
+var_dump($box->typed);
+var_dump(Box::$typedStatic -= null_value());
+var_dump(Box::$typedStatic);
 ",
     )
     .unwrap();
@@ -62438,6 +62447,10 @@ Box::bumpStatic();
             "string(2) \"su\"\n",
             "int(24)\n",
             "string(3) \"sut\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

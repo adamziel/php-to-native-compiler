@@ -5736,8 +5736,8 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         if (metadata_ptr != NULL) {
             ptn_reference_adopt_property_type(current.as.reference, metadata_ptr);
         }
-        if (ptn_reference_assign(runtime, current.as.reference, value)) {
-            PtnValue result = ptn_value_clone(current.as.reference->value);
+        PtnValue result = ptn_null();
+        if (ptn_reference_assign_result(runtime, current.as.reference, value, &result)) {
             ptn_symbols_set(
                 ptn_runtime_static_property_initialized_table(runtime),
                 key,
