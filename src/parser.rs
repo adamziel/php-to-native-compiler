@@ -12488,6 +12488,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             .collect::<HashMap<_, _>>();
         let trait_uses = class.trait_uses.clone();
         let mut used_trait_pairs = Vec::new();
+        let mut trait_resolution_failed = false;
         for trait_use in &trait_uses {
             let Some(trait_decl) = traits
                 .iter()
@@ -12509,9 +12510,14 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
                     class,
                     Diagnostic::uncaught_fatal("Error", message, Some(trait_use.span), None),
                 );
+                trait_resolution_failed = true;
                 continue;
             };
             used_trait_pairs.push((trait_use, trait_decl));
+        }
+        if trait_resolution_failed {
+            class.trait_uses.clear();
+            continue;
         }
         let used_traits = used_trait_pairs
             .iter()
@@ -12521,6 +12527,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             validate_trait_use_adaptations(&class.name, &trait_uses, traits, &used_traits)
         {
             defer_class_declaration_fatal(class, diagnostic);
+            class.trait_uses.clear();
             continue;
         }
         for (trait_use, trait_decl) in used_trait_pairs {
@@ -12535,6 +12542,8 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
                 &mut constant_origins,
             ) {
                 defer_class_declaration_fatal(class, diagnostic);
+                class.trait_uses.clear();
+                break;
             }
         }
     }

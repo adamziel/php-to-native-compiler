@@ -1098,6 +1098,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "                ptn_ascii_case_equal(resolved_expected_class_name, \"Traversable\");\n",
     );
     out.push_str("        }\n");
+    out.push_str(
+        "        if (ptn_builtin_exception_class_name(value.as.object->class_name) != NULL &&\n",
+    );
+    out.push_str("            ptn_exception_type_matches_name(value.as.object->class_name, resolved_expected_class_name)) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
     out.push_str("        return ptn_declared_class_is_same_or_descendant(value.as.object->class_name, resolved_expected_class_name) ||\n");
     out.push_str("            ptn_declared_class_implements_interface(value.as.object->class_name, resolved_expected_class_name) ||\n");
     out.push_str(

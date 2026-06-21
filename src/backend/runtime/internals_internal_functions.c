@@ -7253,6 +7253,9 @@ typedef struct {
     PtnSerializeIdEntry *objects;
     size_t object_len;
     size_t object_capacity;
+    PtnSerializeIdEntry *exceptions;
+    size_t exception_len;
+    size_t exception_capacity;
     size_t next_id;
 } PtnSerializeState;
 
@@ -7266,6 +7269,9 @@ static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runti
     state->objects = NULL;
     state->object_len = 0;
     state->object_capacity = 0;
+    state->exceptions = NULL;
+    state->exception_len = 0;
+    state->exception_capacity = 0;
     state->next_id = 1;
 }
 
@@ -7279,6 +7285,10 @@ static void ptn_serialize_state_free(PtnSerializeState *state) {
     state->objects = NULL;
     state->object_len = 0;
     state->object_capacity = 0;
+    free(state->exceptions);
+    state->exceptions = NULL;
+    state->exception_len = 0;
+    state->exception_capacity = 0;
 }
 
 static size_t ptn_serialize_state_next_id(PtnSerializeState *state) {
@@ -7378,16 +7388,48 @@ static void ptn_serialize_remove_object_id(PtnSerializeState *state, PtnObject *
     }
 }
 
+static int ptn_serialize_exception_id(PtnSerializeState *state, PtnException *exception, size_t *id) {
+    return ptn_serialize_id_lookup(state->exceptions, state->exception_len, exception, id);
+}
+
+static void ptn_serialize_add_exception_id(PtnSerializeState *state, PtnException *exception, size_t id) {
+    ptn_serialize_id_add(
+        &state->exceptions,
+        &state->exception_len,
+        &state->exception_capacity,
+        exception,
+        id
+    );
+}
+
+static void ptn_serialize_remove_exception_id(PtnSerializeState *state, PtnException *exception) {
+    for (size_t i = 0; i < state->exception_len; i++) {
+        if (state->exceptions[i].pointer == exception) {
+            memmove(
+                &state->exceptions[i],
+                &state->exceptions[i + 1],
+                (state->exception_len - i - 1) * sizeof(PtnSerializeIdEntry)
+            );
+            state->exception_len--;
+            return;
+        }
+    }
+}
+
 static void ptn_serialize_truncate_nested_ids(
     PtnSerializeState *state,
     size_t reference_len,
-    size_t object_len
+    size_t object_len,
+    size_t exception_len
 ) {
     if (state->reference_len > reference_len) {
         state->reference_len = reference_len;
     }
     if (state->object_len > object_len) {
         state->object_len = object_len;
+    }
+    if (state->exception_len > exception_len) {
+        state->exception_len = exception_len;
     }
 }
 
@@ -7486,6 +7528,96 @@ static void ptn_serialize_append_object_property_key(
     memcpy(encoded + declaring_len + 2, metadata->display_name, display_len);
     ptn_serialize_append_string(buffer, encoded, encoded_len);
     free(encoded);
+}
+
+static void ptn_serialize_append_exception_property_key(
+    PtnStringBuffer *buffer,
+    const char *declaring_class,
+    const char *display_name
+) {
+    size_t display_len = strlen(display_name);
+    if (declaring_class == NULL) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t encoded_len = display_len + 3;
+        char *encoded = malloc(encoded_len);
+        if (encoded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        encoded[0] = '\0';
+        encoded[1] = '*';
+        encoded[2] = '\0';
+        memcpy(encoded + 3, display_name, display_len);
+        ptn_serialize_append_string(buffer, encoded, encoded_len);
+        free(encoded);
+        return;
+    }
+
+    size_t declaring_len = strlen(declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t encoded_len = declaring_len + display_len + 2;
+    char *encoded = malloc(encoded_len);
+    if (encoded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    encoded[0] = '\0';
+    memcpy(encoded + 1, declaring_class, declaring_len);
+    encoded[declaring_len + 1] = '\0';
+    memcpy(encoded + declaring_len + 2, display_name, display_len);
+    ptn_serialize_append_string(buffer, encoded, encoded_len);
+    free(encoded);
+}
+
+static int ptn_serialize_append_exception(
+    PtnStringBuffer *buffer,
+    PtnException *exception,
+    PtnSerializeState *state
+) {
+    const char *class_name = exception->class_name == NULL ? "Exception" : exception->class_name;
+    const char *base_class = ptn_exception_type_matches_name(class_name, "Error")
+        ? "Error"
+        : "Exception";
+    PtnArray *dynamic_properties = exception->dynamic_properties.type == PTN_ARRAY
+        ? exception->dynamic_properties.as.array
+        : NULL;
+    size_t property_count = 7 + (dynamic_properties == NULL ? 0 : dynamic_properties->len);
+    const char *path = exception->path == NULL ? "ptn" : exception->path;
+    const char *message = exception->message == NULL ? "" : exception->message;
+    size_t message_len = exception->message == NULL ? 0 : exception->message_len;
+
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(class_name),
+        class_name,
+        property_count
+    );
+    ptn_serialize_append_exception_property_key(buffer, NULL, "message");
+    ptn_serialize_append_string(buffer, message, message_len);
+    ptn_serialize_append_exception_property_key(buffer, base_class, "string");
+    ptn_serialize_append_string(buffer, "", 0);
+    ptn_serialize_append_exception_property_key(buffer, NULL, "code");
+    ptn_string_buffer_append_format(buffer, "i:%lld;", (long long)exception->code);
+    ptn_serialize_append_exception_property_key(buffer, NULL, "file");
+    ptn_serialize_append_string(buffer, path, strlen(path));
+    ptn_serialize_append_exception_property_key(buffer, NULL, "line");
+    ptn_string_buffer_append_format(buffer, "i:%zu;", exception->line);
+    ptn_serialize_append_exception_property_key(buffer, base_class, "trace");
+    ptn_serialize_append_value_with_id(buffer, exception->trace, state, 0);
+    ptn_serialize_append_exception_property_key(buffer, base_class, "previous");
+    ptn_serialize_append_value_with_id(buffer, exception->previous, state, 0);
+    if (dynamic_properties != NULL) {
+        for (size_t i = 0; i < dynamic_properties->len; i++) {
+            PtnArrayEntry *entry = &dynamic_properties->entries[i];
+            ptn_serialize_append_key(buffer, entry->key);
+            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+        }
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+    return 1;
 }
 
 static void ptn_serialize_append_array(
@@ -8270,6 +8402,12 @@ static int ptn_serialize_append_value_with_id(
             ptn_string_buffer_append_format(buffer, "R:%zu;", id);
             return 1;
         }
+        if (deref.type == PTN_EXCEPTION &&
+            ptn_serialize_exception_id(state, deref.as.exception, &id)) {
+            ptn_serialize_add_reference_id(state, value.as.reference, id);
+            ptn_string_buffer_append_format(buffer, "R:%zu;", id);
+            return 1;
+        }
         id = ptn_serialize_state_next_id(state);
         ptn_serialize_add_reference_id(state, value.as.reference, id);
         int referenceable = ptn_serialize_append_value_with_id(buffer, deref, state, id);
@@ -8339,7 +8477,23 @@ static int ptn_serialize_append_value_with_id(
             }
             return referenceable;
         }
-        case PTN_EXCEPTION:
+        case PTN_EXCEPTION: {
+            if (value.as.exception == NULL) {
+                ptn_string_buffer_append(buffer, "N;");
+                return 0;
+            }
+            size_t exception_id = 0;
+            if (ptn_serialize_exception_id(state, value.as.exception, &exception_id)) {
+                ptn_string_buffer_append_format(buffer, "r:%zu;", exception_id);
+                return 1;
+            }
+            ptn_serialize_add_exception_id(state, value.as.exception, id);
+            int referenceable = ptn_serialize_append_exception(buffer, value.as.exception, state);
+            if (!referenceable) {
+                ptn_serialize_remove_exception_id(state, value.as.exception);
+            }
+            return referenceable;
+        }
         case PTN_CLOSURE:
         case PTN_REFERENCE:
             ptn_string_buffer_append(buffer, "N;");
@@ -8358,11 +8512,13 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
     if (active_state != NULL) {
         size_t saved_reference_len = active_state->reference_len;
         size_t saved_object_len = active_state->object_len;
+        size_t saved_exception_len = active_state->exception_len;
         ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
         ptn_serialize_truncate_nested_ids(
             active_state,
             saved_reference_len,
-            saved_object_len
+            saved_object_len,
+            saved_exception_len
         );
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
@@ -9342,6 +9498,7 @@ static void ptn_unserialize_declare_internal_property_metadata(
     const char *declaring_class,
     PtnPropertyVisibility visibility,
     PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
     const char *type_text,
     int type_allows_null,
     size_t line
@@ -9355,7 +9512,7 @@ static void ptn_unserialize_declare_internal_property_metadata(
         visibility,
         0,
         type_kind,
-        NULL,
+        type_class_name,
         type_text,
         type_allows_null,
         0,
@@ -9439,6 +9596,7 @@ static PtnValue ptn_unserialize_new_internal_exception_shell(
         base_class,
         PTN_PROPERTY_PRIVATE,
         PTN_PROPERTY_TYPE_ARRAY,
+        NULL,
         "array",
         0,
         line
@@ -9450,6 +9608,7 @@ static PtnValue ptn_unserialize_new_internal_exception_shell(
         base_class,
         PTN_PROPERTY_PRIVATE,
         PTN_PROPERTY_TYPE_CLASS,
+        "Throwable",
         "?Throwable",
         1,
         line

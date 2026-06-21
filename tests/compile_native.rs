@@ -11585,6 +11585,47 @@ var_dump($d);
 }
 
 #[test]
+fn compile_exception_previous_chain_serializes_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-previous-serialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-previous-serialize.php");
+    let output = root.join("exception-previous-serialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$examples = [
+    "Exception(Exception())" => new Exception("outer", 0, new Exception("inner")),
+    "Error(Error())" => new Error("outer", 0, new Error("inner")),
+    "Error(Exception())" => new Error("outer", 0, new Exception("inner")),
+    "Exception(Error())" => new Exception("outer", 0, new Error("inner")),
+];
+
+foreach ($examples as $name => $example) {
+    $processed = unserialize(serialize($example));
+    echo $name, ": ", get_class($processed), " previous ",
+        get_class($processed->getPrevious()), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Exception(Exception()): Exception previous Exception\n",
+            "Error(Error()): Error previous Error\n",
+            "Error(Exception()): Error previous Exception\n",
+            "Exception(Error()): Exception previous Error\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_payloads_and_nested_unserialize_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-payloads");
     fs::create_dir_all(&root).unwrap();
