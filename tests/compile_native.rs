@@ -12377,6 +12377,50 @@ echo \"ok\\n\";
 }
 
 #[test]
+fn compile_gc_counts_object_array_graphs_and_large_pending_roots_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-object-array-large-roots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-object-array-large-roots.php");
+    let output = root.join("gc-object-array-large-roots-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = new stdClass();
+$a->a = array();
+$a->a[0] = new stdClass();
+$a->a[0]->a = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+
+$a = new stdClass();
+$a->a = array();
+$a->a[0] = new stdClass();
+$a->a[0]->a = $a;
+$a->a[1] = &$a->a;
+gc_collect_cycles();
+unset($a);
+for ($i = 0; $i < 9999; $i++) {
+    $b = range(0, 1);
+    $b[0] =& $b;
+    unset($b);
+}
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nint(10002)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_reentrant_destructor_collection_defers_pending_cycles_to_native_binary() {
     let root = temp_dir("ptn-native-gc-reentrant-destructor-collection");
     fs::create_dir_all(&root).unwrap();

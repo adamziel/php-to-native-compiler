@@ -358,7 +358,7 @@ static int ptn_pending_destructor_array_cycle_references_draining = 0;
 static PtnReference *ptn_replaced_reference_cycle_suppressed_reference = NULL;
 static size_t ptn_replaced_reference_cycle_suppression_depth = 0;
 
-/* Approximate Zend's root-buffer auto collection for many short-lived array cycles. */
+/* PTN records possible array-cycle roots and collects them on explicit GC. */
 #define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 10000
 
 static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
@@ -368,15 +368,7 @@ static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
     if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
         ptn_abort_out_of_memory();
     }
-    size_t total = ptn_pending_array_cycle_collections + count;
-    if (!ptn_pending_array_cycle_auto_flushed &&
-        total >= PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD) {
-        ptn_pending_array_cycle_collections =
-            total - PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD;
-        ptn_pending_array_cycle_auto_flushed = 1;
-        return;
-    }
-    ptn_pending_array_cycle_collections = total;
+    ptn_pending_array_cycle_collections += count;
 }
 
 static PTN_UNUSED int ptn_gc_array_reference_auto_flushed(void) {

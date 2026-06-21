@@ -59931,21 +59931,33 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
     }
 }
 
-static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value, size_t epoch, size_t depth);
+static size_t ptn_gc_count_unreachable_contained_values_in_value(
+    PtnValue value,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth
+);
+static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
+    PtnObject *object,
+    size_t root_epoch,
+    size_t counted_epoch
+);
 
 static size_t ptn_gc_count_unreachable_contained_values_in_symbol_table(
     PtnSymbolTable *symbols,
-    size_t epoch,
+    size_t root_epoch,
+    size_t counted_epoch,
     size_t depth
 ) {
-    if (symbols == NULL || epoch == 0 || depth > 1024) {
+    if (symbols == NULL || root_epoch == 0 || counted_epoch == 0 || depth > 1024) {
         return 0;
     }
     size_t count = 0;
     for (size_t i = 0; i < symbols->len; i++) {
         size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
             symbols->items[i].value,
-            epoch,
+            root_epoch,
+            counted_epoch,
             depth + 1
         );
         if (count > SIZE_MAX - nested) {
@@ -59956,34 +59968,57 @@ static size_t ptn_gc_count_unreachable_contained_values_in_symbol_table(
     return count;
 }
 
-static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value, size_t epoch, size_t depth) {
-    if (epoch == 0 || depth > 1024) {
+static size_t ptn_gc_count_unreachable_contained_values_in_value(
+    PtnValue value,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth
+) {
+    if (root_epoch == 0 || counted_epoch == 0 || depth > 1024) {
         return 0;
     }
     if (value.type == PTN_REFERENCE) {
         PtnReference *reference = value.as.reference;
-        if (reference == NULL || reference->gc_mark_epoch == epoch) {
+        if (
+            reference == NULL ||
+            reference->gc_mark_epoch == root_epoch ||
+            reference->gc_mark_epoch == counted_epoch
+        ) {
             return 0;
         }
-        reference->gc_mark_epoch = epoch;
-        return ptn_gc_count_unreachable_contained_values_in_value(
+        int consumes_pending_array_cycle =
+            reference->value.type == PTN_ARRAY &&
+            reference->value.as.array != NULL &&
+            ptn_array_count_reference(reference->value.as.array, reference, 0) > 0;
+        reference->gc_mark_epoch = counted_epoch;
+        size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
             reference->value,
-            epoch,
+            root_epoch,
+            counted_epoch,
             depth + 1
         );
+        if (consumes_pending_array_cycle && ptn_pending_array_cycle_collections > 0) {
+            ptn_pending_array_cycle_collections--;
+        }
+        return nested;
     }
     if (value.type == PTN_ARRAY) {
         PtnArray *array = value.as.array;
-        if (array == NULL || array->gc_mark_epoch == epoch) {
+        if (
+            array == NULL ||
+            array->gc_mark_epoch == root_epoch ||
+            array->gc_mark_epoch == counted_epoch
+        ) {
             return 0;
         }
-        array->gc_mark_epoch = epoch;
+        array->gc_mark_epoch = counted_epoch;
 
         size_t count = 1;
         for (size_t i = 0; i < array->len; i++) {
             size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
                 array->entries[i].value,
-                epoch,
+                root_epoch,
+                counted_epoch,
                 depth + 1
             );
             if (count > SIZE_MAX - nested) {
@@ -59993,20 +60028,47 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value,
         }
         return count;
     }
+    if (value.type == PTN_OBJECT) {
+        PtnObject *object = value.as.object;
+        if (
+            object == NULL ||
+            object->refcount == 0 ||
+            object->native_data != NULL ||
+            object->gc_mark_epoch == root_epoch ||
+            object->gc_mark_epoch == counted_epoch
+        ) {
+            return 0;
+        }
+        object->gc_mark_epoch = counted_epoch;
+        size_t count = 1;
+        size_t properties = ptn_gc_count_unreachable_contained_values_in_object_properties(
+            object,
+            root_epoch,
+            counted_epoch
+        );
+        if (count > SIZE_MAX - properties) {
+            ptn_abort_out_of_memory();
+        }
+        return count + properties;
+    }
     if (value.type != PTN_CLOSURE || value.as.closure == NULL) {
         return 0;
     }
 
     PtnClosure *closure = value.as.closure;
-    if (closure->gc_mark_epoch == epoch) {
+    if (
+        closure->gc_mark_epoch == root_epoch ||
+        closure->gc_mark_epoch == counted_epoch
+    ) {
         return 0;
     }
-    closure->gc_mark_epoch = epoch;
+    closure->gc_mark_epoch = counted_epoch;
 
     size_t count = 1;
     size_t captures = ptn_gc_count_unreachable_contained_values_in_symbol_table(
         &closure->captures,
-        epoch,
+        root_epoch,
+        counted_epoch,
         depth + 1
     );
     if (count > SIZE_MAX - captures) {
@@ -60016,7 +60078,8 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value,
     if (closure->has_wrapped_callable) {
         size_t wrapped = ptn_gc_count_unreachable_contained_values_in_value(
             closure->wrapped_callable,
-            epoch,
+            root_epoch,
+            counted_epoch,
             depth + 1
         );
         if (count > SIZE_MAX - wrapped) {
@@ -60027,7 +60090,11 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value,
     return count;
 }
 
-static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(PtnObject *object, size_t epoch) {
+static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
+    PtnObject *object,
+    size_t root_epoch,
+    size_t counted_epoch
+) {
     if (object == NULL || object->properties == NULL) {
         return 0;
     }
@@ -60035,7 +60102,8 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(Ptn
     for (size_t i = 0; i < object->properties->len; i++) {
         size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
             object->properties->entries[i].value,
-            epoch,
+            root_epoch,
+            counted_epoch,
             0
         );
         if (count > SIZE_MAX - nested) {
@@ -60528,7 +60596,8 @@ static size_t ptn_gc_destructed_object_count(PtnObject *object) {
 
 static size_t ptn_runtime_collect_unreachable_objects(
     PtnRuntime *runtime,
-    size_t *destructor_component_epoch_out
+    size_t *destructor_component_epoch_out,
+    size_t *counted_object_epoch_out
 ) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -60539,6 +60608,9 @@ static size_t ptn_runtime_collect_unreachable_objects(
     }
     if (destructor_component_epoch_out != NULL) {
         *destructor_component_epoch_out = 0;
+    }
+    if (counted_object_epoch_out != NULL) {
+        *counted_object_epoch_out = 0;
     }
 
     size_t epoch = ptn_runtime_mark_gc_roots(runtime, root);
@@ -60589,6 +60661,10 @@ static size_t ptn_runtime_collect_unreachable_objects(
     }
     ptn_gc_object_components_release(&destructor_components);
 
+    size_t counted_object_epoch = ptn_runtime_next_gc_mark_epoch(root);
+    if (counted_object_epoch_out != NULL) {
+        *counted_object_epoch_out = counted_object_epoch;
+    }
     size_t index = root->live_objects_len;
     while (index > 0) {
         index--;
@@ -60598,12 +60674,20 @@ static size_t ptn_runtime_collect_unreachable_objects(
             object->refcount > 0 &&
             object->native_data == NULL &&
             object->gc_mark_epoch != epoch &&
+            object->gc_mark_epoch != counted_object_epoch &&
             !ptn_object_has_pending_declared_destructor(object)
         ) {
             int object_already_counted = object->gc_mark_epoch == counted_destructor_epoch;
+            if (!object_already_counted) {
+                object->gc_mark_epoch = counted_object_epoch;
+            }
             size_t nested = object_already_counted
                 ? 0
-                : ptn_gc_count_unreachable_contained_values_in_object_properties(object, epoch);
+                : ptn_gc_count_unreachable_contained_values_in_object_properties(
+                    object,
+                    epoch,
+                    counted_object_epoch
+                );
             size_t object_count = object_already_counted
                 ? 0
                 : ptn_gc_destructed_object_count(object);
@@ -60657,7 +60741,8 @@ static int ptn_runtime_array_is_object_property_storage(PtnRuntime *root, PtnArr
 
 static size_t ptn_runtime_collect_unreachable_references_and_arrays(
     PtnRuntime *runtime,
-    size_t excluded_epoch
+    size_t excluded_epoch,
+    size_t counted_epoch
 ) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -60682,6 +60767,8 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         ) {
             continue;
         }
+        int already_counted = counted_epoch != 0 &&
+            reference->gc_mark_epoch == counted_epoch;
         if (excluded_epoch != 0 && reference->gc_mark_epoch == excluded_epoch) {
             if (
                 reference->value.type != PTN_ARRAY ||
@@ -60711,7 +60798,9 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         if (collected == SIZE_MAX) {
             ptn_abort_out_of_memory();
         }
-        collected++;
+        if (!already_counted) {
+            collected++;
+        }
         if (reference_index > root->live_references_len) {
             reference_index = root->live_references_len;
         }
@@ -60732,6 +60821,8 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         ) {
             continue;
         }
+        int already_counted = counted_epoch != 0 &&
+            array->gc_mark_epoch == counted_epoch;
         if (ptn_runtime_array_is_object_property_storage(root, array)) {
             continue;
         }
@@ -60748,7 +60839,9 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
         if (collected == SIZE_MAX) {
             ptn_abort_out_of_memory();
         }
-        collected++;
+        if (!already_counted) {
+            collected++;
+        }
         if (array_index > root->live_arrays_len) {
             array_index = root->live_arrays_len;
         }
@@ -60773,13 +60866,16 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     }
     root->gc_running = 1;
     size_t destructor_component_epoch = 0;
+    size_t counted_object_epoch = 0;
     size_t object_cycles = ptn_runtime_collect_unreachable_objects(
         runtime,
-        &destructor_component_epoch
+        &destructor_component_epoch,
+        &counted_object_epoch
     );
     size_t reference_array_cycles = ptn_runtime_collect_unreachable_references_and_arrays(
         runtime,
-        destructor_component_epoch
+        destructor_component_epoch,
+        counted_object_epoch
     );
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
     ptn_runtime_run_unreferenced_object_destructors(root);
