@@ -3765,7 +3765,8 @@ static PTN_UNUSED void ptn_throw_uninitialized_typed_property_reference_error(
 static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *property
+    const char *property,
+    size_t line
 ) {
     char message[256];
     int written = snprintf(
@@ -3778,7 +3779,7 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
@@ -4381,6 +4382,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             (object->enum_case_name != NULL ||
              ptn_ascii_case_equal(object->class_name, "BcMath\\Number") ||
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+             ptn_internal_class_name_is_sensitive_parameter_value(object->class_name) ||
              ptn_internal_class_name_is_weak_map(object->class_name) ||
              ptn_internal_class_name_is_weak_reference(object->class_name) ||
 #endif
@@ -4390,7 +4392,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 ptn_throw_dynamic_property_readonly_class_error(
                     runtime,
                     object->class_name,
-                    property
+                    property,
+                    line
                 );
             }
             return NULL;
@@ -4405,7 +4408,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 ptn_throw_dynamic_property_readonly_class_error(
                     runtime,
                     object->class_name,
-                    property
+                    property,
+                    line
                 );
             }
             return NULL;

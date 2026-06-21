@@ -7427,6 +7427,17 @@ function old_fn() {}
         "Cannot apply #[\\AllowDynamicProperties] to enum Demo"
     );
 
+    let readonly_dynamic_properties_target =
+        parser::parse("<?php #[AllowDynamicProperties] readonly class Demo {}").unwrap_err();
+    assert_eq!(
+        readonly_dynamic_properties_target.kind,
+        DiagnosticKind::Fatal
+    );
+    assert_eq!(
+        readonly_dynamic_properties_target.message,
+        "Cannot apply #[\\AllowDynamicProperties] to readonly class Demo"
+    );
+
     let enum_deprecated_target = parser::parse("<?php #[Deprecated] enum Demo {}").unwrap_err();
     assert_eq!(enum_deprecated_target.kind, DiagnosticKind::Fatal);
     assert_eq!(
@@ -52430,6 +52441,48 @@ var_dump($p->getValue($v1));
     assert!(c_source.contains("ptn_sensitive_parameter_value_clone"));
     assert!(c_source.contains("ptn_internal_class_property_exists"));
     assert!(c_source.contains("ptn_reflection_property_call_method"));
+}
+
+#[test]
+fn compile_sensitive_parameter_value_rejects_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-value-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-value-serialization.php");
+    let output = root.join("sensitive-parameter-value-serialization-bin");
+    fs::write(
+        &input,
+        "<?php
+$value = new SensitiveParameterValue('secret');
+try {
+    serialize($value);
+} catch (Exception $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+try {
+    $value->extra = true;
+} catch (Error $error) {
+    echo $error->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Serialization of 'SensitiveParameterValue' is not allowed\n",
+            "Cannot create dynamic property SensitiveParameterValue::$extra\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_class_name_is_sensitive_parameter_value"));
+    assert!(c_source.contains("Cannot create dynamic property %s::$%s"));
 }
 
 #[test]

@@ -15520,6 +15520,15 @@ fn validate_builtin_attribute_targets(
                     Some(class.span),
                 ));
             }
+            if class.is_readonly {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to readonly class {}",
+                        class.name
+                    ),
+                    Some(class.span),
+                ));
+            }
         }
         if class.attributes.deprecated_message.is_some()
             && class.is_interface

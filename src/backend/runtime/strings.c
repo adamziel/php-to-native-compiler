@@ -877,7 +877,7 @@ static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, Ptn
             ptn_abort_out_of_memory();
         }
         if (runtime != NULL) {
-            ptn_throw_exception(runtime, "Error", message);
+            ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
             return ptn_string("");
         }
         fprintf(stderr, "Fatal error: %s\n", message);

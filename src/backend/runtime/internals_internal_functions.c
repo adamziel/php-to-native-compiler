@@ -8226,6 +8226,7 @@ static int ptn_serialize_append_value_with_id(
             }
             if (ptn_internal_class_name_is_weak_reference(value.as.object->class_name) ||
                 ptn_internal_class_name_is_weak_map(value.as.object->class_name) ||
+                ptn_internal_class_name_is_sensitive_parameter_value(value.as.object->class_name) ||
                 ptn_internal_class_name_is_xml_parser(value.as.object->class_name)) {
                 char message[96];
                 int written = snprintf(
