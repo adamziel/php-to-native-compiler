@@ -3658,6 +3658,7 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
+static int ptn_declared_class_constant_value(PtnRuntime *runtime, const char *class_name, const char *constant_name, PtnValue *value_out);
 static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
@@ -85842,6 +85843,7 @@ static PtnValue ptn_declared_class_reflection_enum_cases(PtnRuntime *runtime, co
 static PtnValue ptn_declared_class_reflection_enum_case(PtnRuntime *runtime, const char *class_name, const char *case_name, size_t line);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
+static int ptn_declared_class_constant_value(PtnRuntime *runtime, const char *class_name, const char *constant_name, PtnValue *value_out);
 static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
@@ -92377,6 +92379,20 @@ static PtnValue ptn_reflection_class_constant_object_from_name(
     );
 }
 
+static PtnValue ptn_runtime_read_reflection_class_constant(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant_name,
+    size_t line
+) {
+    PtnValue value = ptn_null();
+    if (ptn_declared_trait_exists(class_name) &&
+        ptn_declared_class_constant_value(runtime, class_name, constant_name, &value)) {
+        return value;
+    }
+    return ptn_runtime_read_class_constant(runtime, class_name, constant_name, line);
+}
+
 static PtnValue ptn_reflection_enum_case_object_from_name(
     PtnRuntime *runtime,
     const char *class_name,
@@ -92456,7 +92472,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
     }
     const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
     const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
-    if (!ptn_runtime_class_or_interface_exists(runtime, resolved_class_name)) {
+    if (!ptn_reflection_class_runtime_symbol_exists(runtime, resolved_class_name)) {
         ptn_reflection_class_throw_missing_class(runtime, lookup_class_name);
         free(class_name);
         return ptn_null();
@@ -97843,7 +97859,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return builtin_value;
         }
         if (ptn_declared_class_constant_exists(class_name, constant_name)) {
-            PtnValue value = ptn_runtime_read_class_constant(runtime, class_name, constant_name, line);
+            PtnValue value = ptn_runtime_read_reflection_class_constant(runtime, class_name, constant_name, line);
             free(constant_name);
             return value;
         }
@@ -98216,7 +98232,7 @@ static PtnValue ptn_reflection_class_constant_to_string(
     const char *constant_name,
     size_t line
 ) {
-    PtnValue value = ptn_runtime_read_class_constant(runtime, class_name, constant_name, line);
+    PtnValue value = ptn_runtime_read_reflection_class_constant(runtime, class_name, constant_name, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&value);
         return ptn_null();
@@ -98339,7 +98355,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
-        if (ptn_declared_user_class_or_interface_exists(data->class_name)) {
+        if (ptn_declared_user_class_or_interface_exists(data->class_name) || ptn_declared_trait_exists(data->class_name)) {
             return ptn_declared_class_constant_reflection_attributes(
                 runtime,
                 data->class_name,
@@ -98398,7 +98414,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         if (constant_name == NULL) {
             return ptn_null();
         }
-        PtnValue result = ptn_runtime_read_class_constant(runtime, data->class_name, constant_name, line);
+        PtnValue result = ptn_runtime_read_reflection_class_constant(runtime, data->class_name, constant_name, line);
         free(constant_name);
         return result;
     }

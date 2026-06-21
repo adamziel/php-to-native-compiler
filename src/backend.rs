@@ -6482,6 +6482,7 @@ fn emit_class_metadata_helpers(
         for trait_use in &class.trait_uses {
             let trait_name =
                 canonical_trait_name(traits, &trait_use.name).unwrap_or(trait_use.name.as_str());
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
             out.push_str("        if (objects) {\n");
             out.push_str(
                 "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
@@ -6495,6 +6496,13 @@ fn emit_class_metadata_helpers(
             out.push_str(&c_string(trait_name));
             out.push_str("\"));\n");
             out.push_str("        }\n");
+            out.push_str("#else\n");
+            out.push_str("        (void)runtime;\n");
+            out.push_str("        (void)objects;\n");
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+            out.push_str(&c_string(trait_name));
+            out.push_str("\"));\n");
+            out.push_str("#endif\n");
         }
         out.push_str("        return result;\n");
         out.push_str("    }\n");
@@ -7069,12 +7077,16 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
+    let has_trait_constant_lookup_entries = traits
+        .iter()
+        .any(|trait_decl| !trait_decl.constants.is_empty());
     let has_class_constant_lookup_entries = classes
         .iter()
-        .any(|class| !class_constant_lookup_chain(class, classes).is_empty());
+        .any(|class| !class_constant_lookup_chain(class, classes).is_empty())
+        || has_trait_constant_lookup_entries;
     if !has_class_constant_lookup_entries {
         out.push_str("    (void)constant_name;\n");
     }
@@ -7093,13 +7105,58 @@ fn emit_class_metadata_helpers(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for constant in &trait_decl.constants {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_constant_value(PtnRuntime *runtime, const char *class_name, const char *constant_name, PtnValue *value_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    if !has_trait_constant_lookup_entries {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)constant_name;\n");
+        out.push_str("    (void)value_out;\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for constant in &trait_decl.constants {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            if (value_out != NULL) {\n");
+            out.push_str("                *value_out = ");
+            out.push_str(&c_property_default_value(Some(&constant.value)));
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     if !has_class_constant_lookup_entries {
@@ -7122,13 +7179,29 @@ fn emit_class_metadata_helpers(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for constant in &trait_decl.constants {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if constant.is_enum_case { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     if !has_class_constant_lookup_entries {
@@ -7148,6 +7221,30 @@ fn emit_class_metadata_helpers(
             out.push_str("            if (declaring_class_out != NULL) {\n");
             out.push_str("                *declaring_class_out = \"");
             out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (visibility_out != NULL) {\n");
+            out.push_str("                *visibility_out = ");
+            out.push_str(c_property_visibility(constant.visibility));
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for constant in &trait_decl.constants {
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            if (declaring_class_out != NULL) {\n");
+            out.push_str("                *declaring_class_out = \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\";\n");
             out.push_str("            }\n");
             out.push_str("            if (visibility_out != NULL) {\n");
@@ -7191,11 +7288,11 @@ fn emit_class_metadata_helpers(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
+    out.push_str("    (void)runtime;\n");
     if !has_class_constant_lookup_entries {
-        out.push_str("    (void)runtime;\n");
         out.push_str("    (void)filter_present;\n");
         out.push_str("    (void)filter;\n");
     }
@@ -7229,6 +7326,28 @@ fn emit_class_metadata_helpers(
         out.push_str("        return result;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for constant in &trait_decl.constants {
+            out.push_str("        if (ptn_class_constant_matches_filter(");
+            out.push_str(c_property_visibility(constant.visibility));
+            out.push_str(", ");
+            out.push_str(if constant.is_final { "1" } else { "0" });
+            out.push_str(", filter_present, filter)) {\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\"), ");
+            out.push_str(&c_property_default_value(Some(&constant.value)));
+            out.push_str(");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
@@ -7240,7 +7359,7 @@ fn emit_class_metadata_helpers(
         );
         out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
         out.push_str("    int64_t index = 0;\n");
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7262,6 +7381,26 @@ fn emit_class_metadata_helpers(
                 out.push_str(", filter_present, filter)) {\n");
                 out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_class_constant_object_from_name(runtime, \"");
                 out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
+        }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
+                out.push_str("        if (ptn_class_constant_matches_filter(");
+                out.push_str(c_property_visibility(constant.visibility));
+                out.push_str(", ");
+                out.push_str(if constant.is_final { "1" } else { "0" });
+                out.push_str(", filter_present, filter)) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_class_constant_object_from_name(runtime, \"");
+                out.push_str(&c_string(&trait_decl.name));
                 out.push_str("\", \"");
                 out.push_str(&c_string(&constant.name));
                 out.push_str("\"));\n");
@@ -7365,7 +7504,7 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7390,13 +7529,31 @@ fn emit_class_metadata_helpers(
             out.push_str("        return 0;\n");
             out.push_str("    }\n");
         }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ptn_class_constant_modifiers(");
+                out.push_str(c_property_visibility(constant.visibility));
+                out.push_str(", ");
+                out.push_str(if constant.is_final { "1" } else { "0" });
+                out.push_str(");\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    return 0;\n");
         out.push_str("}\n");
 
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7419,13 +7576,29 @@ fn emit_class_metadata_helpers(
             out.push_str("        return 0;\n");
             out.push_str("    }\n");
         }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(if constant.is_enum_case { "1" } else { "0" });
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    return 0;\n");
         out.push_str("}\n");
 
         out.push_str(
             "\nstatic PTN_UNUSED const char *ptn_declared_class_reflection_constant_doc_comment(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7448,13 +7621,29 @@ fn emit_class_metadata_helpers(
             out.push_str("        return NULL;\n");
             out.push_str("    }\n");
         }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(&c_optional_string(constant.doc_comment.as_deref()));
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return NULL;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    return NULL;\n");
         out.push_str("}\n");
 
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_type_metadata(const char *class_name, const char *constant_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin) {\n",
         );
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7502,13 +7691,50 @@ fn emit_class_metadata_helpers(
             out.push_str("        return 0;\n");
             out.push_str("    }\n");
         }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                if let Some(type_metadata) = constant
+                    .type_hint
+                    .as_ref()
+                    .and_then(reflection_named_type_metadata)
+                {
+                    out.push_str("            *type_name = \"");
+                    out.push_str(&c_string(&type_metadata.name));
+                    out.push_str("\";\n");
+                    out.push_str("            *type_display_name = \"");
+                    out.push_str(&c_string(&type_metadata.display_name));
+                    out.push_str("\";\n");
+                    out.push_str("            *allows_null = ");
+                    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+                    out.push_str(";\n");
+                    out.push_str("            *is_builtin = ");
+                    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+                    out.push_str(";\n");
+                } else {
+                    out.push_str("            *type_name = NULL;\n");
+                    out.push_str("            *type_display_name = NULL;\n");
+                    out.push_str("            *allows_null = 0;\n");
+                    out.push_str("            *is_builtin = 0;\n");
+                }
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    return 0;\n");
         out.push_str("}\n");
 
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
+        if classes.is_empty() && traits.is_empty() {
             out.push_str("    (void)class_name;\n");
         }
         if !has_class_constant_lookup_entries {
@@ -7520,6 +7746,26 @@ fn emit_class_metadata_helpers(
             out.push_str("\")) {\n");
             for entry in class_constant_lookup_chain(class, classes) {
                 let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(if class_constant_has_deprecation(constant) {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
+        for trait_decl in traits {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\")) {\n");
+            for constant in &trait_decl.constants {
                 out.push_str("        if (strcmp(constant_name, \"");
                 out.push_str(&c_string(&constant.name));
                 out.push_str("\") == 0) {\n");
@@ -8240,7 +8486,7 @@ fn emit_reflection_attribute_metadata_helpers(
     emit_declared_class_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_property_reflection_attributes(out, classes, traits, functions);
-    emit_declared_class_constant_reflection_attributes(out, classes, functions);
+    emit_declared_class_constant_reflection_attributes(out, classes, traits, functions);
     emit_declared_function_reflection_attributes(out, classes, functions);
     emit_declared_function_parameter_reflection_attributes(out, classes, functions);
     emit_declared_constant_attributes(out, classes, functions, instructions);
@@ -8866,6 +9112,7 @@ fn emit_declared_class_property_reflection_attributes(
 fn emit_declared_class_constant_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
@@ -8875,6 +9122,11 @@ fn emit_declared_class_constant_reflection_attributes(
     out.push_str("    (void)constant_name;\n");
     let has_constant_attributes = classes.iter().any(|class| {
         class
+            .constants
+            .iter()
+            .any(|constant| !constant.attributes.instances.is_empty())
+    }) || traits.iter().any(|trait_decl| {
+        trait_decl
             .constants
             .iter()
             .any(|constant| !constant.attributes.instances.is_empty())
@@ -8891,6 +9143,32 @@ fn emit_declared_class_constant_reflection_attributes(
             }
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionClassConstant",
+                "ReflectionClassConstant::getAttributes",
+                &constant.attributes,
+                16,
+                label_namespace,
+                classes,
+                functions,
+                Some("class_name"),
+                false,
+            );
+            label_namespace += 1;
+            out.push_str("    }\n");
+        }
+    }
+    for trait_decl in traits {
+        for constant in &trait_decl.constants {
+            if constant.attributes.instances.is_empty() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\") && strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");

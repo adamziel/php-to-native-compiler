@@ -128,6 +128,7 @@ pub struct TraitDecl {
     pub end_line: usize,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
+    pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<TraitMethodDecl>,
 }
 
@@ -2510,6 +2511,49 @@ impl<'a> LoweringContext<'a> {
                 source_order: property.span.byte_start,
             })
             .collect();
+        let trait_constant_values =
+            collect_class_constant_values(&trait_decl.constants, &self.constant_values);
+        let trait_constant_deprecations = collect_class_constant_deprecations(
+            &trait_decl.constants,
+            &self.constant_values,
+            &trait_constant_values,
+        );
+        let constants = trait_decl
+            .constants
+            .iter()
+            .map(|constant| {
+                let attributes = self.lower_class_scoped_attribute_metadata(
+                    &constant.attributes,
+                    &trait_decl.name,
+                    None,
+                );
+                let metadata = self.class_deprecated_metadata(
+                    &attributes,
+                    &trait_decl.name,
+                    &constant.name,
+                    &trait_constant_values,
+                    &trait_constant_deprecations,
+                );
+                ClassConstantDecl {
+                    name: constant.name.clone(),
+                    visibility: lower_property_visibility(constant.visibility),
+                    type_hint: constant.type_hint.clone().map(lower_type_hint),
+                    attributes,
+                    doc_comment: constant.doc_comment.clone(),
+                    deprecated_message: metadata.message,
+                    deprecated_since: metadata.since,
+                    deprecated_message_dependency: metadata.message_dependency,
+                    deprecated_message_runtime_reference: metadata.message_runtime_reference,
+                    is_enum_case: constant.is_enum_case,
+                    enum_case_value: constant
+                        .enum_case_value
+                        .as_ref()
+                        .map(|value| self.lower_expr(value)),
+                    is_final: constant.is_final,
+                    value: self.lower_expr(&constant.value),
+                }
+            })
+            .collect();
         TraitDecl {
             name: trait_decl.name.clone(),
             source_file: self.source_file.clone(),
@@ -2522,6 +2566,7 @@ impl<'a> LoweringContext<'a> {
             end_line: trait_decl.span.end_line,
             properties,
             static_properties,
+            constants,
             methods: trait_decl
                 .methods
                 .iter()
