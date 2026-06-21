@@ -22700,11 +22700,11 @@ fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> R
             reject_append_array_read(array)?;
             reject_append_array_read_in_optional_exprs(dimensions)?;
         }
-        AssignmentTarget::Property { receiver, .. } => {
-            reject_append_array_read(receiver)?;
-        }
+        AssignmentTarget::Property { .. } => {}
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
-            reject_append_array_read(receiver)?;
+            if !matches!(receiver.as_ref(), Expr::ArrayAccess { .. }) {
+                reject_append_array_read(receiver)?;
+            }
             reject_append_array_read(name)?;
         }
         AssignmentTarget::List(target) => {

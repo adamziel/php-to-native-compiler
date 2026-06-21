@@ -19155,7 +19155,13 @@ fn emit_instruction(
                 } else {
                     None
                 };
-                let path = emit_array_path_segments(out, values, dimensions);
+                let path = if pre_eval_root.is_some() {
+                    emit_array_path_segments_with_deferred_variable_warnings(
+                        out, values, dimensions,
+                    )
+                } else {
+                    emit_array_path_segments(out, values, dimensions)
+                };
                 let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
@@ -19180,7 +19186,41 @@ fn emit_instruction(
                     out.push_str(&snapshot_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
+                    out.push_str(", ");
+                    if path.deferred_undefined_variable_warnings.is_empty() {
+                        out.push('1');
+                    } else {
+                        out.push_str("!(");
+                        for (index, warning) in
+                            path.deferred_undefined_variable_warnings.iter().enumerate()
+                        {
+                            if index > 0 {
+                                out.push_str(" || ");
+                            }
+                            out.push_str(&warning.missing_temp);
+                        }
+                        out.push(')');
+                    }
                     out.push_str(");\n");
+                    for warning in &path.deferred_undefined_variable_warnings {
+                        out.push_str("    if (");
+                        out.push_str(&warning.missing_temp);
+                        out.push_str(" && ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                        out.push_str(&c_string(array));
+                        out.push_str("\") == ");
+                        out.push_str(root_epoch_temp);
+                        out.push_str(") {\n");
+                        out.push_str(
+                            "        ptn_emit_undefined_variable_warning(&runtime.diagnostics, \"",
+                        );
+                        out.push_str(&c_string(&warning.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(source_path));
+                        out.push_str("\", ");
+                        out.push_str(&warning.line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                    }
                 } else {
                     out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
                     out.push_str(&c_string(array));
@@ -21512,6 +21552,13 @@ struct EmittedArrayPath {
     name: String,
     len: usize,
     value_temps: Vec<String>,
+    deferred_undefined_variable_warnings: Vec<DeferredUndefinedVariableWarning>,
+}
+
+struct DeferredUndefinedVariableWarning {
+    missing_temp: String,
+    name: String,
+    line: usize,
 }
 
 fn emit_array_path_segments(
@@ -21531,6 +21578,60 @@ fn emit_array_path_segments(
         }
     }
     emit_array_path(out, values, dimensions.len(), initializers, value_temps)
+}
+
+fn emit_array_path_segments_with_deferred_variable_warnings(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    dimensions: &[Option<ValueExpr>],
+) -> EmittedArrayPath {
+    let mut value_temps = Vec::new();
+    let mut initializers = Vec::new();
+    let mut deferred_undefined_variable_warnings = Vec::new();
+    for dimension in dimensions {
+        match dimension {
+            Some(ValueExpr::Load { name, line }) => {
+                let lookup_temp = values.next_temp();
+                let missing_temp = values.next_temp();
+                let value_temp = values.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                out.push_str("    int ");
+                out.push_str(&missing_temp);
+                out.push_str(" = !");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists;\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&value_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists ? ptn_value_clone_deref(");
+                out.push_str(&lookup_temp);
+                out.push_str(".value) : ptn_null();\n");
+                initializers.push(format!("{{ 0, {value_temp} }}"));
+                value_temps.push(value_temp);
+                deferred_undefined_variable_warnings.push(DeferredUndefinedVariableWarning {
+                    missing_temp,
+                    name: name.clone(),
+                    line: *line,
+                });
+            }
+            Some(dimension) => {
+                let temp = values.emit_materialized_value(out, dimension);
+                initializers.push(format!("{{ 0, {temp} }}"));
+                value_temps.push(temp);
+            }
+            None => {
+                initializers.push("{ 1, ptn_null() }".to_string());
+            }
+        }
+    }
+    let mut path = emit_array_path(out, values, dimensions.len(), initializers, value_temps);
+    path.deferred_undefined_variable_warnings = deferred_undefined_variable_warnings;
+    path
 }
 
 fn emit_array_unset_path_segments(
@@ -21568,6 +21669,7 @@ fn emit_array_path(
         name,
         len,
         value_temps,
+        deferred_undefined_variable_warnings: Vec::new(),
     }
 }
 
@@ -29299,6 +29401,22 @@ impl ValueEmitter {
         out: &mut String,
         receiver: &ValueExpr,
     ) -> String {
+        if matches!(
+            receiver,
+            ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. }
+        ) {
+            if let Some(target) = reference_array_dim_target_from_value(receiver) {
+                let reference_temp = self.emit_reference_target(out, &target);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&reference_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &reference_temp);
+                return result_temp;
+            }
+        }
         match receiver {
             ValueExpr::PropertyFetch {
                 receiver,

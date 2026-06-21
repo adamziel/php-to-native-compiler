@@ -448,15 +448,6 @@ static PTN_UNUSED int ptn_array_offset_key_from_value(
         case PTN_REFERENCE:
             return ptn_array_offset_key_from_value(runtime, key_value, line, quiet, key_out);
         default:
-            if (key_value.type == PTN_FLOAT && ptn_float_to_int_out_of_range(key_value.as.floating)) {
-                PtnRuntime *root = runtime == NULL ? NULL : ptn_runtime_root(runtime);
-                if (root == NULL) {
-                    root = runtime;
-                }
-                if (root != NULL && root->diagnostics.has_error_handler) {
-                    return 0;
-                }
-            }
             *key_out = ptn_array_key_from_value(key_value);
             return 1;
     }
@@ -7115,12 +7106,17 @@ static PTN_UNUSED void ptn_emit_false_array_conversion_deprecation(PtnRuntime *r
         return;
     }
     runtime->diagnostics.emitted_deprecation = 1;
-    ptn_emit_array_runtime_diagnostic(
-        runtime,
-        "Deprecated",
-        "Automatic conversion of false to array is deprecated",
+    const char *message = "Automatic conversion of false to array is deprecated";
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_DEPRECATED,
+        message,
+        runtime->source_path,
         line
-    );
+    )) {
+        return;
+    }
+    ptn_emit_array_runtime_diagnostic(runtime, "Deprecated", message, line);
 }
 
 static PTN_UNUSED PtnArray *ptn_array_convertible_scalar_for_write(
@@ -12529,7 +12525,8 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     PtnValue value,
-    size_t line
+    size_t line,
+    int emit_null_key_deprecation
 );
 
 static PTN_UNUSED void ptn_runtime_array_path_set_impl(
@@ -12695,7 +12692,8 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     PtnValue value,
-    size_t line
+    size_t line,
+    int emit_null_key_deprecation
 ) {
     uint64_t current_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
     if (current_epoch != pre_eval_epoch) {
@@ -12708,7 +12706,15 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
         );
         return;
     }
-    ptn_runtime_array_path_set(runtime, name, segments, segment_count, value, line);
+    ptn_runtime_array_path_set_impl(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        value,
+        line,
+        emit_null_key_deprecation
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
