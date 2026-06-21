@@ -59105,6 +59105,55 @@ var_dump($a);
 }
 
 #[test]
+fn compile_arrayaccess_indirect_modification_notice_uses_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-indirect-modification-error-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-indirect-modification-error-handler.php");
+    let output = root.join("arrayaccess-indirect-modification-error-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box implements ArrayAccess {
+    public function offsetExists($offset): bool {
+        return true;
+    }
+
+    public function offsetGet($offset): mixed {
+        return ['name' => 'Foo'];
+    }
+
+    public function offsetSet($offset, $value): void {
+        echo \"set\\n\";
+    }
+
+    public function offsetUnset($offset): void {
+    }
+}
+
+set_error_handler(function ($errno, $message) {
+    echo \"handled:$errno:$message\\n\";
+    return true;
+});
+
+$box = new Box();
+$box[0]['name'] = 'Bar';
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "handled:8:Indirect modification of overloaded element of Box has no effect\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_arrayaccess_standalone_isset_numeric_string_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-arrayaccess-standalone-isset-numeric-string-offsets");
     fs::create_dir_all(&root).unwrap();

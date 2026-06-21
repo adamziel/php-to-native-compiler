@@ -10943,7 +10943,6 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     PtnValue container,
     size_t line
 ) {
-    (void)runtime;
     container = ptn_value_deref(container);
     const char *type_name = container.type == PTN_OBJECT
         ? container.as.object->class_name
@@ -10958,12 +10957,12 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_array_runtime_diagnostic_at_path(
-        runtime,
-        "Notice",
+    ptn_emit_notice_with_path(
+        runtime == NULL ? NULL : &runtime->diagnostics,
         message,
         runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn",
-        line
+        line,
+        1
     );
 }
 
