@@ -59398,10 +59398,18 @@ try { var_dump([1] + 2); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; 
 try { var_dump(\"abc\" * 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump(\"123abc\" + \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump([1] % 2); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" % \"def\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump([1] << 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" << \"def\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump([1] >> 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" >> \"def\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" | 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(1 & \"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(\"abc\" ^ 1); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(\"123abc\" + 2);\n\
 var_dump(\"3.5x\" * 2);\n\
+try { var_dump(+\"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(-\"abc\"); } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $object = new stdClass;\n\
 try { var_dump($object + [1]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { var_dump([1] + $object); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
@@ -59422,14 +59430,22 @@ Unsupported operand types: string * int\n\
 Warning: A non-numeric value encountered in ptn on line 6\n\
 Unsupported operand types: string + string\n\
 Unsupported operand types: array % int\n\
+Unsupported operand types: string % string\n\
 Unsupported operand types: array << int\n\
+Unsupported operand types: string << string\n\
 Unsupported operand types: array >> int\n\
+Unsupported operand types: string >> string\n\
+Unsupported operand types: string | int\n\
+Unsupported operand types: int & string\n\
+Unsupported operand types: string ^ int\n\
 \n\
-Warning: A non-numeric value encountered in ptn on line 10\n\
+Warning: A non-numeric value encountered in ptn on line 16\n\
 int(125)\n\
 \n\
-Warning: A non-numeric value encountered in ptn on line 11\n\
+Warning: A non-numeric value encountered in ptn on line 17\n\
 float(7)\n\
+Unsupported operand types: string * int\n\
+Unsupported operand types: string * int\n\
 Unsupported operand types: stdClass + array\n\
 Unsupported operand types: array + stdClass\n"
     );

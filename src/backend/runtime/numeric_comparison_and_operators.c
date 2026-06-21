@@ -870,6 +870,24 @@ static PTN_UNUSED int ptn_numeric_operator_rejects_operand(PtnValue value) {
     return 0;
 }
 
+static PTN_UNUSED int ptn_integer_operator_rejects_operand(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (ptn_numeric_operator_rejects_operand(value)) {
+        return 1;
+    }
+    if (value.type != PTN_STRING) {
+        return 0;
+    }
+
+    PtnNumber number;
+    int has_trailing_non_numeric_data = 0;
+    return !ptn_arithmetic_string_to_number(
+        value.as.string,
+        &number,
+        &has_trailing_non_numeric_data
+    );
+}
+
 static PTN_UNUSED void ptn_throw_unsupported_operand_types(
     PtnRuntime *runtime,
     PtnValue left,
@@ -925,6 +943,54 @@ static PTN_UNUSED void ptn_arithmetic_operands(
     if (!ptn_arithmetic_number(runtime, right, line, right_number)) {
         ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
     }
+}
+
+static PTN_UNUSED PtnValue ptn_positive(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return ptn_int(integer);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(value.as.floating);
+    }
+
+    PtnNumber number;
+    if (!ptn_arithmetic_number(runtime, value, line, &number)) {
+        ptn_throw_unsupported_operand_types(runtime, value, "*", ptn_int(1), line);
+        return ptn_null();
+    }
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(number.floating);
+    }
+    return ptn_int(number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_negate(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        if (integer == INT64_MIN) {
+            return ptn_float(-(double)integer);
+        }
+        return ptn_int(-integer);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(-value.as.floating);
+    }
+
+    PtnNumber number;
+    if (!ptn_arithmetic_number(runtime, value, line, &number)) {
+        ptn_throw_unsupported_operand_types(runtime, value, "*", ptn_int(1), line);
+        return ptn_null();
+    }
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(-number.floating);
+    }
+    if (number.integer == INT64_MIN) {
+        return ptn_float(-(double)number.integer);
+    }
+    return ptn_int(-number.integer);
 }
 
 static PTN_UNUSED int ptn_fast_numeric_pair(PtnValue left, PtnValue right, double *left_number, double *right_number) {
@@ -1462,8 +1528,8 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnVal
         return internal_result;
     }
 #endif
-    if (ptn_numeric_operator_rejects_operand(left) ||
-        ptn_numeric_operator_rejects_operand(right)) {
+    if (ptn_integer_operator_rejects_operand(left) ||
+        ptn_integer_operator_rejects_operand(right)) {
         ptn_throw_unsupported_operand_types(runtime, left, "%", right, line);
         return ptn_null();
     }
@@ -2112,8 +2178,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(
         };
         return ptn_bitwise_string_and(left_string, right_string);
     }
-    if (ptn_numeric_operator_rejects_operand(left) ||
-        ptn_numeric_operator_rejects_operand(right)) {
+    if (ptn_integer_operator_rejects_operand(left) ||
+        ptn_integer_operator_rejects_operand(right)) {
         ptn_throw_unsupported_operand_types(runtime, left, "&", right, line);
         return ptn_null();
     }
@@ -2144,8 +2210,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(
         };
         return ptn_bitwise_string_or(left_string, right_string);
     }
-    if (ptn_numeric_operator_rejects_operand(left) ||
-        ptn_numeric_operator_rejects_operand(right)) {
+    if (ptn_integer_operator_rejects_operand(left) ||
+        ptn_integer_operator_rejects_operand(right)) {
         ptn_throw_unsupported_operand_types(runtime, left, "|", right, line);
         return ptn_null();
     }
@@ -2176,8 +2242,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(
         };
         return ptn_bitwise_string_xor(left_string, right_string);
     }
-    if (ptn_numeric_operator_rejects_operand(left) ||
-        ptn_numeric_operator_rejects_operand(right)) {
+    if (ptn_integer_operator_rejects_operand(left) ||
+        ptn_integer_operator_rejects_operand(right)) {
         ptn_throw_unsupported_operand_types(runtime, left, "^", right, line);
         return ptn_null();
     }

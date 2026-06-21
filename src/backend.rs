@@ -10545,14 +10545,17 @@ fn emit_attribute_argument_expression(
             out.push_str(target);
             out.push_str(" = ");
             match op {
-                AstUnaryOp::Positive => out.push_str("ptn_positive("),
-                AstUnaryOp::Negate => out.push_str("ptn_negate("),
+                AstUnaryOp::Positive => out.push_str("ptn_positive(runtime, "),
+                AstUnaryOp::Negate => out.push_str("ptn_negate(runtime, "),
                 AstUnaryOp::Not => out.push_str("ptn_not("),
                 AstUnaryOp::BitwiseNot => out.push_str("ptn_bitwise_not(runtime, "),
                 AstUnaryOp::ErrorSuppress => unreachable!("attribute expressions reject @"),
             }
             out.push_str(&value_temp);
-            if matches!(op, AstUnaryOp::BitwiseNot) {
+            if matches!(op, AstUnaryOp::Positive | AstUnaryOp::Negate) {
+                out.push_str(", ");
+                out.push_str(&fallback_line.to_string());
+            } else if matches!(op, AstUnaryOp::BitwiseNot) {
                 out.push_str(", runtime != NULL ? runtime->source_path : NULL, ");
                 out.push_str(&fallback_line.to_string());
             }
@@ -33204,11 +33207,17 @@ impl ValueEmitter {
                     UnaryOp::ErrorSuppress => unreachable!(),
                 });
                 out.push('(');
-                if matches!(op, UnaryOp::BitwiseNot) {
+                if matches!(
+                    op,
+                    UnaryOp::Positive | UnaryOp::Negate | UnaryOp::BitwiseNot
+                ) {
                     out.push_str("&runtime, ");
                 }
                 out.push_str(&expr_temp);
-                if matches!(op, UnaryOp::BitwiseNot) {
+                if matches!(op, UnaryOp::Positive | UnaryOp::Negate) {
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                } else if matches!(op, UnaryOp::BitwiseNot) {
                     out.push_str(", \"");
                     out.push_str(&c_string(&self.source_file));
                     out.push_str("\", ");

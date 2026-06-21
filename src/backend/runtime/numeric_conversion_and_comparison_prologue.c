@@ -6132,46 +6132,6 @@ static PTN_UNUSED int ptn_fast_scalar_double(PtnValue value, double *number) {
     return 0;
 }
 
-static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
-    value = ptn_value_deref(value);
-    int64_t integer = 0;
-    if (ptn_fast_integer_value(value, &integer)) {
-        if (integer == INT64_MIN) {
-            return ptn_float(-(double)integer);
-        }
-        return ptn_int(-integer);
-    }
-    if (value.type == PTN_FLOAT) {
-        return ptn_float(-value.as.floating);
-    }
-
-    PtnNumber number = ptn_to_number(value);
-    if (number.type == PTN_NUMBER_FLOAT) {
-        return ptn_float(-number.floating);
-    }
-    if (number.integer == INT64_MIN) {
-        return ptn_float(-(double)number.integer);
-    }
-    return ptn_int(-number.integer);
-}
-
-static PTN_UNUSED PtnValue ptn_positive(PtnValue value) {
-    value = ptn_value_deref(value);
-    int64_t integer = 0;
-    if (ptn_fast_integer_value(value, &integer)) {
-        return ptn_int(integer);
-    }
-    if (value.type == PTN_FLOAT) {
-        return ptn_float(value.as.floating);
-    }
-
-    PtnNumber number = ptn_to_number(value);
-    if (number.type == PTN_NUMBER_FLOAT) {
-        return ptn_float(number.floating);
-    }
-    return ptn_int(number.integer);
-}
-
 static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
