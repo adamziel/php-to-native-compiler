@@ -51453,6 +51453,59 @@ try {
 }
 
 #[test]
+fn compile_array_walk_user_type_error_uses_internal_callback_location_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-user-type-error-location");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-user-type-error-location.php");
+    let output = root.join("array-walk-user-type-error-location-bin");
+    fs::write(
+        &input,
+        "<?php
+class TypeHinted {}
+function needs_type(TypeHinted $value) {
+    var_dump($value);
+}
+$items = [new TypeHinted(), 1];
+array_walk($items, \"needs_type\");
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(TypeHinted)#"), "{stdout}");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let message = format!(
+        "Fatal error: Uncaught TypeError: needs_type(): Argument #1 ($value) must be of type TypeHinted, int given in {}:3",
+        input.display()
+    );
+    assert!(stderr.contains(&message), "{stderr}");
+    assert!(
+        stderr.contains("\n#0 [internal function]: needs_type(1, 1)\n"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!(
+            "\n#1 {}(7): array_walk(Array, 'needs_type')\n",
+            input.display()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("called in"),
+        "internal callback type errors must not add a call-site suffix: {stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("include_definition && include_call_site"));
+    assert!(c_source.contains("runtime->trace_frame->file"));
+}
+
+#[test]
 fn compile_array_walk_userdata_by_ref_separation_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-userdata-ref-separation");
     fs::create_dir_all(&root).unwrap();

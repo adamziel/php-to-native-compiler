@@ -1111,9 +1111,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\\0';\n",
     );
-    out.push_str(
-        "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
-    );
+    out.push_str("    const char *call_path = NULL;\n");
+    out.push_str("    size_t call_line = 0;\n");
+    out.push_str("    if (runtime != NULL && runtime->trace_frame != NULL && runtime->trace_frame->runtime == runtime && runtime->trace_frame->file != NULL && runtime->trace_frame->line != 0) {\n");
+    out.push_str("        call_path = runtime->trace_frame->file;\n");
+    out.push_str("        call_line = runtime->trace_frame->line;\n");
+    out.push_str("    }\n");
+    out.push_str("    int include_call_site = call_path != NULL && call_line != 0;\n");
     out.push_str(
         "    int include_definition = declaration_path != NULL && declaration_line != 0;\n",
     );
@@ -1122,10 +1126,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("    size_t throw_line = include_definition ? declaration_line : line;\n");
     out.push_str("    int needed;\n");
-    out.push_str("    if (line != 0 && has_parameter_name) {\n");
-    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
-    out.push_str("    } else if (line != 0) {\n");
-    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
+    out.push_str("    if (include_call_site && has_parameter_name) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, call_path, call_line);\n");
+    out.push_str("    } else if (include_call_site) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, call_path, call_line);\n");
     out.push_str("    } else if (has_parameter_name) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    } else {\n");
@@ -1138,16 +1142,16 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (line != 0 && has_parameter_name) {\n");
-    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
-    out.push_str("    } else if (line != 0) {\n");
-    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
+    out.push_str("    if (include_call_site && has_parameter_name) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, call_path, call_line);\n");
+    out.push_str("    } else if (include_call_site) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, call_path, call_line);\n");
     out.push_str("    } else if (has_parameter_name) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    if (include_definition) {\n");
+    out.push_str("    if (include_definition && include_call_site) {\n");
     out.push_str("        ptn_throw_exception_owned_message_at_defined_location(runtime, \"TypeError\", message, throw_path, throw_line);\n");
     out.push_str("    } else {\n");
     out.push_str("        ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, throw_path, throw_line);\n");
