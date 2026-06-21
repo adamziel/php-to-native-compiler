@@ -1597,6 +1597,41 @@ static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties
 }
 #endif
 
+static PTN_UNUSED int ptn_direct_value_var_dump_weak_reference_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
+        return 0;
+    }
+    PtnObject *referent = ptn_weak_reference_object_referent(object);
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (1) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id
+    );
+    ptn_direct_value_dump_seen_object_push(seen, object);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+    ptn_direct_dump_write_cstr(runtime, "[\"object\"]=>\n");
+    if (referent == NULL) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "NULL\n");
+    } else {
+        PtnValue referent_value = ptn_object(referent);
+        referent_value.owned = 0;
+        ptn_direct_value_var_dump_value_indented(runtime, referent_value, indent + 1, seen);
+    }
+    ptn_direct_value_dump_seen_object_pop(seen);
+    ptn_direct_value_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    return 1;
+}
+
 static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -2099,6 +2134,9 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
                 break;
             }
             if (ptn_direct_var_dump_weak_map_object(runtime, object, indent, seen)) {
+                break;
+            }
+            if (ptn_direct_value_var_dump_weak_reference_object(runtime, object, indent, seen)) {
                 break;
             }
             if (ptn_direct_var_dump_simplexml_object(runtime, object, indent, seen)) {
@@ -3035,6 +3073,41 @@ static PTN_UNUSED size_t ptn_direct_var_dump_object_property_count(PtnObject *ob
         ptn_dom_var_dump_virtual_property_count(object);
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_weak_reference_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectDumpSeen *seen
+) {
+    if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
+        return 0;
+    }
+    PtnObject *referent = ptn_weak_reference_object_referent(object);
+    size_t class_name_len = ptn_direct_var_dump_class_name_len(object->class_name);
+    ptn_direct_var_dump_writef(
+        runtime,
+        "object(%.*s)#%zu (1) {\n",
+        (int)class_name_len,
+        object->class_name,
+        object->object_id
+    );
+    ptn_direct_dump_seen_object_push(seen, object);
+    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_output_write_cstr(runtime, "[\"object\"]=>\n");
+    if (referent == NULL) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "NULL\n");
+    } else {
+        PtnValue referent_value = ptn_object(referent);
+        referent_value.owned = 0;
+        ptn_direct_var_dump_value_indented(runtime, referent_value, indent + 1, seen);
+    }
+    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_output_write_cstr(runtime, "}\n");
+    return 1;
+}
+
 static PTN_UNUSED void ptn_direct_var_dump_object_indented(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -3043,6 +3116,9 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
 ) {
     if (object->enum_case_name != NULL) {
         ptn_direct_var_dump_writef(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+        return;
+    }
+    if (ptn_direct_var_dump_weak_reference_object(runtime, object, indent, seen)) {
         return;
     }
     size_t class_name_len = ptn_direct_var_dump_class_name_len(object->class_name);
@@ -81899,15 +81975,19 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
     const PtnValue *args,
     size_t line
 ) {
-    (void)argc;
-    (void)args;
-    (void)line;
-    ptn_throw_exception_at(
+    ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "Error",
-        "Direct instantiation of WeakReference is not allowed, use WeakReference::create instead",
+        ptn_duplicate_string(
+            "Direct instantiation of WeakReference is not allowed, use WeakReference::create instead"
+        ),
         runtime->source_path,
-        line
+        line,
+        "WeakReference->__construct",
+        runtime->source_path,
+        line,
+        argc,
+        args
     );
     return ptn_null();
 }

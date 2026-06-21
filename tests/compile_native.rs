@@ -10872,6 +10872,45 @@ var_dump($wr->get());
 }
 
 #[test]
+fn compile_weak_reference_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-reference-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-reference-var-dump.php");
+    let output = root.join("weak-reference-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+$std = new stdClass;
+$wr = WeakReference::create($std);
+var_dump($wr);
+unset($std);
+var_dump($wr);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(WeakReference)#2 (1) {\n",
+            "  [\"object\"]=>\n",
+            "  object(stdClass)#1 (0) {\n",
+            "  }\n",
+            "}\n",
+            "object(WeakReference)#2 (1) {\n",
+            "  [\"object\"]=>\n",
+            "  NULL\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_weak_reference_guards_to_native_binary() {
     let root = temp_dir("ptn-native-weak-reference-guards");
     fs::create_dir_all(&root).unwrap();
@@ -10924,6 +10963,30 @@ try {
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_reference_new_fatal_stack_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-reference-new-fatal-stack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-reference-new-fatal-stack.php");
+    let output = root.join("weak-reference-new-fatal-stack-bin");
+    fs::write(&input, "<?php\nnew WeakReference();\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught Error: Direct instantiation of WeakReference is not allowed, use WeakReference::create instead"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("WeakReference->__construct()"), "{stderr}");
+    assert!(stderr.contains("#1 {main}"), "{stderr}");
 }
 
 #[test]
