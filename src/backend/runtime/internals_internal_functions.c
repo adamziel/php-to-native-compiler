@@ -12263,6 +12263,9 @@ static void ptn_var_export_append_object_state_array(
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
             const PtnObjectPropertyMetadata *metadata =
                 ptn_object_property_metadata(object, entry->key.as.string);
+            if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+                continue;
+            }
             if (metadata != NULL) {
                 display_key = ptn_array_string_key(metadata->display_name);
                 free_display_key = 1;
