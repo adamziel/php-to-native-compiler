@@ -54577,6 +54577,7 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         root = runtime;
     }
     root->gc_running = 1;
+    ptn_runtime_run_unreferenced_object_destructors(root);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
     int64_t collected = 0;
     if (weak_map_cycles > 0) {

@@ -830,6 +830,74 @@ static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index) {
     root->live_objects_len--;
 }
 
+static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth);
+
+static int ptn_array_reaches_object(PtnArray *array, PtnObject *target, size_t depth) {
+    if (array == NULL || target == NULL || depth > 1024) {
+        return 0;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_value_reaches_object(array->entries[i].value, target, depth + 1)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth) {
+    if (target == NULL || depth > 1024) {
+        return 0;
+    }
+    if (value.type == PTN_REFERENCE) {
+        return value.as.reference != NULL &&
+            ptn_value_reaches_object(value.as.reference->value, target, depth + 1);
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        if (value.as.object == target) {
+            return 1;
+        }
+        return value.as.object != NULL &&
+            ptn_array_reaches_object(value.as.object->properties, target, depth + 1);
+    }
+    if (value.type == PTN_ARRAY) {
+        return ptn_array_reaches_object(value.as.array, target, depth + 1);
+    }
+    return 0;
+}
+
+static int ptn_symbol_table_reaches_object(PtnSymbolTable *symbols, PtnObject *target) {
+    if (symbols == NULL || target == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        if (ptn_value_reaches_object(symbols->items[i].value, target, 0)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_runtime_roots_reach_object(PtnRuntime *root, PtnObject *target) {
+    if (root == NULL || target == NULL) {
+        return 0;
+    }
+    if (ptn_symbol_table_reaches_object(&root->symbols, target)) {
+        return 1;
+    }
+    if (
+        root->global_symbols != NULL &&
+        root->global_symbols != &root->symbols &&
+        ptn_symbol_table_reaches_object(root->global_symbols, target)
+    ) {
+        return 1;
+    }
+    PtnSymbolTable *static_properties = root->static_properties == NULL
+        ? &root->owned_static_properties
+        : root->static_properties;
+    return ptn_symbol_table_reaches_object(static_properties, target);
+}
+
 static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int only_unreferenced) {
     if (runtime == NULL) {
         return;
@@ -844,7 +912,7 @@ static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int
             object->refcount != 0 &&
             !object->destructor_called &&
             only_unreferenced &&
-            object->refcount > 1
+            (object->refcount > 1 || ptn_runtime_roots_reach_object(root, object))
         ) {
             continue;
         }

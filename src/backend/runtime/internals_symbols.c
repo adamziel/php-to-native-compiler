@@ -92,6 +92,59 @@ static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference
     return count;
 }
 
+static int ptn_object_has_pending_declared_destructor(PtnObject *object) {
+    if (
+        object == NULL ||
+        !object->destructor_enabled ||
+        object->destructor_called ||
+        object->class_name == NULL
+    ) {
+        return 0;
+    }
+    PtnRuntime *runtime = object->lifecycle_runtime;
+    if (runtime == NULL) {
+        return 0;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    return root->declared_method_exists != NULL &&
+        root->declared_method_exists(object->class_name, "__destruct");
+}
+
+static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth);
+
+static int ptn_array_contains_pending_destructor(PtnArray *array, size_t depth) {
+    if (array == NULL || depth > 1024) {
+        return 0;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_value_contains_pending_destructor(array->entries[i].value, depth + 1)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth) {
+    if (depth > 1024) {
+        return 0;
+    }
+    if (value.type == PTN_REFERENCE) {
+        return value.as.reference != NULL &&
+            ptn_value_contains_pending_destructor(value.as.reference->value, depth + 1);
+    }
+    if (value.type == PTN_ARRAY) {
+        return ptn_array_contains_pending_destructor(value.as.array, depth + 1);
+    }
+    if (value.type != PTN_OBJECT || value.as.object == NULL) {
+        return 0;
+    }
+    if (ptn_object_has_pending_declared_destructor(value.as.object)) {
+        return 1;
+    }
+    return value.as.object->properties != NULL &&
+        ptn_array_contains_pending_destructor(value.as.object->properties, depth + 1);
+}
+
 static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnReference *reference, size_t depth) {
     if (array == NULL || reference == NULL || depth > 1024) {
         return;
@@ -125,7 +178,11 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
         reference->value.as.array != NULL &&
         reference->value.as.array->refcount == 1) {
         size_t internal_refs = ptn_array_count_reference(reference->value.as.array, reference, 0);
-        if (internal_refs > 0 && reference->refcount == internal_refs + 1) {
+        if (
+            internal_refs > 0 &&
+            reference->refcount == internal_refs + 1 &&
+            !ptn_array_contains_pending_destructor(reference->value.as.array, 0)
+        ) {
             ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
         }
     }

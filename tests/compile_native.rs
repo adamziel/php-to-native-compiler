@@ -10822,6 +10822,84 @@ var_dump($ref->get());
 }
 
 #[test]
+fn compile_gc_reentrant_global_unset_preserves_symbols_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-reentrant-global-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-reentrant-global-unset.php");
+    let output = root.join("gc-reentrant-global-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public function __destruct() {
+        if (isset($GLOBALS['a'])) {
+            unset($GLOBALS['array']);
+            unset($GLOBALS['a']);
+        }
+    }
+}
+
+$a = new stdClass;
+$array = [];
+$t = [new C];
+$t[] =& $t;
+unset($t);
+$e = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(0)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_object_cycle_destructor_updates_referenced_property_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-object-cycle-referenced-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-object-cycle-referenced-property.php");
+    let output = root.join("gc-object-cycle-referenced-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class ryat {
+    var $ryat;
+    var $chtg;
+
+    function __destruct() {
+        $this->chtg = $this->ryat;
+        $this->ryat = 1;
+    }
+}
+
+$o = new ryat;
+$o->ryat = $o;
+$x =& $o->chtg;
+unset($o);
+gc_collect_cycles();
+var_dump($x);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(ryat)#1 (2) {\n  [\"ryat\"]=>\n  int(1)\n  [\"chtg\"]=>\n  *RECURSION*\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_status_to_native_binary() {
     let root = temp_dir("ptn-native-gc-status");
     fs::create_dir_all(&root).unwrap();

@@ -328,13 +328,15 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
         return;
     }
 
-    free(symbols->items[index].name);
-    ptn_value_destroy(&symbols->items[index].value);
+    char *removed_name = symbols->items[index].name;
+    PtnValue removed_value = symbols->items[index].value;
     for (size_t i = index + 1; i < symbols->len; i++) {
         symbols->items[i - 1] = symbols->items[i];
     }
     symbols->len--;
     ptn_symbols_rebuild_index(symbols, symbols->len);
+    free(removed_name);
+    ptn_value_destroy(&removed_value);
 }
 
 static const char *ptn_closure_bind_argument_type_name(PtnValue value) {
