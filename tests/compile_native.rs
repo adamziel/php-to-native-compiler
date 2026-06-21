@@ -28677,6 +28677,107 @@ while ($reader->read()) {
 }
 
 #[test]
+fn compile_xml_parser_sax_dtd_namespace_callbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-sax-dtd-namespace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-sax-dtd-namespace.php");
+    let output = root.join("xml-parser-sax-dtd-namespace-bin");
+    fs::write(
+        &input,
+        "<?php
+$parser = xml_parser_create();
+$xml = '<!DOCTYPE dtd [<!ENTITY ref \"ent\">]><elt att=\"&ref;\">a&ref;</elt>';
+xml_parse_into_struct($parser, $xml, $vals);
+var_dump($vals);
+
+$xml = <<<XML
+<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE root [
+    <!ENTITY foo \"ent\">
+]>
+<root>
+  <element hint=\"hello&apos;world\">&foo;<![CDATA[ &amp; ]]><?x &amp; ?></element>
+</root>
+XML;
+$parser = xml_parser_create();
+xml_set_character_data_handler($parser, function($_, $data) {
+    echo 'C:', str_replace(\"\\n\", '\\\\n', $data), \"\\n\";
+});
+xml_parse($parser, $xml, true);
+
+$parser = xml_parser_create_ns();
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+xml_set_start_namespace_decl_handler($parser, function($_, $prefix, $uri) {
+    echo 'NS+:', $prefix ?? '', ':', $uri, \"\\n\";
+});
+xml_set_end_namespace_decl_handler($parser, function($_, $prefix) {
+    echo 'NS-:', $prefix ?? '', \"\\n\";
+});
+xml_parse($parser, '<aw1:book xmlns:aw1=\"urn:one\" xmlns:aw2=\"urn:two\"><aw2:td>x</aw2:td></aw1:book>', true);
+
+$xml = <<<XML
+<!DOCTYPE dates [
+    <!NOTATION USDATE SYSTEM \"http://example/usdate.not\">
+    <!ENTITY testUS SYSTEM \"test_usdate.xml\" NDATA USDATE>
+]>
+XML;
+$parser = xml_parser_create();
+xml_set_notation_decl_handler($parser, function($_, $name, $base, $systemID, $publicID) {
+    echo 'NOT:', $name, ':', $base, ':', $systemID, ':', $publicID, \"\\n\";
+});
+xml_set_unparsed_entity_decl_handler($parser, function($_, $name, $base, $systemID, $publicID, $notationName) {
+    echo 'UNP:', $name, ':', $base, ':', $systemID, ':', $publicID, ':', $notationName, \"\\n\";
+});
+xml_parse($parser, $xml, true);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(5) {\n",
+            "    [\"tag\"]=>\n",
+            "    string(3) \"ELT\"\n",
+            "    [\"type\"]=>\n",
+            "    string(8) \"complete\"\n",
+            "    [\"level\"]=>\n",
+            "    int(1)\n",
+            "    [\"attributes\"]=>\n",
+            "    array(1) {\n",
+            "      [\"ATT\"]=>\n",
+            "      string(3) \"ent\"\n",
+            "    }\n",
+            "    [\"value\"]=>\n",
+            "    string(4) \"aent\"\n",
+            "  }\n",
+            "}\n",
+            "C:\\n  \n",
+            "C:ent\n",
+            "C: &amp; \n",
+            "C:\\n\n",
+            "NS+:aw1:urn:one\n",
+            "NS+:aw2:urn:two\n",
+            "NS-:aw2\n",
+            "NS-:aw1\n",
+            "NOT:USDATE::http://example/usdate.not:\n",
+            "UNP:testUS::test_usdate.xml::USDATE\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_parser_collect_dtd_declarations"));
+    assert!(c_source.contains("ptn_xml_parser_emit_end_namespace"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();
