@@ -380,8 +380,10 @@ struct ParsedPropertyHookBlock {
     is_virtual: bool,
     has_get: bool,
     has_set: bool,
+    get_is_final: bool,
     get_is_abstract: bool,
     get_returns_by_ref: bool,
+    set_is_final: bool,
     set_is_abstract: bool,
     get_override_span: Option<SourceSpan>,
     set_override_span: Option<SourceSpan>,
@@ -394,6 +396,16 @@ struct ParsedPropertyHookBlock {
     get_body: Option<Vec<Statement>>,
     set_body: Option<Vec<Statement>>,
     set_parameter_name: Option<String>,
+    set_parameter_type: Option<TypeHint>,
+    set_parameter_span: Option<SourceSpan>,
+    set_parameter_is_explicit: bool,
+}
+
+struct ParsedPropertyHookSetParameter {
+    name: String,
+    type_hint: Option<TypeHint>,
+    span: SourceSpan,
+    is_explicit: bool,
 }
 
 enum ParsedClassMember {
@@ -458,6 +470,7 @@ impl Parser<'_> {
                 &mut self.compile_warnings,
             )?;
             validate_property_interface_set_visibility(&validation_classes)?;
+            validate_property_hook_set_parameter_types(&validation_classes)?;
             validate_property_hook_signature_compatibility(&validation_classes)?;
             validate_abstract_methods(&validation_classes)?;
             validate_final_class_inheritance(&validation_classes)?;
@@ -3091,8 +3104,10 @@ impl Parser<'_> {
                     is_virtual: hooks.is_virtual,
                     hook_has_get: hooks.has_get,
                     hook_has_set: hooks.has_set,
+                    hook_get_is_final: hooks.get_is_final,
                     hook_get_is_abstract: hooks.get_is_abstract,
                     hook_get_returns_by_ref: hooks.get_returns_by_ref,
+                    hook_set_is_final: hooks.set_is_final,
                     hook_set_is_abstract: hooks.set_is_abstract,
                     hook_get_override_span: hooks.get_override_span,
                     hook_set_override_span: hooks.set_override_span,
@@ -3105,6 +3120,9 @@ impl Parser<'_> {
                     hook_get_body: hooks.get_body,
                     hook_set_body: hooks.set_body,
                     hook_set_parameter_name: hooks.set_parameter_name,
+                    hook_set_parameter_type: hooks.set_parameter_type,
+                    hook_set_parameter_span: hooks.set_parameter_span,
+                    hook_set_parameter_is_explicit: hooks.set_parameter_is_explicit,
                     type_hint,
                     attributes: attributes.clone(),
                     doc_comment,
@@ -3137,8 +3155,10 @@ impl Parser<'_> {
                 is_virtual: false,
                 hook_has_get: false,
                 hook_has_set: false,
+                hook_get_is_final: false,
                 hook_get_is_abstract: false,
                 hook_get_returns_by_ref: false,
+                hook_set_is_final: false,
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
                 hook_set_override_span: None,
@@ -3151,6 +3171,9 @@ impl Parser<'_> {
                 hook_get_body: None,
                 hook_set_body: None,
                 hook_set_parameter_name: None,
+                hook_set_parameter_type: None,
+                hook_set_parameter_span: None,
+                hook_set_parameter_is_explicit: false,
                 type_hint,
                 attributes: attributes.clone(),
                 doc_comment,
@@ -3325,6 +3348,7 @@ impl Parser<'_> {
                     }
                     hooks.get_attributes = hook_attributes;
                     hooks.get_span = Some(token.span);
+                    hooks.get_is_final = hook_is_final;
                     hooks.get_returns_by_ref = hook_returns_by_ref;
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
@@ -3446,10 +3470,16 @@ impl Parser<'_> {
                     }
                     hooks.set_attributes = hook_attributes;
                     hooks.set_span = Some(token.span);
-                    let set_parameter_name = if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    hooks.set_is_final = hook_is_final;
+                    let set_parameter = if matches!(self.peek().kind, TokenKind::LeftParen) {
                         self.parse_property_hook_set_parameters(class_name, property_name)?
                     } else {
-                        "value".to_string()
+                        ParsedPropertyHookSetParameter {
+                            name: "value".to_string(),
+                            type_hint: None,
+                            span: token.span,
+                            is_explicit: false,
+                        }
                     };
                     let is_abstract_hook =
                         hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
@@ -3461,6 +3491,10 @@ impl Parser<'_> {
                     )?;
                     hooks.has_set = true;
                     hooks.set_is_abstract = is_abstract_hook;
+                    hooks.set_parameter_name = Some(set_parameter.name.clone());
+                    hooks.set_parameter_type = set_parameter.type_hint.clone();
+                    hooks.set_parameter_span = Some(set_parameter.span);
+                    hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                     if !is_abstract_hook {
                         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                             self.advance();
@@ -3483,7 +3517,10 @@ impl Parser<'_> {
                                 hooks.is_virtual = false;
                                 hooks.set_value = Some(value);
                             }
-                            hooks.set_parameter_name = Some(set_parameter_name);
+                            hooks.set_parameter_name = Some(set_parameter.name.clone());
+                            hooks.set_parameter_type = set_parameter.type_hint.clone();
+                            hooks.set_parameter_span = Some(set_parameter.span);
+                            hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                         } else if let Some((value, uses_backing_property)) =
                             self.parse_simple_property_hook_set_body(property_name)
                         {
@@ -3494,20 +3531,29 @@ impl Parser<'_> {
                                     expression: value,
                                     span,
                                 }]);
-                                hooks.set_parameter_name = Some(set_parameter_name);
+                                hooks.set_parameter_name = Some(set_parameter.name.clone());
+                                hooks.set_parameter_type = set_parameter.type_hint.clone();
+                                hooks.set_parameter_span = Some(set_parameter.span);
+                                hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             } else {
                                 let span = value.span();
                                 hooks.set_body = Some(vec![Statement::Expression {
                                     expression: value,
                                     span,
                                 }]);
-                                hooks.set_parameter_name = Some(set_parameter_name);
+                                hooks.set_parameter_name = Some(set_parameter.name.clone());
+                                hooks.set_parameter_type = set_parameter.type_hint.clone();
+                                hooks.set_parameter_span = Some(set_parameter.span);
+                                hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             }
                         } else if matches!(self.peek().kind, TokenKind::LeftBrace) {
                             let (body, uses_backing_property) =
                                 self.parse_property_hook_statement_body(property_name, "set")?;
                             hooks.set_body = Some(body);
-                            hooks.set_parameter_name = Some(set_parameter_name);
+                            hooks.set_parameter_name = Some(set_parameter.name.clone());
+                            hooks.set_parameter_type = set_parameter.type_hint.clone();
+                            hooks.set_parameter_span = Some(set_parameter.span);
+                            hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             if uses_backing_property {
                                 hooks.is_virtual = false;
                             }
@@ -3651,7 +3697,7 @@ impl Parser<'_> {
         &mut self,
         class_name: &str,
         property_name: &str,
-    ) -> Result<String> {
+    ) -> Result<ParsedPropertyHookSetParameter> {
         let parameters = self.parse_function_parameters()?;
         if let Some(parameter) = parameters.first() {
             if parameter.by_ref {
@@ -3681,9 +3727,19 @@ impl Parser<'_> {
                     Some(parameter.span),
                 ));
             }
-            return Ok(parameter.name.clone());
+            return Ok(ParsedPropertyHookSetParameter {
+                name: parameter.name.clone(),
+                type_hint: parameter.type_hint.clone(),
+                span: parameter.span,
+                is_explicit: true,
+            });
         }
-        Ok("value".to_string())
+        Ok(ParsedPropertyHookSetParameter {
+            name: "value".to_string(),
+            type_hint: None,
+            span: self.previous_span(),
+            is_explicit: true,
+        })
     }
 
     fn skip_property_hook_body(&mut self, hook_name: &str, property_name: &str) -> Result<bool> {
@@ -4389,8 +4445,10 @@ impl Parser<'_> {
                 is_virtual,
                 hook_has_get,
                 hook_has_set,
+                hook_get_is_final,
                 hook_get_is_abstract,
                 hook_get_returns_by_ref,
+                hook_set_is_final,
                 hook_set_is_abstract,
                 hook_get_override_span,
                 hook_set_override_span,
@@ -4403,14 +4461,19 @@ impl Parser<'_> {
                 hook_get_body,
                 hook_set_body,
                 hook_set_parameter_name,
+                hook_set_parameter_type,
+                hook_set_parameter_span,
+                hook_set_parameter_is_explicit,
             ) = if let Some(hooks) = promoted_hook_block {
                 (
                     true,
                     hooks.is_virtual,
                     hooks.has_get,
                     hooks.has_set,
+                    hooks.get_is_final,
                     hooks.get_is_abstract,
                     hooks.get_returns_by_ref,
+                    hooks.set_is_final,
                     hooks.set_is_abstract,
                     hooks.get_override_span,
                     hooks.set_override_span,
@@ -4423,6 +4486,9 @@ impl Parser<'_> {
                     hooks.get_body,
                     hooks.set_body,
                     hooks.set_parameter_name,
+                    hooks.set_parameter_type,
+                    hooks.set_parameter_span,
+                    hooks.set_parameter_is_explicit,
                 )
             } else {
                 (
@@ -4433,6 +4499,8 @@ impl Parser<'_> {
                     false,
                     false,
                     false,
+                    false,
+                    false,
                     None,
                     None,
                     AttributeMetadata::default(),
@@ -4444,6 +4512,9 @@ impl Parser<'_> {
                     None,
                     None,
                     None,
+                    None,
+                    None,
+                    false,
                 )
             };
             Some(PromotedProperty {
@@ -4455,8 +4526,10 @@ impl Parser<'_> {
                 is_virtual,
                 hook_has_get,
                 hook_has_set,
+                hook_get_is_final,
                 hook_get_is_abstract,
                 hook_get_returns_by_ref,
+                hook_set_is_final,
                 hook_set_is_abstract,
                 hook_get_override_span,
                 hook_set_override_span,
@@ -4469,6 +4542,9 @@ impl Parser<'_> {
                 hook_get_body,
                 hook_set_body,
                 hook_set_parameter_name,
+                hook_set_parameter_type,
+                hook_set_parameter_span,
+                hook_set_parameter_is_explicit,
                 doc_comment: parameter_doc_comment,
                 has_override_attribute: attributes.has_override,
                 span: modifiers.first_span().unwrap_or(token.span),
@@ -11922,8 +11998,10 @@ fn promoted_properties_from_constructor(
                 is_virtual: promoted.is_virtual,
                 hook_has_get: promoted.hook_has_get,
                 hook_has_set: promoted.hook_has_set,
+                hook_get_is_final: promoted.hook_get_is_final,
                 hook_get_is_abstract: promoted.hook_get_is_abstract,
                 hook_get_returns_by_ref: promoted.hook_get_returns_by_ref,
+                hook_set_is_final: promoted.hook_set_is_final,
                 hook_set_is_abstract: promoted.hook_set_is_abstract,
                 hook_get_override_span: promoted.hook_get_override_span,
                 hook_set_override_span: promoted.hook_set_override_span,
@@ -11936,6 +12014,9 @@ fn promoted_properties_from_constructor(
                 hook_get_body: promoted.hook_get_body.clone(),
                 hook_set_body: promoted.hook_set_body.clone(),
                 hook_set_parameter_name: promoted.hook_set_parameter_name.clone(),
+                hook_set_parameter_type: promoted.hook_set_parameter_type.clone(),
+                hook_set_parameter_span: promoted.hook_set_parameter_span,
+                hook_set_parameter_is_explicit: promoted.hook_set_parameter_is_explicit,
                 type_hint: parameter
                     .type_hint
                     .as_ref()
@@ -12819,6 +12900,15 @@ fn validate_composed_property_compatibility(
     imported: &PropertyDecl,
     span: SourceSpan,
 ) -> Result<()> {
+    if existing.has_hooks || imported.has_hooks {
+        return Err(Diagnostic::new(
+            format!(
+                "{existing_owner} and {imported_owner} define the same hooked property (${}) in the composition of {composer_name}. Conflict resolution between hooked properties is currently not supported. Class was composed",
+                existing.name
+            ),
+            Some(span),
+        ));
+    }
     if existing.visibility == imported.visibility
         && existing.set_visibility == imported.set_visibility
         && existing.is_final == imported.is_final
@@ -15841,6 +15931,53 @@ fn collect_interface_property_hooks(
     }
 }
 
+fn validate_property_hook_set_parameter_types(classes: &[ClassDecl]) -> Result<()> {
+    let runtime_class_aliases = HashMap::new();
+    for class in classes {
+        for property in &class.properties {
+            if !property.has_hooks
+                || !property.hook_has_set
+                || !property.hook_set_parameter_is_explicit
+            {
+                continue;
+            }
+            let parameter_type = property.hook_set_parameter_type.as_ref();
+            let property_type = property
+                .type_hint
+                .as_ref()
+                .and_then(|type_hint| type_hint.semantic_type.as_ref());
+            let compatible = match (property_type, parameter_type) {
+                (Some(property_type), Some(parameter_type)) => type_hint_is_subtype(
+                    property_type,
+                    parameter_type,
+                    classes,
+                    &runtime_class_aliases,
+                ),
+                (None, None) => true,
+                _ => false,
+            };
+            if compatible {
+                continue;
+            }
+            let parameter_name = property
+                .hook_set_parameter_name
+                .as_deref()
+                .unwrap_or("value");
+            return Err(Diagnostic::new(
+                format!(
+                    "Type of parameter ${parameter_name} of hook {}::${}::set must be compatible with property type",
+                    class.name, property.name
+                ),
+                property
+                    .hook_set_parameter_span
+                    .or(property.hook_set_span)
+                    .or(Some(property.span)),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_property_hook_signature_compatibility(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
         for property in &class.properties {
@@ -15855,6 +15992,29 @@ fn validate_property_hook_signature_compatibility(classes: &[ClassDecl]) -> Resu
                     ),
                     property.hook_get_span.or(Some(property.span)),
                 ));
+            }
+
+            if let Some((parent_class, parent_property)) =
+                visible_parent_property(class, &property.name, classes)
+            {
+                if property.hook_has_get && parent_property.hook_get_is_final {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot override final property hook {}::${}::get()",
+                            parent_class.name, parent_property.name
+                        ),
+                        property.hook_get_span.or(Some(property.span)),
+                    ));
+                }
+                if property.hook_has_set && parent_property.hook_set_is_final {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot override final property hook {}::${}::set()",
+                            parent_class.name, parent_property.name
+                        ),
+                        property.hook_set_span.or(Some(property.span)),
+                    ));
+                }
             }
         }
 
@@ -16475,13 +16635,11 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
             else {
                 continue;
             };
-            validate_property_type_pair(
+            validate_instance_property_type_pair(
                 class,
-                &property.name,
-                property.type_hint.as_ref(),
-                class.span,
+                property,
                 parent_class,
-                parent_property.type_hint.as_ref(),
+                parent_property,
                 classes,
                 &runtime_class_aliases,
             )?;
@@ -16505,6 +16663,113 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_instance_property_type_pair(
+    class: &ClassDecl,
+    property: &PropertyDecl,
+    parent_class: &ClassDecl,
+    parent_property: &PropertyDecl,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
+    if !parent_property_uses_one_sided_virtual_hook_variance(parent_property) {
+        return validate_property_type_pair(
+            class,
+            &property.name,
+            property.type_hint.as_ref(),
+            class.span,
+            parent_class,
+            parent_property.type_hint.as_ref(),
+            classes,
+            runtime_class_aliases,
+        );
+    }
+
+    if parent_property.hook_has_get {
+        let child_return_type = property_effective_get_type(property);
+        let parent_return_type = property_effective_get_type(parent_property);
+        if !type_hint_is_subtype(
+            &child_return_type,
+            &parent_return_type,
+            classes,
+            runtime_class_aliases,
+        ) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Declaration of {}::{}::get(): {} must be compatible with {}::{}::get(): {}",
+                    class.name,
+                    property_hook_display_name(&property.name),
+                    type_hint_display_canonical(&child_return_type),
+                    parent_class.name,
+                    property_hook_display_name(&parent_property.name),
+                    type_hint_display_canonical(&parent_return_type)
+                ),
+                property.hook_get_span.or(Some(property.span)),
+            ));
+        }
+    }
+
+    if parent_property.hook_has_set {
+        let child_parameter_type = property_effective_set_parameter_type(property);
+        let parent_parameter_type = property_effective_set_parameter_type(parent_property);
+        if !type_hint_is_subtype(
+            &parent_parameter_type,
+            &child_parameter_type,
+            classes,
+            runtime_class_aliases,
+        ) {
+            let child_parameter_name = property
+                .hook_set_parameter_name
+                .as_deref()
+                .unwrap_or("value");
+            let parent_parameter_name = parent_property
+                .hook_set_parameter_name
+                .as_deref()
+                .unwrap_or("value");
+            return Err(Diagnostic::new(
+                format!(
+                    "Declaration of {}::{}::set({} ${}): void must be compatible with {}::{}::set({} ${}): void",
+                    class.name,
+                    property_hook_display_name(&property.name),
+                    type_hint_display_canonical(&child_parameter_type),
+                    child_parameter_name,
+                    parent_class.name,
+                    property_hook_display_name(&parent_property.name),
+                    type_hint_display_canonical(&parent_parameter_type),
+                    parent_parameter_name
+                ),
+                property.hook_set_span.or(Some(property.span)),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn parent_property_uses_one_sided_virtual_hook_variance(property: &PropertyDecl) -> bool {
+    property.has_hooks && property.is_virtual && (property.hook_has_get ^ property.hook_has_set)
+}
+
+fn property_effective_get_type(property: &PropertyDecl) -> TypeHint {
+    property
+        .type_hint
+        .as_ref()
+        .and_then(|type_hint| type_hint.semantic_type.clone())
+        .unwrap_or(TypeHint::Mixed)
+}
+
+fn property_effective_set_parameter_type(property: &PropertyDecl) -> TypeHint {
+    property
+        .hook_set_parameter_type
+        .clone()
+        .or_else(|| {
+            property
+                .type_hint
+                .as_ref()
+                .and_then(|type_hint| type_hint.semantic_type.clone())
+        })
+        .unwrap_or(TypeHint::Mixed)
 }
 
 fn validate_property_type_pair(

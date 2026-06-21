@@ -1637,6 +1637,150 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nexplicit typed set parameter\n--FILE--\n<?php\nclass Test { public $prop { set(int $value) { var_dump($value); } } }\n(new Test())->prop = 42;\n--EXPECT--\nint(42)\n",
         ),
         (
+            "Zend/tests/property_hooks/set_value_parameter_type_variance_001.phpt",
+            "--TEST--\nset parameter variance\n--FILE--\n<?php\nclass Test { public $prop { set(string $prop) {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/set_value_parameter_type_variance_002.phpt",
+            "--TEST--\nset parameter variance\n--FILE--\n<?php\nclass Test { public string|array $prop { set(string $prop) {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/set_value_parameter_type_variance_003.phpt",
+            "--TEST--\nset parameter variance\n--FILE--\n<?php\ninterface X {} interface Y {} class Test { public X $prop { set(Y $prop) {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/set_value_parameter_type_variance_005.phpt",
+            "--TEST--\nset parameter variance\n--FILE--\n<?php\nclass Test { public string $prop { set($prop) {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/set_value_parameter_type_variance_007.phpt",
+            "--TEST--\nset parameter variance\n--FILE--\n<?php\ninterface X {} interface Y extends X {} class A { public Y $prop { set(X $prop) {} } } class B extends A { public Y $prop { set(Y $prop) {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/type_compatibility.phpt",
+            "--TEST--\nhook type variance\n--FILE--\n<?php\nclass A { public int|float $a { get { return 42.0; } } public int $b { set {} } } class B extends A { public int $a { get { return 42; } } public int|float $b { set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/type_compatibility_invalid.phpt",
+            "--TEST--\ninvalid get variance\n--FILE--\n<?php\nclass A { public int $a { get {} } } class B extends A { public int|float $a { get {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/type_compatibility_invalid_2.phpt",
+            "--TEST--\ninvalid set variance\n--FILE--\n<?php\nclass A { public int|float $a { set {} } } class B extends A { public int $a { set {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_add_get_contravariant.phpt",
+            "--TEST--\nadd get to set-only\n--FILE--\n<?php\nclass A { public int $prop { set {} } } class B extends A { public int|string $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_add_set_covariant.phpt",
+            "--TEST--\nadd set to get-only\n--FILE--\n<?php\nclass A { public int|string $prop { get { return 42; } } } class B extends A { public int $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/traits_conflict.phpt",
+            "--TEST--\ntrait hook conflict\n--FILE--\n<?php\ntrait T { public $prop { get {} } } class C { use T; public $prop { set {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/final.phpt",
+            "--TEST--\nfinal hook override\n--FILE--\n<?php\nclass A { public $prop { final get { return 42; } } } class B extends A { public $prop { get { return 24; } } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/inheritance.phpt",
+            "--TEST--\nproperty hook inheritance\n--FILE--\n<?php\nclass A { public $prop { get { return 42; } } } class B extends A { public $prop { get { return parent::$prop::get(); } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/invalid_abstract.phpt",
+            "--TEST--\nabstract hook implementation\n--FILE--\n<?php\nabstract class A { public abstract $prop { get; } } class B extends A { public $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_add_get.phpt",
+            "--TEST--\nadd get to inherited set-only hook\n--FILE--\n<?php\nclass A { public $prop { set {} } } class B extends A { public $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_add_set.phpt",
+            "--TEST--\nadd set to inherited get-only hook\n--FILE--\n<?php\nclass A { public $prop { get { return 42; } } } class B extends A { public $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_attribute_fail.phpt",
+            "--TEST--\noverride attribute missing hook\n--FILE--\n<?php\nclass A { public $prop { get { return 42; } } } class B extends A { public $prop { #[Override] set {} } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_attribute_plain.phpt",
+            "--TEST--\noverride attribute plain property\n--FILE--\n<?php\nclass A { public $prop; } class B extends A { public $prop { #[Override] get => parent::$prop::get(); } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_attribute_virtual.phpt",
+            "--TEST--\noverride attribute virtual hook\n--FILE--\n<?php\nclass A { public $prop { get { return 42; } } } class B extends A { public $prop { #[Override] get => parent::$prop::get(); } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/override_default_value.phpt",
+            "--TEST--\noverride hooked property default value\n--FILE--\n<?php\nclass A { public $prop = 1 { get => $this->prop; } } class B extends A { public $prop = 2 { get => $this->prop; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/protected_to_public.phpt",
+            "--TEST--\ninherited hook visibility widening\n--FILE--\n<?php\nclass A { protected $prop { get { return 42; } } } class B extends A { public $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/bug006.phpt",
+            "--TEST--\nabstract virtualness tracking\n--FILE--\n<?php\nabstract class A { public abstract $prop { get; } } class B extends A { public $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh15456.phpt",
+            "--TEST--\nget class vars virtual properties\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } } var_dump(get_class_vars(Test::class));\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh15644.phpt",
+            "--TEST--\nasymmetric set hook\n--FILE--\n<?php\nclass Test { public private(set) $prop { set { $this->prop = $value; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh16185.phpt",
+            "--TEST--\ndynamic property array indexing\n--FILE--\n<?php\nclass Test { public $prop { get { return []; } } } $test = new Test(); var_dump($test->prop[0] ?? null);\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh16725.phpt",
+            "--TEST--\nhooked object iterator visibility\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } } foreach (new Test() as $k => $v) { var_dump($k, $v); }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh17234.phpt",
+            "--TEST--\nnumeric parent hook call\n--FILE--\n<?php\nclass A { public $prop { get { return 42; } } } class B extends A { public $prop { get { return parent::$prop::get(0); } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh18000.phpt",
+            "--TEST--\nlazy proxy set hook\n--FILE--\n<?php\nclass Test { public $prop { set { $this->prop = $value; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh18268.phpt",
+            "--TEST--\narray walk added hooks\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } } array_walk(new Test(), function () {});\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh20270.phpt",
+            "--TEST--\nparent hook named args\n--FILE--\n<?php\nclass A { public $prop { set($value) {} } } class B extends A { public $prop { set { parent::$prop::set(value: $value); } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-1.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public protected(set) $prop { get; set; } } class B extends A { public protected(set) $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-2.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public $prop { get; } } class B extends A { public $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-3.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public protected(set) $prop { get; } } class B extends A { public protected(set) $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-4.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public protected(set) $prop { get; set; } } class B extends A { public protected(set) $prop { get { return 42; } set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-5.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public protected(set) $prop { get; } } class B extends A { public protected(set) $prop { get { return 42; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh19044-6.phpt",
+            "--TEST--\nprotected prototype scope\n--FILE--\n<?php\nabstract class A { public protected(set) $prop { set; } } class B extends A { public protected(set) $prop { set {} } }\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/field_assign.phpt",
             "--TEST--\nfield assign\n--FILE--\n<?php\nclass Test { public $prop { set { $field ??= 42; $field++; } } }\n--EXPECT--\n",
         ),
