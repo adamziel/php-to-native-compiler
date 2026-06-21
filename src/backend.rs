@@ -18402,11 +18402,21 @@ fn emit_instruction(
             }
             let path = emit_array_path_segments(out, values, dimensions);
             let value_temp = values.emit_materialized_value(out, value);
-            let stored_temp = if let Some(op) = compound_op {
-                let current_temp = values.next_temp();
+            if let Some(op) = compound_op {
+                let base_temp = values.next_temp();
+                let container_temp = values.next_temp();
+                let split_temp = values.next_temp();
                 out.push_str("    PtnValue ");
-                out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
+                out.push_str(&base_temp);
+                out.push_str(";\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&container_temp);
+                out.push_str(";\n");
+                out.push_str("    int ");
+                out.push_str(&split_temp);
+                out.push_str(
+                    " = ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"",
+                );
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
                 out.push_str(&path.name);
@@ -18414,7 +18424,29 @@ fn emit_instruction(
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(", &");
+                out.push_str(&base_temp);
+                out.push_str(", &");
+                out.push_str(&container_temp);
                 out.push_str(");\n");
+
+                let current_temp = values.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ");
+                out.push_str(&split_temp);
+                out.push_str(" ? ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&base_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(" + 1, ");
+                out.push_str(&(path.len.saturating_sub(1)).to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(") : ptn_value_clone(");
+                out.push_str(&base_temp);
+                out.push_str(");\n");
+
                 let result_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -18443,8 +18475,46 @@ fn emit_instruction(
                     out.push(')');
                 }
                 out.push_str(";\n");
+
+                out.push_str("    if (");
+                out.push_str(&split_temp);
+                out.push_str(") {\n");
+                out.push_str(
+                    "        ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &",
+                );
+                out.push_str(&base_temp);
+                out.push_str(", ");
+                out.push_str(&container_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(" + 1, ");
+                out.push_str(&(path.len.saturating_sub(1)).to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
                 emit_value_cleanup(out, "    ", &current_temp);
-                result_temp
+                emit_value_cleanup(out, "    ", &base_temp);
+                emit_value_cleanup(out, "    ", &container_temp);
+                emit_value_cleanup(out, "    ", &result_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
             } else {
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
@@ -18452,29 +18522,22 @@ fn emit_instruction(
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                snapshot_temp
-            };
-            out.push_str("    ");
-            out.push_str(if compound_op.is_some() {
-                "ptn_runtime_array_path_set_from_assign_op"
-            } else {
-                "ptn_runtime_array_path_set"
-            });
-            out.push_str("(&runtime, \"");
-            out.push_str(&c_string(array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&stored_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &stored_temp);
-            emit_value_cleanup(out, "    ", &value_temp);
-            for segment_temp in path.value_temps {
-                emit_value_cleanup(out, "    ", &segment_temp);
+                out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&snapshot_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &snapshot_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
             }
         }
         Instruction::StoreArrayDimRef { target, source } => {

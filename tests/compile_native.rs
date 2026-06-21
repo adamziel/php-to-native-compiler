@@ -56030,6 +56030,92 @@ var_dump($box[0]['name']);
 }
 
 #[test]
+fn compile_arrayaccess_proxy_compound_write_reuses_proxy_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-proxy-compound-write");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-proxy-compound-write.php");
+    let output = root.join("arrayaccess-proxy-compound-write-bin");
+    fs::write(
+        &input,
+        "<?php
+class Proxy implements ArrayAccess {
+    private $owner;
+    private $slot;
+
+    public function __construct($owner, $slot) {
+        echo \"Proxy::__construct($slot)\\n\";
+        $this->owner = $owner;
+        $this->slot = $slot;
+    }
+
+    public function offsetExists($offset): bool {
+        return isset($this->owner->items[$this->slot][$offset]);
+    }
+
+    public function offsetGet($offset): mixed {
+        echo \"Proxy::offsetGet($offset)\\n\";
+        return $this->owner->items[$this->slot][$offset] ?? null;
+    }
+
+    public function offsetSet($offset, $value): void {
+        echo \"Proxy::offsetSet($offset,$value)\\n\";
+        $this->owner->items[$this->slot][$offset] = $value;
+    }
+
+    public function offsetUnset($offset): void {}
+}
+
+class Store implements ArrayAccess {
+    public $items = [
+        0 => [\"name\" => \"Foo\"],
+    ];
+
+    public function offsetExists($offset): bool {
+        return isset($this->items[$offset]);
+    }
+
+    public function offsetGet($offset): mixed {
+        echo \"Store::offsetGet($offset)\\n\";
+        return new Proxy($this, $offset);
+    }
+
+    public function offsetSet($offset, $value): void {
+        $this->items[$offset] = $value;
+    }
+
+    public function offsetUnset($offset): void {}
+}
+
+$store = new Store();
+$store[0][\"name\"] .= \"Bar\";
+var_dump($store->items[0][\"name\"]);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        concat!(
+            "Store::offsetGet(0)\n",
+            "Proxy::__construct(0)\n",
+            "Proxy::offsetGet(name)\n",
+            "Proxy::offsetSet(name,FooBar)\n",
+            "string(6) \"FooBar\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_read_overloaded_base_for_assign_op"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_overloaded_assign_op"));
+}
+
+#[test]
 fn compile_arrayaccess_standalone_isset_numeric_string_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-arrayaccess-standalone-isset-numeric-string-offsets");
     fs::create_dir_all(&root).unwrap();
