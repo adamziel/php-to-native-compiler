@@ -758,6 +758,8 @@ typedef struct {
     int hook_has_get;
     int hook_get_returns_by_ref;
     int hook_has_set;
+    char *hook_get_declaring_class;
+    char *hook_set_declaring_class;
     int is_unset;
     int lazy_skip;
     int readonly_clone_reinitialized;

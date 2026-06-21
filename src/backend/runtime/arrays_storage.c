@@ -45,6 +45,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     int hook_has_get,
     int hook_get_returns_by_ref,
     int hook_has_set,
+    const char *hook_get_declaring_class,
+    const char *hook_set_declaring_class,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
     const char *type_text,
@@ -1288,6 +1290,8 @@ static void ptn_object_property_metadata_free_fields(PtnObjectPropertyMetadata *
     free(metadata->storage_name);
     free(metadata->display_name);
     free(metadata->declaring_class);
+    free(metadata->hook_get_declaring_class);
+    free(metadata->hook_set_declaring_class);
     free(metadata->last_type_name);
     free(metadata->type_class_name);
     free(metadata->type_text);
@@ -1319,6 +1323,12 @@ static PtnObjectPropertyMetadata ptn_object_property_metadata_clone_entry(
     clone.declaring_class = source->declaring_class == NULL
         ? NULL
         : ptn_duplicate_string(source->declaring_class);
+    clone.hook_get_declaring_class = source->hook_get_declaring_class == NULL
+        ? NULL
+        : ptn_duplicate_string(source->hook_get_declaring_class);
+    clone.hook_set_declaring_class = source->hook_set_declaring_class == NULL
+        ? NULL
+        : ptn_duplicate_string(source->hook_set_declaring_class);
     clone.last_type_name = source->last_type_name == NULL
         ? NULL
         : ptn_duplicate_string(source->last_type_name);
@@ -2102,6 +2112,8 @@ static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
         0,
         0,
         0,
+        NULL,
+        NULL,
         PTN_PROPERTY_TYPE_STRING,
         NULL,
         "string",
@@ -2125,6 +2137,8 @@ static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
             0,
             0,
             0,
+            NULL,
+            NULL,
             backing_type_kind,
             NULL,
             backing_type_text,
@@ -2217,6 +2231,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     int hook_has_get,
     int hook_get_returns_by_ref,
     int hook_has_set,
+    const char *hook_get_declaring_class,
+    const char *hook_set_declaring_class,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
     const char *type_text,
@@ -2245,6 +2261,12 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].hook_has_get = hook_has_get;
             object->property_metadata[i].hook_get_returns_by_ref = hook_get_returns_by_ref;
             object->property_metadata[i].hook_has_set = hook_has_set;
+            free(object->property_metadata[i].hook_get_declaring_class);
+            free(object->property_metadata[i].hook_set_declaring_class);
+            object->property_metadata[i].hook_get_declaring_class =
+                hook_get_declaring_class == NULL ? NULL : ptn_duplicate_string(hook_get_declaring_class);
+            object->property_metadata[i].hook_set_declaring_class =
+                hook_set_declaring_class == NULL ? NULL : ptn_duplicate_string(hook_set_declaring_class);
             object->property_metadata[i].is_unset = 0;
             object->property_metadata[i].lazy_skip = 0;
             object->property_metadata[i].readonly_clone_reinitialized = 0;
@@ -2292,6 +2314,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->hook_has_get = hook_has_get;
     metadata->hook_get_returns_by_ref = hook_get_returns_by_ref;
     metadata->hook_has_set = hook_has_set;
+    metadata->hook_get_declaring_class =
+        hook_get_declaring_class == NULL ? NULL : ptn_duplicate_string(hook_get_declaring_class);
+    metadata->hook_set_declaring_class =
+        hook_set_declaring_class == NULL ? NULL : ptn_duplicate_string(hook_set_declaring_class);
     metadata->is_unset = 0;
     metadata->lazy_skip = 0;
     metadata->readonly_clone_reinitialized = 0;

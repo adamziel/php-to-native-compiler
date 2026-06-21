@@ -11722,6 +11722,53 @@ static int ptn_var_export_should_break_value(PtnValue value, PtnDumpSeenArrays *
     return ptn_var_export_is_complex_value(value);
 }
 
+static void ptn_var_export_append_virtual_hook_object_properties(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line,
+    int *exported
+) {
+    if (exported == NULL || *exported || object == NULL) {
+        return;
+    }
+    *exported = 1;
+    PtnValue receiver = ptn_object(object);
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (
+            ptn_object_property_storage_initialized(object, metadata->storage_name) ||
+            !metadata->has_hooks ||
+            !metadata->hook_has_get ||
+            ptn_property_is_set_only_virtual(metadata)
+        ) {
+            continue;
+        }
+        PtnValue entry_value = ptn_object_read_property(
+            runtime,
+            receiver,
+            metadata->display_name,
+            metadata->declaring_class,
+            line
+        );
+        PtnValue deref_value = ptn_value_deref(entry_value);
+        ptn_string_buffer_append_indent(buffer, indent + 3);
+        PtnArrayKey display_key = ptn_array_string_key(metadata->display_name);
+        ptn_var_export_append_key(buffer, display_key);
+        ptn_array_key_free(display_key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (ptn_var_export_should_break_value(deref_value, seen)) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 2);
+        }
+        ptn_var_export_append_value(buffer, runtime, deref_value, indent + 2, seen, line);
+        ptn_value_destroy(&entry_value);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
+}
+
 static void ptn_var_export_append_array(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
@@ -11774,10 +11821,10 @@ static void ptn_var_export_append_object_state_array(
         ptn_string_buffer_append_char(buffer, ')');
         return;
     }
+    int exported_virtual_hook_properties = 0;
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
-        ptn_string_buffer_append_indent(buffer, indent + 3);
         PtnArrayKey display_key = entry->key;
         int free_display_key = 0;
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
@@ -11786,8 +11833,19 @@ static void ptn_var_export_append_object_state_array(
             if (metadata != NULL) {
                 display_key = ptn_array_string_key(metadata->display_name);
                 free_display_key = 1;
+            } else {
+                ptn_var_export_append_virtual_hook_object_properties(
+                    buffer,
+                    runtime,
+                    object,
+                    indent,
+                    seen,
+                    line,
+                    &exported_virtual_hook_properties
+                );
             }
         }
+        ptn_string_buffer_append_indent(buffer, indent + 3);
         ptn_var_export_append_key(buffer, display_key);
         if (free_display_key) {
             ptn_array_key_free(display_key);
@@ -11800,6 +11858,15 @@ static void ptn_var_export_append_object_state_array(
         ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
         ptn_string_buffer_append(buffer, ",\n");
     }
+    ptn_var_export_append_virtual_hook_object_properties(
+        buffer,
+        runtime,
+        object,
+        indent,
+        seen,
+        line,
+        &exported_virtual_hook_properties
+    );
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append_char(buffer, ')');
 }
@@ -70061,6 +70128,8 @@ static PtnValue ptn_clone_object_storage(PtnRuntime *runtime, PtnObject *source)
             metadata->hook_has_get,
             metadata->hook_get_returns_by_ref,
             metadata->hook_has_set,
+            metadata->hook_get_declaring_class,
+            metadata->hook_set_declaring_class,
             metadata->type_kind,
             metadata->type_class_name,
             metadata->type_text,
@@ -103912,6 +103981,8 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
             metadata->hook_has_get,
             metadata->hook_get_returns_by_ref,
             metadata->hook_has_set,
+            metadata->hook_get_declaring_class,
+            metadata->hook_set_declaring_class,
             metadata->type_kind,
             metadata->type_class_name,
             metadata->type_text,
@@ -113614,6 +113685,31 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
     }
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (
+            ptn_object_property_storage_initialized(object, metadata->storage_name) ||
+            !metadata->has_hooks ||
+            !metadata->hook_has_get ||
+            ptn_property_is_set_only_virtual(metadata)
+        ) {
+            continue;
+        }
+        PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        int visible =
+            ptn_object_property_visible_for_foreach(runtime, object, storage_key, access_scope);
+        ptn_array_key_free(storage_key);
+        if (!visible) {
+            continue;
+        }
+        PtnValue value =
+            ptn_object_read_property(runtime, target, metadata->display_name, access_scope, line);
+        PtnArrayKey result_key = ptn_public_object_property_array_key_from_name_len(
+            metadata->display_name,
+            strlen(metadata->display_name)
+        );
+        ptn_array_set_entry(result.as.array, result_key, value);
+    }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         if (!ptn_object_property_visible_for_foreach(runtime, object, entry->key, access_scope)) {

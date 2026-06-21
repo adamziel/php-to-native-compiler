@@ -2911,7 +2911,7 @@ impl Parser<'_> {
         let description = match hook_kind {
             VirtualPropertyHookKind::GetOnly => "get-only",
             VirtualPropertyHookKind::SetOnly => "set-only",
-            VirtualPropertyHookKind::Other => "virtual",
+            VirtualPropertyHookKind::Other => return Ok(()),
         };
         Err(Diagnostic::new(
             format!(
@@ -3051,7 +3051,10 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let hooks = self.parse_property_hook_block(class_name, &name, visibility)?;
+            let mut hooks = self.parse_property_hook_block(class_name, &name, visibility)?;
+            if value.is_some() {
+                hooks.is_virtual = false;
+            }
             reject_asymmetric_virtual_property_hook_metadata(
                 class_name,
                 &name,
@@ -8184,6 +8187,13 @@ impl Parser<'_> {
             let name_expr = self.parse_dynamic_variable_expr(member.span)?;
             let member_span = combine_spans(member.span, name_expr.span());
             if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                if let Some(name) = literal_member_name_from_expr(&name_expr) {
+                    return Ok(Expr::StaticPropertyFetch {
+                        class_name,
+                        name,
+                        span: combine_spans(class_span, member_span),
+                    });
+                }
                 return Ok(Expr::DynamicClassConstantFetch {
                     class_name: Some(class_name),
                     receiver: None,
@@ -11876,7 +11886,7 @@ fn reject_asymmetric_virtual_property_hook_metadata(
     hooks: &ParsedPropertyHookBlock,
     span: SourceSpan,
 ) -> Result<()> {
-    if set_visibility == visibility || !hooks.is_virtual {
+    if set_visibility == visibility || !hooks.is_virtual || (hooks.has_get && hooks.has_set) {
         return Ok(());
     }
     let hook_kind = match (hooks.has_get, hooks.has_set) {
@@ -12074,6 +12084,7 @@ fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {
     match expr {
         Expr::String(value, _) if !value.contains('\0') => Some(value.clone()),
         Expr::Int(value, _) => Some(value.to_string()),
+        Expr::DynamicVariable { name, .. } => literal_member_name_from_expr(name),
         _ => None,
     }
 }

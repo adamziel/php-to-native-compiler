@@ -8544,6 +8544,10 @@ fn parser_rejects_missing_abstract_property_hook_implementations() {
             "<?php class C { public function test() { return parent::$prop::get(); } }",
             "Must not use parent::$prop::get() outside a property hook",
         ),
+        (
+            "<?php class P {} class C extends P { public $a { get { return parent::${0}::get(); } } }",
+            "Must not use parent::$0::get() in a different property ($a)",
+        ),
     ];
 
     for (source, message) in cases {
@@ -8571,6 +8575,10 @@ class B extends A {
 
 #[test]
 fn parser_rejects_asymmetric_virtual_property_hooks() {
+    parser::parse("<?php class Foo { public private(set) int $bar { get => 42; set {} } }")
+        .unwrap();
+    parser::parse("<?php class Foo { public int $bar = 42 { set {} } }").unwrap();
+
     let error = parser::parse("<?php class Foo { public private(set) int $bar { get => 42; } }")
         .unwrap_err();
     assert_eq!(

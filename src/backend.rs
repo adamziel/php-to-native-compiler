@@ -5552,6 +5552,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     );
     out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str("static const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str(
@@ -6663,6 +6664,41 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.iter().all(|class| class.properties.is_empty()) {
+        out.push_str("    (void)property_name;\n");
+    }
+    out.push_str("    if (class_name == NULL || property_name == NULL) {\n");
+    out.push_str("        return class_name;\n");
+    out.push_str("    }\n");
+    for class in classes {
+        if class.properties.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in &class.properties {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return \"");
+            out.push_str(&c_string(property_prototype_class_name(
+                class,
+                &property.name,
+                classes,
+            )));
+            out.push_str("\";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return class_name;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return class_name;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -15101,6 +15137,37 @@ fn inherited_hook_property<'a>(
     None
 }
 
+fn inherited_property_with_hook<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+    hook_name: &str,
+) -> Option<(&'a str, &'a crate::ir::PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name == property_name
+                && if hook_name.eq_ignore_ascii_case("get") {
+                    candidate.hook_has_get
+                } else {
+                    candidate.hook_has_set
+                }
+        }) {
+            return Some((parent.name.as_str(), property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
 fn effective_property_hook<'a>(
     class: &'a ClassDecl,
     property: &'a crate::ir::PropertyDecl,
@@ -15115,16 +15182,7 @@ fn effective_property_hook<'a>(
     if has_local_hook {
         return Some((class.name.as_str(), property));
     }
-    inherited_hook_property(class, &property.name, classes).and_then(
-        |(declaring_class, inherited_property)| {
-            let has_inherited_hook = if hook_name.eq_ignore_ascii_case("get") {
-                inherited_property.hook_has_get
-            } else {
-                inherited_property.hook_has_set
-            };
-            has_inherited_hook.then_some((declaring_class, inherited_property))
-        },
-    )
+    inherited_property_with_hook(class, &property.name, classes, hook_name)
 }
 
 fn effective_property_hook_has_get(
@@ -15155,6 +15213,31 @@ fn property_runtime_declaring_class(
         }
     }
     class.name.clone()
+}
+
+fn property_prototype_class_name<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> &'a str {
+    let mut prototype_class = class.name.as_str();
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if parent.properties.iter().any(|property| {
+            property.visibility != PropertyVisibility::Private && property.name == property_name
+        }) {
+            prototype_class = parent.name.as_str();
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    prototype_class
 }
 
 struct ClassReflectionPropertyDefaultEntry<'a> {
@@ -15466,7 +15549,9 @@ fn class_property_initialization_chain(
             }
         }
         properties.extend(class.properties.iter().cloned().map(|property| {
-            let hook_get_value = inherited_hook_property(class, &property.name, classes)
+            let hook_get_value = (!property.hook_has_get)
+                .then(|| inherited_property_with_hook(class, &property.name, classes, "get"))
+                .flatten()
                 .and_then(|(_, hook_property)| hook_property.hook_get_value.clone());
             (
                 property_runtime_declaring_class(class, &property, classes),
@@ -34873,13 +34958,25 @@ impl ValueEmitter {
                 .classes
                 .iter()
                 .find(|class| class.name.eq_ignore_ascii_case(&declaring_class_name));
-            let effective_hook_has_get = hook_metadata_class
-                .map_or(property.hook_has_get, |class| {
-                    effective_property_hook_has_get(class, &property, &self.classes)
+            let effective_hook_get = hook_metadata_class
+                .and_then(|class| effective_property_hook(class, &property, &self.classes, "get"));
+            let effective_hook_set = hook_metadata_class
+                .and_then(|class| effective_property_hook(class, &property, &self.classes, "set"));
+            let effective_hook_has_get = effective_hook_get.is_some() || property.hook_has_get;
+            let effective_hook_has_set = effective_hook_set.is_some() || property.hook_has_set;
+            let hook_get_declaring_class = effective_hook_get
+                .map(|(class_name, _)| class_name)
+                .or_else(|| {
+                    property
+                        .hook_has_get
+                        .then_some(declaring_class_name.as_str())
                 });
-            let effective_hook_has_set = hook_metadata_class
-                .map_or(property.hook_has_set, |class| {
-                    effective_property_hook_has_set(class, &property, &self.classes)
+            let hook_set_declaring_class = effective_hook_set
+                .map(|(class_name, _)| class_name)
+                .or_else(|| {
+                    property
+                        .hook_has_set
+                        .then_some(declaring_class_name.as_str())
                 });
             out.push_str(indent);
             out.push_str("PtnValue ");
@@ -34910,6 +35007,24 @@ impl ValueEmitter {
             });
             out.push_str(", ");
             out.push_str(if effective_hook_has_set { "1" } else { "0" });
+            out.push_str(", ");
+            match hook_get_declaring_class {
+                Some(class_name) => {
+                    out.push('"');
+                    out.push_str(&c_string(class_name));
+                    out.push('"');
+                }
+                None => out.push_str("NULL"),
+            }
+            out.push_str(", ");
+            match hook_set_declaring_class {
+                Some(class_name) => {
+                    out.push('"');
+                    out.push_str(&c_string(class_name));
+                    out.push('"');
+                }
+                None => out.push_str("NULL"),
+            }
             out.push_str(", ");
             out.push_str(c_property_type_kind(property.type_hint.as_ref()));
             out.push_str(", ");
@@ -36027,7 +36142,7 @@ impl ValueEmitter {
             }
         });
         let set_parameter_name = property.map(|property| {
-            if property_hook_set_has_runtime(property) {
+            if property.hook_has_set {
                 property
                     .hook_set_parameter_name
                     .clone()
