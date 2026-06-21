@@ -52785,6 +52785,14 @@ static const char *ptn_mb_current_substitute_character(void) {
     return ptn_mb_env_or_state("PTN_MBSTRING_SUBSTITUTE_CHARACTER", ptn_mb_substitute_character_name, "63");
 }
 
+static const char *ptn_mb_auto_detect_order(void) {
+    const char *language = ptn_mb_current_language();
+    if (ptn_ascii_case_equal(language, "Japanese") || ptn_ascii_case_equal(language, "ja")) {
+        return "ASCII,JIS,UTF-8,EUC-JP,SJIS";
+    }
+    return "ASCII,UTF-8";
+}
+
 static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (encoding.len == 0) {
         return NULL;
@@ -53296,6 +53304,66 @@ static void ptn_mb_throw_contains_invalid_encoding(
     ptn_throw_exception_owned_message(runtime, "ValueError", message);
 }
 
+static void ptn_mb_throw_empty_encoding_list(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must specify at least one encoding",
+        function_name,
+        position,
+        argument_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must specify at least one encoding",
+        function_name,
+        position,
+        argument_name
+    );
+    ptn_throw_exception_owned_message(runtime, "ValueError", message);
+}
+
+static void ptn_mb_emit_ini_invalid_encoding_warning(PtnRuntime *runtime, PtnStringOperand encoding, size_t line) {
+    char *given = ptn_duplicate_string_len(encoding.data, encoding.len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "ini_set(): INI setting contains invalid encoding \"%s\"",
+        given
+    );
+    if (needed < 0) {
+        free(given);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(given);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "ini_set(): INI setting contains invalid encoding \"%s\"",
+        given
+    );
+    free(given);
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
 static void ptn_mb_throw_unsupported_encoding(
     PtnRuntime *runtime,
     const char *function_name,
@@ -53380,6 +53448,138 @@ static const char *ptn_mb_encoding_list_item_canonical_or_throw(
     return canonical;
 }
 
+static void ptn_mb_detect_order_buffer_append_name(PtnStringBuffer *buffer, const char *name) {
+    if (buffer->len != 0) {
+        ptn_string_buffer_append_char(buffer, ',');
+    }
+    ptn_string_buffer_append(buffer, name);
+}
+
+static void ptn_mb_detect_order_buffer_append_canonical(PtnStringBuffer *buffer, const char *canonical) {
+    if (ptn_ascii_case_equal(canonical, "auto")) {
+        const char *order = ptn_mb_auto_detect_order();
+        size_t start = 0;
+        size_t len = strlen(order);
+        while (start <= len) {
+            size_t end = start;
+            while (end < len && order[end] != ',') {
+                end++;
+            }
+            if (end > start) {
+                char *item = ptn_duplicate_string_len(order + start, end - start);
+                ptn_mb_detect_order_buffer_append_name(buffer, item);
+                free(item);
+            }
+            if (end >= len) {
+                break;
+            }
+            start = end + 1;
+        }
+        return;
+    }
+    ptn_mb_detect_order_buffer_append_name(buffer, canonical);
+}
+
+static int ptn_mb_detect_order_buffer_append_item(
+    PtnRuntime *runtime,
+    PtnStringOperand item,
+    PtnStringBuffer *buffer,
+    int throw_errors,
+    size_t line
+) {
+    char *prefix = NULL;
+    if (ptn_mb_encoding_has_embedded_nul(item, &prefix)) {
+        PtnStringOperand shown = ptn_string_operand_borrowed(prefix);
+        if (throw_errors) {
+            ptn_mb_throw_contains_invalid_encoding(runtime, "mb_detect_order", 1, "encoding", shown);
+        } else {
+            ptn_mb_emit_ini_invalid_encoding_warning(runtime, shown, line);
+        }
+        free(prefix);
+        return 0;
+    }
+    const char *canonical = ptn_mb_canonical_encoding_name(item);
+    if (canonical == NULL) {
+        if (throw_errors) {
+            ptn_mb_throw_contains_invalid_encoding(runtime, "mb_detect_order", 1, "encoding", item);
+        } else {
+            ptn_mb_emit_ini_invalid_encoding_warning(runtime, item, line);
+        }
+        return 0;
+    }
+    ptn_mb_detect_order_buffer_append_canonical(buffer, canonical);
+    return 1;
+}
+
+static int ptn_mb_detect_order_buffer_from_operand(
+    PtnRuntime *runtime,
+    PtnStringOperand list,
+    PtnStringBuffer *buffer,
+    int throw_errors,
+    size_t line
+) {
+    size_t start = 0;
+    int saw_item = 0;
+    while (start <= list.len) {
+        size_t end = start;
+        while (end < list.len && list.data[end] != ',' && list.data[end] != ' ') {
+            end++;
+        }
+        while (start < end && isspace((unsigned char)list.data[start])) {
+            start++;
+        }
+        while (end > start && isspace((unsigned char)list.data[end - 1])) {
+            end--;
+        }
+        if (end > start) {
+            saw_item = 1;
+            PtnStringOperand item = ptn_string_operand_borrowed_len(list.data + start, end - start);
+            if (!ptn_mb_detect_order_buffer_append_item(runtime, item, buffer, throw_errors, line)) {
+                return 0;
+            }
+        }
+        if (end >= list.len) {
+            break;
+        }
+        start = end + 1;
+    }
+    if (!saw_item) {
+        if (throw_errors) {
+            ptn_mb_throw_empty_encoding_list(runtime, "mb_detect_order", 1, "encoding");
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_mb_detect_order_buffer_from_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnStringBuffer *buffer,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY) {
+        if (resolved.as.array->len == 0) {
+            ptn_mb_throw_empty_encoding_list(runtime, "mb_detect_order", 1, "encoding");
+            return 0;
+        }
+        for (size_t i = 0; i < resolved.as.array->len; i++) {
+            PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
+            int ok = ptn_mb_detect_order_buffer_append_item(runtime, item, buffer, 1, line);
+            ptn_string_operand_free(item);
+            if (!ok) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    PtnStringOperand order = ptn_value_to_string_operand(value);
+    int ok = ptn_mb_detect_order_buffer_from_operand(runtime, order, buffer, 1, line);
+    ptn_string_operand_free(order);
+    return ok;
+}
+
 static const char *ptn_mb_encoding_list_first_from_value(
     PtnRuntime *runtime,
     const char *function_name,
@@ -53413,7 +53613,11 @@ static const char *ptn_mb_encoding_list_first_from_value(
                 first = canonical;
             }
         }
-        return first == NULL ? fallback : first;
+        if (first == NULL) {
+            ptn_mb_throw_empty_encoding_list(runtime, function_name, position, argument_name);
+            return NULL;
+        }
+        return first;
     }
     PtnStringOperand list = ptn_value_to_string_operand(value);
     const char *first = NULL;
@@ -53453,8 +53657,8 @@ static const char *ptn_mb_encoding_list_first_from_value(
         }
         start = end + 1;
     }
-    if (!saw_item && list.len != 0) {
-        ptn_mb_throw_contains_invalid_encoding(runtime, function_name, position, argument_name, list);
+    if (!saw_item) {
+        ptn_mb_throw_empty_encoding_list(runtime, function_name, position, argument_name);
     }
     ptn_string_operand_free(list);
     return first == NULL ? NULL : first;
@@ -53946,7 +54150,6 @@ static PtnValue ptn_internal_mb_substitute_char(PtnRuntime *runtime, size_t argc
 }
 
 static PtnValue ptn_internal_mb_detect_order(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     if (argc == 0) {
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         const char *order = ptn_mb_current_detect_order();
@@ -53975,40 +54178,11 @@ static PtnValue ptn_internal_mb_detect_order(PtnRuntime *runtime, size_t argc, c
         }
         return result;
     }
-    PtnValue resolved = ptn_value_deref(args[0]);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    if (resolved.type == PTN_ARRAY) {
-        for (size_t i = 0; i < resolved.as.array->len; i++) {
-            PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
-            const char *canonical = ptn_mb_canonical_encoding_name(item);
-            ptn_string_operand_free(item);
-            if (canonical == NULL) {
-                free(buffer.data);
-                return ptn_bool(0);
-            }
-            if (buffer.len != 0) {
-                ptn_string_buffer_append_char(&buffer, ',');
-            }
-            ptn_string_buffer_append(&buffer, canonical);
-        }
-    } else {
-        (void)ptn_mb_encoding_list_first_from_value(
-            runtime,
-            "mb_detect_order",
-            1,
-            "encoding",
-            args[0],
-            line,
-            NULL
-        );
-        if (runtime->exceptions->active_exception != NULL) {
-            free(buffer.data);
-            return ptn_null();
-        }
-        PtnStringOperand order = ptn_value_to_string_operand(args[0]);
-        ptn_string_buffer_append_len(&buffer, order.data, order.len);
-        ptn_string_operand_free(order);
+    if (!ptn_mb_detect_order_buffer_from_value(runtime, args[0], &buffer, line)) {
+        free(buffer.data);
+        return ptn_null();
     }
     ptn_mb_copy_state_string(ptn_mb_detect_order_name, sizeof(ptn_mb_detect_order_name), buffer.data);
     free(buffer.data);
@@ -60893,25 +61067,27 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_bool(0);
     }
     if (ptn_string_operand_ascii_case_equal(option, "mbstring.detect_order")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order()));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
-        char *invalid = NULL;
-        if (ptn_mb_encoding_has_embedded_nul(value, &invalid)) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "ini_set(): INI setting contains invalid encoding \"%s\"",
-                invalid
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_emit_warning(&runtime->diagnostics, message, line);
-            free(invalid);
+        if (value.len == 0) {
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            return previous;
         }
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        int ok = ptn_mb_detect_order_buffer_from_operand(runtime, value, &buffer, 0, line);
         ptn_string_operand_free(value);
+        if (!ok) {
+            free(buffer.data);
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        ptn_mb_copy_state_string(ptn_mb_detect_order_name, sizeof(ptn_mb_detect_order_name), buffer.data);
+        free(buffer.data);
         ptn_string_operand_free(option);
-        return ptn_bool(0);
+        return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));

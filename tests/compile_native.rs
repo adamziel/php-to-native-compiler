@@ -18934,6 +18934,69 @@ dump_exception(fn() => mb_detect_order($alias));\n",
 }
 
 #[test]
+fn compile_mbstring_detect_order_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-detect-order-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-detect-order-validation.php");
+    let output = root.join("mb-detect-order-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_error(callable $callback) {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+function dump_order() {\n\
+    echo implode(', ', mb_detect_order()), \"\\n\";\n\
+}\n\
+dump_error(fn() => mb_detect_order(''));\n\
+dump_error(fn() => mb_detect_order([]));\n\
+mb_language('Japanese');\n\
+var_dump(mb_detect_order('auto'));\n\
+dump_order();\n\
+var_dump(mb_detect_order('SJIS,EUC-JP,JIS,UTF-8'));\n\
+dump_order();\n\
+dump_error(fn() => mb_detect_order('BAD_NAME'));\n\
+dump_error(fn() => mb_detect_order(['ASCII', 'BAD_NAME']));\n\
+$value = 'text';\n\
+dump_error(fn() => mb_convert_variables('UTF-8', [], $value));\n\
+ini_set('mbstring.detect_order', 'UTF-8, ISO-8859-1, ASCII');\n\
+dump_order();\n\
+ini_set('mbstring.detect_order', 'UTF-8');\n\
+dump_order();\n\
+ini_set('mbstring.detect_order', '');\n\
+dump_order();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "mb_detect_order(): Argument #1 ($encoding) must specify at least one encoding\n",
+            "mb_detect_order(): Argument #1 ($encoding) must specify at least one encoding\n",
+            "bool(true)\n",
+            "ASCII, JIS, UTF-8, EUC-JP, SJIS\n",
+            "bool(true)\n",
+            "SJIS, EUC-JP, JIS, UTF-8\n",
+            "mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"BAD_NAME\"\n",
+            "mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"BAD_NAME\"\n",
+            "mb_convert_variables(): Argument #2 ($from_encoding) must specify at least one encoding\n",
+            "UTF-8, ISO-8859-1, ASCII\n",
+            "UTF-8\n",
+            "UTF-8\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
     let root = temp_dir("ptn-native-mb-strimwidth-marker");
     fs::create_dir_all(&root).unwrap();
