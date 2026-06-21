@@ -387,6 +387,23 @@ static PTN_UNUSED void ptn_array_note_mutation(PtnArray *array) {
     array->mutation_epoch++;
 }
 
+static PTN_UNUSED void ptn_array_note_iterator_unset(PtnArray *array, size_t index) {
+    if (array == NULL || array->iterator_refcount == 0 || !array->has_iterator_current_index) {
+        return;
+    }
+    if (index < array->iterator_current_index) {
+        array->iterator_current_index--;
+        if (index < array->iterator_mutation_resume_index) {
+            array->iterator_mutation_resume_index--;
+        }
+        return;
+    }
+    if (index == array->iterator_current_index) {
+        array->iterator_mutation_resume_index = index;
+        array->iterator_mutation_epoch++;
+    }
+}
+
 static PTN_UNUSED void ptn_array_note_value_replacement(PtnValue old_value, PtnValue new_value) {
     PtnValue old_resolved = ptn_value_deref(old_value);
     if (old_resolved.type != PTN_ARRAY || old_resolved.as.array == NULL) {
@@ -555,13 +572,16 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
     }
 
     ptn_array_note_mutation(array);
+    ptn_array_note_iterator_unset(array, index);
     ptn_array_key_free(array->entries[index].key);
     ptn_value_destroy(&array->entries[index].value);
     for (size_t i = index + 1; i < array->len; i++) {
         array->entries[i - 1] = array->entries[i];
     }
     array->len--;
-    if (array->current_index > array->len) {
+    if (array->current_index > index) {
+        array->current_index--;
+    } else if (array->current_index > array->len) {
         array->current_index = array->len;
     }
     ptn_array_key_free(key);

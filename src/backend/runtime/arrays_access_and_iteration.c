@@ -9712,6 +9712,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
     iterator.length = 0;
     iterator.valid = array->len != 0;
     iterator.live = 1;
+    iterator.runtime = runtime;
+    iterator.access_scope = access_scope;
+    iterator.line = line;
     ptn_array_iterator_remember_current_key(&iterator);
     ptn_array_iterator_retain(array);
     return iterator;
@@ -9977,13 +9980,29 @@ static PTN_UNUSED PtnArray *ptn_array_iterator_watched_slot_array(PtnArrayIterat
     return value->as.array;
 }
 
-static PTN_UNUSED void ptn_array_iterator_refresh_watched_array(PtnArrayIterator *iterator) {
+static PTN_UNUSED int ptn_array_iterator_refresh_watched_array(PtnArrayIterator *iterator) {
     if (!iterator->live || iterator->watched_slot == NULL) {
-        return;
+        return 1;
     }
-    PtnArray *array = ptn_array_iterator_watched_slot_array(iterator);
-    if (array == NULL || array == iterator->array) {
-        return;
+    PtnValue watched = ptn_value_deref(*iterator->watched_slot);
+    if (watched.type != PTN_ARRAY || watched.as.array == NULL) {
+        ptn_emit_foreach_non_array_warning(
+            iterator->runtime,
+            watched,
+            iterator->runtime == NULL ? NULL : iterator->runtime->source_path,
+            iterator->line
+        );
+        if (iterator->array != NULL) {
+            ptn_array_iterator_release(iterator->array);
+            iterator->array = NULL;
+        }
+        iterator->valid = 0;
+        ptn_array_iterator_clear_current_key(iterator);
+        return 0;
+    }
+    PtnArray *array = watched.as.array;
+    if (array == iterator->array) {
+        return 1;
     }
     ptn_array_iterator_retain(array);
     if (iterator->array != NULL) {
@@ -9991,6 +10010,7 @@ static PTN_UNUSED void ptn_array_iterator_refresh_watched_array(PtnArrayIterator
     }
     iterator->array = array;
     iterator->object = NULL;
+    return 1;
 }
 
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
@@ -10048,7 +10068,9 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
             }
         }
         if (replacement == NULL) {
-            ptn_array_iterator_refresh_watched_array(iterator);
+            if (!ptn_array_iterator_refresh_watched_array(iterator)) {
+                return;
+            }
         }
 #else
         iterator->valid = 0;
@@ -10059,6 +10081,10 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         size_t limit = iterator->array == NULL ? 0 : iterator->array->len;
         iterator->valid = iterator->index < limit;
         ptn_array_iterator_remember_current_key(iterator);
+        return;
+    }
+
+    if (!ptn_array_iterator_refresh_watched_array(iterator)) {
         return;
     }
 
@@ -10098,7 +10124,6 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         ptn_generator_release_consumed_reference(iterator->generator, iterator->index);
     }
 
-    ptn_array_iterator_refresh_watched_array(iterator);
     ptn_array_iterator_sync_object_property_keys(iterator);
     ptn_array_iterator_clear_current_key(iterator);
     size_t limit = iterator->live ? iterator->array->len : iterator->length;
