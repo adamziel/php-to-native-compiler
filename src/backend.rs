@@ -5330,6 +5330,17 @@ fn emit_user_function_dispatch(
     out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Cannot call constructor\", runtime->source_path, line);\n");
     out.push_str("            return ptn_null();\n");
     out.push_str("        }\n");
+    out.push_str("        if (runtime->has_current_receiver) {\n");
+    out.push_str("            PtnValue ptn_static_magic_current_receiver = ptn_value_deref(runtime->current_receiver);\n");
+    out.push_str("            if (ptn_static_magic_current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_static_magic_current_receiver.as.object->class_name, ptn_static_magic_resolved_class)) {\n");
+    out.push_str("                PtnValue ptn_static_bound_magic_result;\n");
+    out.push_str("                if (ptn_call_declared_method_in_scope(runtime, ptn_static_magic_current_receiver, ptn_static_magic_resolved_class, ptn_static_magic_method, ptn_static_magic_current_receiver.as.object->class_name, argc, args, line, &ptn_static_bound_magic_result)) {\n");
+    out.push_str("                    free(ptn_static_magic_name);\n");
+    out.push_str("                    *found = 1;\n");
+    out.push_str("                    return ptn_static_bound_magic_result;\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
     out.push_str("        PtnValue ptn_static_magic_result;\n");
     out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, ptn_static_magic_class, argc, args, line, &ptn_static_magic_result)) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
@@ -6738,8 +6749,15 @@ fn emit_class_metadata_helpers(
     );
     out.push_str("    int needed;\n");
     out.push_str("    int is_constructor = ptn_ascii_case_equal(method_name, \"__construct\");\n");
+    out.push_str("    int is_destructor = ptn_ascii_case_equal(method_name, \"__destruct\");\n");
     out.push_str("    if (is_constructor) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Cannot call %s %s::%s()\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (runtime != NULL && runtime->destructor_shutdown_phase && is_destructor) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from global scope during shutdown ignored\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (is_destructor && access_scope == NULL) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (is_destructor) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, access_scope);\n");
     out.push_str("    } else if (access_scope == NULL) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
     out.push_str("    } else {\n");
@@ -6754,6 +6772,15 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     out.push_str("    if (is_constructor) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Cannot call %s %s::%s()\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (runtime != NULL && runtime->destructor_shutdown_phase && is_destructor) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from global scope during shutdown ignored\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("        ptn_emit_warning(&runtime->diagnostics, message, 0);\n");
+    out.push_str("        free(message);\n");
+    out.push_str("        return;\n");
+    out.push_str("    } else if (is_destructor && access_scope == NULL) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (is_destructor) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, access_scope);\n");
     out.push_str("    } else if (access_scope == NULL) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
     out.push_str("    } else {\n");
@@ -7644,10 +7671,12 @@ fn emit_class_metadata_helpers(
     out.push_str("    const char *visibility_name = ptn_method_visibility_name(visibility);\n");
     out.push_str("    const char *scope = runtime->current_class_name;\n");
     out.push_str("    int is_constructor = ptn_ascii_case_equal(method_name, \"__construct\");\n");
+    out.push_str("    int is_destructor = ptn_ascii_case_equal(method_name, \"__destruct\");\n");
+    out.push_str("    int methodless_visibility = is_constructor || is_destructor;\n");
     out.push_str("    int needed;\n");
-    out.push_str("    if (is_constructor && scope == NULL) {\n");
+    out.push_str("    if (methodless_visibility && scope == NULL) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
-    out.push_str("    } else if (is_constructor) {\n");
+    out.push_str("    } else if (methodless_visibility) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
     out.push_str("    } else if (scope == NULL) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
@@ -7661,9 +7690,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (is_constructor && scope == NULL) {\n");
+    out.push_str("    if (methodless_visibility && scope == NULL) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
-    out.push_str("    } else if (is_constructor) {\n");
+    out.push_str("    } else if (methodless_visibility) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
     out.push_str("    } else if (scope == NULL) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
@@ -7896,7 +7925,7 @@ fn emit_class_metadata_helpers(
         out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
         out.push_str("                ptn_abort_out_of_memory();\n");
         out.push_str("            }\n");
-        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone(args[ptn_magic_arg_i]));\n");
+        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
         out.push_str("        }\n");
         let function = &functions[method.function_index];
         emit_dynamic_method_deprecated_warning(
@@ -15509,7 +15538,7 @@ fn class_magic_call_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<&'a crate::ir::MethodDecl> {
-    class_public_method_lookup_chain(class, classes)
+    class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__call"))
         .map(|method| method.method)
@@ -16538,8 +16567,13 @@ fn emit_method_dispatch(
             out.push_str(method_visibility_name(method.visibility));
             out.push_str("\";\n");
             out.push_str("                ptn_inaccessible_class = \"");
-            out.push_str(&c_string(entry.declaring_class));
-            out.push_str("\";\n");
+            if method.name.eq_ignore_ascii_case("__destruct") {
+                out.push_str("\";\n");
+                out.push_str("                ptn_inaccessible_class = class_name;\n");
+            } else {
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\";\n");
+            }
             out.push_str("                ptn_inaccessible_method = \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\";\n");
@@ -16556,7 +16590,7 @@ fn emit_method_dispatch(
             out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
             out.push_str("                ptn_abort_out_of_memory();\n");
             out.push_str("            }\n");
-            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone(args[ptn_magic_arg_i]));\n");
+            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
             out.push_str("        }\n");
             let function = &functions[method.function_index];
             emit_dynamic_method_deprecated_warning(

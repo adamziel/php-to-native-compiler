@@ -1271,6 +1271,8 @@ struct PtnRuntime {
     const char *current_called_class_name;
     const char *called_class_name_override;
     const char *forward_static_called_class_name;
+    const char *destructor_access_scope;
+    int destructor_shutdown_phase;
     PtnGenerator *current_generator;
     PtnObject *current_fiber;
     int has_current_receiver;
@@ -1408,6 +1410,8 @@ static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
+static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value);
+static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);

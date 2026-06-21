@@ -12595,28 +12595,7 @@ fn import_trait_method_into_class(
     own_method_names: &HashSet<String>,
     imported_method_names: &mut HashSet<String>,
 ) -> Result<()> {
-    let original_excluded =
-        trait_method_excluded_by_precedence(&trait_use.adaptations, &trait_decl.name, &method.name);
     let method_key = method.name.to_ascii_lowercase();
-    if !original_excluded
-        && !own_method_names.contains(&method_key)
-        && !(class.is_enum && method_key == "cases")
-    {
-        let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
-        if let Err(existing) =
-            insert_imported_trait_method(class, imported_method_names, &method_key, imported)
-        {
-            return Err(trait_method_collision_diagnostic(
-                class,
-                trait_decl,
-                method,
-                &method.name,
-                &existing,
-                class.span,
-            ));
-        }
-    }
-
     for alias in matching_trait_aliases(&trait_use.adaptations, &trait_decl.name, &method.name) {
         let Some(alias_name) = alias.alias.as_ref() else {
             continue;
@@ -12635,6 +12614,27 @@ fn import_trait_method_into_class(
         {
             return Err(trait_method_collision_diagnostic(
                 class, trait_decl, method, alias_name, &existing, alias.span,
+            ));
+        }
+    }
+
+    let original_excluded =
+        trait_method_excluded_by_precedence(&trait_use.adaptations, &trait_decl.name, &method.name);
+    if !original_excluded
+        && !own_method_names.contains(&method_key)
+        && !(class.is_enum && method_key == "cases")
+    {
+        let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
+        if let Err(existing) =
+            insert_imported_trait_method(class, imported_method_names, &method_key, imported)
+        {
+            return Err(trait_method_collision_diagnostic(
+                class,
+                trait_decl,
+                method,
+                &method.name,
+                &existing,
+                class.span,
             ));
         }
     }
@@ -14067,11 +14067,13 @@ fn method_signature_compatibility_error(
 ) -> Diagnostic {
     Diagnostic::new(
         format!(
-            "Declaration of {}::{} must be compatible with {}::{}",
-            class.name,
-            method_signature_display(method),
-            parent_class.name,
-            method_signature_display(parent_method)
+            "Declaration of {} must be compatible with {}",
+            class_method_signature_display(&class.name, method, method_signature_display),
+            class_method_signature_display(
+                &parent_class.name,
+                parent_method,
+                method_signature_display
+            )
         ),
         Some(method.span),
     )
@@ -14123,6 +14125,23 @@ fn method_signature_display(method: &MethodDecl) -> String {
 
 fn method_signature_display_canonical(method: &MethodDecl) -> String {
     method_signature_display_with(method, type_hint_display_canonical)
+}
+
+fn class_method_signature_display(
+    class_name: &str,
+    method: &MethodDecl,
+    display_method: fn(&MethodDecl) -> String,
+) -> String {
+    let method_display = display_method(method);
+    if method.return_by_ref {
+        format!(
+            "&{}::{}",
+            class_name,
+            method_display.trim_start_matches('&')
+        )
+    } else {
+        format!("{}::{}", class_name, method_display)
+    }
 }
 
 fn method_signature_display_with(

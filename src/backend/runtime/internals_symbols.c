@@ -45,7 +45,7 @@ static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnRefere
     }
     PtnValue result = ptn_value_clone(stored_value);
     ptn_array_note_value_replacement(reference->value, stored_value);
-    ptn_value_destroy(&reference->value);
+    ptn_value_destroy_with_runtime_scope(runtime, &reference->value);
     reference->value = stored_value;
     *result_out = result;
     return 1;
@@ -68,7 +68,7 @@ static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, Pt
     PtnValue old_value = reference->value;
     ptn_array_note_value_replacement(old_value, stored_value);
     reference->value = stored_value;
-    ptn_value_destroy(&old_value);
+    ptn_value_destroy_with_runtime_scope(runtime, &old_value);
     return 1;
 }
 
@@ -327,6 +327,18 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     ptn_value_drop(value);
 }
 
+static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value) {
+    PtnRuntime *root = runtime == NULL ? NULL : ptn_runtime_root(runtime);
+    if (root == NULL) {
+        ptn_value_destroy(value);
+        return;
+    }
+    const char *previous_scope = root->destructor_access_scope;
+    root->destructor_access_scope = runtime->current_class_name;
+    ptn_value_destroy(value);
+    root->destructor_access_scope = previous_scope;
+}
+
 static PTN_UNUSED void ptn_value_detach_for_write(PtnValue *value) {
     if (value == NULL || value->type != PTN_STRING) {
         return;
@@ -381,6 +393,20 @@ static void ptn_symbols_free(PtnSymbolTable *symbols) {
     for (size_t i = 0; i < symbols->len; i++) {
         free(symbols->items[i].name);
         ptn_value_destroy(&symbols->items[i].value);
+    }
+    free(symbols->index_slots);
+    free(symbols->items);
+    symbols->items = NULL;
+    symbols->len = 0;
+    symbols->capacity = 0;
+    symbols->index_slots = NULL;
+    symbols->index_capacity = 0;
+}
+
+static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime) {
+    for (size_t i = 0; i < symbols->len; i++) {
+        free(symbols->items[i].name);
+        ptn_value_destroy_with_runtime_scope(runtime, &symbols->items[i].value);
     }
     free(symbols->index_slots);
     free(symbols->items);

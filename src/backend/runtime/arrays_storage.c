@@ -734,7 +734,7 @@ static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObj
     }
 }
 
-static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
+static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
     if (object == NULL || !object->destructor_enabled || object->destructor_called) {
         return;
     }
@@ -764,8 +764,18 @@ static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
     }
 
     object->destructor_called = 1;
+    const char *previous_scope = root->current_class_name;
+    int previous_shutdown_phase = root->destructor_shutdown_phase;
+    root->current_class_name = root->destructor_access_scope;
+    root->destructor_shutdown_phase = during_shutdown;
     PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
+    root->destructor_shutdown_phase = previous_shutdown_phase;
+    root->current_class_name = previous_scope;
     ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
+    ptn_object_run_destructor_ex(object, 0);
 }
 
 static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(
@@ -998,7 +1008,7 @@ static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int
             continue;
         }
         ptn_object_retain(object);
-        ptn_object_run_destructor(object);
+        ptn_object_run_destructor_ex(object, 1);
         ptn_object_release(object);
     }
 }
@@ -1022,7 +1032,7 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
             continue;
         }
         ptn_object_retain(object);
-        ptn_object_run_destructor(object);
+        ptn_object_run_destructor_ex(object, 1);
         ptn_object_release(object);
         if (root->output_buffers_len > initial_output_buffers_len) {
             return;
@@ -1044,7 +1054,7 @@ static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(PtnValu
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT && value.as.object != NULL) {
         ptn_object_retain(value.as.object);
-        ptn_object_run_destructor(value.as.object);
+        ptn_object_run_destructor_ex(value.as.object, 1);
         ptn_object_release(value.as.object);
         return;
     }

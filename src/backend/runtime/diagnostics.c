@@ -78,6 +78,38 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     ptn_symbol_index_insert(symbols, name, symbol_index);
 }
 
+static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
+    PtnSymbolTable *symbols,
+    const char *name,
+    PtnValue value,
+    PtnRuntime *runtime
+) {
+    PtnValue stored_value = ptn_value_clone(value);
+    ptn_symbols_ensure_index(symbols, symbols->len + 1);
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index < symbols->len) {
+        PtnValue old_value = symbols->items[index].value;
+        ptn_array_note_value_replacement(old_value, stored_value);
+        symbols->items[index].value = stored_value;
+        ptn_value_destroy_with_runtime_scope(runtime, &old_value);
+        return;
+    }
+    if (symbols->len == symbols->capacity) {
+        size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
+        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        symbols->items = new_items;
+        symbols->capacity = new_capacity;
+    }
+    size_t symbol_index = symbols->len;
+    symbols->items[symbol_index].name = ptn_duplicate_string(name);
+    symbols->items[symbol_index].value = stored_value;
+    symbols->len++;
+    ptn_symbol_index_insert(symbols, name, symbol_index);
+}
+
 static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *out) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
@@ -337,6 +369,27 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
     ptn_symbols_rebuild_index(symbols, symbols->len);
     free(removed_name);
     ptn_value_destroy(&removed_value);
+}
+
+static PTN_UNUSED void ptn_symbols_unset_with_runtime_scope(
+    PtnSymbolTable *symbols,
+    const char *name,
+    PtnRuntime *runtime
+) {
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index >= symbols->len) {
+        return;
+    }
+
+    char *removed_name = symbols->items[index].name;
+    PtnValue removed_value = symbols->items[index].value;
+    for (size_t i = index + 1; i < symbols->len; i++) {
+        symbols->items[i - 1] = symbols->items[i];
+    }
+    symbols->len--;
+    ptn_symbols_rebuild_index(symbols, symbols->len);
+    free(removed_name);
+    ptn_value_destroy_with_runtime_scope(runtime, &removed_value);
 }
 
 static const char *ptn_closure_bind_argument_type_name(PtnValue value) {
@@ -1909,6 +1962,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_called_class_name = NULL;
     runtime->called_class_name_override = NULL;
     runtime->forward_static_called_class_name = NULL;
+    runtime->destructor_access_scope = NULL;
+    runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
     runtime->current_fiber = NULL;
     runtime->has_current_receiver = 0;

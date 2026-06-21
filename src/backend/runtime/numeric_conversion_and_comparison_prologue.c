@@ -141,6 +141,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->current_called_class_name = NULL;
     runtime->called_class_name_override = NULL;
     runtime->forward_static_called_class_name = NULL;
+    runtime->destructor_access_scope = NULL;
+    runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
     runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
@@ -444,17 +446,17 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
-    ptn_symbols_free(&runtime->owned_static_property_set_visibility);
-    ptn_symbols_free(&runtime->owned_static_property_read_visibility);
-    ptn_symbols_free(&runtime->owned_static_property_initialized);
-    ptn_symbols_free(&runtime->owned_static_properties);
-    ptn_symbols_free(&runtime->owned_class_constant_initializing);
-    ptn_symbols_free(&runtime->owned_class_constant_deprecations);
-    ptn_symbols_free(&runtime->owned_class_constants);
-    ptn_symbols_free(&runtime->owned_dynamic_classes);
-    ptn_symbols_free(&runtime->owned_class_aliases);
-    ptn_symbols_free(&runtime->owned_constants);
-    ptn_symbols_free(&runtime->symbols);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_set_visibility, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_read_visibility, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_initialized, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_properties, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constant_initializing, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constant_deprecations, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constants, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_classes, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_class_aliases, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
     for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
         free(runtime->magic_property_frames[i].property);
     }
@@ -685,7 +687,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime
         return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set(&runtime->symbols, name, result);
+    ptn_symbols_set_with_runtime_scope(&runtime->symbols, name, result, runtime);
     return result;
 }
 
@@ -704,7 +706,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_global_variable_result(PtnRuntime *
         return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set(globals, name, result);
+    ptn_symbols_set_with_runtime_scope(globals, name, result, runtime);
     return result;
 }
 
@@ -747,7 +749,7 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_global_variable_quiet(PtnRunt
 }
 
 static PTN_UNUSED void ptn_runtime_unset_global_variable(PtnRuntime *runtime, const char *name) {
-    ptn_symbols_unset(ptn_runtime_global_symbol_table(runtime), name);
+    ptn_symbols_unset_with_runtime_scope(ptn_runtime_global_symbol_table(runtime), name, runtime);
 }
 
 static PTN_UNUSED void ptn_abort_by_reference_argument_error(
@@ -1050,10 +1052,10 @@ static PTN_UNUSED int ptn_call_frame_has_parameter(PtnCallFrame *frame, const ch
 
 static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
     if (ptn_call_frame_has_parameter(runtime->call_frame, name)) {
-        ptn_symbols_set(&runtime->symbols, name, ptn_null());
+        ptn_symbols_set_with_runtime_scope(&runtime->symbols, name, ptn_null(), runtime);
         return;
     }
-    ptn_symbols_unset(&runtime->symbols, name);
+    ptn_symbols_unset_with_runtime_scope(&runtime->symbols, name, runtime);
 }
 
 static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t depth) {
@@ -5051,7 +5053,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         return ptn_value_clone_deref(value);
     }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set(static_properties, key, result);
+    ptn_symbols_set_with_runtime_scope(static_properties, key, result, runtime);
     ptn_symbols_set(
         ptn_runtime_static_property_initialized_table(runtime),
         key,
