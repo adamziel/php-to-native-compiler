@@ -3217,13 +3217,15 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
-    size_t property_len
+    size_t property_len,
+    PtnMagicPropertyOperation operation
 );
 static PTN_UNUSED size_t ptn_magic_property_push_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
-    size_t property_len
+    size_t property_len,
+    PtnMagicPropertyOperation operation
 );
 static PTN_UNUSED int ptn_magic_property_set_len(
     PtnRuntime *runtime,
@@ -3244,13 +3246,15 @@ static PTN_UNUSED int ptn_magic_property_unset_len(
 static PTN_UNUSED int ptn_magic_property_is_active(
     PtnRuntime *runtime,
     PtnValue receiver,
-    const char *property
+    const char *property,
+    PtnMagicPropertyOperation operation
 ) {
     return ptn_magic_property_is_active_len(
         runtime,
         receiver,
         property,
-        property == NULL ? 0 : strlen(property)
+        property == NULL ? 0 : strlen(property),
+        operation
     );
 }
 
@@ -3258,7 +3262,8 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
-    size_t property_len
+    size_t property_len,
+    PtnMagicPropertyOperation operation
 ) {
     if (runtime == NULL || property == NULL) {
         return 0;
@@ -3271,6 +3276,7 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
         PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
         if (
             frame->object_id == receiver.as.object->object_id &&
+            frame->operation == operation &&
             frame->property != NULL &&
             frame->property_len == property_len &&
             memcmp(frame->property, property, property_len) == 0
@@ -3284,13 +3290,15 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
 static PTN_UNUSED size_t ptn_magic_property_push(
     PtnRuntime *runtime,
     PtnValue receiver,
-    const char *property
+    const char *property,
+    PtnMagicPropertyOperation operation
 ) {
     return ptn_magic_property_push_len(
         runtime,
         receiver,
         property,
-        property == NULL ? 0 : strlen(property)
+        property == NULL ? 0 : strlen(property),
+        operation
     );
 }
 
@@ -3298,7 +3306,8 @@ static PTN_UNUSED size_t ptn_magic_property_push_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
-    size_t property_len
+    size_t property_len,
+    PtnMagicPropertyOperation operation
 ) {
     size_t mark = runtime->magic_property_frame_len;
     receiver = ptn_value_deref(receiver);
@@ -3330,6 +3339,7 @@ static PTN_UNUSED size_t ptn_magic_property_push_len(
     frame->object_id = receiver.as.object->object_id;
     frame->property = ptn_duplicate_string_len(property, property_len);
     frame->property_len = property_len;
+    frame->operation = operation;
     return mark;
 }
 
@@ -3353,7 +3363,7 @@ static PTN_UNUSED int ptn_magic_property_get(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_get == NULL ||
-        ptn_magic_property_is_active(runtime, receiver, property)) {
+        ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
         return 0;
     }
     return runtime->magic_property_get(runtime, receiver, property, line, value_out);
@@ -3376,7 +3386,7 @@ static PTN_UNUSED int ptn_magic_property_isset(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_isset == NULL ||
-        ptn_magic_property_is_active(runtime, receiver, property)) {
+        ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
     return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);
@@ -3409,7 +3419,13 @@ static PTN_UNUSED int ptn_magic_property_set_len(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_set == NULL ||
-        ptn_magic_property_is_active_len(runtime, receiver, property, property_len)) {
+        ptn_magic_property_is_active_len(
+            runtime,
+            receiver,
+            property,
+            property_len,
+            PTN_MAGIC_PROPERTY_SET
+        )) {
         return 0;
     }
     return runtime->magic_property_set(runtime, receiver, property, property_len, value, line);
@@ -3439,7 +3455,13 @@ static PTN_UNUSED int ptn_magic_property_unset_len(
 ) {
     if (runtime == NULL ||
         runtime->magic_property_unset == NULL ||
-        ptn_magic_property_is_active_len(runtime, receiver, property, property_len)) {
+        ptn_magic_property_is_active_len(
+            runtime,
+            receiver,
+            property,
+            property_len,
+            PTN_MAGIC_PROPERTY_UNSET
+        )) {
         return 0;
     }
     return runtime->magic_property_unset(runtime, receiver, property, property_len, line);
@@ -4849,6 +4871,30 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             );
         }
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        char *updated_storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            1,
+            line
+        );
+        if (updated_storage_key != NULL) {
+            PtnArrayKey updated_key = ptn_array_string_key(updated_storage_key);
+            PtnArrayEntry *updated_entry =
+                ptn_array_entry_for_key(receiver.as.object->properties, updated_key);
+            ptn_array_key_free(updated_key);
+            free(updated_storage_key);
+            if (updated_entry != NULL) {
+                return ptn_value_clone_deref(updated_entry->value);
+            }
+        }
         return ptn_null();
     }
     if (static_property_as_instance) {
@@ -5744,6 +5790,15 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
     PtnObjectPropertyMetadata *mutable_metadata = metadata == NULL
         ? NULL
         : ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    if (
+        metadata != NULL &&
+        metadata->is_unset &&
+        ptn_magic_property_set_len(runtime, receiver, property, property_len, value, line)
+    ) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        return ptn_value_clone_deref(value);
+    }
     if (
         indirect_write &&
         metadata != NULL &&
@@ -13118,6 +13173,31 @@ static PTN_UNUSED void ptn_object_array_path_unset(
     ptn_array_key_free(read_key);
     free(read_storage_key);
     if (entry == NULL) {
+        PtnValue current = ptn_object_read_property_for_indirect_write(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        );
+        if (runtime != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            return;
+        }
+        PtnValue resolved = ptn_value_deref(current);
+        if (current.type == PTN_REFERENCE || resolved.type == PTN_OBJECT) {
+            ptn_value_array_path_unset(runtime, &current, segments, segment_count, line);
+        } else if (resolved.type != PTN_NULL) {
+            ptn_emit_indirect_modification_overloaded_property_notice(
+                runtime,
+                receiver,
+                property,
+                line
+            );
+        }
+        ptn_value_destroy(&current);
         return;
     }
     char *write_storage_key = ptn_object_resolve_property_storage_key(
@@ -13374,6 +13454,7 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
     if (slot == NULL) {
+        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
         return;
     }
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;

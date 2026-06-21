@@ -163,6 +163,139 @@ fn compile_dynamic_variable_unset_to_native_binary() {
 }
 
 #[test]
+fn compile_dynamic_this_write_context_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-this-write-context-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-this-write-context-errors.php");
+    let output = root.join("dynamic-this-write-context-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($callback) {
+    try {
+        $callback();
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+report(function () {
+    $name = \"this\";
+    $$name = 0;
+});
+report(function () {
+    $name = \"this\";
+    $$name ??= 1;
+});
+report(function () {
+    $name = \"this\";
+    $$name =& $name;
+});
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot re-assign $this\nCannot re-assign $this\nCannot re-assign $this\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot re-assign $this"));
+    assert!(c_source.contains("ptn_ascii_case_equal"));
+}
+
+#[test]
+fn compile_unset_magic_property_runtime_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-unset-magic-property-runtime-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unset-magic-property-runtime-edges.php");
+    let output = root.join("unset-magic-property-runtime-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+class OffsetBox implements ArrayAccess {
+    private $owner;
+    public function __construct($owner) {
+        $this->owner = $owner;
+        $this->owner->whatever = $this;
+    }
+    public function offsetExists($offset): bool { return true; }
+    public function offsetGet($offset): mixed { return 'value'; }
+    public function offsetSet($offset, $value): void {}
+    public function offsetUnset($offset): void { echo \"offsetUnset $offset\\n\"; }
+}
+class MagicBox {
+    public function __get($name) {
+        echo \"get $name\\n\";
+        return new OffsetBox($this);
+    }
+    public function __set($name, $value) {
+        echo \"set $name\\n\";
+    }
+}
+$box = new MagicBox();
+unset($box->whatever[0]);
+
+class DeclaredMagic {
+    public $x = 'old';
+    public function __set($name, $value) {
+        echo \"magic set $name=$value\\n\";
+        $this->$name = $value;
+    }
+    public function unsetX() { unset($this->x); }
+    public function writeX() { $this->x = 'new'; }
+}
+$declared = new DeclaredMagic();
+$declared->unsetX();
+$declared->writeX();
+echo $declared->x, \"\\n\";
+
+class ErrorHandlerTarget {
+    public $a;
+    public function errorHandler() { $this->a = new stdClass(); }
+}
+$target = new ErrorHandlerTarget();
+set_error_handler([$target, 'errorHandler']);
+unset($target->a);
+try {
+    ++$target->a;
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+echo get_class($target->a), \"\\n\";
+restore_error_handler();
+
+class Point { public $label = 'set'; }
+$point = new Point();
+var_dump(empty($point->$missing));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "get whatever\nset whatever\noffsetUnset 0\nmagic set x=new\nnew\nCannot increment stdClass\nstdClass\n"
+    ));
+    assert!(stdout.contains("Undefined variable $missing"));
+    assert!(stdout.contains("bool(true)\n"));
+    assert!(!stdout.contains("Undefined property"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_MAGIC_PROPERTY_SET"));
+    assert!(c_source.contains("ptn_object_property_probe_quiet"));
+}
+
+#[test]
 fn direct_var_dump_internal_first_class_callable_metadata() {
     let root = temp_dir("ptn-native-direct-var-dump-internal-callable");
     fs::create_dir_all(&root).unwrap();
@@ -4632,6 +4765,24 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
     assert_eq!(unset_append.message, "Cannot use [] for unsetting");
     assert_eq!(unset_append.kind, DiagnosticKind::Fatal);
+
+    let unset_this = parser::parse("<?php unset($this);").unwrap_err();
+    assert_eq!(unset_this.message, "Cannot unset $this");
+    assert_eq!(unset_this.kind, DiagnosticKind::Fatal);
+
+    let unset_function = parser::parse("<?php unset($var());").unwrap_err();
+    assert_eq!(
+        unset_function.message,
+        "Can't use function return value in write context"
+    );
+    assert_eq!(unset_function.kind, DiagnosticKind::Fatal);
+
+    let unset_new = parser::parse("<?php unset(new ArrayObject());").unwrap_err();
+    assert_eq!(
+        unset_new.message,
+        "syntax error, unexpected token \")\", expecting \"->\" or \"?->\" or \"[\""
+    );
+    assert_eq!(unset_new.kind, DiagnosticKind::ParseError);
 }
 
 #[test]

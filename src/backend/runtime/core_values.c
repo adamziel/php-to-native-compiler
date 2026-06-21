@@ -918,7 +918,15 @@ typedef struct {
     size_t object_id;
     char *property;
     size_t property_len;
+    int operation;
 } PtnMagicPropertyFrame;
+
+typedef enum {
+    PTN_MAGIC_PROPERTY_ISSET = 1,
+    PTN_MAGIC_PROPERTY_GET = 2,
+    PTN_MAGIC_PROPERTY_SET = 3,
+    PTN_MAGIC_PROPERTY_UNSET = 4
+} PtnMagicPropertyOperation;
 
 typedef enum {
     PTN_STREAM_BACKEND_FILE,

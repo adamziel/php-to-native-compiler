@@ -15726,11 +15726,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_ISSET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_ISSET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -15777,11 +15777,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -15892,11 +15892,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -15939,11 +15939,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_SET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_SET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -15988,11 +15988,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_UNSET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_UNSET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -18702,6 +18702,7 @@ fn emit_instruction(
         }
         Instruction::UnsetDynamicVariable { name, line } => {
             let name_temp = values.emit_dynamic_variable_name(out, name, *line);
+            values.emit_dynamic_this_unset_guard(out, &name_temp, *line);
             out.push_str("    ptn_runtime_unset_variable(&runtime, ");
             out.push_str(&name_temp);
             out.push_str(");\n");
@@ -28531,6 +28532,32 @@ impl ValueEmitter {
         name_temp
     }
 
+    fn emit_dynamic_this_reassignment_guard(&self, out: &mut String, name_temp: &str, line: usize) {
+        out.push_str("    if (ptn_ascii_case_equal(");
+        out.push_str(name_temp);
+        out.push_str(", \"this\")) {\n");
+        out.push_str(
+            "        ptn_throw_exception_at(&runtime, \"Error\", \"Cannot re-assign $this\", \"",
+        );
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+
+    fn emit_dynamic_this_unset_guard(&self, out: &mut String, name_temp: &str, line: usize) {
+        out.push_str("    if (ptn_ascii_case_equal(");
+        out.push_str(name_temp);
+        out.push_str(", \"this\")) {\n");
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"Cannot unset $this\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+
     fn emit_dynamic_variable_name_for_direct_quiet_probe(
         &mut self,
         out: &mut String,
@@ -29208,6 +29235,7 @@ impl ValueEmitter {
 
         if let AssignmentTarget::DynamicVariable { name, line } = target {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+            self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
             let value_temp = self.emit_materialized_value(out, value);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
@@ -31046,6 +31074,7 @@ impl ValueEmitter {
             }
             AssignmentTarget::DynamicVariable { name, line } => {
                 let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -31591,6 +31620,7 @@ impl ValueEmitter {
             }
             ReferenceTarget::DynamicVariable { name, line } => {
                 let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 out.push_str("    ptn_runtime_bind_variable_reference(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
@@ -32823,6 +32853,7 @@ impl ValueEmitter {
                 line: target_line,
             } => {
                 let name_temp = self.emit_dynamic_variable_name(out, name, *target_line);
+                self.emit_dynamic_this_reassignment_guard(out, &name_temp, *target_line);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -36028,6 +36059,7 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        self.emit_dynamic_this_reassignment_guard(out, &name_temp, line);
         let lookup_temp = self.next_temp();
         out.push_str("    PtnLookupResult ");
         out.push_str(&lookup_temp);
@@ -37041,6 +37073,56 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
                 result_temp
             }
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                nullsafe,
+                line,
+            } => {
+                let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("        if (");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".exists");
+                if *nullsafe {
+                    out.push_str(" && ptn_value_deref(");
+                    out.push_str(&receiver_lookup_temp);
+                    out.push_str(".value).type != PTN_NULL");
+                }
+                out.push_str(") {\n");
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let lookup_temp = self.next_temp();
+                out.push_str("            PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".value, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("            if (");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("                ");
+                out.push_str(&result_temp);
+                out.push_str(" = !ptn_is_truthy(");
+                out.push_str(&lookup_temp);
+                out.push_str(".value);\n");
+                out.push_str("            }\n");
+                emit_value_cleanup(out, "            ", &format!("{lookup_temp}.value"));
+                out.push_str("            free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                out.push_str("        }\n");
+                emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
+                result_temp
+            }
             ValueExpr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -38050,6 +38132,7 @@ impl ValueEmitter {
             }
             ReferenceTarget::DynamicVariable { name, line } => {
                 let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);

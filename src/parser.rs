@@ -5915,6 +5915,9 @@ impl Parser<'_> {
             return Err(nullsafe_write_context_diagnostic(target.span()));
         }
         match target {
+            Expr::Variable(name, span) if name.eq_ignore_ascii_case("this") => {
+                Err(Diagnostic::new("Cannot unset $this", Some(span)))
+            }
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
             Expr::DynamicVariable { name, span } => Ok(UnsetTarget::DynamicVariable { name, span }),
             Expr::ArrayAccess { .. } => unset_array_dim_target_from_expr(target),
@@ -5946,6 +5949,43 @@ impl Parser<'_> {
                 name,
                 span,
             }),
+            Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(Diagnostic::new(
+                "Can't use function return value in write context",
+                Some(span),
+            )),
+            Expr::MethodCall { span, .. }
+            | Expr::DynamicMethodCall { span, .. }
+            | Expr::ParentPropertyHookCall { span, .. } => Err(Diagnostic::new(
+                "Can't use method return value in write context",
+                Some(span),
+            )),
+            Expr::NewObject { span, .. } => Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \")\", expecting \"->\" or \"?->\" or \"[\"",
+                Some(span),
+            )),
+            Expr::Grouped { expr, .. } => {
+                let grouped_span = expr.span();
+                match *expr {
+                    Expr::Call { .. } | Expr::DynamicCall { .. } => Err(Diagnostic::new(
+                        "Can't use function return value in write context",
+                        Some(grouped_span),
+                    )),
+                    Expr::MethodCall { .. }
+                    | Expr::DynamicMethodCall { .. }
+                    | Expr::ParentPropertyHookCall { .. } => Err(Diagnostic::new(
+                        "Can't use method return value in write context",
+                        Some(grouped_span),
+                    )),
+                    Expr::NewObject { .. } => Err(Diagnostic::parse_error(
+                        "syntax error, unexpected token \")\", expecting \"->\" or \"?->\" or \"[\"",
+                        Some(grouped_span),
+                    )),
+                    inner => Err(Diagnostic::new(
+                        "unsupported unset target",
+                        Some(inner.span()),
+                    )),
+                }
+            }
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
                 Some(target.span()),

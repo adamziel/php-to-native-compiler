@@ -133,6 +133,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
                 caller_runtime->magic_property_frames[i].object_id;
             runtime->magic_property_frames[i].property_len =
                 caller_runtime->magic_property_frames[i].property_len;
+            runtime->magic_property_frames[i].operation =
+                caller_runtime->magic_property_frames[i].operation;
             runtime->magic_property_frames[i].property =
                 ptn_duplicate_string_len(
                     caller_runtime->magic_property_frames[i].property,
