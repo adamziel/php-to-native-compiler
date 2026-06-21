@@ -91,7 +91,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(
         return ptn_bitwise_string_not(string);
     }
     if (value.type == PTN_ARRAY) {
-        ptn_abort_type_error_at("Cannot perform bitwise not on array", path, line);
+        ptn_throw_exception_at(runtime, "TypeError", "Cannot perform bitwise not on array", path, line);
+        return ptn_null();
     }
     return ptn_int(~ptn_bitwise_integer_operand_checked(runtime, value, line));
 }

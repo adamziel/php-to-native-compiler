@@ -1278,7 +1278,7 @@ static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnVal
 }
 
 static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
-    if (value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+    if (!isfinite(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
         return 1;
     }
     int64_t integer = (int64_t)value;
@@ -1447,7 +1447,7 @@ static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *dia
 
 static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
     if (number.type == PTN_NUMBER_FLOAT) {
-        return (int64_t)number.floating;
+        return ptn_float_to_php_integer(number.floating);
     }
     return number.integer;
 }
@@ -1491,7 +1491,7 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
                 line
             );
         }
-        return (int64_t)value.as.floating;
+        return ptn_float_to_php_integer(value.as.floating);
     }
 
     PtnNumber number = ptn_to_number(value);
@@ -2147,12 +2147,12 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand_checked(
     if (value.type == PTN_FLOAT) {
         if (ptn_float_to_int_out_of_range(value.as.floating)) {
             ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, value.as.floating, line);
-            return INT64_MIN;
+            return ptn_float_to_php_integer(value.as.floating);
         }
         if (ptn_float_to_int_loses_precision(value.as.floating)) {
             ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
         }
-        return (int64_t)value.as.floating;
+        return ptn_float_to_php_integer(value.as.floating);
     }
     return ptn_value_to_integer_with_precision_deprecation(&runtime->diagnostics, value);
 }

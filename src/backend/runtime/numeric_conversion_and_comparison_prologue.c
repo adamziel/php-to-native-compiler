@@ -6183,12 +6183,12 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
         return ptn_int(integer);
     }
     if (value.type == PTN_FLOAT) {
-        return ptn_int((int64_t)value.as.floating);
+        return ptn_int(ptn_float_to_php_integer(value.as.floating));
     }
 
     PtnNumber number = ptn_to_number(value);
     if (number.type == PTN_NUMBER_FLOAT) {
-        return ptn_int((int64_t)number.floating);
+        return ptn_int(ptn_float_to_php_integer(number.floating));
     }
     return ptn_int(number.integer);
 }
