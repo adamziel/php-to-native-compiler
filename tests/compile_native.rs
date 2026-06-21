@@ -21596,6 +21596,52 @@ de\n\
 }
 
 #[test]
+fn compile_internal_variadic_named_arguments_throw_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-variadic-named-arguments-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-variadic-named-arguments-throw.php");
+    let output = root.join("internal-variadic-named-arguments-throw-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    array_merge([1, 2], a: [3, 4]);\n\
+} catch (ArgumentCountError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    array_diff_key([1, 2], [3, 4], a: [5, 6]);\n\
+} catch (ArgumentCountError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    $array = [1, 2];\n\
+    array_push($array, ...['values' => 3]);\n\
+} catch (ArgumentCountError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Internal function array_merge() does not accept named variadic arguments\n",
+            "Internal function array_diff_key() does not accept named variadic arguments\n",
+            "Internal function array_push() does not accept named variadic arguments\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_internal_named_variadic_argument_error"));
+}
+
+#[test]
 fn compile_sparse_named_reference_arguments_to_native_binary() {
     let root = temp_dir("ptn-native-sparse-named-reference-arguments");
     fs::create_dir_all(&root).unwrap();
@@ -21914,8 +21960,73 @@ fn compile_variadic_user_function_arguments_to_native_binary() {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source
-        .contains("ptn_runtime_set_call_frame(&runtime, argc, args, 1, ptn_parameter_names);"));
+        .contains("ptn_runtime_set_call_frame(&runtime, argc, args, ptn_call_arg_names, 1, ptn_parameter_names"));
     assert!(c_source.contains("ptn_array_set_entry(ptn_variadic_1.as.array"));
+}
+
+#[test]
+fn compile_named_variadic_user_function_func_introspection_to_native_binary() {
+    let root = temp_dir("ptn-native-named-variadic-user-function-func-introspection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("named-variadic-user-function-func-introspection.php");
+    let output = root.join("named-variadic-user-function-func-introspection-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function inspect($head, ...$tail) {\n\
+    var_dump($head, $tail, func_num_args(), func_get_args());\n\
+    try {\n\
+        var_dump(func_get_arg(1));\n\
+    } catch (ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+inspect(extra: \"E\", head: \"H\", more: \"M\");\n\
+inspect(\"H\", \"P\", named: \"N\");",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"H\"\n",
+            "array(2) {\n",
+            "  [\"extra\"]=>\n",
+            "  string(1) \"E\"\n",
+            "  [\"more\"]=>\n",
+            "  string(1) \"M\"\n",
+            "}\n",
+            "int(1)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"H\"\n",
+            "}\n",
+            "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function\n",
+            "string(1) \"H\"\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"P\"\n",
+            "  [\"named\"]=>\n",
+            "  string(1) \"N\"\n",
+            "}\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"H\"\n",
+            "  [1]=>\n",
+            "  string(1) \"P\"\n",
+            "}\n",
+            "string(1) \"P\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_function_named(&runtime, \"inspect\""));
 }
 
 #[test]

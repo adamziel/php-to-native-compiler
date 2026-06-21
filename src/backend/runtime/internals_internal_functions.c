@@ -4451,6 +4451,39 @@ static void ptn_throw_named_call_error(
     ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static void ptn_throw_internal_named_variadic_argument_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Internal function %s() does not accept named variadic arguments",
+        function_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Internal function %s() does not accept named variadic arguments",
+        function_name
+    );
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "ArgumentCountError",
+        message,
+        runtime->source_path,
+        line
+    );
+}
+
 static int ptn_normalize_named_call_arguments(
     PtnRuntime *runtime,
     PtnFunctionMetadata metadata,
@@ -4464,14 +4497,22 @@ static int ptn_normalize_named_call_arguments(
     if (!metadata.found || !ptn_call_arg_names_have_named(argc, arg_names)) {
         return 0;
     }
-    if (metadata.is_internal && metadata.parameters == NULL) {
-        return 0;
-    }
-
     size_t fixed_parameter_count = metadata.parameter_count;
     int has_variadic = metadata.is_variadic && metadata.parameter_count > 0;
     if (has_variadic) {
         fixed_parameter_count--;
+    }
+
+    if (metadata.is_internal && metadata.parameters == NULL) {
+        if (has_variadic) {
+            ptn_throw_internal_named_variadic_argument_error(
+                runtime,
+                metadata.name != NULL ? metadata.name : "",
+                line
+            );
+            return 1;
+        }
+        return 0;
     }
 
     PtnValue *fixed_values = NULL;
@@ -4553,6 +4594,15 @@ static int ptn_normalize_named_call_arguments(
             }
             has_fixed_slot = 1;
             continue;
+        }
+
+        if (metadata.is_internal) {
+            ptn_throw_internal_named_variadic_argument_error(
+                runtime,
+                metadata.name != NULL ? metadata.name : "",
+                line
+            );
+            goto fail;
         }
 
         if (!has_variadic) {
@@ -67194,15 +67244,47 @@ static PtnValue ptn_call_frame_arg_value(PtnRuntime *runtime, PtnCallFrame *fram
     return ptn_null();
 }
 
+static int ptn_call_frame_arg_visible_to_func_api(PtnCallFrame *frame, size_t position) {
+    return frame->arg_names == NULL ||
+        position < frame->parameter_count ||
+        frame->arg_names[position] == NULL;
+}
+
+static size_t ptn_call_frame_func_arg_count(PtnCallFrame *frame) {
+    size_t count = 0;
+    for (size_t i = 0; i < frame->argc; i++) {
+        if (ptn_call_frame_arg_visible_to_func_api(frame, i)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static int ptn_call_frame_func_arg_position(PtnCallFrame *frame, size_t visible_position, size_t *position_out) {
+    size_t visible = 0;
+    for (size_t i = 0; i < frame->argc; i++) {
+        if (!ptn_call_frame_arg_visible_to_func_api(frame, i)) {
+            continue;
+        }
+        if (visible == visible_position) {
+            *position_out = i;
+            return 1;
+        }
+        visible++;
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
     (void)line;
     PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_num_args");
-    if (frame->argc > (size_t)INT64_MAX) {
+    size_t visible_arg_count = ptn_call_frame_func_arg_count(frame);
+    if (visible_arg_count > (size_t)INT64_MAX) {
         ptn_abort_out_of_memory();
     }
-    return ptn_int((int64_t)frame->argc);
+    return ptn_int((int64_t)visible_arg_count);
 }
 
 static PtnValue ptn_internal_func_get_arg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -67217,14 +67299,15 @@ static PtnValue ptn_internal_func_get_arg(PtnRuntime *runtime, size_t argc, cons
             "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0"
         );
     }
-    if ((uint64_t)position >= (uint64_t)frame->argc) {
+    size_t source_position = 0;
+    if (!ptn_call_frame_func_arg_position(frame, (size_t)position, &source_position)) {
         ptn_throw_exception(
             runtime,
             "ValueError",
             "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function"
         );
     }
-    return ptn_call_frame_arg_value(runtime, frame, (size_t)position);
+    return ptn_call_frame_arg_value(runtime, frame, source_position);
 }
 
 static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -67233,15 +67316,20 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
     (void)line;
     PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_args");
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t visible = 0;
     for (size_t i = 0; i < frame->argc; i++) {
-        if (i > (size_t)INT64_MAX) {
+        if (!ptn_call_frame_arg_visible_to_func_api(frame, i)) {
+            continue;
+        }
+        if (visible > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
         ptn_array_set_entry(
             result.as.array,
-            ptn_array_int_key((int64_t)i),
+            ptn_array_int_key((int64_t)visible),
             ptn_call_frame_arg_value(runtime, frame, i)
         );
+        visible++;
     }
     return result;
 }

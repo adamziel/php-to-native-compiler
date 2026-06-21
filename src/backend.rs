@@ -41498,6 +41498,39 @@ impl ValueEmitter {
         called_class_override: Option<&CalledClassOverride>,
         discarded: bool,
     ) -> String {
+        if direct_user
+            .parameters
+            .iter()
+            .any(|parameter| parameter.is_variadic)
+        {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                name,
+                arguments,
+                argument_names,
+                &vec![false; arguments.len()],
+                line,
+                false,
+                Some(&direct_user.parameters),
+            );
+            self.emit_runtime_named_user_call(
+                out,
+                result_temp,
+                name,
+                direct_user,
+                &format!("{args_temp}.len"),
+                &format!("{args_temp}.values"),
+                &format!("(const char *const *){args_temp}.names"),
+                line,
+                called_class_override,
+                discarded,
+            );
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            return result_temp.to_string();
+        }
+
         let argument_slots =
             match bind_named_call_arguments(&direct_user.parameters, argument_names) {
                 Ok(argument_slots) => argument_slots,
@@ -41586,6 +41619,141 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &temp);
         }
         result_temp.to_string()
+    }
+
+    fn emit_runtime_named_user_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        name: &str,
+        direct_user: &DirectUserCall,
+        argc_expr: &str,
+        args_expr: &str,
+        arg_names_expr: &str,
+        line: usize,
+        called_class_override: Option<&CalledClassOverride>,
+        discarded: bool,
+    ) {
+        if direct_user.deprecated_message.is_some()
+            || direct_user.deprecated_since.is_some()
+            || direct_user.deprecated_message_runtime_reference.is_some()
+        {
+            self.emit_deprecated_call_warning(out, direct_user, line);
+        }
+        if discarded {
+            if let Some(message) = direct_user.no_discard_warning.as_deref() {
+                out.push_str("    ptn_emit_user_warning(&runtime.diagnostics, \"");
+                out.push_str(&c_string(message));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+        }
+
+        let previous_override_temp = called_class_override.map(|override_| {
+            let previous_override_temp = self.next_temp();
+            out.push_str("    const char *");
+            out.push_str(&previous_override_temp);
+            out.push_str(" = runtime.called_class_name_override;\n");
+            out.push_str("    runtime.called_class_name_override = ");
+            Self::emit_called_class_override_expr(out, override_);
+            out.push_str(";\n");
+            previous_override_temp
+        });
+        let previous_arg_names_temp = self.next_temp();
+        out.push_str("    const char *const *");
+        out.push_str(&previous_arg_names_temp);
+        out.push_str(" = runtime.next_call_arg_names;\n");
+        out.push_str("    runtime.next_call_arg_names = ");
+        out.push_str(arg_names_expr);
+        out.push_str(";\n");
+
+        if let Some(visibility_check) = direct_user.visibility_check.as_ref() {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(";\n");
+            out.push_str("    if (!ptn_declared_method_visible(");
+            out.push_str(c_property_visibility(visibility_check.visibility));
+            out.push_str(", \"");
+            out.push_str(&c_string(&visibility_check.declaring_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.target_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.method_name));
+            out.push_str("\", runtime.current_class_name)");
+            if visibility_check.visibility == PropertyVisibility::Protected {
+                out.push_str(" && !ptn_declared_protected_static_method_root_allows(runtime.current_class_name, \"");
+                out.push_str(&c_string(&visibility_check.target_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&visibility_check.method_name));
+                out.push_str("\")");
+            }
+            out.push_str(") {\n");
+            out.push_str("        runtime.next_call_arg_names = ");
+            out.push_str(&previous_arg_names_temp);
+            out.push_str(";\n");
+            if let Some(previous_override_temp) = &previous_override_temp {
+                out.push_str("        runtime.called_class_name_override = ");
+                out.push_str(previous_override_temp);
+                out.push_str(";\n");
+            }
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_throw_method_visibility_error(&runtime, \"");
+            out.push_str(&c_string(&visibility_check.declaring_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&visibility_check.method_name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(visibility_check.visibility));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    } else {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ");
+        } else {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ");
+        }
+
+        if direct_user.class_name.is_some() && direct_user.method_name.is_some() {
+            out.push_str(&direct_user.c_name);
+            out.push_str("(&runtime, ");
+            emit_static_call_receiver(out, direct_user.receiver_class_name.as_deref());
+            out.push_str(", ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        } else {
+            out.push_str("ptn_call_function_named(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(arg_names_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
+
+        out.push_str("    runtime.next_call_arg_names = ");
+        out.push_str(&previous_arg_names_temp);
+        out.push_str(";\n");
+        if direct_user.visibility_check.is_some() {
+            out.push_str("    }\n");
+        }
+        if let Some(previous_override_temp) = previous_override_temp {
+            out.push_str("    runtime.called_class_name_override = ");
+            out.push_str(&previous_override_temp);
+            out.push_str(";\n");
+        }
     }
 
     fn emit_fatal_value(&mut self, out: &mut String, result_temp: &str, message: &str) {
