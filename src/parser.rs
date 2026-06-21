@@ -390,6 +390,8 @@ struct ParsedPropertyHookBlock {
     set_override_span: Option<SourceSpan>,
     get_attributes: AttributeMetadata,
     set_attributes: AttributeMetadata,
+    get_doc_comment: Option<String>,
+    set_doc_comment: Option<String>,
     get_span: Option<SourceSpan>,
     set_span: Option<SourceSpan>,
     get_value: Option<Expr>,
@@ -398,6 +400,7 @@ struct ParsedPropertyHookBlock {
     set_body: Option<Vec<Statement>>,
     set_parameter_name: Option<String>,
     set_parameter_type: Option<TypeHint>,
+    set_parameter_doc_comment: Option<String>,
     set_parameter_span: Option<SourceSpan>,
     set_parameter_is_explicit: bool,
 }
@@ -405,6 +408,7 @@ struct ParsedPropertyHookBlock {
 struct ParsedPropertyHookSetParameter {
     name: String,
     type_hint: Option<TypeHint>,
+    doc_comment: Option<String>,
     span: SourceSpan,
     is_explicit: bool,
 }
@@ -3141,6 +3145,8 @@ impl Parser<'_> {
                     hook_set_override_span: hooks.set_override_span,
                     hook_get_attributes: hooks.get_attributes,
                     hook_set_attributes: hooks.set_attributes,
+                    hook_get_doc_comment: hooks.get_doc_comment,
+                    hook_set_doc_comment: hooks.set_doc_comment,
                     hook_get_span: hooks.get_span,
                     hook_set_span: hooks.set_span,
                     hook_get_value: hooks.get_value,
@@ -3149,6 +3155,7 @@ impl Parser<'_> {
                     hook_set_body: hooks.set_body,
                     hook_set_parameter_name: hooks.set_parameter_name,
                     hook_set_parameter_type: hooks.set_parameter_type,
+                    hook_set_parameter_doc_comment: hooks.set_parameter_doc_comment,
                     hook_set_parameter_span: hooks.set_parameter_span,
                     hook_set_parameter_is_explicit: hooks.set_parameter_is_explicit,
                     type_hint,
@@ -3192,6 +3199,8 @@ impl Parser<'_> {
                 hook_set_override_span: None,
                 hook_get_attributes: AttributeMetadata::default(),
                 hook_set_attributes: AttributeMetadata::default(),
+                hook_get_doc_comment: None,
+                hook_set_doc_comment: None,
                 hook_get_span: None,
                 hook_set_span: None,
                 hook_get_value: None,
@@ -3200,6 +3209,7 @@ impl Parser<'_> {
                 hook_set_body: None,
                 hook_set_parameter_name: None,
                 hook_set_parameter_type: None,
+                hook_set_parameter_doc_comment: None,
                 hook_set_parameter_span: None,
                 hook_set_parameter_is_explicit: false,
                 type_hint,
@@ -3305,6 +3315,7 @@ impl Parser<'_> {
         };
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             let hook_attributes = self.parse_attribute_groups()?;
+            let hook_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             let mut hook_is_final = false;
             let mut hook_is_abstract = false;
             let hook_visibility = property_visibility;
@@ -3375,6 +3386,7 @@ impl Parser<'_> {
                         hooks.get_override_span = Some(token.span);
                     }
                     hooks.get_attributes = hook_attributes;
+                    hooks.get_doc_comment = hook_doc_comment;
                     hooks.get_span = Some(token.span);
                     hooks.get_is_final = hook_is_final;
                     hooks.get_returns_by_ref = hook_returns_by_ref;
@@ -3497,6 +3509,7 @@ impl Parser<'_> {
                         hooks.set_override_span = Some(token.span);
                     }
                     hooks.set_attributes = hook_attributes;
+                    hooks.set_doc_comment = hook_doc_comment;
                     hooks.set_span = Some(token.span);
                     hooks.set_is_final = hook_is_final;
                     let set_parameter = if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -3505,6 +3518,7 @@ impl Parser<'_> {
                         ParsedPropertyHookSetParameter {
                             name: "value".to_string(),
                             type_hint: None,
+                            doc_comment: None,
                             span: token.span,
                             is_explicit: false,
                         }
@@ -3521,6 +3535,7 @@ impl Parser<'_> {
                     hooks.set_is_abstract = is_abstract_hook;
                     hooks.set_parameter_name = Some(set_parameter.name.clone());
                     hooks.set_parameter_type = set_parameter.type_hint.clone();
+                    hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                     hooks.set_parameter_span = Some(set_parameter.span);
                     hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                     if !is_abstract_hook {
@@ -3547,6 +3562,7 @@ impl Parser<'_> {
                             }
                             hooks.set_parameter_name = Some(set_parameter.name.clone());
                             hooks.set_parameter_type = set_parameter.type_hint.clone();
+                            hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                             hooks.set_parameter_span = Some(set_parameter.span);
                             hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                         } else if let Some((value, uses_backing_property)) =
@@ -3561,6 +3577,7 @@ impl Parser<'_> {
                                 }]);
                                 hooks.set_parameter_name = Some(set_parameter.name.clone());
                                 hooks.set_parameter_type = set_parameter.type_hint.clone();
+                                hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                                 hooks.set_parameter_span = Some(set_parameter.span);
                                 hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             } else {
@@ -3571,6 +3588,7 @@ impl Parser<'_> {
                                 }]);
                                 hooks.set_parameter_name = Some(set_parameter.name.clone());
                                 hooks.set_parameter_type = set_parameter.type_hint.clone();
+                                hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                                 hooks.set_parameter_span = Some(set_parameter.span);
                                 hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             }
@@ -3580,6 +3598,7 @@ impl Parser<'_> {
                             hooks.set_body = Some(body);
                             hooks.set_parameter_name = Some(set_parameter.name.clone());
                             hooks.set_parameter_type = set_parameter.type_hint.clone();
+                            hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                             hooks.set_parameter_span = Some(set_parameter.span);
                             hooks.set_parameter_is_explicit = set_parameter.is_explicit;
                             if uses_backing_property {
@@ -3758,6 +3777,7 @@ impl Parser<'_> {
             return Ok(ParsedPropertyHookSetParameter {
                 name: parameter.name.clone(),
                 type_hint: parameter.type_hint.clone(),
+                doc_comment: parameter.doc_comment.clone(),
                 span: parameter.span,
                 is_explicit: true,
             });
@@ -3765,6 +3785,7 @@ impl Parser<'_> {
         Ok(ParsedPropertyHookSetParameter {
             name: "value".to_string(),
             type_hint: None,
+            doc_comment: None,
             span: self.previous_span(),
             is_explicit: true,
         })
@@ -4331,7 +4352,7 @@ impl Parser<'_> {
         class_is_readonly: bool,
     ) -> Result<FunctionParameter> {
         let attributes = self.parse_attribute_groups()?;
-        let parameter_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
+        let mut parameter_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let promotion_modifiers = if class_name_for_promotions.is_some() {
             let modifiers = self.parse_class_modifiers()?;
             if modifiers.has_promoted_property_modifier() {
@@ -4413,6 +4434,9 @@ impl Parser<'_> {
         } else {
             None
         };
+        if let Some(trailing_doc_comment) = self.doc_comment_before(self.peek().span.byte_start) {
+            parameter_doc_comment = Some(trailing_doc_comment);
+        }
         let promoted_hook_block = if class_name_for_promotions.is_some()
             && matches!(self.peek().kind, TokenKind::LeftBrace)
         {
@@ -4488,6 +4512,8 @@ impl Parser<'_> {
                 hook_set_override_span,
                 hook_get_attributes,
                 hook_set_attributes,
+                hook_get_doc_comment,
+                hook_set_doc_comment,
                 hook_get_span,
                 hook_set_span,
                 hook_get_value,
@@ -4496,6 +4522,7 @@ impl Parser<'_> {
                 hook_set_body,
                 hook_set_parameter_name,
                 hook_set_parameter_type,
+                hook_set_parameter_doc_comment,
                 hook_set_parameter_span,
                 hook_set_parameter_is_explicit,
             ) = if let Some(hooks) = promoted_hook_block {
@@ -4513,6 +4540,8 @@ impl Parser<'_> {
                     hooks.set_override_span,
                     hooks.get_attributes,
                     hooks.set_attributes,
+                    hooks.get_doc_comment,
+                    hooks.set_doc_comment,
                     hooks.get_span,
                     hooks.set_span,
                     hooks.get_value,
@@ -4521,6 +4550,7 @@ impl Parser<'_> {
                     hooks.set_body,
                     hooks.set_parameter_name,
                     hooks.set_parameter_type,
+                    hooks.set_parameter_doc_comment,
                     hooks.set_parameter_span,
                     hooks.set_parameter_is_explicit,
                 )
@@ -4539,6 +4569,9 @@ impl Parser<'_> {
                     None,
                     AttributeMetadata::default(),
                     AttributeMetadata::default(),
+                    None,
+                    None,
+                    None,
                     None,
                     None,
                     None,
@@ -4569,6 +4602,8 @@ impl Parser<'_> {
                 hook_set_override_span,
                 hook_get_attributes,
                 hook_set_attributes,
+                hook_get_doc_comment,
+                hook_set_doc_comment,
                 hook_get_span,
                 hook_set_span,
                 hook_get_value,
@@ -4577,9 +4612,10 @@ impl Parser<'_> {
                 hook_set_body,
                 hook_set_parameter_name,
                 hook_set_parameter_type,
+                hook_set_parameter_doc_comment,
                 hook_set_parameter_span,
                 hook_set_parameter_is_explicit,
-                doc_comment: parameter_doc_comment,
+                doc_comment: parameter_doc_comment.clone(),
                 has_override_attribute: attributes.has_override,
                 span: modifiers.first_span().unwrap_or(token.span),
             })
@@ -4603,6 +4639,7 @@ impl Parser<'_> {
         Ok(FunctionParameter {
             name,
             attributes,
+            doc_comment: parameter_doc_comment,
             type_hint,
             by_ref,
             is_variadic,
@@ -12131,6 +12168,8 @@ fn promoted_properties_from_constructor(
                 hook_set_override_span: promoted.hook_set_override_span,
                 hook_get_attributes: promoted.hook_get_attributes.clone(),
                 hook_set_attributes: promoted.hook_set_attributes.clone(),
+                hook_get_doc_comment: promoted.hook_get_doc_comment.clone(),
+                hook_set_doc_comment: promoted.hook_set_doc_comment.clone(),
                 hook_get_span: promoted.hook_get_span,
                 hook_set_span: promoted.hook_set_span,
                 hook_get_value: promoted.hook_get_value.clone(),
@@ -12139,6 +12178,7 @@ fn promoted_properties_from_constructor(
                 hook_set_body: promoted.hook_set_body.clone(),
                 hook_set_parameter_name: promoted.hook_set_parameter_name.clone(),
                 hook_set_parameter_type: promoted.hook_set_parameter_type.clone(),
+                hook_set_parameter_doc_comment: promoted.hook_set_parameter_doc_comment.clone(),
                 hook_set_parameter_span: promoted.hook_set_parameter_span,
                 hook_set_parameter_is_explicit: promoted.hook_set_parameter_is_explicit,
                 type_hint: parameter

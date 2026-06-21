@@ -26788,6 +26788,71 @@ foreach ([\"plain\", \"gen\", \"old\"] as $name) {
 }
 
 #[test]
+fn compile_reflection_function_is_disabled_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-is-disabled");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-is-disabled.php");
+    let output = root.join("reflection-function-is-disabled-bin");
+    fs::write(
+        &input,
+        "<?php
+$reflection = new ReflectionFunction('strlen');
+var_dump(method_exists($reflection, 'isDisabled'));
+var_dump($reflection->isDisabled());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "\nDeprecated: Method ReflectionFunction::isDisabled() is deprecated since 8.0, as ReflectionFunction can no longer be constructed for disabled functions in ptn on line 4\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let disabled_input = root.join("reflection-function-disabled-hidden.php");
+    let disabled_output = root.join("reflection-function-disabled-hidden-bin");
+    fs::write(
+        &disabled_input,
+        "<?php
+var_dump(function_exists('is_file'));
+try {
+    $reflection = new ReflectionFunction('is_file');
+    var_dump($reflection->isDisabled());
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(
+        &disabled_input,
+        &disabled_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let disabled_execution = Command::new(&disabled_output)
+        .env("PTN_DISABLE_FUNCTIONS", "is_file")
+        .output()
+        .unwrap();
+    assert!(disabled_execution.status.success());
+    assert_eq!(
+        String::from_utf8(disabled_execution.stdout).unwrap(),
+        concat!("bool(false)\n", "Function is_file() does not exist\n",)
+    );
+    assert_eq!(String::from_utf8(disabled_execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_extension_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-extension-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -26898,6 +26963,58 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
     assert!(c_source.contains("ptn_reflection_extension_functions"));
     assert!(c_source.contains("ptn_reflection_extension_constants"));
     assert!(c_source.contains("ptn_reflection_class_extension"));
+}
+
+#[test]
+fn compile_reflection_constant_source_and_deprecated_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-constant-source-deprecated");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-constant-source-deprecated.php");
+    let output = root.join("reflection-constant-source-deprecated-bin");
+    fs::write(
+        &input,
+        "<?php
+const REFLECT_SOURCE_CONST = 1;
+#[Deprecated]
+const REFLECT_OLD_SOURCE_CONST = 2;
+
+$source = new ReflectionConstant('REFLECT_SOURCE_CONST');
+$old = new ReflectionConstant('REFLECT_OLD_SOURCE_CONST');
+$internal = new ReflectionConstant('PHP_VERSION');
+var_dump(
+    method_exists($source, 'getFileName'),
+    $source->getFileName() === __FILE__,
+    $source->isDeprecated(),
+    $old->getFileName() === __FILE__,
+    $old->isDeprecated(),
+    $internal->getFileName(),
+    $internal->isDeprecated()
+);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_constant_with_source"));
+    assert!(c_source.contains("ptn_declared_constant_is_deprecated"));
 }
 
 #[test]
@@ -27077,6 +27194,62 @@ foreach ($callables as $callable) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reflection_parameter_call_method"));
     assert!(c_source.contains("ptn_reflection_named_type_call_method"));
+}
+
+#[test]
+fn compile_reflection_parameter_doc_comment_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-doc-comment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-doc-comment.php");
+    let output = root.join("reflection-parameter-doc-comment-bin");
+    fs::write(
+        &input,
+        "<?php
+function reflected_param_docs(/** first */ $first, $plain, /** leading */ $trailing /** trailing */) {}
+$closure = function (/** closure */ $value) {};
+class HookDocProbe {
+    public string $prop {
+        /** getter */
+        get { return \"ok\"; }
+        /** setter */
+        set(string $value /** hook parameter */) {}
+    }
+}
+
+$params = (new ReflectionFunction('reflected_param_docs'))->getParameters();
+var_dump(method_exists($params[0], 'getDocComment'));
+echo $params[0]->getDocComment(), \"\\n\";
+var_dump($params[1]->getDocComment());
+echo $params[2]->getDocComment(), \"\\n\";
+echo (new ReflectionFunction($closure))->getParameters()[0]->getDocComment(), \"\\n\";
+$hook = (new ReflectionClass(HookDocProbe::class))->getProperty('prop')->getHook(PropertyHookType::Set);
+echo $hook->getDocComment(), \"\\n\";
+echo $hook->getParameters()[0]->getDocComment(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "/** first */\n",
+            "bool(false)\n",
+            "/** trailing */\n",
+            "/** closure */\n",
+            "/** setter */\n",
+            "/** hook parameter */\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_metadata_parameter_doc_comment"));
+    assert!(c_source.contains("/** first */"));
 }
 
 #[test]

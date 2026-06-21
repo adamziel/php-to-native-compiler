@@ -197,7 +197,7 @@ pub fn emit_c(module: &Module) -> String {
         runtime_requirements.internal_function_dispatch,
     );
     if runtime_requirements.internal_function_dispatch {
-        emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
+        emit_user_function_dispatch(&mut out, &module.functions, &module.classes, &module.traits);
     }
     emit_class_metadata_helpers(
         &mut out,
@@ -2656,10 +2656,139 @@ fn emit_function_metadata_parameters(
             .as_ref()
             .and_then(reflection_default_constant_name);
         out.push_str(&c_optional_string(default_constant_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&c_optional_string(parameter.doc_comment.as_deref()));
         out.push_str(" }");
     }
     out.push_str(" };\n");
     name.to_string()
+}
+
+fn emit_property_hook_set_parameter_metadata(
+    out: &mut String,
+    indent: &str,
+    name: &str,
+    property: &crate::ir::PropertyDecl,
+) -> String {
+    out.push_str(indent);
+    out.push_str("static const PtnParameterMetadata ");
+    out.push_str(name);
+    out.push_str("[] = { { \"");
+    out.push_str(&c_string(
+        property
+            .hook_set_parameter_name
+            .as_deref()
+            .unwrap_or("value"),
+    ));
+    out.push_str("\", ");
+    let parameter_type = property.hook_set_parameter_type.as_ref().or_else(|| {
+        property
+            .type_hint
+            .as_ref()
+            .and_then(|type_hint| type_hint.semantic_type.as_ref())
+    });
+    if let Some(type_metadata) = parameter_type.and_then(reflection_type_metadata) {
+        emit_reflection_type_metadata_fields(out, &type_metadata);
+    } else {
+        out.push_str("NULL, NULL, 0, 0");
+    }
+    out.push_str(", 0, 0, 1, NULL, NULL, ");
+    out.push_str(&c_optional_string(
+        property.hook_set_parameter_doc_comment.as_deref(),
+    ));
+    out.push_str(" } };\n");
+    name.to_string()
+}
+
+fn emit_property_hook_return_type_metadata(
+    out: &mut String,
+    property: &crate::ir::PropertyDecl,
+    hook_name: &str,
+) {
+    out.push_str(", ");
+    let void_type = TypeHint::Void;
+    let return_type = if hook_name == "set" {
+        Some(&void_type)
+    } else {
+        property
+            .type_hint
+            .as_ref()
+            .and_then(|type_hint| type_hint.semantic_type.as_ref())
+    };
+    if let Some(type_metadata) = return_type.and_then(reflection_type_metadata) {
+        emit_reflection_type_metadata_fields(out, &type_metadata);
+    } else {
+        out.push_str("NULL, NULL, 0, 0");
+    }
+}
+
+fn emit_property_hook_function_metadata_return(
+    out: &mut String,
+    indent: &str,
+    metadata_name: &str,
+    owner_name: &str,
+    owner_source_file: &str,
+    property: &crate::ir::PropertyDecl,
+    hook_name: &str,
+) {
+    let is_set = hook_name == "set";
+    let parameter_count = if is_set { 1 } else { 0 };
+    let parameters = if is_set {
+        emit_property_hook_set_parameter_metadata(
+            out,
+            indent,
+            &format!("{metadata_name}_parameters"),
+            property,
+        )
+    } else {
+        "NULL".to_string()
+    };
+    let method_name = property_hook_method_name(&property.name, hook_name);
+    let hook_line = if is_set {
+        property.hook_set_line
+    } else {
+        property.hook_get_line
+    };
+    let doc_comment = if is_set {
+        property.hook_set_doc_comment.as_deref()
+    } else {
+        property.hook_get_doc_comment.as_deref()
+    };
+    let is_deprecated = if is_set {
+        property.hook_set_attributes.deprecated_count > 0
+    } else {
+        property.hook_get_attributes.deprecated_count > 0
+    };
+
+    out.push_str(indent);
+    out.push_str("return ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"");
+    out.push_str(&c_string(owner_name));
+    out.push_str("::");
+    out.push_str(&c_string(&method_name));
+    out.push_str("\", 0, ");
+    out.push_str(&parameter_count.to_string());
+    out.push_str(", ");
+    out.push_str(&parameter_count.to_string());
+    out.push_str(", 0, ");
+    out.push_str(&parameters);
+    out.push_str(", ");
+    out.push_str(if !is_set && property.hook_get_returns_by_ref {
+        "1"
+    } else {
+        "0"
+    });
+    emit_property_hook_return_type_metadata(out, property, hook_name);
+    out.push_str("), 0, ");
+    out.push_str(if is_deprecated { "1" } else { "0" });
+    out.push_str("), \"");
+    out.push_str(&c_string(owner_source_file));
+    out.push_str("\", ");
+    out.push_str(&hook_line.to_string());
+    out.push_str(", ");
+    out.push_str(&hook_line.to_string());
+    out.push_str(", ");
+    out.push_str(&c_optional_string(doc_comment));
+    out.push_str(", NULL);\n");
 }
 
 fn emit_variadic_parameter_binding(
@@ -5206,6 +5335,7 @@ fn emit_user_function_dispatch(
     out: &mut String,
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
 ) {
     out.push_str(
         "\nstatic int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
@@ -5305,7 +5435,7 @@ fn emit_user_function_dispatch(
         out.push_str(";\n");
         out.push_str("    }\n");
     }
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             let function = &functions[method.function_index];
@@ -5345,6 +5475,84 @@ fn emit_user_function_dispatch(
             emit_function_metadata_source_suffix(out, function, method.function_index);
             out.push_str(";\n");
             out.push_str("    }\n");
+        }
+        for (property_index, property) in class.properties.iter().enumerate() {
+            if property.hook_has_get {
+                let hook_method_name = property_hook_method_name(&property.name, "get");
+                out.push_str("    if (ptn_ascii_case_equal(name, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("::");
+                out.push_str(&c_string(&hook_method_name));
+                out.push_str("\")) {\n");
+                emit_property_hook_function_metadata_return(
+                    out,
+                    "        ",
+                    &format!("ptn_class_{class_index}_property_{property_index}_get_hook"),
+                    &class.name,
+                    &class.source_file,
+                    property,
+                    "get",
+                );
+                out.push_str("    }\n");
+            }
+            if property.hook_has_set {
+                let hook_method_name = property_hook_method_name(&property.name, "set");
+                out.push_str("    if (ptn_ascii_case_equal(name, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("::");
+                out.push_str(&c_string(&hook_method_name));
+                out.push_str("\")) {\n");
+                emit_property_hook_function_metadata_return(
+                    out,
+                    "        ",
+                    &format!("ptn_class_{class_index}_property_{property_index}_set_hook"),
+                    &class.name,
+                    &class.source_file,
+                    property,
+                    "set",
+                );
+                out.push_str("    }\n");
+            }
+        }
+    }
+    for (trait_index, trait_decl) in traits.iter().enumerate() {
+        for (property_index, property) in trait_decl.properties.iter().enumerate() {
+            if property.hook_has_get {
+                let hook_method_name = property_hook_method_name(&property.name, "get");
+                out.push_str("    if (ptn_ascii_case_equal(name, \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("::");
+                out.push_str(&c_string(&hook_method_name));
+                out.push_str("\")) {\n");
+                emit_property_hook_function_metadata_return(
+                    out,
+                    "        ",
+                    &format!("ptn_trait_{trait_index}_property_{property_index}_get_hook"),
+                    &trait_decl.name,
+                    &trait_decl.source_file,
+                    property,
+                    "get",
+                );
+                out.push_str("    }\n");
+            }
+            if property.hook_has_set {
+                let hook_method_name = property_hook_method_name(&property.name, "set");
+                out.push_str("    if (ptn_ascii_case_equal(name, \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("::");
+                out.push_str(&c_string(&hook_method_name));
+                out.push_str("\")) {\n");
+                emit_property_hook_function_metadata_return(
+                    out,
+                    "        ",
+                    &format!("ptn_trait_{trait_index}_property_{property_index}_set_hook"),
+                    &trait_decl.name,
+                    &trait_decl.source_file,
+                    property,
+                    "set",
+                );
+                out.push_str("    }\n");
+            }
         }
     }
     out.push_str("    return ptn_function_metadata_not_found();\n");
@@ -8648,6 +8856,7 @@ fn emit_reflection_attribute_metadata_helpers(
     emit_declared_function_reflection_attributes(out, classes, functions);
     emit_declared_function_parameter_reflection_attributes(out, classes, functions);
     emit_declared_constant_attributes(out, classes, functions, instructions);
+    emit_declared_constant_is_deprecated(out, instructions);
     emit_declared_attribute_class_flags(out, classes);
 }
 
@@ -9951,6 +10160,44 @@ fn emit_declared_constant_attributes(
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionConstant\", \"getAttributes\", argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_declared_constant_is_deprecated(out: &mut String, instructions: &[Instruction]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_constant_is_deprecated(const char *constant_name) {\n",
+    );
+    let mut has_deprecated_constant = false;
+    for instruction in instructions {
+        let Instruction::DefineConstant {
+            name,
+            attributes,
+            deprecated_message,
+            deprecated_since,
+            deprecated_message_dependency,
+            ..
+        } = instruction
+        else {
+            continue;
+        };
+        if attributes.deprecated_count == 0
+            && deprecated_message.is_none()
+            && deprecated_since.is_none()
+            && deprecated_message_dependency.is_none()
+        {
+            continue;
+        }
+        has_deprecated_constant = true;
+        out.push_str("    if (strcmp(constant_name, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\") == 0) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    if !has_deprecated_constant {
+        out.push_str("    (void)constant_name;\n");
+    }
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 }
 
@@ -17138,7 +17385,10 @@ fn emit_callable_validation_helpers(out: &mut String) {
     );
     out.push_str("                (ptn_user_function_exists(runtime, function_lookup_name) ||\n");
     out.push_str(
-        "                    ptn_find_internal_function(function_lookup_name) != NULL);\n",
+        "                    (!ptn_runtime_function_disabled(runtime, function_lookup_name) &&\n",
+    );
+    out.push_str(
+        "                        ptn_find_internal_function(function_lookup_name) != NULL));\n",
     );
     out.push_str("        }\n");
     out.push_str("        free(name);\n");
@@ -18234,11 +18484,11 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED const char *ptn_dynamic_call_effective_internal_name(PtnRuntime *runtime, const char *name) {\n",
     );
     out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
-    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || (!ptn_runtime_function_disabled(runtime, lookup_name) && ptn_find_internal_function(lookup_name) != NULL)) {\n");
     out.push_str("        return lookup_name;\n");
     out.push_str("    }\n");
     out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
-    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str("    if (namespace_separator != NULL && !ptn_runtime_function_disabled(runtime, namespace_separator + 1) && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
     out.push_str("        return namespace_separator + 1;\n");
     out.push_str("    }\n");
     out.push_str("    return lookup_name;\n");

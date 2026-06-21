@@ -5,7 +5,12 @@
         return 0;
     }
     free(ptn_constant_stack.items);
-    ptn_runtime_define_constant(runtime, name, constant_value);
+    ptn_runtime_define_constant_with_source(
+        runtime,
+        name,
+        constant_value,
+        runtime != NULL ? runtime->source_path : NULL
+    );
     ptn_value_destroy(&constant_value);
     return 1;
 }
@@ -6249,69 +6254,69 @@ static int ptn_internal_function_parameter_can_be_passed_by_value(const char *na
 }
 
 static const PtnParameterMetadata PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS[] = {
-    { "string", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
-    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "encoding", "string", "?string", 1, 1, 0, 0, 1, NULL, NULL },
-    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1, NULL, NULL },
+    { "string", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "encoding", "string", "?string", 1, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1, NULL, NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS[] = {
-    { "table", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+    { "table", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_HEADERS_SENT_PARAMETERS[] = {
-    { "filename", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL },
-    { "line", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL },
+    { "filename", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL, NULL },
+    { "line", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_ASSERT_PARAMETERS[] = {
-    { "assertion", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL },
-    { "description", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL },
+    { "assertion", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "description", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS[] = {
-    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL },
-    { "args", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL },
+    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "args", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS[] = {
-    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL },
-    { "args", "array", "array", 0, 1, 0, 0, 1, NULL, NULL },
+    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "args", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_ARRAY_SLICE_PARAMETERS[] = {
-    { "array", "array", "array", 0, 1, 0, 0, 1, NULL, NULL },
-    { "offset", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "length", "int", "?int", 1, 1, 0, 0, 1, "null", NULL },
-    { "preserve_keys", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL },
+    { "array", "array", "array", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "offset", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "length", "int", "?int", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "preserve_keys", "bool", "bool", 0, 1, 0, 0, 1, "false", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[] = {
-    { "hour", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "minute", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "second", "int", "int", 0, 1, 0, 0, 1, "0", NULL },
-    { "microsecond", "int", "int", 0, 1, 0, 0, 1, "0", NULL },
+    { "hour", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "minute", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "second", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
+    { "microsecond", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS[] = {
-    { "timezoneGroup", "int", "int", 0, 1, 0, 0, 1, "DateTimeZone::ALL", "DateTimeZone::ALL" },
-    { "countryCode", "string", "?string", 1, 1, 0, 0, 1, "null", NULL },
+    { "timezoneGroup", "int", "int", 0, 1, 0, 0, 1, "DateTimeZone::ALL", "DateTimeZone::ALL", NULL },
+    { "countryCode", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARAMETERS[] = {
-    { "timestampBegin", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MIN", "PHP_INT_MIN" },
-    { "timestampEnd", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MAX", NULL },
+    { "timestampBegin", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MIN", "PHP_INT_MIN", NULL },
+    { "timestampEnd", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MAX", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS[] = {
-    { "timestamp", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
-    { "returnFormat", "int", "int", 0, 1, 0, 0, 1, "SUNFUNCS_RET_STRING", "SUNFUNCS_RET_STRING" },
-    { "latitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
-    { "longitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
-    { "zenith", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
-    { "utcOffset", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
+    { "timestamp", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "returnFormat", "int", "int", 0, 1, 0, 0, 1, "SUNFUNCS_RET_STRING", "SUNFUNCS_RET_STRING", NULL },
+    { "latitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "longitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "zenith", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "utcOffset", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -6369,6 +6374,16 @@ static const char *ptn_function_metadata_parameter_default_constant_name(
         metadata.parameters[index].default_value_constant_name != NULL
     ) {
         return metadata.parameters[index].default_value_constant_name;
+    }
+    return NULL;
+}
+
+static const char *ptn_function_metadata_parameter_doc_comment(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    if (metadata.parameters != NULL && index < metadata.parameter_count) {
+        return metadata.parameters[index].doc_comment;
     }
     return NULL;
 }
@@ -88180,6 +88195,7 @@ static PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, 
 static PtnValue ptn_declared_function_parameter_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t parameter_index, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_closure_parameter_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t parameter_index, const char *ptn_attribute_scope_class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
+static int ptn_declared_constant_is_deprecated(const char *constant_name);
 static int ptn_declared_attribute_class_flags(
     const char *class_name,
     int *found_out,
@@ -89477,27 +89493,27 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         return ptn_function_metadata_not_found();
     }
     static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
-        { "status", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL },
+        { "status", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS[] = {
-        { "options", "array", "array", 1, 0, 0, 0, 1, NULL, NULL },
+        { "options", "array", "array", 1, 0, 0, 0, 1, NULL, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS[] = {
-        { "fields", "array", "array", 0, 0, 1, 0, 1, NULL, NULL },
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "eol", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "fields", "array", "array", 0, 0, 1, 0, 1, NULL, NULL, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "eol", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
     };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
@@ -89742,6 +89758,17 @@ static PtnFunctionMetadata ptn_find_function_metadata(const char *name) {
     PtnFunctionMetadata metadata = ptn_user_function_metadata(name);
     if (metadata.found) {
         return metadata;
+    }
+    return ptn_internal_function_metadata(ptn_find_internal_function(name));
+}
+
+static PtnFunctionMetadata ptn_find_runtime_function_metadata(PtnRuntime *runtime, const char *name) {
+    PtnFunctionMetadata metadata = ptn_user_function_metadata(name);
+    if (metadata.found) {
+        return metadata;
+    }
+    if (ptn_runtime_function_disabled(runtime, name)) {
+        return ptn_function_metadata_not_found();
     }
     return ptn_internal_function_metadata(ptn_find_internal_function(name));
 }
@@ -91407,6 +91434,7 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isAnonymous")
         || ptn_ascii_case_equal(method_name, "isClosure")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isDisabled")
         || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
@@ -91437,6 +91465,7 @@ static int ptn_reflection_function_abstract_method_exists(const char *method_nam
         || ptn_ascii_case_equal(method_name, "isVariadic")
         || ptn_ascii_case_equal(method_name, "returnsReference")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isDisabled")
         || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
@@ -91524,6 +91553,7 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getDeclaringFunction")
         || ptn_ascii_case_equal(method_name, "getDefaultValue")
         || ptn_ascii_case_equal(method_name, "getDefaultValueConstantName")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getPosition")
         || ptn_ascii_case_equal(method_name, "getType")
@@ -91603,10 +91633,12 @@ static int ptn_reflection_constant_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getExtension")
         || ptn_ascii_case_equal(method_name, "getExtensionName")
+        || ptn_ascii_case_equal(method_name, "getFileName")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getShortName")
-        || ptn_ascii_case_equal(method_name, "inNamespace");
+        || ptn_ascii_case_equal(method_name, "inNamespace")
+        || ptn_ascii_case_equal(method_name, "isDeprecated");
 }
 
 static int ptn_reflection_attribute_method_exists(const char *method_name) {
@@ -92744,6 +92776,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isAnonymous",
             "isClosure",
             "isDeprecated",
+            "isDisabled",
             "isGenerator",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -92796,10 +92829,12 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getAttributes",
             "getExtension",
             "getExtensionName",
+            "getFileName",
             "getName",
             "getNamespaceName",
             "getShortName",
             "inNamespace",
+            "isDeprecated",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -92856,6 +92891,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__toString",
             "canBePassedByValue",
             "getAttributes",
+            "getDocComment",
             "getName",
             "getPosition",
             "getType",
@@ -94806,7 +94842,6 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     size_t line
 ) {
     (void)args;
-    (void)line;
     PtnReflectionConstantData *data = ptn_reflection_constant_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
@@ -94862,6 +94897,18 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
         return extension_name == NULL
             ? ptn_null()
             : ptn_reflection_extension_object_from_name(runtime, extension_name);
+    }
+    if (ptn_ascii_case_equal(name, "getFileName")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getFileName", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_runtime_constant_source_file(runtime, data->name);
+    }
+    if (ptn_ascii_case_equal(name, "isDeprecated")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "isDeprecated", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_declared_constant_is_deprecated(data->name));
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         return ptn_declared_constant_attributes(runtime, data->name, argc, args, line);
@@ -96205,7 +96252,7 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     if (ptn_ascii_case_equal(data->class_name, "XMLReader") &&
         ptn_ascii_case_equal(data->name, "expand")) {
         static const PtnParameterMetadata PTN_INTERNAL_XMLREADER_EXPAND_PARAMETERS[] = {
-            { "baseNode", "DOMNode", "?DOMNode", 1, 0, 0, 0, 1, "null", NULL },
+            { "baseNode", "DOMNode", "?DOMNode", 1, 0, 0, 0, 1, "null", NULL, NULL },
         };
         return ptn_function_metadata_found(
             "XMLReader::expand",
@@ -96267,8 +96314,8 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
         ptn_ascii_case_equal(data->name, "__construct")
     ) {
         static const PtnParameterMetadata PTN_INTERNAL_REFLECTION_PROPERTY_CONSTRUCT_PARAMETERS[] = {
-            { "class", "object|string", "object|string", 0, 0, 0, 0, 1, NULL, NULL },
-            { "property", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+            { "class", "object|string", "object|string", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+            { "property", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
         };
         return ptn_function_metadata_found(
             "ReflectionProperty::__construct",
@@ -104822,7 +104869,7 @@ static PtnFunctionMetadata ptn_reflection_parameter_resolve_function_metadata(
     }
 
     char *name = ptn_value_to_string(target);
-    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    PtnFunctionMetadata metadata = ptn_find_runtime_function_metadata(runtime, name);
     if (!metadata.found) {
         char message[256];
         int written = snprintf(
@@ -105993,7 +106040,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         metadata = target.as.closure->metadata;
     } else {
         name = ptn_value_to_string(target);
-        metadata = ptn_find_function_metadata(name);
+        metadata = ptn_find_runtime_function_metadata(runtime, name);
     }
     if (!metadata.found) {
         char message[256];
@@ -113977,6 +114024,14 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     if (ptn_ascii_case_equal(name, "isDeprecated")) {
         return ptn_bool(metadata.is_deprecated);
     }
+    if (ptn_ascii_case_equal(name, "isDisabled")) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionFunction::isDisabled() is deprecated since 8.0, as ReflectionFunction can no longer be constructed for disabled functions",
+            line
+        );
+        return ptn_bool(0);
+    }
     if (ptn_ascii_case_equal(name, "isGenerator")) {
         return ptn_bool(metadata.is_generator);
     }
@@ -114157,6 +114212,12 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
             ptn_function_metadata_parameter_default_display(metadata, index),
             line
         );
+    }
+    if (ptn_ascii_case_equal(name, "getDocComment")) {
+        const char *doc_comment = ptn_function_metadata_parameter_doc_comment(metadata, index);
+        return doc_comment == NULL
+            ? ptn_bool(0)
+            : ptn_owned_string(ptn_duplicate_string(doc_comment));
     }
     if (ptn_ascii_case_equal(name, "isCallable")) {
         ptn_emit_deprecation(
@@ -117570,12 +117631,14 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL;
+    int exists =
+        ptn_user_function_exists(runtime, lookup_name) ||
+        (!ptn_runtime_function_disabled(runtime, lookup_name) &&
+            ptn_find_internal_function(lookup_name) != NULL);
     free(name);
     return ptn_bool(exists);
 }

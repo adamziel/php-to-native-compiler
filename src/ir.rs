@@ -174,6 +174,8 @@ pub struct PropertyDecl {
     pub hook_set_is_abstract: bool,
     pub hook_get_attributes: AttributeMetadata,
     pub hook_set_attributes: AttributeMetadata,
+    pub hook_get_doc_comment: Option<String>,
+    pub hook_set_doc_comment: Option<String>,
     pub hook_get_line: usize,
     pub hook_set_line: usize,
     pub hook_get_value: Option<ValueExpr>,
@@ -181,6 +183,8 @@ pub struct PropertyDecl {
     pub hook_get_body: Option<Vec<Instruction>>,
     pub hook_set_body: Option<Vec<Instruction>>,
     pub hook_set_parameter_name: Option<String>,
+    pub hook_set_parameter_type: Option<TypeHint>,
+    pub hook_set_parameter_doc_comment: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
     pub doc_comment: Option<String>,
@@ -302,6 +306,7 @@ pub struct FunctionDecl {
 pub struct FunctionParameter {
     pub name: String,
     pub attributes: AttributeMetadata,
+    pub doc_comment: Option<String>,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
     pub is_variadic: bool,
@@ -1799,6 +1804,8 @@ impl<'a> LoweringContext<'a> {
                     &class.name,
                     parent_name,
                 ),
+                hook_get_doc_comment: property.hook_get_doc_comment.clone(),
+                hook_set_doc_comment: property.hook_set_doc_comment.clone(),
                 hook_get_line: property
                     .hook_get_span
                     .as_ref()
@@ -1826,6 +1833,11 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
+                hook_set_parameter_type: property
+                    .hook_set_parameter_type
+                    .clone()
+                    .map(lower_type_hint),
+                hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
@@ -2380,6 +2392,7 @@ impl<'a> LoweringContext<'a> {
         FunctionParameter {
             name: parameter.name.clone(),
             attributes: self.annotate_attribute_metadata(&parameter.attributes),
+            doc_comment: parameter.doc_comment.clone(),
             type_hint: parameter.type_hint.clone().map(lower_type_hint),
             by_ref: parameter.by_ref,
             is_variadic: parameter.is_variadic,
@@ -2458,6 +2471,8 @@ impl<'a> LoweringContext<'a> {
                     &trait_decl.name,
                     None,
                 ),
+                hook_get_doc_comment: property.hook_get_doc_comment.clone(),
+                hook_set_doc_comment: property.hook_set_doc_comment.clone(),
                 hook_get_line: property
                     .hook_get_span
                     .as_ref()
@@ -2485,6 +2500,11 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
+                hook_set_parameter_type: property
+                    .hook_set_parameter_type
+                    .clone()
+                    .map(lower_type_hint),
+                hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,

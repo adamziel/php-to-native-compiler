@@ -6,6 +6,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->global_symbols = caller_runtime->global_symbols;
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
+    ptn_symbols_init(&runtime->owned_constant_sources);
+    runtime->constant_sources = caller_runtime->constant_sources;
     ptn_symbols_init(&runtime->owned_class_aliases);
     runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_dynamic_classes);
@@ -494,6 +496,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_dynamic_classes, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_class_aliases, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_constant_sources, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_constants, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->symbols, runtime);
     if (runtime->lifecycle_root == runtime && runtime->last_opened_directory != NULL) {
@@ -6141,6 +6144,40 @@ static PTN_UNUSED PtnValue ptn_call_method(
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
     ptn_symbols_set(runtime->constants, name, value);
+}
+
+static PTN_UNUSED void ptn_runtime_record_constant_source(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *source_path
+) {
+    if (runtime == NULL || source_path == NULL || source_path[0] == '\0') {
+        return;
+    }
+    PtnValue source = ptn_string(source_path);
+    ptn_symbols_set(runtime->constant_sources, name, source);
+}
+
+static PTN_UNUSED void ptn_runtime_define_constant_with_source(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    const char *source_path
+) {
+    ptn_runtime_define_constant(runtime, name, value);
+    ptn_runtime_record_constant_source(runtime, name, source_path);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_constant_source_file(PtnRuntime *runtime, const char *name) {
+    PtnValue source;
+    if (
+        runtime != NULL &&
+        runtime->constant_sources != NULL &&
+        ptn_symbols_get(runtime->constant_sources, name, &source)
+    ) {
+        return ptn_value_clone_deref(source);
+    }
+    return ptn_bool(0);
 }
 
 static PTN_UNUSED PtnNumber ptn_number_int(int64_t integer) {

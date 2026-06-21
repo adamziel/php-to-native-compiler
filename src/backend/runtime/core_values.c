@@ -663,6 +663,7 @@ typedef struct {
     int can_be_passed_by_value;
     const char *default_value_display;
     const char *default_value_constant_name;
+    const char *doc_comment;
 } PtnParameterMetadata;
 
 typedef struct {
@@ -1223,6 +1224,8 @@ struct PtnRuntime {
     PtnSymbolTable *global_symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
+    PtnSymbolTable owned_constant_sources;
+    PtnSymbolTable *constant_sources;
     PtnSymbolTable owned_class_aliases;
     PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_dynamic_classes;
