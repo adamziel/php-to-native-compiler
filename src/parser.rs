@@ -453,13 +453,18 @@ impl Parser<'_> {
         validation_traits.extend(self.external_traits.iter().cloned());
         if self.validate_method_signatures {
             let local_class_count = classes.len();
-            validate_parent_class_names(&mut validation_classes)?;
-            validate_interface_references(&mut validation_classes, &mut self.compile_warnings)?;
+            validate_parent_class_names(&mut validation_classes, &validation_traits)?;
+            validate_interface_references(
+                &mut validation_classes,
+                &validation_traits,
+                &mut self.compile_warnings,
+            )?;
             for (class, validation_class) in classes
                 .iter_mut()
                 .zip(validation_classes.iter().take(local_class_count))
             {
                 class.is_conditionally_declared = validation_class.is_conditionally_declared;
+                class.declaration_fatals = validation_class.declaration_fatals.clone();
             }
             validate_interface_method_conflicts(&validation_classes)?;
             validate_override_attributes(&validation_classes, &validation_traits)?;
@@ -2063,15 +2068,6 @@ impl Parser<'_> {
                         Some(span),
                     ));
                 }
-                if self.peek_is_identifier("final") {
-                    let span = self.peek().span;
-                    self.advance();
-                    self.expect_semicolon()?;
-                    return Err(Diagnostic::new(
-                        "final trait aliases are unsupported",
-                        Some(span),
-                    ));
-                }
                 if self.peek_is_identifier("static") {
                     let span = self.peek().span;
                     self.advance();
@@ -2082,13 +2078,31 @@ impl Parser<'_> {
                     ));
                 }
                 let mut visibility = None;
+                let mut is_final = false;
                 let mut alias = None;
-                if let Some(parsed_visibility) = self.parse_optional_trait_alias_visibility() {
-                    visibility = Some(parsed_visibility);
-                    if !matches!(self.peek().kind, TokenKind::Semicolon) {
-                        alias = Some(self.parse_trait_adaptation_method_name()?);
+                loop {
+                    if self.peek_is_identifier("final") {
+                        if is_final {
+                            return Err(Diagnostic::new(
+                                "Multiple final modifiers are not allowed",
+                                Some(self.peek().span),
+                            ));
+                        }
+                        is_final = true;
+                        self.advance();
+                        continue;
                     }
-                } else if !matches!(self.peek().kind, TokenKind::Semicolon) {
+                    if visibility.is_none() {
+                        if let Some(parsed_visibility) =
+                            self.parse_optional_trait_alias_visibility()
+                        {
+                            visibility = Some(parsed_visibility);
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if !matches!(self.peek().kind, TokenKind::Semicolon) {
                     alias = Some(self.parse_trait_adaptation_method_name()?);
                 }
                 let semicolon = self.expect_semicolon()?;
@@ -2096,6 +2110,7 @@ impl Parser<'_> {
                     method,
                     alias,
                     visibility,
+                    is_final,
                     span: combine_spans(span_start, semicolon),
                 }));
                 continue;
@@ -2264,9 +2279,20 @@ impl Parser<'_> {
         let doc_comment = self.doc_comment_before(declaration_start_span.byte_start);
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
+                let trait_uses = self.parse_trait_use_declarations()?;
+                let trait_name = trait_uses
+                    .first()
+                    .map(|trait_use| trait_use.name.as_str())
+                    .unwrap_or("");
+                let span = trait_uses
+                    .first()
+                    .map(|trait_use| trait_use.span)
+                    .unwrap_or(member_start_span);
                 return Err(Diagnostic::new(
-                    "interfaces may not use traits",
-                    Some(self.peek().span),
+                    format!(
+                        "Cannot use traits inside of interfaces. {trait_name} is used in {class_name}"
+                    ),
+                    Some(span),
                 ));
             }
             if modifiers.visibility_span.is_some()
@@ -12936,6 +12962,9 @@ fn import_trait_method_into_class(
         if let Some(visibility) = alias.visibility {
             imported.visibility = visibility;
         }
+        if alias.is_final {
+            imported.is_final = true;
+        }
         if let Err(existing) =
             insert_imported_trait_method(class, imported_method_names, &alias_key, imported)
         {
@@ -13226,6 +13255,9 @@ fn adapted_original_trait_method(
             if let Some(visibility) = alias.visibility {
                 imported.visibility = visibility;
             }
+            if alias.is_final {
+                imported.is_final = true;
+            }
         }
     }
     imported
@@ -13414,31 +13446,42 @@ fn validate_trait_names(
     Ok(())
 }
 
-fn validate_parent_class_names(classes: &mut [ClassDecl]) -> Result<()> {
+fn validate_parent_class_names(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
     let names = classes
         .iter()
         .filter(|class| !class.is_interface)
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
+    let trait_names = traits
+        .iter()
+        .map(|trait_decl| trait_decl.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
     for class in classes.iter_mut() {
         if class.is_interface {
             continue;
         }
-        let Some(parent_name) = &class.parent_name else {
+        let Some(parent_name) = class.parent_name.clone() else {
             continue;
         };
         if parent_name.eq_ignore_ascii_case("stdClass")
-            || is_modeled_spl_iterator_class_name(parent_name)
-            || is_modeled_builtin_date_class_name(parent_name)
-            || is_modeled_builtin_enum_class_name(parent_name)
-            || is_modeled_builtin_exception_class_name(parent_name)
-            || is_modeled_builtin_reflection_class_name(parent_name)
-            || is_modeled_archive_network_class_name(parent_name)
+            || is_modeled_spl_iterator_class_name(&parent_name)
+            || is_modeled_builtin_date_class_name(&parent_name)
+            || is_modeled_builtin_enum_class_name(&parent_name)
+            || is_modeled_builtin_exception_class_name(&parent_name)
+            || is_modeled_builtin_reflection_class_name(&parent_name)
+            || is_modeled_archive_network_class_name(&parent_name)
             || parent_name
                 .trim_start_matches('\\')
                 .eq_ignore_ascii_case("BcMath\\Number")
             || parent_name.eq_ignore_ascii_case("Generator")
         {
+            continue;
+        }
+        if trait_names.contains(&parent_name.to_ascii_lowercase()) {
+            class.declaration_fatals.push(ClassDeclarationFatal {
+                message: format!("Class {} cannot extend trait {parent_name}", class.name),
+                span: class.span,
+            });
             continue;
         }
         if !names.contains(&parent_name.to_ascii_lowercase()) {
@@ -13450,6 +13493,7 @@ fn validate_parent_class_names(classes: &mut [ClassDecl]) -> Result<()> {
 
 fn validate_interface_references(
     classes: &mut [ClassDecl],
+    traits: &[TraitDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
     let interface_names = classes
@@ -13457,9 +13501,13 @@ fn validate_interface_references(
         .filter(|class| class.is_interface)
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
+    let trait_names = traits
+        .iter()
+        .map(|trait_decl| trait_decl.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
     for class in classes.iter_mut() {
         let mut seen_interfaces = HashSet::new();
-        for interface_name in &class.interfaces {
+        for interface_name in class.interfaces.clone() {
             if !seen_interfaces.insert(interface_name.to_ascii_lowercase()) {
                 let declaration_kind = if class.is_interface {
                     "Interface"
@@ -13474,7 +13522,7 @@ fn validate_interface_references(
                     Some(class.span),
                 ));
             }
-            if class.is_interface && class.name.eq_ignore_ascii_case(interface_name) {
+            if class.is_interface && class.name.eq_ignore_ascii_case(&interface_name) {
                 compile_warnings.push(CompileWarning {
                     message: format!("Interface \"{interface_name}\" not found"),
                     span: class.span,
@@ -13483,8 +13531,18 @@ fn validate_interface_references(
                 return Ok(());
             }
             if interface_names.contains(&interface_name.to_ascii_lowercase())
-                || is_modeled_builtin_interface_name(interface_name)
+                || is_modeled_builtin_interface_name(&interface_name)
             {
+                continue;
+            }
+            if trait_names.contains(&interface_name.to_ascii_lowercase()) {
+                class.declaration_fatals.push(ClassDeclarationFatal {
+                    message: format!(
+                        "{} cannot implement {interface_name} - it is not an interface",
+                        class.name
+                    ),
+                    span: class.span,
+                });
                 continue;
             }
             class.is_conditionally_declared = true;

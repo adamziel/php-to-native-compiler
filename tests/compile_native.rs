@@ -9087,6 +9087,115 @@ Talker::statAlias();
 }
 
 #[test]
+fn compile_trait_reference_kind_declaration_fatals_to_native_binary() {
+    let cases = [
+        (
+            "implements-trait",
+            "<?php
+trait abc {}
+class foo implements abc {}
+",
+            "Fatal error: foo cannot implement abc - it is not an interface in ",
+        ),
+        (
+            "extends-trait",
+            "<?php
+trait abc {}
+class foo extends abc {}
+",
+            "Fatal error: Class foo cannot extend trait abc in ",
+        ),
+    ];
+
+    for (name, source, expected) in cases {
+        let root = temp_dir(&format!("ptn-native-trait-kind-{name}"));
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        assert!(String::from_utf8(execution.stderr)
+            .unwrap()
+            .contains(expected));
+    }
+}
+
+#[test]
+fn parser_reports_trait_use_inside_interface_with_trait_and_interface_names() {
+    let error = parser::parse(
+        "<?php
+trait foo {}
+interface MyInterface {
+    use foo;
+}",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Cannot use traits inside of interfaces. foo is used in MyInterface"
+    );
+}
+
+#[test]
+fn compile_final_trait_alias_marks_imported_method_final_to_native_binary() {
+    let root = temp_dir("ptn-native-final-trait-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("final-trait-alias.php");
+    let output = root.join("final-trait-alias-bin");
+    fs::write(
+        &input,
+        "<?php
+trait T1 {
+    function foo() {
+        echo \"Done\\n\";
+    }
+}
+class C1 {
+    use T1 {
+        T1::foo as final;
+    }
+}
+class C2 extends C1 {
+    public function bar() {}
+}
+(new C2)->foo();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let error = parser::parse(
+        "<?php
+trait T1 {
+    function foo() {}
+}
+class C1 {
+    use T1 {
+        T1::foo as final;
+    }
+}
+class C2 extends C1 {
+    public function foo() {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "Cannot override final method C1::foo()");
+}
+
+#[test]
 fn compile_trait_adaptation_across_separate_use_blocks_to_native_binary() {
     let root = temp_dir("ptn-native-trait-adaptation-separate-use-blocks");
     fs::create_dir_all(&root).unwrap();

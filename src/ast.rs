@@ -98,6 +98,7 @@ pub struct TraitAliasAdaptation {
     pub method: TraitMethodReference,
     pub alias: Option<String>,
     pub visibility: Option<PropertyVisibility>,
+    pub is_final: bool,
     pub span: SourceSpan,
 }
 
