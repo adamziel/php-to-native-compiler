@@ -12231,6 +12231,36 @@ foreach ([
 }
 
 #[test]
+fn compile_unserialize_readonly_class_rejects_dynamic_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-readonly-dynamic-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-readonly-dynamic-property.php");
+    let output = root.join("unserialize-readonly-dynamic-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+readonly class C {}
+
+try {
+    var_dump(unserialize('O:1:"C":1:{s:1:"x";b:1;}'));
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout, "Cannot create dynamic property C::$x\n");
+    assert!(!stdout.contains("Creation of dynamic property"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serialize_visibility_keys_and_get_debug_type_to_native_binary() {
     let root = temp_dir("ptn-native-serialize-visibility-keys-debug-type");
     fs::create_dir_all(&root).unwrap();

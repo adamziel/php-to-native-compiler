@@ -10897,6 +10897,19 @@ static int ptn_unserialize_store_object_property_entry(
                 !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, property_key)) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
+        if (runtime != NULL &&
+            runtime->declared_class_is_readonly != NULL &&
+            runtime->declared_class_is_readonly(object->class_name)) {
+            ptn_throw_dynamic_property_readonly_class_error(
+                runtime,
+                object->class_name,
+                property_key.as.string,
+                state->line
+            );
+            ptn_array_key_free(property_key);
+            ptn_value_destroy(&parsed.value);
+            return 0;
+        }
         ptn_emit_dynamic_property_deprecation(
             runtime,
             object,
