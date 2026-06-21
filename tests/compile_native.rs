@@ -10921,6 +10921,46 @@ foreach ([new ReturnsArray(), new ReturnsNull(), new ReturnsNone(), new ReturnsO
 }
 
 #[test]
+fn compile_object_to_string_error_trace_uses_conversion_site_to_native_binary() {
+    let root = temp_dir("ptn-native-object-to-string-error-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-to-string-error-trace.php");
+    let output = root.join("object-to-string-error-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function __toString() {
+        undefined_function();
+    }
+}
+echo (new A);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught Error: Call to undefined function undefined_function()"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("object-to-string-error-trace.php(7): A->__toString()"),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("#0 [internal function]: A->__toString()"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_strict_object_to_string_return_type_to_native_binary() {
     let root = temp_dir("ptn-native-strict-object-to-string-return-type");
     fs::create_dir_all(&root).unwrap();

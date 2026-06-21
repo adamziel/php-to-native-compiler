@@ -19723,9 +19723,12 @@ fn emit_instruction(
         }
         Instruction::Echo(value) => {
             let emitted_value = values.emit_materialized_value(out, value);
+            let line = value_expr_runtime_line(value).unwrap_or(0);
             out.push_str("    ptn_echo(&runtime, ");
             out.push_str(&emitted_value);
-            out.push_str(", 0);\n");
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Increment { target, op, line } => {
