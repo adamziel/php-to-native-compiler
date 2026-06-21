@@ -404,6 +404,22 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
+    for preload_index in &module.preload_include_indices {
+        if *preload_index >= module.includes.len() {
+            continue;
+        }
+        out.push_str("    ptn_include_seen[");
+        out.push_str(&preload_index.to_string());
+        out.push_str("] = 1;\n");
+        out.push_str("    PtnValue ptn_preload_result_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" = ");
+        out.push_str(&include_c_name(*preload_index));
+        out.push_str("(&runtime);\n");
+        out.push_str("    ptn_value_destroy(&ptn_preload_result_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(");\n");
+    }
     let mut values = ValueEmitter::new(
         &module.source_file,
         &module.source_dir,

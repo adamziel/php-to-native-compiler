@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::{compile_file, CompileOptions, Diagnostic, DiagnosticKind};
+use ptn::{compile_file_with_preloads, CompileOptions, Diagnostic, DiagnosticKind};
 
 fn main() {
     match run() {
@@ -596,6 +596,23 @@ fn opcache_ini_env_name(name: &str) -> Option<String> {
         .map(|canonical| format!("PTN_{}", canonical.to_ascii_uppercase().replace('.', "_")))
 }
 
+fn opcache_preload_files(ini: &RuntimeIni, script: &Path) -> Vec<PathBuf> {
+    let script_dir = script.parent().unwrap_or_else(|| Path::new(""));
+    let mut files = Vec::new();
+    for (name, value) in &ini.opcache {
+        if !name.eq_ignore_ascii_case("opcache.preload") || value.is_empty() {
+            continue;
+        }
+        let path = PathBuf::from(value);
+        if path.is_absolute() {
+            files.push(path);
+        } else {
+            files.push(script_dir.join(path));
+        }
+    }
+    files
+}
+
 fn normalize_ini_scalar(raw_value: &str) -> String {
     let trimmed = raw_value.trim();
     if trimmed.len() >= 2 {
@@ -939,7 +956,14 @@ fn compile_and_run(
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let native = TempPath::new("ptn-phpc-native", "bin");
-    compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
+    let preload_files = opcache_preload_files(&ini, script);
+    compile_file_with_preloads(
+        script,
+        native.path(),
+        CompileOptions { emit_c: false },
+        &preload_files,
+    )
+    .map_err(|error| {
         if error.span.is_some() {
             PhpcError::SourceFatal {
                 diagnostic: error,

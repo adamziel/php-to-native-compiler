@@ -27,6 +27,7 @@ pub struct Module {
     pub traits: Vec<TraitDecl>,
     pub functions: Vec<FunctionDecl>,
     pub includes: Vec<IncludeFile>,
+    pub preload_include_indices: Vec<usize>,
     pub instructions: Vec<Instruction>,
     pub compile_warnings: Vec<CompileWarning>,
     pub source_file: String,
@@ -1022,6 +1023,7 @@ pub fn lower_with_source(
         source_dir,
         source_bytes,
         Vec::new(),
+        Vec::new(),
         &IncludeResolutionMap::new(),
     )
 }
@@ -1032,6 +1034,7 @@ pub fn lower_with_source_and_includes(
     source_dir: String,
     source_bytes: Vec<u8>,
     include_sources: Vec<IncludeSource>,
+    preload_include_indices: Vec<usize>,
     include_resolutions: &IncludeResolutionMap,
 ) -> Module {
     let mut context = LoweringContext::new(
@@ -1078,6 +1081,7 @@ pub fn lower_with_source_and_includes(
         traits,
         functions: context.functions,
         includes,
+        preload_include_indices,
         instructions,
         compile_warnings: lower_compile_warnings(&program.compile_warnings),
         source_file,

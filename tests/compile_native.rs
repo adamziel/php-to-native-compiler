@@ -12,7 +12,7 @@ use ptn::ast::{
     UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
-use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
+use ptn::{compile_file, compile_file_with_preloads, parser, CompileOptions, DiagnosticKind};
 
 fn undefined_variable_warning(path: &Path, name: &str, line: usize) -> String {
     format!(
@@ -49991,6 +49991,94 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "bool(true)\n",
             "string(1) \"1\"\n",
             "string(2) \"-1\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_preload_class_aliases_before_root_to_native_binary() {
+    let root = temp_dir("ptn-native-preload-class-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    let output = root.join("preload-class-aliases-bin");
+    fs::write(
+        &preload,
+        "<?php\n\
+class A {}\n\
+class_alias(A::class, 'B');\n\
+interface I {}\n\
+class C implements I {}\n\
+class_alias('C', 'D');\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(class_exists('A'));\n\
+var_dump(class_exists('B'));\n\
+var_dump(class_exists('D'));\n\
+var_dump(is_subclass_of('D', 'I'));\n",
+    )
+    .unwrap();
+
+    compile_file_with_preloads(
+        &input,
+        &output,
+        CompileOptions { emit_c: false },
+        &[preload],
+    )
+    .unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_preload_runs_before_root_script() {
+    let root = temp_dir("ptn-phpc-opcache-preload-before-root");
+    fs::create_dir_all(&root).unwrap();
+    let preload = root.join("preload.inc.php");
+    let input = root.join("main.php");
+    fs::write(
+        &preload,
+        "<?php\n\
+trait T1 {\n\
+    public static function foo() {}\n\
+}\n\
+class TraitAliasTest {\n\
+    use T1 { T1::foo as bar; }\n\
+}\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(get_class_methods('TraitAliasTest'));\n\
+var_dump(ini_get('opcache.preload'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-d")
+        .arg(format!("opcache.preload={}", preload.display()))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "array(2) {{\n  [0]=>\n  string(3) \"bar\"\n  [1]=>\n  string(3) \"foo\"\n}}\nstring({}) \"{}\"\n",
+            preload.display().to_string().len(),
+            preload.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

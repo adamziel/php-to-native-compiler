@@ -36,6 +36,24 @@ pub struct CompileOutput {
 }
 
 pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Result<CompileOutput> {
+    compile_file_inner(input, output, options, &[])
+}
+
+pub fn compile_file_with_preloads(
+    input: &Path,
+    output: &Path,
+    options: CompileOptions,
+    preload_files: &[PathBuf],
+) -> Result<CompileOutput> {
+    compile_file_inner(input, output, options, preload_files)
+}
+
+fn compile_file_inner(
+    input: &Path,
+    output: &Path,
+    options: CompileOptions,
+    preload_files: &[PathBuf],
+) -> Result<CompileOutput> {
     let source_bytes = fs::read(input).map_err(|error| {
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
@@ -50,6 +68,7 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         include_program.classes.clone(),
         include_program.traits.clone(),
     );
+    let preload_include_indices = includes.collect_preload_files(preload_files, &source_dir)?;
     includes.collect_program(&include_program, &source_file, &source_dir)?;
     includes.finalize_sources()?;
     let (included_classes, included_traits) = includes.validation_symbols(None);
@@ -67,6 +86,7 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         source_dir,
         source_bytes,
         include_sources,
+        preload_include_indices,
         &include_resolutions,
     );
     let c_source = emit_c(&module);
@@ -115,6 +135,35 @@ impl IncludeCollector {
         self.collect_with_fresh_path_env(|collector| {
             collector.collect_program_with_current_env(program, source_file, source_dir)
         })
+    }
+
+    fn collect_preload_files(
+        &mut self,
+        preload_files: &[PathBuf],
+        source_dir: &str,
+    ) -> Result<Vec<usize>> {
+        let mut indices = Vec::new();
+        for preload_file in preload_files {
+            if preload_file.as_os_str().is_empty() {
+                continue;
+            }
+            let resolved_path = if preload_file.is_absolute() {
+                preload_file.clone()
+            } else {
+                Path::new(source_dir).join(preload_file)
+            };
+            let preload_path = resolved_path.to_string_lossy().into_owned();
+            let Some(index) = self.resolve_include_candidate(&preload_path, source_dir)? else {
+                return Err(Diagnostic::new(
+                    format!("failed to read preload file {}", resolved_path.display()),
+                    None,
+                ));
+            };
+            if !indices.contains(&index) {
+                indices.push(index);
+            }
+        }
+        Ok(indices)
     }
 
     fn collect_program_with_current_env(
