@@ -3426,6 +3426,14 @@ fn emit_static_property_declarations(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(", ");
             out.push_str(c_property_visibility(property.set_visibility));
             out.push_str(", ");
+            out.push_str(c_property_type_kind(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_class_name(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_text(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
+            out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");
             out.push_str(
@@ -3510,6 +3518,14 @@ fn emit_static_property_initializer_helper(
             out.push_str(c_property_visibility(property.visibility));
             out.push_str(", ");
             out.push_str(c_property_visibility(property.set_visibility));
+            out.push_str(", ");
+            out.push_str(c_property_type_kind(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_class_name(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_text(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", 1);\n");
@@ -23844,6 +23860,10 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
         IncDecTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         IncDecTarget::StaticProperty { .. } => {}
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
@@ -24794,6 +24814,10 @@ fn collect_inc_dec_target_runtime_requirements(
         }
         IncDecTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         IncDecTarget::StaticProperty { .. } => {}
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
@@ -27581,6 +27605,7 @@ fn emit_increment_statement(
         }
         IncDecTarget::PropertyArrayDim { .. }
         | IncDecTarget::Property { .. }
+        | IncDecTarget::DynamicProperty { .. }
         | IncDecTarget::StaticProperty { .. }
         | IncDecTarget::StaticPropertyArrayDim { .. }
         | IncDecTarget::DynamicStaticPropertyName { .. } => {
@@ -28275,6 +28300,13 @@ fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
         IncDecTarget::Property {
             receiver: target, ..
         } => value_mentions_variable(target, name),
+        IncDecTarget::DynamicProperty {
+            receiver,
+            name: property_name,
+            ..
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
         IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
             dimensions.iter().any(|dimension| {
                 dimension
@@ -29462,6 +29494,9 @@ fn inc_dec_target_uses_this(target: &IncDecTarget) -> bool {
             dimensions.iter().flatten().any(value_expr_uses_this)
         }
         IncDecTarget::Property { receiver, .. } => value_expr_uses_this(receiver),
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            value_expr_uses_this(receiver) || value_expr_uses_this(name)
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => value_expr_uses_this(name),
     }
 }
@@ -31828,7 +31863,7 @@ impl ValueEmitter {
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
@@ -31900,7 +31935,7 @@ impl ValueEmitter {
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
@@ -31975,7 +32010,7 @@ impl ValueEmitter {
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -32052,7 +32087,7 @@ impl ValueEmitter {
         let current_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -32240,7 +32275,7 @@ impl ValueEmitter {
         let current_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_value_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -32342,7 +32377,7 @@ impl ValueEmitter {
         let current_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_value_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
@@ -35541,7 +35576,7 @@ impl ValueEmitter {
                 let current_value_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_value_temp);
-                out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+                out.push_str(" = ptn_runtime_read_static_property_for_indirect_write(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
@@ -35697,6 +35732,91 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &assigned_temp);
                 emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::DynamicProperty { receiver, name, .. } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let (name_temp, name_len_temp) =
+                    self.emit_dynamic_property_name_for_write(out, name, line);
+                out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_object_read_property_for_compound_assignment(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_property_increment_value(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(match op {
+                    IncDecOp::Increment => "1",
+                    IncDecOp::Decrement => "0",
+                });
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property_len(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&name_len_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &current_temp);
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
 
                 if let Some(old_temp) = old_temp {

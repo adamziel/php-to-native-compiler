@@ -11395,6 +11395,10 @@ fn collect_arrow_captures_from_inc_dec_target(
         IncDecTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
         IncDecTarget::StaticProperty { .. } => {}
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             collect_arrow_captures_from_expr(name, exclusions, seen, captures);
@@ -18663,6 +18667,10 @@ fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result
         IncDecTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             validate_control_transfers_in_expr(name)?;
         }
@@ -19681,6 +19689,9 @@ fn inc_dec_target_contains_yield(target: &IncDecTarget) -> bool {
             dimensions.iter().flatten().any(expr_contains_yield)
         }
         IncDecTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
     }
@@ -19896,6 +19907,10 @@ fn validate_anonymous_functions_in_inc_dec_target(
         }
         IncDecTarget::Property { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)
+        }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            validate_anonymous_functions_in_expr(receiver, functions)?;
+            validate_anonymous_functions_in_expr(name, functions)
         }
         IncDecTarget::StaticProperty { .. } => Ok(()),
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
@@ -22103,6 +22118,15 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             name,
             span,
         }),
+        AssignmentTarget::DynamicProperty {
+            receiver,
+            name,
+            span,
+        } => Ok(IncDecTarget::DynamicProperty {
+            receiver,
+            name,
+            span,
+        }),
         AssignmentTarget::StaticProperty {
             class_name,
             name,
@@ -22137,6 +22161,7 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::PropertyArrayDim { span, .. } => *span,
         IncDecTarget::StaticPropertyArrayDim { span, .. } => *span,
         IncDecTarget::Property { span, .. } => *span,
+        IncDecTarget::DynamicProperty { span, .. } => *span,
         IncDecTarget::StaticProperty { span, .. } => *span,
         IncDecTarget::DynamicStaticPropertyName { span, .. } => *span,
     }
@@ -23243,6 +23268,10 @@ fn reject_standalone_list_expr_in_inc_dec_target(target: &IncDecTarget) -> Resul
         IncDecTarget::Property { receiver, .. } => {
             reject_standalone_list_expr(receiver)?;
         }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            reject_standalone_list_expr(receiver)?;
+            reject_standalone_list_expr(name)?;
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             reject_standalone_list_expr(name)?;
         }
@@ -23536,6 +23565,10 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
             }
         }
         IncDecTarget::Property { receiver, .. } => reject_append_array_read(receiver)?,
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
+        }
         IncDecTarget::DynamicStaticPropertyName { name, .. } => {
             reject_append_array_read(name)?;
         }
@@ -24923,6 +24956,10 @@ fn inc_dec_target_uses_this_property(target: &IncDecTarget, property_name: &str)
         IncDecTarget::Property { receiver, name, .. } => {
             receiver_is_this_property(receiver, name, property_name)
                 || expr_uses_this_property(receiver, property_name)
+        }
+        IncDecTarget::DynamicProperty { receiver, name, .. } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
         }
         IncDecTarget::DynamicVariable { name, .. } => expr_uses_this_property(name, property_name),
         IncDecTarget::ArrayDim(target) => {

@@ -791,6 +791,47 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     size_t line,
     PtnValue *out
 );
+static PTN_UNUSED int ptn_property_type_coerce_assignment(
+    PtnRuntime *runtime,
+    PtnPropertyTypeKind kind,
+    const char *type_class_name,
+    const char *type_text,
+    int allows_null,
+    const char *declaring_class,
+    const char *property,
+    PtnValue value,
+    int reference_context,
+    size_t line,
+    PtnValue *out
+);
+static PTN_UNUSED int ptn_property_type_try_coerce_assignment(
+    PtnRuntime *runtime,
+    PtnPropertyTypeKind kind,
+    const char *type_class_name,
+    const char *type_text,
+    int allows_null,
+    PtnValue value,
+    PtnValue *out
+);
+static PTN_UNUSED void ptn_reference_adopt_property_type(
+    PtnReference *reference,
+    const PtnObjectPropertyMetadata *metadata
+);
+static PTN_UNUSED void ptn_throw_reference_property_bind_incompatibility(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const PtnReferencePropertyTypeSource *existing,
+    const PtnObjectPropertyMetadata *metadata
+);
+static PTN_UNUSED PtnReferencePropertyTypeSource ptn_reference_primary_property_type_source(
+    const PtnReference *reference
+);
+static PTN_UNUSED int ptn_compare_identical(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnRuntime *runtime, PtnValue value, const char *expected_class_name);
@@ -1254,6 +1295,14 @@ struct PtnRuntime {
     PtnSymbolTable *static_property_read_visibility;
     PtnSymbolTable owned_static_property_set_visibility;
     PtnSymbolTable *static_property_set_visibility;
+    PtnSymbolTable owned_static_property_type_kind;
+    PtnSymbolTable *static_property_type_kind;
+    PtnSymbolTable owned_static_property_type_class_name;
+    PtnSymbolTable *static_property_type_class_name;
+    PtnSymbolTable owned_static_property_type_text;
+    PtnSymbolTable *static_property_type_text;
+    PtnSymbolTable owned_static_property_type_allows_null;
+    PtnSymbolTable *static_property_type_allows_null;
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;

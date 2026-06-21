@@ -34,6 +34,14 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->static_property_read_visibility = caller_runtime->static_property_read_visibility;
     ptn_symbols_init(&runtime->owned_static_property_set_visibility);
     runtime->static_property_set_visibility = caller_runtime->static_property_set_visibility;
+    ptn_symbols_init(&runtime->owned_static_property_type_kind);
+    runtime->static_property_type_kind = caller_runtime->static_property_type_kind;
+    ptn_symbols_init(&runtime->owned_static_property_type_class_name);
+    runtime->static_property_type_class_name = caller_runtime->static_property_type_class_name;
+    ptn_symbols_init(&runtime->owned_static_property_type_text);
+    runtime->static_property_type_text = caller_runtime->static_property_type_text;
+    ptn_symbols_init(&runtime->owned_static_property_type_allows_null);
+    runtime->static_property_type_allows_null = caller_runtime->static_property_type_allows_null;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
     runtime->diagnostics.error_reporting = caller_runtime->diagnostics.error_reporting;
@@ -493,6 +501,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_allows_null, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_text, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_class_name, runtime);
+    ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_type_kind, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_set_visibility, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_read_visibility, runtime);
     ptn_symbols_free_with_runtime_scope(&runtime->owned_static_property_initialized, runtime);
@@ -3059,6 +3071,30 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_set_visibility_tab
         : runtime->static_property_set_visibility;
 }
 
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_type_kind_table(PtnRuntime *runtime) {
+    return runtime->static_property_type_kind == NULL
+        ? &runtime->owned_static_property_type_kind
+        : runtime->static_property_type_kind;
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_type_class_name_table(PtnRuntime *runtime) {
+    return runtime->static_property_type_class_name == NULL
+        ? &runtime->owned_static_property_type_class_name
+        : runtime->static_property_type_class_name;
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_type_text_table(PtnRuntime *runtime) {
+    return runtime->static_property_type_text == NULL
+        ? &runtime->owned_static_property_type_text
+        : runtime->static_property_type_text;
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_type_allows_null_table(PtnRuntime *runtime) {
+    return runtime->static_property_type_allows_null == NULL
+        ? &runtime->owned_static_property_type_allows_null
+        : runtime->static_property_type_allows_null;
+}
+
 static PTN_UNUSED int ptn_runtime_static_property_declaration_exists(
     PtnRuntime *runtime,
     const char *key
@@ -3066,7 +3102,8 @@ static PTN_UNUSED int ptn_runtime_static_property_declaration_exists(
     return ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key) != NULL ||
         ptn_symbols_value_slot(ptn_runtime_static_property_initialized_table(runtime), key) != NULL ||
         ptn_symbols_value_slot(ptn_runtime_static_property_read_visibility_table(runtime), key) != NULL ||
-        ptn_symbols_value_slot(ptn_runtime_static_property_set_visibility_table(runtime), key) != NULL;
+        ptn_symbols_value_slot(ptn_runtime_static_property_set_visibility_table(runtime), key) != NULL ||
+        ptn_symbols_value_slot(ptn_runtime_static_property_type_kind_table(runtime), key) != NULL;
 }
 
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_table(PtnRuntime *runtime) {
@@ -4332,6 +4369,10 @@ static PTN_UNUSED void ptn_runtime_define_static_property(
     const char *property,
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
+    PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
+    const char *type_text,
+    int type_allows_null,
     PtnValue value,
     int initialized
 ) {
@@ -4352,7 +4393,208 @@ static PTN_UNUSED void ptn_runtime_define_static_property(
         key,
         ptn_int((int64_t)set_visibility)
     );
+    ptn_symbols_set(
+        ptn_runtime_static_property_type_kind_table(runtime),
+        key,
+        ptn_int((int64_t)type_kind)
+    );
+    if (type_class_name != NULL) {
+        ptn_symbols_set(
+            ptn_runtime_static_property_type_class_name_table(runtime),
+            key,
+            ptn_string(type_class_name)
+        );
+    }
+    if (type_text != NULL) {
+        ptn_symbols_set(
+            ptn_runtime_static_property_type_text_table(runtime),
+            key,
+            ptn_string(type_text)
+        );
+    }
+    ptn_symbols_set(
+        ptn_runtime_static_property_type_allows_null_table(runtime),
+        key,
+        ptn_bool(type_allows_null)
+    );
     free(key);
+}
+
+static PTN_UNUSED int ptn_runtime_static_property_metadata(
+    PtnRuntime *runtime,
+    const char *key,
+    const char *declaring_class,
+    const char *property,
+    PtnObjectPropertyMetadata *metadata
+) {
+    PtnValue type_kind_value;
+    if (!ptn_symbols_get(ptn_runtime_static_property_type_kind_table(runtime), key, &type_kind_value)) {
+        return 0;
+    }
+    type_kind_value = ptn_value_deref(type_kind_value);
+    if (type_kind_value.type != PTN_INT ||
+        (PtnPropertyTypeKind)type_kind_value.as.integer == PTN_PROPERTY_TYPE_NONE) {
+        return 0;
+    }
+
+    memset(metadata, 0, sizeof(*metadata));
+    metadata->storage_name = (char *)key;
+    metadata->display_name = (char *)property;
+    metadata->declaring_class = (char *)declaring_class;
+    metadata->read_visibility = PTN_PROPERTY_PUBLIC;
+    metadata->set_visibility = PTN_PROPERTY_PUBLIC;
+    metadata->type_kind = (PtnPropertyTypeKind)type_kind_value.as.integer;
+
+    PtnValue type_class_name;
+    if (ptn_symbols_get(
+        ptn_runtime_static_property_type_class_name_table(runtime),
+        key,
+        &type_class_name
+    )) {
+        type_class_name = ptn_value_deref(type_class_name);
+        if (type_class_name.type == PTN_STRING) {
+            metadata->type_class_name = (char *)type_class_name.as.string.data;
+        }
+    }
+
+    PtnValue type_text;
+    if (ptn_symbols_get(ptn_runtime_static_property_type_text_table(runtime), key, &type_text)) {
+        type_text = ptn_value_deref(type_text);
+        if (type_text.type == PTN_STRING) {
+            metadata->type_text = (char *)type_text.as.string.data;
+        }
+    }
+
+    PtnValue allows_null;
+    if (ptn_symbols_get(
+        ptn_runtime_static_property_type_allows_null_table(runtime),
+        key,
+        &allows_null
+    )) {
+        metadata->type_allows_null = ptn_is_truthy(allows_null);
+    }
+
+    return 1;
+}
+
+static PTN_UNUSED int ptn_runtime_static_property_type_coerce_assignment(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    PtnValue value,
+    int reference_context,
+    size_t line,
+    PtnValue *out
+) {
+    if (metadata == NULL) {
+        *out = ptn_value_clone_deref(value);
+        return 1;
+    }
+    return ptn_property_type_coerce_assignment(
+        runtime,
+        metadata->type_kind,
+        metadata->type_class_name,
+        metadata->type_text,
+        metadata->type_allows_null,
+        metadata->declaring_class,
+        metadata->display_name,
+        value,
+        reference_context,
+        line,
+        out
+    );
+}
+
+static PTN_UNUSED int ptn_property_type_accepts_array_auto_initialization(
+    PtnRuntime *runtime,
+    PtnPropertyTypeKind kind,
+    const char *type_class_name,
+    const char *type_text,
+    int allows_null
+) {
+    PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    PtnValue coerced = ptn_null();
+    int accepts = ptn_property_type_try_coerce_assignment(
+        runtime,
+        kind,
+        type_class_name,
+        type_text,
+        allows_null,
+        array,
+        &coerced
+    );
+    ptn_value_destroy(&coerced);
+    ptn_value_destroy(&array);
+    return accepts;
+}
+
+static PTN_UNUSED int ptn_property_metadata_accepts_array_auto_initialization(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return metadata != NULL &&
+        ptn_property_type_accepts_array_auto_initialization(
+            runtime,
+            metadata->type_kind,
+            metadata->type_class_name,
+            metadata->type_text,
+            metadata->type_allows_null
+        );
+}
+
+static PTN_UNUSED void ptn_throw_property_array_auto_initialization_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    const char *type_text,
+    int reference_context,
+    size_t line
+) {
+    char message[512];
+    const char *declared_type = type_text == NULL ? "mixed" : type_text;
+    int written;
+    if (reference_context) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot auto-initialize an array inside a reference held by property %s::$%s of type %s",
+            declaring_class,
+            property,
+            declared_type
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot auto-initialize an array inside property %s::$%s of type %s",
+            declaring_class,
+            property,
+            declared_type
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_uninitialized_typed_static_property_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Typed static property %s::$%s must not be accessed before initialization",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED int ptn_runtime_static_property_initialized(
@@ -4976,6 +5218,27 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
             free(key);
             return ptn_null();
         }
+        PtnObjectPropertyMetadata metadata;
+        PtnObjectPropertyMetadata *metadata_ptr =
+            ptn_runtime_static_property_metadata(runtime, key, declaring_class, property, &metadata)
+                ? &metadata
+                : NULL;
+        PtnValue initialized;
+        if (metadata_ptr != NULL &&
+            (!ptn_symbols_get(
+                ptn_runtime_static_property_initialized_table(runtime),
+                key,
+                &initialized
+            ) || !ptn_is_truthy(initialized))) {
+            free(key);
+            ptn_throw_uninitialized_typed_static_property_error(
+                runtime,
+                declaring_class,
+                property,
+                line
+            );
+            return ptn_null();
+        }
         PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
         PtnValue value;
         if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
@@ -5004,6 +5267,102 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     }
     free(key);
     return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_static_property_for_indirect_write(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+    }
+    if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+        free(key);
+        return ptn_null();
+    }
+
+    PtnPropertyVisibility read_visibility = PTN_PROPERTY_PUBLIC;
+    PtnValue visibility_value;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_read_visibility_table(runtime),
+            key,
+            &visibility_value
+        ) &&
+        ptn_value_deref(visibility_value).type == PTN_INT
+    ) {
+        read_visibility = (PtnPropertyVisibility)ptn_value_deref(visibility_value).as.integer;
+    }
+    if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
+        free(key);
+        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
+        return ptn_null();
+    }
+
+    PtnObjectPropertyMetadata metadata;
+    PtnObjectPropertyMetadata *metadata_ptr =
+        ptn_runtime_static_property_metadata(runtime, key, declaring_class, property, &metadata)
+            ? &metadata
+            : NULL;
+    PtnValue initialized;
+    int is_initialized = ptn_symbols_get(
+        ptn_runtime_static_property_initialized_table(runtime),
+        key,
+        &initialized
+    ) && ptn_is_truthy(initialized);
+    if (!is_initialized && metadata_ptr != NULL) {
+        if (ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata_ptr)) {
+            free(key);
+            return ptn_array_from_literal_entries(0, NULL);
+        }
+        free(key);
+        ptn_throw_property_array_auto_initialization_error(
+            runtime,
+            metadata_ptr->declaring_class,
+            metadata_ptr->display_name,
+            metadata_ptr->type_text,
+            0,
+            line
+        );
+        return ptn_null();
+    }
+
+    PtnValue value;
+    if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+        ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, ptn_null());
+        value = ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(value);
+    if (metadata_ptr != NULL &&
+        resolved.type == PTN_NULL &&
+        !ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata_ptr)) {
+        free(key);
+        ptn_throw_property_array_auto_initialization_error(
+            runtime,
+            metadata_ptr->declaring_class,
+            metadata_ptr->display_name,
+            metadata_ptr->type_text,
+            0,
+            line
+        );
+        return ptn_null();
+    }
+    free(key);
+    return ptn_value_clone_deref(value);
 }
 
 static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
@@ -5208,6 +5567,16 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
         PtnValue current = *slot;
         *slot = ptn_reference_value(ptn_reference_new_owned(current));
     }
+    PtnObjectPropertyMetadata metadata;
+    if (ptn_runtime_static_property_metadata(
+        runtime,
+        key,
+        declaring_class,
+        property,
+        &metadata
+    )) {
+        ptn_reference_adopt_property_type(slot->as.reference, &metadata);
+    }
     PtnValue reference = ptn_value_clone(*slot);
     free(key);
     return reference;
@@ -5357,8 +5726,16 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         return ptn_null();
     }
     PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
+    PtnObjectPropertyMetadata metadata;
+    PtnObjectPropertyMetadata *metadata_ptr =
+        ptn_runtime_static_property_metadata(runtime, key, declaring_class, property, &metadata)
+            ? &metadata
+            : NULL;
     PtnValue current;
     if (ptn_symbols_get(static_properties, key, &current) && current.type == PTN_REFERENCE) {
+        if (metadata_ptr != NULL) {
+            ptn_reference_adopt_property_type(current.as.reference, metadata_ptr);
+        }
         if (ptn_reference_assign(runtime, current.as.reference, value)) {
             PtnValue result = ptn_value_clone(current.as.reference->value);
             ptn_symbols_set(
@@ -5377,7 +5754,18 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         free(key);
         return ptn_value_clone_deref(value);
     }
-    PtnValue result = ptn_value_clone_deref(value);
+    PtnValue result = ptn_null();
+    if (!ptn_runtime_static_property_type_coerce_assignment(
+        runtime,
+        metadata_ptr,
+        value,
+        0,
+        line,
+        &result
+    )) {
+        free(key);
+        return ptn_null();
+    }
     ptn_symbols_set_with_runtime_scope(static_properties, key, result, runtime);
     ptn_symbols_set(
         ptn_runtime_static_property_initialized_table(runtime),
@@ -5493,6 +5881,62 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
             ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
         }
         return;
+    }
+    PtnObjectPropertyMetadata metadata;
+    PtnObjectPropertyMetadata *metadata_ptr =
+        ptn_runtime_static_property_metadata(runtime, key, declaring_class, property, &metadata)
+            ? &metadata
+            : NULL;
+    if (metadata_ptr != NULL) {
+        PtnValue coerced = ptn_null();
+        if (!ptn_runtime_static_property_type_coerce_assignment(
+            runtime,
+            metadata_ptr,
+            reference,
+            0,
+            line,
+            &coerced
+        )) {
+            free(key);
+            return;
+        }
+        if (reference.as.reference->property_type_kind != PTN_PROPERTY_TYPE_NONE) {
+            PtnValue existing_coerced = ptn_null();
+            if (!ptn_property_reference_coerce_assignment(
+                runtime,
+                reference.as.reference,
+                reference,
+                1,
+                line,
+                &existing_coerced
+            )) {
+                ptn_value_destroy(&coerced);
+                free(key);
+                return;
+            }
+            if (!ptn_compare_identical(runtime, existing_coerced, coerced, line)) {
+                PtnReferencePropertyTypeSource existing =
+                    ptn_reference_primary_property_type_source(reference.as.reference);
+                ptn_throw_reference_property_bind_incompatibility(
+                    runtime,
+                    reference.as.reference->value,
+                    &existing,
+                    metadata_ptr
+                );
+                ptn_value_destroy(&existing_coerced);
+                ptn_value_destroy(&coerced);
+                free(key);
+                return;
+            }
+            ptn_value_destroy(&existing_coerced);
+        }
+        ptn_value_destroy(&reference.as.reference->value);
+        reference.as.reference->value = coerced;
+        ptn_reference_adopt_property_type(reference.as.reference, metadata_ptr);
+    }
+    PtnValue *old_slot = ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key);
+    if (old_slot != NULL && old_slot->type == PTN_REFERENCE && metadata_ptr != NULL) {
+        ptn_reference_forget_property_type(old_slot->as.reference, metadata_ptr);
     }
     ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, reference);
     ptn_symbols_set(

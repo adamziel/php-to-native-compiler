@@ -3405,6 +3405,50 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     return 1;
 }
 
+static PTN_UNUSED int ptn_reference_property_type_source_accepts_array_auto_initialization(
+    PtnRuntime *runtime,
+    const PtnReferencePropertyTypeSource *source
+) {
+    return source != NULL &&
+        ptn_property_type_accepts_array_auto_initialization(
+            runtime,
+            source->kind,
+            source->class_name,
+            source->text,
+            source->allows_null
+        );
+}
+
+static PTN_UNUSED int ptn_reference_property_types_accept_array_auto_initialization(
+    PtnRuntime *runtime,
+    const PtnReference *reference,
+    PtnReferencePropertyTypeSource *blocking_source
+) {
+    if (reference == NULL || reference->property_type_kind == PTN_PROPERTY_TYPE_NONE) {
+        return 1;
+    }
+    PtnReferencePropertyTypeSource primary =
+        ptn_reference_primary_property_type_source(reference);
+    if (!ptn_reference_property_type_source_accepts_array_auto_initialization(runtime, &primary)) {
+        if (blocking_source != NULL) {
+            *blocking_source = primary;
+        }
+        return 0;
+    }
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        if (!ptn_reference_property_type_source_accepts_array_auto_initialization(
+            runtime,
+            &reference->property_type_sources[i]
+        )) {
+            if (blocking_source != NULL) {
+                *blocking_source = reference->property_type_sources[i];
+            }
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PTN_UNUSED int ptn_reference_property_source_matches(
     const PtnReferencePropertyTypeSource *source,
     const PtnObjectPropertyMetadata *metadata
@@ -5556,19 +5600,36 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         ) {
             return magic_value;
         }
-        if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY) {
-            return ptn_array_from_literal_entries(0, NULL);
-        }
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
-            ptn_throw_uninitialized_typed_property_error(
+            if (ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata)) {
+                return ptn_array_from_literal_entries(0, NULL);
+            }
+            ptn_throw_property_array_auto_initialization_error(
                 runtime,
                 metadata->declaring_class,
                 metadata->display_name,
+                metadata->type_text,
+                0,
                 line
             );
             return ptn_null();
         }
         return ptn_null();
+    }
+    if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
+        PtnValue current = ptn_value_deref(entry->value);
+        if (current.type == PTN_NULL &&
+            !ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata)) {
+            ptn_throw_property_array_auto_initialization_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                metadata->type_text,
+                0,
+                line
+            );
+            return ptn_null();
+        }
     }
     return ptn_value_clone_deref(entry->value);
 }
@@ -11909,6 +11970,26 @@ static PTN_UNUSED PtnArray *ptn_array_root_slot_for_write(
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_ARRAY) {
         return ptn_array_detach_value(value);
+    }
+    if (slot->type == PTN_REFERENCE &&
+        value->type == PTN_NULL &&
+        slot->as.reference->property_type_kind != PTN_PROPERTY_TYPE_NONE) {
+        PtnReferencePropertyTypeSource blocking_source;
+        if (!ptn_reference_property_types_accept_array_auto_initialization(
+            runtime,
+            slot->as.reference,
+            &blocking_source
+        )) {
+            ptn_throw_property_array_auto_initialization_error(
+                runtime,
+                blocking_source.declaring_class,
+                blocking_source.property_name,
+                blocking_source.text,
+                1,
+                line
+            );
+            return NULL;
+        }
     }
     PtnArray *converted = ptn_array_convertible_scalar_for_write(runtime, value, line);
     if (converted != NULL) {

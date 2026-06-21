@@ -699,6 +699,10 @@ impl IncludeCollector {
             IncDecTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
+            IncDecTarget::DynamicProperty { receiver, name, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)
+            }
             IncDecTarget::StaticProperty { .. } => Ok(()),
             IncDecTarget::DynamicStaticPropertyName { name, .. } => {
                 self.collect_expr(name, source_file, source_dir)

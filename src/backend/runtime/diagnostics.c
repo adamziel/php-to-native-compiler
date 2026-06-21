@@ -1884,6 +1884,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->static_property_read_visibility = &runtime->owned_static_property_read_visibility;
     ptn_symbols_init(&runtime->owned_static_property_set_visibility);
     runtime->static_property_set_visibility = &runtime->owned_static_property_set_visibility;
+    ptn_symbols_init(&runtime->owned_static_property_type_kind);
+    runtime->static_property_type_kind = &runtime->owned_static_property_type_kind;
+    ptn_symbols_init(&runtime->owned_static_property_type_class_name);
+    runtime->static_property_type_class_name = &runtime->owned_static_property_type_class_name;
+    ptn_symbols_init(&runtime->owned_static_property_type_text);
+    runtime->static_property_type_text = &runtime->owned_static_property_type_text;
+    ptn_symbols_init(&runtime->owned_static_property_type_allows_null);
+    runtime->static_property_type_allows_null = &runtime->owned_static_property_type_allows_null;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
     if (getenv("PTN_STARTUP_WARNING_EMITTED") != NULL) {

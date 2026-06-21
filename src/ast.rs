@@ -790,6 +790,11 @@ pub enum IncDecTarget {
         name: String,
         span: SourceSpan,
     },
+    DynamicProperty {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     StaticProperty {
         class_name: String,
         name: String,
