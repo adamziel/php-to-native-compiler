@@ -38541,6 +38541,72 @@ int(0)\n"
 }
 
 #[test]
+fn compile_nested_array_assignment_preserves_key_order_with_unrelated_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-array-assignment-evaluation-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-array-assignment-evaluation-order.php");
+    let output = root.join("nested-array-assignment-evaluation-order-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$counter = -1;\n\
+function next_index() { global $counter; return ++$counter; }\n\
+$arr = [[0, 0], 0];\n\
+$brr = [0, 0, [0, 0, 0, 5], 0];\n\
+$crr = [0, 0, 0, 0, [0, 0, 0, 0, 0, 10], 0, 0];\n\
+$arr[next_index()][next_index()] = $brr[next_index()][next_index()] + $crr[next_index()][next_index()];\n\
+var_dump($arr[0][1]);\n\
+\n\
+$items[2][3] = 'stdClass';\n\
+$items[$i = 0][++$i] = new $items[++$i][++$i];\n\
+var_dump(isset($items[0][1]), $items[0][1] instanceof stdClass);\n\
+\n\
+$x = [[0], 0];\n\
+function replace_x($value) { global $x; $x = $value; return 0; }\n\
+$x1 = [[1], 1];\n\
+$x2 = [[2], 2];\n\
+$x3 = [[3], 3];\n\
+$bx = [10];\n\
+$x[replace_x($x1)][replace_x($x2)] = $bx[replace_x($x3)];\n\
+var_dump($x);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(15)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(10)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"arr\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"items\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"x\""));
+    assert!(!c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"arr\""));
+    assert!(
+        !c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"items\"")
+    );
+    assert!(!c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"x\""));
+}
+
+#[test]
 fn compile_false_array_offset_unset_deprecates_to_native_binary() {
     let root = temp_dir("ptn-native-false-array-offset-unset-deprecates");
     fs::create_dir_all(&root).unwrap();

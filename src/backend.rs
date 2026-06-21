@@ -20199,32 +20199,31 @@ fn emit_instruction(
                     .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
                 let value_may_emit_undefined_variable_warning =
                     value_expr_is_direct_variable_read(value);
-                let pre_eval_root =
-                    if dimensions.len() > 1 || value_may_emit_undefined_variable_warning {
-                        let root_lookup_temp = values.next_temp();
-                        let root_temp = values.next_temp();
-                        let root_epoch_temp = values.next_temp();
-                        out.push_str("    PtnLookupResult ");
-                        out.push_str(&root_lookup_temp);
-                        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
-                        out.push_str(&c_string(array));
-                        out.push_str("\");\n");
-                        out.push_str("    PtnValue ");
-                        out.push_str(&root_temp);
-                        out.push_str(" = ");
-                        out.push_str(&root_lookup_temp);
-                        out.push_str(".exists ? ptn_value_clone_deref(");
-                        out.push_str(&root_lookup_temp);
-                        out.push_str(".value) : ptn_null();\n");
-                        out.push_str("    uint64_t ");
-                        out.push_str(&root_epoch_temp);
-                        out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
-                        out.push_str(&c_string(array));
-                        out.push_str("\");\n");
-                        Some((root_temp, root_epoch_temp))
-                    } else {
-                        None
-                    };
+                let pre_eval_root = if value_may_emit_undefined_variable_warning {
+                    let root_lookup_temp = values.next_temp();
+                    let root_temp = values.next_temp();
+                    let root_epoch_temp = values.next_temp();
+                    out.push_str("    PtnLookupResult ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&root_temp);
+                    out.push_str(" = ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".exists ? ptn_value_clone_deref(");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".value) : ptn_null();\n");
+                    out.push_str("    uint64_t ");
+                    out.push_str(&root_epoch_temp);
+                    out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    Some((root_temp, root_epoch_temp))
+                } else {
+                    None
+                };
                 let path = if pre_eval_root.is_some() || has_deferred_dimension_warnings {
                     emit_array_path_segments_with_deferred_variable_warnings(
                         out, values, dimensions,
@@ -31131,8 +31130,7 @@ impl ValueEmitter {
                 .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
             let value_may_emit_undefined_variable_warning =
                 value_expr_is_direct_variable_read(value);
-            let pre_eval_root = if dimensions.len() > 1 || value_may_emit_undefined_variable_warning
-            {
+            let pre_eval_root = if value_may_emit_undefined_variable_warning {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
                 let root_epoch_temp = self.next_temp();
