@@ -1687,9 +1687,8 @@ fn emit_declared_class_new_instance_without_constructor(
             out.push_str("        int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;\n");
             out.push_str("        runtime->warn_by_ref_argument_mismatch = 1;\n");
             out.push_str("        runtime->throw_argument_count_errors = 1;\n");
-            out.push_str(
-                "        PtnValue constructor_result = ptn_call_declared_method(runtime, result, \"__construct\", argc, args, line);\n",
-            );
+            out.push_str("        const char *const *constructor_arg_names = runtime->next_call_arg_names;\n");
+            out.push_str("        PtnValue constructor_result = ptn_call_declared_method_named(runtime, result, \"__construct\", argc, args, constructor_arg_names, line);\n");
             out.push_str("        runtime->throw_argument_count_errors = previous_throw_argument_count_errors;\n");
             out.push_str("        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;\n");
             out.push_str("        if (runtime->exceptions->active_exception == NULL && result.type == PTN_OBJECT) {\n");
@@ -16732,6 +16731,10 @@ fn emit_method_dispatch(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method_named(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line) {\n",
     );
+    out.push_str("    static const PtnParameterMetadata PTN_CLOSURE_CALL_PARAMETERS[] = {\n");
+    out.push_str("        { \"newThis\", \"object\", \"object\", 0, 0, 0, 0, 1, NULL, NULL },\n");
+    out.push_str("        { \"args\", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL },\n");
+    out.push_str("    };\n");
     out.push_str("    if (!ptn_call_arg_names_have_named(argc, arg_names)) {\n");
     out.push_str("        return ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
     out.push_str("    }\n");
@@ -16743,6 +16746,8 @@ fn emit_method_dispatch(
     out.push_str("        metadata = runtime->declared_method_metadata(resolved.as.object->class_name, method_name);\n");
     out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
     out.push_str("        metadata = resolved.as.closure->metadata;\n");
+    out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"call\")) {\n");
+    out.push_str("        metadata = ptn_function_metadata_found(\"Closure::call\", 1, 2, 1, 1, PTN_CLOSURE_CALL_PARAMETERS, 0, NULL, NULL, 0, 0);\n");
     out.push_str("    }\n");
     out.push_str("    PtnNormalizedCallArguments normalized;\n");
     out.push_str("    int normalized_active = ptn_normalize_named_call_arguments(runtime, metadata, argc, args, arg_names, line, &normalized);\n");
@@ -16866,7 +16871,8 @@ fn emit_method_dispatch(
             "            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n",
         );
         out.push_str("            ptn_closure_set_capture(bound, \"this\", new_this);\n");
-        out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line, 0);\n");
+        out.push_str("            const char *const *ptn_closure_call_arg_names = runtime->next_call_arg_names;\n");
+        out.push_str("            PtnValue call_result = ptn_call_callable_named(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, ptn_closure_call_arg_names != NULL && argc > 1 ? ptn_closure_call_arg_names + 1 : NULL, line, 0);\n");
         out.push_str("            ptn_value_destroy(&bound);\n");
         out.push_str("            return call_result;\n");
         out.push_str("        }\n");
@@ -16875,7 +16881,7 @@ fn emit_method_dispatch(
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("            const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
         out.push_str("            runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
-        out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved, argc, args, line, 0);\n");
+        out.push_str("            PtnValue result = ptn_call_callable_named(runtime, resolved, argc, args, runtime->next_call_arg_names, line, 0);\n");
         out.push_str(
             "            runtime->by_ref_argument_function_name_override = previous_name;\n",
         );

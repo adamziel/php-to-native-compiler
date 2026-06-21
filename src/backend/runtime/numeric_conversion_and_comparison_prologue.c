@@ -315,6 +315,7 @@ static PTN_UNUSED void ptn_runtime_push_trace_frame(
     frame->line = line;
     frame->argc = argc;
     frame->args = args;
+    frame->arg_names = runtime->next_call_arg_names;
     frame->parameter_count = 0;
     frame->parameter_names = NULL;
     frame->sensitive_parameter_count = 0;
@@ -1223,9 +1224,12 @@ static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
         if (i > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
+        PtnArrayKey key = frame->arg_names != NULL && frame->arg_names[i] != NULL
+            ? ptn_array_string_key(frame->arg_names[i])
+            : ptn_array_int_key((int64_t)i);
         ptn_array_set_entry(
             args.as.array,
-            ptn_array_int_key((int64_t)i),
+            key,
             ptn_trace_frame_arg_value(frame, i)
         );
     }
@@ -1647,7 +1651,12 @@ static int ptn_exception_append_trace_frame(
             if (i != 0) {
                 ptn_string_buffer_append(buffer, ", ");
             }
-            ptn_trace_append_arg(buffer, args_value.as.array->entries[i].value, max_string_len);
+            PtnArrayEntry *entry = &args_value.as.array->entries[i];
+            if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+                ptn_string_buffer_append_len(buffer, entry->key.as.string, entry->key.string_len);
+                ptn_string_buffer_append(buffer, ": ");
+            }
+            ptn_trace_append_arg(buffer, entry->value, max_string_len);
         }
     } else if (args_slot != NULL) {
         ptn_exception_trace_warning(runtime, "args element is not an array", line);

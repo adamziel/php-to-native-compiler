@@ -38874,6 +38874,86 @@ var_dump($referenced);",
 }
 
 #[test]
+fn compile_named_callback_and_reflection_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-named-callback-reflection-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("named-callback-reflection-arguments.php");
+    let output = root.join("named-callback-reflection-arguments-bin");
+    fs::write(
+        &input,
+        "<?php
+$show = function($a = 'a', $b = 'b', $c = 'c') {
+    echo \"a=$a,b=$b,c=$c\\n\";
+};
+class NamedTarget {
+    public function __construct($a = 'a', $b = 'b', $c = 'c') {
+        echo \"a=$a,b=$b,c=$c\\n\";
+    }
+    public function method($a = 'a', $b = 'b', $c = 'c') {
+        echo \"a=$a,b=$b,c=$c\\n\";
+    }
+}
+
+call_user_func($show, c: 'C', a: 'A');
+try {
+    var_dump(call_user_func('array_slice', [1, 2, 3, 4, 5], length: 2));
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump(call_user_func('array_slice', [1, 2, 3, 4, 'x' => 5], 3, preserve_keys: true));
+
+$show->__invoke('A', c: 'C');
+$show->call(new class {}, 'A', c: 'C');
+$rf = new ReflectionFunction($show);
+$rf->invoke('A', c: 'C');
+$rf->invokeArgs(['A', 'c' => 'C']);
+$rm = new ReflectionMethod(NamedTarget::class, 'method');
+$rm->invoke(new NamedTarget('skip'), 'A', c: 'C');
+$rm->invokeArgs(new NamedTarget('skip'), ['A', 'c' => 'C']);
+$rc = new ReflectionClass(NamedTarget::class);
+$rc->newInstance('A', c: 'C');
+$rc->newInstanceArgs(['A', 'c' => 'C']);
+try {
+    call_user_func_array('array_multisort', ['' => 1]);
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "a=A,b=b,c=C\n",
+            "array_slice(): Argument #2 ($offset) not passed\n",
+            "array(2) {\n",
+            "  [3]=>\n",
+            "  int(4)\n",
+            "  [\"x\"]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "a=A,b=b,c=C\n",
+            "a=A,b=b,c=C\n",
+            "a=A,b=b,c=C\n",
+            "a=A,b=b,c=C\n",
+            "a=skip,b=b,c=c\n",
+            "a=A,b=b,c=C\n",
+            "a=skip,b=b,c=c\n",
+            "a=A,b=b,c=C\n",
+            "a=A,b=b,c=C\n",
+            "a=A,b=b,c=C\n",
+            "array_multisort() expects at least 1 argument, 0 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_call_user_func_namespaced_sort_literal_warns_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-namespaced-sort-literal-warns");
     fs::create_dir_all(&root).unwrap();
