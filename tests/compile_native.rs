@@ -51506,6 +51506,55 @@ array_walk($items, \"needs_type\");
 }
 
 #[test]
+fn compile_array_walk_callback_class_type_error_location_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-callback-class-type-error-location");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-callback-class-type-error-location.php");
+    let output = root.join("array-walk-callback-class-type-error-location-bin");
+    fs::write(
+        &input,
+        "<?php
+class WalkExpected {}
+function walk_requires_object(WalkExpected $value) {}
+function call_requires_object(WalkExpected $value) {}
+
+$input = [1];
+try {
+    array_walk($input, \"walk_requires_object\");
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    call_user_func(\"call_requires_object\", 1);
+} catch (TypeError $e) {
+    echo strpos($e->getMessage(), \"called in \") === false
+        ? \"call_user_func missing caller\\n\"
+        : \"call_user_func includes caller\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "walk_requires_object(): Argument #1 ($value) must be of type WalkExpected, int given\n",
+            "call_user_func includes caller\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("suppress_call_site"));
+    assert!(c_source.contains("suppress_user_call_frame_location"));
+}
+
+#[test]
 fn compile_array_walk_userdata_by_ref_separation_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-userdata-ref-separation");
     fs::create_dir_all(&root).unwrap();

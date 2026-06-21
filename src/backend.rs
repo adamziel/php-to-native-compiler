@@ -1111,9 +1111,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\\0';\n",
     );
+    out.push_str("    int suppress_call_site = runtime != NULL && (runtime->suppress_user_call_frame_location || runtime->suppress_user_argument_count_location);\n");
     out.push_str("    const char *call_path = NULL;\n");
     out.push_str("    size_t call_line = 0;\n");
-    out.push_str("    if (runtime != NULL && runtime->trace_frame != NULL && runtime->trace_frame->runtime == runtime && runtime->trace_frame->file != NULL && runtime->trace_frame->line != 0) {\n");
+    out.push_str("    if (!suppress_call_site && runtime != NULL && runtime->trace_frame != NULL && runtime->trace_frame->runtime == runtime && runtime->trace_frame->file != NULL && runtime->trace_frame->line != 0) {\n");
     out.push_str("        call_path = runtime->trace_frame->file;\n");
     out.push_str("        call_line = runtime->trace_frame->line;\n");
     out.push_str("    }\n");
@@ -1121,8 +1122,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    int include_definition = declaration_path != NULL && declaration_line != 0;\n",
     );
+    out.push_str("    const char *runtime_path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n");
     out.push_str(
-        "    const char *throw_path = include_definition ? declaration_path : runtime->source_path;\n",
+        "    const char *throw_path = include_definition ? declaration_path : runtime_path;\n",
     );
     out.push_str("    size_t throw_line = include_definition ? declaration_line : line;\n");
     out.push_str("    int needed;\n");
