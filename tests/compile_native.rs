@@ -12861,6 +12861,78 @@ var_dump(class_exists('defclass', false));
 }
 
 #[test]
+fn compile_eval_array_mutations_use_current_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-array-mutations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-array-mutations.php");
+    let output = root.join("eval-array-mutations-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$a = ["v.0", "v.1", "v.2"];
+$transform = 'array_pop($a);';
+foreach ($a as $k => $v) {
+    echo "$k:$v\n";
+    eval($transform);
+}
+var_dump($a);
+
+$a = ["v.0"];
+$counter = 0;
+$transform = 'array_push($a, "new.$counter");';
+foreach ($a as $k => &$v) {
+    echo "$k:$v\n";
+    eval($transform);
+    $counter++;
+    if ($counter > 2) {
+        break;
+    }
+}
+var_dump($a);
+
+$a = ["left", "right"];
+$k = 0;
+eval('unset($a[$k]);');
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0:v.0\n",
+            "1:v.1\n",
+            "2:v.2\n",
+            "array(0) {\n",
+            "}\n",
+            "0:v.0\n",
+            "1:new.0\n",
+            "2:new.1\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"v.0\"\n",
+            "  [1]=>\n",
+            "  string(5) \"new.0\"\n",
+            "  [2]=>\n",
+            "  &string(5) \"new.1\"\n",
+            "  [3]=>\n",
+            "  string(5) \"new.2\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [1]=>\n",
+            "  string(5) \"right\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();
