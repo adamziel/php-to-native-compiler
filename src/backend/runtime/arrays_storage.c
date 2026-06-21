@@ -1147,6 +1147,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->lazy_options = 0;
     object->lazy_initializing = 0;
     object->readonly_clone_initializing = 0;
+    object->defer_object_id_release_once = 0;
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);
@@ -2396,7 +2397,6 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);
     ptn_runtime_prune_weak_maps_for_released_object(object->lifecycle_runtime);
-    ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);
     }
@@ -2409,6 +2409,14 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         object->property_metadata_len
     );
     ptn_array_free(object->properties);
+    if (object->defer_object_id_release_once) {
+        ptn_runtime_release_object_id_after_next_allocation(
+            object->lifecycle_runtime,
+            object->object_id
+        );
+    } else {
+        ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
+    }
     free(object);
 }
 

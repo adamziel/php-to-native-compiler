@@ -105106,8 +105106,57 @@ static PTN_UNUSED PtnValue ptn_recursive_array_iterator_new(
     return ptn_array_iterator_new_for_class(runtime, "RecursiveArrayIterator", argc, args, line);
 }
 
-static PTN_UNUSED PtnValue ptn_array_object_new(
+static PtnArrayObjectData *ptn_array_object_data_create(
+    PtnValue storage,
+    int64_t flags,
+    char *iterator_class
+) {
+    PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->storage = ptn_value_clone_deref(storage);
+    data->flags = flags;
+    data->iterator_class = iterator_class;
+    data->sorting = 0;
+    return data;
+}
+
+static void ptn_array_object_install_data(
     PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnArrayObjectData *data,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT) {
+        ptn_array_object_data_free(data);
+        return;
+    }
+    if (resolved.as.object->native_data != NULL &&
+        resolved.as.object->native_data_free != NULL) {
+        resolved.as.object->native_data_free(resolved.as.object->native_data);
+    }
+    resolved.as.object->native_data = data;
+    resolved.as.object->native_data_free = ptn_array_object_data_free;
+    ptn_spl_declare_storage_property(runtime, resolved, "ArrayObject", data->storage, line);
+}
+
+static PTN_UNUSED PtnValue ptn_array_object_new_uninitialized(PtnRuntime *runtime) {
+    PtnValue storage = ptn_array_from_literal_entries(0, NULL);
+    PtnArrayObjectData *data =
+        ptn_array_object_data_create(storage, 0, ptn_duplicate_string("ArrayIterator"));
+    PtnValue object = ptn_object_new_shell(runtime, "ArrayObject");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_array_object_data_free;
+    ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, 0);
+    ptn_value_destroy(&storage);
+    return object;
+}
+
+static PTN_UNUSED int ptn_array_object_initialize(
+    PtnRuntime *runtime,
+    PtnValue receiver,
     size_t argc,
     const PtnValue *args,
     size_t line
@@ -105124,14 +105173,14 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception_at(runtime, "ArgumentCountError", message, runtime->source_path, line);
-        return ptn_null();
+        return 0;
     }
 
     int64_t flags = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "ArrayObject::__construct", 2, "flags", args[1], line)
         : (argc >= 1 ? ptn_spl_inherited_flags_from_storage(args[0]) : 0);
     if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
+        return 0;
     }
     char *iterator_class = argc >= 3
         ? ptn_spl_array_object_iterator_class_arg(
@@ -105144,7 +105193,7 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
         )
         : ptn_duplicate_string("ArrayIterator");
     if (runtime->exceptions->active_exception != NULL || iterator_class == NULL) {
-        return ptn_null();
+        return 0;
     }
 
     PtnValue storage = ptn_null();
@@ -105163,26 +105212,28 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&storage);
             free(iterator_class);
-            return ptn_null();
+            return 0;
         }
     }
 
-    PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
-    if (data == NULL) {
-        ptn_value_destroy(&storage);
-        free(iterator_class);
-        ptn_abort_out_of_memory();
-    }
-    data->storage = ptn_value_clone_deref(storage);
-    data->flags = flags;
-    data->iterator_class = iterator_class;
-    data->sorting = 0;
-
-    PtnValue object = ptn_object_new_shell(runtime, "ArrayObject");
-    object.as.object->native_data = data;
-    object.as.object->native_data_free = ptn_array_object_data_free;
-    ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+    PtnArrayObjectData *data =
+        ptn_array_object_data_create(storage, flags, iterator_class);
+    ptn_array_object_install_data(runtime, receiver, data, line);
     ptn_value_destroy(&storage);
+    return runtime->exceptions->active_exception == NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_array_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue object = ptn_array_object_new_uninitialized(runtime);
+    if (!ptn_array_object_initialize(runtime, object, argc, args, line)) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
     return object;
 }
 
@@ -110243,30 +110294,12 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    PtnArrayObjectData *data = ptn_array_object_data(runtime, receiver);
-    if (data == NULL) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_array_object_initialize(runtime, receiver, argc, args, line);
         return ptn_null();
     }
-    if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_array_object_new(runtime, argc, args, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&replacement);
-            return ptn_null();
-        }
-        PtnValue resolved_receiver = ptn_value_deref(receiver);
-        if (replacement.type == PTN_OBJECT &&
-            replacement.as.object->native_data != NULL &&
-            resolved_receiver.type == PTN_OBJECT) {
-            PtnArrayObjectData *new_data =
-                (PtnArrayObjectData *)replacement.as.object->native_data;
-            replacement.as.object->native_data = NULL;
-            replacement.as.object->native_data_free = NULL;
-            ptn_array_object_data_free(resolved_receiver.as.object->native_data);
-            resolved_receiver.as.object->native_data = new_data;
-            resolved_receiver.as.object->native_data_free = ptn_array_object_data_free;
-            ptn_spl_declare_storage_property(runtime, resolved_receiver, "ArrayObject", new_data->storage, line);
-        }
-        ptn_value_destroy(&replacement);
+    PtnArrayObjectData *data = ptn_array_object_data(runtime, receiver);
+    if (data == NULL) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "count")) {

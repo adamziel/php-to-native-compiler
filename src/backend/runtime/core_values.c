@@ -880,6 +880,7 @@ struct PtnObject {
     int lazy_options;
     int lazy_initializing;
     int readonly_clone_initializing;
+    int defer_object_id_release_once;
     PtnValue lazy_initializer;
     PtnValue lazy_proxy_instance;
 };
@@ -1241,6 +1242,8 @@ struct PtnRuntime {
     size_t *free_object_ids;
     size_t free_object_ids_len;
     size_t free_object_ids_capacity;
+    size_t deferred_free_object_id;
+    int has_deferred_free_object_id;
     PtnOutputBuffer *output_buffers;
     size_t output_buffers_len;
     size_t output_buffers_capacity;
@@ -1643,28 +1646,7 @@ static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const
     root->included_files[root->included_files_len++] = ptn_duplicate_string(path);
 }
 
-static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root == NULL) {
-        return 0;
-    }
-    if (root->free_object_ids_len > 0) {
-        return root->free_object_ids[--root->free_object_ids_len];
-    }
-    if (root->next_object_id == 0) {
-        root->next_object_id = 1;
-    }
-    if (root->next_object_id > (size_t)INT64_MAX) {
-        ptn_abort_out_of_memory();
-    }
-    return root->next_object_id++;
-}
-
-static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t object_id) {
-    PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root == NULL || object_id == 0) {
-        return;
-    }
+static void ptn_runtime_push_free_object_id(PtnRuntime *root, size_t object_id) {
     if (root->free_object_ids_len == root->free_object_ids_capacity) {
         size_t new_capacity = root->free_object_ids_capacity == 0
             ? 8
@@ -1681,6 +1663,54 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
         root->free_object_ids_capacity = new_capacity;
     }
     root->free_object_ids[root->free_object_ids_len++] = object_id;
+}
+
+static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return 0;
+    }
+    size_t object_id = 0;
+    if (root->free_object_ids_len > 0) {
+        object_id = root->free_object_ids[--root->free_object_ids_len];
+    } else {
+        if (root->next_object_id == 0) {
+            root->next_object_id = 1;
+        }
+        if (root->next_object_id > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        object_id = root->next_object_id++;
+    }
+    if (root->has_deferred_free_object_id) {
+        ptn_runtime_push_free_object_id(root, root->deferred_free_object_id);
+        root->deferred_free_object_id = 0;
+        root->has_deferred_free_object_id = 0;
+    }
+    return object_id;
+}
+
+static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t object_id) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || object_id == 0) {
+        return;
+    }
+    ptn_runtime_push_free_object_id(root, object_id);
+}
+
+static PTN_UNUSED void ptn_runtime_release_object_id_after_next_allocation(
+    PtnRuntime *runtime,
+    size_t object_id
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || object_id == 0) {
+        return;
+    }
+    if (root->has_deferred_free_object_id) {
+        ptn_runtime_push_free_object_id(root, root->deferred_free_object_id);
+    }
+    root->deferred_free_object_id = object_id;
+    root->has_deferred_free_object_id = 1;
 }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -2184,6 +2214,14 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
 );
 static PTN_UNUSED PtnValue ptn_array_object_new(
     PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_object_new_uninitialized(PtnRuntime *runtime);
+static PTN_UNUSED int ptn_array_object_initialize(
+    PtnRuntime *runtime,
+    PtnValue receiver,
     size_t argc,
     const PtnValue *args,
     size_t line

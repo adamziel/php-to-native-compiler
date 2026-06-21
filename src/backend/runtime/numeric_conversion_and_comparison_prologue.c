@@ -80,6 +80,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;
     runtime->free_object_ids_capacity = 0;
+    runtime->deferred_free_object_id = 0;
+    runtime->has_deferred_free_object_id = 0;
     runtime->output_buffers = NULL;
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
@@ -619,6 +621,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->free_object_ids = NULL;
         runtime->free_object_ids_len = 0;
         runtime->free_object_ids_capacity = 0;
+        runtime->deferred_free_object_id = 0;
+        runtime->has_deferred_free_object_id = 0;
         free(runtime->output_buffers);
         runtime->output_buffers = NULL;
         runtime->output_buffers_len = 0;

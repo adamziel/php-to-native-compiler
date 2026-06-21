@@ -33840,6 +33840,22 @@ impl ValueEmitter {
                 true,
             );
         } else {
+            if compile_time_class_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("ArrayObject"))
+            {
+                self.emit_runtime_new_object(
+                    out,
+                    &result_temp,
+                    "ArrayObject",
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    true,
+                );
+                return result_temp;
+            }
+
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -34577,6 +34593,77 @@ impl ValueEmitter {
         argument_unpacks: &[bool],
         line: usize,
     ) {
+        if parent_class_name.eq_ignore_ascii_case("ArrayObject") {
+            if argument_unpacks.iter().any(|unpack| *unpack) {
+                let args_temp = self.emit_call_arguments_builder(
+                    out,
+                    "__construct",
+                    arguments,
+                    &[],
+                    argument_unpacks,
+                    line,
+                    true,
+                    None,
+                );
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(".len, ");
+                out.push_str(&args_temp);
+                out.push_str(".values, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                out.push_str("    ptn_call_arguments_destroy(&");
+                out.push_str(&args_temp);
+                out.push_str(");\n");
+                return;
+            }
+
+            let mut argument_temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            if argument_temps.is_empty() {
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ");
+                for (index, temp) in argument_temps.iter().enumerate() {
+                    if index > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(temp);
+                }
+                out.push_str(" };\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", ");
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            }
+            for temp in argument_temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+            return;
+        }
+
         let parent_temp = self.next_temp();
         if argument_unpacks.iter().any(|unpack| *unpack) {
             let args_temp = self.emit_call_arguments_builder(
@@ -34730,6 +34817,75 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        if declare_result && class_name.eq_ignore_ascii_case("ArrayObject") {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_array_object_new_uninitialized(&runtime);\n");
+            if argument_unpacks.iter().any(|unpack| *unpack) {
+                let args_temp = self.emit_call_arguments_builder(
+                    out,
+                    "__construct",
+                    arguments,
+                    &[],
+                    argument_unpacks,
+                    line,
+                    true,
+                    None,
+                );
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(".len, ");
+                out.push_str(&args_temp);
+                out.push_str(".values, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                out.push_str("    ptn_call_arguments_destroy(&");
+                out.push_str(&args_temp);
+                out.push_str(");\n");
+                return;
+            }
+
+            let mut argument_temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            if argument_temps.is_empty() {
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ");
+                out.push_str(&argument_temps.join(", "));
+                out.push_str(" };\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ptn_array_object_initialize(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(", ");
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            }
+            for argument_temp in argument_temps {
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
+            return;
+        }
+
         let class_name_expr = if declare_result {
             format!("\"{}\"", c_string(class_name))
         } else {

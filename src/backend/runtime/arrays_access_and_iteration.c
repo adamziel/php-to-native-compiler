@@ -9280,6 +9280,14 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         } else {
             ptn_iteratoraggregate_invalid_result_throw(runtime, value.as.object, path, line);
         }
+        if (
+            iterator.has_iterator_object &&
+            iterator.iterator_object.type == PTN_OBJECT &&
+            resolved.type == PTN_OBJECT &&
+            iterator.iterator_object.as.object == resolved.as.object
+        ) {
+            iterator.iterator_object.as.object->defer_object_id_release_once = 1;
+        }
         ptn_value_destroy(&result);
         return iterator;
     }

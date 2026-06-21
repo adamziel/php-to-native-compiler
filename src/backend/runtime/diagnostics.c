@@ -1915,6 +1915,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;
     runtime->free_object_ids_capacity = 0;
+    runtime->deferred_free_object_id = 0;
+    runtime->has_deferred_free_object_id = 0;
     runtime->output_buffers = NULL;
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
