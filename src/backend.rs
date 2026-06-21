@@ -29943,6 +29943,9 @@ impl ValueEmitter {
         out: &mut String,
         receiver: &ValueExpr,
     ) -> String {
+        if let Some(result_temp) = self.emit_array_dim_indirect_write_receiver(out, receiver) {
+            return result_temp;
+        }
         if matches!(
             receiver,
             ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. }
@@ -29999,6 +30002,80 @@ impl ValueEmitter {
             }
             _ => self.emit_materialized_value(out, receiver),
         }
+    }
+
+    fn emit_array_dim_indirect_write_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+    ) -> Option<String> {
+        let Some(ReferenceTarget::ArrayDim(target)) =
+            reference_array_dim_target_from_value(receiver)
+        else {
+            return None;
+        };
+        if target.dimensions.is_empty() {
+            return None;
+        }
+
+        let has_append_segment = target.dimensions.iter().any(Option::is_none);
+        let path = emit_array_path_segments(out, self, &target.dimensions);
+        let result_temp = self.next_temp();
+        if has_append_segment {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ptn_null(), ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+        } else {
+            let lookup_temp = self.next_temp();
+            out.push_str("    PtnLookupResult ");
+            out.push_str(&lookup_temp);
+            out.push_str(" = ptn_runtime_array_path_lookup_quiet(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(";\n");
+            out.push_str("    if (");
+            out.push_str(&lookup_temp);
+            out.push_str(".exists) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&lookup_temp);
+            out.push_str(".value;\n");
+            out.push_str("    } else {\n");
+            emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ptn_null(), ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        }
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        Some(result_temp)
     }
 
     fn emit_dynamic_variable_read(

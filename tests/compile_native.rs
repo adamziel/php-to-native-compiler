@@ -38150,6 +38150,80 @@ fn compile_append_call_argument_by_value_diagnostic_to_native_binary() {
 }
 
 #[test]
+fn compile_append_array_dim_property_write_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-append-array-dim-property-write-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-array-dim-property-write-receiver.php");
+    let output = root.join("append-array-dim-property-write-receiver-bin");
+    fs::write(
+        &input,
+        "<?php
+$missing = [];
+try {
+    $missing[1][2]->foo = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($missing);
+
+$items = [];
+try {
+    $items[]->bar = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($items);
+
+$arr[][] = 2;
+try {
+    $arr[][]->bar = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($arr);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Attempt to assign property \"foo\" on null\n",
+            "array(1) {\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [2]=>\n",
+            "    NULL\n",
+            "  }\n",
+            "}\n",
+            "Attempt to assign property \"bar\" on null\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "Attempt to assign property \"bar\" on null\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    NULL\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_append_method_call_arguments_use_declared_parameter_modes_to_native_binary() {
     let root = temp_dir("ptn-native-append-method-argument-parameter-modes");
     fs::create_dir_all(&root).unwrap();
