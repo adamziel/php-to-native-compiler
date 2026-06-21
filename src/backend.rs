@@ -29881,17 +29881,7 @@ impl ValueEmitter {
             receiver,
             ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. }
         ) {
-            if let Some(target) = reference_array_dim_target_from_value(receiver) {
-                let reference_temp = self.emit_reference_target(out, &target);
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone_deref(");
-                out.push_str(&reference_temp);
-                out.push_str(");\n");
-                emit_value_cleanup(out, "    ", &reference_temp);
-                return result_temp;
-            }
+            return self.emit_materialized_value(out, receiver);
         }
         match receiver {
             ValueExpr::PropertyFetch {

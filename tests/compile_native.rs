@@ -47074,6 +47074,7 @@ fn compile_string_offset_object_receiver_errors_to_native_binary() {
         "<?php\n\
 $str = 'abc';\n\
 try { $str[0]->bar = 1; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $str[0]->bar[1] = 2; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $str[1]->bar += 1; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { unset($str[2]->bar); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
     )
@@ -47085,7 +47086,7 @@ try { unset($str[2]->bar); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; 
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Cannot use string offset as an object\nCannot use string offset as an object\nCannot use string offset as an object\n"
+        "Cannot use string offset as an object\nCannot use string offset as an object\nCannot use string offset as an object\nCannot use string offset as an object\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
