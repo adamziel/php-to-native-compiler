@@ -63937,6 +63937,54 @@ echo $copy->x, \"\\n\";
 }
 
 #[test]
+fn compile_readonly_uninitialized_array_append_rejects_indirect_initialization_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-uninitialized-array-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-uninitialized-array-append.php");
+    let output = root.join("readonly-uninitialized-array-append-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public readonly array $a;
+    public function init() {
+        $this->a[] = 1;
+        var_dump($this->a);
+    }
+}
+function init_outside() {
+    $c = new C;
+    $c->a[] = 1;
+    var_dump($c->a);
+}
+try {
+    (new C)->init();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    init_outside();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify readonly property C::$a\n",
+            "Cannot indirectly modify readonly property C::$a\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_readonly_indirect_modification_errors_to_native_binary() {
     let root = temp_dir("ptn-native-readonly-indirect-modification");
     fs::create_dir_all(&root).unwrap();

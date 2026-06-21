@@ -4485,7 +4485,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 return NULL;
             }
             if (for_write && scoped_private->set_visibility != scoped_private->read_visibility) {
-                if (indirect_write) {
+                if (indirect_write && scoped_private->is_readonly) {
+                    ptn_throw_readonly_property_indirect_modification_error(
+                        runtime,
+                        scoped_private->declaring_class,
+                        property,
+                        line
+                    );
+                } else if (indirect_write) {
                     ptn_throw_property_indirect_set_visibility_error(
                         runtime,
                         scoped_private->set_visibility,
@@ -4574,7 +4581,14 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 return NULL;
             }
             if (for_write && shared_property->set_visibility != shared_property->read_visibility) {
-                if (indirect_write) {
+                if (indirect_write && shared_property->is_readonly) {
+                    ptn_throw_readonly_property_indirect_modification_error(
+                        runtime,
+                        shared_property->declaring_class,
+                        property,
+                        line
+                    );
+                } else if (indirect_write) {
                     ptn_throw_property_indirect_set_visibility_error(
                         runtime,
                         shared_property->set_visibility,
@@ -5478,6 +5492,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
     free(storage_key);
     if (entry == NULL) {
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
+            if (metadata->is_readonly) {
+                ptn_throw_readonly_property_indirect_modification_error(
+                    runtime,
+                    metadata->declaring_class,
+                    metadata->display_name,
+                    line
+                );
+                return ptn_null();
+            }
             if (
                 metadata->set_visibility != metadata->read_visibility &&
                 !ptn_property_visibility_allows(
@@ -6163,8 +6186,8 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
         }
     }
     int readonly_clone_reinit = 0;
-    if (metadata != NULL && metadata->is_readonly && entry != NULL) {
-        if (indirect_write) {
+    if (metadata != NULL && metadata->is_readonly && indirect_write) {
+        if (entry != NULL) {
             PtnValue current = ptn_value_deref(entry->value);
             PtnValue assigned = ptn_value_deref(value);
             if (current.type == PTN_OBJECT &&
@@ -6174,16 +6197,18 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
                 free(storage_key);
                 return ptn_value_clone(assigned);
             }
-            ptn_array_key_free(key);
-            free(storage_key);
-            ptn_throw_readonly_property_indirect_modification_error(
-                runtime,
-                metadata->declaring_class,
-                metadata->display_name,
-                line
-            );
-            return ptn_null();
         }
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_indirect_modification_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return ptn_null();
+    }
+    if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         readonly_clone_reinit =
             receiver.as.object->readonly_clone_initializing &&
             mutable_metadata != NULL &&
