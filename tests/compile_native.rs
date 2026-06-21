@@ -54224,6 +54224,65 @@ try {
 }
 
 #[test]
+fn compile_array_object_array_as_props_property_exists_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-array-as-props-property-exists");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-array-as-props-property-exists.php");
+    let output = root.join("array-object-array-as-props-property-exists-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$source = [
+    'a' => 1,
+    'b' => true,
+    'c' => 0,
+    'd' => null,
+    'e' => false,
+    'f' => [],
+    0 => 'zero',
+];
+$object = new ArrayObject($source, ArrayObject::ARRAY_AS_PROPS);
+$source['z'] = '';
+$source[''] = '';
+foreach (['a', 'b', 'c', 'd', 'e', 'f', '0', 0, 'z', ''] as $key) {
+    var_dump(property_exists($object, $key));
+}
+
+$plain = new ArrayObject(['a' => 1], 0);
+var_dump(property_exists($plain, 'a'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_property_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-metadata");
     fs::create_dir_all(&root).unwrap();

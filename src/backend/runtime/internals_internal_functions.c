@@ -110748,6 +110748,38 @@ static void ptn_throw_property_exists_target_type_error(PtnRuntime *runtime, Ptn
     ptn_throw_exception(runtime, "TypeError", message);
 }
 
+static int ptn_array_object_array_as_props_property_exists(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *property_name,
+    size_t property_len,
+    size_t line
+) {
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT) {
+        return 0;
+    }
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(target);
+    if (data == NULL || (data->flags & PTN_ARRAY_OBJECT_ARRAY_AS_PROPS) == 0) {
+        return 0;
+    }
+
+    PtnValue property_value = ptn_owned_string_len(
+        ptn_duplicate_string_len(property_name, property_len),
+        property_len
+    );
+    PtnArrayKey key;
+    int converted = ptn_array_offset_key_from_value(runtime, property_value, line, 0, &key);
+    ptn_value_destroy(&property_value);
+    if (!converted) {
+        return 0;
+    }
+
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    ptn_array_key_free(key);
+    return entry != NULL;
+}
+
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue target = ptn_value_deref(args[0]);
@@ -110779,7 +110811,14 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
     if (target.type == PTN_OBJECT) {
         exists = ptn_declared_class_property_exists(target.as.object->class_name, property_name) ||
             ptn_internal_class_property_exists(target.as.object->class_name, property_name) ||
-            ptn_object_public_property_slot_exists(target.as.object, property_name);
+            ptn_object_public_property_slot_exists(target.as.object, property_name) ||
+            ptn_array_object_array_as_props_property_exists(
+                runtime,
+                target,
+                property_operand.data,
+                property_operand.len,
+                line
+            );
     } else if (target.type == PTN_STRING) {
         char *class_name = ptn_value_to_string(target);
         const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
