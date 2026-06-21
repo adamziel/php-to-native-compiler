@@ -64526,9 +64526,6 @@ static PtnValue ptn_defined_constants_core_table(void) {
     return table;
 }
 
-#define PTN_LIBXML_DOTTED_VERSION "2.9.14"
-#define PTN_LIBXML_VERSION 20914
-#define PTN_LIBXML_LOADED_VERSION "20914"
 #define PTN_LIBXML_NOENT 2
 #define PTN_LIBXML_DTDLOAD 4
 #define PTN_LIBXML_DTDATTR 8
@@ -64555,9 +64552,10 @@ static PtnValue ptn_defined_constants_core_table(void) {
 #define PTN_LIBXML_ERR_FATAL 3
 
 static void ptn_defined_constants_add_libxml(PtnValue table) {
-    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string(PTN_LIBXML_DOTTED_VERSION));
-    ptn_get_defined_constants_add_int(table, "LIBXML_VERSION", PTN_LIBXML_VERSION);
-    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_LOADED_VERSION"), ptn_string(PTN_LIBXML_LOADED_VERSION));
+    const PtnLibxmlVersionInfo *version = ptn_libxml_version_info_load();
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string(version->dotted));
+    ptn_get_defined_constants_add_int(table, "LIBXML_VERSION", version->version);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_LOADED_VERSION"), ptn_string(version->loaded));
     ptn_get_defined_constants_add_int(table, "LIBXML_NOENT", PTN_LIBXML_NOENT);
     ptn_get_defined_constants_add_int(table, "LIBXML_DTDLOAD", PTN_LIBXML_DTDLOAD);
     ptn_get_defined_constants_add_int(table, "LIBXML_DTDATTR", PTN_LIBXML_DTDATTR);
@@ -72117,6 +72115,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_XML_ERROR_TAG_NAME_MISMATCH 76
 #define PTN_XML_ERROR_TAG_NOT_FINISHED 77
 #define PTN_DOM_INVALID_CHARACTER_ERR 5
+#define PTN_DOM_NO_MODIFICATION_ALLOWED_ERR 7
 
 typedef struct PtnXmlNode PtnXmlNode;
 
@@ -73886,12 +73885,29 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos) {
 
 static int ptn_libxml_external_entity_loader_is_configured = 0;
 static PtnValue ptn_libxml_external_entity_loader;
+static int ptn_libxml_internal_errors = 0;
 
 typedef void *PtnLibxml2DocPtr;
 typedef void *PtnLibxml2ValidCtxtPtr;
 typedef void *PtnLibxml2ParserCtxtPtr;
 typedef void *PtnLibxml2ParserInputPtr;
 typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
+
+typedef struct {
+    int domain;
+    int code;
+    char *message;
+    int level;
+    char *file;
+    int line;
+    char *str1;
+    char *str2;
+    char *str3;
+    int int1;
+    int int2;
+    void *ctxt;
+    void *node;
+} PtnLibxml2Error;
 
 typedef struct {
     int attempted;
@@ -73906,6 +73922,7 @@ typedef struct {
     void (*xmlSetExternalEntityLoader)(PtnLibxml2ExternalEntityLoader);
     PtnLibxml2ParserInputPtr (*xmlNewStringInputStream)(PtnLibxml2ParserCtxtPtr, const unsigned char *);
     void (*xmlSetGenericErrorFunc)(void *, void (*)(void *, const char *, ...));
+    void (*xmlSetStructuredErrorFunc)(void *, void (*)(void *, const PtnLibxml2Error *));
 } PtnLibxml2Api;
 
 typedef struct {
@@ -73921,6 +73938,13 @@ typedef struct {
     size_t owned_input_count;
     size_t owned_input_capacity;
 } PtnLibxml2LoaderBridgeState;
+
+typedef struct {
+    PtnRuntime *runtime;
+    const char *function_name;
+    size_t line;
+    int suppress_warnings;
+} PtnLibxml2DomParseErrorCapture;
 
 static PtnLibxml2Api ptn_libxml2_api = {0};
 static PtnLibxml2LoaderBridgeState *ptn_libxml2_active_loader_bridge = NULL;
@@ -73940,26 +73964,22 @@ static char *ptn_libxml_source_directory_or_dot(PtnRuntime *runtime) {
     return ptn_duplicate_string(".");
 }
 
-static int ptn_dom_document_external_context_enabled(PtnXmlNode *document) {
+static int ptn_dom_document_property_truthy(PtnXmlNode *document, const char *property) {
     if (document == NULL || document->object == NULL) {
         return 0;
     }
     PtnValue value = ptn_null();
-    if (ptn_xml_object_stored_property_read(document->object, "resolveExternals", &value)) {
-        int enabled = ptn_is_truthy(value);
+    if (ptn_xml_object_stored_property_read(document->object, property, &value)) {
+        int truthy = ptn_is_truthy(value);
         ptn_value_destroy(&value);
-        if (enabled) {
-            return 1;
-        }
-    }
-    if (ptn_xml_object_stored_property_read(document->object, "substituteEntities", &value)) {
-        int enabled = ptn_is_truthy(value);
-        ptn_value_destroy(&value);
-        if (enabled) {
-            return 1;
-        }
+        return truthy;
     }
     return 0;
+}
+
+static int ptn_dom_document_external_context_enabled(PtnXmlNode *document) {
+    return ptn_dom_document_property_truthy(document, "resolveExternals") ||
+        ptn_dom_document_property_truthy(document, "substituteEntities");
 }
 
 static PtnValue ptn_libxml_external_entity_context(
@@ -74013,6 +74033,55 @@ static void ptn_libxml2_generic_error_noop(void *ctx, const char *message, ...) 
     (void)message;
 }
 
+static void ptn_libxml2_dom_parse_structured_error(void *ctx, const PtnLibxml2Error *error) {
+    PtnLibxml2DomParseErrorCapture *capture = (PtnLibxml2DomParseErrorCapture *)ctx;
+    if (capture == NULL || capture->suppress_warnings || error == NULL || error->message == NULL) {
+        return;
+    }
+    size_t message_len = strlen(error->message);
+    while (message_len > 0 && (error->message[message_len - 1] == '\n' || error->message[message_len - 1] == '\r')) {
+        message_len--;
+    }
+    if (message_len == 0) {
+        return;
+    }
+    const char *file = error->file != NULL && error->file[0] != '\0' ? error->file : "Entity";
+    int xml_line = error->line > 0 ? error->line : 1;
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): %.*s in %s, line: %d",
+        capture->function_name,
+        (int)message_len,
+        error->message,
+        file,
+        xml_line
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): %.*s in %s, line: %d",
+        capture->function_name,
+        (int)message_len,
+        error->message,
+        file,
+        xml_line
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&capture->runtime->diagnostics, message, capture->line);
+    free(message);
+}
+
 static int ptn_libxml2_load_symbol(void *handle, const char *name, void *out, size_t out_size) {
 #if defined(_WIN32)
     (void)handle;
@@ -74050,6 +74119,7 @@ static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
     PTN_LIBXML2_LOAD_REQUIRED(xmlGetExternalEntityLoader, "xmlGetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetExternalEntityLoader, "xmlSetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlNewStringInputStream, "xmlNewStringInputStream");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlSetStructuredErrorFunc, "xmlSetStructuredErrorFunc");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSetGenericErrorFunc, "xmlSetGenericErrorFunc");
     api->available = 1;
 #undef PTN_LIBXML2_LOAD_REQUIRED
@@ -75944,6 +76014,51 @@ static PtnXmlNode *ptn_dom_named_node_map_offset_node(PtnXmlNodeListData *list, 
         : ptn_xml_node_list_item(list, (size_t)index);
 }
 
+static int ptn_dom_libxml_accepts_document_source(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *source,
+    size_t source_len,
+    const char *url,
+    int options,
+    size_t line
+) {
+    if (source_len > (size_t)INT_MAX) {
+        return 1;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL) {
+        return 1;
+    }
+    PtnLibxml2DomParseErrorCapture capture;
+    memset(&capture, 0, sizeof(capture));
+    capture.runtime = runtime;
+    capture.function_name = function_name;
+    capture.line = line;
+    capture.suppress_warnings = ptn_libxml_internal_errors ||
+        ((options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    api->xmlSetStructuredErrorFunc(&capture, ptn_libxml2_dom_parse_structured_error);
+    PtnLibxml2DocPtr doc = api->xmlReadMemory(
+        source,
+        (int)source_len,
+        url,
+        NULL,
+        options
+    );
+    api->xmlSetStructuredErrorFunc(NULL, NULL);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    if (doc == NULL) {
+        return 0;
+    }
+    api->xmlFreeDoc(doc);
+    return 1;
+}
+
 static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMDocument::loadXML", "1 or 2 arguments", argc);
@@ -75957,6 +76072,28 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
         ptn_string_operand_free(source);
         ptn_throw_exception(runtime, "ValueError", "DOMDocument::loadXML(): Argument #1 ($source) must not be empty");
         return ptn_null();
+    }
+    int options = argc >= 2 ? (int)ptn_value_to_integer(args[1]) : 0;
+    if (ptn_dom_document_property_truthy(document, "validateOnParse")) {
+        options |= PTN_LIBXML_DTDVALID;
+    }
+    if (ptn_dom_document_property_truthy(document, "substituteEntities")) {
+        options |= PTN_LIBXML_NOENT;
+    }
+    if (ptn_dom_document_property_truthy(document, "resolveExternals")) {
+        options |= PTN_LIBXML_DTDLOAD;
+    }
+    if (!ptn_dom_libxml_accepts_document_source(
+        runtime,
+        "DOMDocument::loadXML",
+        source.data,
+        source.len,
+        NULL,
+        options,
+        line
+    )) {
+        ptn_string_operand_free(source);
+        return ptn_bool(0);
     }
     document->child_count = 0;
     int ok = ptn_xml_parse_document_into(runtime, document, source.data, source.len);
@@ -76001,6 +76138,40 @@ static PtnValue ptn_dom_fragment_append_xml_method(PtnRuntime *runtime, PtnValue
     if (fragment == NULL || fragment->type != PTN_XML_NODE_DOCUMENT_FRAGMENT) {
         ptn_string_operand_free(source);
         return ptn_bool(0);
+    }
+    if (fragment->owner_document == NULL) {
+        ptn_string_operand_free(source);
+        ptn_dom_throw_exception_code(runtime, "No Modification Allowed Error", PTN_DOM_NO_MODIFICATION_ALLOWED_ERR, line);
+        return ptn_null();
+    }
+    const char *prefix = "<ptn-fragment>";
+    const char *suffix = "</ptn-fragment>";
+    size_t prefix_len = strlen(prefix);
+    size_t suffix_len = strlen(suffix);
+    if (source.len <= SIZE_MAX - prefix_len - suffix_len - 1) {
+        size_t wrapped_len = prefix_len + source.len + suffix_len;
+        char *wrapped = malloc(wrapped_len + 1);
+        if (wrapped == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(wrapped, prefix, prefix_len);
+        memcpy(wrapped + prefix_len, source.data, source.len);
+        memcpy(wrapped + prefix_len + source.len, suffix, suffix_len);
+        wrapped[wrapped_len] = '\0';
+        int accepted = ptn_dom_libxml_accepts_document_source(
+            runtime,
+            "DOMDocumentFragment::appendXML",
+            wrapped,
+            wrapped_len,
+            NULL,
+            0,
+            line
+        );
+        free(wrapped);
+        if (!accepted) {
+            ptn_string_operand_free(source);
+            return ptn_bool(0);
+        }
     }
     PtnXmlNode *temporary = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
     int ok = ptn_xml_parse_document_into(runtime, temporary, source.data, source.len);
@@ -76096,12 +76267,36 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
     unsigned char *data = NULL;
     size_t data_len = 0;
     int read_result = ptn_read_file_bytes(path, &data, &data_len);
-    free(path);
     if (read_result <= 0) {
+        free(path);
         free(data);
         return ptn_bool(0);
     }
     PtnXmlNode *document = ptn_xml_node_data(receiver);
+    int options = argc >= 2 ? (int)ptn_value_to_integer(args[1]) : 0;
+    if (ptn_dom_document_property_truthy(document, "validateOnParse")) {
+        options |= PTN_LIBXML_DTDVALID;
+    }
+    if (ptn_dom_document_property_truthy(document, "substituteEntities")) {
+        options |= PTN_LIBXML_NOENT;
+    }
+    if (ptn_dom_document_property_truthy(document, "resolveExternals")) {
+        options |= PTN_LIBXML_DTDLOAD;
+    }
+    if (!ptn_dom_libxml_accepts_document_source(
+        runtime,
+        "DOMDocument::load",
+        (const char *)data,
+        data_len,
+        path,
+        options,
+        line
+    )) {
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+    free(path);
     document->child_count = 0;
     int ok = ptn_xml_parse_document_into(runtime, document, (const char *)data, data_len);
     free(data);
@@ -81257,8 +81452,6 @@ static PtnValue ptn_internal_xml_parser_free(PtnRuntime *runtime, size_t argc, c
     );
     return ptn_bool(1);
 }
-
-static int ptn_libxml_internal_errors = 0;
 
 static PtnValue ptn_internal_libxml_use_internal_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));

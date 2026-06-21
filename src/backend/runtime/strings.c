@@ -1032,6 +1032,144 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) 
     return ptn_ascii_case_compare(left, right) == 0;
 }
 
+typedef struct {
+    int attempted;
+    int version;
+    char dotted[32];
+    char loaded[32];
+} PtnLibxmlVersionInfo;
+
+static PtnLibxmlVersionInfo ptn_libxml_version_info = {0};
+
+static void ptn_libxml_format_version_info(PtnLibxmlVersionInfo *info, int version) {
+    info->version = version;
+    snprintf(info->loaded, sizeof(info->loaded), "%d", version);
+    snprintf(
+        info->dotted,
+        sizeof(info->dotted),
+        "%d.%d.%d",
+        version / 10000,
+        (version / 100) % 100,
+        version % 100
+    );
+}
+
+static int ptn_libxml_parse_version_string(const char *version) {
+    if (version == NULL || version[0] == '\0') {
+        return 0;
+    }
+    if (strchr(version, '.') == NULL) {
+        int value = 0;
+        for (size_t i = 0; version[i] != '\0'; i++) {
+            if (!isdigit((unsigned char)version[i])) {
+                return 0;
+            }
+            if (value > (INT_MAX - (version[i] - '0')) / 10) {
+                return 0;
+            }
+            value = value * 10 + (version[i] - '0');
+        }
+        return value;
+    }
+    int parts[3] = {0, 0, 0};
+    size_t part = 0;
+    for (size_t i = 0; version[i] != '\0'; i++) {
+        if (version[i] == '.') {
+            if (++part >= 3) {
+                return 0;
+            }
+            continue;
+        }
+        if (!isdigit((unsigned char)version[i])) {
+            return 0;
+        }
+        if (parts[part] > (INT_MAX - (version[i] - '0')) / 10) {
+            return 0;
+        }
+        parts[part] = parts[part] * 10 + (version[i] - '0');
+    }
+    return parts[0] * 10000 + parts[1] * 100 + parts[2];
+}
+
+static void *ptn_libxml_version_open_known_name(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    const char *env_library = getenv("PTN_LIBXML2_LIBRARY");
+    const char *names[] = {
+        env_library == NULL ? "" : env_library,
+#ifdef PTN_LIBXML2_DEFAULT_LIBRARY
+        PTN_LIBXML2_DEFAULT_LIBRARY,
+#endif
+        "libxml2.so.2",
+        "libxml2.so",
+        NULL
+    };
+    for (size_t i = 0; names[i] != NULL; i++) {
+        if (names[i][0] == '\0') {
+            continue;
+        }
+        void *handle = dlopen(names[i], RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+#endif
+}
+
+static void *ptn_libxml_version_open_nix_store(void) {
+#if defined(_WIN32)
+    return NULL;
+#else
+    const char *patterns[] = {
+        "/nix/store/*-libxml2-*/lib/libxml2.so.2*",
+        "/nix/store/*-libxml2-*/lib/libxml2.so",
+        NULL
+    };
+    for (size_t pattern = 0; patterns[pattern] != NULL; pattern++) {
+        glob_t matches;
+        memset(&matches, 0, sizeof(matches));
+        void *handle = NULL;
+        if (glob(patterns[pattern], 0, NULL, &matches) == 0) {
+            for (size_t i = 0; i < matches.gl_pathc; i++) {
+                handle = dlopen(matches.gl_pathv[i], RTLD_LAZY | RTLD_LOCAL);
+                if (handle != NULL) {
+                    break;
+                }
+            }
+        }
+        globfree(&matches);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+#endif
+}
+
+static const PtnLibxmlVersionInfo *ptn_libxml_version_info_load(void) {
+    if (ptn_libxml_version_info.attempted) {
+        return &ptn_libxml_version_info;
+    }
+    ptn_libxml_version_info.attempted = 1;
+    ptn_libxml_format_version_info(&ptn_libxml_version_info, 20914);
+#if !defined(_WIN32)
+    void *handle = ptn_libxml_version_open_known_name();
+    if (handle == NULL) {
+        handle = ptn_libxml_version_open_nix_store();
+    }
+    if (handle != NULL) {
+        const char **parser_version = (const char **)dlsym(handle, "xmlParserVersion");
+        int parsed = parser_version == NULL ? 0 : ptn_libxml_parse_version_string(*parser_version);
+        if (parsed > 0) {
+            ptn_libxml_format_version_info(&ptn_libxml_version_info, parsed);
+        }
+    }
+#endif
+    return &ptn_libxml_version_info;
+}
+
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
 #define PTN_BUILTIN_INT_CONSTANT(constant_name, value) \
     if (strcmp(name, constant_name) == 0) { \
@@ -1244,15 +1382,15 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "LIBXML_DOTTED_VERSION") == 0) {
-        *out = ptn_string("2.9.14");
+        *out = ptn_string(ptn_libxml_version_info_load()->dotted);
         return 1;
     }
     if (strcmp(name, "LIBXML_VERSION") == 0) {
-        *out = ptn_int(20914);
+        *out = ptn_int(ptn_libxml_version_info_load()->version);
         return 1;
     }
     if (strcmp(name, "LIBXML_LOADED_VERSION") == 0) {
-        *out = ptn_string("20914");
+        *out = ptn_string(ptn_libxml_version_info_load()->loaded);
         return 1;
     }
     if (strcmp(name, "LIBXML_NOENT") == 0) {
