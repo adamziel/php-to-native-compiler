@@ -18131,6 +18131,39 @@ echo $diff2->y, ' ', $diff2->m, ' ', $diff2->d, ' ',
 $diff3 = date_diff($dt1, $dti2);
 echo $diff3->y, ' ', $diff3->m, ' ', $diff3->d, ' ',
      $diff3->h, ' ', $diff3->i, ' ', $diff3->s, \"\\n\";
+
+date_default_timezone_set('Europe/London');
+$london1 = new DateTime('2010-10-20');
+$london2 = new DateTimeImmutable('2010-10-25');
+$london3 = new DateTimeImmutable('2010-10-28');
+echo $london1->diff($london2)->format('%y %m %d %h %i %s'), \"\\n\";
+echo $london2->diff($london3)->format('%y %m %d %h %i %s'), \"\\n\";
+echo date_diff($london1, $london3)->format('%y %m %d %h %i %s'), \"\\n\";
+
+date_default_timezone_set('Europe/Berlin');
+$berlinStart = date_create('2012-06-01');
+$berlinEnd = date_create('2012-12-01');
+echo date_diff($berlinStart, $berlinEnd)->format('%mM / %dD %hH %iM'), \"\\n\";
+
+date_default_timezone_set('Asia/Tehran');
+$tehran1 = new DateTime('2019-09-24 11:47:24');
+$tehran2 = new DateTime('2019-08-21 12:47:24');
+$tehranDiff = $tehran1->diff($tehran2);
+echo $tehranDiff->y, ' ', $tehranDiff->m, ' ', $tehranDiff->d, ' ',
+     $tehranDiff->h, ' ', $tehranDiff->i, ' ', $tehranDiff->s, ' ',
+     $tehranDiff->invert, ' ', $tehranDiff->days, \"\\n\";
+
+$chicagoStart = new DateTimeImmutable(
+    '2000-11-01 09:29:22.907606',
+    new DateTimeZone('America/Chicago')
+);
+$newYorkEnd = new DateTimeImmutable(
+    '2022-06-06 11:00:00.000000',
+    new DateTimeZone('America/New_York')
+);
+$cityDiff = $chicagoStart->diff($newYorkEnd);
+var_dump($cityDiff->y);
+echo $cityDiff->format('%R %Y %M %D (%a) %H %I %S %F'), \"\\n\";
 ",
     )
     .unwrap();
@@ -18141,7 +18174,16 @@ echo $diff3->y, ' ', $diff3->m, ' ', $diff3->d, ' ',
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "0 0 5 0 0 0\n0 0 3 0 0 0\n0 0 8 0 0 0\n"
+        "0 0 5 0 0 0\n\
+0 0 3 0 0 0\n\
+0 0 8 0 0 0\n\
+0 0 5 0 0 0\n\
+0 0 3 0 0 0\n\
+0 0 8 0 0 0\n\
+6M / 0D 0H 0M\n\
+0 1 2 23 0 0 1 33\n\
+int(21)\n\
++ 21 07 04 (7886) 23 30 37 092394\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

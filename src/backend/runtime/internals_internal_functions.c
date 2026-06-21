@@ -70358,6 +70358,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Asia/Hong_Kong", 16, 0 },
     { "Asia/Jerusalem", 16, 0 },
     { "Asia/Kolkata", 16, 0 },
+    { "Asia/Tehran", 16, 0 },
     { "Australia/Brisbane", 8, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
@@ -70506,24 +70507,79 @@ static int ptn_timezone_uses_z_designator(const char *name) {
         ptn_ascii_case_equal(name, "Etc/Zulu");
 }
 
-static int ptn_datetime_timestamp_dst_month(time_t timestamp) {
-    struct tm *parts = gmtime(&timestamp);
-    if (parts == NULL) {
-        return 0;
-    }
-    int month = parts->tm_mon + 1;
-    int day = parts->tm_mday;
-    return (month > 3 && month < 10) || (month == 3 && day >= 25) || (month == 10 && day < 25);
+static time_t ptn_datetime_utc_timestamp_for_parts(
+    int year,
+    int month,
+    int day,
+    int hour,
+    int minute,
+    int second
+) {
+    struct tm parts;
+    memset(&parts, 0, sizeof(parts));
+    parts.tm_year = year - 1900;
+    parts.tm_mon = month - 1;
+    parts.tm_mday = day;
+    parts.tm_hour = hour;
+    parts.tm_min = minute;
+    parts.tm_sec = second;
+    parts.tm_isdst = -1;
+    return ptn_mktime_in_utc(&parts);
 }
 
-static int ptn_datetime_timestamp_us_dst(time_t timestamp) {
+static int ptn_date_weekday_for_ymd(int year, int month, int day) {
+    time_t timestamp = ptn_datetime_utc_timestamp_for_parts(year, month, day, 0, 0, 0);
+    struct tm *parts = gmtime(&timestamp);
+    return parts == NULL ? 0 : parts->tm_wday;
+}
+
+static int ptn_date_last_weekday_in_month(int year, int month, int weekday) {
+    int day = ptn_date_days_in_month(year, month);
+    int actual = ptn_date_weekday_for_ymd(year, month, day);
+    return day - ((actual - weekday + 7) % 7);
+}
+
+static int ptn_date_nth_weekday_in_month(int year, int month, int weekday, int nth) {
+    int first = ptn_date_weekday_for_ymd(year, month, 1);
+    return 1 + ((weekday - first + 7) % 7) + (nth - 1) * 7;
+}
+
+static int ptn_datetime_timestamp_europe_dst(time_t timestamp) {
     struct tm *parts = gmtime(&timestamp);
     if (parts == NULL) {
         return 0;
     }
-    int month = parts->tm_mon + 1;
-    int day = parts->tm_mday;
-    return (month > 3 && month < 11) || (month == 3 && day >= 8) || (month == 11 && day < 8);
+    int year = parts->tm_year + 1900;
+    int start_day = ptn_date_last_weekday_in_month(year, 3, 0);
+    int end_day = ptn_date_last_weekday_in_month(year, 10, 0);
+    time_t start = ptn_datetime_utc_timestamp_for_parts(year, 3, start_day, 1, 0, 0);
+    time_t end = ptn_datetime_utc_timestamp_for_parts(year, 10, end_day, 1, 0, 0);
+    return timestamp >= start && timestamp < end;
+}
+
+static int ptn_datetime_timestamp_dst_month(time_t timestamp) {
+    return ptn_datetime_timestamp_europe_dst(timestamp);
+}
+
+static int ptn_datetime_timestamp_us_dst_for_standard_offset(time_t timestamp, int standard_offset) {
+    struct tm *parts = gmtime(&timestamp);
+    if (parts == NULL) {
+        return 0;
+    }
+    int year = parts->tm_year + 1900;
+    int start_month = 3;
+    int start_day = ptn_date_nth_weekday_in_month(year, 3, 0, 2);
+    int end_month = 11;
+    int end_day = ptn_date_nth_weekday_in_month(year, 11, 0, 1);
+    if (year < 2007) {
+        start_month = 4;
+        start_day = ptn_date_nth_weekday_in_month(year, 4, 0, 1);
+        end_month = 10;
+        end_day = ptn_date_last_weekday_in_month(year, 10, 0);
+    }
+    time_t start = ptn_datetime_utc_timestamp_for_parts(year, start_month, start_day, 2, 0, 0) - standard_offset;
+    time_t end = ptn_datetime_utc_timestamp_for_parts(year, end_month, end_day, 2, 0, 0) - (standard_offset + 3600);
+    return timestamp >= start && timestamp < end;
 }
 
 static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
@@ -70531,8 +70587,7 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_timezone_parse_offset_literal(name, &literal_offset)) {
         return literal_offset;
     }
-    int europe_dst = ptn_datetime_timestamp_dst_month(timestamp);
-    int us_dst = ptn_datetime_timestamp_us_dst(timestamp);
+    int europe_dst = ptn_datetime_timestamp_europe_dst(timestamp);
     if (ptn_ascii_case_equal(name, "UTC") ||
         ptn_ascii_case_equal(name, "GMT") ||
         ptn_ascii_case_equal(name, "Z") ||
@@ -70556,18 +70611,22 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
         ptn_ascii_case_equal(name, "US/Eastern")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -18000);
         return us_dst ? -14400 : -18000;
     }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -21600);
         return us_dst ? -18000 : -21600;
     }
     if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
         return -18000;
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -28800);
         return us_dst ? -25200 : -28800;
     }
     if (ptn_ascii_case_equal(name, "America/Halifax")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -14400);
         return us_dst ? -10800 : -14400;
     }
     if (ptn_ascii_case_equal(name, "America/Sao_Paulo")) {
@@ -70578,7 +70637,16 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         return 19800;
     }
     if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
-        return ptn_datetime_timestamp_dst_month(timestamp) ? 10800 : 7200;
+        return ptn_datetime_timestamp_europe_dst(timestamp) ? 10800 : 7200;
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Tehran")) {
+        struct tm *parts = gmtime(&timestamp);
+        int month = parts == NULL ? 1 : parts->tm_mon + 1;
+        int day = parts == NULL ? 1 : parts->tm_mday;
+        int iran_dst = (month > 3 && month < 9) ||
+            (month == 3 && day >= 22) ||
+            (month == 9 && day < 22);
+        return iran_dst ? 16200 : 12600;
     }
     if (ptn_ascii_case_equal(name, "CET")) {
         return 3600;
@@ -70605,8 +70673,7 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
 }
 
 static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t timestamp) {
-    int europe_dst = ptn_datetime_timestamp_dst_month(timestamp);
-    int us_dst = ptn_datetime_timestamp_us_dst(timestamp);
+    int europe_dst = ptn_datetime_timestamp_europe_dst(timestamp);
     if (ptn_timezone_parse_offset_literal(name, NULL)) {
         return "GMT";
     }
@@ -70635,18 +70702,22 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
         ptn_ascii_case_equal(name, "US/Eastern")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -18000);
         return us_dst ? "EDT" : "EST";
     }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -21600);
         return us_dst ? "CDT" : "CST";
     }
     if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
         return "EST";
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -28800);
         return us_dst ? "PDT" : "PST";
     }
     if (ptn_ascii_case_equal(name, "America/Halifax")) {
+        int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -14400);
         return us_dst ? "ADT" : "AST";
     }
     if (ptn_ascii_case_equal(name, "Asia/Calcutta") ||
@@ -70655,6 +70726,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
         return europe_dst ? "IDT" : "IST";
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Tehran")) {
+        return ptn_timezone_offset_for_name(name, timestamp) == 16200 ? "+0430" : "+0330";
     }
     if (ptn_ascii_case_equal(name, "CET") ||
         ptn_ascii_case_equal(name, "CEST") ||
@@ -71992,12 +72066,114 @@ static void ptn_datetime_set_timezone_data(PtnRuntime *runtime, PtnValue datetim
     ptn_datetime_sync_properties(runtime, object, object.as.object->class_name, line);
 }
 
-static int64_t ptn_date_floor_days_between(time_t start, time_t end) {
-    double seconds = difftime(end, start);
-    if (seconds < 0) {
-        seconds = -seconds;
+typedef struct {
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    int microsecond;
+} PtnDateTimeWallParts;
+
+static int ptn_datetime_wall_parts_in_timezone(
+    PtnDateTimeData *data,
+    const char *timezone,
+    PtnDateTimeWallParts *out
+) {
+    if (data == NULL || timezone == NULL || out == NULL) {
+        return 0;
     }
-    return (int64_t)floor(seconds / 86400.0);
+    int offset = ptn_timezone_offset_for_name(timezone, data->timestamp);
+    time_t wall_timestamp = data->timestamp + offset;
+    struct tm *parts = gmtime(&wall_timestamp);
+    if (parts == NULL) {
+        return 0;
+    }
+    out->year = parts->tm_year + 1900;
+    out->month = parts->tm_mon + 1;
+    out->day = parts->tm_mday;
+    out->hour = parts->tm_hour;
+    out->minute = parts->tm_min;
+    out->second = parts->tm_sec;
+    out->microsecond = data->microsecond;
+    return 1;
+}
+
+static time_t ptn_datetime_wall_parts_timestamp(PtnDateTimeWallParts parts) {
+    return ptn_datetime_utc_timestamp_for_parts(
+        parts.year,
+        parts.month,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second
+    );
+}
+
+static int ptn_datetime_data_compare(PtnDateTimeData *left, PtnDateTimeData *right) {
+    if (left->timestamp < right->timestamp) {
+        return -1;
+    }
+    if (left->timestamp > right->timestamp) {
+        return 1;
+    }
+    if (left->microsecond < right->microsecond) {
+        return -1;
+    }
+    if (left->microsecond > right->microsecond) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_datetime_diff_subtract_seconds(
+    int invert,
+    PtnDateTimeWallParts earlier,
+    PtnDateTimeWallParts later,
+    int *years,
+    int *months,
+    int *days,
+    int *hours,
+    int *minutes,
+    int *seconds,
+    int adjustment
+) {
+    if (adjustment <= 0) {
+        return;
+    }
+    int64_t lower = (int64_t)(*days) * 86400 +
+        (int64_t)(*hours) * 3600 +
+        (int64_t)(*minutes) * 60 +
+        (int64_t)(*seconds) -
+        adjustment;
+    while (lower < 0) {
+        (*months)--;
+        int borrow_year;
+        int borrow_month;
+        if (invert) {
+            borrow_year = earlier.year;
+            borrow_month = earlier.month;
+        } else {
+            borrow_year = later.year;
+            borrow_month = later.month - 1;
+            if (borrow_month == 0) {
+                borrow_month = 12;
+                borrow_year--;
+            }
+        }
+        lower += (int64_t)ptn_date_days_in_month(borrow_year, borrow_month) * 86400;
+        if (*months < 0) {
+            *months += 12;
+            (*years)--;
+        }
+    }
+    *days = (int)(lower / 86400);
+    lower %= 86400;
+    *hours = (int)(lower / 3600);
+    lower %= 3600;
+    *minutes = (int)(lower / 60);
+    *seconds = (int)(lower % 60);
 }
 
 static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, PtnValue right, int absolute, size_t line) {
@@ -72008,39 +72184,43 @@ static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, P
         return ptn_null();
     }
 
-    time_t start_timestamp = left_data->timestamp;
-    time_t end_timestamp = right_data->timestamp;
-    int invert = difftime(end_timestamp, start_timestamp) < 0 ? 1 : 0;
-    if (invert) {
-        time_t tmp = start_timestamp;
-        start_timestamp = end_timestamp;
-        end_timestamp = tmp;
-    }
-
-    struct tm start_parts_storage;
-    struct tm end_parts_storage;
-    struct tm *start_parts = gmtime(&start_timestamp);
-    if (start_parts == NULL) {
+    PtnDateTimeWallParts left_parts;
+    PtnDateTimeWallParts right_parts;
+    const char *diff_timezone = right_data->timezone == NULL ? "UTC" : right_data->timezone;
+    if (!ptn_datetime_wall_parts_in_timezone(left_data, diff_timezone, &left_parts) ||
+        !ptn_datetime_wall_parts_in_timezone(right_data, diff_timezone, &right_parts)) {
         ptn_throw_exception(runtime, "Exception", "Failed to compute DateTime diff");
         return ptn_null();
     }
-    start_parts_storage = *start_parts;
-    struct tm *end_parts = gmtime(&end_timestamp);
-    if (end_parts == NULL) {
-        ptn_throw_exception(runtime, "Exception", "Failed to compute DateTime diff");
-        return ptn_null();
+
+    int invert = ptn_datetime_data_compare(left_data, right_data) > 0 ? 1 : 0;
+    PtnDateTimeWallParts later = invert ? left_parts : right_parts;
+    PtnDateTimeWallParts earlier = invert ? right_parts : left_parts;
+    int earlier_offset = ptn_timezone_offset_for_name(
+        diff_timezone,
+        invert ? right_data->timestamp : left_data->timestamp
+    );
+    int later_offset = ptn_timezone_offset_for_name(
+        diff_timezone,
+        invert ? left_data->timestamp : right_data->timestamp
+    );
+    int offset_gain = later_offset - earlier_offset;
+    int same_timezone = left_data->timezone != NULL &&
+        right_data->timezone != NULL &&
+        ptn_ascii_case_equal(left_data->timezone, right_data->timezone);
+    int offset_adjustment = !same_timezone && offset_gain > 0 ? offset_gain : 0;
+    int years = later.year - earlier.year;
+    int months = later.month - earlier.month;
+    int days = later.day - earlier.day;
+    int hours = later.hour - earlier.hour;
+    int minutes = later.minute - earlier.minute;
+    int seconds = later.second - earlier.second;
+    int microseconds = later.microsecond - earlier.microsecond;
+
+    if (microseconds < 0) {
+        microseconds += 1000000;
+        seconds--;
     }
-    end_parts_storage = *end_parts;
-    start_parts = &start_parts_storage;
-    end_parts = &end_parts_storage;
-
-    int years = end_parts->tm_year - start_parts->tm_year;
-    int months = end_parts->tm_mon - start_parts->tm_mon;
-    int days = end_parts->tm_mday - start_parts->tm_mday;
-    int hours = end_parts->tm_hour - start_parts->tm_hour;
-    int minutes = end_parts->tm_min - start_parts->tm_min;
-    int seconds = end_parts->tm_sec - start_parts->tm_sec;
-
     if (seconds < 0) {
         seconds += 60;
         minutes--;
@@ -72053,19 +72233,47 @@ static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, P
         hours += 24;
         days--;
     }
-    if (days < 0) {
+    int borrow_year = invert ? earlier.year : later.year;
+    int borrow_month = invert ? earlier.month : later.month - 1;
+    if (!invert && borrow_month == 0) {
+        borrow_month = 12;
+        borrow_year--;
+    }
+    while (days < 0) {
         months--;
-        int borrow_year = end_parts->tm_year + 1900;
-        int borrow_month = end_parts->tm_mon;
+        days += ptn_date_days_in_month(borrow_year, borrow_month);
+        borrow_month--;
         if (borrow_month == 0) {
             borrow_month = 12;
             borrow_year--;
         }
-        days += ptn_date_days_in_month(borrow_year, borrow_month);
     }
     if (months < 0) {
         months += 12;
         years--;
+    }
+    ptn_datetime_diff_subtract_seconds(
+        invert,
+        earlier,
+        later,
+        &years,
+        &months,
+        &days,
+        &hours,
+        &minutes,
+        &seconds,
+        offset_adjustment
+    );
+
+    int64_t total_wall_seconds = (int64_t)difftime(
+        ptn_datetime_wall_parts_timestamp(later),
+        ptn_datetime_wall_parts_timestamp(earlier)
+    );
+    if (total_wall_seconds < 0) {
+        total_wall_seconds = -total_wall_seconds;
+    }
+    if (offset_adjustment > 0 && total_wall_seconds >= offset_adjustment) {
+        total_wall_seconds -= offset_adjustment;
     }
 
     PtnDateIntervalData *interval = malloc(sizeof(PtnDateIntervalData));
@@ -72078,10 +72286,10 @@ static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, P
     interval->hours = hours;
     interval->minutes = minutes;
     interval->seconds = seconds;
-    interval->fraction = 0.0;
+    interval->fraction = (double)microseconds / 1000000.0;
     interval->invert = absolute ? 0 : invert;
     interval->has_total_days = 1;
-    interval->total_days = ptn_date_floor_days_between(left_data->timestamp, right_data->timestamp);
+    interval->total_days = total_wall_seconds / 86400;
     interval->from_string = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
@@ -72971,6 +73179,17 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
                 case 's':
                     ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->seconds);
                     break;
+                case 'F':
+                case 'f': {
+                    int microseconds = (int)llround(interval->fraction * 1000000.0);
+                    if (microseconds < 0) {
+                        microseconds = 0;
+                    } else if (microseconds > 999999) {
+                        microseconds = 999999;
+                    }
+                    ptn_string_buffer_append_format(&buffer, "%06d", microseconds);
+                    break;
+                }
                 case 'R':
                     ptn_string_buffer_append_char(&buffer, interval->invert ? '-' : '+');
                     break;
