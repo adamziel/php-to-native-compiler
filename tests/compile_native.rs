@@ -24126,6 +24126,118 @@ try {
 }
 
 #[test]
+fn compile_shutdown_destructs_global_roots_before_contained_children_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-root-before-children");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-root-before-children.php");
+    let output = root.join("shutdown-root-before-children-bin");
+    fs::write(
+        &input,
+        "<?php
+class Node {
+    public $parent = null;
+    public $children = [];
+
+    public function insert(Node $node) {
+        $node->parent = $this;
+        $this->children[] = $node;
+    }
+
+    public function __destruct() {
+        echo count($this->children), \"\\n\";
+        unset($this->children);
+    }
+}
+
+$a = new Node;
+$a->insert(new Node);
+$a->insert(new Node);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2\n0\n0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_symbol_value_destructors(&runtime->symbols)"));
+}
+
+#[test]
+fn compile_var_dump_preserves_prior_property_count_during_active_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-active-property-unset-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-active-property-unset-count.php");
+    let output = root.join("var-dump-active-property-unset-count-bin");
+    fs::write(
+        &input,
+        "<?php
+class ParentBox {
+    public $child = null;
+    public $label = 1;
+
+    public function __destruct() {
+        var_dump($this);
+        unset($this->child);
+        var_dump($this);
+    }
+}
+
+class ChildBox {
+    public $parent = null;
+
+    public function __destruct() {
+        var_dump($this->parent);
+    }
+}
+
+$p = new ParentBox;
+$c = new ChildBox;
+$c->parent = $p;
+$p->child = $c;
+unset($c);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(ParentBox)#1 (2) {\n",
+            "  [\"child\"]=>\n",
+            "  object(ChildBox)#2 (1) {\n",
+            "    [\"parent\"]=>\n",
+            "    *RECURSION*\n",
+            "  }\n",
+            "  [\"label\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "object(ParentBox)#1 (2) {\n",
+            "  [\"label\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "object(ParentBox)#1 (1) {\n",
+            "  [\"label\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("active_property_value_unsets"));
+    assert!(c_source.contains("last_var_dump_property_count"));
+}
+
+#[test]
 fn compile_static_property_and_static_local_destructor_order_to_native_binary() {
     let root = temp_dir("ptn-native-static-shutdown-destructor-order");
     fs::create_dir_all(&root).unwrap();

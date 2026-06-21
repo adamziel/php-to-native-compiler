@@ -1168,6 +1168,29 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
     ptn_runtime_run_object_destructors_matching(runtime, 0);
 }
 
+static PTN_UNUSED size_t ptn_runtime_run_symbol_value_destructors(PtnSymbolTable *symbols) {
+    if (symbols == NULL || symbols->len == 0) {
+        return 0;
+    }
+
+    size_t len = symbols->len;
+    PtnValue *values = malloc(len * sizeof(PtnValue));
+    if (values == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        values[i] = ptn_value_clone(symbols->items[i].value);
+    }
+
+    size_t destructors_ran = 0;
+    for (size_t i = 0; i < len; i++) {
+        destructors_ran += ptn_runtime_run_static_property_value_destructors(values[i], 0);
+        ptn_value_destroy(&values[i]);
+    }
+    free(values);
+    return destructors_ran;
+}
+
 static PTN_UNUSED size_t ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {
     if (depth > 1024) {
         return 0;
@@ -1254,6 +1277,9 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->lazy_initializing = 0;
     object->readonly_clone_initializing = 0;
     object->defer_object_id_release_once = 0;
+    object->var_dump_property_count_initialized = 0;
+    object->last_var_dump_property_count = 0;
+    object->active_property_value_unsets = 0;
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);

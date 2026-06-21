@@ -886,6 +886,9 @@ struct PtnObject {
     int lazy_initializing;
     int readonly_clone_initializing;
     int defer_object_id_release_once;
+    int var_dump_property_count_initialized;
+    size_t last_var_dump_property_count;
+    size_t active_property_value_unsets;
     PtnValue lazy_initializer;
     PtnValue lazy_proxy_instance;
 };

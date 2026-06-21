@@ -476,6 +476,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
+        ptn_runtime_run_symbol_value_destructors(&runtime->symbols);
         ptn_runtime_run_object_destructors_until_output_buffer(runtime);
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);

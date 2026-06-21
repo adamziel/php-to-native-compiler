@@ -7123,7 +7123,17 @@ static PTN_UNUSED void ptn_object_unset_property_len(
     if (entry != NULL && entry->value.type == PTN_REFERENCE && mutable_metadata != NULL) {
         ptn_reference_forget_property_type(entry->value.as.reference, mutable_metadata);
     }
+    int active_value_unset = entry != NULL;
+    if (active_value_unset) {
+        if (receiver.as.object->active_property_value_unsets == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        receiver.as.object->active_property_value_unsets++;
+    }
     ptn_array_unset_entry(receiver.as.object->properties, key);
+    if (active_value_unset && receiver.as.object->active_property_value_unsets > 0) {
+        receiver.as.object->active_property_value_unsets--;
+    }
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 1;
         if (

@@ -1930,7 +1930,15 @@ static PTN_UNUSED size_t ptn_direct_var_dump_object_visible_property_count(PtnOb
         ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
         return 1;
     }
-    return ptn_direct_object_initialized_property_dump_count(object);
+    size_t count = ptn_direct_object_initialized_property_dump_count(object);
+    if (
+        object->active_property_value_unsets != 0 &&
+        object->var_dump_property_count_initialized &&
+        object->last_var_dump_property_count > count
+    ) {
+        return object->last_var_dump_property_count;
+    }
+    return count;
 }
 
 static PTN_UNUSED void ptn_direct_value_var_dump_object_header(
@@ -1952,6 +1960,8 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_header(
         object->object_id,
         property_count
     );
+    object->var_dump_property_count_initialized = 1;
+    object->last_var_dump_property_count = property_count;
 }
 
 static PTN_UNUSED int ptn_direct_value_var_dump_object_proxy_instance(
