@@ -17033,6 +17033,8 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
 
 fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
+        validate_inherited_class_constant_ambiguity(class, classes)?;
+
         for constant in &class.constants {
             if constant.is_final && constant.visibility == PropertyVisibility::Private {
                 return Err(Diagnostic::new(
@@ -17138,6 +17140,134 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct InheritedClassConstant<'a> {
+    class: &'a ClassDecl,
+    constant: &'a ClassConstantDecl,
+}
+
+fn validate_inherited_class_constant_ambiguity(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Result<()> {
+    let mut inherited = Vec::new();
+    collect_visible_parent_class_constants(class, classes, &mut inherited);
+
+    let mut seen_interfaces = HashSet::new();
+    for interface_name in &class.interfaces {
+        collect_interface_constants(
+            interface_name,
+            classes,
+            &mut seen_interfaces,
+            &mut inherited,
+        );
+    }
+
+    let mut seen_constants: Vec<InheritedClassConstant<'_>> = Vec::new();
+    for candidate in inherited {
+        if class
+            .constants
+            .iter()
+            .any(|constant| constant.name == candidate.constant.name)
+        {
+            continue;
+        }
+        if let Some(first) = seen_constants
+            .iter()
+            .find(|first| first.constant.name == candidate.constant.name)
+        {
+            if first.class.name.eq_ignore_ascii_case(&candidate.class.name) {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "{} {} inherits both {}::{} and {}::{}, which is ambiguous",
+                    class_constant_owner_kind(class),
+                    class.name,
+                    first.class.name,
+                    first.constant.name,
+                    candidate.class.name,
+                    candidate.constant.name
+                ),
+                Some(class.span),
+            ));
+        }
+        seen_constants.push(candidate);
+    }
+
+    Ok(())
+}
+
+fn class_constant_owner_kind(class: &ClassDecl) -> &'static str {
+    if class.is_enum {
+        "Enum"
+    } else if class.is_interface {
+        "Interface"
+    } else {
+        "Class"
+    }
+}
+
+fn collect_visible_parent_class_constants<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+    constants: &mut Vec<InheritedClassConstant<'a>>,
+) {
+    let mut seen_names = HashSet::new();
+    let mut parent_name = class.parent_name.as_deref();
+    while let Some(name) = parent_name {
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        for constant in &parent.constants {
+            if seen_names.contains(&constant.name) {
+                continue;
+            }
+            if constant.visibility != PropertyVisibility::Private {
+                constants.push(InheritedClassConstant {
+                    class: parent,
+                    constant,
+                });
+                seen_names.insert(constant.name.clone());
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+}
+
+fn collect_interface_constants<'a>(
+    interface_name: &str,
+    classes: &'a [ClassDecl],
+    seen_interfaces: &mut HashSet<String>,
+    constants: &mut Vec<InheritedClassConstant<'a>>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen_interfaces.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    for constant in &interface.constants {
+        if constants.iter().any(|existing| {
+            existing.class.name.eq_ignore_ascii_case(&interface.name)
+                && existing.constant.name == constant.name
+        }) {
+            continue;
+        }
+        constants.push(InheritedClassConstant {
+            class: interface,
+            constant,
+        });
+    }
+    for parent_interface in &interface.interfaces {
+        collect_interface_constants(parent_interface, classes, seen_interfaces, constants);
+    }
 }
 
 fn find_final_interface_constant_for_class<'a>(

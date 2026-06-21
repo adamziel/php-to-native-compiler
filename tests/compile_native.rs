@@ -6507,6 +6507,33 @@ fn parser_rejects_invalid_final_class_constant_overrides() {
 }
 
 #[test]
+fn parser_rejects_ambiguous_inherited_class_constants() {
+    let cases = [
+        (
+            "class implements interfaces",
+            "<?php interface A { public const FOO = 1; } interface B { public const FOO = 2; } class C implements A, B {}",
+            "Class C inherits both A::FOO and B::FOO, which is ambiguous",
+        ),
+        (
+            "interface extends interfaces",
+            "<?php interface A { public const FOO = 1; } interface B { public const FOO = 2; } interface C extends A, B {}",
+            "Interface C inherits both A::FOO and B::FOO, which is ambiguous",
+        ),
+    ];
+
+    for (name, source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{name}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+    }
+
+    parser::parse(
+        "<?php interface A { public const FOO = 1; } interface B { public const FOO = 2; } class C implements A, B { public const FOO = 3; }",
+    )
+    .unwrap();
+}
+
+#[test]
 fn compile_enum_trait_constant_conflict_with_case_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-enum-trait-constant-case-conflict");
     fs::create_dir_all(&root).unwrap();
