@@ -4839,6 +4839,20 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     );
     assert_eq!(method_write.kind, DiagnosticKind::Fatal);
 
+    let temporary_offset_write = parser::parse("<?php [0, 1][0] = 1;").unwrap_err();
+    assert_eq!(
+        temporary_offset_write.message,
+        "Cannot use temporary expression in write context"
+    );
+    assert_eq!(temporary_offset_write.kind, DiagnosticKind::Fatal);
+
+    let builtin_offset_write = parser::parse("<?php strlen('foo')[0] = 1;").unwrap_err();
+    assert_eq!(
+        builtin_offset_write.message,
+        "Cannot use result of built-in function in write context"
+    );
+    assert_eq!(builtin_offset_write.kind, DiagnosticKind::Fatal);
+
     let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
     assert_eq!(unset_append.message, "Cannot use [] for unsetting");
     assert_eq!(unset_append.kind, DiagnosticKind::Fatal);
