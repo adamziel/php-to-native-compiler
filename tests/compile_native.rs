@@ -13501,6 +13501,52 @@ var_dump(method_exists($gen, "valid"));
 }
 
 #[test]
+fn compile_generator_yield_from_shared_delegate_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-shared-delegate");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-shared-delegate.php");
+    let output = root.join("generator-yield-from-shared-delegate-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function from() {
+    foreach (range(0, 8) as $v) {
+        yield $v;
+    }
+}
+function gen($gen) {
+    yield from $gen;
+}
+$leaf = from();
+$left = gen($leaf);
+$right = gen($leaf);
+$all = [$leaf, $left, $right];
+for ($round = 0; $round < 3; $round++) {
+    foreach ($all as $gen) {
+        var_dump($gen->current());
+        $gen->next();
+    }
+}
+var_dump($leaf->valid(), $left->valid(), $right->valid());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nint(7)\nint(8)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_yield_from"));
+}
+
+#[test]
 fn compile_by_reference_generator_foreach_to_native_binary() {
     let root = temp_dir("ptn-native-generator-by-ref-foreach");
     fs::create_dir_all(&root).unwrap();
