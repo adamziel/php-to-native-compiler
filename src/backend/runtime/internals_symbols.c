@@ -168,6 +168,26 @@ static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnRefer
     }
 }
 
+static size_t ptn_pending_array_cycle_collections = 0;
+static int ptn_pending_array_cycle_auto_flushed = 0;
+
+/* Approximate Zend's root-buffer auto collection for many short-lived array cycles. */
+#define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 9998
+
+static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
+    if (count == 0 || ptn_pending_array_cycle_auto_flushed) {
+        return;
+    }
+    if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_pending_array_cycle_collections += count;
+    if (ptn_pending_array_cycle_collections >= PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD) {
+        ptn_pending_array_cycle_collections = 0;
+        ptn_pending_array_cycle_auto_flushed = 1;
+    }
+}
+
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference == NULL) {
         return;
@@ -184,6 +204,7 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
             reference->refcount == internal_refs + 1 &&
             !ptn_array_contains_pending_destructor(reference->value.as.array, 0)
         ) {
+            ptn_gc_note_array_reference_cycles(internal_refs);
             ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
         }
     }

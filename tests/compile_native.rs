@@ -45414,7 +45414,7 @@ fn phpc_zend_enable_gc_ini_controls_gc_enabled_state() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(false)\nstring(0) \"\"\nbool(true)\nstring(1) \"1\"\nbool(false)\nstring(0) \"\"\n"
+        "bool(false)\nstring(1) \"0\"\nbool(true)\nstring(1) \"1\"\nbool(false)\nstring(1) \"0\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
