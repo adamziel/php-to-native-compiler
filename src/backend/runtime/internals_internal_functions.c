@@ -10342,6 +10342,22 @@ static int ptn_unserialize_spl_array_backed_requires_string_property_keys(PtnObj
         ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject");
 }
 
+static int ptn_unserialize_key_is_spl_array_backed_payload_slot(
+    PtnObject *object,
+    PtnArrayKey key
+) {
+    if (!ptn_unserialize_spl_array_backed_requires_string_property_keys(object)) {
+        return 0;
+    }
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return key.as.integer >= 0 && key.as.integer <= 3;
+    }
+    if (key.type == PTN_ARRAY_KEY_STRING && key.string_len == 1) {
+        return key.as.string[0] >= '0' && key.as.string[0] <= '3';
+    }
+    return 0;
+}
+
 static int ptn_unserialize_store_object_property_entry(
     PtnRuntime *runtime,
     PtnUnserializeState *state,
@@ -10355,8 +10371,8 @@ static int ptn_unserialize_store_object_property_entry(
         return 0;
     }
 
-    if (key.type != PTN_ARRAY_KEY_STRING &&
-        ptn_unserialize_spl_array_backed_requires_string_property_keys(object)) {
+    if (ptn_unserialize_spl_array_backed_requires_string_property_keys(object) &&
+        !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, key)) {
         ptn_array_key_free(key);
         ptn_value_destroy(&parsed.value);
         if (runtime != NULL) {
@@ -10411,6 +10427,7 @@ static int ptn_unserialize_store_object_property_entry(
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
     } else if (metadata == NULL &&
                !ptn_unserialize_key_is_spl_dllist_payload_slot(object, property_key) &&
+               !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, property_key) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
         ptn_emit_dynamic_property_deprecation(
