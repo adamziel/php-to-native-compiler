@@ -1602,6 +1602,24 @@ static PTN_UNUSED const char *ptn_property_non_object_receiver_name(PtnValue rec
     return ptn_offset_container_type_name(receiver);
 }
 
+static PTN_UNUSED int ptn_value_is_from_string_offset(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_STRING && value.from_string_offset;
+}
+
+static PTN_UNUSED void ptn_throw_string_offset_as_object_error(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Cannot use string offset as an object",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     PtnRuntime *runtime,
     const char *property,
@@ -1646,6 +1664,10 @@ static PTN_UNUSED void ptn_throw_property_assignment_on_non_object(
     PtnValue receiver,
     size_t line
 ) {
+    if (ptn_value_is_from_string_offset(receiver)) {
+        ptn_throw_string_offset_as_object_error(runtime, line);
+        return;
+    }
     if (ptn_value_deref(receiver).type == PTN_CLOSURE) {
         ptn_throw_closure_dynamic_property_error(runtime, property, line);
         return;
@@ -1670,6 +1692,10 @@ static PTN_UNUSED void ptn_throw_property_increment_on_non_object(
     PtnValue receiver,
     size_t line
 ) {
+    if (ptn_value_is_from_string_offset(receiver)) {
+        ptn_throw_string_offset_as_object_error(runtime, line);
+        return;
+    }
     char message[192];
     int written = snprintf(
         message,
@@ -1690,6 +1716,10 @@ static PTN_UNUSED void ptn_throw_property_modification_on_non_object(
     PtnValue receiver,
     size_t line
 ) {
+    if (ptn_value_is_from_string_offset(receiver)) {
+        ptn_throw_string_offset_as_object_error(runtime, line);
+        return;
+    }
     if (ptn_value_deref(receiver).type == PTN_CLOSURE) {
         ptn_throw_closure_dynamic_property_error(runtime, property, line);
         return;
@@ -6341,9 +6371,11 @@ static PTN_UNUSED void ptn_object_unset_property(
     const char *access_scope,
     size_t line
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
+        if (ptn_value_is_from_string_offset(receiver)) {
+            ptn_throw_string_offset_as_object_error(runtime, line);
+        }
         return;
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -9399,7 +9431,7 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     if (!ptn_string_offset_index(container.as.string.len, offset, &index)) {
         if (!quiet) {
             ptn_emit_uninitialized_string_offset_warning(runtime, offset, line);
-            return ptn_lookup_found(ptn_string(""));
+            return ptn_lookup_found(ptn_value_from_string_offset(ptn_string("")));
         }
         return ptn_lookup_missing();
     }
@@ -9410,7 +9442,7 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     }
     result[0] = (char)container.as.string.data[index];
     result[1] = '\0';
-    return ptn_lookup_found(ptn_owned_string_len(result, 1));
+    return ptn_lookup_found(ptn_value_from_string_offset(ptn_owned_string_len(result, 1)));
 }
 
 static PTN_UNUSED int ptn_string_offset_assignment_index(
@@ -9479,6 +9511,9 @@ static PTN_UNUSED PtnValue ptn_runtime_string_offset_set_result(
 
     int64_t offset = 0;
     if (!ptn_string_offset_from_value(runtime, key_value, line, 0, &offset)) {
+        return ptn_null();
+    }
+    if (target->type != PTN_STRING) {
         return ptn_null();
     }
 

@@ -602,6 +602,7 @@ typedef struct {
     int owned;
     int by_ref_return_fallback;
     int by_ref_argument_source_disabled;
+    int from_string_offset;
     union {
         int boolean;
         int64_t integer;
@@ -618,6 +619,11 @@ typedef struct {
 
 static PTN_UNUSED PtnValue ptn_value_with_by_ref_return_fallback(PtnValue value, int fallback) {
     value.by_ref_return_fallback = fallback ? 1 : 0;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_value_from_string_offset(PtnValue value) {
+    value.from_string_offset = 1;
     return value;
 }
 
@@ -2890,6 +2896,7 @@ static PTN_UNUSED PtnValue ptn_null(void) {
     value.owned = 0;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     return value;
 }
 
@@ -2899,6 +2906,7 @@ static PTN_UNUSED PtnValue ptn_missing(void) {
     value.owned = -1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     return value;
 }
 
@@ -2908,6 +2916,7 @@ static PTN_UNUSED PtnValue ptn_nullsafe_short_circuit(void) {
     value.owned = -2;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     return value;
 }
 
@@ -2950,6 +2959,7 @@ static PTN_UNUSED PtnValue ptn_bool(int boolean) {
     value.owned = 0;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.boolean = boolean ? 1 : 0;
     return value;
 }
@@ -2960,6 +2970,7 @@ static PTN_UNUSED PtnValue ptn_int(int64_t integer) {
     value.owned = 0;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.integer = integer;
     return value;
 }
@@ -2970,6 +2981,7 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     value.owned = 0;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.floating = floating;
     return value;
 }
@@ -3062,6 +3074,7 @@ static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     value.owned = 0;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.string.data = (const unsigned char *)string;
     value.as.string.len = len;
     value.as.string.payload = NULL;
@@ -3079,6 +3092,7 @@ static PTN_UNUSED PtnValue ptn_owned_string_len(char *string, size_t len) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.string.data = payload->data;
     value.as.string.len = len;
     value.as.string.payload = payload;
@@ -3095,6 +3109,7 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.array = array;
     return value;
 }
@@ -3105,6 +3120,7 @@ static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.object = object;
     return value;
 }
@@ -3144,6 +3160,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.closure = closure;
     return value;
 }
@@ -3154,6 +3171,7 @@ static PTN_UNUSED PtnValue ptn_exception_value(PtnException *exception) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.exception = exception;
     return value;
 }
@@ -3778,6 +3796,7 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.resource = resource;
     return value;
 }
@@ -3797,7 +3816,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
-        { PTN_NULL, 0, 0, 0, { 0 } }
+        { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     static PtnResource stdout_resource = {
         SIZE_MAX,
@@ -3813,7 +3832,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
-        { PTN_NULL, 0, 0, 0, { 0 } }
+        { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     static PtnResource stderr_resource = {
         SIZE_MAX,
@@ -3829,7 +3848,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
-        { PTN_NULL, 0, 0, 0, { 0 } }
+        { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     PtnResource *resource = &stdin_resource;
     if (id == 2) {
@@ -3852,6 +3871,7 @@ static PTN_UNUSED PtnValue ptn_reference_value(PtnReference *reference) {
     value.owned = 1;
     value.by_ref_return_fallback = 0;
     value.by_ref_argument_source_disabled = 0;
+    value.from_string_offset = 0;
     value.as.reference = reference;
     return value;
 }

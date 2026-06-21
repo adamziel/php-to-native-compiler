@@ -31370,30 +31370,44 @@ impl ValueEmitter {
                     out.push_str("    if (!ptn_value_is_nullsafe_short_circuit(");
                     out.push_str(&array_temp);
                     out.push_str(")) {\n");
+                    let array_snapshot_temp = self.next_temp();
+                    out.push_str("        PtnValue ");
+                    out.push_str(&array_snapshot_temp);
+                    out.push_str(" = ptn_value_clone_deref(");
+                    out.push_str(&array_temp);
+                    out.push_str(");\n");
                     let index_temp = self.emit_materialized_value(out, index);
                     out.push_str("        ");
                     out.push_str(&result_temp);
                     out.push_str(" = ptn_array_read(&runtime, ");
-                    out.push_str(&array_temp);
+                    out.push_str(&array_snapshot_temp);
                     out.push_str(", ");
                     out.push_str(&index_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                     emit_value_cleanup(out, "        ", &index_temp);
+                    emit_value_cleanup(out, "        ", &array_snapshot_temp);
                     out.push_str("    }\n");
                 } else {
+                    let array_snapshot_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&array_snapshot_temp);
+                    out.push_str(" = ptn_value_clone_deref(");
+                    out.push_str(&array_temp);
+                    out.push_str(");\n");
                     let index_temp = self.emit_materialized_value(out, index);
                     out.push_str("    PtnValue ");
                     out.push_str(&result_temp);
                     out.push_str(" = ptn_array_read(&runtime, ");
-                    out.push_str(&array_temp);
+                    out.push_str(&array_snapshot_temp);
                     out.push_str(", ");
                     out.push_str(&index_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &index_temp);
+                    emit_value_cleanup(out, "    ", &array_snapshot_temp);
                 }
                 emit_value_cleanup(out, "    ", &array_temp);
                 result_temp
@@ -34861,9 +34875,27 @@ impl ValueEmitter {
         let class_name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&class_name_temp);
-        out.push_str(" = ptn_value_to_string(");
+        out.push_str("_raw = ptn_value_to_string(");
         out.push_str(&class_value_temp);
         out.push_str(");\n");
+        out.push_str("    const char *");
+        out.push_str(&class_name_temp);
+        out.push_str("_resolved = ptn_runtime_resolve_class_alias(&runtime, ptn_symbol_name_without_leading_slash(");
+        out.push_str(&class_name_temp);
+        out.push_str("_raw));\n");
+        out.push_str("    const char *");
+        out.push_str(&class_name_temp);
+        out.push_str("_canonical = ptn_declared_class_canonical_name(");
+        out.push_str(&class_name_temp);
+        out.push_str("_resolved);\n");
+        out.push_str("    char *");
+        out.push_str(&class_name_temp);
+        out.push_str(" = ptn_duplicate_string(");
+        out.push_str(&class_name_temp);
+        out.push_str("_canonical);\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str("_raw);\n");
         (class_value_temp, class_name_temp)
     }
 

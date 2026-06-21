@@ -43339,6 +43339,127 @@ var_dump($str[-11111111111111111111111]);",
 }
 
 #[test]
+fn compile_string_offset_read_survives_error_handler_root_replacement_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-read-handler-root-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-read-handler-root-replacement.php");
+    let output = root.join("string-offset-read-handler-root-replacement-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function() { $GLOBALS['a'] = 8; });\n\
+$a = 'a';\n\
+var_dump($a[$b]);\n\
+var_dump($a);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\nint(8)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_clone_deref"));
+    assert!(c_source.contains("ptn_array_read(&runtime"));
+}
+
+#[test]
+fn compile_string_offset_write_rechecks_target_after_key_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-write-handler-target-recheck");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-write-handler-target-recheck.php");
+    let output = root.join("string-offset-write-handler-target-recheck-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function($code, $msg) {\n\
+    echo \"Err: $msg\\n\";\n\
+    $GLOBALS['a'] = null;\n\
+});\n\
+$a[$y] = $a .= ($y);\n\
+var_dump($a);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Err: Undefined variable $y\nErr: Undefined variable $y\nErr: String offset cast occurred\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_offset_object_receiver_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-object-receiver-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-object-receiver-errors.php");
+    let output = root.join("string-offset-object-receiver-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = 'abc';\n\
+try { $str[0]->bar = 1; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $str[1]->bar += 1; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { unset($str[2]->bar); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot use string offset as an object\nCannot use string offset as an object\nCannot use string offset as an object\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_from_string_offset"));
+}
+
+#[test]
+fn compile_encapsed_string_dynamic_static_class_name_is_canonicalized_to_native_binary() {
+    let root = temp_dir("ptn-native-encapsed-dynamic-static-class-canonical");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("encapsed-dynamic-static-class-canonical.php");
+    let output = root.join("encapsed-dynamic-static-class-canonical-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$bar = 'bar';\n\
+class FooBar { public static $prop = 42; }\n\
+function foobar() { return 42; }\n\
+var_dump(\"foo$bar\"::$prop);\n\
+var_dump(\"foo$bar\"());",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_canonical_name"));
+}
+
+#[test]
 fn compile_large_float_string_offset_reads_to_native_binary() {
     let root = temp_dir("ptn-native-large-float-string-offset-reads");
     fs::create_dir_all(&root).unwrap();
