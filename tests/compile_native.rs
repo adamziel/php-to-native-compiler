@@ -31081,6 +31081,52 @@ echo xmlwriter_flush($xw);
 }
 
 #[test]
+fn compile_xmlwriter_shift_jis_output_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlwriter-shift-jis-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlwriter-shift-jis-output.php");
+    let output = root.join("xmlwriter-shift-jis-output-bin");
+    let stream_path = root.join("stream.xml");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$text = \"\\u{{3041}}\\u{{3041}}\\u{{3041}}\";\n\
+\n\
+$memory = XMLWriter::toMemory();\n\
+$memory->startDocument(null, 'SHIFT_JIS');\n\
+$memory->writeComment($text);\n\
+echo bin2hex($memory->outputMemory()), \"\\n\";\n\
+\n\
+$h = fopen('{}', 'w+b');\n\
+$stream = XMLWriter::toStream($h);\n\
+$stream->startDocument(null, 'SHIFT_JIS');\n\
+$stream->writeComment($text);\n\
+var_dump($stream->flush());\n\
+fclose($h);\n\
+echo bin2hex(file_get_contents('{}')), \"\\n\";\n",
+            stream_path.display(),
+            stream_path.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "3c3f786d6c2076657273696f6e3d22312e302220656e636f64696e673d2253484946545f4a4953223f3e0a3c212d2d829f829f829f2d2d3e\n",
+            "int(56)\n",
+            "3c3f786d6c2076657273696f6e3d22312e302220656e636f64696e673d2253484946545f4a4953223f3e0a3c212d2d829f829f829f2d2d3e\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_xmlwriter_resources_and_invalid_targets_to_native_binary() {
     let root = temp_dir("ptn-native-xmlwriter-resources-invalid-targets");
     fs::create_dir_all(&root).unwrap();

@@ -82535,6 +82535,7 @@ typedef struct {
     PtnXmlWriterTarget target;
     char *uri;
     PtnResource *stream;
+    char *output_encoding;
     int indent;
     char *indent_string;
     size_t indent_string_len;
@@ -82879,6 +82880,7 @@ static PtnXmlWriterData *ptn_xmlwriter_data_new(void) {
     data->target = PTN_XMLWRITER_TARGET_NONE;
     data->uri = NULL;
     data->stream = NULL;
+    data->output_encoding = NULL;
     data->indent = 0;
     data->indent_string = ptn_duplicate_string(" ");
     data->indent_string_len = 1;
@@ -83013,9 +83015,42 @@ static void ptn_xmlwriter_finish_document(PtnXmlWriterData *data) {
     data->document_finished = 1;
 }
 
+static int ptn_xmlwriter_output_encoding_is_utf8(const char *encoding) {
+    return encoding == NULL ||
+        encoding[0] == '\0' ||
+        ptn_ascii_case_equal(encoding, "UTF-8") ||
+        ptn_ascii_case_equal(encoding, "UTF8");
+}
+
+static char *ptn_xmlwriter_encoded_buffer_alloc(PtnXmlWriterData *data, size_t *len_out) {
+    *len_out = data->buffer.len;
+    if (ptn_xmlwriter_output_encoding_is_utf8(data->output_encoding)) {
+        return ptn_duplicate_string_len(data->buffer.data, data->buffer.len);
+    }
+
+    PtnStringOperand encoding = ptn_string_operand_borrowed(data->output_encoding);
+    char *to_encoding = ptn_iconv_resolve_encoding_alloc(encoding);
+    if (to_encoding == NULL || ptn_xmlwriter_output_encoding_is_utf8(to_encoding)) {
+        free(to_encoding);
+        return ptn_duplicate_string_len(data->buffer.data, data->buffer.len);
+    }
+
+    char *encoded = ptn_mb_iconv_convert_alloc(
+        data->buffer.data,
+        data->buffer.len,
+        "UTF-8",
+        to_encoding,
+        len_out
+    );
+    free(to_encoding);
+    return encoded;
+}
+
 static int64_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
-    size_t len = data->buffer.len;
+    size_t len = 0;
+    char *output = ptn_xmlwriter_encoded_buffer_alloc(data, &len);
     if (len > (size_t)INT64_MAX) {
+        free(output);
         ptn_abort_out_of_memory();
     }
     int64_t written = (int64_t)len;
@@ -83024,9 +83059,10 @@ static int64_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
         if (file == NULL) {
             written = -1;
         } else {
-            size_t count = fwrite(data->buffer.data, 1, len, file);
+            size_t count = fwrite(output, 1, len, file);
             if (count > (size_t)INT64_MAX) {
                 fclose(file);
+                free(output);
                 ptn_abort_out_of_memory();
             }
             written = (int64_t)count;
@@ -83036,13 +83072,15 @@ static int64_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
         if (data->stream == NULL || !ptn_stream_resource_is_open(data->stream)) {
             written = -1;
         } else {
-            size_t count = ptn_stream_write_bytes(data->stream, data->buffer.data, len);
+            size_t count = ptn_stream_write_bytes(data->stream, output, len);
             if (count > (size_t)INT64_MAX) {
+                free(output);
                 ptn_abort_out_of_memory();
             }
             written = (int64_t)count;
         }
     }
+    free(output);
     if (empty) {
         ptn_xmlwriter_buffer_clear(&data->buffer);
     }
@@ -83068,6 +83106,7 @@ static void ptn_xmlwriter_data_free(void *ptr) {
     free(data->pending_attribute_namespace_prefix);
     free(data->pending_attribute_namespace_uri);
     free(data->uri);
+    free(data->output_encoding);
     free(data->indent_string);
     if (data->stream != NULL) {
         ptn_resource_release(data->stream);
@@ -83292,10 +83331,9 @@ static PtnValue ptn_xmlwriter_flush_data(PtnXmlWriterData *data, int empty) {
     if (data->target == PTN_XMLWRITER_TARGET_URI || data->target == PTN_XMLWRITER_TARGET_STREAM) {
         return ptn_int((int64_t)ptn_xmlwriter_write_target(data, empty));
     }
-    PtnValue result = ptn_owned_string_len(
-        ptn_duplicate_string_len(data->buffer.data, data->buffer.len),
-        data->buffer.len
-    );
+    size_t output_len = 0;
+    char *output = ptn_xmlwriter_encoded_buffer_alloc(data, &output_len);
+    PtnValue result = ptn_owned_string_len(output, output_len);
     if (empty) {
         ptn_xmlwriter_buffer_clear(&data->buffer);
     }
@@ -83423,6 +83461,10 @@ static PtnValue ptn_xmlwriter_dispatch(
             ptn_string_buffer_append_char(&data->buffer, '"');
         }
         ptn_string_buffer_append(&data->buffer, "?>\n");
+        free(data->output_encoding);
+        data->output_encoding = encoding.len == 0
+            ? NULL
+            : ptn_duplicate_string_len(encoding.data, encoding.len);
         data->document_started = 1;
         data->document_finished = 0;
         ptn_string_operand_free(version);
