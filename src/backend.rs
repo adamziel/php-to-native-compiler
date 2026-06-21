@@ -23321,6 +23321,24 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static ARRAY_SLICE_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "array",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "preserve_keys",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     static EXTRACT_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "array",
@@ -24197,6 +24215,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
     ];
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("array_slice") {
+        Some(&ARRAY_SLICE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
         Some(&GRAPHEME_EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
@@ -38509,7 +38529,7 @@ impl ValueEmitter {
                             )
                         }
                         Err(error) => {
-                            self.emit_fatal_value(out, &result_temp, &error.message());
+                            self.emit_error_value(out, &result_temp, &error.message(), line);
                             result_temp
                         }
                     };
@@ -38996,7 +39016,7 @@ impl ValueEmitter {
             match bind_named_call_arguments(&direct_user.parameters, argument_names) {
                 Ok(argument_slots) => argument_slots,
                 Err(error) => {
-                    self.emit_fatal_value(out, result_temp, &error.message());
+                    self.emit_error_value(out, result_temp, &error.message(), line);
                     return result_temp.to_string();
                 }
             };
@@ -39090,6 +39110,25 @@ impl ValueEmitter {
         out.push_str(&c_string(message));
         out.push_str("\");\n");
         out.push_str("    exit(255);\n");
+    }
+
+    fn emit_error_value(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        message: &str,
+        line: usize,
+    ) {
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
+        out.push_str(&c_string(message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
     }
 
     fn emit_dynamic_call(

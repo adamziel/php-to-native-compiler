@@ -5889,6 +5889,9 @@ impl Parser<'_> {
             targets.push(self.parse_unset_target()?);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
                 targets.push(self.parse_unset_target()?);
             }
         }
@@ -6434,12 +6437,21 @@ impl Parser<'_> {
             if matches!(self.peek().kind, TokenKind::LeftParen) {
                 let (argument_exprs, argument_names, argument_unpacks, _) =
                     self.parse_call_arguments()?;
+                let mut seen_argument_names = HashSet::new();
                 for (argument_index, argument) in argument_exprs.iter().enumerate() {
                     if argument_unpacks[argument_index] {
                         return Err(Diagnostic::new(
                             "Cannot use unpacking in attribute argument list",
                             Some(argument.span()),
                         ));
+                    }
+                    if let Some(name) = &argument_names[argument_index] {
+                        if !seen_argument_names.insert(name.clone()) {
+                            return Err(Diagnostic::new(
+                                format!("Duplicate named parameter ${name}"),
+                                Some(argument.span()),
+                            ));
+                        }
                     }
                     arguments.record_value(
                         argument_names[argument_index].clone(),
@@ -8737,19 +8749,15 @@ impl Parser<'_> {
         let mut arguments = Vec::new();
         let mut argument_names = Vec::new();
         let mut argument_unpacks = Vec::new();
-        let mut named_arguments = HashSet::new();
         let mut seen_named_argument = false;
         let mut seen_unpacked_argument = false;
         if !matches!(self.peek().kind, TokenKind::RightParen) {
-            let (name, unpack, argument, span) = self.parse_call_argument()?;
-            if let Some(name) = &name {
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                return Err(syntax_error_unexpected(self.peek(), None));
+            }
+            let (name, unpack, argument, _span) = self.parse_call_argument()?;
+            if name.is_some() {
                 seen_named_argument = true;
-                if !named_arguments.insert(name.clone()) {
-                    return Err(Diagnostic::new(
-                        format!("Named parameter ${name} overwrites previous argument"),
-                        Some(span),
-                    ));
-                }
             }
             if unpack {
                 seen_unpacked_argument = true;
@@ -8762,15 +8770,20 @@ impl Parser<'_> {
                 if matches!(self.peek().kind, TokenKind::RightParen) {
                     break;
                 }
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    return Err(syntax_error_unexpected(self.peek(), Some("\")\"")));
+                }
                 let (name, unpack, argument, span) = self.parse_call_argument()?;
-                if let Some(name) = &name {
-                    seen_named_argument = true;
-                    if !named_arguments.insert(name.clone()) {
+                if unpack {
+                    if seen_named_argument {
                         return Err(Diagnostic::new(
-                            format!("Named parameter ${name} overwrites previous argument"),
+                            "Cannot use argument unpacking after named arguments",
                             Some(span),
                         ));
                     }
+                    seen_unpacked_argument = true;
+                } else if name.is_some() {
+                    seen_named_argument = true;
                 } else if seen_named_argument {
                     return Err(Diagnostic::new(
                         "Cannot use positional argument after named argument",
@@ -8781,15 +8794,6 @@ impl Parser<'_> {
                         "Cannot use positional argument after argument unpacking",
                         Some(span),
                     ));
-                }
-                if unpack {
-                    if seen_named_argument {
-                        return Err(Diagnostic::new(
-                            "Cannot use argument unpacking after named arguments",
-                            Some(span),
-                        ));
-                    }
-                    seen_unpacked_argument = true;
                 }
                 arguments.push(argument);
                 argument_names.push(name);
