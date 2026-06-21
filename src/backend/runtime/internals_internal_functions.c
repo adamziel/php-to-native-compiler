@@ -75977,6 +75977,22 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
                 ptn_throw_exception(runtime, "TypeError", message);
                 return ptn_null();
             }
+            if (base_node->type != PTN_XML_NODE_DOCUMENT) {
+                PtnValue resolved = ptn_value_deref(args[0]);
+                const char *given = resolved.type == PTN_OBJECT ? resolved.as.object->class_name : "DOMNode";
+                char message[160];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "XMLReader::expand(): Couldn't fetch %s",
+                    given
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+                return ptn_bool(0);
+            }
             PtnXmlNode *target_doc = base_node->type == PTN_XML_NODE_DOCUMENT
                 ? base_node
                 : ptn_xml_document_for_node(base_node);
@@ -77965,8 +77981,8 @@ static PtnValue ptn_internal_xml_parse(PtnRuntime *runtime, size_t argc, const P
         return ptn_bool(0);
     }
     if (parser->parsing) {
-        ptn_emit_spaced_warning(&runtime->diagnostics, "xml_parse(): Parser must not be called recursively", line);
-        return ptn_bool(0);
+        ptn_throw_exception(runtime, "Error", "Parser must not be called recursively");
+        return ptn_null();
     }
     if (parser->finished) {
         return ptn_int(1);
@@ -77993,8 +78009,8 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
         return ptn_bool(0);
     }
     if (parser->parsing) {
-        ptn_emit_spaced_warning(&runtime->diagnostics, "xml_parse_into_struct(): Parser must not be called recursively", line);
-        return ptn_bool(0);
+        ptn_throw_exception(runtime, "Error", "Parser must not be called recursively");
+        return ptn_null();
     }
     if (parser->finished) {
         if (args[2].type == PTN_REFERENCE) {

@@ -29088,6 +29088,28 @@ try {
     echo $exception->getMessage(), \"\\n\";
 }
 
+function ptn_recursive_start($parser, $name) {
+    xml_parse($parser, '<nested/>');
+}
+function ptn_recursive_end($parser, $name) {}
+$recursive = xml_parser_create();
+xml_set_element_handler($recursive, 'ptn_recursive_start', 'ptn_recursive_end');
+try {
+    xml_parse($recursive, '<root/>');
+} catch (Throwable $exception) {
+    echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+}
+
+$badBase = new DOMCharacterData();
+$badReader = new XMLReader();
+$badReader->XML('<books><book>bad base</book></books>');
+while ($badReader->read()) {
+    if ($badReader->localName === 'book') {
+        var_dump($badReader->expand($badBase));
+        break;
+    }
+}
+
 $dom = new DOMDocument();
 $dom->loadXML('<books><book>base book</book></books>');
 $reader = new XMLReader();
@@ -29112,6 +29134,9 @@ while ($reader->read()) {
         "ValueError: xml_set_object(): Argument #2 ($object) cannot safely swap to object of class B as method \"end_element\" does not exist, which was set via xml_set_element_handler()\n"
     ));
     assert!(stdout.contains("Serialization of 'XMLParser' is not allowed\n"));
+    assert!(stdout.contains("Error: Parser must not be called recursively\n"));
+    assert!(stdout.contains("Warning: XMLReader::expand(): Couldn't fetch DOMCharacterData"));
+    assert!(stdout.contains("bool(false)\n"));
     assert!(stdout.ends_with("base book\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
