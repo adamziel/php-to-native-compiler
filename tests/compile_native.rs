@@ -4206,6 +4206,64 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
 }
 
 #[test]
+fn parser_wraps_assignment_with_prefix_unary_expression() {
+    let program =
+        parser::parse("<?php var_dump(!$x = true, -$y = 3, ~$z = 4, +$p = \"42\", !!$q = 0);")
+            .unwrap();
+    let Statement::Call { arguments, .. } = &program.statements[0] else {
+        panic!("expected call statement");
+    };
+
+    assert!(matches!(
+        &arguments[0],
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Assign { target: AssignmentTarget::Variable { name, .. }, .. } if name == "x")
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::Unary {
+            op: UnaryOp::Negate,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Assign { target: AssignmentTarget::Variable { name, .. }, .. } if name == "y")
+    ));
+    assert!(matches!(
+        &arguments[2],
+        Expr::Unary {
+            op: UnaryOp::BitwiseNot,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Assign { target: AssignmentTarget::Variable { name, .. }, .. } if name == "z")
+    ));
+    assert!(matches!(
+        &arguments[3],
+        Expr::Unary {
+            op: UnaryOp::Positive,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Assign { target: AssignmentTarget::Variable { name, .. }, .. } if name == "p")
+    ));
+    assert!(matches!(
+        &arguments[4],
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr: outer,
+            ..
+        } if matches!(
+            outer.as_ref(),
+            Expr::Unary {
+                op: UnaryOp::Not,
+                expr,
+                ..
+            } if matches!(expr.as_ref(), Expr::Assign { target: AssignmentTarget::Variable { name, .. }, .. } if name == "q")
+        )
+    ));
+}
+
+#[test]
 fn parser_distinguishes_non_canonical_boolean_cast() {
     let program = parser::parse("<?php var_dump((boolean) 42, (bool) 42);").unwrap();
     let Statement::Call { arguments, .. } = &program.statements[0] else {
@@ -63127,6 +63185,53 @@ fn compile_unary_plus_precedence_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "-2.5\n-9");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_prefix_unary_assignment_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-prefix-unary-assignment-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("prefix-unary-assignment-precedence.php");
+    let output = root.join("prefix-unary-assignment-precedence-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+         $x = false;\n\
+         var_dump(!$x = true);\n\
+         var_dump($x);\n\
+         $y = 2;\n\
+         var_dump(-$y = 3);\n\
+         var_dump($y);\n\
+         $z = 2;\n\
+         var_dump(~$z = 3);\n\
+         var_dump($z);\n\
+         $p = 0;\n\
+         var_dump(+$p = \"42\");\n\
+         var_dump($p);\n\
+         $q = true;\n\
+         var_dump(!!$q = 0);\n\
+         var_dump($q);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+         bool(true)\n\
+         int(-3)\n\
+         int(3)\n\
+         int(-4)\n\
+         int(3)\n\
+         int(42)\n\
+         string(2) \"42\"\n\
+         bool(false)\n\
+         int(0)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

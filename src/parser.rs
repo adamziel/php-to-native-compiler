@@ -6919,16 +6919,11 @@ impl Parser<'_> {
             return Err(syntax_error_unexpected(self.peek(), None));
         }
 
-        if let Expr::Unary {
-            op: UnaryOp::ErrorSuppress,
-            expr,
-            span: suppress_span,
-        } = left
-        {
+        if let Expr::Unary { op, expr, span } = left {
             let assignment = self.parse_assignment_expr_from_left(*expr)?;
-            let span = combine_spans(suppress_span, assignment.span());
+            let span = combine_spans(span, assignment.span());
             return Ok(Expr::Unary {
-                op: UnaryOp::ErrorSuppress,
+                op,
                 expr: Box::new(assignment),
                 span,
             });
