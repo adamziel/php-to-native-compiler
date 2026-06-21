@@ -7560,12 +7560,16 @@ typedef struct {
     size_t len;
     size_t capacity;
     PtnValue *values;
+    char **names;
+    int saw_named;
 } PtnCallArguments;
 
 static PTN_UNUSED void ptn_call_arguments_init(PtnCallArguments *arguments) {
     arguments->len = 0;
     arguments->capacity = 0;
     arguments->values = NULL;
+    arguments->names = NULL;
+    arguments->saw_named = 0;
 }
 
 static PTN_UNUSED void ptn_call_arguments_reserve(PtnCallArguments *arguments, size_t additional) {
@@ -7588,13 +7592,61 @@ static PTN_UNUSED void ptn_call_arguments_reserve(PtnCallArguments *arguments, s
     if (values == NULL) {
         ptn_abort_out_of_memory();
     }
+    char **names = realloc(arguments->names, next_capacity * sizeof(char *));
+    if (names == NULL) {
+        ptn_abort_out_of_memory();
+    }
     arguments->values = values;
+    arguments->names = names;
     arguments->capacity = next_capacity;
 }
 
-static PTN_UNUSED void ptn_call_arguments_append_owned(PtnCallArguments *arguments, PtnValue value) {
+static PTN_UNUSED int ptn_call_arguments_can_append(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    const char *name,
+    size_t line
+) {
+    if (name == NULL && arguments->saw_named) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot use positional argument after named argument during unpacking",
+            runtime->source_path,
+            line
+        );
+        return 0;
+    }
+    return 1;
+}
+
+static PTN_UNUSED void ptn_call_arguments_append_named_owned(PtnCallArguments *arguments, const char *name, PtnValue value) {
     ptn_call_arguments_reserve(arguments, 1);
-    arguments->values[arguments->len++] = value;
+    arguments->values[arguments->len] = value;
+    arguments->names[arguments->len] = name == NULL ? NULL : ptn_duplicate_string(name);
+    if (name != NULL) {
+        arguments->saw_named = 1;
+    }
+    arguments->len++;
+}
+
+static PTN_UNUSED int ptn_call_arguments_append_checked_owned(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    if (!ptn_call_arguments_can_append(runtime, arguments, name, line)) {
+        ptn_value_destroy(&value);
+        return 0;
+    }
+    ptn_call_arguments_append_named_owned(arguments, name, value);
+    return 1;
+}
+
+static PTN_UNUSED void ptn_call_arguments_append_owned(PtnCallArguments *arguments, PtnValue value) {
+    ptn_call_arguments_append_named_owned(arguments, NULL, value);
 }
 
 static PTN_UNUSED int ptn_call_argument_index_is_by_ref(
@@ -7615,11 +7667,14 @@ static PTN_UNUSED int ptn_call_argument_index_is_by_ref(
     return 0;
 }
 
-static PTN_UNUSED int ptn_call_arguments_validate_unpack_key(
+static PTN_UNUSED int ptn_call_arguments_unpack_name_from_key_value(
     PtnRuntime *runtime,
+    PtnCallArguments *arguments,
     PtnValue key_value,
-    size_t line
+    size_t line,
+    char **name_out
 ) {
+    *name_out = NULL;
     PtnValue key = ptn_value_deref(key_value);
     if (key.type != PTN_INT && key.type != PTN_STRING) {
         ptn_throw_exception_at(
@@ -7633,37 +7688,28 @@ static PTN_UNUSED int ptn_call_arguments_validate_unpack_key(
     }
 
     PtnArrayKey array_key = ptn_array_key_from_value(key);
-    int is_string_key = array_key.type == PTN_ARRAY_KEY_STRING;
-    ptn_array_key_free(array_key);
-    if (is_string_key) {
-        ptn_throw_exception_at(
-            runtime,
-            "Error",
-            "Cannot use positional argument after named argument during unpacking",
-            runtime->source_path,
-            line
-        );
-        return 0;
-    }
-    return 1;
-}
-
-static PTN_UNUSED int ptn_call_arguments_validate_array_unpack_key(
-    PtnRuntime *runtime,
-    PtnArrayKey key,
-    size_t line
-) {
-    if (key.type != PTN_ARRAY_KEY_STRING) {
+    if (array_key.type == PTN_ARRAY_KEY_STRING) {
+        *name_out = ptn_duplicate_string_len(array_key.as.string, array_key.string_len);
+        ptn_array_key_free(array_key);
         return 1;
     }
-    ptn_throw_exception_at(
-        runtime,
-        "Error",
-        "Cannot use positional argument after named argument during unpacking",
-        runtime->source_path,
-        line
-    );
-    return 0;
+    ptn_array_key_free(array_key);
+    return ptn_call_arguments_can_append(runtime, arguments, NULL, line);
+}
+
+static PTN_UNUSED int ptn_call_arguments_unpack_name_from_array_key(
+    PtnRuntime *runtime,
+    PtnCallArguments *arguments,
+    PtnArrayKey key,
+    size_t line,
+    char **name_out
+) {
+    *name_out = NULL;
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        *name_out = ptn_duplicate_string_len(key.as.string, key.string_len);
+        return 1;
+    }
+    return ptn_call_arguments_can_append(runtime, arguments, NULL, line);
 }
 
 static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArguments *arguments, PtnValue value, size_t line) {
@@ -7687,14 +7733,16 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
                     break;
                 }
                 PtnValue key = ptn_array_iterator_current_key(&iterator);
-                if (!ptn_call_arguments_validate_unpack_key(runtime, key, line)) {
+                char *argument_name = NULL;
+                if (!ptn_call_arguments_unpack_name_from_key_value(runtime, arguments, key, line, &argument_name)) {
                     ptn_value_destroy(&key);
                     break;
                 }
                 ptn_value_destroy(&key);
 
                 PtnValue current = ptn_array_iterator_current_value(&iterator);
-                ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(current));
+                ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(current));
+                free(argument_name);
                 ptn_value_destroy(&current);
                 ptn_array_iterator_advance(&iterator);
             }
@@ -7710,10 +7758,12 @@ static PTN_UNUSED void ptn_call_arguments_unpack(PtnRuntime *runtime, PtnCallArg
     ptn_call_arguments_reserve(arguments, array->len);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
-        if (!ptn_call_arguments_validate_array_unpack_key(runtime, entry->key, line)) {
+        char *argument_name = NULL;
+        if (!ptn_call_arguments_unpack_name_from_array_key(runtime, arguments, entry->key, line, &argument_name)) {
             return;
         }
-        ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
+        ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(entry->value));
+        free(argument_name);
     }
 }
 
@@ -7751,7 +7801,8 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
                     break;
                 }
                 PtnValue key = ptn_array_iterator_current_key(&iterator);
-                if (!ptn_call_arguments_validate_unpack_key(runtime, key, line)) {
+                char *argument_name = NULL;
+                if (!ptn_call_arguments_unpack_name_from_key_value(runtime, arguments, key, line, &argument_name)) {
                     ptn_value_destroy(&key);
                     break;
                 }
@@ -7771,13 +7822,15 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
                         arguments->len + 1,
                         line
                     );
-                    ptn_call_arguments_append_owned(
+                    ptn_call_arguments_append_named_owned(
                         arguments,
+                        argument_name,
                         ptn_reference_value(ptn_reference_new_owned(ptn_value_clone_deref(current)))
                     );
                 } else {
-                    ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(current));
+                    ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(current));
                 }
+                free(argument_name);
                 ptn_value_destroy(&current);
                 ptn_array_iterator_advance(&iterator);
             }
@@ -7818,7 +7871,8 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
     ptn_call_arguments_reserve(arguments, array->len);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
-        if (!ptn_call_arguments_validate_array_unpack_key(runtime, entry->key, line)) {
+        char *argument_name = NULL;
+        if (!ptn_call_arguments_unpack_name_from_array_key(runtime, arguments, entry->key, line, &argument_name)) {
             return;
         }
 
@@ -7833,10 +7887,11 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
                 PtnValue current = entry->value;
                 entry->value = ptn_reference_value(ptn_reference_new_owned(current));
             }
-            ptn_call_arguments_append_owned(arguments, ptn_value_clone(entry->value));
+            ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone(entry->value));
         } else {
-            ptn_call_arguments_append_owned(arguments, ptn_value_clone_deref(entry->value));
+            ptn_call_arguments_append_named_owned(arguments, argument_name, ptn_value_clone_deref(entry->value));
         }
+        free(argument_name);
     }
 }
 
@@ -7926,11 +7981,15 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
 static PTN_UNUSED void ptn_call_arguments_destroy(PtnCallArguments *arguments) {
     for (size_t i = 0; i < arguments->len; i++) {
         ptn_value_destroy(&arguments->values[i]);
+        free(arguments->names[i]);
     }
     free(arguments->values);
+    free(arguments->names);
     arguments->values = NULL;
+    arguments->names = NULL;
     arguments->len = 0;
     arguments->capacity = 0;
+    arguments->saw_named = 0;
 }
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(

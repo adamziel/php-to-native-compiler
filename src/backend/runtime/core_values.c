@@ -1034,6 +1034,7 @@ typedef struct {
 typedef struct {
     size_t argc;
     const PtnValue *args;
+    const char *const *arg_names;
     size_t parameter_count;
     const char *const *parameter_names;
 } PtnCallFrame;
@@ -1045,6 +1046,7 @@ struct PtnTraceFrame {
     size_t line;
     size_t argc;
     const PtnValue *args;
+    const char *const *arg_names;
     size_t parameter_count;
     const char *const *parameter_names;
     size_t sensitive_parameter_count;
@@ -1213,6 +1215,7 @@ struct PtnRuntime {
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
+    const char *const *next_call_arg_names;
     PtnTraceFrame owned_trace_frame;
     PtnTraceFrame *trace_frame;
     PtnRuntime *lifecycle_root;

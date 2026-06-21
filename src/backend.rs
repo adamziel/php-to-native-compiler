@@ -1496,7 +1496,13 @@ fn emit_user_function_prototypes(
             "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
         out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_function_named(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);\n",
+        );
+        out.push_str(
             "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func);\n",
         );
         out.push_str(
             "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
@@ -1514,6 +1520,9 @@ fn emit_user_function_prototypes(
     if needs_method_dispatch {
         out.push_str(
                 "static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);\n",
+            );
+        out.push_str(
+                "static PTN_UNUSED PtnValue ptn_call_declared_method_named(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line);\n",
             );
         out.push_str(
                 "static PTN_UNUSED int ptn_declared_method_argument_by_ref(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argument_index);\n",
@@ -1752,6 +1761,10 @@ fn emit_user_functions(
             out.push_str(";\n");
         }
         out.push_str("    runtime.call_site_line = line;\n");
+        out.push_str(
+            "    const char *const *ptn_call_arg_names = caller_runtime->next_call_arg_names;\n",
+        );
+        out.push_str("    caller_runtime->next_call_arg_names = NULL;\n");
         if function.is_anonymous {
             out.push_str("    char *ptn_closure_trace_name = NULL;\n");
         }
@@ -1793,7 +1806,7 @@ fn emit_user_functions(
             .map(|position| position.to_string())
             .unwrap_or_else(|| "((size_t)-1)".to_string());
         if call_frame_parameter_count == 0 {
-            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL, ");
+            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ptn_call_arg_names, 0, NULL, ");
             out.push_str(&sensitive_parameter_count.to_string());
             out.push_str(", ");
             out.push_str(sensitive_parameters_expr);
@@ -1816,7 +1829,9 @@ fn emit_user_functions(
                 out.push('"');
             }
             out.push_str(" };\n");
-            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ");
+            out.push_str(
+                "    ptn_runtime_set_call_frame(&runtime, argc, args, ptn_call_arg_names, ",
+            );
             out.push_str(&call_frame_parameter_count.to_string());
             out.push_str(", ptn_parameter_names, ");
             out.push_str(&sensitive_parameter_count.to_string());
@@ -2894,11 +2909,25 @@ fn emit_variadic_parameter_binding(
         format!("ptn_value_clone_deref(args[{index_temp}])")
     };
 
+    out.push_str("        const char *ptn_variadic_arg_name_");
+    out.push_str(&parameter_index.to_string());
+    out.push_str(" = runtime.call_frame != NULL && runtime.call_frame->arg_names != NULL ? runtime.call_frame->arg_names[");
+    out.push_str(&index_temp);
+    out.push_str("] : NULL;\n");
+    out.push_str("        PtnArrayKey ptn_variadic_key_");
+    out.push_str(&parameter_index.to_string());
+    out.push_str(" = ptn_variadic_arg_name_");
+    out.push_str(&parameter_index.to_string());
+    out.push_str(" != NULL ? ptn_array_string_key(ptn_variadic_arg_name_");
+    out.push_str(&parameter_index.to_string());
+    out.push_str(") : ptn_array_int_key((int64_t)");
+    out.push_str(&offset_temp);
+    out.push_str(");\n");
     out.push_str("        ptn_array_set_entry(");
     out.push_str(&array_temp);
-    out.push_str(".as.array, ptn_array_int_key((int64_t)");
-    out.push_str(&offset_temp);
-    out.push_str("), ");
+    out.push_str(".as.array, ptn_variadic_key_");
+    out.push_str(&parameter_index.to_string());
+    out.push_str(", ");
     out.push_str(&value_expr);
     out.push_str(");\n");
     out.push_str("    }\n");
@@ -7925,7 +7954,9 @@ fn emit_class_metadata_helpers(
         out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
         out.push_str("                ptn_abort_out_of_memory();\n");
         out.push_str("            }\n");
-        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
+        out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
+        out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
+        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
         out.push_str("        }\n");
         let function = &functions[method.function_index];
         emit_dynamic_method_deprecated_warning(
@@ -7950,11 +7981,14 @@ fn emit_class_metadata_helpers(
         out.push_str("        runtime->called_class_name_override = called_class_name != NULL ? called_class_name : \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\";\n");
+        out.push_str("        const char *const *ptn_magic_previous_arg_names = runtime->next_call_arg_names;\n");
+        out.push_str("        runtime->next_call_arg_names = NULL;\n");
         out.push_str("        *result_out = ");
         out.push_str(&user_function_c_name(method.function_index));
         out.push_str("(runtime, ptn_string(\"");
         out.push_str(&c_string(&class.name));
         out.push_str("\"), 2, ptn_magic_args, line);\n");
+        out.push_str("        runtime->next_call_arg_names = ptn_magic_previous_arg_names;\n");
         out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
         out.push_str("        ptn_value_destroy(&ptn_magic_args[0]);\n");
         out.push_str("        ptn_value_destroy(&ptn_magic_args[1]);\n");
@@ -10777,7 +10811,7 @@ fn emit_property_hook_get_helper(
             out.push_str("        runtime.has_current_receiver = 1;\n");
             out.push_str("        runtime.current_receiver = receiver;\n");
             out.push_str("        ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
-            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
             out.push_str("        runtime.active_property_hook_class = \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\";\n");
@@ -11004,7 +11038,7 @@ fn emit_property_hook_set_helper(
                     .unwrap_or("value"),
             ));
             out.push_str("\", value);\n");
-            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
             out.push_str("        runtime.active_property_hook_class = \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\";\n");
@@ -16269,6 +16303,45 @@ fn emit_method_dispatch(
     needs_closure_invoke_dispatch: bool,
 ) {
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method_named(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line) {\n",
+    );
+    out.push_str("    if (!ptn_call_arg_names_have_named(argc, arg_names)) {\n");
+    out.push_str("        return ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnFunctionMetadata metadata = ptn_function_metadata_not_found();\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str(
+        "    if (resolved.type == PTN_OBJECT && runtime->declared_method_metadata != NULL) {\n",
+    );
+    out.push_str("        metadata = runtime->declared_method_metadata(resolved.as.object->class_name, method_name);\n");
+    out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
+    out.push_str("        metadata = resolved.as.closure->metadata;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnNormalizedCallArguments normalized;\n");
+    out.push_str("    int normalized_active = ptn_normalize_named_call_arguments(runtime, metadata, argc, args, arg_names, line, &normalized);\n");
+    out.push_str("    if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *const *previous_arg_names = runtime->next_call_arg_names;\n");
+    out.push_str("    const PtnValue *call_args = args;\n");
+    out.push_str("    const char *const *call_arg_names = arg_names;\n");
+    out.push_str("    size_t call_argc = argc;\n");
+    out.push_str("    if (normalized_active) {\n");
+    out.push_str("        call_args = normalized.values;\n");
+    out.push_str("        call_arg_names = (const char *const *)normalized.names;\n");
+    out.push_str("        call_argc = normalized.len;\n");
+    out.push_str("    }\n");
+    out.push_str("    runtime->next_call_arg_names = call_arg_names;\n");
+    out.push_str("    PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, call_argc, call_args, line);\n");
+    out.push_str("    runtime->next_call_arg_names = previous_arg_names;\n");
+    out.push_str("    if (normalized_active) {\n");
+    out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
+    out.push_str("    }\n");
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
@@ -16590,7 +16663,9 @@ fn emit_method_dispatch(
             out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
             out.push_str("                ptn_abort_out_of_memory();\n");
             out.push_str("            }\n");
-            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
+            out.push_str("            const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
+            out.push_str("            PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
+            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
             out.push_str("        }\n");
             let function = &functions[method.function_index];
             emit_dynamic_method_deprecated_warning(
@@ -16611,9 +16686,12 @@ fn emit_method_dispatch(
                 function,
                 "line",
             );
+            out.push_str("        const char *const *ptn_magic_previous_arg_names = runtime->next_call_arg_names;\n");
+            out.push_str("        runtime->next_call_arg_names = NULL;\n");
             out.push_str("        PtnValue ptn_magic_result = ");
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, resolved, 2, ptn_magic_args, line);\n");
+            out.push_str("        runtime->next_call_arg_names = ptn_magic_previous_arg_names;\n");
             out.push_str("        ptn_value_destroy(&ptn_magic_args[0]);\n");
             out.push_str("        ptn_value_destroy(&ptn_magic_args[1]);\n");
             out.push_str("        return ptn_magic_result;\n");
@@ -23240,7 +23318,12 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    let has_named_arguments = argument_names.iter().any(Option::is_some);
+    let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
     if is_generated_user_function_call(name, functions) {
+        if has_unpacked_arguments {
+            requirements.internal_function_dispatch = true;
+        }
         return;
     }
     if (name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof"))
@@ -23253,8 +23336,6 @@ fn collect_call_runtime_requirements(
         requirements.internal_function_dispatch = true;
         requirements.method_dispatch = true;
     }
-    let has_named_arguments = argument_names.iter().any(Option::is_some);
-    let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
     if !has_named_arguments && name.eq_ignore_ascii_case("var_dump") {
         requirements.compact_internal_helpers = true;
         return;
@@ -33653,6 +33734,7 @@ impl ValueEmitter {
                     out,
                     "__construct",
                     arguments,
+                    &[],
                     argument_unpacks,
                     line,
                     true,
@@ -33775,6 +33857,7 @@ impl ValueEmitter {
                         out,
                         "__construct",
                         arguments,
+                        &[],
                         argument_unpacks,
                         line,
                         true,
@@ -33829,6 +33912,7 @@ impl ValueEmitter {
                     out,
                     "__construct",
                     arguments,
+                    &[],
                     argument_unpacks,
                     line,
                     true,
@@ -33864,6 +33948,7 @@ impl ValueEmitter {
                 out,
                 "__construct",
                 arguments,
+                &[],
                 argument_unpacks,
                 line,
                 true,
@@ -33957,6 +34042,7 @@ impl ValueEmitter {
                 out,
                 "__construct",
                 arguments,
+                &[],
                 argument_unpacks,
                 line,
                 true,
@@ -37844,6 +37930,7 @@ impl ValueEmitter {
         out: &mut String,
         function_name: &str,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
         dynamic_argument_materialization: bool,
@@ -37967,11 +38054,21 @@ impl ValueEmitter {
                 } else {
                     self.emit_call_argument(out, function_name, argument_index, argument)
                 };
-                out.push_str("    ptn_call_arguments_append_owned(&");
+                out.push_str("    ptn_call_arguments_append_checked_owned(&runtime, &");
                 out.push_str(&args_temp);
+                out.push_str(", ");
+                if let Some(Some(argument_name)) = argument_names.get(argument_index) {
+                    out.push('"');
+                    out.push_str(&c_string(argument_name));
+                    out.push('"');
+                } else {
+                    out.push_str("NULL");
+                }
                 out.push_str(", ptn_value_share(");
                 out.push_str(&value_temp);
-                out.push_str("));\n");
+                out.push_str("), ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &value_temp);
             }
         }
@@ -38055,6 +38152,7 @@ impl ValueEmitter {
                 out,
                 "var_dump",
                 arguments,
+                &[],
                 argument_unpacks,
                 line,
                 false,
@@ -38337,6 +38435,7 @@ impl ValueEmitter {
             out,
             "array_push",
             &arguments[1..],
+            &[],
             value_unpacks,
             line,
             false,
@@ -38666,14 +38765,6 @@ impl ValueEmitter {
             }
         }
         if has_unpacked_arguments {
-            if has_named_arguments {
-                self.emit_fatal_value(
-                    out,
-                    &result_temp,
-                    "named arguments with argument unpacking are unsupported",
-                );
-                return result_temp;
-            }
             let direct_parameters = direct_user
                 .as_ref()
                 .map(|direct_user| direct_user.parameters.as_slice());
@@ -38681,35 +38772,25 @@ impl ValueEmitter {
                 out,
                 name,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 false,
                 direct_parameters,
             );
-            if let Some(direct_user) = &direct_user {
-                self.emit_direct_user_function_call(
-                    out,
-                    &result_temp,
-                    direct_user,
-                    &format!("{args_temp}.len"),
-                    &format!("{args_temp}.values"),
-                    line,
-                    called_class_override.as_ref(),
-                    discarded,
-                );
-            } else {
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_call_function(&runtime, \"");
-                out.push_str(&c_string(&resolved_name));
-                out.push_str("\", ");
-                out.push_str(&args_temp);
-                out.push_str(".len, ");
-                out.push_str(&args_temp);
-                out.push_str(".values, ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-            }
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_function_named(&runtime, \"");
+            out.push_str(&c_string(&resolved_name));
+            out.push_str("\", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -38753,11 +38834,33 @@ impl ValueEmitter {
                     discarded,
                 );
             }
-            self.emit_fatal_value(
+            let no_unpacks = vec![false; arguments.len()];
+            let args_temp = self.emit_call_arguments_builder(
                 out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
+                name,
+                arguments,
+                argument_names,
+                &no_unpacks,
+                line,
+                false,
+                None,
             );
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_function_named(&runtime, \"");
+            out.push_str(&c_string(&resolved_name));
+            out.push_str("\", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
             return result_temp;
         }
         if arguments.is_empty() {
@@ -39348,15 +39451,6 @@ impl ValueEmitter {
         discarded: bool,
     ) -> String {
         let suppress_scoped_callable_deprecation = static_method_syntax;
-        if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
-        }
         if argument_unpacks.iter().all(|unpack| !*unpack) {
             if let [ValueExpr::PipeValue { expr, .. }] = arguments {
                 let pipe_input_temp = self.emit_materialized_value(out, expr);
@@ -39418,11 +39512,14 @@ impl ValueEmitter {
         }
         let callee_temp = self.emit_materialized_value(out, callee);
         let result_temp = self.next_temp();
-        if argument_unpacks.iter().any(|unpack| *unpack) {
+        if argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_names.iter().any(Option::is_some)
+        {
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 "{closure}",
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 true,
@@ -39443,13 +39540,15 @@ impl ValueEmitter {
             };
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(" = ptn_call_callable_named(&runtime, ");
             out.push_str(&callee_temp);
             out.push_str(", ");
             out.push_str(&args_temp);
             out.push_str(".len, ");
             out.push_str(&args_temp);
-            out.push_str(".values, ");
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
             out.push_str(&line.to_string());
             out.push_str(", 0);\n");
             if let Some(temp) = scoped_callable_deprecation_temp {
@@ -40476,15 +40575,6 @@ impl ValueEmitter {
                 };
             }
         }
-        if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
-        }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
         if !self.full_internal_dispatch
@@ -40516,7 +40606,9 @@ impl ValueEmitter {
             nullsafe: false,
             line,
         });
-        if argument_unpacks.iter().any(|unpack| *unpack) {
+        if argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_names.iter().any(Option::is_some)
+        {
             let direct_parameters = declared_signature
                 .as_ref()
                 .map(|(_, parameters)| parameters.as_slice());
@@ -40524,6 +40616,7 @@ impl ValueEmitter {
                 out,
                 name,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 declared_signature.is_none(),
@@ -40539,8 +40632,9 @@ impl ValueEmitter {
                     line,
                 );
             }
+            out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(" = ptn_call_declared_method_named(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
@@ -40548,7 +40642,9 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".len, ");
             out.push_str(&args_temp);
-            out.push_str(".values, ");
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("    ptn_call_arguments_destroy(&");
@@ -40712,16 +40808,6 @@ impl ValueEmitter {
                 };
             }
         }
-        if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
-        }
-
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
         let declared_signature =
@@ -40741,7 +40827,9 @@ impl ValueEmitter {
         out.push_str("    if (!ptn_value_is_nullsafe_short_circuit(");
         out.push_str(&receiver_temp);
         out.push_str(")) {\n");
-        if argument_unpacks.iter().any(|unpack| *unpack) {
+        if argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_names.iter().any(Option::is_some)
+        {
             let direct_parameters = declared_signature
                 .as_ref()
                 .map(|(_, parameters)| parameters.as_slice());
@@ -40749,6 +40837,7 @@ impl ValueEmitter {
                 out,
                 name,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 declared_signature.is_none(),
@@ -40766,7 +40855,7 @@ impl ValueEmitter {
             }
             out.push_str("        ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(" = ptn_call_declared_method_named(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
@@ -40774,7 +40863,9 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".len, ");
             out.push_str(&args_temp);
-            out.push_str(".values, ");
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        ptn_call_arguments_destroy(&");
@@ -40934,16 +41025,6 @@ impl ValueEmitter {
                 };
             }
         }
-        if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
-        }
-
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
         let declared_signature =
@@ -40963,7 +41044,9 @@ impl ValueEmitter {
         out.push_str("    if (ptn_value_deref(");
         out.push_str(&receiver_temp);
         out.push_str(").type != PTN_NULL) {\n");
-        if argument_unpacks.iter().any(|unpack| *unpack) {
+        if argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_names.iter().any(Option::is_some)
+        {
             let direct_parameters = declared_signature
                 .as_ref()
                 .map(|(_, parameters)| parameters.as_slice());
@@ -40971,6 +41054,7 @@ impl ValueEmitter {
                 out,
                 name,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 declared_signature.is_none(),
@@ -40988,7 +41072,7 @@ impl ValueEmitter {
             }
             out.push_str("        ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(" = ptn_call_declared_method_named(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
@@ -40996,7 +41080,9 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".len, ");
             out.push_str(&args_temp);
-            out.push_str(".values, ");
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        ptn_call_arguments_destroy(&");
@@ -41128,15 +41214,6 @@ impl ValueEmitter {
         line: usize,
         discarded: bool,
     ) -> String {
-        if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
-        }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let name_temp = self.emit_materialized_value(out, name);
         let method_value_temp = self.next_temp();
@@ -41161,11 +41238,14 @@ impl ValueEmitter {
         out.push_str(&method_value_temp);
         out.push_str(");\n");
         let result_temp = self.next_temp();
-        if argument_unpacks.iter().any(|unpack| *unpack) {
+        if argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_names.iter().any(Option::is_some)
+        {
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 "dynamic method call",
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 true,
@@ -41181,7 +41261,7 @@ impl ValueEmitter {
             }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(" = ptn_call_declared_method_named(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&method_name_temp);
@@ -41189,7 +41269,9 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".len, ");
             out.push_str(&args_temp);
-            out.push_str(".values, ");
+            out.push_str(".values, (const char *const *)");
+            out.push_str(&args_temp);
+            out.push_str(".names, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("    ptn_call_arguments_destroy(&");

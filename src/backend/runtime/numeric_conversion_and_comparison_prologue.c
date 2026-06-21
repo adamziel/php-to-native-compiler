@@ -46,15 +46,18 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->native_argv = caller_runtime->native_argv;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
+    runtime->owned_call_frame.arg_names = NULL;
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->next_call_arg_names = NULL;
     runtime->owned_trace_frame.runtime = NULL;
     runtime->owned_trace_frame.function_name = NULL;
     runtime->owned_trace_frame.file = NULL;
     runtime->owned_trace_frame.line = 0;
     runtime->owned_trace_frame.argc = 0;
     runtime->owned_trace_frame.args = NULL;
+    runtime->owned_trace_frame.arg_names = NULL;
     runtime->owned_trace_frame.parameter_count = 0;
     runtime->owned_trace_frame.parameter_names = NULL;
     runtime->owned_trace_frame.sensitive_parameter_count = 0;
@@ -239,6 +242,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
+    const char *const *arg_names,
     size_t parameter_count,
     const char *const *parameter_names,
     size_t sensitive_parameter_count,
@@ -247,6 +251,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
 ) {
     runtime->owned_call_frame.argc = argc;
     runtime->owned_call_frame.args = args;
+    runtime->owned_call_frame.arg_names = arg_names;
     runtime->owned_call_frame.parameter_count = parameter_count;
     runtime->owned_call_frame.parameter_names = parameter_names;
     runtime->call_frame = &runtime->owned_call_frame;
@@ -258,6 +263,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
         runtime->suppress_user_call_frame_location ? 0 : runtime->call_site_line;
     runtime->owned_trace_frame.argc = argc;
     runtime->owned_trace_frame.args = args;
+    runtime->owned_trace_frame.arg_names = arg_names;
     runtime->owned_trace_frame.parameter_count = parameter_count;
     runtime->owned_trace_frame.parameter_names = parameter_names;
     runtime->owned_trace_frame.sensitive_parameter_count = sensitive_parameter_count;
