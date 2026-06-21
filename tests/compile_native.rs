@@ -6106,6 +6106,39 @@ class Sample {
 }
 
 #[test]
+fn parser_reports_inherited_class_constant_ambiguity() {
+    let cases = [
+        (
+            "<?php interface I1 { const C = 1; } interface I2 { const C = 1; } class C implements I1, I2 {}",
+            "Class C inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            "<?php interface I1 { const C = 1; } interface I2 { const C = 2; } interface I3 extends I1, I2 {}",
+            "Interface I3 inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            "<?php interface A { const FOO = 'foo'; } interface B { const FOO = 'foo'; } enum Foo implements A, B {}",
+            "Enum Foo inherits both A::FOO and B::FOO, which is ambiguous",
+        ),
+        (
+            "<?php class C { const C = 1; } interface I { const C = 1; } class C2 extends C implements I {}",
+            "Class C2 inherits both C::C and I::C, which is ambiguous",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+    }
+
+    parser::parse(
+        "<?php interface I1 { const C = 1; } interface I2 extends I1 {} class C implements I1, I2 {}",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_accepts_dynamic_class_name_fetch_syntax() {
     let program =
         parser::parse("<?php $e = new Exception; echo $e::class; echo (new stdClass)::CLASS;")
