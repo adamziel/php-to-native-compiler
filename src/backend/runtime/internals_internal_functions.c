@@ -23487,10 +23487,18 @@ static const char *ptn_uri_whatwg_classify_parse_failure(PtnStringOperand input)
     size_t colon = ptn_uri_find_byte(trimmed, first_delimiter, 0, ':');
     if (colon >= first_delimiter ||
         colon == 0 ||
-        !ptn_uri_validate_scheme_component(trimmed, colon) ||
-        colon + 2 >= trimmed_len ||
+        !ptn_uri_validate_scheme_component(trimmed, colon)) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+    if (colon + 2 >= trimmed_len ||
         trimmed[colon + 1] != '/' ||
         trimmed[colon + 2] != '/') {
+        char *scheme = ptn_uri_duplicate_len(trimmed, colon);
+        int host_required = ptn_uri_whatwg_is_special_scheme(scheme) && !ptn_ascii_case_equal(scheme, "file");
+        free(scheme);
+        if (host_required) {
+            return "HostMissing";
+        }
         return NULL;
     }
 

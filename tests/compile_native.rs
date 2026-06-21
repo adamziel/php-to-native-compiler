@@ -63945,6 +63945,11 @@ try {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
 try {
+    new Uri\WhatWg\Url("http:");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
     new Uri\WhatWg\Url("https://");
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
@@ -63994,7 +63999,8 @@ try {
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (PortInvalid)\n",
