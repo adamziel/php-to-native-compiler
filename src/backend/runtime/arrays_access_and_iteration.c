@@ -3573,6 +3573,7 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
     if (receiver.type != PTN_OBJECT) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
         PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
         if (
@@ -3615,6 +3616,7 @@ static PTN_UNUSED size_t ptn_magic_property_push_len(
     if (receiver.type != PTN_OBJECT || property == NULL) {
         return mark;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     if (runtime->magic_property_frame_len == runtime->magic_property_frame_capacity) {
         size_t new_capacity = runtime->magic_property_frame_capacity == 0
             ? 4
@@ -3667,6 +3669,7 @@ static PTN_UNUSED int ptn_magic_property_get(
         ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_get(runtime, receiver, property, line, value_out);
 }
 
@@ -3675,6 +3678,7 @@ static PTN_UNUSED int ptn_magic_property_get_exists(PtnRuntime *runtime, PtnValu
     if (runtime == NULL || runtime->magic_property_get_exists == NULL) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_get_exists(runtime, receiver);
 }
 
@@ -3690,6 +3694,7 @@ static PTN_UNUSED int ptn_magic_property_isset(
         ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);
 }
 
@@ -3729,6 +3734,7 @@ static PTN_UNUSED int ptn_magic_property_set_len(
         )) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_set(runtime, receiver, property, property_len, value, line);
 }
 
@@ -3765,6 +3771,7 @@ static PTN_UNUSED int ptn_magic_property_unset_len(
         )) {
         return 0;
     }
+    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_unset(runtime, receiver, property, property_len, line);
 }
 
@@ -6929,9 +6936,10 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         !ptn_lazy_object_initialize(runtime, receiver, line)) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
+    PtnValue magic_receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     PtnObjectPropertyMetadata *blocked_metadata =
-        ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
-    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
+        ptn_object_blocked_magic_metadata(runtime, magic_receiver.as.object, property, access_scope, 1);
+    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, magic_receiver)) {
         ptn_throw_overloaded_property_reference_error(runtime, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
@@ -7094,12 +7102,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         metadata->is_unset &&
         ptn_property_type_is_declared(metadata->type_kind)) {
         PtnValue magic_value = ptn_null();
-        if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+        if (ptn_magic_property_get(runtime, magic_receiver, property, line, &magic_value)) {
             if (magic_value.type == PTN_REFERENCE) {
                 PtnValue coerced = ptn_null();
                 if (!ptn_coerce_unset_typed_property_magic_value(
                     runtime,
-                    receiver,
+                    magic_receiver,
                     metadata,
                     magic_value,
                     line,
@@ -7120,8 +7128,15 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         }
     }
     if (metadata == NULL && entry == NULL) {
+        if (ptn_magic_property_get_exists(runtime, magic_receiver) &&
+            ptn_magic_property_is_active(runtime, magic_receiver, property, PTN_MAGIC_PROPERTY_GET)) {
+            ptn_emit_undefined_property_warning(runtime, magic_receiver.as.object, property, line);
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
         PtnValue magic_value = ptn_null();
-        if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+        if (ptn_magic_property_get(runtime, magic_receiver, property, line, &magic_value)) {
             if (magic_value.type == PTN_REFERENCE) {
                 ptn_array_key_free(key);
                 free(storage_key);
@@ -7129,7 +7144,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             }
             ptn_emit_indirect_modification_overloaded_property_notice(
                 runtime,
-                receiver,
+                magic_receiver,
                 property,
                 line
             );

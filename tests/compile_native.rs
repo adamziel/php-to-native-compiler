@@ -62122,6 +62122,66 @@ echo substr_count($dump, \"[\\\"instance\\\"]=>\") === 1 ? \"proxy-instance-once
 }
 
 #[test]
+fn compile_lazy_proxy_magic_get_reference_fetch_uses_effective_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-magic-get-reference-fetch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-magic-get-reference-fetch.php");
+    let output = root.join("lazy-proxy-magic-get-reference-fetch-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyMagicFoo {
+    public $_;
+    public function &__get($name) {
+        global $proxy;
+        printf(\"%s(\\$%s) on %s\\n\", __METHOD__, $name, $this::class);
+        return $proxy->{$name};
+    }
+}
+
+class LazyMagicBar extends LazyMagicFoo {}
+
+$rc = new ReflectionClass(LazyMagicBar::class);
+$proxy = $rc->newLazyProxy(function () {
+    echo \"Init\\n\";
+    return new LazyMagicFoo();
+});
+$real = $rc->initializeLazyObject($proxy);
+$a = &$real->x;
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Init\n",
+                "LazyMagicFoo::__get($x) on LazyMagicFoo\n",
+                "\nWarning: Undefined property: LazyMagicFoo::$x in {} on line 7\n",
+                "NULL\n",
+            ),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_effective_initialized_proxy_receiver"));
+    assert!(c_source.contains("ptn_object_reference_for_property"));
+}
+
+#[test]
 fn compile_lazy_dynamic_property_compound_restores_declared_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-dynamic-property-compound");
     fs::create_dir_all(&root).unwrap();

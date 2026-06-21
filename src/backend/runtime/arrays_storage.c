@@ -1902,6 +1902,27 @@ static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject 
     ptn_lazy_object_sync_proxy_instance_properties_depth(proxy, 0);
 }
 
+static PTN_UNUSED PtnValue ptn_lazy_object_effective_initialized_proxy_receiver(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+        return receiver;
+    }
+    PtnObject *object = receiver.as.object;
+    for (size_t depth = 0; depth < 64; depth++) {
+        if (!object->lazy_is_proxy || object->lazy_uninitialized) {
+            return ptn_value_borrow(ptn_object(object));
+        }
+        PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
+        if (real.type != PTN_OBJECT ||
+            real.as.object == NULL ||
+            real.as.object == object) {
+            return ptn_value_borrow(ptn_object(object));
+        }
+        object = real.as.object;
+    }
+    return ptn_value_borrow(ptn_object(object));
+}
+
 typedef struct {
     PtnArray *properties;
     PtnObjectPropertyMetadata *metadata;
