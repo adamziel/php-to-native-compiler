@@ -6681,28 +6681,35 @@ impl Parser<'_> {
             let mut arguments = ParsedAttributeArguments::default();
 
             if matches!(self.peek().kind, TokenKind::LeftParen) {
-                let (argument_exprs, argument_names, argument_unpacks, _) =
-                    self.parse_call_arguments()?;
-                let mut seen_argument_names = HashSet::new();
-                for (argument_index, argument) in argument_exprs.iter().enumerate() {
-                    if argument_unpacks[argument_index] {
-                        return Err(Diagnostic::new(
-                            "Cannot use unpacking in attribute argument list",
-                            Some(argument.span()),
-                        ));
-                    }
-                    if let Some(name) = &argument_names[argument_index] {
-                        if !seen_argument_names.insert(name.clone()) {
+                if self.peek_is_first_class_callable_arguments() {
+                    self.parse_first_class_callable_arguments()?;
+                    attributes.first_class_callable_argument_count = attributes
+                        .first_class_callable_argument_count
+                        .saturating_add(1);
+                } else {
+                    let (argument_exprs, argument_names, argument_unpacks, _) =
+                        self.parse_call_arguments()?;
+                    let mut seen_argument_names = HashSet::new();
+                    for (argument_index, argument) in argument_exprs.iter().enumerate() {
+                        if argument_unpacks[argument_index] {
                             return Err(Diagnostic::new(
-                                format!("Duplicate named parameter ${name}"),
+                                "Cannot use unpacking in attribute argument list",
                                 Some(argument.span()),
                             ));
                         }
+                        if let Some(name) = &argument_names[argument_index] {
+                            if !seen_argument_names.insert(name.clone()) {
+                                return Err(Diagnostic::new(
+                                    format!("Duplicate named parameter ${name}"),
+                                    Some(argument.span()),
+                                ));
+                            }
+                        }
+                        arguments.record_value(
+                            argument_names[argument_index].clone(),
+                            self.parsed_attribute_argument_value_from_expr(argument)?,
+                        );
                     }
-                    arguments.record_value(
-                        argument_names[argument_index].clone(),
-                        self.parsed_attribute_argument_value_from_expr(argument)?,
-                    );
                 }
             }
 
@@ -7578,6 +7585,12 @@ impl Parser<'_> {
                         ));
                     }
                     if self.peek_is_first_class_callable_arguments() {
+                        if expr_is_nullsafe_chain(&expr) {
+                            return Err(Diagnostic::new(
+                                "Cannot combine nullsafe operator with Closure creation",
+                                Some(start_span),
+                            ));
+                        }
                         let right_span = self.parse_first_class_callable_arguments()?;
                         let callable_span = combine_spans(start_span, member_span);
                         let callable = Expr::Array {
@@ -8556,6 +8569,12 @@ impl Parser<'_> {
             let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if self.peek_is_first_class_callable_arguments() {
+                        return Err(Diagnostic::new(
+                            "Cannot create Closure for new expression",
+                            Some(start_span),
+                        ));
+                    }
                     constructor_parentheses = true;
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
@@ -8580,6 +8599,12 @@ impl Parser<'_> {
             let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if self.peek_is_first_class_callable_arguments() {
+                        return Err(Diagnostic::new(
+                            "Cannot create Closure for new expression",
+                            Some(start_span),
+                        ));
+                    }
                     constructor_parentheses = true;
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
@@ -8603,6 +8628,12 @@ impl Parser<'_> {
         let mut constructor_parentheses = false;
         let (arguments, argument_names, argument_unpacks) =
             if matches!(self.peek().kind, TokenKind::LeftParen) {
+                if self.peek_is_first_class_callable_arguments() {
+                    return Err(Diagnostic::new(
+                        "Cannot create Closure for new expression",
+                        Some(start_span),
+                    ));
+                }
                 constructor_parentheses = true;
                 let (arguments, argument_names, argument_unpacks, right_span) =
                     self.parse_call_arguments()?;
@@ -11884,6 +11915,9 @@ fn apply_parsed_attribute(
 fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeMetadata) {
     attributes.instances.extend(group.instances);
     attributes.total_count = attributes.total_count.saturating_add(group.total_count);
+    attributes.first_class_callable_argument_count = attributes
+        .first_class_callable_argument_count
+        .saturating_add(group.first_class_callable_argument_count);
     attributes.attribute_count = attributes
         .attribute_count
         .saturating_add(group.attribute_count);
@@ -15748,6 +15782,13 @@ fn validate_builtin_attributes_for_target(
     target: AttributeTarget,
     span: SourceSpan,
 ) -> Result<()> {
+    if attributes.first_class_callable_argument_count > 0 {
+        return Err(Diagnostic::new(
+            "Cannot create Closure as attribute argument",
+            Some(span),
+        ));
+    }
+
     validate_builtin_attribute_repetition("Attribute", attributes.attribute_count, span)?;
     validate_builtin_attribute_repetition(
         "AllowDynamicProperties",

@@ -56969,6 +56969,126 @@ try {
 }
 
 #[test]
+fn phpc_renders_first_class_callable_forbidden_context_fatals() {
+    let cases = [
+        (
+            "first-class-callable-new",
+            "<?php
+class Foo {}
+new Foo(...);
+",
+            "Cannot create Closure for new expression",
+            3,
+        ),
+        (
+            "first-class-callable-attribute",
+            "<?php
+#[Attribute(...)]
+class Foo {}
+",
+            "Cannot create Closure as attribute argument",
+            3,
+        ),
+        (
+            "first-class-callable-nullsafe-chain",
+            "<?php
+$foo?->foo->bar(...);
+",
+            "Cannot combine nullsafe operator with Closure creation",
+            2,
+        ),
+    ];
+
+    for (name, source, message, line) in cases {
+        let root_name = format!("ptn-phpc-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        fs::write(&input, source).unwrap();
+
+        let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: {message} in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn compile_first_class_callable_magic_trampoline_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-first-class-callable-magic-trampoline");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-magic-trampoline.php");
+    let output = root.join("first-class-callable-magic-trampoline-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicFccRegression {
+    public function __call($name, $args) {
+        var_dump($name, $args);
+    }
+
+    public static function __callStatic($name, $args) {
+        var_dump($name, $args);
+    }
+}
+
+$instance = new MagicFccRegression();
+$instance->missing(...)(first: 11, second: \"ok\");
+MagicFccRegression::missingStatic(...)(third: 33);
+
+$reflection = new ReflectionFunction(MagicFccRegression::fail(...));
+$parameters = $reflection->getParameters();
+var_dump(count($parameters));
+$argument = $parameters[0];
+var_dump($argument->getName());
+var_dump($argument->isVariadic());
+$type = $argument->getType();
+var_dump($type->getName());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(7) \"missing\"\n",
+            "array(2) {\n",
+            "  [\"first\"]=>\n",
+            "  int(11)\n",
+            "  [\"second\"]=>\n",
+            "  string(2) \"ok\"\n",
+            "}\n",
+            "string(13) \"missingStatic\"\n",
+            "array(1) {\n",
+            "  [\"third\"]=>\n",
+            "  int(33)\n",
+            "}\n",
+            "int(1)\n",
+            "string(9) \"arguments\"\n",
+            "bool(true)\n",
+            "string(5) \"mixed\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_magic_call_trampoline_metadata"));
+    assert!(c_source.contains("ptn_find_callable_metadata"));
+}
+
+#[test]
 fn compile_closure_invoke_reference_warning_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invoke-reference-warning");
     fs::create_dir_all(&root).unwrap();

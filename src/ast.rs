@@ -314,6 +314,7 @@ pub struct AnonymousFunction {
 pub struct AttributeMetadata {
     pub instances: Vec<AttributeInstance>,
     pub total_count: u16,
+    pub first_class_callable_argument_count: u16,
     pub attribute_count: u16,
     pub allow_dynamic_properties_count: u16,
     pub delayed_target_validation_count: u16,

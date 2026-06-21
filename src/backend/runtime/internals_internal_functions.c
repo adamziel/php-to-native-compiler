@@ -90362,6 +90362,25 @@ static PtnFunctionMetadata ptn_find_runtime_function_metadata(PtnRuntime *runtim
     return ptn_internal_function_metadata(ptn_find_internal_function(name));
 }
 
+static PtnFunctionMetadata ptn_magic_call_trampoline_metadata(void) {
+    static const PtnParameterMetadata PTN_MAGIC_CALL_TRAMPOLINE_PARAMETERS[] = {
+        { "arguments", "mixed", "mixed", 1, 1, 0, 1, 1, NULL, NULL, NULL },
+    };
+    return ptn_function_metadata_found(
+        "{closure}",
+        0,
+        sizeof(PTN_MAGIC_CALL_TRAMPOLINE_PARAMETERS) / sizeof(PTN_MAGIC_CALL_TRAMPOLINE_PARAMETERS[0]),
+        0,
+        1,
+        PTN_MAGIC_CALL_TRAMPOLINE_PARAMETERS,
+        0,
+        NULL,
+        NULL,
+        0,
+        0
+    );
+}
+
 static PtnFunctionMetadata ptn_find_declared_method_metadata(
     PtnRuntime *runtime,
     const char *class_name,
@@ -90383,12 +90402,18 @@ static PtnFunctionMetadata ptn_find_function_or_method_metadata(
         *separator = '\0';
         const char *class_name = ptn_symbol_name_without_leading_slash(owned_name);
         class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);
+        const char *method_name = separator + 2;
         PtnFunctionMetadata metadata =
-            ptn_find_declared_method_metadata(runtime, class_name, separator + 2);
-        free(owned_name);
+            ptn_find_declared_method_metadata(runtime, class_name, method_name);
         if (metadata.found) {
+            free(owned_name);
             return metadata;
         }
+        if (ptn_declared_class_has_static_call_magic(class_name)) {
+            free(owned_name);
+            return ptn_magic_call_trampoline_metadata();
+        }
+        free(owned_name);
         return ptn_find_function_metadata(name);
     }
     free(owned_name);
@@ -90447,6 +90472,9 @@ static PtnFunctionMetadata ptn_find_callable_metadata(PtnRuntime *runtime, PtnVa
                         : ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
                     PtnFunctionMetadata metadata =
                         ptn_find_declared_method_metadata(runtime, class_name, method_name);
+                    if (!metadata.found && ptn_declared_class_has_static_call_magic(class_name)) {
+                        metadata = ptn_magic_call_trampoline_metadata();
+                    }
                     free(scope_name);
                     free(method_name);
                     if (metadata.found) {
@@ -90460,6 +90488,9 @@ static PtnFunctionMetadata ptn_find_callable_metadata(PtnRuntime *runtime, PtnVa
                 if (class_name != NULL) {
                     PtnFunctionMetadata metadata =
                         ptn_find_declared_method_metadata(runtime, class_name, method_name);
+                    if (!metadata.found && ptn_declared_class_has_call_magic(class_name)) {
+                        metadata = ptn_magic_call_trampoline_metadata();
+                    }
                     free(method_name);
                     if (metadata.found) {
                         return metadata;
