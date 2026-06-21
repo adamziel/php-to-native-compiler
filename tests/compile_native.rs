@@ -60881,41 +60881,56 @@ done\n",
 }
 
 #[test]
-fn compile_magic_method_visibility_warning_before_declaration_fatal() {
-    let root = temp_dir("ptn-native-magic-method-visibility-before-fatal");
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("magic-method-visibility-before-fatal.php");
-    let output = root.join("magic-method-visibility-before-fatal-bin");
-    fs::write(
-        &input,
-        "<?php
-class MagicVisibilityFatal {
+fn compile_magic_method_visibility_warning_suppressed_by_declaration_fatal() {
+    let cases = [
+        (
+            "magic-set-arity",
+            "<?php
+class MagicSetFatal {
     private function __set($name) {}
 }
 echo \"unreachable\\n\";
 ",
-    )
-    .unwrap();
+            "Method MagicSetFatal::__set() must take exactly 2 arguments",
+            "MagicSetFatal::__set() must have public visibility",
+        ),
+        (
+            "magic-tostring-arity",
+            "<?php
+class MagicStringFatal {
+    static protected function __toString($a, $b) {}
+}
+echo \"unreachable\\n\";
+",
+            "Method MagicStringFatal::__toString() cannot take arguments",
+            "MagicStringFatal::__toString() must have public visibility",
+        ),
+    ];
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    for (name, source, message, visibility_message) in cases {
+        let root_name = format!("ptn-native-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
 
-    let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(execution.status.code(), Some(255));
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        format!(
-            "Warning: The magic method MagicVisibilityFatal::__set() must have public visibility in {} on line 3\n",
-            input.display(),
-        )
-    );
-    assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "\nFatal error: Method MagicVisibilityFatal::__set() must take exactly 2 arguments in {} on line 3\n",
-            input.display(),
-        )
-    );
+        let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!("Fatal error: {message} in {} on line 3\n", input.display()),
+            "{name}"
+        );
+
+        let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+        assert!(c_source.contains(message), "{name}");
+        assert!(!c_source.contains(visibility_message), "{name}");
+    }
 }
 
 #[test]
@@ -61214,6 +61229,103 @@ echo \"unreachable\\n\";
         let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
         assert!(c_source.contains(message), "{name}");
     }
+}
+
+#[test]
+fn compile_parent_scoped_instance_calls_dispatch_target_call_magic_to_native_binary() {
+    let root = temp_dir("ptn-native-parent-scoped-call-magic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parent-scoped-call-magic.php");
+    let output = root.join("parent-scoped-call-magic-bin");
+    fs::write(
+        &input,
+        "<?php
+class A
+{
+    public function __call($name, $args)
+    {
+        echo \"magic method called: $name\\n\";
+    }
+}
+
+class B extends A
+{
+    public function getFoo()
+    {
+        parent::getFoo();
+    }
+}
+
+(new A())->getFoo();
+(new B())->getFoo();
+
+class A1 {
+    public function __call($method, $args) { echo \"__call\\n\"; }
+    public static function __callStatic($method, $args) { echo \"__callStatic\\n\"; }
+}
+
+class A2 {
+    public function __call($method, $args) { echo \"__call\\n\"; }
+    public static function __callStatic($method, $args) { echo \"__callStatic\\n\"; }
+    private function test() {}
+}
+
+class B1 extends A1 {
+    public function test() { parent::test(); }
+}
+
+class B2 extends A2 {
+    public function test() { parent::test(); }
+}
+
+(new B1())->test();
+(new B2())->test();
+
+class RootMagic {
+    public function __call($method, $args) { echo \"root:$method\\n\"; }
+}
+class MidMagic extends RootMagic {}
+class LeafMagic extends MidMagic {
+    public function probe() { parent::missing(); }
+}
+(new LeafMagic())->probe();
+
+class ParentNoMagic {}
+class ChildOnlyMagic extends ParentNoMagic {
+    public function __call($method, $args) { echo \"child:$method\\n\"; }
+    public function probe() {
+        try {
+            parent::missing();
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+}
+(new ChildOnlyMagic())->probe();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "magic method called: getFoo\n",
+            "magic method called: getFoo\n",
+            "__call\n",
+            "__call\n",
+            "root:missing\n",
+            "Call to undefined method ParentNoMagic::missing()\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_undefined_method_message"));
+    assert!(c_source.contains("ptn_magic_args[0] = ptn_owned_string"));
 }
 
 #[test]

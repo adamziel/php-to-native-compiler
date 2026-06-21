@@ -15676,6 +15676,75 @@ fn class_magic_call_static_method<'a>(
         .map(|method| method.method)
 }
 
+fn emit_scoped_instance_magic_call(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    receiver_expr: &str,
+    result_lhs: &str,
+) {
+    out.push_str(indent);
+    out.push_str("PtnValue ptn_magic_args[2];\n");
+    out.push_str(indent);
+    out.push_str("ptn_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));\n");
+    out.push_str(indent);
+    out.push_str("ptn_magic_args[1] = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str(indent);
+    out.push_str("for (size_t ptn_magic_arg_i = 0; ptn_magic_arg_i < argc; ptn_magic_arg_i++) {\n");
+    out.push_str(indent);
+    out.push_str("    if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
+    out.push_str(indent);
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str(indent);
+    out.push_str("    }\n");
+    out.push_str(indent);
+    out.push_str("    const char *ptn_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_magic_arg_i] : NULL;\n");
+    out.push_str(indent);
+    out.push_str("    PtnArrayKey ptn_magic_arg_key = ptn_magic_arg_name != NULL ? ptn_array_string_key(ptn_magic_arg_name) : ptn_array_int_key((int64_t)ptn_magic_arg_i);\n");
+    out.push_str(indent);
+    out.push_str("    ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_magic_arg_key, ptn_value_deep_clone(ptn_value_deref(args[ptn_magic_arg_i])));\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    emit_dynamic_method_deprecated_warning(
+        out,
+        indent,
+        "&runtime->diagnostics",
+        class_name,
+        "method_name",
+        function,
+        "line",
+    );
+    emit_dynamic_method_no_discard_warning(
+        out,
+        indent,
+        "&runtime->diagnostics",
+        class_name,
+        "method_name",
+        function,
+        "line",
+    );
+    out.push_str(indent);
+    out.push_str(
+        "const char *const *ptn_magic_previous_arg_names = runtime->next_call_arg_names;\n",
+    );
+    out.push_str(indent);
+    out.push_str("runtime->next_call_arg_names = NULL;\n");
+    out.push_str(indent);
+    out.push_str(result_lhs);
+    out.push_str(&user_function_c_name(method.function_index));
+    out.push_str("(runtime, ");
+    out.push_str(receiver_expr);
+    out.push_str(", 2, ptn_magic_args, line);\n");
+    out.push_str(indent);
+    out.push_str("runtime->next_call_arg_names = ptn_magic_previous_arg_names;\n");
+    out.push_str(indent);
+    out.push_str("ptn_value_destroy(&ptn_magic_args[0]);\n");
+    out.push_str(indent);
+    out.push_str("ptn_value_destroy(&ptn_magic_args[1]);\n");
+}
+
 fn class_magic_invoke_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -17083,6 +17152,23 @@ fn emit_method_dispatch(
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, target_class_name, method_name)");
             }
             out.push_str(")) {\n");
+            if !method.name.eq_ignore_ascii_case("__construct") {
+                if let Some(magic_method) = class_magic_call_method(class, classes) {
+                    let magic_function = &functions[magic_method.function_index];
+                    out.push_str("                if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+                    emit_scoped_instance_magic_call(
+                        out,
+                        "                    ",
+                        &class.name,
+                        magic_method,
+                        magic_function,
+                        "resolved_receiver",
+                        "*result_out = ",
+                    );
+                    out.push_str("                    return 1;\n");
+                    out.push_str("                }\n");
+                }
+            }
             out.push_str("                if (resolved_receiver.type != PTN_OBJECT && ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
             out.push_str("                    return 1;\n");
             out.push_str("                }\n");
@@ -17164,13 +17250,54 @@ fn emit_method_dispatch(
             }
             out.push_str("        }\n");
         }
-        out.push_str("        if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
-        out.push_str("            *result_out = ptn_call_declared_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
-        out.push_str("            return 1;\n");
-        out.push_str("        }\n");
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__construct\")) {\n");
         out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Cannot call constructor\", runtime->source_path, line);\n");
         out.push_str("            *result_out = ptn_null();\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+        if let Some(magic_method) = class_magic_call_method(class, classes) {
+            let magic_function = &functions[magic_method.function_index];
+            emit_scoped_instance_magic_call(
+                out,
+                "            ",
+                &class.name,
+                magic_method,
+                magic_function,
+                "resolved_receiver",
+                "*result_out = ",
+            );
+        } else {
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+            out.push_str("            const char *ptn_scoped_modeled_parent = ptn_declared_class_parent_name(target_class_name);\n");
+            out.push_str("            while (ptn_scoped_modeled_parent != NULL) {\n");
+            out.push_str("                if (ptn_internal_class_exists_name(ptn_scoped_modeled_parent) && ptn_internal_class_method_exists(ptn_scoped_modeled_parent, method_name)) {\n");
+            out.push_str("                    if (ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplObjectStorage\")) {\n");
+            out.push_str("                        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+            out.push_str("                        return 1;\n");
+            out.push_str("                    }\n");
+            out.push_str("                    char *ptn_scoped_original_class_name = resolved_receiver.as.object->class_name;\n");
+            out.push_str("                    resolved_receiver.as.object->class_name = (char *)ptn_scoped_modeled_parent;\n");
+            out.push_str("                    PtnValue ptn_scoped_internal_parent_result = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+            out.push_str("                    resolved_receiver.as.object->class_name = ptn_scoped_original_class_name;\n");
+            out.push_str("                    *result_out = ptn_scoped_internal_parent_result;\n");
+            out.push_str("                    return 1;\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_scoped_modeled_parent = ptn_declared_class_parent_name(ptn_scoped_modeled_parent);\n");
+            out.push_str("            }\n");
+            out.push_str("#endif\n");
+            out.push_str("            int ptn_undefined_method_needed = snprintf(NULL, 0, \"Call to undefined method %s::%s()\", target_class_name, method_name);\n");
+            out.push_str("            if (ptn_undefined_method_needed < 0) {\n");
+            out.push_str("                ptn_abort_out_of_memory();\n");
+            out.push_str("            }\n");
+            out.push_str("            char *ptn_undefined_method_message = malloc((size_t)ptn_undefined_method_needed + 1);\n");
+            out.push_str("            if (ptn_undefined_method_message == NULL) {\n");
+            out.push_str("                ptn_abort_out_of_memory();\n");
+            out.push_str("            }\n");
+            out.push_str("            snprintf(ptn_undefined_method_message, (size_t)ptn_undefined_method_needed + 1, \"Call to undefined method %s::%s()\", target_class_name, method_name);\n");
+            out.push_str("            ptn_throw_exception_owned_message_at(runtime, \"Error\", ptn_undefined_method_message, runtime->source_path, line);\n");
+            out.push_str("            *result_out = ptn_null();\n");
+        }
         out.push_str("            return 1;\n");
         out.push_str("        }\n");
         out.push_str("        if (ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
@@ -21183,6 +21310,12 @@ fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibil
             if method.visibility == PropertyVisibility::Public
                 || !magic_method_requires_public_visibility(&method.name)
             {
+                continue;
+            }
+            let Some(function) = module.functions.get(method.function_index) else {
+                continue;
+            };
+            if magic_declaration_fatal_message(class, method, function).is_some() {
                 continue;
             }
             warnings.push(MagicVisibilityWarning {
