@@ -37749,6 +37749,9 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
+        out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+        out.push_str(&left_temp);
+        out.push_str(");\n");
         let right_temp = self.emit_materialized_value(out, right);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -37767,6 +37770,7 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
         }
         out.push_str(");\n");
+        out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
         result_temp

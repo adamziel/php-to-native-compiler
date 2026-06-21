@@ -4985,6 +4985,18 @@ impl Parser<'_> {
             {
                 self.advance();
                 let source = self.parse_reference_source()?;
+                if !self.peek_is_statement_terminator() {
+                    let span = combine_spans(token.span, source.span());
+                    let assignment = Expr::AssignRef {
+                        target: AssignmentTarget::ArrayDim(target),
+                        source: Box::new(source),
+                        span,
+                    };
+                    let expression = self.parse_reference_assignment_expression_tail(assignment)?;
+                    let span = expression.span();
+                    self.expect_statement_terminator()?;
+                    return Ok(Statement::Expression { expression, span });
+                }
                 self.expect_statement_terminator()?;
                 return Ok(Statement::ArrayAssignRef {
                     target,
@@ -5028,6 +5040,18 @@ impl Parser<'_> {
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let source = self.parse_reference_source()?;
+            if !self.peek_is_statement_terminator() {
+                let span = combine_spans(token.span, source.span());
+                let assignment = Expr::AssignRef {
+                    target,
+                    source: Box::new(source),
+                    span,
+                };
+                let expression = self.parse_reference_assignment_expression_tail(assignment)?;
+                let span = expression.span();
+                self.expect_statement_terminator()?;
+                return Ok(Statement::Expression { expression, span });
+            }
             self.expect_statement_terminator()?;
             return Ok(Statement::AssignRef {
                 name,
@@ -6879,11 +6903,12 @@ impl Parser<'_> {
             let source = self.parse_reference_source()?;
             validate_reference_assignment_target_source(&target, &source, operator.span)?;
             let span = combine_spans(left_span, source.span());
-            return Ok(Expr::AssignRef {
+            let assignment = Expr::AssignRef {
                 target,
                 source: Box::new(source),
                 span,
-            });
+            };
+            return self.parse_reference_assignment_expression_tail(assignment);
         }
         let value = self.parse_assignment_expr_without_keyword_boolean()?;
         if matches!(op, AssignmentOp::Assign) {
@@ -6954,6 +6979,10 @@ impl Parser<'_> {
 
     fn parse_ternary_expr(&mut self, binary_min_precedence: u8) -> Result<Expr> {
         let condition = self.parse_binary_expr(binary_min_precedence)?;
+        self.parse_ternary_tail_from_condition(condition)
+    }
+
+    fn parse_ternary_tail_from_condition(&mut self, condition: Expr) -> Result<Expr> {
         if !matches!(self.peek().kind, TokenKind::Question) {
             return Ok(condition);
         }
@@ -6990,8 +7019,17 @@ impl Parser<'_> {
         })
     }
 
+    fn parse_reference_assignment_expression_tail(&mut self, assignment: Expr) -> Result<Expr> {
+        let expression = self.parse_binary_tail_from_left(assignment, 0)?;
+        self.parse_ternary_tail_from_condition(expression)
+    }
+
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
-        let mut left = self.parse_unary_expr()?;
+        let left = self.parse_unary_expr()?;
+        self.parse_binary_tail_from_left(left, min_precedence)
+    }
+
+    fn parse_binary_tail_from_left(&mut self, mut left: Expr, min_precedence: u8) -> Result<Expr> {
         loop {
             if token_is_identifier_named(self.peek(), "instanceof") {
                 if COMPARISON_PRECEDENCE < min_precedence {
@@ -9559,6 +9597,13 @@ impl Parser<'_> {
             TokenKind::CloseTag | TokenKind::Eof => Ok(()),
             _ => Err(syntax_error_unexpected(self.peek(), None)),
         }
+    }
+
+    fn peek_is_statement_terminator(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof
+        )
     }
 
     fn expect_const_statement_terminator(&mut self) -> Result<()> {

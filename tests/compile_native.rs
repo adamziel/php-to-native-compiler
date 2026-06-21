@@ -5470,6 +5470,39 @@ fn parser_accepts_by_reference_return_call_assignment_sources() {
 }
 
 #[test]
+fn parser_accepts_by_reference_assignment_expression_tails() {
+    let program =
+        parser::parse("<?php $a = 2; $x =& $a == 1; $a[] =& $a == $a =& $b > gc_collect_cycles();")
+            .unwrap();
+
+    let Statement::Expression { expression, .. } = &program.statements[1] else {
+        panic!("expected by-reference assignment comparison expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Binary {
+            op: BinaryOp::Equal,
+            left,
+            ..
+        } if matches!(left.as_ref(), Expr::AssignRef { target: AssignmentTarget::Variable { name, .. }, .. } if name == "x")
+    ));
+
+    let Statement::Expression { expression, .. } = &program.statements[2] else {
+        panic!("expected array by-reference assignment comparison expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Binary {
+            op: BinaryOp::Equal,
+            left,
+            right,
+            ..
+        } if matches!(left.as_ref(), Expr::AssignRef { target: AssignmentTarget::ArrayDim(_), .. })
+            && matches!(right.as_ref(), Expr::Binary { op: BinaryOp::Greater, .. })
+    ));
+}
+
+#[test]
 fn parser_accepts_by_reference_return_call_result_chains() {
     let program = parser::parse(
         "<?php function &id(&$value) { return $value; } function &chain(&$value) { return id($value); } function &fallback() { return make_value(); }",
@@ -37959,6 +37992,69 @@ var_dump($copy);\n",
             input.display(),
             input.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_reference_assignment_expression_tails_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-assignment-expression-tails");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-assignment-expression-tails.php");
+    let output = root.join("by-reference-assignment-expression-tails-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = 2;\n\
+var_dump($x =& $a == 1);\n\
+var_dump($x);\n\
+var_dump($x =& $a + 1);\n\
+var_dump($x);\n\
+var_dump($x =& $a ? \"yes\" : \"no\");\n\
+var_dump($x);\n\
+$b = 0;\n\
+$a = [];\n\
+$a[] =& $a == $a =& $b > gc_collect_cycles();\n\
+var_dump($b);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nint(2)\nint(3)\nint(2)\nstring(3) \"yes\"\nint(2)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_binary_left_temporary_survives_rhs_gc_to_native_binary() {
+    let root = temp_dir("ptn-native-binary-left-temporary-rhs-gc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("binary-left-temporary-rhs-gc.php");
+    let output = root.join("binary-left-temporary-rhs-gc-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    $s = 'O:8:\"stdClass\":1:{s:1:\"x\";r:1;}';\n\
+    unserialize($s) % gc_collect_cycles();\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unsupported operand types: stdClass % int\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

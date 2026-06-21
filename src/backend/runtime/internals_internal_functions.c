@@ -58628,6 +58628,9 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
         : root->static_properties;
     ptn_gc_mark_symbol_table(&stack, static_properties);
     ptn_gc_mark_static_locals(&stack, root);
+    for (size_t i = 0; i < root->temporary_roots_len; i++) {
+        ptn_gc_mark_stack_push(&stack, root->temporary_roots[i]);
+    }
 
     ptn_gc_mark_reachable_values(&stack, epoch);
     free(stack.items);

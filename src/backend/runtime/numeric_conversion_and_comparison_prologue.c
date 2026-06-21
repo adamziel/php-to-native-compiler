@@ -73,6 +73,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->temporary_roots = NULL;
+    runtime->temporary_roots_len = 0;
+    runtime->temporary_roots_capacity = 0;
     runtime->static_local_slots = NULL;
     runtime->static_local_slots_len = 0;
     runtime->static_local_slots_capacity = 0;
@@ -634,6 +637,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
         runtime->live_objects_capacity = 0;
+        for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
+            ptn_value_destroy(&runtime->temporary_roots[i]);
+        }
+        free(runtime->temporary_roots);
+        runtime->temporary_roots = NULL;
+        runtime->temporary_roots_len = 0;
+        runtime->temporary_roots_capacity = 0;
         free(runtime->static_local_slots);
         runtime->static_local_slots = NULL;
         runtime->static_local_slots_len = 0;

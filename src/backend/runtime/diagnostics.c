@@ -1917,6 +1917,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->temporary_roots = NULL;
+    runtime->temporary_roots_len = 0;
+    runtime->temporary_roots_capacity = 0;
     runtime->static_local_slots = NULL;
     runtime->static_local_slots_len = 0;
     runtime->static_local_slots_capacity = 0;

@@ -1239,6 +1239,9 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    PtnValue *temporary_roots;
+    size_t temporary_roots_len;
+    size_t temporary_roots_capacity;
     PtnStaticLocalSlot *static_local_slots;
     size_t static_local_slots_len;
     size_t static_local_slots_capacity;

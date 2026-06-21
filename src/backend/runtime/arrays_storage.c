@@ -58,6 +58,8 @@ static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_property_metadata(
 );
 static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object);
 static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object);
+static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnValue value);
+static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
@@ -793,6 +795,44 @@ static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObj
         root->live_objects_len--;
         return;
     }
+}
+
+static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnValue value) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->temporary_roots_len == root->temporary_roots_capacity) {
+        size_t new_capacity = root->temporary_roots_capacity == 0
+            ? 8
+            : root->temporary_roots_capacity * 2;
+        if (new_capacity < root->temporary_roots_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnValue)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue *new_roots = realloc(
+            root->temporary_roots,
+            new_capacity * sizeof(PtnValue)
+        );
+        if (new_roots == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->temporary_roots = new_roots;
+        root->temporary_roots_capacity = new_capacity;
+    }
+    root->temporary_roots[root->temporary_roots_len++] = ptn_value_clone(value);
+}
+
+static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->temporary_roots_len == 0) {
+        return;
+    }
+    root->temporary_roots_len--;
+    ptn_value_destroy(&root->temporary_roots[root->temporary_roots_len]);
 }
 
 static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
