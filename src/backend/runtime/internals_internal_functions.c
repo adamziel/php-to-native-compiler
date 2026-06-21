@@ -17371,6 +17371,10 @@ static char *ptn_extract_target_name(
     *count_only = 0;
 
     if (mode == PTN_EXTR_PREFIX_ALL) {
+        if (raw_len == 0) {
+            free(raw);
+            return NULL;
+        }
         target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
         if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
             free(raw);
@@ -17477,6 +17481,11 @@ static PtnValue ptn_extract_from_array(
         char *target = ptn_extract_target_name(runtime, array->entries[i].key, mode, prefix, &count_only);
         if (target == NULL) {
             continue;
+        }
+        if (strcmp(target, "this") == 0) {
+            ptn_throw_exception_at(runtime, "Error", "Cannot re-assign $this", runtime->source_path, line);
+            free(target);
+            break;
         }
         extracted++;
         if (!count_only) {

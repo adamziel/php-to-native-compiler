@@ -37175,6 +37175,10 @@ var_dump($_x, $_1);\n\
 $existing = \"keep\";\n\
 var_dump(extract([\"existing\" => \"new\"], EXTR_PREFIX_SAME, \"p\"));\n\
 var_dump($existing, $p_existing);\n\
+var_dump(extract([\"\" => \"blank\", \"ok\" => \"yes\"], EXTR_PREFIX_ALL, \"same\"));\n\
+var_dump(isset($same_), $same_ok);\n\
+var_dump(extract([\"\" => \"blank\"], EXTR_PREFIX_INVALID, \"same\"));\n\
+var_dump($same_);\n\
 foreach ([[7, \"ok\"], [EXTR_PREFIX_ALL, \"1bad\"]] as [$flags, $prefix]) {\n\
     try { extract([\"x\" => 1], $flags, $prefix); } catch (Throwable $e) { echo get_class($e), \": \", $e->getMessage(), \"\\n\"; }\n\
 }",
@@ -37199,8 +37203,49 @@ foreach ([[7, \"ok\"], [EXTR_PREFIX_ALL, \"1bad\"]] as [$flags, $prefix]) {\n\
             "int(1)\n",
             "string(4) \"keep\"\n",
             "string(3) \"new\"\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "string(3) \"yes\"\n",
+            "int(1)\n",
+            "string(5) \"blank\"\n",
             "ValueError: extract(): Argument #2 ($flags) must be a valid extract type\n",
             "ValueError: extract(): Argument #3 ($prefix) must be a valid identifier\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_extract_rejects_this_before_later_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-this-reassignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-this-reassignment.php");
+    let output = root.join("extract-this-reassignment-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo() {
+    try {
+        extract([\"this\" => 42, \"a\" => 24]);
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+    var_dump($a);
+}
+foo();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Cannot re-assign $this\n\nWarning: Undefined variable $a in {} on line 8\nNULL\n",
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
