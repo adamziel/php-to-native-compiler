@@ -6121,21 +6121,27 @@ impl Parser<'_> {
                 receiver,
                 name,
                 span,
-            } => Ok(UnsetTarget::Property {
-                receiver,
-                name,
-                span,
-            }),
+            } => {
+                reject_temporary_property_write_receiver(&receiver)?;
+                Ok(UnsetTarget::Property {
+                    receiver,
+                    name,
+                    span,
+                })
+            }
             Expr::DynamicPropertyFetch {
                 receiver,
                 name,
                 span,
                 ..
-            } => Ok(UnsetTarget::DynamicProperty {
-                receiver,
-                name,
-                span,
-            }),
+            } => {
+                reject_temporary_property_write_receiver(&receiver)?;
+                Ok(UnsetTarget::DynamicProperty {
+                    receiver,
+                    name,
+                    span,
+                })
+            }
             Expr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -12934,6 +12940,15 @@ fn import_trait_members_into_class(
             .iter()
             .find(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
         {
+            if class.is_enum && existing.is_enum_case {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot use trait {}, because {}::{} conflicts with enum case {}::{}",
+                        trait_decl.name, trait_decl.name, constant.name, class.name, existing.name
+                    ),
+                    Some(class.span),
+                ));
+            }
             let constant_key = constant.name.to_ascii_lowercase();
             let existing_owner = constant_origins
                 .get(&constant_key)
@@ -21821,6 +21836,7 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
                 name,
                 span: property_span,
             } => {
+                reject_temporary_property_write_receiver(&receiver)?;
                 dimensions.reverse();
                 return Ok(UnsetTarget::PropertyArrayDim {
                     receiver,
@@ -22066,21 +22082,27 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             receiver,
             name,
             span,
-        } => Ok(AssignmentTarget::Property {
-            receiver,
-            name,
-            span,
-        }),
+        } => {
+            reject_temporary_property_write_receiver(&receiver)?;
+            Ok(AssignmentTarget::Property {
+                receiver,
+                name,
+                span,
+            })
+        }
         Expr::DynamicPropertyFetch {
             receiver,
             name,
             span,
             ..
-        } => Ok(AssignmentTarget::DynamicProperty {
-            receiver,
-            name,
-            span,
-        }),
+        } => {
+            reject_temporary_property_write_receiver(&receiver)?;
+            Ok(AssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                span,
+            })
+        }
         Expr::StaticPropertyFetch {
             class_name,
             name,
@@ -22273,6 +22295,7 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                 name,
                 span: property_span,
             } => {
+                reject_temporary_property_write_receiver(&receiver)?;
                 dimensions.reverse();
                 return Ok(AssignmentTarget::PropertyArrayDim {
                     receiver,
@@ -22329,6 +22352,19 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                 ));
             }
         }
+    }
+}
+
+fn reject_temporary_property_write_receiver(receiver: &Expr) -> Result<()> {
+    match receiver {
+        Expr::Grouped { expr, .. } => reject_temporary_property_write_receiver(expr),
+        Expr::ClassConstantFetch { span, .. } | Expr::DynamicClassConstantFetch { span, .. } => {
+            Err(Diagnostic::new(
+                TEMPORARY_WRITE_CONTEXT_MESSAGE,
+                Some(*span),
+            ))
+        }
+        _ => Ok(()),
     }
 }
 

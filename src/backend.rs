@@ -14312,18 +14312,13 @@ fn reflection_user_method_entry_to_string(
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
     out.push('\n');
-    if !function.parameters.is_empty() {
-        out.push('\n');
-        reflection_parameters_to_string(
-            out,
-            &function.parameters,
-            function_required_parameter_count(function),
-        );
-    }
+    out.push('\n');
+    reflection_parameters_to_string(
+        out,
+        &function.parameters,
+        function_required_parameter_count(function),
+    );
     if let Some(return_type) = &function.return_type {
-        if function.parameters.is_empty() {
-            out.push('\n');
-        }
         out.push_str("      - Return [ ");
         out.push_str(&type_hint_label(return_type));
         out.push_str(" ]\n");
@@ -14663,18 +14658,13 @@ fn reflection_class_methods_to_string(
         out.push_str(" - ");
         out.push_str(&method.end_line.to_string());
         out.push('\n');
-        if !function.parameters.is_empty() {
-            out.push('\n');
-            reflection_parameters_to_string(
-                out,
-                &function.parameters,
-                function_required_parameter_count(function),
-            );
-        }
+        out.push('\n');
+        reflection_parameters_to_string(
+            out,
+            &function.parameters,
+            function_required_parameter_count(function),
+        );
         if let Some(return_type) = &function.return_type {
-            if function.parameters.is_empty() {
-                out.push('\n');
-            }
             out.push_str("      - Return [ ");
             out.push_str(&type_hint_label(return_type));
             out.push_str(" ]\n");
@@ -14716,20 +14706,15 @@ fn reflection_method_to_string(
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
     out.push('\n');
-    if !function.parameters.is_empty() {
-        out.push('\n');
-        reflection_parameters_to_string_with_indent(
-            &mut out,
-            &function.parameters,
-            function_required_parameter_count(function),
-            "  ",
-            "    ",
-        );
-    }
+    out.push('\n');
+    reflection_parameters_to_string_with_indent(
+        &mut out,
+        &function.parameters,
+        function_required_parameter_count(function),
+        "  ",
+        "    ",
+    );
     if let Some(return_type) = &function.return_type {
-        if function.parameters.is_empty() {
-            out.push('\n');
-        }
         out.push_str("  - Return [ ");
         out.push_str(&type_hint_label(return_type));
         out.push_str(" ]\n");

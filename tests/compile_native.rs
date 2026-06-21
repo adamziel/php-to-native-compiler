@@ -4982,6 +4982,14 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     );
     assert_eq!(temporary_offset_write.kind, DiagnosticKind::Fatal);
 
+    let enum_case_property_write =
+        parser::parse("<?php enum Foo: int { case Bar = 0; } Foo::Bar->value = 1;").unwrap_err();
+    assert_eq!(
+        enum_case_property_write.message,
+        "Cannot use temporary expression in write context"
+    );
+    assert_eq!(enum_case_property_write.kind, DiagnosticKind::Fatal);
+
     let builtin_offset_write = parser::parse("<?php strlen('foo')[0] = 1;").unwrap_err();
     assert_eq!(
         builtin_offset_write.message,
@@ -5003,6 +5011,14 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
         "Can't use function return value in write context"
     );
     assert_eq!(unset_function.kind, DiagnosticKind::Fatal);
+
+    let unset_enum_case_property =
+        parser::parse("<?php enum Foo: int { case Bar = 0; } unset(Foo::Bar->value);").unwrap_err();
+    assert_eq!(
+        unset_enum_case_property.message,
+        "Cannot use temporary expression in write context"
+    );
+    assert_eq!(unset_enum_case_property.kind, DiagnosticKind::Fatal);
 
     let unset_new = parser::parse("<?php unset(new ArrayObject());").unwrap_err();
     assert_eq!(
@@ -6421,6 +6437,39 @@ fn parser_rejects_invalid_final_class_constant_overrides() {
         assert_eq!(error.message, message, "{name}");
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
     }
+}
+
+#[test]
+fn compile_enum_trait_constant_conflict_with_case_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-trait-constant-case-conflict");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-trait-constant-case-conflict.php");
+    let output = root.join("enum-trait-constant-case-conflict-bin");
+    fs::write(
+        &input,
+        "<?php
+trait X {
+    public const Up = 1;
+}
+
+enum Direction {
+    use X;
+
+    case Up;
+    case Down;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(execution.stderr).unwrap().contains(
+        "Fatal error: Cannot use trait X, because X::Up conflicts with enum case Direction::Up"
+    ));
 }
 
 #[test]
@@ -25842,6 +25891,13 @@ echo $empty;
     assert_eq!(
         stdout
             .matches("Method [ <user, prototype MyStringable> public method toString ]")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("      - Parameters [0] {\n      }\n      - Return [ string ]")
             .count(),
         2,
         "{stdout}"
