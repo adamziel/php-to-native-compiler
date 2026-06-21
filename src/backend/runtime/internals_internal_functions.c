@@ -17962,7 +17962,13 @@ static void ptn_array_column_add_value(
     if (!index_key.is_null) {
         PtnValue index_value;
         if (ptn_array_column_lookup(runtime, row, index_key, line, &index_value)) {
-            PtnArrayKey result_key = ptn_array_key_from_value(index_value);
+            ptn_emit_array_offset_key_conversion_diagnostic(runtime, index_value, line, 1);
+            PtnArrayKey result_key;
+            if (!ptn_array_offset_key_from_value(runtime, index_value, line, 0, &result_key)) {
+                ptn_value_destroy(&index_value);
+                ptn_value_destroy(&value);
+                return;
+            }
             ptn_value_destroy(&index_value);
             ptn_array_set_entry(result->as.array, result_key, value);
             return;
@@ -18135,6 +18141,12 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
+static int ptn_array_rand_index_compare(const void *left, const void *right) {
+    size_t left_index = *(const size_t *)left;
+    size_t right_index = *(const size_t *)right;
+    return (left_index > right_index) - (left_index < right_index);
+}
+
 static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_rand", 1, "array", args[0]);
     int64_t requested = argc >= 2
@@ -18175,6 +18187,7 @@ static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const 
         indices[i] = indices[j];
         indices[j] = tmp;
     }
+    qsort(indices, count, sizeof(size_t), ptn_array_rand_index_compare);
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < count; i++) {
@@ -19555,6 +19568,10 @@ static int ptn_extract_is_valid_identifier(const char *name) {
     return ptn_extract_is_valid_identifier_len(name, strlen(name));
 }
 
+static int ptn_extract_name_is_this(const char *name, size_t len) {
+    return len == 4 && memcmp(name, "this", 4) == 0;
+}
+
 static char *ptn_extract_key_name(PtnArrayKey key, size_t *len_out) {
     if (key.type == PTN_ARRAY_KEY_STRING) {
         char *name = ptn_duplicate_string_len(key.as.string, key.string_len);
@@ -19671,9 +19688,18 @@ static char *ptn_extract_target_name(
     size_t raw_len = 0;
     char *raw = ptn_extract_key_name(key, &raw_len);
     int raw_valid = ptn_extract_is_valid_identifier_len(raw, raw_len);
+    int raw_is_this = ptn_extract_name_is_this(raw, raw_len);
     char *target = NULL;
     size_t target_len = 0;
     *count_only = 0;
+
+    if (raw_is_this &&
+        (mode == PTN_EXTR_SKIP ||
+         mode == PTN_EXTR_IF_EXISTS ||
+         mode == PTN_EXTR_PREFIX_IF_EXISTS)) {
+        free(raw);
+        return NULL;
+    }
 
     if (mode == PTN_EXTR_PREFIX_ALL) {
         if (raw_len == 0) {
@@ -19686,7 +19712,7 @@ static char *ptn_extract_target_name(
             free(target);
             return NULL;
         }
-    } else if (mode == PTN_EXTR_PREFIX_INVALID && !raw_valid) {
+    } else if (mode == PTN_EXTR_PREFIX_INVALID && (!raw_valid || raw_is_this)) {
         target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
         if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
             free(raw);
@@ -19699,7 +19725,7 @@ static char *ptn_extract_target_name(
             return NULL;
         }
         if ((mode == PTN_EXTR_PREFIX_SAME || mode == PTN_EXTR_PREFIX_IF_EXISTS) &&
-            ptn_extract_local_symbol_exists(runtime, raw)) {
+            (raw_is_this || ptn_extract_local_symbol_exists(runtime, raw))) {
             target = ptn_extract_prefixed_name(prefix, raw, raw_len, &target_len);
             if (!ptn_extract_is_valid_identifier_len(target, target_len)) {
                 free(raw);
@@ -19780,6 +19806,12 @@ static PtnValue ptn_extract_from_array(
         array = ptn_array_detach_value(&source.as.reference->value);
     }
 
+    PtnValue snapshot = ptn_null();
+    if (!refs) {
+        snapshot = ptn_array(ptn_array_clone(array));
+        array = snapshot.as.array;
+    }
+
     int64_t extracted = 0;
     for (size_t i = 0; i < array->len; i++) {
         int count_only = 0;
@@ -19809,6 +19841,7 @@ static PtnValue ptn_extract_from_array(
         free(target);
     }
     free(prefix);
+    ptn_value_destroy(&snapshot);
     return ptn_int(extracted);
 }
 
@@ -19907,6 +19940,7 @@ static int ptn_array_unique_contains_string_value(
     PtnRuntime *runtime,
     PtnArray *array,
     PtnStringOperand value_string,
+    int case_insensitive,
     size_t line
 ) {
     for (size_t i = 0; i < array->len; i++) {
@@ -19915,8 +19949,18 @@ static int ptn_array_unique_contains_string_value(
             array->entries[i].value,
             line
         );
-        int equal = value_string.len == existing_string.len &&
-            memcmp(value_string.data, existing_string.data, value_string.len) == 0;
+        int equal = value_string.len == existing_string.len;
+        if (equal && case_insensitive) {
+            for (size_t index = 0; index < value_string.len; index++) {
+                if (tolower((unsigned char)value_string.data[index]) !=
+                    tolower((unsigned char)existing_string.data[index])) {
+                    equal = 0;
+                    break;
+                }
+            }
+        } else if (equal) {
+            equal = memcmp(value_string.data, existing_string.data, value_string.len) == 0;
+        }
         ptn_string_operand_free(existing_string);
         if (equal) {
             return 1;
@@ -19925,26 +19969,53 @@ static int ptn_array_unique_contains_string_value(
     return 0;
 }
 
+static int ptn_array_unique_contains_regular_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue value,
+    size_t line
+) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_compare_equal(runtime, value, array->entries[i].value, line)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unique", 1, "array", args[0]);
-    if (argc >= 2) {
-        int64_t flags = ptn_internal_expect_integer_arg(runtime, "array_unique", 2, "flags", args[1], line);
-        if (flags != PTN_SORT_STRING) {
-            ptn_throw_exception(
-                runtime,
-                "Error",
-                "array_unique() flags are unsupported; default string value comparison is supported"
-            );
-            return ptn_null();
-        }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "array_unique", 2, "flags", args[1], line)
+        : PTN_SORT_STRING;
+    int regular = flags == PTN_SORT_REGULAR;
+    int string_case_insensitive = flags == (PTN_SORT_STRING | PTN_SORT_FLAG_CASE);
+    if (!regular && flags != PTN_SORT_STRING && !string_case_insensitive) {
+        ptn_throw_exception(
+            runtime,
+            "Error",
+            "array_unique() flags are unsupported; default string value comparison is supported"
+        );
+        return ptn_null();
     }
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
-        PtnStringOperand entry_string = ptn_array_unique_string_operand(runtime, entry->value, line);
-        int duplicate = ptn_array_unique_contains_string_value(runtime, result.as.array, entry_string, line);
-        ptn_string_operand_free(entry_string);
+        int duplicate = 0;
+        if (regular) {
+            duplicate = ptn_array_unique_contains_regular_value(runtime, result.as.array, entry->value, line);
+        } else {
+            PtnStringOperand entry_string = ptn_array_unique_string_operand(runtime, entry->value, line);
+            duplicate = ptn_array_unique_contains_string_value(
+                runtime,
+                result.as.array,
+                entry_string,
+                string_case_insensitive,
+                line
+            );
+            ptn_string_operand_free(entry_string);
+        }
         if (duplicate) {
             continue;
         }

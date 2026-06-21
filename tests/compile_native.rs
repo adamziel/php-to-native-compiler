@@ -37604,12 +37604,17 @@ $input = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4];\n\
 $keys = array_rand($input, 3);\n\
 $ok = is_array($keys) && count($keys) === 3 && array_key_exists(0, $keys) && array_key_exists(1, $keys) && array_key_exists(2, $keys);\n\
 $ok = $ok && $keys[0] !== $keys[1] && $keys[0] !== $keys[2] && $keys[1] !== $keys[2];\n\
+$positions = array_flip(array_keys($input));\n\
+$last = -1;\n\
 foreach ($keys as $key) {\n\
     $ok = $ok && is_string($key) && array_key_exists($key, $input);\n\
+    $ok = $ok && $positions[$key] > $last;\n\
+    $last = $positions[$key];\n\
 }\n\
 $single = array_rand($input);\n\
 $ok = $ok && is_string($single) && array_key_exists($single, $input);\n\
-var_dump($ok, function_exists('array_rand'), function_exists('ARRAY_RAND'));\n\
+$all = array_rand($input, count($input));\n\
+var_dump($ok, $all, function_exists('array_rand'), function_exists('ARRAY_RAND'));\n\
 try {\n\
     array_rand([]);\n\
 } catch (\\ValueError $e) {\n\
@@ -37629,11 +37634,23 @@ try {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\n\
-bool(true)\n\
-bool(true)\n\
-array_rand(): Argument #1 ($array) must not be empty\n\
-array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)\n"
+        concat!(
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"one\"\n",
+            "  [1]=>\n",
+            "  string(3) \"two\"\n",
+            "  [2]=>\n",
+            "  string(5) \"three\"\n",
+            "  [3]=>\n",
+            "  string(4) \"four\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array_rand(): Argument #1 ($array) must not be empty\n",
+            "array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -37796,7 +37813,9 @@ $unique = array_unique($items);\n\
 $unique[0] = \"changed\";\n\
 var_dump($unique, $items);\n\
 var_dump(array_unique([], SORT_STRING));\n\
-try { array_unique($items, SORT_REGULAR); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(array_unique($items, SORT_REGULAR));\n\
+var_dump(array_unique(['b', 'a', 'b'], SORT_REGULAR));\n\
+try { array_unique([new stdClass, new stdClass], SORT_STRING | SORT_FLAG_CASE); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $nested = [[1], [2], [1]];\n\
 var_dump(array_unique($nested, SORT_STRING));\n\
 var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), defined(\"SORT_STRING\"));",
@@ -37838,10 +37857,24 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
             "}\n",
             "array(0) {\n",
             "}\n",
-            "array_unique() flags are unsupported; default string value comparison is supported\n",
-            "\nWarning: Array to string conversion in ptn on line 9\n",
-            "\nWarning: Array to string conversion in ptn on line 9\n",
-            "\nWarning: Array to string conversion in ptn on line 9\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [\"empty\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"b\"\n",
+            "  [1]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "Object of class stdClass could not be converted to string\n",
+            "\nWarning: Array to string conversion in ptn on line 11\n",
+            "\nWarning: Array to string conversion in ptn on line 11\n",
+            "\nWarning: Array to string conversion in ptn on line 11\n",
             "array(1) {\n",
             "  [0]=>\n",
             "  array(1) {\n",
@@ -38086,6 +38119,60 @@ var_dump(function_exists(\"array_column\"), function_exists(\"ARRAY_COLUMN\"));"
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"c\"\n}\narray(3) {\n  [2]=>\n  string(1) \"a\"\n  [\"02\"]=>\n  string(1) \"b\"\n  [3]=>\n  string(1) \"c\"\n}\narray(4) {\n  [2]=>\n  array(2) {\n    [42]=>\n    string(1) \"a\"\n    [\"id\"]=>\n    string(1) \"2\"\n  }\n  [\"02\"]=>\n  array(2) {\n    [42]=>\n    string(1) \"b\"\n    [\"id\"]=>\n    string(2) \"02\"\n  }\n  [3]=>\n  array(2) {\n    [42]=>\n    string(1) \"c\"\n    [\"id\"]=>\n    int(3)\n  }\n  [\"skip\"]=>\n  array(2) {\n    [\"x\"]=>\n    string(7) \"missing\"\n    [\"id\"]=>\n    string(4) \"skip\"\n  }\n}\narray(2) {\n  [0]=>\n  string(4) \"seed\"\n  [1]=>\n  string(4) \"copy\"\n}\narray(1) {\n  [0]=>\n  string(4) \"seed\"\n}\narray(1) {\n  [\"one\"]=>\n  string(4) \"zero\"\n}\narray(1) {\n  [0]=>\n  string(13) \"__get(foobar)\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_column_index_key_uses_array_offset_coercion_to_native_binary() {
+    let root = temp_dir("ptn-native-array-column-index-offset-coercion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-column-index-offset-coercion.php");
+    let output = root.join("array-column-index-offset-coercion-bin");
+    fs::write(
+        &input,
+        "<?php
+$rows = [
+    ['value' => 'null', 'idx' => null],
+    ['value' => 'float', 'idx' => 7.38],
+    ['value' => 'bool', 'idx' => false],
+];
+var_dump(array_column($rows, 'value', 'idx'));
+foreach ([new stdClass, []] as $bad) {
+    try {
+        var_dump(array_column([['value' => 'bad', 'idx' => $bad]], 'value', 'idx'));
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in {} on line 7\n",
+                "\nDeprecated: Implicit conversion from float 7.38 to int loses precision in {} on line 7\n",
+                "array(3) {{\n",
+                "  [\"\"]=>\n",
+                "  string(4) \"null\"\n",
+                "  [7]=>\n",
+                "  string(5) \"float\"\n",
+                "  [0]=>\n",
+                "  string(4) \"bool\"\n",
+                "}}\n",
+                "Cannot access offset of type stdClass on array\n",
+                "Cannot access offset of type array on array\n",
+            ),
+            input.display(),
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -39593,6 +39680,86 @@ foo();
         format!(
             "Cannot re-assign $this\n\nWarning: Undefined variable $a in {} on line 8\nNULL\n",
             input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_extract_self_overwrite_snapshots_source_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-self-overwrite");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-self-overwrite.php");
+    let output = root.join("extract-self-overwrite-bin");
+    fs::write(
+        &input,
+        "<?php
+$foo = ['foo' => 1, 'bar' => 2, 'test' => 3];
+var_dump(extract($foo), $foo, $bar, $test);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nint(1)\nint(2)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_extract_this_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-this-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-this-modes.php");
+    let output = root.join("extract-this-modes-bin");
+    fs::write(
+        &input,
+        "<?php
+class ExtractThisModes {
+    public function run(): void {
+        foreach ([
+            'OVERWRITE' => EXTR_OVERWRITE,
+            'SKIP' => EXTR_SKIP,
+            'PREFIX_SAME' => EXTR_PREFIX_SAME,
+            'PREFIX_ALL' => EXTR_PREFIX_ALL,
+            'PREFIX_INVALID' => EXTR_PREFIX_INVALID,
+            'IF_EXISTS' => EXTR_IF_EXISTS,
+            'PREFIX_IF_EXISTS' => EXTR_PREFIX_IF_EXISTS,
+        ] as $name => $flags) {
+            unset($x_this);
+            try {
+                $result = extract(['this' => 'value'], $flags, 'x');
+                echo $name, ':', $result, ':', (isset($x_this) ? $x_this : 'NULL'), \"\\n\";
+            } catch (Throwable $e) {
+                echo $name, ':E:', $e->getMessage(), \"\\n\";
+            }
+        }
+    }
+}
+(new ExtractThisModes)->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "OVERWRITE:E:Cannot re-assign $this\n",
+            "SKIP:0:NULL\n",
+            "PREFIX_SAME:1:value\n",
+            "PREFIX_ALL:1:value\n",
+            "PREFIX_INVALID:1:value\n",
+            "IF_EXISTS:0:NULL\n",
+            "PREFIX_IF_EXISTS:0:NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
