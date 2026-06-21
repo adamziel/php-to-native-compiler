@@ -2866,6 +2866,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);
     }
+    ptn_object_forget_property_reference_sources(object);
     ptn_value_destroy(&object->lazy_initializer);
     ptn_value_destroy(&object->lazy_proxy_instance);
     free(object->class_name);
