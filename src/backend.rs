@@ -3416,6 +3416,7 @@ fn emit_class_constant_initializer_helper(
             let initializing_table_temp = values.next_temp();
             let initializing_frame_temp = values.next_temp();
             let initializing_trace_frame_temp = values.next_temp();
+            let suppressed_constant_trace_frame_temp = values.next_temp();
             let previous_initializing_class_temp = values.next_temp();
             let previous_initializing_constant_temp = values.next_temp();
             out.push_str("            char *");
@@ -3450,6 +3451,15 @@ fn emit_class_constant_initializer_helper(
             out.push_str("            PtnTraceFrame ");
             out.push_str(&initializing_trace_frame_temp);
             out.push_str(";\n");
+            out.push_str("            PtnTraceFrame *");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(" = NULL;\n");
+            out.push_str("            if (runtime.trace_frame != NULL && runtime.trace_frame->function_name != NULL && strcmp(runtime.trace_frame->function_name, \"[constant expression]\") == 0) {\n");
+            out.push_str("                ");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(" = runtime.trace_frame;\n");
+            out.push_str("                runtime.trace_frame = runtime.trace_frame->previous;\n");
+            out.push_str("            }\n");
             out.push_str("            PtnTryFrame ");
             out.push_str(&initializing_frame_temp);
             out.push_str(";\n");
@@ -3465,6 +3475,16 @@ fn emit_class_constant_initializer_helper(
             out.push_str("                ptn_runtime_pop_trace_frame(&runtime, &");
             out.push_str(&initializing_trace_frame_temp);
             out.push_str(");\n");
+            out.push_str("                if (");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(" != NULL) {\n");
+            out.push_str("                    ");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str("->previous = runtime.trace_frame;\n");
+            out.push_str("                    runtime.trace_frame = ");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("                }\n");
             out.push_str("                ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
             out.push_str(", ");
@@ -3621,6 +3641,16 @@ fn emit_class_constant_initializer_helper(
             out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
             out.push_str(&initializing_trace_frame_temp);
             out.push_str(");\n");
+            out.push_str("            if (");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(" != NULL) {\n");
+            out.push_str("                ");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str("->previous = runtime.trace_frame;\n");
+            out.push_str("                runtime.trace_frame = ");
+            out.push_str(&suppressed_constant_trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("            }\n");
             out.push_str("            ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
             out.push_str(", ");
@@ -4265,9 +4295,6 @@ fn reflection_named_type_metadata(type_hint: &TypeHint) -> Option<ReflectionName
         TypeHint::Union(_) | TypeHint::Intersection(_) => return None,
         other => other,
     };
-    if matches!(named_type, TypeHint::Void | TypeHint::Never) {
-        return None;
-    }
     Some(ReflectionNamedTypeMetadata {
         name: reflection_named_type_name(named_type),
         display_name: type_hint_label(type_hint),
@@ -4371,6 +4398,8 @@ fn reflection_named_type_is_builtin(type_hint: &TypeHint) -> bool {
             | TypeHint::Object
             | TypeHint::Iterable
             | TypeHint::Mixed
+            | TypeHint::Void
+            | TypeHint::Never
             | TypeHint::Static
     )
 }
@@ -27931,6 +27960,24 @@ impl ValueEmitter {
         None
     }
 
+    fn class_constant_fetch_error_message(&self, class_name: &str) -> Option<String> {
+        if !class_name.eq_ignore_ascii_case("parent") || self.current_function_is_anonymous {
+            return None;
+        }
+        let Some(current_class_name) = &self.current_class_name else {
+            return Some("Cannot access \"parent\" when no class scope is active".to_string());
+        };
+        if self
+            .declared_parent_class_name(current_class_name)
+            .is_none()
+        {
+            return Some(
+                "Cannot access \"parent\" when current class scope has no parent".to_string(),
+            );
+        }
+        None
+    }
+
     fn class_name_fetch_uses_runtime_scope(&self, class_name: &str) -> bool {
         if class_name.eq_ignore_ascii_case("static") {
             return true;
@@ -34899,7 +34946,16 @@ impl ValueEmitter {
                 out.push_str("\");\n");
             }
         } else {
-            if self.class_name_fetch_uses_runtime_scope(class_name) {
+            if let Some(message) = self.class_constant_fetch_error_message(class_name) {
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
+                out.push_str(&c_string(&message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else if self.class_name_fetch_uses_runtime_scope(class_name) {
                 out.push_str(" = ptn_null();\n");
                 self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
                 out.push_str("    if (");
@@ -35038,7 +35094,15 @@ impl ValueEmitter {
         out.push_str(" = ptn_null();\n");
 
         if let Some(class_name) = class_name {
-            if self.class_name_fetch_uses_runtime_scope(class_name) {
+            if let Some(message) = self.class_constant_fetch_error_message(class_name) {
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
+                out.push_str(&c_string(&message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else if self.class_name_fetch_uses_runtime_scope(class_name) {
                 self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
                 out.push_str("    if (");
                 out.push_str(&result_temp);

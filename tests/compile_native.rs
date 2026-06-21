@@ -34664,6 +34664,78 @@ try {
 }
 
 #[test]
+fn compile_class_constant_invalid_parent_reference_error_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-invalid-parent-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-invalid-parent-reference.php");
+    let output = root.join("class-constant-invalid-parent-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    const B = parent::C;
+}
+
+try {
+    A::B;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot access \"parent\" when current class scope has no parent\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(
+        c_source.contains("Cannot access \\\"parent\\\" when current class scope has no parent")
+    );
+}
+
+#[test]
+fn compile_class_constant_self_reference_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-self-reference-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-self-reference-trace.php");
+    let output = root.join("class-constant-self-reference-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+   const FOO = [self::BAR];
+   const BAR = [self::FOO];
+}
+var_dump(A::FOO);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Cannot declare self-referencing constant self::BAR in {}:4\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 4\n",
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_append_expression_with_reference_list_assignment_to_native_binary() {
     let root = temp_dir("ptn-native-append-reference-list-assignment-expression");
     fs::create_dir_all(&root).unwrap();
@@ -51761,6 +51833,43 @@ foreach (['foo', $fn, 'Bar::staticMethod', [$bar, 'instanceMethod']] as $callabl
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("PtnParameterMetadata"));
     assert!(c_source.contains("ptn_reflection_parameter_object_from_metadata"));
+    assert!(c_source.contains("ptn_reflection_named_type_object_from_metadata"));
+}
+
+#[test]
+fn compile_reflection_void_and_never_return_types_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-void-never-return-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-void-never-return-types.php");
+    let output = root.join("reflection-void-never-return-types-bin");
+    fs::write(
+        &input,
+        "<?php
+function done(): void {}
+function terminates(): never {}
+
+foreach (['done', 'terminates'] as $name) {
+    $type = (new ReflectionFunction($name))->getReturnType();
+    var_dump($type->getName(), (string) $type, $type->allowsNull(), $type->isBuiltin());
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"void\"\nstring(4) \"void\"\nbool(false)\nbool(true)\n",
+            "string(5) \"never\"\nstring(5) \"never\"\nbool(false)\nbool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reflection_named_type_object_from_metadata"));
 }
 
