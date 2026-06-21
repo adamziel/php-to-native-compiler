@@ -31017,6 +31017,52 @@ $fn();\n\
 }
 
 #[test]
+fn compile_reflection_function_closure_uses_method_origin_display_name_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-closure-method-origin-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-closure-method-origin-name.php");
+    let output = root.join("reflection-closure-method-origin-name-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Foo;
+
+class Bar {
+    public function baz() {
+        return function () {
+        };
+    }
+}
+
+$c = (new Bar())->baz();
+$r = new \\ReflectionFunction($c);
+var_dump($r->getName());
+var_dump($r->getShortName());
+var_dump($r->getNamespaceName());
+var_dump($r->inNamespace());
+var_dump($r->getNamespaceName() . ($r->inNamespace() ? '\\\\' : '') . $r->getShortName() === $r->getName());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(26) \"{closure:Foo\\Bar::baz():6}\"\n",
+            "string(26) \"{closure:Foo\\Bar::baz():6}\"\n",
+            "string(0) \"\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_class_method_magic_constants_to_native_binary() {
     let root = temp_dir("ptn-native-class-method-magic-constants");
     fs::create_dir_all(&root).unwrap();
@@ -40513,6 +40559,12 @@ try {
     echo $e->getMessage(), \"\\n\";
 }
 
+set_error_handler(function ($errno, $message) {
+    echo \"handled:\", $message, \"\\n\";
+});
+var_dump($closure->missing);
+restore_error_handler();
+
 var_dump($closure instanceof Closure);
 ",
     )
@@ -40529,6 +40581,8 @@ var_dump($closure instanceof Closure);
             "int(2)\n",
             "Cannot access offset of type Closure on array\n",
             "Cannot create dynamic property Closure::$prop\n",
+            "handled:Undefined property: Closure::$missing\n",
+            "NULL\n",
             "bool(true)\n",
         )
     );
@@ -40537,6 +40591,7 @@ var_dump($closure instanceof Closure);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_array_key_from_literal_value"));
     assert!(c_source.contains("Cannot create dynamic property Closure::$%s"));
+    assert!(c_source.contains("Undefined property: Closure::$%s"));
     assert!(c_source.contains("ptn_ascii_case_equal(\"Closure\""));
 }
 
@@ -55105,21 +55160,26 @@ var_dump($sameReflection->getNumberOfParameters());
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let same_display_name = format!("{{closure:{}:20}}", input.display());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "int(5)\n",
-            "int(8)\n",
-            "int(7)\n",
-            "bool(true)\n",
-            "int(3)\n",
-            "string(3) \"add\"\n",
-            "int(2)\n",
-            "int(1)\n",
-            "string(25) \"FromCallableWorker::twice\"\n",
-            "int(1)\n",
-            "string(9) \"{closure}\"\n",
-            "int(1)\n",
+        format!(
+            concat!(
+                "int(5)\n",
+                "int(8)\n",
+                "int(7)\n",
+                "bool(true)\n",
+                "int(3)\n",
+                "string(3) \"add\"\n",
+                "int(2)\n",
+                "int(1)\n",
+                "string(25) \"FromCallableWorker::twice\"\n",
+                "int(1)\n",
+                "string({}) \"{}\"\n",
+                "int(1)\n",
+            ),
+            same_display_name.len(),
+            same_display_name
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

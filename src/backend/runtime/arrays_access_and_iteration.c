@@ -1809,6 +1809,43 @@ static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static PTN_UNUSED void ptn_emit_closure_undefined_property_warning(
+    PtnRuntime *runtime,
+    const char *property,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Undefined property: Closure::$%s",
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
+    ptn_diagnostic_printf(
+        &runtime->diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_throw_closure_dynamic_property_error(
     PtnRuntime *runtime,
     const char *property,
@@ -4969,6 +5006,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     }
     if (receiver.type == PTN_EXCEPTION) {
         ptn_emit_undefined_exception_property_warning(runtime, receiver.as.exception, property, line);
+        return ptn_null();
+    }
+    if (receiver.type == PTN_CLOSURE) {
+        ptn_emit_closure_undefined_property_warning(runtime, property, line);
         return ptn_null();
     }
     if (receiver.type != PTN_OBJECT) {

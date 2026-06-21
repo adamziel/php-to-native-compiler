@@ -100452,6 +100452,8 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
 
 typedef struct {
     PtnFunctionMetadata metadata;
+    char *reflection_name;
+    int reflection_name_is_closure_display;
     char *closure_scope_class_name;
     int has_closure_this;
     PtnValue closure_this;
@@ -100460,6 +100462,17 @@ typedef struct {
     int has_closure_function_index;
     size_t closure_function_index;
 } PtnReflectionFunctionData;
+
+static const char *ptn_reflection_function_effective_name(PtnReflectionFunctionData *data) {
+    if (data == NULL) {
+        return "";
+    }
+    return data->reflection_name != NULL ? data->reflection_name : data->metadata.name;
+}
+
+static int ptn_reflection_function_uses_closure_display_name(PtnReflectionFunctionData *data) {
+    return data != NULL && data->reflection_name_is_closure_display;
+}
 
 typedef struct {
     char *name;
@@ -102740,6 +102753,7 @@ static void ptn_reflection_function_data_free(void *data) {
     if (function_data == NULL) {
         return;
     }
+    free(function_data->reflection_name);
     free(function_data->closure_scope_class_name);
     ptn_value_destroy(&function_data->closure_this);
     ptn_value_destroy(&function_data->closure);
@@ -103433,6 +103447,8 @@ static PtnValue ptn_reflection_function_object_from_metadata(
         ptn_abort_out_of_memory();
     }
     data->metadata = metadata;
+    data->reflection_name = NULL;
+    data->reflection_name_is_closure_display = 0;
     data->closure_scope_class_name = NULL;
     data->has_closure_this = 0;
     data->closure_this = ptn_null();
@@ -104787,6 +104803,8 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         ptn_abort_out_of_memory();
     }
     data->metadata = metadata;
+    data->reflection_name = NULL;
+    data->reflection_name_is_closure_display = 0;
     data->closure_scope_class_name = NULL;
     data->has_closure_this = 0;
     data->closure_this = ptn_null();
@@ -104802,6 +104820,10 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         data->closure = ptn_value_clone(target);
         data->has_closure_function_index = 1;
         data->closure_function_index = target.as.closure->function_index;
+        if (!target.as.closure->has_wrapped_callable && target.as.closure->display_name != NULL) {
+            data->reflection_name = ptn_duplicate_string(target.as.closure->display_name);
+            data->reflection_name_is_closure_display = 1;
+        }
         PtnValue closure_this = ptn_null();
         if (ptn_symbols_get(&target.as.closure->captures, "this", &closure_this)) {
             data->has_closure_this = 1;
@@ -104812,7 +104834,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
-    ptn_reflection_function_attach_name_property(runtime, object, metadata.name);
+    ptn_reflection_function_attach_name_property(runtime, object, ptn_reflection_function_effective_name(data));
     return object;
 }
 
@@ -112510,7 +112532,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_reflection_function_static_variables(runtime, metadata);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
-        return ptn_owned_string(ptn_duplicate_string(metadata.name));
+        return ptn_owned_string(ptn_duplicate_string(ptn_reflection_function_effective_name(data)));
     }
     if (ptn_ascii_case_equal(name, "getExtensionName")) {
         const char *extension_name = ptn_reflection_function_extension_name(metadata);
@@ -112523,7 +112545,12 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             : ptn_reflection_extension_object_from_name(runtime, extension_name);
     }
     if (ptn_ascii_case_equal(name, "getNamespaceName")) {
-        return ptn_reflection_function_string_before_last_namespace_separator(metadata.name);
+        if (ptn_reflection_function_uses_closure_display_name(data)) {
+            return ptn_string("");
+        }
+        return ptn_reflection_function_string_before_last_namespace_separator(
+            ptn_reflection_function_effective_name(data)
+        );
     }
     if (ptn_ascii_case_equal(name, "getParameters")) {
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -112566,10 +112593,18 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_reflection_function_size_result(metadata.required_parameter_count);
     }
     if (ptn_ascii_case_equal(name, "getShortName")) {
-        return ptn_reflection_function_string_after_last_namespace_separator(metadata.name);
+        if (ptn_reflection_function_uses_closure_display_name(data)) {
+            return ptn_owned_string(ptn_duplicate_string(ptn_reflection_function_effective_name(data)));
+        }
+        return ptn_reflection_function_string_after_last_namespace_separator(
+            ptn_reflection_function_effective_name(data)
+        );
     }
     if (ptn_ascii_case_equal(name, "inNamespace")) {
-        return ptn_bool(strchr(metadata.name, '\\') != NULL);
+        return ptn_bool(
+            !ptn_reflection_function_uses_closure_display_name(data) &&
+            strchr(ptn_reflection_function_effective_name(data), '\\') != NULL
+        );
     }
     if (ptn_ascii_case_equal(name, "isInternal")) {
         return ptn_bool(metadata.is_internal);
