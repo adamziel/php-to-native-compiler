@@ -7552,6 +7552,7 @@ typedef struct {
     size_t id_len;
     size_t id_capacity;
     int failed;
+    int bad_data;
     int unexpected_end;
     int insufficient_data;
     size_t insufficient_required;
@@ -7658,6 +7659,7 @@ static void ptn_unserialize_state_init(
     state->id_len = 0;
     state->id_capacity = 0;
     state->failed = 0;
+    state->bad_data = 0;
     state->unexpected_end = 0;
     state->insufficient_data = 0;
     state->insufficient_required = 0;
@@ -7687,6 +7689,11 @@ static void ptn_unserialize_fail_at(PtnUnserializeState *state, size_t pos) {
 
 static void ptn_unserialize_fail(PtnUnserializeState *state) {
     ptn_unserialize_fail_at(state, state->pos);
+}
+
+static void ptn_unserialize_fail_bad_data_at(PtnUnserializeState *state, size_t pos) {
+    state->bad_data = 1;
+    ptn_unserialize_fail_at(state, pos);
 }
 
 static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
@@ -8113,6 +8120,10 @@ static void ptn_unserialize_emit_unexpected_end_warning(PtnRuntime *runtime, siz
     );
 }
 
+static void ptn_unserialize_emit_bad_data_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_runtime_warning(runtime, "Bad unserialize data", line);
+}
+
 static void ptn_unserialize_emit_insufficient_data_warning(
     PtnRuntime *runtime,
     size_t required,
@@ -8261,6 +8272,36 @@ static void ptn_unserialize_declare_internal_readonly_property(
     ptn_value_destroy(&assigned);
 }
 
+static void ptn_unserialize_declare_internal_property_metadata(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property_name,
+    const char *declaring_class,
+    PtnPropertyVisibility visibility,
+    PtnPropertyTypeKind type_kind,
+    const char *type_text,
+    int type_allows_null,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        property_name,
+        declaring_class,
+        visibility,
+        visibility,
+        0,
+        type_kind,
+        NULL,
+        type_text,
+        type_allows_null,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
 static PtnValue ptn_unserialize_new_internal_attribute_shell(
     PtnRuntime *runtime,
     const char *class_name,
@@ -8312,6 +8353,33 @@ static PtnValue ptn_unserialize_new_internal_attribute_shell(
             line
         );
     }
+    return object;
+}
+
+static PtnValue ptn_unserialize_new_internal_exception_shell(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    const char *canonical_name = ptn_builtin_exception_class_name(class_name);
+    if (canonical_name == NULL) {
+        canonical_name = class_name;
+    }
+    const char *base_class = ptn_exception_type_matches_name(canonical_name, "Error")
+        ? "Error"
+        : "Exception";
+    PtnValue object = ptn_object_new_shell(runtime, canonical_name);
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "trace",
+        base_class,
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_TYPE_ARRAY,
+        "array",
+        0,
+        line
+    );
     return object;
 }
 
@@ -8613,6 +8681,9 @@ static PtnValue ptn_unserialize_new_object_shell(
         if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
             return ptn_zip_archive_new_shell(runtime, line);
         }
+        if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
+            return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
+        }
         if (ptn_internal_class_name_is_attribute(resolved_name) ||
             ptn_internal_class_name_is_deprecated(resolved_name) ||
             ptn_internal_class_name_is_no_discard(resolved_name)) {
@@ -8636,6 +8707,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
+                return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
             }
             if (ptn_internal_class_name_is_attribute(resolved_name) ||
                 ptn_internal_class_name_is_deprecated(resolved_name) ||
@@ -8670,6 +8744,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
+                return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
             }
             if (ptn_internal_class_name_is_attribute(resolved_name) ||
                 ptn_internal_class_name_is_deprecated(resolved_name) ||
@@ -9238,6 +9315,18 @@ static void ptn_unserialize_order_object_property_entry(
     *index = target;
 }
 
+static int ptn_unserialize_spl_array_backed_requires_string_property_keys(PtnObject *object) {
+    if (object == NULL || object->class_name == NULL) {
+        return 0;
+    }
+    return ptn_internal_class_name_is_array_iterator(object->class_name) ||
+        ptn_internal_class_name_is_recursive_array_iterator(object->class_name) ||
+        ptn_internal_class_name_is_array_object(object->class_name) ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject");
+}
+
 static int ptn_unserialize_store_object_property_entry(
     PtnRuntime *runtime,
     PtnUnserializeState *state,
@@ -9248,6 +9337,21 @@ static int ptn_unserialize_store_object_property_entry(
     if (object == NULL || object->properties == NULL) {
         ptn_array_key_free(key);
         ptn_value_destroy(&parsed.value);
+        return 0;
+    }
+
+    if (key.type != PTN_ARRAY_KEY_STRING &&
+        ptn_unserialize_spl_array_backed_requires_string_property_keys(object)) {
+        ptn_array_key_free(key);
+        ptn_value_destroy(&parsed.value);
+        if (runtime != NULL) {
+            ptn_throw_exception(
+                runtime,
+                "UnexpectedValueException",
+                "Incomplete or ill-typed serialization data"
+            );
+        }
+        ptn_unserialize_fail(state);
         return 0;
     }
 
@@ -9468,6 +9572,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
             state->pos += class_len;
+            size_t class_name_end = state->pos;
             if (ptn_ascii_case_equal(class_name, "ReflectionReference") ||
                 ptn_internal_class_name_is_weak_reference(class_name) ||
                 ptn_internal_class_name_is_weak_map(class_name)) {
@@ -9488,8 +9593,18 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             if (!ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_consume(state, ':') ||
-                !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count) ||
+                !ptn_unserialize_consume(state, ':')) {
+                free(class_name);
+                return result;
+            }
+            if (!ptn_unserialize_has(state, 1) ||
+                state->data[state->pos] < '0' ||
+                state->data[state->pos] > '9') {
+                ptn_unserialize_fail_bad_data_at(state, class_name_end);
+                free(class_name);
+                return result;
+            }
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 free(class_name);
@@ -9757,6 +9872,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     size_t saved_error_pos = state->error_pos;
     size_t saved_line = state->line;
     int saved_failed = state->failed;
+    int saved_bad_data = state->bad_data;
     int saved_unexpected_end = state->unexpected_end;
     int saved_insufficient_data = state->insufficient_data;
     size_t saved_insufficient_required = state->insufficient_required;
@@ -9769,6 +9885,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     state->error_pos = 0;
     state->line = line;
     state->failed = 0;
+    state->bad_data = 0;
     state->unexpected_end = 0;
     state->insufficient_data = 0;
     state->insufficient_required = 0;
@@ -9871,6 +9988,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     state->error_pos = saved_error_pos;
     state->line = saved_line;
     state->failed = saved_failed;
+    state->bad_data = saved_bad_data;
     state->unexpected_end = saved_unexpected_end;
     state->insufficient_data = saved_insufficient_data;
     state->insufficient_required = saved_insufficient_required;
@@ -9892,6 +10010,7 @@ fail:
         state->error_pos = saved_error_pos;
         state->line = saved_line;
         state->failed = saved_failed;
+        state->bad_data = saved_bad_data;
         state->unexpected_end = saved_unexpected_end;
         state->insufficient_data = saved_insufficient_data;
         state->insufficient_required = saved_insufficient_required;
@@ -9908,6 +10027,7 @@ typedef struct {
     size_t error_pos;
     size_t line;
     int failed;
+    int bad_data;
     int unexpected_end;
     int insufficient_data;
     size_t insufficient_required;
@@ -9938,6 +10058,7 @@ static int ptn_unserialize_value_from_operand(
         saved.line = active_state->line;
         size_t saved_id_len = active_state->id_len;
         saved.failed = active_state->failed;
+        saved.bad_data = active_state->bad_data;
         saved.unexpected_end = active_state->unexpected_end;
         saved.insufficient_data = active_state->insufficient_data;
         saved.insufficient_required = active_state->insufficient_required;
@@ -9953,6 +10074,7 @@ static int ptn_unserialize_value_from_operand(
         active_state->allowed_classes =
             allowed_classes == NULL ? &PTN_UNSERIALIZE_ALLOW_ALL : allowed_classes;
         active_state->failed = 0;
+        active_state->bad_data = 0;
         active_state->unexpected_end = 0;
         active_state->insufficient_data = 0;
         active_state->insufficient_required = 0;
@@ -9975,6 +10097,7 @@ static int ptn_unserialize_value_from_operand(
             ptn_try_frame_pop(runtime, &parse_frame);
         }
         int failed = active_state->failed;
+        int bad_data = active_state->bad_data;
         int unexpected_end = active_state->unexpected_end;
         int insufficient_data = active_state->insufficient_data;
         size_t insufficient_required = active_state->insufficient_required;
@@ -9988,6 +10111,7 @@ static int ptn_unserialize_value_from_operand(
         active_state->error_pos = saved.error_pos;
         active_state->line = saved.line;
         active_state->failed = saved.failed;
+        active_state->bad_data = saved.bad_data;
         active_state->unexpected_end = saved.unexpected_end;
         active_state->insufficient_data = saved.insufficient_data;
         active_state->insufficient_required = saved.insufficient_required;
@@ -10008,6 +10132,9 @@ static int ptn_unserialize_value_from_operand(
             if (emit_diagnostics) {
                 if (unexpected_end) {
                     ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+                }
+                if (bad_data) {
+                    ptn_unserialize_emit_bad_data_warning(runtime, line);
                 }
                 if (insufficient_data) {
                     ptn_unserialize_emit_insufficient_data_warning(
@@ -10060,6 +10187,7 @@ static int ptn_unserialize_value_from_operand(
         parsed = ptn_unserialize_parse_value(&state, runtime);
     }
     int failed = state.failed;
+    int bad_data = state.bad_data;
     int unexpected_end = state.unexpected_end;
     int insufficient_data = state.insufficient_data;
     size_t insufficient_required = state.insufficient_required;
@@ -10085,6 +10213,9 @@ static int ptn_unserialize_value_from_operand(
         if (emit_diagnostics) {
             if (unexpected_end) {
                 ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+            }
+            if (bad_data) {
+                ptn_unserialize_emit_bad_data_warning(runtime, line);
             }
             if (insufficient_data) {
                 ptn_unserialize_emit_insufficient_data_warning(
@@ -106414,6 +106545,7 @@ static int ptn_array_object_unserialize_legacy_payload(
         saved.error_pos = state->error_pos;
         saved.line = state->line;
         saved.failed = state->failed;
+        saved.bad_data = state->bad_data;
         saved.unexpected_end = state->unexpected_end;
         saved.insufficient_data = state->insufficient_data;
         saved.insufficient_required = state->insufficient_required;
@@ -106427,6 +106559,7 @@ static int ptn_array_object_unserialize_legacy_payload(
         state->error_pos = 0;
         state->line = line;
         state->failed = 0;
+        state->bad_data = 0;
         state->unexpected_end = 0;
         state->insufficient_data = 0;
         state->insufficient_required = 0;
@@ -106537,6 +106670,7 @@ done:
         state->error_pos = saved.error_pos;
         state->line = saved.line;
         state->failed = saved.failed;
+        state->bad_data = saved.bad_data;
         state->unexpected_end = saved.unexpected_end;
         state->insufficient_data = saved.insufficient_data;
         state->insufficient_required = saved.insufficient_required;

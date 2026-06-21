@@ -11590,6 +11590,102 @@ var_dump(unserialize($payload));
 }
 
 #[test]
+fn compile_unserialize_bad_object_header_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-bad-object-header-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-bad-object-header-warning.php");
+    let output = root.join("unserialize-bad-object-header-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(unserialize('O:8:\"00000000\":'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Bad unserialize data"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 13 of 15 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_spl_array_backed_rejects_integer_property_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-spl-integer-property-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-spl-integer-property-key.php");
+    let output = root.join("unserialize-spl-integer-property-key-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = 'O:13:"ArrayIterator":2:{i:0;i:0;s:1:"x";R:2;}';
+try {
+    var_dump(unserialize($payload));
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "UnexpectedValueException:Incomplete or ill-typed serialization data\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_exception_trace_type_error_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-exception-trace-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-exception-trace-type-error.php");
+    let output = root.join("unserialize-exception-trace-type-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize('a:2:{i:0;O:9:"exception":1:{s:16:"' . "\0" . 'Exception' . "\0" . 'trace";s:4:"test";}i:1;R:3;}'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught TypeError: Cannot assign string to property Exception::$trace of type array"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_session_php_serialize_decode_unexpected_end_to_native_binary() {
     let root = temp_dir("ptn-native-session-php-serialize-decode-unexpected-end");
     fs::create_dir_all(&root).unwrap();
