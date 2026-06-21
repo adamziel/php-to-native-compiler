@@ -940,6 +940,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"IteratorIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"FilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"CallbackFilterIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RegexIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"InfiniteIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"NoRewindIterator\") ||\n");
@@ -1005,6 +1006,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DirectoryIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Stringable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"IntlBreakIterator\") ||\n");
@@ -6516,6 +6523,7 @@ fn emit_class_metadata_helpers(
         "CachingIterator",
         "CallbackFilterIterator",
         "RecursiveCallbackFilterIterator",
+        "DirectoryIterator",
         "FilterIterator",
         "InfiniteIterator",
         "IteratorIterator",
@@ -6523,6 +6531,7 @@ fn emit_class_metadata_helpers(
         "SplObjectStorage",
         "LimitIterator",
         "NoRewindIterator",
+        "RegexIterator",
         "SplDoublyLinkedList",
         "SplQueue",
         "SplStack",
@@ -16458,11 +16467,13 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "arrayobject" => Some("ArrayObject"),
         "cachingiterator" => Some("CachingIterator"),
         "callbackfilteriterator" => Some("CallbackFilterIterator"),
+        "directoryiterator" => Some("DirectoryIterator"),
         "filteriterator" => Some("FilterIterator"),
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
         "norewinditerator" => Some("NoRewindIterator"),
+        "regexiterator" => Some("RegexIterator"),
         "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),

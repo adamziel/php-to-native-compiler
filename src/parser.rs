@@ -12023,10 +12023,12 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
         "arrayiterator"
             | "arrayobject"
             | "callbackfilteriterator"
+            | "directoryiterator"
             | "filteriterator"
             | "infiniteiterator"
             | "iteratoriterator"
             | "limititerator"
+            | "regexiterator"
             | "recursivearrayiterator"
             | "spldoublylinkedlist"
             | "splfileinfo"
@@ -14580,6 +14582,8 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("ArrayIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
+        || name.eq_ignore_ascii_case("DirectoryIterator")
+        || name.eq_ignore_ascii_case("RegexIterator")
         || name.eq_ignore_ascii_case("SplFixedArray")
         || name.eq_ignore_ascii_case("SplObjectStorage")
         || name.eq_ignore_ascii_case("WeakMap")
@@ -15031,6 +15035,15 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         || candidate_name.eq_ignore_ascii_case("SplStack")
     {
         &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("DirectoryIterator") {
+        &[
+            "Iterator",
+            "SeekableIterator",
+            "Stringable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("RegexIterator") {
+        &["Iterator", "OuterIterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("SplFileObject") {
         &[
             "Iterator",
