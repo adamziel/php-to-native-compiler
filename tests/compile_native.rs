@@ -1139,6 +1139,93 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_regex_iterator_replace_reference_property_to_native_binary() {
+    let root = temp_dir("ptn-native-regex-iterator-replace-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("regex-iterator-replace-reference.php");
+    let output = root.join("regex-iterator-replace-reference-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$a = new ArrayIterator(["test1", "skip", "test2", "test3"]);
+$i = new RegexIterator($a, '/^(test)(\d+)/', RegexIterator::REPLACE);
+$r = '$2:$1';
+$i->replacement =& $r;
+var_dump(iterator_to_array($i));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_regex_iterator_new"));
+    assert!(c_source.contains("ptn_regex_iterator_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(6) \"1:test\"\n",
+            "  [2]=>\n",
+            "  string(6) \"2:test\"\n",
+            "  [3]=>\n",
+            "  string(6) \"3:test\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_directory_iterator_foreach_by_reference_guard_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-iterator-by-ref-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-iterator-by-ref-guard.php");
+    let output = root.join("directory-iterator-by-ref-guard-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    foreach (new DirectoryIterator(__DIR__) as &$file) {
+        echo $file, "\n";
+    }
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_directory_iterator_new"));
+    assert!(c_source.contains("ptn_directory_iterator_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "An iterator cannot be used with foreach by reference\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_caching_iterator_current_string_and_inner_forwarding_to_native_binary() {
     let root = temp_dir("ptn-native-caching-iterator");
     fs::create_dir_all(&root).unwrap();

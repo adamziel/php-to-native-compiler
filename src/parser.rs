@@ -15036,12 +15036,7 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
     {
         &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("DirectoryIterator") {
-        &[
-            "Iterator",
-            "SeekableIterator",
-            "Stringable",
-            "Traversable",
-        ][..]
+        &["Iterator", "SeekableIterator", "Stringable", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("RegexIterator") {
         &["Iterator", "OuterIterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("SplFileObject") {

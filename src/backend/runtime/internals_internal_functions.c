@@ -117877,17 +117877,11 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
             ptn_regex_iterator_data_free(resolved_receiver.as.object->native_data);
             resolved_receiver.as.object->native_data = new_data;
             resolved_receiver.as.object->native_data_free = ptn_regex_iterator_data_free;
-            PtnArrayEntry *replacement_entry = ptn_array_entry_for_key(
-                replacement.as.object->properties,
-                ptn_array_string_key("replacement")
+            ptn_array_set_entry(
+                resolved_receiver.as.object->properties,
+                ptn_array_string_key("replacement"),
+                ptn_string("")
             );
-            if (replacement_entry != NULL) {
-                ptn_array_set_entry(
-                    resolved_receiver.as.object->properties,
-                    ptn_array_string_key("replacement"),
-                    ptn_value_clone_deref(replacement_entry->value)
-                );
-            }
         }
         ptn_value_destroy(&replacement);
         return ptn_null();

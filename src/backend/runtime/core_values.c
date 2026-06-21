@@ -2453,6 +2453,13 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_call_internal(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
