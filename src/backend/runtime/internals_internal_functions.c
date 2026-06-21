@@ -92224,8 +92224,11 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getSettableType")
         || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "hasHook")
+        || ptn_ascii_case_equal(method_name, "hasHooks")
         || ptn_ascii_case_equal(method_name, "hasType")
         || ptn_ascii_case_equal(method_name, "hasDefaultValue")
+        || ptn_ascii_case_equal(method_name, "isAbstract")
         || ptn_ascii_case_equal(method_name, "isDefault")
         || ptn_ascii_case_equal(method_name, "isDynamic")
         || ptn_ascii_case_equal(method_name, "isFinal")
@@ -97555,6 +97558,7 @@ static PtnReflectionPropertyData *ptn_reflection_property_data(PtnRuntime *runti
 
 static int ptn_reflection_property_hook_type_argument(
     PtnRuntime *runtime,
+    const char *method_name,
     PtnValue value,
     int *hook_type_out
 ) {
@@ -97595,7 +97599,8 @@ static int ptn_reflection_property_hook_type_argument(
     int written = snprintf(
         message,
         sizeof(message),
-        "ReflectionProperty::getHook(): Argument #1 ($type) must be of type PropertyHookType, %s given",
+        "ReflectionProperty::%s(): Argument #1 ($type) must be of type PropertyHookType, %s given",
+        method_name,
         ptn_offset_container_type_name(value)
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -98481,6 +98486,112 @@ static int ptn_reflection_property_object_argument(
     return 1;
 }
 
+static void ptn_reflection_property_throw_raw_virtual_error(
+    PtnRuntime *runtime,
+    const char *operation,
+    const char *class_name,
+    const char *property_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Must not %s virtual property %s::$%s",
+        operation,
+        class_name,
+        property_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PtnValue ptn_reflection_property_get_raw_object_value(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *property_name,
+    const char *property_owner,
+    size_t line
+) {
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    if (metadata != NULL && metadata->is_virtual) {
+        ptn_reflection_property_throw_raw_virtual_error(
+            runtime,
+            "read from",
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return ptn_null();
+    }
+    const char *previous_active_property_hook_class =
+        runtime == NULL ? NULL : runtime->active_property_hook_class;
+    const char *previous_active_property_hook_property =
+        runtime == NULL ? NULL : runtime->active_property_hook_property;
+    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
+        runtime->active_property_hook_class = ptn_property_hook_get_declaring_class(metadata);
+        runtime->active_property_hook_property = metadata->display_name;
+    }
+    PtnValue result = ptn_object_read_property(
+        runtime,
+        target,
+        property_name,
+        property_owner,
+        line
+    );
+    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
+        runtime->active_property_hook_class = previous_active_property_hook_class;
+        runtime->active_property_hook_property = previous_active_property_hook_property;
+    }
+    return result;
+}
+
+static PtnValue ptn_reflection_property_set_raw_object_value(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *property_name,
+    const char *property_owner,
+    PtnValue value,
+    size_t line
+) {
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    if (metadata != NULL && metadata->is_virtual) {
+        ptn_reflection_property_throw_raw_virtual_error(
+            runtime,
+            "write to",
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return ptn_null();
+    }
+    const char *previous_active_property_hook_class =
+        runtime == NULL ? NULL : runtime->active_property_hook_class;
+    const char *previous_active_property_hook_property =
+        runtime == NULL ? NULL : runtime->active_property_hook_property;
+    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
+        runtime->active_property_hook_class = ptn_property_hook_set_declaring_class(metadata);
+        runtime->active_property_hook_property = metadata->display_name;
+    }
+    PtnValue result = ptn_object_write_property(
+        runtime,
+        target,
+        property_name,
+        property_owner,
+        value,
+        line
+    );
+    if (runtime != NULL && metadata != NULL && metadata->has_hooks) {
+        runtime->active_property_hook_class = previous_active_property_hook_class;
+        runtime->active_property_hook_property = previous_active_property_hook_property;
+    }
+    return result;
+}
+
 static int ptn_reflection_property_is_readable_result(
     PtnRuntime *runtime,
     PtnReflectionPropertyData *data,
@@ -98556,6 +98667,9 @@ static int ptn_reflection_property_is_writable_result(
     if (target.type == PTN_OBJECT) {
         const PtnObjectPropertyMetadata *metadata =
             ptn_reflection_property_object_metadata(target, data->name, declaring_class);
+        if (metadata != NULL && metadata->is_virtual) {
+            return metadata->hook_has_set;
+        }
         if (metadata != NULL &&
             metadata->is_readonly &&
             ptn_object_property_storage_initialized(target.as.object, metadata->storage_name)) {
@@ -99053,7 +99167,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             return ptn_null();
         }
         int hook_type = 0;
-        if (!ptn_reflection_property_hook_type_argument(runtime, args[0], &hook_type)) {
+        if (!ptn_reflection_property_hook_type_argument(runtime, name, args[0], &hook_type)) {
             return ptn_null();
         }
         const char *hook_class_name = declaring_class == NULL ? data->class_name : declaring_class;
@@ -99069,11 +99183,97 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "hasHook")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        int hook_type = 0;
+        if (!ptn_reflection_property_hook_type_argument(runtime, name, args[0], &hook_type)) {
+            return ptn_null();
+        }
+        const char *hook_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(hook_class_name) ||
+             ptn_declared_trait_exists(hook_class_name))) {
+            PtnValue hook = ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                hook_type
+            );
+            int found = ptn_value_deref(hook).type != PTN_NULL;
+            ptn_value_destroy(&hook);
+            return ptn_bool(found);
+        }
+        return ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "hasHooks")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *hook_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(hook_class_name) ||
+             ptn_declared_trait_exists(hook_class_name))) {
+            PtnValue get_hook = ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                1
+            );
+            if (ptn_value_deref(get_hook).type != PTN_NULL) {
+                ptn_value_destroy(&get_hook);
+                return ptn_bool(1);
+            }
+            ptn_value_destroy(&get_hook);
+            PtnValue set_hook = ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                2
+            );
+            int found = ptn_value_deref(set_hook).type != PTN_NULL;
+            ptn_value_destroy(&set_hook);
+            return ptn_bool(found);
+        }
+        return ptn_bool(0);
+    }
     if (ptn_ascii_case_equal(name, "getHooks")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_array_from_literal_entries(0, NULL);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        const char *hook_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(hook_class_name) ||
+             ptn_declared_trait_exists(hook_class_name))) {
+            PtnValue get_hook = ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                1
+            );
+            if (ptn_value_deref(get_hook).type != PTN_NULL) {
+                ptn_array_set_entry(result.as.array, ptn_array_string_key("get"), get_hook);
+            } else {
+                ptn_value_destroy(&get_hook);
+            }
+            PtnValue set_hook = ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                2
+            );
+            if (ptn_value_deref(set_hook).type != PTN_NULL) {
+                ptn_array_set_entry(result.as.array, ptn_array_string_key("set"), set_hook);
+            } else {
+                ptn_value_destroy(&set_hook);
+            }
+        }
+        return result;
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
@@ -99252,6 +99452,12 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     if (ptn_ascii_case_equal(name, "isDefault")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(has_metadata);
+    }
+    if (ptn_ascii_case_equal(name, "isAbstract")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool((modifiers & 64) != 0);
     }
     if (ptn_ascii_case_equal(name, "isDynamic")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
@@ -99514,11 +99720,11 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             return sensitive_data == NULL ? ptn_null() : ptn_value_clone_deref(sensitive_data->value);
         }
         if (raw_value) {
-            return ptn_object_read_property(
+            return ptn_reflection_property_get_raw_object_value(
                 runtime,
                 target,
                 data->name,
-                data->class_name,
+                storage_declaring_class,
                 line
             );
         }
@@ -99835,14 +100041,23 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ptn_value_destroy(&written);
             return ptn_null();
         }
-        PtnValue written = ptn_object_write_property(
-            runtime,
-            target,
-            data->name,
-            data->class_name,
-            args[1],
-            line
-        );
+        PtnValue written = ptn_ascii_case_equal(name, "setRawValue")
+            ? ptn_reflection_property_set_raw_object_value(
+                runtime,
+                target,
+                data->name,
+                declaring_class == NULL ? data->class_name : declaring_class,
+                args[1],
+                line
+            )
+            : ptn_object_write_property(
+                runtime,
+                target,
+                data->name,
+                data->class_name,
+                args[1],
+                line
+            );
         ptn_value_destroy(&written);
         return ptn_null();
     }

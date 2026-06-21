@@ -3179,6 +3179,14 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
     }
 
+    const char *property_hook_type_case = ptn_ascii_case_equal(resolved_class_name, "PropertyHookType")
+        ? ptn_property_hook_type_case_name(constant_name)
+        : NULL;
+    if (property_hook_type_case != NULL) {
+        *out = ptn_builtin_enum_case_singleton(runtime, "PropertyHookType", property_hook_type_case);
+        free(class_name);
+        return 1;
+    }
     if (ptn_builtin_class_constant_value_span(name, class_len, constant_name, out)) {
         free(class_name);
         return 1;

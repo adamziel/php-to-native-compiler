@@ -60371,6 +60371,113 @@ echo $deprecated->value, \"\\n\";
 }
 
 #[test]
+fn compile_reflection_property_hook_runtime_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-hook-runtime-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-hook-runtime-semantics.php");
+    let output = root.join("reflection-property-hook-runtime-semantics-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectHookRuntime {
+    public string $backed {
+        get { return $this->backed; }
+        set { throw new Exception('setter called'); }
+    }
+
+    public string $setOnly {
+        set { throw new Exception('setter called'); }
+    }
+
+    public string $getOnly {
+        get { return 'value'; }
+    }
+}
+
+abstract class ReflectHookAbstract {
+    abstract public $must { get; set; }
+}
+
+var_dump(PropertyHookType::Get);
+var_dump(PropertyHookType::Get === PropertyHookType::Get);
+var_dump(constant('PropertyHookType::Set') === PropertyHookType::Set);
+
+$object = new ReflectHookRuntime();
+$backed = new ReflectionProperty(ReflectHookRuntime::class, 'backed');
+var_dump($backed->hasHooks());
+var_dump($backed->hasHook(PropertyHookType::Get));
+var_dump($backed->hasHook(PropertyHookType::Set));
+var_dump(array_keys($backed->getHooks()));
+echo $backed->getHook(PropertyHookType::Get)->getName(), \"\\n\";
+var_dump($backed->isAbstract());
+$backed->setRawValue($object, 42);
+var_dump($backed->isInitialized($object));
+var_dump($backed->getRawValue($object));
+
+$setOnly = new ReflectionProperty(ReflectHookRuntime::class, 'setOnly');
+var_dump($setOnly->hasHooks());
+var_dump($setOnly->isInitialized($object));
+try {
+    $setOnly->setRawValue($object, 'x');
+} catch (Error $e) {
+    echo get_class($e), \"\\n\";
+}
+
+$getOnly = new ReflectionProperty(ReflectHookRuntime::class, 'getOnly');
+var_dump($getOnly->isWritable(null, $object));
+
+$abstract = new ReflectionProperty(ReflectHookAbstract::class, 'must');
+var_dump($abstract->isAbstract());
+var_dump((bool) ($abstract->getModifiers() & ReflectionProperty::IS_ABSTRACT));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "enum(PropertyHookType::Get)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(3) \"get\"\n",
+            "  [1]=>\n",
+            "  string(3) \"set\"\n",
+            "}\n",
+            "$backed::get\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(2) \"42\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Error\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_set_raw_object_value"));
+    assert!(c_source.contains("ptn_builtin_enum_case_singleton"));
+}
+
+#[test]
 fn compile_nodiscard_property_hook_to_native_fatal() {
     let root = temp_dir("ptn-native-nodiscard-property-hook-fatal");
     fs::create_dir_all(&root).unwrap();

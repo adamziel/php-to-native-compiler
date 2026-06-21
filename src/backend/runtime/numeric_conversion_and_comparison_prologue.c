@@ -3670,6 +3670,16 @@ static PTN_UNUSED const char *ptn_uri_comparison_mode_case_name(const char *case
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_property_hook_type_case_name(const char *case_name) {
+    if (strcmp(case_name, "Get") == 0) {
+        return "Get";
+    }
+    if (strcmp(case_name, "Set") == 0) {
+        return "Set";
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *class_name,
     size_t class_len,
@@ -4225,6 +4235,28 @@ static PTN_UNUSED int ptn_builtin_class_constant_value(
     return ptn_builtin_class_constant_value_span(class_name, strlen(class_name), constant, out);
 }
 
+static PTN_UNUSED PtnValue ptn_builtin_enum_case_singleton(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name
+) {
+    if (runtime == NULL) {
+        return ptn_enum_case(runtime, class_name, case_name);
+    }
+    char *key = ptn_class_constant_key(class_name, case_name);
+    PtnValue existing;
+    if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &existing)) {
+        free(key);
+        return ptn_value_clone_deref(existing);
+    }
+    PtnValue created = ptn_enum_case(runtime, class_name, case_name);
+    PtnValue result = ptn_value_clone(created);
+    ptn_symbols_set(ptn_runtime_class_constant_table(runtime), key, created);
+    ptn_value_destroy(&created);
+    free(key);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -4673,6 +4705,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (comparison_mode_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\UriComparisonMode", comparison_mode_case);
+    }
+    const char *property_hook_type_case = ptn_ascii_case_equal(resolved_class_name, "PropertyHookType")
+        ? ptn_property_hook_type_case_name(constant)
+        : NULL;
+    if (property_hook_type_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "PropertyHookType", property_hook_type_case);
     }
     if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
