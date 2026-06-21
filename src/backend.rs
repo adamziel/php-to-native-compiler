@@ -46,7 +46,6 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Pdo\\Pgsql",
     "PDOStatement",
     "PDORow",
-    "Random\\Randomizer",
     "SQLite3",
     "SQLite3Stmt",
     "SQLite3Result",
@@ -73,9 +72,6 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
     ("FiberError", "Error"),
-    ("Random\\RandomError", "Error"),
-    ("Random\\BrokenRandomEngineError", "Random\\RandomError"),
-    ("Random\\RandomException", "Exception"),
     ("Uri\\InvalidUriException", "ValueError"),
     ("Uri\\WhatWg\\InvalidUrlException", "ValueError"),
     ("DateRangeError", "ValueError"),
@@ -5911,7 +5907,6 @@ fn emit_class_metadata_helpers(
         "Serializable",
         "DOMParentNode",
         "DOMChildNode",
-        "Random\\Engine",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(builtin));
@@ -5955,7 +5950,6 @@ fn emit_class_metadata_helpers(
         "Serializable",
         "DOMParentNode",
         "DOMChildNode",
-        "Random\\Engine",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(builtin));
@@ -16649,11 +16643,6 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_php_token(class_name)) {\n");
     out.push_str(
         "        return ptn_php_token_call_method(runtime, resolved, method_name, argc, args, line);\n",
-    );
-    out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_random_randomizer(class_name)) {\n");
-    out.push_str(
-        "        return ptn_randomizer_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {\n");

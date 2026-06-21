@@ -1714,7 +1714,6 @@ static PTN_UNUSED int ptn_internal_class_name_is_delayed_target_validation(const
 static PTN_UNUSED int ptn_internal_class_name_is_deprecated(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_no_discard(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_return_type_will_change(const char *class_name);
-static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
@@ -1836,12 +1835,6 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_fiber_new(
-    PtnRuntime *runtime,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-);
-static PTN_UNUSED PtnValue ptn_randomizer_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -2662,14 +2655,6 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_uri_whatwg_url_call_method(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    const char *name,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-);
-static PTN_UNUSED PtnValue ptn_randomizer_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
