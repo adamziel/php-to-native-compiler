@@ -11285,31 +11285,39 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         for property in &class.properties {
-            if !property.has_hooks {
+            let get_hook = effective_property_hook(class, property, classes, "get");
+            let set_hook = effective_property_hook(class, property, classes, "set");
+            if get_hook.is_none() && set_hook.is_none() {
                 continue;
             }
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\") == 0) {\n");
-            if property.hook_has_get {
+            if let Some((hook_class_name, hook_property)) = get_hook {
                 out.push_str("            if (hook_type == 1) {\n");
                 out.push_str(
                     "                return ptn_reflection_method_object_from_name(runtime, \"",
                 );
-                out.push_str(&c_string(&class.name));
+                out.push_str(&c_string(hook_class_name));
                 out.push_str("\", \"");
-                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str(&c_string(&property_hook_method_name(
+                    &hook_property.name,
+                    "get",
+                )));
                 out.push_str("\");\n");
                 out.push_str("            }\n");
             }
-            if property.hook_has_set {
+            if let Some((hook_class_name, hook_property)) = set_hook {
                 out.push_str("            if (hook_type == 2) {\n");
                 out.push_str(
                     "                return ptn_reflection_method_object_from_name(runtime, \"",
                 );
-                out.push_str(&c_string(&class.name));
+                out.push_str(&c_string(hook_class_name));
                 out.push_str("\", \"");
-                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str(&c_string(&property_hook_method_name(
+                    &hook_property.name,
+                    "set",
+                )));
                 out.push_str("\");\n");
                 out.push_str("            }\n");
             }
@@ -12095,6 +12103,48 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
     out.push_str("    return (modifiers & filter) != 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_is_readable_hook(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.hook_has_get { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.hook_has_get { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 1;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -14796,6 +14846,48 @@ fn inherited_hook_property<'a>(
     None
 }
 
+fn effective_property_hook<'a>(
+    class: &'a ClassDecl,
+    property: &'a crate::ir::PropertyDecl,
+    classes: &'a [ClassDecl],
+    hook_name: &str,
+) -> Option<(&'a str, &'a crate::ir::PropertyDecl)> {
+    let has_local_hook = if hook_name.eq_ignore_ascii_case("get") {
+        property.hook_has_get
+    } else {
+        property.hook_has_set
+    };
+    if has_local_hook {
+        return Some((class.name.as_str(), property));
+    }
+    inherited_hook_property(class, &property.name, classes).and_then(
+        |(declaring_class, inherited_property)| {
+            let has_inherited_hook = if hook_name.eq_ignore_ascii_case("get") {
+                inherited_property.hook_has_get
+            } else {
+                inherited_property.hook_has_set
+            };
+            has_inherited_hook.then_some((declaring_class, inherited_property))
+        },
+    )
+}
+
+fn effective_property_hook_has_get(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    effective_property_hook(class, property, classes, "get").is_some()
+}
+
+fn effective_property_hook_has_set(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    effective_property_hook(class, property, classes, "set").is_some()
+}
+
 fn property_runtime_declaring_class(
     class: &ClassDecl,
     property: &crate::ir::PropertyDecl,
@@ -14889,8 +14981,8 @@ fn class_property_exists_chain<'a>(
                 is_readonly: property.is_readonly,
                 has_hooks: property.has_hooks,
                 is_virtual: property.is_virtual,
-                hook_has_get: property.hook_has_get,
-                hook_has_set: property.hook_has_set,
+                hook_has_get: effective_property_hook_has_get(class, property, classes),
+                hook_has_set: effective_property_hook_has_set(class, property, classes),
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
                 type_hint: property.type_hint.as_ref(),
@@ -14991,6 +15083,7 @@ fn class_property_vars_chain<'a>(
                 class
                     .properties
                     .iter()
+                    .filter(|property| !property.is_virtual)
                     .map(|property| ClassPropertyVarsEntry {
                         declaring_class: class.name.as_str(),
                         name: property.name.as_str(),
@@ -16711,6 +16804,72 @@ fn emit_method_dispatch(
         out.push_str("    if (ptn_ascii_case_equal(target_class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        for property in class
+            .properties
+            .iter()
+            .filter(|property| property_hook_get_has_runtime(property))
+        {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+            out.push_str("\")) {\n");
+            out.push_str("            if (resolved_receiver.type != PTN_OBJECT) {\n");
+            out.push_str("                char ptn_nonstatic_hook_message[512];\n");
+            out.push_str("                int ptn_nonstatic_hook_written = snprintf(ptn_nonstatic_hook_message, sizeof(ptn_nonstatic_hook_message), \"Non-static method %s::%s() cannot be called statically\", target_class_name, method_name);\n");
+            out.push_str("                if (ptn_nonstatic_hook_written < 0 || (size_t)ptn_nonstatic_hook_written >= sizeof(ptn_nonstatic_hook_message)) {\n");
+            out.push_str("                    ptn_abort_out_of_memory();\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_hook_message, runtime->source_path, line);\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("            if (!ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+            out.push_str("                return 0;\n");
+            out.push_str("            }\n");
+            out.push_str("            PtnValue ptn_hook_result;\n");
+            out.push_str("            if (ptn_declared_class_property_hook_get(runtime, resolved_receiver, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", line, &ptn_hook_result)) {\n");
+            out.push_str("                *result_out = ptn_hook_result;\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("        }\n");
+        }
+        for property in class
+            .properties
+            .iter()
+            .filter(|property| property_hook_set_has_runtime(property))
+        {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+            out.push_str("\")) {\n");
+            out.push_str("            if (resolved_receiver.type != PTN_OBJECT) {\n");
+            out.push_str("                char ptn_nonstatic_hook_message[512];\n");
+            out.push_str("                int ptn_nonstatic_hook_written = snprintf(ptn_nonstatic_hook_message, sizeof(ptn_nonstatic_hook_message), \"Non-static method %s::%s() cannot be called statically\", target_class_name, method_name);\n");
+            out.push_str("                if (ptn_nonstatic_hook_written < 0 || (size_t)ptn_nonstatic_hook_written >= sizeof(ptn_nonstatic_hook_message)) {\n");
+            out.push_str("                    ptn_abort_out_of_memory();\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_hook_message, runtime->source_path, line);\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("            if (!ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+            out.push_str("                return 0;\n");
+            out.push_str("            }\n");
+            out.push_str(
+                "            PtnValue ptn_hook_value = argc > 0 ? args[0] : ptn_null();\n",
+            );
+            out.push_str("            if (ptn_declared_class_property_hook_set(runtime, resolved_receiver, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", ptn_hook_value, line)) {\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("        }\n");
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             let function = &functions[method.function_index];
@@ -33283,6 +33442,18 @@ impl ValueEmitter {
             };
             self.current_class_name = previous_class_name;
             let assigned_temp = self.next_temp();
+            let hook_metadata_class = self
+                .classes
+                .iter()
+                .find(|class| class.name.eq_ignore_ascii_case(&declaring_class_name));
+            let effective_hook_has_get = hook_metadata_class
+                .map_or(property.hook_has_get, |class| {
+                    effective_property_hook_has_get(class, &property, &self.classes)
+                });
+            let effective_hook_has_set = hook_metadata_class
+                .map_or(property.hook_has_set, |class| {
+                    effective_property_hook_has_set(class, &property, &self.classes)
+                });
             out.push_str(indent);
             out.push_str("PtnValue ");
             out.push_str(&assigned_temp);
@@ -33303,9 +33474,9 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if property.is_virtual { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(if property.hook_has_get { "1" } else { "0" });
+            out.push_str(if effective_hook_has_get { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(if property.hook_has_set { "1" } else { "0" });
+            out.push_str(if effective_hook_has_set { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(c_property_type_kind(property.type_hint.as_ref()));
             out.push_str(", ");

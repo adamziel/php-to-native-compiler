@@ -82278,6 +82278,7 @@ static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, co
 static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name);
 static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line);
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
+static int ptn_declared_class_reflection_property_is_readable_hook(const char *class_name, const char *property_name);
 static const char *ptn_declared_class_reflection_property_doc_comment(const char *class_name, const char *property_name);
 static int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
@@ -91208,6 +91209,7 @@ static int ptn_reflection_property_is_readable_result(
     int is_static,
     int visibility,
     int has_default,
+    int modifiers,
     const char *scope_class,
     PtnValue target,
     size_t line
@@ -91222,6 +91224,10 @@ static int ptn_reflection_property_is_readable_result(
 
     int read_allowed =
         ptn_reflection_property_visibility_allows(scope_class, declaring_class, visibility);
+    if ((modifiers & 512) != 0) {
+        return read_allowed &&
+            ptn_declared_class_reflection_property_is_readable_hook(declaring_class, data->name);
+    }
     if (is_static) {
         return read_allowed && has_default;
     }
@@ -92276,6 +92282,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             is_static,
             visibility,
             has_default,
+            modifiers,
             scope_class,
             target,
             line
