@@ -26,6 +26,9 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     }
     reference->refcount = 1;
     reference->value = value;
+    reference->lifecycle_runtime = NULL;
+    reference->gc_mark_epoch = 0;
+    reference->gc_collecting = 0;
     reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
     reference->property_type_class_name = NULL;
     reference->property_type_text = NULL;
@@ -60,6 +63,11 @@ static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnRefere
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
         return 0;
     }
+    ptn_gc_attach_value_runtime(
+        runtime != NULL ? runtime : reference->lifecycle_runtime,
+        stored_value,
+        0
+    );
     PtnValue result = ptn_value_clone(stored_value);
     ptn_array_note_value_replacement(reference->value, stored_value);
     ptn_gc_begin_replaced_reference_cycle_suppression(reference);
@@ -84,6 +92,11 @@ static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, Pt
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
         return 0;
     }
+    ptn_gc_attach_value_runtime(
+        runtime != NULL ? runtime : reference->lifecycle_runtime,
+        stored_value,
+        0
+    );
     PtnValue old_value = reference->value;
     ptn_array_note_value_replacement(old_value, stored_value);
     reference->value = stored_value;
@@ -130,40 +143,164 @@ static int ptn_object_has_pending_declared_destructor(PtnObject *object) {
         root->declared_method_exists(object->class_name, "__destruct");
 }
 
-static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth);
+typedef struct {
+    PtnArray **arrays;
+    size_t arrays_len;
+    size_t arrays_capacity;
+    PtnReference **references;
+    size_t references_len;
+    size_t references_capacity;
+} PtnPendingDestructorScan;
 
-static int ptn_array_contains_pending_destructor(PtnArray *array, size_t depth) {
+static void ptn_pending_destructor_scan_free(PtnPendingDestructorScan *scan) {
+    if (scan == NULL) {
+        return;
+    }
+    free(scan->arrays);
+    free(scan->references);
+    scan->arrays = NULL;
+    scan->arrays_len = 0;
+    scan->arrays_capacity = 0;
+    scan->references = NULL;
+    scan->references_len = 0;
+    scan->references_capacity = 0;
+}
+
+static int ptn_pending_destructor_scan_note_array(
+    PtnPendingDestructorScan *scan,
+    PtnArray *array
+) {
+    if (scan == NULL || array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->arrays_len; i++) {
+        if (scan->arrays[i] == array) {
+            return 0;
+        }
+    }
+    if (scan->arrays_len == scan->arrays_capacity) {
+        size_t new_capacity = scan->arrays_capacity == 0 ? 8 : scan->arrays_capacity * 2;
+        if (new_capacity < scan->arrays_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_arrays = realloc(scan->arrays, new_capacity * sizeof(PtnArray *));
+        if (new_arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->arrays = new_arrays;
+        scan->arrays_capacity = new_capacity;
+    }
+    scan->arrays[scan->arrays_len++] = array;
+    return 1;
+}
+
+static int ptn_pending_destructor_scan_note_reference(
+    PtnPendingDestructorScan *scan,
+    PtnReference *reference
+) {
+    if (scan == NULL || reference == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->references_len; i++) {
+        if (scan->references[i] == reference) {
+            return 0;
+        }
+    }
+    if (scan->references_len == scan->references_capacity) {
+        size_t new_capacity = scan->references_capacity == 0
+            ? 8
+            : scan->references_capacity * 2;
+        if (new_capacity < scan->references_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnReference *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnReference **new_references = realloc(
+            scan->references,
+            new_capacity * sizeof(PtnReference *)
+        );
+        if (new_references == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->references = new_references;
+        scan->references_capacity = new_capacity;
+    }
+    scan->references[scan->references_len++] = reference;
+    return 1;
+}
+
+static int ptn_value_contains_pending_destructor_impl(
+    PtnValue value,
+    size_t depth,
+    PtnPendingDestructorScan *scan
+);
+
+static int ptn_array_contains_pending_destructor_impl(
+    PtnArray *array,
+    size_t depth,
+    PtnPendingDestructorScan *scan
+) {
     if (array == NULL || depth > 1024) {
         return 0;
     }
+    if (!ptn_pending_destructor_scan_note_array(scan, array)) {
+        return 0;
+    }
     for (size_t i = 0; i < array->len; i++) {
-        if (ptn_value_contains_pending_destructor(array->entries[i].value, depth + 1)) {
+        if (ptn_value_contains_pending_destructor_impl(
+                array->entries[i].value,
+                depth + 1,
+                scan
+            )) {
             return 1;
         }
     }
     return 0;
 }
 
-static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth) {
+static int ptn_array_contains_pending_destructor(PtnArray *array, size_t depth) {
+    PtnPendingDestructorScan scan = {0};
+    int result = ptn_array_contains_pending_destructor_impl(array, depth, &scan);
+    ptn_pending_destructor_scan_free(&scan);
+    return result;
+}
+
+static int ptn_value_contains_pending_destructor_impl(
+    PtnValue value,
+    size_t depth,
+    PtnPendingDestructorScan *scan
+) {
     if (depth > 1024) {
         return 0;
     }
     if (value.type == PTN_REFERENCE) {
-        return value.as.reference != NULL &&
-            ptn_value_contains_pending_destructor(value.as.reference->value, depth + 1);
+        if (value.as.reference == NULL ||
+            !ptn_pending_destructor_scan_note_reference(scan, value.as.reference)) {
+            return 0;
+        }
+        return ptn_value_contains_pending_destructor_impl(
+            value.as.reference->value,
+            depth + 1,
+            scan
+        );
     }
     if (value.type == PTN_ARRAY) {
-        return ptn_array_contains_pending_destructor(value.as.array, depth + 1);
+        return ptn_array_contains_pending_destructor_impl(value.as.array, depth + 1, scan);
     }
     if (value.type == PTN_CLOSURE && value.as.closure != NULL) {
         if (value.as.closure->has_wrapped_callable &&
-            ptn_value_contains_pending_destructor(value.as.closure->wrapped_callable, depth + 1)) {
+            ptn_value_contains_pending_destructor_impl(
+                value.as.closure->wrapped_callable,
+                depth + 1,
+                scan
+            )) {
             return 1;
         }
         for (size_t i = 0; i < value.as.closure->captures.len; i++) {
-            if (ptn_value_contains_pending_destructor(
+            if (ptn_value_contains_pending_destructor_impl(
                 value.as.closure->captures.items[i].value,
-                depth + 1
+                depth + 1,
+                scan
             )) {
                 return 1;
             }
@@ -177,7 +314,11 @@ static int ptn_value_contains_pending_destructor(PtnValue value, size_t depth) {
         return 1;
     }
     return value.as.object->properties != NULL &&
-        ptn_array_contains_pending_destructor(value.as.object->properties, depth + 1);
+        ptn_array_contains_pending_destructor_impl(
+            value.as.object->properties,
+            depth + 1,
+            scan
+        );
 }
 
 static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnReference *reference, size_t depth) {
@@ -212,20 +353,24 @@ static PtnReference *ptn_replaced_reference_cycle_suppressed_reference = NULL;
 static size_t ptn_replaced_reference_cycle_suppression_depth = 0;
 
 /* Approximate Zend's root-buffer auto collection for many short-lived array cycles. */
-#define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 9998
+#define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 10000
 
 static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
-    if (count == 0 || ptn_pending_array_cycle_auto_flushed) {
+    if (count == 0) {
         return;
     }
     if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
         ptn_abort_out_of_memory();
     }
-    ptn_pending_array_cycle_collections += count;
-    if (ptn_pending_array_cycle_collections >= PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD) {
-        ptn_pending_array_cycle_collections = 0;
+    size_t total = ptn_pending_array_cycle_collections + count;
+    if (!ptn_pending_array_cycle_auto_flushed &&
+        total >= PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD) {
+        ptn_pending_array_cycle_collections =
+            total - PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD;
         ptn_pending_array_cycle_auto_flushed = 1;
+        return;
     }
+    ptn_pending_array_cycle_collections = total;
 }
 
 static PTN_UNUSED int ptn_gc_array_reference_auto_flushed(void) {
@@ -411,8 +556,30 @@ static PTN_UNUSED int ptn_gc_suppresses_replaced_reference_cycle(
         ptn_replaced_reference_cycle_suppressed_reference == reference;
 }
 
+static PTN_UNUSED void ptn_reference_destroy_storage(PtnReference *reference) {
+    if (reference == NULL) {
+        return;
+    }
+    ptn_value_destroy(&reference->value);
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        free(reference->property_type_sources[i].class_name);
+        free(reference->property_type_sources[i].text);
+        free(reference->property_type_sources[i].declaring_class);
+        free(reference->property_type_sources[i].property_name);
+    }
+    free(reference->property_type_sources);
+    free(reference);
+}
+
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference == NULL) {
+        return;
+    }
+    if (reference->gc_collecting) {
         return;
     }
     if (reference->refcount == 0) {
@@ -445,19 +612,8 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference->refcount != 0) {
         return;
     }
-    ptn_value_destroy(&reference->value);
-    free(reference->property_type_class_name);
-    free(reference->property_type_text);
-    free(reference->property_declaring_class);
-    free(reference->property_name);
-    for (size_t i = 0; i < reference->property_type_source_len; i++) {
-        free(reference->property_type_sources[i].class_name);
-        free(reference->property_type_sources[i].text);
-        free(reference->property_type_sources[i].declaring_class);
-        free(reference->property_type_sources[i].property_name);
-    }
-    free(reference->property_type_sources);
-    free(reference);
+    ptn_runtime_unregister_reference(reference->lifecycle_runtime, reference);
+    ptn_reference_destroy_storage(reference);
 }
 
 static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
@@ -513,6 +669,7 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
         array->refcount--;
         return;
     }
+    ptn_runtime_unregister_array(array->lifecycle_runtime, array);
     array->destructing = 1;
     if (array->iterator_refcount != 0) {
         array->refcount = 0;

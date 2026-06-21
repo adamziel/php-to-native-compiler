@@ -87,6 +87,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
     PtnRuntime *runtime
 ) {
     PtnValue stored_value = ptn_value_clone(value);
+    ptn_gc_attach_value_runtime(runtime, stored_value, 0);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
@@ -1919,6 +1920,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->live_arrays = NULL;
+    runtime->live_arrays_len = 0;
+    runtime->live_arrays_capacity = 0;
+    runtime->live_references = NULL;
+    runtime->live_references_len = 0;
+    runtime->live_references_capacity = 0;
     runtime->temporary_roots = NULL;
     runtime->temporary_roots_len = 0;
     runtime->temporary_roots_capacity = 0;

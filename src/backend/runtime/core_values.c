@@ -738,6 +738,9 @@ typedef struct {
 struct PtnReference {
     size_t refcount;
     PtnValue value;
+    PtnRuntime *lifecycle_runtime;
+    size_t gc_mark_epoch;
+    int gc_collecting;
     PtnPropertyTypeKind property_type_kind;
     char *property_type_class_name;
     char *property_type_text;
@@ -851,6 +854,7 @@ struct PtnArray {
     size_t refcount;
     int destructing;
     size_t gc_mark_epoch;
+    PtnRuntime *lifecycle_runtime;
     size_t debug_hidden_refcount;
     int debug_reference_wrapped;
     size_t iterator_refcount;
@@ -1262,6 +1266,12 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    PtnArray **live_arrays;
+    size_t live_arrays_len;
+    size_t live_arrays_capacity;
+    PtnReference **live_references;
+    size_t live_references_len;
+    size_t live_references_capacity;
     PtnValue *temporary_roots;
     size_t temporary_roots_len;
     size_t temporary_roots_capacity;

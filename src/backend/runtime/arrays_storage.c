@@ -36,6 +36,9 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array);
 static PTN_UNUSED void ptn_array_retain(PtnArray *array);
 static PTN_UNUSED void ptn_object_retain(PtnObject *object);
 static PTN_UNUSED void ptn_object_release(PtnObject *object);
+static PTN_UNUSED void ptn_gc_attach_value_runtime(PtnRuntime *runtime, PtnValue value, size_t depth);
+static PTN_UNUSED void ptn_runtime_unregister_array(PtnRuntime *runtime, PtnArray *array);
+static PTN_UNUSED void ptn_runtime_unregister_reference(PtnRuntime *runtime, PtnReference *reference);
 static PTN_UNUSED void ptn_object_register_property_metadata(
     PtnObject *object,
     const char *property,
@@ -478,6 +481,7 @@ static PTN_UNUSED void ptn_array_set_entry_with_by_ref_argument_eligibility(
     PtnValue value,
     int by_ref_argument_eligible
 ) {
+    ptn_gc_attach_value_runtime(array == NULL ? NULL : array->lifecycle_runtime, value, 0);
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
     ptn_array_note_mutation(array);
@@ -520,6 +524,7 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
 }
 
 static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArrayKey key, PtnValue value) {
+    ptn_gc_attach_value_runtime(array == NULL ? NULL : array->lifecycle_runtime, value, 0);
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
     ptn_array_note_mutation(array);
@@ -677,6 +682,185 @@ static PTN_UNUSED int ptn_array_key_from_literal_value(
     return 1;
 }
 
+static void ptn_runtime_remove_live_array_at(PtnRuntime *root, size_t index) {
+    if (root == NULL || index >= root->live_arrays_len) {
+        return;
+    }
+    for (size_t i = index + 1; i < root->live_arrays_len; i++) {
+        root->live_arrays[i - 1] = root->live_arrays[i];
+    }
+    root->live_arrays_len--;
+}
+
+static void ptn_runtime_remove_live_reference_at(PtnRuntime *root, size_t index) {
+    if (root == NULL || index >= root->live_references_len) {
+        return;
+    }
+    for (size_t i = index + 1; i < root->live_references_len; i++) {
+        root->live_references[i - 1] = root->live_references[i];
+    }
+    root->live_references_len--;
+}
+
+static PTN_UNUSED void ptn_runtime_register_array(PtnRuntime *runtime, PtnArray *array) {
+    if (runtime == NULL || array == NULL || array->lifecycle_runtime != NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (root->live_arrays_len == root->live_arrays_capacity) {
+        size_t new_capacity = root->live_arrays_capacity == 0
+            ? 16
+            : root->live_arrays_capacity * 2;
+        if (new_capacity < root->live_arrays_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_arrays = realloc(root->live_arrays, new_capacity * sizeof(PtnArray *));
+        if (new_arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->live_arrays = new_arrays;
+        root->live_arrays_capacity = new_capacity;
+    }
+    root->live_arrays[root->live_arrays_len++] = array;
+    array->lifecycle_runtime = root;
+}
+
+static PTN_UNUSED void ptn_runtime_unregister_array(PtnRuntime *runtime, PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    PtnRuntime *owner = runtime != NULL ? runtime : array->lifecycle_runtime;
+    PtnRuntime *root = ptn_runtime_root(owner);
+    if (root != NULL) {
+        for (size_t i = 0; i < root->live_arrays_len; i++) {
+            if (root->live_arrays[i] == array) {
+                ptn_runtime_remove_live_array_at(root, i);
+                break;
+            }
+        }
+    }
+    array->lifecycle_runtime = NULL;
+}
+
+static PTN_UNUSED void ptn_runtime_register_reference(PtnRuntime *runtime, PtnReference *reference) {
+    if (runtime == NULL || reference == NULL || reference->lifecycle_runtime != NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (root->live_references_len == root->live_references_capacity) {
+        size_t new_capacity = root->live_references_capacity == 0
+            ? 16
+            : root->live_references_capacity * 2;
+        if (new_capacity < root->live_references_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnReference *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnReference **new_references = realloc(
+            root->live_references,
+            new_capacity * sizeof(PtnReference *)
+        );
+        if (new_references == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->live_references = new_references;
+        root->live_references_capacity = new_capacity;
+    }
+    root->live_references[root->live_references_len++] = reference;
+    reference->lifecycle_runtime = root;
+}
+
+static PTN_UNUSED void ptn_runtime_unregister_reference(PtnRuntime *runtime, PtnReference *reference) {
+    if (reference == NULL) {
+        return;
+    }
+    PtnRuntime *owner = runtime != NULL ? runtime : reference->lifecycle_runtime;
+    PtnRuntime *root = ptn_runtime_root(owner);
+    if (root != NULL) {
+        for (size_t i = 0; i < root->live_references_len; i++) {
+            if (root->live_references[i] == reference) {
+                ptn_runtime_remove_live_reference_at(root, i);
+                break;
+            }
+        }
+    }
+    reference->lifecycle_runtime = NULL;
+}
+
+static void ptn_gc_attach_symbol_table_runtime(PtnRuntime *runtime, PtnSymbolTable *symbols, size_t depth);
+
+static PTN_UNUSED void ptn_gc_attach_value_runtime(PtnRuntime *runtime, PtnValue value, size_t depth) {
+    if (runtime == NULL || depth > 1024) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    if (value.type == PTN_REFERENCE) {
+        PtnReference *reference = value.as.reference;
+        if (reference == NULL) {
+            return;
+        }
+        int already_owned = reference->lifecycle_runtime == root;
+        ptn_runtime_register_reference(root, reference);
+        if (!already_owned) {
+            ptn_gc_attach_value_runtime(root, reference->value, depth + 1);
+        }
+        return;
+    }
+    if (value.type == PTN_ARRAY) {
+        PtnArray *array = value.as.array;
+        if (array == NULL) {
+            return;
+        }
+        int already_owned = array->lifecycle_runtime == root;
+        ptn_runtime_register_array(root, array);
+        if (already_owned) {
+            return;
+        }
+        for (size_t i = 0; i < array->len; i++) {
+            ptn_gc_attach_value_runtime(root, array->entries[i].value, depth + 1);
+        }
+        return;
+    }
+    if (value.type == PTN_OBJECT) {
+        PtnObject *object = value.as.object;
+        if (object == NULL) {
+            return;
+        }
+        ptn_gc_attach_value_runtime(root, ptn_array(object->properties), depth + 1);
+        ptn_gc_attach_value_runtime(root, object->lazy_initializer, depth + 1);
+        ptn_gc_attach_value_runtime(root, object->lazy_proxy_instance, depth + 1);
+        return;
+    }
+    if (value.type == PTN_CLOSURE) {
+        PtnClosure *closure = value.as.closure;
+        if (closure == NULL) {
+            return;
+        }
+        ptn_gc_attach_symbol_table_runtime(root, &closure->captures, depth + 1);
+        if (closure->has_wrapped_callable) {
+            ptn_gc_attach_value_runtime(root, closure->wrapped_callable, depth + 1);
+        }
+    }
+}
+
+static void ptn_gc_attach_symbol_table_runtime(PtnRuntime *runtime, PtnSymbolTable *symbols, size_t depth) {
+    if (symbols == NULL || depth > 1024) {
+        return;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        ptn_gc_attach_value_runtime(runtime, symbols->items[i].value, depth + 1);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     PtnRuntime *runtime,
     size_t line,
@@ -691,6 +875,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     array->refcount = 1;
     array->destructing = 0;
     array->gc_mark_epoch = 0;
+    array->lifecycle_runtime = NULL;
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
@@ -706,6 +891,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     array->iterator_mutation_resume_index = 0;
     array->iterator_mutation_epoch = 0;
     array->mutation_epoch = 0;
+    ptn_runtime_register_array(runtime, array);
     if (entry_count != 0) {
         array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {
@@ -735,6 +921,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
             key = ptn_array_int_key(array->next_auto_key);
         }
         PtnValue stored = ptn_value_clone(entries[i].value);
+        ptn_gc_attach_value_runtime(runtime, stored, 0);
         if (
             entries[i].value.type == PTN_STRING &&
             entries[i].value.as.string.payload == NULL &&
@@ -1301,6 +1488,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);
+    ptn_runtime_register_array(root, object->properties);
     return ptn_object(object);
 }
 
@@ -2589,6 +2777,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     array->refcount = 1;
     array->destructing = 0;
     array->gc_mark_epoch = 0;
+    array->lifecycle_runtime = NULL;
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
@@ -2622,6 +2811,10 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
         );
     }
     array->next_auto_key = source->next_auto_key;
+    ptn_runtime_register_array(source == NULL ? NULL : source->lifecycle_runtime, array);
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_gc_attach_value_runtime(array->lifecycle_runtime, array->entries[i].value, 0);
+    }
     return array;
 }
 

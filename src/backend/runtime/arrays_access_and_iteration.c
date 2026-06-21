@@ -12503,6 +12503,7 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
             return;
         }
         if (segment_count == 1) {
+            ptn_gc_attach_value_runtime(runtime, reference, 0);
             ptn_symbols_bind_reference(ptn_runtime_global_symbol_table(runtime), global_name, reference);
             free(global_name);
             return;

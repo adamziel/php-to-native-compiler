@@ -75,6 +75,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->live_arrays = NULL;
+    runtime->live_arrays_len = 0;
+    runtime->live_arrays_capacity = 0;
+    runtime->live_references = NULL;
+    runtime->live_references_len = 0;
+    runtime->live_references_capacity = 0;
     runtime->temporary_roots = NULL;
     runtime->temporary_roots_len = 0;
     runtime->temporary_roots_capacity = 0;
@@ -645,6 +651,14 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
         runtime->live_objects_capacity = 0;
+        free(runtime->live_arrays);
+        runtime->live_arrays = NULL;
+        runtime->live_arrays_len = 0;
+        runtime->live_arrays_capacity = 0;
+        free(runtime->live_references);
+        runtime->live_references = NULL;
+        runtime->live_references_len = 0;
+        runtime->live_references_capacity = 0;
         for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
             ptn_value_destroy(&runtime->temporary_roots[i]);
         }
@@ -798,17 +812,21 @@ static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, 
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
     }
+    ptn_gc_attach_value_runtime(runtime, reference, 0);
     ptn_symbols_bind_reference(ptn_runtime_variable_symbol_table(runtime, name), name, reference);
 }
 
 static PTN_UNUSED void ptn_runtime_bind_global_variable(PtnRuntime *runtime, const char *name) {
     PtnValue reference = ptn_symbols_reference_for_variable(ptn_runtime_global_symbol_table(runtime), name);
+    ptn_gc_attach_value_runtime(runtime, reference, 0);
     ptn_symbols_bind_reference(&runtime->symbols, name, reference);
     ptn_value_destroy(&reference);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_variable(PtnRuntime *runtime, const char *name) {
-    return ptn_symbols_reference_for_variable(ptn_runtime_variable_symbol_table(runtime, name), name);
+    PtnValue reference = ptn_symbols_reference_for_variable(ptn_runtime_variable_symbol_table(runtime, name), name);
+    ptn_gc_attach_value_runtime(runtime, reference, 0);
+    return reference;
 }
 
 static PTN_UNUSED PtnValue *ptn_runtime_global_variable_slot(PtnRuntime *runtime, const char *name) {

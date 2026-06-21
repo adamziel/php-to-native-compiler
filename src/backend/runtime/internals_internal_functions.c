@@ -1828,6 +1828,11 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
+static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+#endif
+
 static PTN_UNUSED int ptn_direct_value_var_dump_spl_fixed_array_object(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -3811,6 +3816,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
+static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -21020,6 +21026,7 @@ static PtnValue ptn_extract_from_array(
         if (!count_only) {
             if (refs) {
                 PtnValue reference = ptn_extract_entry_reference(array, i);
+                ptn_gc_attach_value_runtime(runtime, reference, 0);
                 ptn_symbols_bind_reference(&runtime->symbols, target, reference);
                 ptn_value_destroy(&reference);
             } else {
@@ -21074,6 +21081,7 @@ static PTN_UNUSED PtnValue ptn_internal_extract_globals(PtnRuntime *runtime, siz
             if (refs) {
                 PtnValue current;
                 PtnValue global_reference = ptn_symbols_reference_for_variable(globals, global_name);
+                ptn_gc_attach_value_runtime(runtime, global_reference, 0);
                 if (ptn_symbols_get(&runtime->symbols, target, &current) &&
                     current.type == PTN_REFERENCE &&
                     current.as.reference == global_reference.as.reference) {
@@ -59632,8 +59640,14 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
     while (stack->len > 0) {
         PtnValue value = stack->items[stack->len - 1];
         stack->len--;
-        while (value.type == PTN_REFERENCE && value.as.reference != NULL) {
-            value = value.as.reference->value;
+        if (value.type == PTN_REFERENCE) {
+            PtnReference *reference = value.as.reference;
+            if (reference == NULL || reference->gc_mark_epoch == epoch) {
+                continue;
+            }
+            reference->gc_mark_epoch = epoch;
+            ptn_gc_mark_stack_push(stack, reference->value);
+            continue;
         }
         if (value.type == PTN_ARRAY) {
             PtnArray *array = value.as.array;
@@ -59701,8 +59715,17 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(PtnValue value,
     if (epoch == 0 || depth > 1024) {
         return 0;
     }
-    while (value.type == PTN_REFERENCE && value.as.reference != NULL) {
-        value = value.as.reference->value;
+    if (value.type == PTN_REFERENCE) {
+        PtnReference *reference = value.as.reference;
+        if (reference == NULL || reference->gc_mark_epoch == epoch) {
+            return 0;
+        }
+        reference->gc_mark_epoch = epoch;
+        return ptn_gc_count_unreachable_contained_values_in_value(
+            reference->value,
+            epoch,
+            depth + 1
+        );
     }
     if (value.type == PTN_ARRAY) {
         PtnArray *array = value.as.array;
@@ -59969,6 +59992,93 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
     return collected;
 }
 
+static void ptn_runtime_clear_live_array_reference_slots(PtnRuntime *root, PtnReference *reference) {
+    if (root == NULL || reference == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->live_arrays_len; i++) {
+        PtnArray *array = root->live_arrays[i];
+        if (array == NULL || array->destructing) {
+            continue;
+        }
+        for (size_t j = 0; j < array->len; j++) {
+            PtnValue *entry = &array->entries[j].value;
+            if (entry->type == PTN_REFERENCE && entry->as.reference == reference) {
+                *entry = ptn_null();
+            }
+        }
+    }
+}
+
+static size_t ptn_runtime_collect_unreachable_references_and_arrays(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return 0;
+    }
+
+    size_t epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    size_t collected = 0;
+
+    size_t reference_index = root->live_references_len;
+    while (reference_index > 0) {
+        reference_index--;
+        PtnReference *reference = root->live_references[reference_index];
+        if (
+            reference == NULL ||
+            reference->refcount == 0 ||
+            reference->gc_collecting ||
+            reference->gc_mark_epoch == epoch
+        ) {
+            continue;
+        }
+        ptn_runtime_clear_live_array_reference_slots(root, reference);
+        ptn_runtime_remove_live_reference_at(root, reference_index);
+        reference->lifecycle_runtime = NULL;
+        reference->gc_collecting = 1;
+        reference->refcount = 0;
+        ptn_reference_destroy_storage(reference);
+        if (collected == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        collected++;
+        if (reference_index > root->live_references_len) {
+            reference_index = root->live_references_len;
+        }
+    }
+
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    size_t array_index = root->live_arrays_len;
+    while (array_index > 0) {
+        array_index--;
+        PtnArray *array = root->live_arrays[array_index];
+        if (
+            array == NULL ||
+            array->refcount == 0 ||
+            array->destructing ||
+            array->iterator_refcount != 0 ||
+            array->gc_mark_epoch == epoch
+        ) {
+            continue;
+        }
+        ptn_runtime_remove_live_array_at(root, array_index);
+        array->lifecycle_runtime = NULL;
+        array->refcount = 1;
+        ptn_array_free(array);
+        if (collected == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        collected++;
+        if (array_index > root->live_arrays_len) {
+            array_index = root->live_arrays_len;
+        }
+    }
+
+    return collected;
+}
+
 static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -59985,18 +60095,20 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     }
     root->gc_running = 1;
     size_t object_cycles = ptn_runtime_collect_unreachable_objects(runtime);
+    size_t reference_array_cycles = ptn_runtime_collect_unreachable_references_and_arrays(runtime);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
     ptn_runtime_run_unreferenced_object_destructors(root);
     size_t array_cycles = ptn_pending_array_cycle_collections;
     ptn_pending_array_cycle_collections = 0;
     ptn_pending_array_cycle_auto_flushed = 0;
     int64_t collected = 0;
-    if (weak_map_cycles > 0 || object_cycles > 0 || array_cycles > 0) {
+    if (weak_map_cycles > 0 || object_cycles > 0 || reference_array_cycles > 0 || array_cycles > 0) {
         if (object_cycles > SIZE_MAX - weak_map_cycles ||
-            object_cycles + weak_map_cycles > SIZE_MAX - array_cycles) {
+            object_cycles + weak_map_cycles > SIZE_MAX - reference_array_cycles ||
+            object_cycles + weak_map_cycles + reference_array_cycles > SIZE_MAX - array_cycles) {
             ptn_abort_out_of_memory();
         }
-        size_t total_cycles = object_cycles + weak_map_cycles + array_cycles;
+        size_t total_cycles = object_cycles + weak_map_cycles + reference_array_cycles + array_cycles;
         if (total_cycles > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
