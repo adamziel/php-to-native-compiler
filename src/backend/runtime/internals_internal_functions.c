@@ -43,6 +43,12 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
                 "Constant FILTER_SANITIZE_STRING is deprecated since 8.1, use htmlspecialchars() instead",
                 line
             );
+        } else if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant SUNFUNCS_RET_STRING is deprecated since 8.4, as date_sunrise() and date_sunset() were deprecated in 8.1",
+                line
+            );
         }
         return value;
     }
@@ -5481,6 +5487,32 @@ static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAME
     { "table", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
     { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
     { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[] = {
+    { "hour", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "minute", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "second", "int", "int", 0, 1, 0, 0, 1, "0", NULL },
+    { "microsecond", "int", "int", 0, 1, 0, 0, 1, "0", NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS[] = {
+    { "timezoneGroup", "int", "int", 0, 1, 0, 0, 1, "DateTimeZone::ALL", "DateTimeZone::ALL" },
+    { "countryCode", "string", "?string", 1, 1, 0, 0, 1, "null", NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARAMETERS[] = {
+    { "timestampBegin", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MIN", "PHP_INT_MIN" },
+    { "timestampEnd", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MAX", NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS[] = {
+    { "timestamp", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "returnFormat", "int", "int", 0, 1, 0, 0, 1, "SUNFUNCS_RET_STRING", "SUNFUNCS_RET_STRING" },
+    { "latitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
+    { "longitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
+    { "zenith", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
+    { "utcOffset", "float", "?float", 1, 1, 0, 0, 1, "null", NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -62493,6 +62525,9 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "ENT_XML1", PTN_ENT_XML1);
     ptn_get_defined_constants_add_int(table, "ENT_XHTML", PTN_ENT_XHTML);
     ptn_get_defined_constants_add_int(table, "ENT_HTML5", PTN_ENT_HTML5);
+    ptn_get_defined_constants_add_int(table, "SUNFUNCS_RET_TIMESTAMP", PTN_SUNFUNCS_RET_TIMESTAMP);
+    ptn_get_defined_constants_add_int(table, "SUNFUNCS_RET_STRING", PTN_SUNFUNCS_RET_STRING);
+    ptn_get_defined_constants_add_int(table, "SUNFUNCS_RET_DOUBLE", PTN_SUNFUNCS_RET_DOUBLE);
     ptn_get_defined_constants_add_int(table, "COUNT_NORMAL", PTN_COUNT_NORMAL);
     ptn_get_defined_constants_add_int(table, "COUNT_RECURSIVE", PTN_COUNT_RECURSIVE);
     ptn_get_defined_constants_add_int(table, "PATHINFO_DIRNAME", PTN_PATHINFO_DIRNAME);
@@ -62833,6 +62868,9 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "ENT_XML1",
         "ENT_XHTML",
         "ENT_HTML5",
+        "SUNFUNCS_RET_TIMESTAMP",
+        "SUNFUNCS_RET_STRING",
+        "SUNFUNCS_RET_DOUBLE",
         "COUNT_NORMAL",
         "COUNT_RECURSIVE",
         "PATHINFO_DIRNAME",
@@ -69078,6 +69116,40 @@ static PtnValue ptn_internal_date_diff(PtnRuntime *runtime, size_t argc, const P
     (void)base;
     (void)target;
     return ptn_datetime_diff_interval(runtime, args[0], args[1], absolute, line);
+}
+
+static PtnValue ptn_internal_date_sun_event(
+    PtnRuntime *runtime,
+    int sunset,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        sunset
+            ? "Function date_sunset() is deprecated since 8.1, use date_sun_info() instead"
+            : "Function date_sunrise() is deprecated since 8.1, use date_sun_info() instead",
+        line
+    );
+    (void)argc;
+    (void)args;
+    ptn_throw_exception(
+        runtime,
+        "Error",
+        sunset
+            ? "date_sunset() requires a timelib-backed solar calculation implementation"
+            : "date_sunrise() requires a timelib-backed solar calculation implementation"
+    );
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_date_sunrise(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_date_sun_event(runtime, 0, argc, args, line);
+}
+
+static PtnValue ptn_internal_date_sunset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_date_sun_event(runtime, 1, argc, args, line);
 }
 
 static PtnValue ptn_internal_date_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -82593,6 +82665,8 @@ static PtnValue ptn_internal_date_isodate_set(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_date_modify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_sunrise(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_sunset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_timezone_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_datetimezone_list_abbreviations(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -82915,6 +82989,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_offset_get", 1, 1, ptn_internal_date_offset_get },
         { "date_parse", 1, 1, ptn_internal_date_parse },
         { "date_sub", 2, 2, ptn_internal_date_sub },
+        { "date_sunrise", 1, 6, ptn_internal_date_sunrise },
+        { "date_sunset", 1, 6, ptn_internal_date_sunset },
         { "date_timezone_get", 1, 1, ptn_internal_date_timezone_get },
         { "date_timezone_set", 2, 2, ptn_internal_date_timezone_set },
         { "DateTimeZone::listAbbreviations", 0, 0, ptn_internal_datetimezone_list_abbreviations },
@@ -83955,6 +84031,40 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "array",
             0,
             1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "DateTimeZone::listIdentifiers") ||
+        ptn_ascii_case_equal(function->name, "timezone_identifiers_list")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS) /
+                sizeof(PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS,
+            0,
+            "array",
+            "array",
+            0,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "date_sunrise") ||
+        ptn_ascii_case_equal(function->name, "date_sunset")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS) /
+                sizeof(PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS,
+            0,
+            "string|int|float|false",
+            "string|int|float|false",
+            0,
+            0
         );
     }
     int is_variadic = function->max_args == PTN_VARIADIC_ARGS;
@@ -90105,6 +90215,46 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
             0,
             "DOMNode|false",
             "DOMNode|false",
+            0,
+            0
+        );
+    }
+    if (
+        (ptn_ascii_case_equal(data->class_name, "DateTime") ||
+            ptn_internal_class_name_is_datetime_immutable(data->class_name)) &&
+        ptn_ascii_case_equal(data->name, "setTime")
+    ) {
+        int immutable = ptn_internal_class_name_is_datetime_immutable(data->class_name);
+        return ptn_function_metadata_found(
+            immutable ? "DateTimeImmutable::setTime" : "DateTime::setTime",
+            1,
+            sizeof(PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS) /
+                sizeof(PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS,
+            0,
+            immutable ? "DateTimeImmutable" : "DateTime",
+            immutable ? "DateTimeImmutable" : "DateTime",
+            0,
+            0
+        );
+    }
+    if (
+        ptn_internal_class_name_is_datetime_zone(data->class_name) &&
+        ptn_ascii_case_equal(data->name, "getTransitions")
+    ) {
+        return ptn_function_metadata_found(
+            "DateTimeZone::getTransitions",
+            1,
+            sizeof(PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARAMETERS) /
+                sizeof(PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARAMETERS,
+            0,
+            "array|false",
+            "array|false",
             0,
             0
         );
@@ -98372,6 +98522,44 @@ static PtnValue ptn_reflection_parameter_default_string_value(const char *displa
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
+static PtnValue ptn_reflection_parameter_default_bitwise_or_value(
+    PtnRuntime *runtime,
+    const char *display,
+    size_t line
+) {
+    int64_t result = 0;
+    const char *cursor = display;
+    while (1) {
+        const char *part_end = strchr(cursor, '|');
+        const char *next = part_end == NULL ? NULL : part_end + 1;
+        if (part_end == NULL) {
+            part_end = display + strlen(display);
+        }
+        while (cursor < part_end && isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        while (part_end > cursor && isspace((unsigned char)part_end[-1])) {
+            part_end--;
+        }
+        if (cursor == part_end) {
+            return ptn_read_constant(runtime, display, runtime->source_path, line);
+        }
+        char *constant_name = ptn_duplicate_string_len(cursor, (size_t)(part_end - cursor));
+        PtnValue value = ptn_read_constant(runtime, constant_name, runtime->source_path, line);
+        free(constant_name);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        result |= ptn_value_to_integer(value);
+        ptn_value_destroy(&value);
+        if (next == NULL) {
+            break;
+        }
+        cursor = next;
+    }
+    return ptn_int(result);
+}
+
 static PtnValue ptn_reflection_parameter_default_value_from_display(
     PtnRuntime *runtime,
     const char *display,
@@ -98394,6 +98582,9 @@ static PtnValue ptn_reflection_parameter_default_value_from_display(
     }
     if (display[0] == '\'' || display[0] == '"') {
         return ptn_reflection_parameter_default_string_value(display);
+    }
+    if (strchr(display, '|') != NULL) {
+        return ptn_reflection_parameter_default_bitwise_or_value(runtime, display, line);
     }
     char *end = NULL;
     errno = 0;
@@ -106103,19 +106294,19 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         return ptn_bool(ptn_reflection_parameter_is_default_available(metadata, index));
     }
     if (ptn_ascii_case_equal(name, "isDefaultValueConstant")) {
-        return ptn_bool(
-            ptn_reflection_parameter_is_default_available(metadata, index) &&
-            ptn_function_metadata_parameter_default_constant_name(metadata, index) != NULL
-        );
+        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
+            return ptn_reflection_parameter_throw_default_unavailable(runtime);
+        }
+        return ptn_bool(ptn_function_metadata_parameter_default_constant_name(metadata, index) != NULL);
     }
     if (ptn_ascii_case_equal(name, "getDefaultValueConstantName")) {
         const char *constant_name =
             ptn_function_metadata_parameter_default_constant_name(metadata, index);
-        if (
-            !ptn_reflection_parameter_is_default_available(metadata, index) ||
-            constant_name == NULL
-        ) {
+        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
             return ptn_reflection_parameter_throw_default_unavailable(runtime);
+        }
+        if (constant_name == NULL) {
+            return ptn_null();
         }
         return ptn_owned_string(ptn_duplicate_string(constant_name));
     }

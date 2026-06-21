@@ -2627,6 +2627,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int((int64_t)sizeof(int64_t));
         return 1;
     }
+    if (strcmp(name, "SUNFUNCS_RET_TIMESTAMP") == 0) {
+        *out = ptn_int(PTN_SUNFUNCS_RET_TIMESTAMP);
+        return 1;
+    }
+    if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
+        *out = ptn_int(PTN_SUNFUNCS_RET_STRING);
+        return 1;
+    }
+    if (strcmp(name, "SUNFUNCS_RET_DOUBLE") == 0) {
+        *out = ptn_int(PTN_SUNFUNCS_RET_DOUBLE);
+        return 1;
+    }
     if (strcmp(name, "PHP_MAXPATHLEN") == 0) {
         *out = ptn_int(PTN_PHP_MAXPATHLEN);
         return 1;
