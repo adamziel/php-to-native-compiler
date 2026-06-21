@@ -20065,23 +20065,6 @@ fn emit_instruction(
                 } else {
                     emit_array_path_segments(out, values, dimensions)
                 };
-                if pre_eval_root.is_some() {
-                    for warning in &path.deferred_undefined_variable_warnings {
-                        out.push_str("    if (");
-                        out.push_str(&warning.missing_temp);
-                        out.push_str(") {\n");
-                        out.push_str(
-                            "        ptn_emit_undefined_variable_warning(&runtime.diagnostics, \"",
-                        );
-                        out.push_str(&c_string(&warning.name));
-                        out.push_str("\", \"");
-                        out.push_str(&c_string(source_path));
-                        out.push_str("\", ");
-                        out.push_str(&warning.line.to_string());
-                        out.push_str(");\n");
-                        out.push_str("    }\n");
-                    }
-                }
                 let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
@@ -20112,7 +20095,6 @@ fn emit_instruction(
                     out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
                     out.push_str(&c_string(array));
                     out.push_str("\");\n");
-                    emit_deferred_undefined_variable_warnings(out, &path, source_path);
                     Some((root_temp, root_epoch_temp))
                 } else {
                     None
@@ -22491,8 +22473,6 @@ struct EmittedArrayPath {
 
 struct DeferredUndefinedVariableWarning {
     missing_temp: String,
-    name: String,
-    line: usize,
 }
 
 fn emit_array_path_segments(
@@ -22545,13 +22525,14 @@ fn emit_array_path_segments_with_deferred_variable_warnings(
                 out.push_str(".exists ? ptn_value_clone_deref(");
                 out.push_str(&lookup_temp);
                 out.push_str(".value) : ptn_null();\n");
-                initializers.push(format!("{{ 0, {value_temp} }}"));
+                initializers.push(format!(
+                    "{{ 0, {value_temp}, {missing_temp} ? \"{}\" : NULL, {} }}",
+                    c_string(name),
+                    line
+                ));
                 value_temps.push(value_temp);
-                deferred_undefined_variable_warnings.push(DeferredUndefinedVariableWarning {
-                    missing_temp,
-                    name: name.clone(),
-                    line: *line,
-                });
+                deferred_undefined_variable_warnings
+                    .push(DeferredUndefinedVariableWarning { missing_temp });
             }
             Some(dimension) => {
                 let temp = values.emit_materialized_value(out, dimension);
@@ -22624,26 +22605,6 @@ fn emit_deferred_missing_variable_null_key_deprecation_flag(
         out.push_str(&warning.missing_temp);
     }
     out.push(')');
-}
-
-fn emit_deferred_undefined_variable_warnings(
-    out: &mut String,
-    path: &EmittedArrayPath,
-    source_path: &str,
-) {
-    for warning in &path.deferred_undefined_variable_warnings {
-        out.push_str("    if (");
-        out.push_str(&warning.missing_temp);
-        out.push_str(") {\n");
-        out.push_str("        ptn_emit_undefined_variable_warning(&runtime.diagnostics, \"");
-        out.push_str(&c_string(&warning.name));
-        out.push_str("\", \"");
-        out.push_str(&c_string(source_path));
-        out.push_str("\", ");
-        out.push_str(&warning.line.to_string());
-        out.push_str(");\n");
-        out.push_str("    }\n");
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30837,7 +30798,6 @@ impl ValueEmitter {
                 emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
             }
             out.push_str(");\n");
-            emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
@@ -30898,9 +30858,6 @@ impl ValueEmitter {
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
-            if pre_eval_root.is_some() {
-                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
-            }
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -30931,7 +30888,6 @@ impl ValueEmitter {
                 out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\");\n");
-                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
                 Some((root_temp, root_epoch_temp))
             } else {
                 None
@@ -30942,38 +30898,15 @@ impl ValueEmitter {
             if let Some((root_temp, root_epoch_temp)) =
                 pre_eval_root.as_ref().or(post_value_root.as_ref())
             {
-                out.push_str(";\n");
-                out.push_str("    if (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
-                out.push_str(&c_string(array));
-                out.push_str("\") != ");
-                out.push_str(root_epoch_temp);
-                out.push_str(") {\n");
                 out.push_str(
-                    "        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ",
+                    " = ptn_runtime_array_path_set_result_after_dimension_eval(&runtime, \"",
                 );
-                out.push_str(root_temp);
-                out.push_str(", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_null();\n");
-                out.push_str("    } else {\n");
-                out.push_str("        ");
-                out.push_str(&result_temp);
-                if path.deferred_undefined_variable_warnings.is_empty() {
-                    out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
-                } else {
-                    out.push_str(
-                        " = ptn_runtime_array_path_set_result_with_key_diagnostics(&runtime, \"",
-                    );
-                }
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
+                out.push_str(root_temp);
+                out.push_str(", ");
+                out.push_str(root_epoch_temp);
+                out.push_str(", ");
                 out.push_str(&path.name);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
@@ -30981,12 +30914,9 @@ impl ValueEmitter {
                 out.push_str(&snapshot_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                if !path.deferred_undefined_variable_warnings.is_empty() {
-                    out.push_str(", ");
-                    emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
-                }
+                out.push_str(", ");
+                emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
                 out.push_str(");\n");
-                out.push_str("    }\n");
             } else {
                 if path.deferred_undefined_variable_warnings.is_empty() {
                     out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
@@ -31009,9 +30939,6 @@ impl ValueEmitter {
                     emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
                 }
                 out.push_str(");\n");
-                if post_value_root.is_none() {
-                    emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
-                }
             }
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);

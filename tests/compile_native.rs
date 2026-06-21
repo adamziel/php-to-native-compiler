@@ -48356,6 +48356,37 @@ var_dump($a);
 }
 
 #[test]
+fn compile_nested_false_array_write_skips_stale_leaf_key_after_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-false-array-write-stale-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-false-array-write-stale-root.php");
+    let output = root.join("nested-false-array-write-stale-root-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $msg) {
+    echo "Err: $msg\n";
+    $GLOBALS['a'] = '';
+});
+$a = [false];
+$a[0][$d] = 'b';
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Err: Automatic conversion of false to array is deprecated\nstring(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_offset_object_receiver_errors_to_native_binary() {
     let root = temp_dir("ptn-native-string-offset-object-receiver-errors");
     fs::create_dir_all(&root).unwrap();

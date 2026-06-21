@@ -795,6 +795,8 @@ static PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnRuntime *runtime, P
 typedef struct {
     int append;
     PtnValue value;
+    const char *deferred_missing_variable_name;
+    size_t deferred_missing_variable_line;
 } PtnArrayPathSegment;
 
 typedef struct {
