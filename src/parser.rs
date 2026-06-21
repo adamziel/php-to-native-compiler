@@ -7160,7 +7160,7 @@ impl Parser<'_> {
 
     fn parse_clone_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
-        if matches!(self.peek().kind, TokenKind::LeftParen) {
+        if self.peek_clone_with_property_update_arguments() {
             self.advance();
             let expr = self.parse_assignment_expr()?;
             let with_properties = if matches!(self.peek().kind, TokenKind::Comma) {
@@ -7185,6 +7185,39 @@ impl Parser<'_> {
             with_properties: None,
             span,
         })
+    }
+
+    fn peek_clone_with_property_update_arguments(&self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::LeftParen) {
+            return false;
+        }
+
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        let mut index = self.index;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => {
+                    if paren_depth <= 1 {
+                        return false;
+                    }
+                    paren_depth -= 1;
+                }
+                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::RightBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::RightBrace => brace_depth = brace_depth.saturating_sub(1),
+                TokenKind::Comma if paren_depth == 1 && bracket_depth == 0 && brace_depth == 0 => {
+                    return true;
+                }
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+            index += 1;
+        }
+        false
     }
 
     fn parse_throw_expr(&mut self) -> Result<Expr> {

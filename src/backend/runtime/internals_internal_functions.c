@@ -4503,15 +4503,7 @@ static int ptn_normalize_named_call_arguments(
         fixed_parameter_count--;
     }
 
-    if (metadata.is_internal && metadata.parameters == NULL) {
-        if (has_variadic) {
-            ptn_throw_internal_named_variadic_argument_error(
-                runtime,
-                metadata.name != NULL ? metadata.name : "",
-                line
-            );
-            return 1;
-        }
+    if (metadata.is_internal && metadata.parameters == NULL && !has_variadic) {
         return 0;
     }
 
@@ -4596,7 +4588,7 @@ static int ptn_normalize_named_call_arguments(
             continue;
         }
 
-        if (metadata.is_internal) {
+        if (metadata.is_internal && argument_name[0] != '\0') {
             ptn_throw_internal_named_variadic_argument_error(
                 runtime,
                 metadata.name != NULL ? metadata.name : "",
@@ -4621,9 +4613,14 @@ static int ptn_normalize_named_call_arguments(
         );
     }
 
-    size_t output_fixed_len = extra_arguments.len > 0
-        ? fixed_parameter_count
-        : (has_fixed_slot ? highest_fixed_slot + 1 : 0);
+    size_t output_fixed_len = 0;
+    if (extra_arguments.len > 0) {
+        output_fixed_len = metadata.is_internal && metadata.parameters == NULL && !has_fixed_slot
+            ? 0
+            : fixed_parameter_count;
+    } else if (has_fixed_slot) {
+        output_fixed_len = highest_fixed_slot + 1;
+    }
     if (output_fixed_len > SIZE_MAX - extra_arguments.len) {
         ptn_abort_out_of_memory();
     }

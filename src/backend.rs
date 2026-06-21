@@ -18167,7 +18167,10 @@ fn emit_callable_dispatch(
         );
         out.push_str("    }\n");
         out.push_str(
-            "    return ptn_duplicate_string(ptn_runtime_resolve_class_alias(runtime, scope_name));\n",
+            "    const char *resolved = runtime == NULL ? scope_name : ptn_runtime_resolve_class_alias(runtime, scope_name);\n",
+        );
+        out.push_str(
+            "    return ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));\n",
         );
         out.push_str("}\n");
 

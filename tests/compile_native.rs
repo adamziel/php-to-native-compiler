@@ -4387,6 +4387,60 @@ fn parser_accepts_clone_with_property_updates() {
 }
 
 #[test]
+fn parser_accepts_clone_parenthesized_new_object_postfix_operand() {
+    let program =
+        parser::parse("<?php $property = clone (new Foo)->bar; $method = clone (new Foo)->bar();")
+            .unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected property assignment statement");
+    };
+    let Expr::Clone {
+        expr,
+        with_properties,
+        ..
+    } = value
+    else {
+        panic!("expected property clone expression");
+    };
+    assert!(with_properties.is_none());
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::PropertyFetch { receiver, name, .. }
+            if name == "bar"
+                && matches!(
+                    receiver.as_ref(),
+                    Expr::Grouped { expr, .. }
+                        if matches!(expr.as_ref(), Expr::NewObject { class_name, .. } if class_name == "Foo")
+                )
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected method assignment statement");
+    };
+    let Expr::Clone {
+        expr,
+        with_properties,
+        ..
+    } = value
+    else {
+        panic!("expected method clone expression");
+    };
+    assert!(with_properties.is_none());
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::MethodCall {
+            receiver, name, ..
+        } if name == "bar"
+            && matches!(
+                receiver.as_ref(),
+                Expr::Grouped { expr, .. }
+                    if matches!(expr.as_ref(), Expr::NewObject { class_name, .. } if class_name == "Foo")
+            )
+    ));
+}
+
+#[test]
 fn parser_accepts_keyword_boolean_precedence() {
     let program = parser::parse(
         "<?php echo true || false and false, false or true && false, true xor false || false;",
@@ -22292,6 +22346,37 @@ echo MathBox::pair(1, 2), \"\\n\";
     assert!(c_source.contains("ptn_callable_function_name("));
     assert!(c_source.contains("ptn_call_callable(runtime"));
     assert!(c_source.contains("MathBox::pair"));
+}
+
+#[test]
+fn compile_array_callable_undefined_builtin_method_uses_canonical_class_name() {
+    let root = temp_dir("ptn-native-array-callable-canonical-builtin");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-callable-canonical-builtin.php");
+    let output = root.join("array-callable-canonical-builtin-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$callable = ['stdclass', 'missing'];\n\
+$callable();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Call to undefined method stdClass::missing() in {}:3\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
 }
 
 #[test]
