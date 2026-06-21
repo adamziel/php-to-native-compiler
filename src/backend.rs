@@ -3068,6 +3068,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
     }
+    if name.eq_ignore_ascii_case("headers_sent") && argument_index == 0 {
+        return Some("filename");
+    }
+    if name.eq_ignore_ascii_case("headers_sent") && argument_index == 1 {
+        return Some("line");
+    }
     if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
         return Some("rest_index");
     }
@@ -24434,6 +24440,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         name: "options",
         default: Some(InternalParameterDefault::Null),
     }];
+    static HEADERS_SENT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "line",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static SUBSTR_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "string",
@@ -24772,6 +24788,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&PARSE_STR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("request_parse_body") {
         Some(&REQUEST_PARSE_BODY_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("headers_sent") {
+        Some(&HEADERS_SENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr") {
         Some(&SUBSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr_count") {

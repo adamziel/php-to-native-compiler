@@ -248,6 +248,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "ord")) {
             return "character";
         }
+        if (ptn_ascii_case_equal(name, "headers_sent")) {
+            return "filename";
+        }
         if (ptn_ascii_case_equal(name, "settype")) {
             return "var";
         }
@@ -331,6 +334,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         }
         if (ptn_ascii_case_equal(name, "hypot")) {
             return "y";
+        }
+        if (ptn_ascii_case_equal(name, "headers_sent")) {
+            return "line";
         }
         if (ptn_ascii_case_equal(name, "clamp")) {
             return "min";
@@ -1603,6 +1609,13 @@ static PTN_UNUSED int ptn_direct_value_var_dump_weak_reference_object(
     size_t indent,
     PtnDirectValueDumpSeen *seen
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
         return 0;
     }
@@ -1630,6 +1643,7 @@ static PTN_UNUSED int ptn_direct_value_var_dump_weak_reference_object(
     ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
     return 1;
+#endif
 }
 
 static PTN_UNUSED void ptn_direct_value_var_dump_exception(
@@ -3079,6 +3093,13 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_reference_object(
     size_t indent,
     PtnDirectDumpSeen *seen
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
         return 0;
     }
@@ -3106,6 +3127,7 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_reference_object(
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_output_write_cstr(runtime, "}\n");
     return 1;
+#endif
 }
 
 static PTN_UNUSED void ptn_direct_var_dump_object_indented(
@@ -6028,6 +6050,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 1 && ptn_ascii_case_equal(name, "IntlDateFormatter::parseToCalendar")) {
         return 1;
     }
+    if ((index == 0 || index == 1) && ptn_ascii_case_equal(name, "headers_sent")) {
+        return 1;
+    }
     return 0;
 }
 
@@ -6055,6 +6080,11 @@ static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAME
     { "table", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
     { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
     { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_HEADERS_SENT_PARAMETERS[] = {
+    { "filename", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL },
+    { "line", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[] = {
@@ -21425,6 +21455,86 @@ static PtnValue ptn_internal_http_response_code(PtnRuntime *runtime, size_t argc
     root->http_response_code_initialized = 1;
     root->http_response_code = code;
     return ptn_bool(1);
+}
+
+static int ptn_internal_headers_sent_assign_filename(PtnRuntime *runtime, PtnReference *reference) {
+    if (reference == NULL) {
+        return 0;
+    }
+
+    PtnValue current = ptn_value_deref(reference->value);
+    if (reference->property_type_kind == PTN_PROPERTY_TYPE_NONE && current.type == PTN_OBJECT) {
+        PtnValue old = reference->value;
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        int previous_suppress_user_call_frame_location =
+            root == NULL ? 0 : root->suppress_user_call_frame_location;
+        reference->value = ptn_null();
+        if (root != NULL) {
+            root->suppress_user_call_frame_location = 1;
+        }
+        ptn_value_destroy_with_runtime_scope(runtime, &old);
+        if (root != NULL) {
+            root->suppress_user_call_frame_location =
+                previous_suppress_user_call_frame_location;
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int previous_suppress_user_call_frame_location =
+        root == NULL ? 0 : root->suppress_user_call_frame_location;
+    if (root != NULL) {
+        root->suppress_user_call_frame_location = 1;
+    }
+    int assigned = ptn_reference_assign_publish_first(runtime, reference, ptn_string(""));
+    if (root != NULL) {
+        root->suppress_user_call_frame_location =
+            previous_suppress_user_call_frame_location;
+    }
+    return assigned;
+}
+
+static PtnValue ptn_internal_headers_sent(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int headers_sent = root != NULL && root->output_has_started;
+
+    if (argc >= 2) {
+        if (args[1].type != PTN_REFERENCE) {
+            if (runtime->warn_by_ref_argument_mismatch) {
+                ptn_emit_by_reference_argument_warning(runtime, "headers_sent", 2, "line", line);
+                return ptn_bool(0);
+            }
+            ptn_throw_by_reference_argument_error(runtime, "headers_sent", 2, "line", line);
+            return ptn_null();
+        }
+        if (!ptn_reference_assign_publish_first(runtime, args[1].as.reference, ptn_int(0))) {
+            return ptn_null();
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+
+    if (argc >= 1) {
+        if (args[0].type != PTN_REFERENCE) {
+            if (runtime->warn_by_ref_argument_mismatch) {
+                ptn_emit_by_reference_argument_warning(runtime, "headers_sent", 1, "filename", line);
+                return ptn_bool(0);
+            }
+            ptn_throw_by_reference_argument_error(runtime, "headers_sent", 1, "filename", line);
+            return ptn_null();
+        }
+        if (!ptn_internal_headers_sent_assign_filename(runtime, args[0].as.reference)) {
+            return ptn_null();
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+
+    return ptn_bool(headers_sent);
 }
 
 typedef struct {
@@ -82096,6 +82206,45 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
     map->index = adjusted_index > map->len ? map->len : adjusted_index;
 }
 
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->live_objects_len == 0) {
+        return;
+    }
+
+    PtnObject **owners = malloc(root->live_objects_len * sizeof(PtnObject *));
+    if (owners == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t owner_count = 0;
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *owner = root->live_objects[i];
+        if (owner == NULL ||
+            owner->refcount == 0 ||
+            !ptn_internal_class_name_is_weak_map(owner->class_name) ||
+            owner->native_data == NULL) {
+            continue;
+        }
+        ptn_object_retain(owner);
+        owners[owner_count++] = owner;
+    }
+
+    for (size_t i = 0; i < owner_count; i++) {
+        PtnObject *owner = owners[i];
+        if (owner->refcount != 0 &&
+            ptn_internal_class_name_is_weak_map(owner->class_name) &&
+            owner->native_data != NULL) {
+            ptn_weak_map_prune((PtnWeakMapData *)owner->native_data);
+        }
+    }
+
+    for (size_t i = 0; i < owner_count; i++) {
+        ptn_object_release(owners[i]);
+    }
+    free(owners);
+}
+
 static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
     if (map->capacity >= needed) {
         return;
@@ -83990,6 +84139,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
+        { "headers_sent", 0, 2, ptn_internal_headers_sent },
         { "hypot", 2, 2, ptn_internal_hypot },
         { "iconv", 3, 3, ptn_internal_iconv },
         { "iconv_strpos", 2, 4, ptn_internal_iconv_strpos },
@@ -84881,6 +85031,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "array",
             "array",
+            0,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "headers_sent")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_HEADERS_SENT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_HEADERS_SENT_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_HEADERS_SENT_PARAMETERS,
+            0,
+            "bool",
+            "bool",
             0,
             1
         );

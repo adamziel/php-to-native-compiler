@@ -58,6 +58,13 @@ static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObj
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime);
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
+    (void)runtime;
+}
+#endif
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
@@ -2352,6 +2359,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     }
     object->refcount = 0;
     ptn_runtime_unregister_object(object->lifecycle_runtime, object);
+    ptn_runtime_prune_weak_maps_for_released_object(object->lifecycle_runtime);
     ptn_runtime_release_object_id(object->lifecycle_runtime, object->object_id);
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);

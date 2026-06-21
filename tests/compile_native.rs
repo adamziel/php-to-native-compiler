@@ -10881,6 +10881,7 @@ fn compile_weak_reference_var_dump_to_native_binary() {
         &input,
         "<?php
 $std = new stdClass;
+$std->hello = 'world';
 $wr = WeakReference::create($std);
 var_dump($wr);
 unset($std);
@@ -10898,13 +10899,71 @@ var_dump($wr);
         concat!(
             "object(WeakReference)#2 (1) {\n",
             "  [\"object\"]=>\n",
-            "  object(stdClass)#1 (0) {\n",
+            "  object(stdClass)#1 (1) {\n",
+            "    [\"hello\"]=>\n",
+            "    string(5) \"world\"\n",
             "  }\n",
             "}\n",
             "object(WeakReference)#2 (1) {\n",
             "  [\"object\"]=>\n",
             "  NULL\n",
             "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_headers_sent_outputs_publish_before_destruct_to_native_binary() {
+    let root = temp_dir("ptn-native-headers-sent-outputs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("headers-sent-outputs.php");
+    let output = root.join("headers-sent-outputs-bin");
+    fs::write(
+        &input,
+        "<?php
+$map = new WeakMap;
+
+class Test {
+    public stdClass|string $obj;
+}
+
+$test = new Test;
+$test->obj = new stdClass;
+$map[$test->obj] = new class {
+    function __destruct() {
+        global $test;
+        var_dump($test->obj);
+    }
+};
+
+var_dump(headers_sent($test->obj, $line));
+var_dump($line);
+
+$file = new stdClass;
+$line = null;
+$map[$file] = new class {
+    function __destruct() {
+        global $file;
+        var_dump($file);
+    }
+};
+
+var_dump(headers_sent($file, $line));
+var_dump($file, $line);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\nbool(false)\nint(0)\n",
+            "NULL\nbool(true)\nstring(0) \"\"\nint(0)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
