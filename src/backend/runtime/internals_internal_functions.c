@@ -122045,6 +122045,17 @@ static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static PtnValue ptn_get_object_vars_snapshot_value(PtnValue value) {
+    if (value.type == PTN_REFERENCE && value.as.reference != NULL && value.as.reference->refcount > 1) {
+        return ptn_value_clone(value);
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        return ptn_array(ptn_array_clone(value.as.array));
+    }
+    return ptn_value_clone(value);
+}
+
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue target = ptn_value_deref(args[0]);
@@ -122113,7 +122124,7 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
                 );
             }
         }
-        ptn_array_set_entry(result.as.array, result_key, ptn_value_clone(entry->value));
+        ptn_array_set_entry(result.as.array, result_key, ptn_get_object_vars_snapshot_value(entry->value));
     }
     return result;
 }

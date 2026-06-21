@@ -65912,6 +65912,74 @@ var_dump($object->plain, $vars['plain']);
 }
 
 #[test]
+fn compile_get_object_vars_snapshots_plain_array_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-get-object-vars-array-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-object-vars-array-snapshot.php");
+    let output = root.join("get-object-vars-array-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    protected $bar = array('baz');
+
+    function plain() {
+        array_pop($this->bar);
+        $vars = get_object_vars($this);
+        $this->bar[] = array('buz');
+        print_r($vars);
+    }
+
+    function referenced() {
+        array_pop($this->bar);
+        $dummy = &$this->bar;
+        $vars = get_object_vars($this);
+        $this->bar[] = array('buz');
+        print_r($vars);
+    }
+}
+
+(new A())->plain();
+(new A())->referenced();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Array\n",
+            "(\n",
+            "    [bar] => Array\n",
+            "        (\n",
+            "        )\n",
+            "\n",
+            ")\n",
+            "Array\n",
+            "(\n",
+            "    [bar] => Array\n",
+            "        (\n",
+            "            [0] => Array\n",
+            "                (\n",
+            "                    [0] => buz\n",
+            "                )\n",
+            "\n",
+            "        )\n",
+            "\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_get_object_vars_snapshot_value"));
+}
+
+#[test]
 fn compile_get_mangled_object_vars_to_native_binary() {
     let root = temp_dir("ptn-native-get-mangled-object-vars");
     fs::create_dir_all(&root).unwrap();
