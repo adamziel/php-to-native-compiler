@@ -22306,43 +22306,25 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
             for dimension in &target.dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
-                } else {
-                    return Err(Diagnostic::new(
-                        "increment/decrement cannot use append array access",
-                        Some(target.span),
-                    ));
                 }
             }
         }
-        IncDecTarget::DynamicArrayDim {
-            dimensions, span, ..
-        } => {
+        IncDecTarget::DynamicArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
-                } else {
-                    return Err(Diagnostic::new(
-                        "increment/decrement cannot use append array access",
-                        Some(*span),
-                    ));
                 }
             }
         }
         IncDecTarget::PropertyArrayDim {
             receiver,
             dimensions,
-            span,
             ..
         } => {
             reject_append_array_read(receiver)?;
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
-                } else {
-                    return Err(Diagnostic::new(
-                        "increment/decrement cannot use append array access",
-                        Some(*span),
-                    ));
                 }
             }
         }

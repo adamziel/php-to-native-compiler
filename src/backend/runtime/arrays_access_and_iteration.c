@@ -1738,6 +1738,13 @@ static PTN_UNUSED void ptn_throw_property_modification_on_non_object(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED int ptn_object_is_incomplete_class(PtnObject *object);
+static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+);
+
 static PTN_UNUSED void ptn_validate_property_write_receiver(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1747,6 +1754,10 @@ static PTN_UNUSED void ptn_validate_property_write_receiver(
     PtnValue resolved = ptn_value_deref(receiver);
     if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
+        return;
+    }
+    if (resolved.type == PTN_OBJECT && ptn_object_is_incomplete_class(resolved.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, resolved.as.object, line);
     }
 }
 
@@ -1759,6 +1770,10 @@ static PTN_UNUSED void ptn_validate_property_modify_receiver(
     PtnValue resolved = ptn_value_deref(receiver);
     if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
+        return;
+    }
+    if (resolved.type == PTN_OBJECT && ptn_object_is_incomplete_class(resolved.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, resolved.as.object, line);
     }
 }
 
@@ -1771,6 +1786,10 @@ static PTN_UNUSED void ptn_validate_property_increment_receiver(
     PtnValue resolved = ptn_value_deref(receiver);
     if (resolved.type != PTN_OBJECT && resolved.type != PTN_EXCEPTION) {
         ptn_throw_property_increment_on_non_object(runtime, property, receiver, line);
+        return;
+    }
+    if (resolved.type == PTN_OBJECT && ptn_object_is_incomplete_class(resolved.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, resolved.as.object, line);
     }
 }
 
@@ -3649,6 +3668,65 @@ static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
         runtime->declared_class_allows_dynamic_properties(class_name);
 }
 
+static PTN_UNUSED int ptn_object_is_incomplete_class(PtnObject *object) {
+    return object != NULL &&
+        object->class_name != NULL &&
+        ptn_ascii_case_equal(object->class_name, "__PHP_Incomplete_Class");
+}
+
+static PTN_UNUSED char *ptn_incomplete_object_original_class_name(PtnObject *object) {
+    if (object != NULL && object->properties != NULL) {
+        PtnArrayKey key = ptn_array_string_key("__PHP_Incomplete_Class_Name");
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+        ptn_array_key_free(key);
+        if (entry != NULL) {
+            PtnValue class_name = ptn_value_deref(entry->value);
+            if (class_name.type == PTN_STRING) {
+                return ptn_duplicate_string_len(
+                    (const char *)class_name.as.string.data,
+                    class_name.as.string.len
+                );
+            }
+        }
+    }
+    return ptn_duplicate_string("__PHP_Incomplete_Class");
+}
+
+static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    char *class_name = ptn_incomplete_object_original_class_name(object);
+    int needed = snprintf(
+        NULL,
+        0,
+        "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    if (needed < 0) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    free(class_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_emit_dynamic_property_deprecation(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -4696,6 +4774,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_null();
@@ -5422,6 +5504,10 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         }
         return ptn_null();
     }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
@@ -5887,6 +5973,10 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
+        return;
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
         return;
     }
     if (reference.type != PTN_REFERENCE) {

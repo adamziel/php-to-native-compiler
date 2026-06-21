@@ -11765,6 +11765,50 @@ var_dump(unserialize($encoded));
 }
 
 #[test]
+fn compile_incomplete_class_property_modification_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-class-property-modification-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-class-property-modification-errors.php");
+    let output = root.join("incomplete-class-property-modification-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$z = unserialize('O:1:"A":0:{}');
+try {
+    var_dump($z->e .= 0);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(++$z->x);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump($z->y++);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition\n",
+            "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition\n",
+            "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_allowed_classes_options_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-allowed-classes-options");
     fs::create_dir_all(&root).unwrap();
@@ -33796,6 +33840,51 @@ try {\n\
             "Cannot add element to the array as the next element is already occupied\n",
             "Cannot add element to the array as the next element is already occupied\n",
             "Cannot add element to the array as the next element is already occupied\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_append_array_inc_dec_auto_key_overflow_to_native_binary() {
+    let root = temp_dir("ptn-native-append-array-inc-dec-auto-key-overflow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-array-inc-dec-auto-key-overflow.php");
+    let output = root.join("append-array-inc-dec-auto-key-overflow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [PHP_INT_MAX => 0];\n\
+try {\n\
+    var_dump($items[] .= 0);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(++$items[]);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump($items[]++);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(count($items));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot add element to the array as the next element is already occupied\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "Cannot add element to the array as the next element is already occupied\n",
+            "int(1)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
