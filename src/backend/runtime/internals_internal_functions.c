@@ -67273,6 +67273,32 @@ static const char *ptn_reflection_constant_extension_name(const char *name) {
     return NULL;
 }
 
+static const char *ptn_internal_constant_deprecated_since(const char *name) {
+    name = ptn_symbol_name_without_leading_slash(name);
+    if (ptn_ascii_case_equal(name, "E_STRICT")) {
+        return "8.4";
+    }
+    if (ptn_ascii_case_equal(name, "DATE_RFC7231")) {
+        return "8.5";
+    }
+    return NULL;
+}
+
+static const char *ptn_internal_constant_deprecated_message(const char *name) {
+    name = ptn_symbol_name_without_leading_slash(name);
+    if (ptn_ascii_case_equal(name, "E_STRICT")) {
+        return "the error level was removed";
+    }
+    if (ptn_ascii_case_equal(name, "DATE_RFC7231")) {
+        return "as this format ignores the associated timezone and always uses GMT";
+    }
+    return NULL;
+}
+
+static int ptn_internal_constant_is_deprecated(const char *name) {
+    return ptn_internal_constant_deprecated_since(name) != NULL;
+}
+
 static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnValue core = ptn_defined_constants_core_table();
@@ -96719,6 +96745,14 @@ static PtnValue ptn_reflection_constant_to_string(
     return ptn_owned_string(result);
 }
 
+static PtnValue ptn_internal_constant_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *constant_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -96820,9 +96854,15 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
         ptn_reflection_class_check_exact_arguments(runtime, "isDeprecated", argc, 0);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
-            : ptn_bool(ptn_declared_constant_is_deprecated(data->name));
+            : ptn_bool(ptn_internal_constant_is_deprecated(data->name) ||
+                ptn_declared_constant_is_deprecated(data->name));
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
+        PtnValue internal_value;
+        if (ptn_builtin_constant_value(ptn_symbol_name_without_leading_slash(data->name), &internal_value)) {
+            ptn_value_destroy(&internal_value);
+            return ptn_internal_constant_reflection_attributes(runtime, data->name, argc, args, line);
+        }
         return ptn_declared_constant_attributes(runtime, data->name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -101558,6 +101598,89 @@ static int ptn_reflection_attributes_name_filter_allows(
     free(filter_name);
     ptn_string_operand_free(filter);
     return allowed;
+}
+
+static PtnValue ptn_internal_constant_reflection_attributes(
+    PtnRuntime *runtime,
+    const char *constant_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_reflection_attributes_check_at_most_arguments(
+        runtime,
+        "ReflectionConstant",
+        "getAttributes",
+        argc,
+        2
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_internal_constant_is_deprecated(constant_name)) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    const char *deprecated_since = ptn_internal_constant_deprecated_since(constant_name);
+    const char *deprecated_message = ptn_internal_constant_deprecated_message(constant_name);
+    if (!ptn_reflection_attributes_name_filter_allows(
+            runtime,
+            "ReflectionConstant::getAttributes",
+            "Deprecated",
+            argc,
+            args,
+            line
+        )) {
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_array_from_literal_entries(0, NULL);
+    }
+
+    PtnValue arguments = ptn_array_from_literal_entries(0, NULL);
+    if (deprecated_since != NULL) {
+        ptn_array_set_entry(
+            arguments.as.array,
+            ptn_array_string_key("since"),
+            ptn_owned_string(ptn_duplicate_string(deprecated_since))
+        );
+    }
+    if (deprecated_message != NULL) {
+        ptn_array_set_entry(
+            arguments.as.array,
+            ptn_array_string_key("message"),
+            ptn_owned_string(ptn_duplicate_string(deprecated_message))
+        );
+    }
+    PtnValue constructor_arguments = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        constructor_arguments.as.array,
+        ptn_array_int_key(0),
+        deprecated_message == NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(deprecated_message))
+    );
+    ptn_array_set_entry(
+        constructor_arguments.as.array,
+        ptn_array_int_key(1),
+        deprecated_since == NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(deprecated_since))
+    );
+    PtnValue attribute = ptn_reflection_attribute_object_from_name(
+        runtime,
+        "Deprecated",
+        arguments,
+        constructor_arguments,
+        64,
+        0,
+        NULL,
+        0,
+        0
+    );
+    ptn_value_destroy(&constructor_arguments);
+    ptn_value_destroy(&arguments);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), attribute);
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(

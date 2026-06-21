@@ -27692,6 +27692,56 @@ var_dump(
 }
 
 #[test]
+fn compile_reflection_internal_constant_deprecated_attribute_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-internal-constant-deprecated-attribute");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-internal-constant-deprecated-attribute.php");
+    let output = root.join("reflection-internal-constant-deprecated-attribute-bin");
+    fs::write(
+        &input,
+        "<?php
+$reflection = new ReflectionConstant('E_STRICT');
+$attributes = $reflection->getAttributes();
+var_dump($reflection->isDeprecated());
+var_dump(count($attributes));
+$attribute = $attributes[0];
+var_dump($attribute->getName());
+var_dump($attribute->getArguments());
+$instance = $attribute->newInstance();
+var_dump($instance->message, $instance->since);
+var_dump($reflection->getAttributes('Deprecated')[0]->getName());
+var_dump($reflection->getAttributes('Missing'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(1)\n",
+            "string(10) \"Deprecated\"\n",
+            "array(2) {\n",
+            "  [\"since\"]=>\n",
+            "  string(3) \"8.4\"\n",
+            "  [\"message\"]=>\n",
+            "  string(27) \"the error level was removed\"\n",
+            "}\n",
+            "string(27) \"the error level was removed\"\n",
+            "string(3) \"8.4\"\n",
+            "string(10) \"Deprecated\"\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_constant_namespace_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-constant-namespace-metadata");
     fs::create_dir_all(&root).unwrap();
