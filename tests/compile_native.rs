@@ -746,6 +746,7 @@ var_dump($rc->getFileName());\n\
 var_dump($rc->getStartLine());\n\
 var_dump($rc->getEndLine());\n\
 echo str_contains((string)$rc, $rc->getFileName() . \" \" . $rc->getStartLine() . \"-\" . $rc->getEndLine()) ? \"class-string-lines\\n\" : \"missing-class-string-lines\\n\";\n\
+echo str_contains((string)$rc, $rc->getFileName() . \" 4 - 6\") ? \"method-string-lines\\n\" : \"missing-method-string-lines\\n\";\n\
 \n\
 $internal = new ReflectionClass(\"stdClass\");\n\
 var_dump($internal->getFileName());\n\
@@ -772,6 +773,7 @@ foreach ([[\"ChildBox\", \"multi\"], [\"ChildBox\", \"oneLine\"], [\"ReflectionP
         format!(
             "{file_dump}int(2)\nint(9)\n\
 class-string-lines\n\
+method-string-lines\n\
 bool(false)\nbool(false)\nbool(false)\n\
 {file_dump}int(4)\nint(6)\n\
 {file_dump}int(8)\nint(8)\n\
@@ -22078,7 +22080,8 @@ fn compile_dynamic_method_call_rejects_non_string_names_before_magic_call() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: Method name must be a string in {} on line 1\n",
+            "\nFatal error: Uncaught Error: Method name must be a string in {}:1\nStack trace:\n#0 {{main}}\n  thrown in {} on line 1\n",
+            input.display(),
             input.display()
         )
     );
@@ -57358,6 +57361,71 @@ var_dump($box[0]['name']);
     assert!(c_source.contains("ptn_runtime_array_path_set_from_inc_dec"));
     assert!(c_source.contains("ptn_runtime_bind_array_path_reference"));
     assert!(c_source.contains("ptn_arrayaccess_nested_write_should_apply"));
+}
+
+#[test]
+fn compile_arrayaccess_compound_assignment_preserves_evaluated_root_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-compound-preserve-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-compound-preserve-root.php");
+    let output = root.join("arrayaccess-compound-preserve-root-bin");
+    fs::write(
+        &input,
+        "<?php
+class A implements ArrayAccess {
+    public function &offsetGet($offset): mixed {
+        echo \"get:\";
+        var_dump($offset);
+        $value = null;
+        return $value;
+    }
+
+    public function offsetSet($offset, $value): void {
+        echo \"set:\";
+        var_dump($offset, $value);
+    }
+
+    public function offsetUnset($offset): void {
+    }
+
+    public function offsetExists($offset): bool {
+        return false;
+    }
+}
+
+set_error_handler(function () {
+    $GLOBALS['a'] = null;
+});
+
+$a = new A;
+$result = ($a[$c] .= 'x');
+echo \"result:\";
+var_dump($result);
+echo \"a:\";
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "get:NULL\n",
+            "set:NULL\n",
+            "string(1) \"x\"\n",
+            "result:string(1) \"x\"\n",
+            "a:NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_read_overloaded_base_for_assign_op"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_assign_op"));
 }
 
 #[test]

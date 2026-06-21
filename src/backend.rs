@@ -13485,7 +13485,9 @@ fn reflection_user_method_entry_to_string(
     out.push_str(" method ");
     out.push_str(&method.name);
     out.push_str(" ] {\n");
-    out.push_str("      @@ %s ");
+    out.push_str("      @@ ");
+    out.push_str(&method.source_file);
+    out.push(' ');
     out.push_str(&method.line.to_string());
     out.push_str(" - ");
     out.push_str(&method.end_line.to_string());
@@ -13814,7 +13816,9 @@ fn reflection_class_methods_to_string(
         out.push_str(" method ");
         out.push_str(&method.name);
         out.push_str(" ] {\n");
-        out.push_str("      @@ %s ");
+        out.push_str("      @@ ");
+        out.push_str(&method.source_file);
+        out.push(' ');
         out.push_str(&method.line.to_string());
         out.push_str(" - ");
         out.push_str(&method.end_line.to_string());
@@ -13980,7 +13984,7 @@ fn reflection_trait_methods_to_string(
 }
 
 fn reflection_trait_method_to_string(
-    _trait_decl: &TraitDecl,
+    trait_decl: &TraitDecl,
     method: &TraitMethodDecl,
     _functions: &[FunctionDecl],
 ) -> String {
@@ -13993,7 +13997,9 @@ fn reflection_trait_method_to_string(
     out.push_str(" method ");
     out.push_str(&method.name);
     out.push_str(" ] {\n");
-    out.push_str("  @@ %s ");
+    out.push_str("  @@ ");
+    out.push_str(&trait_decl.source_file);
+    out.push(' ');
     out.push_str(&method.line.to_string());
     out.push_str(" - ");
     out.push_str(&method.line.to_string());
@@ -18855,6 +18861,29 @@ fn emit_instruction(
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
 
+                let root_lookup_temp = values.next_temp();
+                let root_temp = values.next_temp();
+                let root_is_arrayaccess_temp = values.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&root_temp);
+                out.push_str(" = ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".exists ? ptn_value_clone_deref(");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".value) : ptn_null();\n");
+                out.push_str("    int ");
+                out.push_str(&root_is_arrayaccess_temp);
+                out.push_str(" = ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".exists && ptn_arrayaccess_can_dispatch(&runtime, ");
+                out.push_str(&root_temp);
+                out.push_str(", \"offsetGet\");\n");
+
                 let path = emit_array_path_segments(out, values, dimensions);
                 let value_temp = values.emit_materialized_value(out, value);
                 let base_temp = values.next_temp();
@@ -18868,8 +18897,24 @@ fn emit_instruction(
                 out.push_str(";\n");
                 out.push_str("    int ");
                 out.push_str(&split_temp);
+                out.push_str(" = ");
+                out.push_str(&root_is_arrayaccess_temp);
                 out.push_str(
-                    " = ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"",
+                    " ? ptn_value_array_path_read_overloaded_base_for_assign_op(&runtime, ",
+                );
+                out.push_str(&root_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(", &");
+                out.push_str(&base_temp);
+                out.push_str(", &");
+                out.push_str(&container_temp);
+                out.push_str(
+                    ") : ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"",
                 );
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
@@ -18921,7 +18966,22 @@ fn emit_instruction(
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("    } else {\n");
-                out.push_str("        ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+                out.push_str("        if (");
+                out.push_str(&root_is_arrayaccess_temp);
+                out.push_str(") {\n");
+                out.push_str("            ptn_value_array_path_set_from_assign_op(&runtime, &");
+                out.push_str(&root_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
                 out.push_str(&path.name);
@@ -18932,12 +18992,14 @@ fn emit_instruction(
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("        }\n");
                 out.push_str("    }\n");
                 emit_value_cleanup(out, "    ", &current_temp);
                 emit_value_cleanup(out, "    ", &result_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
                 emit_value_cleanup(out, "    ", &base_temp);
                 emit_value_cleanup(out, "    ", &container_temp);
+                emit_value_cleanup(out, "    ", &root_temp);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -29872,6 +29934,29 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        let root_lookup_temp = self.next_temp();
+        let root_temp = self.next_temp();
+        let root_is_arrayaccess_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&root_lookup_temp);
+        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+        out.push_str(&c_string(array));
+        out.push_str("\");\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&root_temp);
+        out.push_str(" = ");
+        out.push_str(&root_lookup_temp);
+        out.push_str(".exists ? ptn_value_clone_deref(");
+        out.push_str(&root_lookup_temp);
+        out.push_str(".value) : ptn_null();\n");
+        out.push_str("    int ");
+        out.push_str(&root_is_arrayaccess_temp);
+        out.push_str(" = ");
+        out.push_str(&root_lookup_temp);
+        out.push_str(".exists && ptn_arrayaccess_can_dispatch(&runtime, ");
+        out.push_str(&root_temp);
+        out.push_str(", \"offsetGet\");\n");
+
         let path = emit_array_path_segments(out, self, dimensions);
         let value_temp = self.emit_materialized_value(out, value);
 
@@ -29886,7 +29971,21 @@ impl ValueEmitter {
         out.push_str(";\n");
         out.push_str("    int ");
         out.push_str(&split_temp);
-        out.push_str(" = ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"");
+        out.push_str(" = ");
+        out.push_str(&root_is_arrayaccess_temp);
+        out.push_str(" ? ptn_value_array_path_read_overloaded_base_for_assign_op(&runtime, ");
+        out.push_str(&root_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&base_temp);
+        out.push_str(", &");
+        out.push_str(&container_temp);
+        out.push_str(") : ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -29937,7 +30036,22 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         out.push_str("    } else {\n");
-        out.push_str("        ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+        out.push_str("        if (");
+        out.push_str(&root_is_arrayaccess_temp);
+        out.push_str(") {\n");
+        out.push_str("            ptn_value_array_path_set_from_assign_op(&runtime, &");
+        out.push_str(&root_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        } else {\n");
+        out.push_str("            ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -29948,12 +30062,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
 
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         emit_value_cleanup(out, "    ", &base_temp);
         emit_value_cleanup(out, "    ", &container_temp);
+        emit_value_cleanup(out, "    ", &root_temp);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -42121,9 +42237,10 @@ impl ValueEmitter {
         out.push_str(".type != PTN_STRING) {\n");
         emit_value_cleanup(out, "        ", &name_temp);
         emit_value_cleanup(out, "        ", &receiver_temp);
-        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"Method name must be a string\", runtime.source_path, ");
+        out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"Method name must be a string\", runtime.source_path, ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
         out.push_str("    }\n");
         let method_name_temp = self.next_temp();
         out.push_str("    char *");

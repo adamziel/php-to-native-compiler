@@ -12813,6 +12813,34 @@ static PTN_UNUSED int ptn_runtime_array_path_read_overloaded_base_for_assign_op(
     return 0;
 }
 
+static PTN_UNUSED int ptn_value_array_path_read_overloaded_base_for_assign_op(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    PtnValue *base_out,
+    PtnValue *container_out
+) {
+    *container_out = ptn_null();
+    PtnValue target_value = ptn_value_deref(target);
+    if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, target_value, "offsetGet")) {
+        PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+        *container_out = ptn_value_clone(target_value);
+        *base_out = ptn_arrayaccess_read(runtime, target_value, key, line);
+        return 1;
+    }
+
+    *base_out = ptn_value_array_path_read_for_assign_op(
+        runtime,
+        target,
+        segments,
+        segment_count,
+        line
+    );
+    return 0;
+}
+
 static PTN_UNUSED void ptn_value_array_path_set_impl(
     PtnRuntime *runtime,
     PtnValue *target,
