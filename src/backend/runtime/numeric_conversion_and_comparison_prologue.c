@@ -3816,6 +3816,15 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RegexIterator")) {
+        if (strcmp(constant, "MATCH") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "GET_MATCH") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "ALL_MATCHES") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "SPLIT") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "REPLACE") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "USE_KEY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "INVERT_MATCH") == 0) { *out = ptn_int(2); return 1; }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveIteratorIterator")) {
         if (strcmp(constant, "LEAVES_ONLY") == 0) {
             *out = ptn_int(0);
@@ -5978,6 +5987,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "DirectoryIterator")
+        && ptn_internal_class_method_exists("DirectoryIterator", name)
+    ) {
+        return ptn_directory_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "SplFileInfo")
         && ptn_internal_class_method_exists("SplFileInfo", name)
     ) {
@@ -6021,6 +6037,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("LimitIterator", name)
     ) {
         return ptn_limit_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "RegexIterator")
+        && ptn_internal_class_method_exists("RegexIterator", name)
+    ) {
+        return ptn_regex_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
