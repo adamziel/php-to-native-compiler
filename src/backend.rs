@@ -16435,6 +16435,62 @@ fn emit_scoped_instance_magic_call(
     out.push_str("ptn_value_destroy(&ptn_magic_args[1]);\n");
 }
 
+fn emit_scoped_instance_magic_call_from_receiver_slot(
+    out: &mut String,
+    indent: &str,
+    target_class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    receiver_expr: &str,
+    result_lhs: &str,
+) -> bool {
+    let Some(target_magic_method) = class_magic_call_method(target_class, classes) else {
+        return false;
+    };
+
+    out.push_str(indent);
+    out.push_str("if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+    for receiver_class in classes {
+        let Some(receiver_magic_method) = class_magic_call_method(receiver_class, classes) else {
+            continue;
+        };
+        let receiver_magic_function = &functions[receiver_magic_method.function_index];
+        out.push_str(indent);
+        out.push_str("    if (ptn_ascii_case_equal(resolved_receiver.as.object->class_name, \"");
+        out.push_str(&c_string(&receiver_class.name));
+        out.push_str("\")) {\n");
+        emit_scoped_instance_magic_call(
+            out,
+            &format!("{indent}        "),
+            &receiver_class.name,
+            receiver_magic_method,
+            receiver_magic_function,
+            receiver_expr,
+            result_lhs,
+        );
+        out.push_str(indent);
+        out.push_str("        return 1;\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+    }
+
+    let target_magic_function = &functions[target_magic_method.function_index];
+    emit_scoped_instance_magic_call(
+        out,
+        &format!("{indent}    "),
+        &target_class.name,
+        target_magic_method,
+        target_magic_function,
+        receiver_expr,
+        result_lhs,
+    );
+    out.push_str(indent);
+    out.push_str("    return 1;\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    true
+}
+
 fn class_magic_invoke_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -17869,21 +17925,15 @@ fn emit_method_dispatch(
             }
             out.push_str(")) {\n");
             if !method.name.eq_ignore_ascii_case("__construct") {
-                if let Some(magic_method) = class_magic_call_method(class, classes) {
-                    let magic_function = &functions[magic_method.function_index];
-                    out.push_str("                if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
-                    emit_scoped_instance_magic_call(
-                        out,
-                        "                    ",
-                        &class.name,
-                        magic_method,
-                        magic_function,
-                        "resolved_receiver",
-                        "*result_out = ",
-                    );
-                    out.push_str("                    return 1;\n");
-                    out.push_str("                }\n");
-                }
+                emit_scoped_instance_magic_call_from_receiver_slot(
+                    out,
+                    "                ",
+                    class,
+                    classes,
+                    functions,
+                    "resolved_receiver",
+                    "*result_out = ",
+                );
             }
             out.push_str("                if (resolved_receiver.type != PTN_OBJECT && ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
             out.push_str("                    return 1;\n");
@@ -17971,19 +18021,16 @@ fn emit_method_dispatch(
         out.push_str("            *result_out = ptn_null();\n");
         out.push_str("            return 1;\n");
         out.push_str("        }\n");
-        out.push_str("        if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
-        if let Some(magic_method) = class_magic_call_method(class, classes) {
-            let magic_function = &functions[magic_method.function_index];
-            emit_scoped_instance_magic_call(
-                out,
-                "            ",
-                &class.name,
-                magic_method,
-                magic_function,
-                "resolved_receiver",
-                "*result_out = ",
-            );
-        } else {
+        if !emit_scoped_instance_magic_call_from_receiver_slot(
+            out,
+            "        ",
+            class,
+            classes,
+            functions,
+            "resolved_receiver",
+            "*result_out = ",
+        ) {
+            out.push_str("        if (resolved_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
             out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
             out.push_str("            const char *ptn_scoped_modeled_parent = ptn_declared_class_parent_name(target_class_name);\n");
             out.push_str("            while (ptn_scoped_modeled_parent != NULL) {\n");
@@ -18013,9 +18060,9 @@ fn emit_method_dispatch(
             out.push_str("            snprintf(ptn_undefined_method_message, (size_t)ptn_undefined_method_needed + 1, \"Call to undefined method %s::%s()\", target_class_name, method_name);\n");
             out.push_str("            ptn_throw_exception_owned_message_at(runtime, \"Error\", ptn_undefined_method_message, runtime->source_path, line);\n");
             out.push_str("            *result_out = ptn_null();\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
         }
-        out.push_str("            return 1;\n");
-        out.push_str("        }\n");
         out.push_str("        if (ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
         out.push_str("            return 1;\n");
         out.push_str("        }\n");

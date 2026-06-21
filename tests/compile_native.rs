@@ -64436,6 +64436,18 @@ class LeafMagic extends MidMagic {
 }
 (new LeafMagic())->probe();
 
+class ParentOverrideMagic {
+    public function __call($method, $args) { echo \"parent-slot:$method\\n\"; }
+}
+class ChildOverrideMagic extends ParentOverrideMagic {
+    public function __call($method, $args) { echo \"child-slot:$method\\n\"; }
+    public function probe() {
+        ParentOverrideMagic::named();
+        parent::missing();
+    }
+}
+(new ChildOverrideMagic())->probe();
+
 class ParentNoMagic {}
 class ChildOnlyMagic extends ParentNoMagic {
     public function __call($method, $args) { echo \"child:$method\\n\"; }
@@ -64464,6 +64476,8 @@ class ChildOnlyMagic extends ParentNoMagic {
             "__call\n",
             "__call\n",
             "root:missing\n",
+            "child-slot:named\n",
+            "child-slot:missing\n",
             "Call to undefined method ParentNoMagic::missing()\n",
         )
     );
