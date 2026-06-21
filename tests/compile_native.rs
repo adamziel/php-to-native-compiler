@@ -12966,6 +12966,66 @@ var_dump((array) $object);
 }
 
 #[test]
+fn compile_array_object_append_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-append.php");
+    let output = root.join("array-object-append-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+$arrayObject = new ArrayObject();
+var_dump(method_exists($arrayObject, "append"));
+$arrayObject->append("foo");
+$arrayObject->append("bar");
+$arrayObject->append("foo");
+var_dump($arrayObject->getArrayCopy());
+
+try {
+    (new ArrayObject(new stdClass))->append("x");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $arrayObject->append();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [1]=>\n",
+            "  string(3) \"bar\"\n",
+            "  [2]=>\n",
+            "  string(3) \"foo\"\n",
+            "}\n",
+            "Cannot append properties to objects, use ArrayObject::offsetSet() instead\n",
+            "ArrayObject::append() expects exactly 1 argument, 0 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_invalid_offset_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-invalid-offset");
     fs::create_dir_all(&root).unwrap();

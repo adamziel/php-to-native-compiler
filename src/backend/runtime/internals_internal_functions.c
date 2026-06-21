@@ -89100,6 +89100,7 @@ static int ptn_array_iterator_method_exists(const char *method_name) {
 
 static int ptn_array_object_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "append")
         || ptn_ascii_case_equal(method_name, "asort")
         || ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "exchangeArray")
@@ -90546,6 +90547,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_array_object(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "append",
             "asort",
             "count",
             "exchangeArray",
@@ -111723,6 +111725,55 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         if (object != NULL) {
             ptn_array_key_free(key);
         }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "append")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ArrayObject::append() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "ArgumentCountError", message, runtime->source_path, line);
+            return ptn_null();
+        }
+        if (data->sorting) {
+            ptn_throw_exception(runtime, "Error", "Modification of ArrayObject during sorting is prohibited");
+            return ptn_null();
+        }
+        if (ptn_spl_storage_object(data->storage) != NULL) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "Error",
+                ptn_duplicate_string("Cannot append properties to objects, use ArrayObject::offsetSet() instead"),
+                runtime->source_path,
+                line,
+                "ArrayObject->append",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return ptn_null();
+        }
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_null();
+        }
+        if (!ptn_array_append_key_available(runtime, array)) {
+            return ptn_null();
+        }
+        ptn_array_set_entry(
+            array,
+            ptn_array_int_key(array->next_auto_key),
+            ptn_value_clone_deref(args[0])
+        );
         ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
         return ptn_null();
     }
