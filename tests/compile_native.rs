@@ -23903,6 +23903,65 @@ var_dump(enum_exists(Quuz::class, true));
 }
 
 #[test]
+fn compile_reflection_enum_to_string_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-enum-to-string-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-enum-to-string-metadata.php");
+    let output = root.join("reflection-enum-to-string-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+interface MyStringable {
+    public function toString(): string;
+}
+
+enum Suit: string implements MyStringable {
+    case Hearts = 'H';
+    case Spades = 'S';
+
+    public function toString(): string {
+        return $this->name;
+    }
+}
+
+echo new ReflectionClass(Suit::class);
+echo \"---\\n\";
+echo new ReflectionEnum(Suit::class);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("  - Enum cases [2] {").count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("Case Hearts = H").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("Case Spades = S").count(), 2, "{stdout}");
+    assert_eq!(
+        stdout
+            .matches("Method [ <user, prototype MyStringable> public method toString ]")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("reflection-enum-to-string-metadata.php 10 - 12"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_is_enum(class_name)"));
+    assert!(c_source.contains("prototype MyStringable"));
+}
+
+#[test]
 fn compile_function_local_class_redeclaration_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-function-local-class-redeclaration");
     fs::create_dir_all(&root).unwrap();

@@ -13290,6 +13290,7 @@ fn reflection_class_to_string_methods_tail(
         &mut out,
         "Static methods",
         class,
+        classes,
         &static_methods,
         functions,
     );
@@ -13300,7 +13301,14 @@ fn reflection_class_to_string_methods_tail(
         .filter(|entry| !entry.is_static)
         .collect::<Vec<_>>();
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
-    reflection_class_methods_to_string(&mut out, "Methods", class, &instance_methods, functions);
+    reflection_class_methods_to_string(
+        &mut out,
+        "Methods",
+        class,
+        classes,
+        &instance_methods,
+        functions,
+    );
 
     out.push_str("}\n");
     out
@@ -13368,10 +13376,17 @@ fn reflection_enum_to_string_methods_tail(
         .copied()
         .filter(|entry| !entry.method.is_static)
         .collect::<Vec<_>>();
-    reflection_enum_static_methods_to_string(&mut out, class, &static_methods, functions);
+    reflection_enum_static_methods_to_string(&mut out, class, classes, &static_methods, functions);
     out.push('\n');
     reflection_enum_properties_to_string(&mut out, class);
-    reflection_class_methods_to_string(&mut out, "Methods", class, &instance_methods, functions);
+    reflection_class_methods_to_string(
+        &mut out,
+        "Methods",
+        class,
+        classes,
+        &instance_methods,
+        functions,
+    );
 
     out.push_str("}\n");
     out
@@ -13380,6 +13395,7 @@ fn reflection_enum_to_string_methods_tail(
 fn reflection_enum_static_methods_to_string(
     out: &mut String,
     class: &ClassDecl,
+    classes: &[ClassDecl],
     methods: &[ClassMethodLookupEntry<'_>],
     functions: &[FunctionDecl],
 ) {
@@ -13400,7 +13416,7 @@ fn reflection_enum_static_methods_to_string(
     }
     if !methods.is_empty() {
         out.push('\n');
-        reflection_user_method_entries_to_string(out, class, methods, functions);
+        reflection_user_method_entries_to_string(out, class, classes, methods, functions);
     }
     out.push_str("  }\n");
 }
@@ -13450,33 +13466,57 @@ fn reflection_enum_properties_to_string(out: &mut String, class: &ClassDecl) {
 fn reflection_user_method_entries_to_string(
     out: &mut String,
     class: &ClassDecl,
+    classes: &[ClassDecl],
     methods: &[ClassMethodLookupEntry<'_>],
     functions: &[FunctionDecl],
 ) {
     for (index, entry) in methods.iter().enumerate() {
-        reflection_user_method_entry_to_string(out, class, *entry, functions);
+        reflection_user_method_entry_to_string(out, class, classes, *entry, functions);
         if index + 1 < methods.len() {
             out.push('\n');
         }
     }
 }
 
+fn reflection_user_method_qualifiers(
+    out: &mut String,
+    class: &ClassDecl,
+    entry: ClassMethodLookupEntry<'_>,
+    classes: &[ClassDecl],
+) {
+    let method = entry.method;
+    if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
+        out.push_str(", inherits ");
+        out.push_str(entry.declaring_class);
+    } else if let Some((prototype_class, _prototype_method)) =
+        reflection_method_prototype(class, &method.name, classes)
+    {
+        if class_by_name(classes, prototype_class).is_some_and(|class| class.is_interface) {
+            out.push_str(", prototype ");
+            out.push_str(prototype_class);
+        } else {
+            out.push_str(", overwrites ");
+            out.push_str(prototype_class);
+            out.push_str(", prototype ");
+            out.push_str(prototype_class);
+        }
+    }
+    if method.name.eq_ignore_ascii_case("__construct") {
+        out.push_str(", ctor");
+    }
+}
+
 fn reflection_user_method_entry_to_string(
     out: &mut String,
     class: &ClassDecl,
+    classes: &[ClassDecl],
     entry: ClassMethodLookupEntry<'_>,
     functions: &[FunctionDecl],
 ) {
     let method = entry.method;
     let function = &functions[method.function_index];
     out.push_str("    Method [ <user");
-    if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
-        out.push_str(", inherits ");
-        out.push_str(entry.declaring_class);
-    }
-    if method.name.eq_ignore_ascii_case("__construct") {
-        out.push_str(", ctor");
-    }
+    reflection_user_method_qualifiers(out, class, entry, classes);
     out.push_str("> ");
     out.push_str(method_visibility_name(method.visibility));
     if method.is_static {
@@ -13789,6 +13829,7 @@ fn reflection_class_methods_to_string(
     out: &mut String,
     label: &str,
     class: &ClassDecl,
+    classes: &[ClassDecl],
     methods: &[ClassMethodLookupEntry<'_>],
     functions: &[FunctionDecl],
 ) {
@@ -13801,13 +13842,7 @@ fn reflection_class_methods_to_string(
         let method = entry.method;
         let function = &functions[method.function_index];
         out.push_str("    Method [ <user");
-        if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
-            out.push_str(", inherits ");
-            out.push_str(entry.declaring_class);
-        }
-        if method.name.eq_ignore_ascii_case("__construct") {
-            out.push_str(", ctor");
-        }
+        reflection_user_method_qualifiers(out, class, *entry, classes);
         out.push_str("> ");
         out.push_str(method_visibility_name(method.visibility));
         if method.is_static {
@@ -13851,23 +13886,7 @@ fn reflection_method_to_string(
     let function = &functions[method.function_index];
     let mut out = String::new();
     out.push_str("Method [ <user");
-    if let Some((prototype_class, _prototype_method)) =
-        reflection_method_prototype(reflected_class, &method.name, classes)
-    {
-        out.push_str(", overwrites ");
-        out.push_str(prototype_class);
-        out.push_str(", prototype ");
-        out.push_str(prototype_class);
-    } else if !entry
-        .declaring_class
-        .eq_ignore_ascii_case(&reflected_class.name)
-    {
-        out.push_str(", inherits ");
-        out.push_str(entry.declaring_class);
-    }
-    if method.name.eq_ignore_ascii_case("__construct") {
-        out.push_str(", ctor");
-    }
+    reflection_user_method_qualifiers(&mut out, reflected_class, entry, classes);
     out.push_str("> ");
     out.push_str(method_visibility_name(method.visibility));
     if method.is_static {
