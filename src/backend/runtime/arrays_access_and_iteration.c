@@ -890,6 +890,11 @@ static PTN_UNUSED PtnValue ptn_new_object(
         (void)args;
         return ptn_object_new_shell(runtime, "stdClass");
     }
+    if (ptn_ascii_case_equal(lookup_class_name, "__PHP_Incomplete_Class")) {
+        (void)argc;
+        (void)args;
+        return ptn_object_new_shell(runtime, "__PHP_Incomplete_Class");
+    }
     if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_internal_class_exists_name(lookup_class_name) &&
@@ -1758,6 +1763,11 @@ static PTN_UNUSED void ptn_throw_property_modification_on_non_object(
 
 static PTN_UNUSED int ptn_object_is_incomplete_class(PtnObject *object);
 static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+);
+static PTN_UNUSED void ptn_emit_incomplete_object_property_access_warning(
     PtnRuntime *runtime,
     PtnObject *object,
     size_t line
@@ -3841,7 +3851,7 @@ static PTN_UNUSED char *ptn_incomplete_object_original_class_name(PtnObject *obj
             }
         }
     }
-    return ptn_duplicate_string("__PHP_Incomplete_Class");
+    return ptn_duplicate_string("unknown");
 }
 
 static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
@@ -3877,6 +3887,42 @@ static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_emit_incomplete_object_property_access_warning(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    char *class_name = ptn_incomplete_object_original_class_name(object);
+    int needed = snprintf(
+        NULL,
+        0,
+        "main(): The script tried to access a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    if (needed < 0) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "main(): The script tried to access a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    free(class_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
 }
 
 static PTN_UNUSED void ptn_emit_dynamic_property_deprecation(
@@ -4684,6 +4730,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
@@ -5279,6 +5329,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
     }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
         return ptn_null();
     }
     char *storage_key = ptn_object_resolve_property_storage_key(

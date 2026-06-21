@@ -8625,8 +8625,10 @@ static int ptn_unserialize_require_payload(PtnUnserializeState *state, size_t co
         state->insufficient_data = 1;
         state->insufficient_required = count;
         state->insufficient_present = ptn_unserialize_remaining(state);
+        ptn_unserialize_fail(state);
+        return 0;
     }
-    return ptn_unserialize_require(state, count);
+    return 1;
 }
 
 static int ptn_unserialize_consume(PtnUnserializeState *state, char expected) {
@@ -9441,6 +9443,17 @@ static PtnValue ptn_unserialize_new_internal_exception_shell(
         0,
         line
     );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "previous",
+        base_class,
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_TYPE_CLASS,
+        "?Throwable",
+        1,
+        line
+    );
     return object;
 }
 
@@ -9718,6 +9731,24 @@ static PtnValue ptn_unserialize_new_incomplete_object_shell(
         ptn_owned_string(ptn_duplicate_string(class_name))
     );
     return object;
+}
+
+static void ptn_unserialize_emit_no_unserializer_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Class %s has no unserializer",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
 static PtnValue ptn_unserialize_new_object_shell(
@@ -10684,19 +10715,35 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_has(state, 1) ||
                 state->data[state->pos] < '0' ||
                 state->data[state->pos] > '9') {
-                ptn_unserialize_fail_bad_data_at(state, class_name_end);
+                if (!ptn_unserialize_has(state, 1)) {
+                    ptn_unserialize_fail_bad_data_at(state, class_name_end);
+                    free(class_name);
+                    return result;
+                }
+                size_t fail_pos = state->pos;
+                if (state->data[state->pos] == ':') {
+                    fail_pos++;
+                }
+                ptn_unserialize_fail_at(state, fail_pos);
                 free(class_name);
                 return result;
             }
-            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count) ||
-                !ptn_unserialize_consume(state, ':') ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count)) {
+                free(class_name);
+                return result;
+            }
+            size_t property_count_end = state->pos;
+            if (property_count > ptn_unserialize_remaining(state)) {
+                if (property_count == SIZE_MAX) {
+                    state->unexpected_end = 1;
+                }
+                ptn_unserialize_fail_at(state, property_count_end);
+                free(class_name);
+                return result;
+            }
+            if (!ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 free(class_name);
-                return result;
-            }
-            if (property_count > ptn_unserialize_remaining(state)) {
-                free(class_name);
-                ptn_unserialize_fail(state);
                 return result;
             }
             result.value = ptn_unserialize_new_object_shell(state, runtime, class_name, state->line);
@@ -10805,6 +10852,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             const char *payload = state->data + state->pos;
+            size_t payload_start = state->pos;
             state->pos += payload_len;
             if (!ptn_unserialize_consume(state, '}')) {
                 free(class_name);
@@ -10871,6 +10919,27 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 );
                 ptn_value_destroy(&callback_result);
                 ptn_value_destroy(&payload_arg);
+                handled_custom_payload = 1;
+            }
+            if (!handled_custom_payload) {
+                const char *display_class_name =
+                    result.value.type == PTN_OBJECT &&
+                    ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class")
+                        ? "__PHP_Incomplete_Class"
+                        : class_name;
+                ptn_unserialize_emit_no_unserializer_warning(
+                    runtime,
+                    display_class_name,
+                    state->line
+                );
+                if (result.value.type != PTN_NULL) {
+                    ptn_value_destroy(&result.value);
+                    result.value = ptn_null();
+                }
+                ptn_unserialize_invalidate_id(state, result.id);
+                ptn_unserialize_fail_at(state, payload_start);
+                free(class_name);
+                return result;
             }
             ptn_unserialize_update_slot(state, result.id, &result.value);
             free(class_name);
@@ -11284,6 +11353,7 @@ static int ptn_unserialize_value_from_operand(
         if (emit_diagnostics && parsed_pos != input.len) {
             ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
         }
+        ptn_unserialize_truncate_ids(active_state, saved_id_len);
         ptn_string_operand_free(input);
         *out = parsed.value;
         return 1;
@@ -109951,13 +110021,16 @@ static void ptn_array_object_throw_unserialize_error(
     PtnRuntime *runtime,
     size_t offset,
     size_t len,
-    size_t line
+    size_t line,
+    int emit_unexpected_end_warning
 ) {
-    ptn_emit_warning(
-        &runtime->diagnostics,
-        "ArrayObject::unserialize(): Unexpected end of serialized data",
-        line
-    );
+    if (emit_unexpected_end_warning) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "ArrayObject::unserialize(): Unexpected end of serialized data",
+            line
+        );
+    }
     char message[96];
     int written = snprintf(
         message,
@@ -110147,7 +110220,13 @@ done:
     }
 
     if (failed) {
-        ptn_array_object_throw_unserialize_error(runtime, error_offset, payload.len, line);
+        ptn_array_object_throw_unserialize_error(
+            runtime,
+            error_offset,
+            payload.len,
+            line,
+            error_offset + 1 < payload.len
+        );
     }
     return 1;
 }

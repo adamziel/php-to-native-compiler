@@ -12208,6 +12208,82 @@ var_dump(unserialize('a:2:{i:0;O:9:"exception":1:{s:16:"' . "\0" . 'Exception' .
 }
 
 #[test]
+fn compile_unserialize_object_edge_cases_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-object-edge-cases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-object-edge-cases.php");
+    let output = root.join("unserialize-object-edge-cases-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    unserialize('O:13:"SplFileObject":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('O:9:"Exception":1:{s:19:"' . "\0" . 'Exception' . "\0" . 'previous";i:10;}');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$ser = 'C:1:"C":6:{dasdas}';
+var_dump(unserialize($ser));
+eval('class C {}');
+var_dump(unserialize($ser));
+
+$incomplete = new __PHP_Incomplete_Class;
+var_dump($incomplete);
+var_dump($incomplete->missing);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Unserialization of 'SplFileObject' is not allowed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign int to property Exception::$previous of type ?Throwable"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Class __PHP_Incomplete_Class has no unserializer"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Class C has no unserializer"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 11 of 18 bytes"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 2, "{stdout}");
+    assert!(
+        stdout.contains("object(__PHP_Incomplete_Class)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("class definition \"unknown\" of the object"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_php_serialize_decode_unexpected_end_to_native_binary() {
     let root = temp_dir("ptn-native-session-php-serialize-decode-unexpected-end");
     fs::create_dir_all(&root).unwrap();
@@ -12505,7 +12581,7 @@ echo "===DONE===\n";
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
-        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        !stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
         "{stdout}"
     );
     assert!(
