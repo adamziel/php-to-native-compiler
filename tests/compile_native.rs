@@ -24902,6 +24902,101 @@ show_access(\"child-dynamic-protected\", function() { return ConstScopeChild::dy
 }
 
 #[test]
+fn compile_lazy_class_metadata_initializers_across_eval_inheritance_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-class-metadata-eval-inheritance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-class-metadata-eval-inheritance.php");
+    let output = root.join("lazy-class-metadata-eval-inheritance-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    const X = E::A;
+    public static $a = array(K => D::V, E::A => K);
+}
+
+eval(\"class D extends C { const V = 'test'; }\");
+
+class E extends D {
+    const A = \"hello\";
+}
+
+define(\"K\", \"nasty\");
+
+var_dump(C::X, C::$a, D::X, D::$a, E::X, E::$a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"hello\"\n",
+            "array(2) {\n",
+            "  [\"nasty\"]=>\n",
+            "  string(4) \"test\"\n",
+            "  [\"hello\"]=>\n",
+            "  string(5) \"nasty\"\n",
+            "}\n",
+            "string(5) \"hello\"\n",
+            "array(2) {\n",
+            "  [\"nasty\"]=>\n",
+            "  string(4) \"test\"\n",
+            "  [\"hello\"]=>\n",
+            "  string(5) \"nasty\"\n",
+            "}\n",
+            "string(5) \"hello\"\n",
+            "array(2) {\n",
+            "  [\"nasty\"]=>\n",
+            "  string(4) \"test\"\n",
+            "  [\"hello\"]=>\n",
+            "  string(5) \"nasty\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_static_property_initializer"));
+    assert!(c_source.contains("ptn_runtime_register_dynamic_class_with_parent"));
+}
+
+#[test]
+fn compile_class_constant_initializer_error_on_instantiation_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-error-on-instantiation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-error-on-instantiation.php");
+    let output = root.join("class-constant-error-on-instantiation-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    const c1 = D::hello;
+}
+
+new C();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Error: Class \"D\" not found"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("[constant expression]()"), "{stderr}");
+}
+
+#[test]
 fn compile_typed_class_constants_to_native_binary() {
     let root = temp_dir("ptn-native-typed-class-constants");
     fs::create_dir_all(&root).unwrap();

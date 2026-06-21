@@ -2948,7 +2948,7 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
             }
         }
         free(key);
-        lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+        lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
     }
 
     if (ptn_builtin_class_constant_value_span(name, class_len, constant_name, out)) {

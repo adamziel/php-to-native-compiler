@@ -148,6 +148,12 @@ pub fn emit_c(module: &Module) -> String {
         .classes
         .iter()
         .any(|class| !class.constants.is_empty());
+    let has_lazy_static_property_initializers = module.classes.iter().any(|class| {
+        class
+            .static_properties
+            .iter()
+            .any(|property| property.value.is_some())
+    });
     let needs_magic_property_dispatch = needs_magic_property_read
         || needs_magic_property_isset
         || needs_magic_property_get
@@ -205,6 +211,17 @@ pub fn emit_c(module: &Module) -> String {
     );
     if has_declared_class_constants {
         emit_class_constant_initializer_helper(
+            &mut out,
+            &module.classes,
+            &module.functions,
+            &module.includes,
+            &module.source_file,
+            &module.source_dir,
+            runtime_requirements.internal_function_dispatch,
+        );
+    }
+    if has_lazy_static_property_initializers {
+        emit_static_property_initializer_helper(
             &mut out,
             &module.classes,
             &module.functions,
@@ -357,6 +374,11 @@ pub fn emit_c(module: &Module) -> String {
             "    runtime.class_constant_initializer = ptn_declared_class_constant_initializer;\n",
         );
     }
+    if has_lazy_static_property_initializers {
+        out.push_str(
+            "    runtime.static_property_initializer = ptn_declared_static_property_initializer;\n",
+        );
+    }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
     out.push_str(
@@ -405,12 +427,7 @@ pub fn emit_c(module: &Module) -> String {
             || !magic_visibility_warnings.is_empty(),
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
-    let early_constant_indexes = emit_static_property_initializers_with_constants(
-        &mut out,
-        &mut values,
-        &module.classes,
-        &module.instructions,
-    );
+    emit_static_property_declarations(&mut out, &module.classes);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
             &mut out,
@@ -424,10 +441,7 @@ pub fn emit_c(module: &Module) -> String {
     let return_label = values.next_label("ptn_main_return");
     out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
     let mut trait_deprecation_index = 0usize;
-    for (instruction_index, instruction) in module.instructions.iter().enumerate() {
-        if early_constant_indexes.contains(&instruction_index) {
-            continue;
-        }
+    for instruction in &module.instructions {
         if let Some(line) = instruction_runtime_line(instruction) {
             let start = trait_deprecation_index;
             while trait_deprecation_index < trait_use_deprecations.len()
@@ -1579,6 +1593,18 @@ fn emit_declared_class_new_instance_without_constructor(
             out.push_str("    ptn_runtime_free(&runtime);\n");
             out.push_str("    return ptn_null();\n");
         } else {
+            emit_class_constant_instantiation_reads(
+                out,
+                &mut values,
+                declared_class,
+                classes,
+                "line",
+                "    ",
+            );
+            out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
             values.emit_declared_object_shell_with_properties(
                 out,
                 "result",
@@ -3176,83 +3202,13 @@ fn emit_source_snapshot_array(out: &mut String, name: &str, bytes: &[u8]) {
     out.push_str(";\n");
 }
 
-fn emit_early_constant_declaration(
-    out: &mut String,
-    values: &mut ValueEmitter,
-    name: &str,
-    value: &ValueExpr,
-    line: usize,
-) {
-    let emitted_value = values.emit_const_materialized_value(out, value);
-    out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
-    out.push_str(&c_string(name));
-    out.push_str("\", ");
-    out.push_str(&emitted_value);
-    out.push_str(", ");
-    out.push_str(&line.to_string());
-    out.push_str(");\n");
-    emit_value_cleanup(out, "    ", &emitted_value);
-}
-
-fn emit_static_property_initializers_with_constants(
-    out: &mut String,
-    values: &mut ValueEmitter,
-    classes: &[ClassDecl],
-    instructions: &[Instruction],
-) -> HashSet<usize> {
-    let mut emitted_constant_indexes = HashSet::new();
-    for class in classes {
-        for (instruction_index, instruction) in instructions.iter().enumerate() {
-            if emitted_constant_indexes.contains(&instruction_index) {
-                continue;
-            }
-            let Instruction::DefineConstant {
-                name, value, line, ..
-            } = instruction
-            else {
-                continue;
-            };
-            if *line >= class.line {
-                continue;
-            }
-            emit_early_constant_declaration(out, values, name, value, *line);
-            emitted_constant_indexes.insert(instruction_index);
-        }
-        let previous_class_name = values.current_class_name.replace(class.name.clone());
-        for property in &class.static_properties {
-            let value_temp = match &property.value {
-                Some(value) => {
-                    let previous_scope_temp = values.next_temp();
-                    let previous_called_scope_temp = values.next_temp();
-                    out.push_str("    const char *");
-                    out.push_str(&previous_scope_temp);
-                    out.push_str(" = runtime.current_class_name;\n");
-                    out.push_str("    const char *");
-                    out.push_str(&previous_called_scope_temp);
-                    out.push_str(" = runtime.current_called_class_name;\n");
-                    out.push_str("    runtime.current_class_name = \"");
-                    out.push_str(&c_string(&class.name));
-                    out.push_str("\";\n");
-                    out.push_str("    runtime.current_called_class_name = \"");
-                    out.push_str(&c_string(&class.name));
-                    out.push_str("\";\n");
-                    let value_temp = values.emit_const_materialized_value(out, value);
-                    out.push_str("    runtime.current_called_class_name = ");
-                    out.push_str(&previous_called_scope_temp);
-                    out.push_str(";\n");
-                    out.push_str("    runtime.current_class_name = ");
-                    out.push_str(&previous_scope_temp);
-                    out.push_str(";\n");
-                    value_temp
-                }
-                None => {
-                    let temp = values.next_temp();
-                    out.push_str("    PtnValue ");
-                    out.push_str(&temp);
-                    out.push_str(" = ptn_null();\n");
-                    temp
-                }
-            };
+fn emit_static_property_declarations(out: &mut String, classes: &[ClassDecl]) {
+    for (class_index, class) in classes.iter().enumerate() {
+        for (property_index, property) in class.static_properties.iter().enumerate() {
+            let value_temp = format!("ptn_static_property_default_{class_index}_{property_index}");
+            out.push_str("    PtnValue ");
+            out.push_str(&value_temp);
+            out.push_str(" = ptn_null();\n");
             out.push_str("    ptn_runtime_define_static_property(&runtime, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");
@@ -3265,7 +3221,7 @@ fn emit_static_property_initializers_with_constants(
             out.push_str(&value_temp);
             out.push_str(", ");
             out.push_str(
-                if property.value.is_some() || property.type_hint.is_none() {
+                if property.value.is_none() && property.type_hint.is_none() {
                     "1"
                 } else {
                     "0"
@@ -3274,9 +3230,123 @@ fn emit_static_property_initializers_with_constants(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
         }
-        values.current_class_name = previous_class_name;
     }
-    emitted_constant_indexes
+}
+
+fn emit_static_property_initializer_helper(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
+    full_internal_dispatch: bool,
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_static_property_initializer(PtnRuntime *runtime_ptr, const char *class_name, const char *property_name) {\n",
+    );
+    out.push_str("#define runtime (*runtime_ptr)\n");
+    let mut values = ValueEmitter::new(
+        source_file,
+        source_dir,
+        functions,
+        classes,
+        includes,
+        full_internal_dispatch,
+    );
+    for class in classes {
+        if class
+            .static_properties
+            .iter()
+            .all(|property| property.value.is_none())
+        {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        let previous_class_name = values.current_class_name.replace(class.name.clone());
+        for property in &class.static_properties {
+            let Some(value) = property.value.as_ref() else {
+                continue;
+            };
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            let previous_scope_temp = values.next_temp();
+            let previous_called_scope_temp = values.next_temp();
+            out.push_str("            const char *");
+            out.push_str(&previous_scope_temp);
+            out.push_str(" = runtime.current_class_name;\n");
+            out.push_str("            const char *");
+            out.push_str(&previous_called_scope_temp);
+            out.push_str(" = runtime.current_called_class_name;\n");
+            out.push_str("            runtime.current_class_name = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("            runtime.current_called_class_name = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            let value_temp = values.emit_const_materialized_value(out, value);
+            out.push_str("            runtime.current_called_class_name = ");
+            out.push_str(&previous_called_scope_temp);
+            out.push_str(";\n");
+            out.push_str("            runtime.current_class_name = ");
+            out.push_str(&previous_scope_temp);
+            out.push_str(";\n");
+            out.push_str("            ptn_runtime_define_static_property(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(", ");
+            out.push_str(c_property_visibility(property.set_visibility));
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(", 1);\n");
+            emit_value_cleanup(out, "            ", &value_temp);
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        values.current_class_name = previous_class_name;
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("#undef runtime\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
+fn emit_class_constant_instantiation_reads(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    line_expr: &str,
+    indent: &str,
+) {
+    for entry in class_constant_lookup_chain(class, classes) {
+        let temp = values.next_temp();
+        out.push_str(indent);
+        out.push_str("if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str(indent);
+        out.push_str("    PtnValue ");
+        out.push_str(&temp);
+        out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+        out.push_str(&c_string(entry.declaring_class));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&entry.constant.name));
+        out.push_str("\", ");
+        out.push_str(line_expr);
+        out.push_str(");\n");
+        out.push_str(indent);
+        out.push_str("    ptn_value_destroy(&");
+        out.push_str(&temp);
+        out.push_str(");\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+    }
 }
 
 fn emit_class_constant_initializer_helper(
@@ -3315,6 +3385,7 @@ fn emit_class_constant_initializer_helper(
             let initializing_key_temp = values.next_temp();
             let initializing_table_temp = values.next_temp();
             let initializing_frame_temp = values.next_temp();
+            let initializing_trace_frame_temp = values.next_temp();
             let previous_initializing_class_temp = values.next_temp();
             let previous_initializing_constant_temp = values.next_temp();
             out.push_str("            char *");
@@ -3346,6 +3417,9 @@ fn emit_class_constant_initializer_helper(
             );
             out.push_str(&c_string(&constant.name));
             out.push_str("\";\n");
+            out.push_str("            PtnTraceFrame ");
+            out.push_str(&initializing_trace_frame_temp);
+            out.push_str(";\n");
             out.push_str("            PtnTryFrame ");
             out.push_str(&initializing_frame_temp);
             out.push_str(";\n");
@@ -3357,6 +3431,9 @@ fn emit_class_constant_initializer_helper(
             out.push_str(".jump) != 0) {\n");
             out.push_str("                ptn_try_frame_pop(&runtime, &");
             out.push_str(&initializing_frame_temp);
+            out.push_str(");\n");
+            out.push_str("                ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&initializing_trace_frame_temp);
             out.push_str(");\n");
             out.push_str("                ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
@@ -3379,6 +3456,15 @@ fn emit_class_constant_initializer_helper(
             out.push_str("                ptn_rethrow_exception(&runtime);\n");
             out.push_str("                return 0;\n");
             out.push_str("            }\n");
+            out.push_str("            ptn_runtime_push_trace_frame(&runtime, &");
+            out.push_str(&initializing_trace_frame_temp);
+            out.push_str(", \"[constant expression]\", runtime.source_path, ");
+            out.push_str(
+                &value_expr_runtime_line(&constant.value)
+                    .unwrap_or(0)
+                    .to_string(),
+            );
+            out.push_str(", 0, NULL);\n");
             let mut extra_cleanup_temps = Vec::new();
             let value_temp = if constant.is_enum_case {
                 if let Some(message) = enum_duplicate_message(class) {
@@ -3501,6 +3587,9 @@ fn emit_class_constant_initializer_helper(
             }
             out.push_str("            ptn_try_frame_pop(&runtime, &");
             out.push_str(&initializing_frame_temp);
+            out.push_str(");\n");
+            out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&initializing_trace_frame_temp);
             out.push_str(");\n");
             out.push_str("            ptn_symbols_unset(");
             out.push_str(&initializing_table_temp);
@@ -33236,12 +33325,32 @@ impl ValueEmitter {
             out.push_str(");\n");
             return;
         }
+        let instantiation_classes = self.classes.clone();
+        let initializes_class_constants =
+            !class_constant_lookup_chain(declared_class, &instantiation_classes).is_empty();
+        if initializes_class_constants {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            emit_class_constant_instantiation_reads(
+                out,
+                self,
+                declared_class,
+                &instantiation_classes,
+                &line.to_string(),
+                "    ",
+            );
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        }
         self.emit_declared_object_shell_with_properties(
             out,
             result_temp,
             declared_class,
             line,
-            declare_result,
+            declare_result && !initializes_class_constants,
         );
         if let Some((
             constructor_declaring_class,
@@ -33474,6 +33583,9 @@ impl ValueEmitter {
                     emit_value_cleanup(out, "    ", &argument_temp);
                 }
             }
+        }
+        if initializes_class_constants {
+            out.push_str("    }\n");
         }
     }
 

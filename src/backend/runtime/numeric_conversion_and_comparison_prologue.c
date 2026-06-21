@@ -112,6 +112,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->active_property_hook_class = NULL;
     runtime->active_property_hook_property = NULL;
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
+    runtime->static_property_initializer = caller_runtime->static_property_initializer;
     runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->magic_property_frames = NULL;
@@ -3220,7 +3221,7 @@ static PTN_UNUSED char *ptn_runtime_resolve_static_property_key(
             return key;
         }
         free(key);
-        lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+        lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
     }
     if (declaring_class_out != NULL) {
         *declaring_class_out = NULL;
@@ -3297,6 +3298,14 @@ static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, cons
 }
 
 static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
+    ptn_runtime_register_dynamic_class_with_parent(runtime, class_name, NULL);
+}
+
+static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *parent_name
+) {
     if (class_name == NULL || *class_name == '\0') {
         return;
     }
@@ -3305,8 +3314,39 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, c
         return;
     }
     char *key = ptn_class_alias_key(class_name);
-    ptn_symbols_set(classes, key, ptn_bool(1));
+    PtnValue parent_value = parent_name == NULL || *parent_name == '\0'
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(parent_name));
+    ptn_symbols_set(classes, key, parent_value);
+    ptn_value_destroy(&parent_value);
     free(key);
+}
+
+static PTN_UNUSED const char *ptn_runtime_dynamic_class_parent_name(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL || class_name == NULL) {
+        return NULL;
+    }
+    char *key = ptn_class_alias_key(class_name);
+    PtnValue parent;
+    int found = ptn_symbols_get(classes, key, &parent);
+    free(key);
+    if (!found) {
+        return NULL;
+    }
+    parent = ptn_value_deref(parent);
+    return parent.type == PTN_STRING ? (const char *)parent.as.string.data : NULL;
+}
+
+static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    const char *dynamic_parent = ptn_runtime_dynamic_class_parent_name(runtime, class_name);
+    return dynamic_parent != NULL ? dynamic_parent : ptn_declared_class_parent_name(class_name);
 }
 
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
@@ -4067,6 +4107,32 @@ static PTN_UNUSED int ptn_runtime_static_property_initialized(
     return result;
 }
 
+static PTN_UNUSED int ptn_runtime_ensure_static_property_initialized(
+    PtnRuntime *runtime,
+    const char *key,
+    const char *declaring_class,
+    const char *property
+) {
+    PtnValue initialized;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_initialized_table(runtime),
+            key,
+            &initialized
+        ) &&
+        ptn_is_truthy(initialized)
+    ) {
+        return 1;
+    }
+    if (runtime->static_property_initializer != NULL && declaring_class != NULL) {
+        (void)runtime->static_property_initializer(runtime, declaring_class, property);
+        if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PTN_UNUSED void ptn_runtime_define_class_constant(
     PtnRuntime *runtime,
     const char *class_name,
@@ -4227,7 +4293,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         const char *metadata_declaring_class = lookup_class_name;
         int metadata_visibility_int = (int)PTN_PROPERTY_PUBLIC;
         int lookup_has_metadata = ptn_declared_class_constant_metadata(
-            target_class_name,
+            lookup_class_name,
             constant,
             &metadata_declaring_class,
             &metadata_visibility_int
@@ -4239,7 +4305,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
             if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
                 free(key);
-                lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+                lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
                 continue;
             }
             PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
@@ -4314,7 +4380,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
                 if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
                     free(key);
-                    lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+                    lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
                     continue;
                 }
                 PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
@@ -4343,7 +4409,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             }
         }
         free(key);
-        lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+        lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);
     }
     PtnValue builtin_value;
     const char *rounding_case = ptn_ascii_case_equal(resolved_class_name, "RoundingMode")
@@ -4586,6 +4652,14 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     );
     PtnValue value;
     if (key != NULL && ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+        if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+            free(key);
+            return ptn_null();
+        }
+        if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+            free(key);
+            return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+        }
         PtnValue visibility_value;
         PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
         if (
@@ -4631,6 +4705,14 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     );
     PtnValue value;
     if (key != NULL && ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+        if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+            free(key);
+            return ptn_lookup_missing();
+        }
+        if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+            free(key);
+            return ptn_lookup_missing();
+        }
         PtnValue visibility_value;
         PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
         if (
@@ -4738,6 +4820,10 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     );
     if (key == NULL) {
         return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+    }
+    if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+        free(key);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
 
     PtnValue read_visibility_value;

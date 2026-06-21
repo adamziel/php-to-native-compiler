@@ -1158,6 +1158,11 @@ typedef int (*PtnClassConstantInitializerHandler)(
     const char *class_name,
     const char *constant_name
 );
+typedef int (*PtnStaticPropertyInitializerHandler)(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property_name
+);
 typedef PtnValue (*PtnNewInstanceWithoutConstructorHandler)(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1244,6 +1249,7 @@ struct PtnRuntime {
     const char *active_property_hook_class;
     const char *active_property_hook_property;
     PtnClassConstantInitializerHandler class_constant_initializer;
+    PtnStaticPropertyInitializerHandler static_property_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;
     PtnMagicPropertyFrame *magic_property_frames;
@@ -1463,6 +1469,15 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
 static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime);
 static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, const char *class_name);
 static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *parent_name
+);
+static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
+    PtnRuntime *runtime,
+    const char *class_name
+);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 

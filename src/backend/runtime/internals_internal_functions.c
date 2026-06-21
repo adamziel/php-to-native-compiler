@@ -107130,6 +107130,143 @@ static void ptn_eval_scan_magic_visibility(
     }
 }
 
+static int ptn_eval_parse_string_literal_value(
+    const char *code,
+    size_t len,
+    size_t *cursor,
+    PtnValue *value_out
+) {
+    char quote = code[*cursor];
+    size_t pos = *cursor + 1;
+    size_t capacity = 16;
+    size_t out_len = 0;
+    char *out = malloc(capacity);
+    if (out == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    while (pos < len) {
+        char ch = code[pos++];
+        if (ch == quote) {
+            char *resized = realloc(out, out_len + 1);
+            if (resized == NULL) {
+                free(out);
+                ptn_abort_out_of_memory();
+            }
+            out = resized;
+            out[out_len] = '\0';
+            *cursor = pos;
+            *value_out = ptn_owned_string_len(out, out_len);
+            return 1;
+        }
+        if (ch == '\\' && pos < len) {
+            ch = code[pos++];
+        }
+        if (out_len + 1 >= capacity) {
+            capacity *= 2;
+            char *resized = realloc(out, capacity);
+            if (resized == NULL) {
+                free(out);
+                ptn_abort_out_of_memory();
+            }
+            out = resized;
+        }
+        out[out_len++] = ch;
+    }
+    free(out);
+    return 0;
+}
+
+static int ptn_eval_parse_scalar_constant_value(
+    const char *code,
+    size_t len,
+    size_t *cursor,
+    PtnValue *value_out
+) {
+    *cursor = ptn_eval_skip_ws(code, len, *cursor);
+    if (*cursor >= len) {
+        return 0;
+    }
+    if (code[*cursor] == '\'' || code[*cursor] == '"') {
+        return ptn_eval_parse_string_literal_value(code, len, cursor, value_out);
+    }
+    if (ptn_eval_keyword_at(code, len, *cursor, "true")) {
+        *cursor += strlen("true");
+        *value_out = ptn_bool(1);
+        return 1;
+    }
+    if (ptn_eval_keyword_at(code, len, *cursor, "false")) {
+        *cursor += strlen("false");
+        *value_out = ptn_bool(0);
+        return 1;
+    }
+    if (ptn_eval_keyword_at(code, len, *cursor, "null")) {
+        *cursor += strlen("null");
+        *value_out = ptn_null();
+        return 1;
+    }
+    size_t value_start = *cursor;
+    if (code[*cursor] == '-') {
+        (*cursor)++;
+    }
+    if (*cursor >= len || !isdigit((unsigned char)code[*cursor])) {
+        *cursor = value_start;
+        return 0;
+    }
+    while (*cursor < len && isdigit((unsigned char)code[*cursor])) {
+        (*cursor)++;
+    }
+    char *number = ptn_duplicate_string_len(code + value_start, *cursor - value_start);
+    char *end = NULL;
+    int64_t parsed = strtoll(number, &end, 10);
+    int valid = end != NULL && *end == '\0';
+    free(number);
+    if (!valid) {
+        return 0;
+    }
+    *value_out = ptn_int(parsed);
+    return 1;
+}
+
+static void ptn_eval_scan_class_constants(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t body_start,
+    size_t body_end,
+    const char *class_name
+) {
+    for (size_t pos = body_start; pos < body_end; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, body_end, pos);
+            continue;
+        }
+        if (!ptn_eval_keyword_at(code, body_end, pos, "const")) {
+            continue;
+        }
+        size_t cursor = ptn_eval_skip_ws(code, body_end, pos + strlen("const"));
+        if (cursor >= body_end || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            continue;
+        }
+        size_t name_start = cursor;
+        while (cursor < body_end && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        char *constant_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+        cursor = ptn_eval_skip_ws(code, body_end, cursor);
+        if (cursor >= body_end || code[cursor] != '=') {
+            free(constant_name);
+            continue;
+        }
+        cursor++;
+        PtnValue value = ptn_null();
+        if (ptn_eval_parse_scalar_constant_value(code, body_end, &cursor, &value)) {
+            ptn_runtime_define_class_constant(runtime, class_name, constant_name, value);
+            ptn_value_destroy(&value);
+        }
+        free(constant_name);
+        pos = cursor;
+    }
+}
+
 static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
     size_t len = strlen(code);
     for (size_t pos = 0; pos < len; pos++) {
@@ -107149,7 +107286,23 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
             cursor++;
         }
         char *class_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
-        ptn_runtime_register_dynamic_class(runtime, class_name);
+        char *parent_name = NULL;
+        size_t metadata_cursor = ptn_eval_skip_ws(code, len, cursor);
+        if (ptn_eval_keyword_at(code, len, metadata_cursor, "extends")) {
+            metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + strlen("extends"));
+            if (metadata_cursor < len && ptn_eval_identifier_start((unsigned char)code[metadata_cursor])) {
+                size_t parent_start = metadata_cursor;
+                while (metadata_cursor < len &&
+                    ptn_eval_identifier_part((unsigned char)code[metadata_cursor])) {
+                    metadata_cursor++;
+                }
+                parent_name = ptn_duplicate_string_len(
+                    code + parent_start,
+                    metadata_cursor - parent_start
+                );
+            }
+        }
+        ptn_runtime_register_dynamic_class_with_parent(runtime, class_name, parent_name);
         size_t body_open = cursor;
         while (body_open < len && code[body_open] != '{' && code[body_open] != ';') {
             if (code[body_open] == '\'' || code[body_open] == '"') {
@@ -107168,10 +107321,18 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
                 class_name,
                 line
             );
+            ptn_eval_scan_class_constants(
+                runtime,
+                code,
+                body_open + 1,
+                body_close,
+                class_name
+            );
             pos = body_close;
         } else {
             pos = cursor;
         }
+        free(parent_name);
         free(class_name);
     }
 }

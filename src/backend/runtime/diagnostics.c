@@ -1894,6 +1894,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->active_property_hook_class = NULL;
     runtime->active_property_hook_property = NULL;
     runtime->class_constant_initializer = NULL;
+    runtime->static_property_initializer = NULL;
     runtime->new_instance_without_constructor = NULL;
     runtime->in_magic_property_dispatch = 0;
     runtime->magic_property_frames = NULL;
