@@ -4191,6 +4191,45 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     return NULL;
 }
 
+static PTN_UNUSED int ptn_object_indirect_write_targets_overloaded_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || !ptn_magic_property_get_exists(runtime, receiver)) {
+        return 0;
+    }
+    PtnObjectPropertyMetadata *blocked_metadata =
+        ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
+    if (blocked_metadata != NULL) {
+        return 1;
+    }
+    if (ptn_object_metadata_for_display_name(receiver.as.object, property) != NULL) {
+        return 0;
+    }
+
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+        1,
+        line
+    );
+    if (storage_key == NULL) {
+        return 1;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    return entry == NULL;
+}
+
 static PTN_UNUSED void ptn_emit_undefined_exception_property_warning(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -5363,6 +5402,26 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
 #endif
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
+    if (
+        indirect_write &&
+        ptn_object_indirect_write_targets_overloaded_property(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        )
+    ) {
+        if (ptn_value_deref(value).type != PTN_REFERENCE) {
+            ptn_emit_indirect_modification_overloaded_property_notice(
+                runtime,
+                receiver,
+                property,
+                line
+            );
+        }
+        return ptn_value_clone_deref(value);
+    }
     if (
         blocked_metadata != NULL &&
         ptn_blocked_property_write_should_call_magic_set(blocked_metadata)

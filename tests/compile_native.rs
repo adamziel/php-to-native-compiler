@@ -59284,6 +59284,55 @@ var_dump($test);
 }
 
 #[test]
+fn compile_overloaded_property_by_value_get_array_append_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-by-value-get-array-append");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-by-value-get-array-append.php");
+    let output = root.join("overloaded-property-by-value-get-array-append-bin");
+    fs::write(
+        &input,
+        "<?php
+class ByValueGet {
+    private array $array = [];
+
+    public function __get($name) {
+        return $this->array;
+    }
+
+    public function dump() {
+        var_dump($this->array);
+    }
+}
+
+$t = new ByValueGet();
+$t->missing[] = 'bar';
+$t->dump();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Notice: Indirect modification of overloaded property ByValueGet::$missing has no effect in {} on line 15\n",
+                "array(0) {{\n",
+                "}}\n",
+            ),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_indirect_write_targets_overloaded_property"));
+}
+
+#[test]
 fn compile_overloaded_property_reference_assignment_by_value_source_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-property-reference-assignment-by-value-source");
     fs::create_dir_all(&root).unwrap();
