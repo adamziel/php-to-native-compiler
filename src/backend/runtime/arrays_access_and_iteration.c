@@ -2283,6 +2283,17 @@ static PTN_UNUSED int ptn_object_property_storage_initialized(
     return entry != NULL;
 }
 
+static PTN_UNUSED int ptn_readonly_property_storage_initialized(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata == NULL || !metadata->is_readonly) {
+        return 0;
+    }
+    return ptn_object_property_storage_initialized(object, metadata->storage_name) ||
+        ptn_object_property_storage_initialized(object, metadata->display_name);
+}
+
 static PTN_UNUSED PtnObjectPropertyMetadata *ptn_object_mutable_property_metadata(
     PtnObject *object,
     const char *storage_name
@@ -4520,6 +4531,10 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             ptn_object_property_storage_initialized(object, scoped_private->storage_name)) {
             return ptn_duplicate_string(scoped_private->storage_name);
         }
+        if (unset_write &&
+            ptn_readonly_property_storage_initialized(object, scoped_private)) {
+            return ptn_duplicate_string(scoped_private->storage_name);
+        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -4552,7 +4567,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         scoped_private->declaring_class,
                         property,
                         access_scope,
-                        1
+                        1,
+                        scoped_private->is_readonly
                     );
                 } else {
                     if (scoped_private->is_readonly &&
@@ -4588,7 +4604,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     scoped_private->declaring_class,
                     property,
                     access_scope,
-                    1
+                    1,
+                    scoped_private->is_readonly
                 );
             } else {
                 ptn_throw_property_visibility_error(
@@ -4614,6 +4631,10 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             shared_property->is_readonly &&
             shared_property->set_visibility == PTN_PROPERTY_PROTECTED &&
             ptn_object_property_storage_initialized(object, shared_property->storage_name)) {
+            return ptn_duplicate_string(shared_property->storage_name);
+        }
+        if (unset_write &&
+            ptn_readonly_property_storage_initialized(object, shared_property)) {
             return ptn_duplicate_string(shared_property->storage_name);
         }
         if (!ptn_property_visibility_allows(
@@ -4648,7 +4669,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         shared_property->declaring_class,
                         property,
                         access_scope,
-                        1
+                        1,
+                        shared_property->is_readonly
                     );
                 } else {
                     if (shared_property->is_readonly &&
@@ -4684,7 +4706,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     shared_property->declaring_class,
                     property,
                     access_scope,
-                    1
+                    1,
+                    shared_property->is_readonly
                 );
             } else {
                 ptn_throw_property_visibility_error(
@@ -5380,6 +5403,26 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         access_scope,
         property
     );
+    if (metadata != NULL && metadata->is_readonly) {
+        if (entry != NULL) {
+            PtnValue current = ptn_value_clone_deref(entry->value);
+            if (current.type == PTN_OBJECT) {
+                ptn_array_key_free(key);
+                free(storage_key);
+                return current;
+            }
+            ptn_value_destroy(&current);
+        }
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_indirect_modification_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return ptn_null();
+    }
     if (
         metadata != NULL &&
         metadata->hook_has_get &&
@@ -6689,6 +6732,17 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
     const char *hook_declaring_class = ptn_property_hook_get_declaring_class(metadata);
+    if (metadata != NULL && metadata->is_readonly) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_indirect_modification_error(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return;
+    }
     if (
         metadata != NULL &&
         metadata->hook_has_get &&
@@ -7151,14 +7205,16 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         }
     }
     if (blocked_metadata != NULL &&
-        blocked_metadata->set_visibility != blocked_metadata->read_visibility) {
+        blocked_metadata->set_visibility != blocked_metadata->read_visibility &&
+        !ptn_readonly_property_storage_initialized(receiver.as.object, blocked_metadata)) {
         ptn_throw_property_unset_visibility_error(
             runtime,
             blocked_metadata->set_visibility,
             blocked_metadata->declaring_class,
             property,
             access_scope,
-            1
+            1,
+            blocked_metadata->is_readonly
         );
         return;
     }

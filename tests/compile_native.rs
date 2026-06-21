@@ -65942,6 +65942,75 @@ clone $box;
 }
 
 #[test]
+fn compile_readonly_indirect_reference_and_unset_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-indirect-reference-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-indirect-reference-unset.php");
+    let output = root.join("readonly-indirect-reference-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public readonly int $value;
+
+    public function init() {
+        $this->value = 1;
+    }
+
+    public function appendInside() {
+        $this->value[] = 1;
+    }
+
+    public function bindInside(int &$value) {
+        $this->value = &$value;
+    }
+
+    public function unsetInside() {
+        unset($this->value);
+    }
+}
+
+function show(callable $callback) {
+    try {
+        $callback();
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+$box = new Box();
+show(fn() => $box->appendInside());
+$box->init();
+show(fn() => $box->appendInside());
+show(fn() => $box->value[] = 2);
+show(function () use ($box) { unset($box->value); });
+
+$other = new Box();
+$i = 42;
+show(fn() => $other->bindInside($i));
+show(function () use ($other) { unset($other->value); });
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify readonly property Box::$value\n",
+            "Cannot indirectly modify readonly property Box::$value\n",
+            "Cannot indirectly modify readonly property Box::$value\n",
+            "Cannot unset readonly property Box::$value\n",
+            "Cannot indirectly modify readonly property Box::$value\n",
+            "Cannot unset protected(set) readonly property Box::$value from global scope\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_magic_method_visibility_warning_to_native_binary() {
     let root = temp_dir("ptn-native-magic-method-visibility-warning");
     fs::create_dir_all(&root).unwrap();

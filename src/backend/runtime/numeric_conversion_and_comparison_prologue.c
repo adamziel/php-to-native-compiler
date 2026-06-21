@@ -3274,19 +3274,22 @@ static PTN_UNUSED void ptn_throw_property_unset_visibility_error(
     const char *declaring_class,
     const char *property,
     const char *access_scope,
-    int asymmetric_set_visibility
+    int asymmetric_set_visibility,
+    int is_readonly
 ) {
     char message[320];
     const char *scope = access_scope == NULL ? "global scope" : access_scope;
     const char *set_suffix = asymmetric_set_visibility ? "(set)" : "";
+    const char *readonly_suffix = is_readonly ? " readonly" : "";
     int written;
     if (access_scope == NULL) {
         written = snprintf(
             message,
             sizeof(message),
-            "Cannot unset %s%s property %s::$%s from %s",
+            "Cannot unset %s%s%s property %s::$%s from %s",
             ptn_property_visibility_name(visibility),
             set_suffix,
+            readonly_suffix,
             declaring_class,
             property,
             scope
@@ -3295,9 +3298,10 @@ static PTN_UNUSED void ptn_throw_property_unset_visibility_error(
         written = snprintf(
             message,
             sizeof(message),
-            "Cannot unset %s%s property %s::$%s from scope %s",
+            "Cannot unset %s%s%s property %s::$%s from scope %s",
             ptn_property_visibility_name(visibility),
             set_suffix,
+            readonly_suffix,
             declaring_class,
             property,
             scope
