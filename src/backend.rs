@@ -19682,6 +19682,23 @@ fn emit_instruction(
                 } else {
                     emit_array_path_segments(out, values, dimensions)
                 };
+                if pre_eval_root.is_some() {
+                    for warning in &path.deferred_undefined_variable_warnings {
+                        out.push_str("    if (");
+                        out.push_str(&warning.missing_temp);
+                        out.push_str(") {\n");
+                        out.push_str(
+                            "        ptn_emit_undefined_variable_warning(&runtime.diagnostics, \"",
+                        );
+                        out.push_str(&c_string(&warning.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(source_path));
+                        out.push_str("\", ");
+                        out.push_str(&warning.line.to_string());
+                        out.push_str(");\n");
+                        out.push_str("    }\n");
+                    }
+                }
                 let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
@@ -19709,25 +19726,6 @@ fn emit_instruction(
                     out.push_str(", ");
                     emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
                     out.push_str(");\n");
-                    for warning in &path.deferred_undefined_variable_warnings {
-                        out.push_str("    if (");
-                        out.push_str(&warning.missing_temp);
-                        out.push_str(" && ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
-                        out.push_str(&c_string(array));
-                        out.push_str("\") == ");
-                        out.push_str(root_epoch_temp);
-                        out.push_str(") {\n");
-                        out.push_str(
-                            "        ptn_emit_undefined_variable_warning(&runtime.diagnostics, \"",
-                        );
-                        out.push_str(&c_string(&warning.name));
-                        out.push_str("\", \"");
-                        out.push_str(&c_string(source_path));
-                        out.push_str("\", ");
-                        out.push_str(&warning.line.to_string());
-                        out.push_str(");\n");
-                        out.push_str("    }\n");
-                    }
                 } else {
                     if path.deferred_undefined_variable_warnings.is_empty() {
                         out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
@@ -30454,11 +30452,39 @@ impl ValueEmitter {
             let has_deferred_dimension_warnings = dimensions
                 .iter()
                 .any(|dimension| matches!(dimension, Some(ValueExpr::Load { .. })));
-            let path = if has_deferred_dimension_warnings {
+            let pre_eval_root = if dimensions.len() > 1 {
+                let root_lookup_temp = self.next_temp();
+                let root_temp = self.next_temp();
+                let root_epoch_temp = self.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&root_temp);
+                out.push_str(" = ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".exists ? ptn_value_clone_deref(");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".value) : ptn_null();\n");
+                out.push_str("    uint64_t ");
+                out.push_str(&root_epoch_temp);
+                out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
+                Some((root_temp, root_epoch_temp))
+            } else {
+                None
+            };
+            let path = if pre_eval_root.is_some() || has_deferred_dimension_warnings {
                 emit_array_path_segments_with_deferred_variable_warnings(out, self, dimensions)
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
+            if pre_eval_root.is_some() {
+                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
+            }
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -30469,30 +30495,81 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            if path.deferred_undefined_variable_warnings.is_empty() {
-                out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
-            } else {
+            if let Some((root_temp, root_epoch_temp)) = &pre_eval_root {
+                out.push_str(";\n");
+                out.push_str("    if (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\") != ");
+                out.push_str(root_epoch_temp);
+                out.push_str(") {\n");
                 out.push_str(
-                    " = ptn_runtime_array_path_set_result_with_key_diagnostics(&runtime, \"",
+                    "        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ",
                 );
-            }
-            out.push_str(&c_string(array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&snapshot_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            if !path.deferred_undefined_variable_warnings.is_empty() {
+                out.push_str(root_temp);
                 out.push_str(", ");
-                emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                if path.deferred_undefined_variable_warnings.is_empty() {
+                    out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
+                } else {
+                    out.push_str(
+                        " = ptn_runtime_array_path_set_result_with_key_diagnostics(&runtime, \"",
+                    );
+                }
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&snapshot_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                if !path.deferred_undefined_variable_warnings.is_empty() {
+                    out.push_str(", ");
+                    emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
+                }
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                if path.deferred_undefined_variable_warnings.is_empty() {
+                    out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
+                } else {
+                    out.push_str(
+                        " = ptn_runtime_array_path_set_result_with_key_diagnostics(&runtime, \"",
+                    );
+                }
+                out.push_str(&c_string(array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&snapshot_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                if !path.deferred_undefined_variable_warnings.is_empty() {
+                    out.push_str(", ");
+                    emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
+                }
+                out.push_str(");\n");
+                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
             }
-            out.push_str(");\n");
-            emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);
+            if let Some((root_temp, _)) = pre_eval_root {
+                emit_value_cleanup(out, "    ", &root_temp);
+            }
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
