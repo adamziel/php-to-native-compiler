@@ -310,6 +310,12 @@ static int ptn_value_contains_pending_destructor_impl(
     if (value.type != PTN_OBJECT || value.as.object == NULL) {
         return 0;
     }
+    if (value.as.object->destructor_called) {
+        PtnRuntime *root = ptn_runtime_root(value.as.object->lifecycle_runtime);
+        if (root != NULL && root->gc_running) {
+            return 1;
+        }
+    }
     if (ptn_object_has_pending_declared_destructor(value.as.object)) {
         return 1;
     }

@@ -12370,6 +12370,50 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_destructor_component_unset_graph_counts_once_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-component-unset-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-component-unset-count.php");
+    let output = root.join("gc-destructor-component-unset-count-bin");
+    fs::write(
+        &input,
+        "<?php
+class Node {
+    public $name;
+    public $children;
+    public $parent;
+    function __construct($name) {
+        $this->name = $name;
+        $this->parent = null;
+    }
+    function insert($node) {
+        $node->parent = $this;
+        $this->children[] = $node;
+    }
+    function __destruct() {
+        unset($this->name, $this->children, $this->parent);
+    }
+}
+$a = new Node('A');
+$b = new Node('B');
+$c = new Node('C');
+$a->insert($b);
+$a->insert($c);
+unset($a, $b, $c);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_unreachable_destructor_cycle_resurrection_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-cycle-resurrection");
     fs::create_dir_all(&root).unwrap();
