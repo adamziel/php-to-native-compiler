@@ -171,6 +171,7 @@ pub fn emit_c(module: &Module) -> String {
         runtime_requirements.dynamic_function_dispatch,
         needs_method_dispatch,
     );
+    emit_function_static_variable_provider_prototypes(&mut out, &module.functions);
     emit_include_helpers(
         &mut out,
         &module.includes,
@@ -4741,6 +4742,17 @@ fn function_static_local_bindings(function: &FunctionDecl) -> Vec<(&str, Option<
 
 fn function_static_variables_provider_name(function_index: usize) -> String {
     format!("ptn_function_{function_index}_static_variables")
+}
+
+fn emit_function_static_variable_provider_prototypes(out: &mut String, functions: &[FunctionDecl]) {
+    for (function_index, function) in functions.iter().enumerate() {
+        if function_static_local_bindings(function).is_empty() {
+            continue;
+        }
+        out.push_str("\nstatic PtnValue ");
+        out.push_str(&function_static_variables_provider_name(function_index));
+        out.push_str("(PtnRuntime *runtime);\n");
+    }
 }
 
 fn c_identifier_fragment(value: &str) -> String {
@@ -33780,6 +33792,16 @@ impl ValueEmitter {
         out.push_str(" = ptn_bool(ptn_exception_type_matches_name(");
         out.push_str(&resolved_temp);
         out.push_str(".as.exception->class_name, ");
+        out.push_str(&expected_class_temp);
+        out.push_str("));\n");
+        out.push_str("    } else if (");
+        out.push_str(&expected_class_temp);
+        out.push_str(" != NULL && ");
+        out.push_str(&resolved_temp);
+        out.push_str(".type == PTN_CLOSURE) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(ptn_ascii_case_equal(\"Closure\", ");
         out.push_str(&expected_class_temp);
         out.push_str("));\n");
         out.push_str("    }\n");

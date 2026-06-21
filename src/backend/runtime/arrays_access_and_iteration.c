@@ -1581,7 +1581,12 @@ static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
         return array_value;
     }
 
-    if (value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
+    if (value.type == PTN_CLOSURE) {
+        ptn_array_set_entry(array, ptn_array_int_key(0), ptn_value_clone(value));
+        return array_value;
+    }
+
+    if (value.type == PTN_EXCEPTION) {
         return array_value;
     }
 
@@ -1617,12 +1622,34 @@ static PTN_UNUSED void ptn_emit_non_object_property_read_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static PTN_UNUSED void ptn_throw_closure_dynamic_property_error(
+    PtnRuntime *runtime,
+    const char *property,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot create dynamic property Closure::$%s",
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_property_assignment_on_non_object(
     PtnRuntime *runtime,
     const char *property,
     PtnValue receiver,
     size_t line
 ) {
+    if (ptn_value_deref(receiver).type == PTN_CLOSURE) {
+        ptn_throw_closure_dynamic_property_error(runtime, property, line);
+        return;
+    }
     char message[192];
     int written = snprintf(
         message,
@@ -1663,6 +1690,10 @@ static PTN_UNUSED void ptn_throw_property_modification_on_non_object(
     PtnValue receiver,
     size_t line
 ) {
+    if (ptn_value_deref(receiver).type == PTN_CLOSURE) {
+        ptn_throw_closure_dynamic_property_error(runtime, property, line);
+        return;
+    }
     char message[192];
     int written = snprintf(
         message,

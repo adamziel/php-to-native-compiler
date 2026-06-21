@@ -36338,6 +36338,115 @@ var_dump($factory);
 }
 
 #[test]
+fn compile_closure_object_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-object-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-object-edges.php");
+    let output = root.join("closure-object-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+$closure = function () {
+    return 2;
+};
+
+$array = (array) $closure;
+var_dump($array[0] === $closure);
+var_dump($array[0]());
+
+try {
+    [function () {} => 'bad'];
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $closure->prop = 1;
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump($closure instanceof Closure);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(2)\n",
+            "Cannot access offset of type Closure on array\n",
+            "Cannot create dynamic property Closure::$prop\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_key_from_literal_value"));
+    assert!(c_source.contains("Cannot create dynamic property Closure::$%s"));
+    assert!(c_source.contains("ptn_ascii_case_equal(\"Closure\""));
+}
+
+#[test]
+fn compile_closure_debug_metadata_includes_captures_this_and_print_r_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-debug-metadata-captures");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-debug-metadata-captures.php");
+    let output = root.join("closure-debug-metadata-captures-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public function make() {
+        $used = 7;
+        return function ($param) use ($used) {
+            static $s = 3;
+            return $this;
+        };
+    }
+}
+
+$closure = (new Box())->make();
+var_dump($closure);
+print_r($closure);
+var_dump((new ReflectionFunction($closure))->getStaticVariables());
+
+$recursive = function () use (&$recursive) {};
+var_dump($recursive);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("[\"static\"]=>\n  array(2) {\n    [\"used\"]=>\n    int(7)\n    [\"s\"]=>\n    int(3)\n  }\n")
+    );
+    assert!(stdout.contains("[\"this\"]=>\n  object(Box)#"));
+    assert!(stdout.contains(
+        "[static] => Array\n        (\n            [used] => 7\n            [s] => 3\n        )\n"
+    ));
+    assert!(stdout.contains("[this] => Box Object\n        (\n        )\n"));
+    assert!(stdout.contains("array(2) {\n  [\"used\"]=>\n  int(7)\n  [\"s\"]=>\n  int(3)\n}\n"));
+    assert!(stdout.contains("[\"recursive\"]=>\n    *RECURSION*\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_static_variables"));
+    assert!(c_source.contains("ptn_print_r_closure"));
+    assert!(c_source.contains("ptn_dump_seen_closures_contains"));
+}
+
+#[test]
 fn compile_call_user_func_by_ref_class_type_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-by-ref-class-type");
     fs::create_dir_all(&root).unwrap();

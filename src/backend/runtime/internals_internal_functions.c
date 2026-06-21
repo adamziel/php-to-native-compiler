@@ -514,7 +514,9 @@ typedef struct {
 } PtnClosureSourceLocation;
 
 static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure);
+static int ptn_closure_has_bound_this(PtnClosure *closure, PtnValue *this_out);
 static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *closure);
+static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *closure);
 static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure);
 
 static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
@@ -994,6 +996,9 @@ typedef struct {
     PtnObject **objects;
     size_t object_len;
     size_t object_capacity;
+    PtnClosure **closures;
+    size_t closure_len;
+    size_t closure_capacity;
 } PtnDirectValueDumpSeen;
 
 static PTN_UNUSED void ptn_direct_value_dump_seen_init(PtnDirectValueDumpSeen *seen) {
@@ -1003,6 +1008,9 @@ static PTN_UNUSED void ptn_direct_value_dump_seen_init(PtnDirectValueDumpSeen *s
     seen->objects = NULL;
     seen->object_len = 0;
     seen->object_capacity = 0;
+    seen->closures = NULL;
+    seen->closure_len = 0;
+    seen->closure_capacity = 0;
 }
 
 static PTN_UNUSED void ptn_direct_value_dump_seen_free(PtnDirectValueDumpSeen *seen) {
@@ -1014,6 +1022,10 @@ static PTN_UNUSED void ptn_direct_value_dump_seen_free(PtnDirectValueDumpSeen *s
     seen->objects = NULL;
     seen->object_len = 0;
     seen->object_capacity = 0;
+    free(seen->closures);
+    seen->closures = NULL;
+    seen->closure_len = 0;
+    seen->closure_capacity = 0;
 }
 
 static PTN_UNUSED int ptn_direct_value_dump_seen_array_contains(PtnDirectValueDumpSeen *seen, PtnArray *array) {
@@ -1075,6 +1087,43 @@ static PTN_UNUSED void ptn_direct_value_dump_seen_object_push(PtnDirectValueDump
 static PTN_UNUSED void ptn_direct_value_dump_seen_object_pop(PtnDirectValueDumpSeen *seen) {
     if (seen->object_len > 0) {
         seen->object_len--;
+    }
+}
+
+static PTN_UNUSED int ptn_direct_value_dump_seen_closure_contains(
+    PtnDirectValueDumpSeen *seen,
+    PtnClosure *closure
+) {
+    for (size_t i = 0; i < seen->closure_len; i++) {
+        if (seen->closures[i] == closure) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_direct_value_dump_seen_closure_push(
+    PtnDirectValueDumpSeen *seen,
+    PtnClosure *closure
+) {
+    if (seen->closure_len == seen->closure_capacity) {
+        size_t new_capacity = seen->closure_capacity == 0 ? 8 : seen->closure_capacity * 2;
+        if (new_capacity < seen->closure_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnClosure **new_closures = realloc(seen->closures, new_capacity * sizeof(PtnClosure *));
+        if (new_closures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->closures = new_closures;
+        seen->closure_capacity = new_capacity;
+    }
+    seen->closures[seen->closure_len++] = closure;
+}
+
+static PTN_UNUSED void ptn_direct_value_dump_seen_closure_pop(PtnDirectValueDumpSeen *seen) {
+    if (seen->closure_len > 0) {
+        seen->closure_len--;
     }
 }
 
@@ -1584,6 +1633,10 @@ static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnRuntime *runtime
     if (ptn_closure_has_static_variables(runtime, closure)) {
         count++;
     }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
+        count++;
+    }
     if (metadata.found && metadata.parameter_count > 0) {
         count++;
     }
@@ -1620,12 +1673,14 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure_parameters(
 static PTN_UNUSED void ptn_direct_value_var_dump_closure(
     PtnRuntime *runtime,
     PtnClosure *closure,
-    size_t indent
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
 ) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t field_count = ptn_direct_closure_dump_field_count(runtime, closure);
     ptn_direct_dump_printf(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    ptn_direct_value_dump_seen_closure_push(seen, closure);
     if (location.found) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"name\"]=>\n");
@@ -1644,27 +1699,31 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "int(%zu)\n", location.line);
     }
-    if (ptn_closure_has_static_variables(runtime, closure)) {
-        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
-        ptn_direct_value_var_dump_indent(runtime, indent + 1);
-        ptn_direct_dump_write_cstr(runtime, "[\"static\"]=>\n");
-        PtnDirectValueDumpSeen static_seen;
-        ptn_direct_value_dump_seen_init(&static_seen);
-        ptn_direct_value_var_dump_value_indented(runtime, static_variables, indent + 1, &static_seen);
-        ptn_direct_value_dump_seen_free(&static_seen);
-        ptn_value_destroy(&static_variables);
-    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"function\"]=>\n");
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
     }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_closure_static_variables(runtime, closure);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"static\"]=>\n");
+        ptn_direct_value_var_dump_value_indented(runtime, static_variables, indent + 1, seen);
+        ptn_value_destroy(&static_variables);
+    }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"this\"]=>\n");
+        ptn_direct_value_var_dump_value_indented(runtime, closure_this, indent + 1, seen);
+    }
     if (metadata.found && metadata.parameter_count > 0) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"parameter\"]=>\n");
         ptn_direct_value_var_dump_closure_parameters(runtime, metadata, indent + 1);
     }
+    ptn_direct_value_dump_seen_closure_pop(seen);
     ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
@@ -1917,6 +1976,11 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
         ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
         return;
     }
+    if (value.type == PTN_CLOSURE && ptn_direct_value_dump_seen_closure_contains(seen, value.as.closure)) {
+        ptn_direct_value_var_dump_indent(runtime, indent);
+        ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
+        return;
+    }
 
     ptn_direct_value_var_dump_indent(runtime, indent);
     if (print_reference) {
@@ -1994,7 +2058,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             break;
         }
         case PTN_CLOSURE:
-            ptn_direct_value_var_dump_closure(runtime, value.as.closure, indent);
+            ptn_direct_value_var_dump_closure(runtime, value.as.closure, indent, seen);
             break;
         case PTN_EXCEPTION:
             ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
@@ -2601,6 +2665,9 @@ typedef struct {
     PtnObject **objects;
     size_t object_len;
     size_t object_capacity;
+    PtnClosure **closures;
+    size_t closure_len;
+    size_t closure_capacity;
 } PtnDirectDumpSeen;
 
 static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
@@ -2610,17 +2677,24 @@ static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
     seen->objects = NULL;
     seen->object_len = 0;
     seen->object_capacity = 0;
+    seen->closures = NULL;
+    seen->closure_len = 0;
+    seen->closure_capacity = 0;
 }
 
 static PTN_UNUSED void ptn_direct_dump_seen_free(PtnDirectDumpSeen *seen) {
     free(seen->arrays);
     free(seen->objects);
+    free(seen->closures);
     seen->arrays = NULL;
     seen->objects = NULL;
+    seen->closures = NULL;
     seen->array_len = 0;
     seen->object_len = 0;
+    seen->closure_len = 0;
     seen->array_capacity = 0;
     seen->object_capacity = 0;
+    seen->closure_capacity = 0;
 }
 
 static PTN_UNUSED int ptn_direct_dump_seen_array_contains(PtnDirectDumpSeen *seen, PtnArray *array) {
@@ -2682,6 +2756,43 @@ static PTN_UNUSED void ptn_direct_dump_seen_object_push(PtnDirectDumpSeen *seen,
 static PTN_UNUSED void ptn_direct_dump_seen_object_pop(PtnDirectDumpSeen *seen) {
     if (seen->object_len > 0) {
         seen->object_len--;
+    }
+}
+
+static PTN_UNUSED int ptn_direct_dump_seen_closure_contains(
+    PtnDirectDumpSeen *seen,
+    PtnClosure *closure
+) {
+    for (size_t i = 0; i < seen->closure_len; i++) {
+        if (seen->closures[i] == closure) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_closure_push(
+    PtnDirectDumpSeen *seen,
+    PtnClosure *closure
+) {
+    if (seen->closure_len == seen->closure_capacity) {
+        size_t new_capacity = seen->closure_capacity == 0 ? 8 : seen->closure_capacity * 2;
+        if (new_capacity < seen->closure_capacity || new_capacity > SIZE_MAX / sizeof(PtnClosure *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnClosure **new_closures = realloc(seen->closures, new_capacity * sizeof(PtnClosure *));
+        if (new_closures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->closures = new_closures;
+        seen->closure_capacity = new_capacity;
+    }
+    seen->closures[seen->closure_len++] = closure;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_closure_pop(PtnDirectDumpSeen *seen) {
+    if (seen->closure_len > 0) {
+        seen->closure_len--;
     }
 }
 
@@ -2986,12 +3097,14 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
 static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
     PtnRuntime *runtime,
     PtnClosure *closure,
-    size_t indent
+    size_t indent,
+    PtnDirectDumpSeen *seen
 ) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t field_count = ptn_closure_dump_field_count(runtime, closure);
     ptn_direct_var_dump_writef(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    ptn_direct_dump_seen_closure_push(seen, closure);
     if (location.found) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_output_write_cstr(runtime, "[\"name\"]=>\n");
@@ -3010,16 +3123,6 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_direct_var_dump_writef(runtime, "int(%zu)\n", location.line);
     }
-    if (ptn_closure_has_static_variables(runtime, closure)) {
-        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
-        ptn_direct_var_dump_indent(runtime, indent + 1);
-        ptn_output_write_cstr(runtime, "[\"static\"]=>\n");
-        PtnDirectDumpSeen static_seen;
-        ptn_direct_dump_seen_init(&static_seen);
-        ptn_direct_var_dump_value_indented(runtime, static_variables, indent + 1, &static_seen);
-        ptn_direct_dump_seen_free(&static_seen);
-        ptn_value_destroy(&static_variables);
-    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_output_write_cstr(runtime, "[\"function\"]=>\n");
@@ -3027,6 +3130,19 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
         ptn_direct_var_dump_writef(runtime, "string(%zu) \"", strlen(metadata.name));
         ptn_output_write_cstr(runtime, metadata.name);
         ptn_output_write_cstr(runtime, "\"\n");
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_closure_static_variables(runtime, closure);
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"static\"]=>\n");
+        ptn_direct_var_dump_value_indented(runtime, static_variables, indent + 1, seen);
+        ptn_value_destroy(&static_variables);
+    }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"this\"]=>\n");
+        ptn_direct_var_dump_value_indented(runtime, closure_this, indent + 1, seen);
     }
     if (metadata.found && metadata.parameter_count > 0) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
@@ -3052,6 +3168,7 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_output_write_cstr(runtime, "}\n");
     }
+    ptn_direct_dump_seen_closure_pop(seen);
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_output_write_cstr(runtime, "}\n");
 }
@@ -3072,6 +3189,11 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
         return;
     }
     if (value.type == PTN_OBJECT && ptn_direct_dump_seen_object_contains(seen, value.as.object)) {
+        ptn_direct_var_dump_indent(runtime, indent);
+        ptn_output_write_cstr(runtime, "*RECURSION*\n");
+        return;
+    }
+    if (value.type == PTN_CLOSURE && ptn_direct_dump_seen_closure_contains(seen, value.as.closure)) {
         ptn_direct_var_dump_indent(runtime, indent);
         ptn_output_write_cstr(runtime, "*RECURSION*\n");
         return;
@@ -3125,7 +3247,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             ptn_direct_var_dump_object_indented(runtime, value.as.object, indent, seen);
             break;
         case PTN_CLOSURE:
-            ptn_direct_var_dump_closure_indented(runtime, value.as.closure, indent);
+            ptn_direct_var_dump_closure_indented(runtime, value.as.closure, indent, seen);
             break;
         case PTN_EXCEPTION:
             ptn_direct_var_dump_exception_indented(runtime, value.as.exception, indent, seen);
@@ -3245,13 +3367,72 @@ static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure)
     return location;
 }
 
+static int ptn_closure_has_bound_this(PtnClosure *closure, PtnValue *this_out) {
+    if (closure == NULL) {
+        return 0;
+    }
+    return ptn_symbols_get(&closure->captures, "this", this_out);
+}
+
+static size_t ptn_closure_non_this_capture_count(PtnClosure *closure) {
+    if (closure == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < closure->captures.len; i++) {
+        PtnSymbol *capture = &closure->captures.items[i];
+        if (strcmp(capture->name, "this") != 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *closure) {
     if (closure == NULL) {
         return 0;
     }
+    if (ptn_closure_non_this_capture_count(closure) > 0) {
+        return 1;
+    }
     PtnFunctionMetadata metadata = closure->metadata;
     return metadata.static_variables_provider != NULL ||
         ptn_runtime_static_local_count(runtime, closure->function_index) > 0;
+}
+
+static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *closure) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (closure == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < closure->captures.len; i++) {
+        PtnSymbol *capture = &closure->captures.items[i];
+        if (strcmp(capture->name, "this") == 0) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(capture->name),
+            ptn_value_clone(capture->value)
+        );
+    }
+
+    PtnValue static_locals =
+        ptn_runtime_static_local_values(runtime, closure->function_index, closure->metadata);
+    PtnValue resolved_static_locals = ptn_value_deref(static_locals);
+    if (resolved_static_locals.type == PTN_ARRAY) {
+        PtnArray *array = resolved_static_locals.as.array;
+        for (size_t i = 0; i < array->len; i++) {
+            PtnArrayEntry *entry = &array->entries[i];
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(entry->value)
+            );
+        }
+    }
+    ptn_value_destroy(&static_locals);
+    return result;
 }
 
 static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure) {
@@ -3265,6 +3446,10 @@ static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *clos
         count++;
     }
     if (ptn_closure_has_static_variables(runtime, closure)) {
+        count++;
+    }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
         count++;
     }
     if (metadata.found && metadata.parameter_count > 0) {
@@ -4380,6 +4565,9 @@ typedef struct {
     PtnObject **objects;
     size_t object_len;
     size_t object_capacity;
+    PtnClosure **closures;
+    size_t closure_len;
+    size_t closure_capacity;
 } PtnDumpSeenArrays;
 
 static void ptn_dump_seen_arrays_init(PtnDumpSeenArrays *seen) {
@@ -4389,6 +4577,9 @@ static void ptn_dump_seen_arrays_init(PtnDumpSeenArrays *seen) {
     seen->objects = NULL;
     seen->object_len = 0;
     seen->object_capacity = 0;
+    seen->closures = NULL;
+    seen->closure_len = 0;
+    seen->closure_capacity = 0;
 }
 
 static void ptn_dump_seen_arrays_free(PtnDumpSeenArrays *seen) {
@@ -4400,6 +4591,10 @@ static void ptn_dump_seen_arrays_free(PtnDumpSeenArrays *seen) {
     seen->objects = NULL;
     seen->object_len = 0;
     seen->object_capacity = 0;
+    free(seen->closures);
+    seen->closures = NULL;
+    seen->closure_len = 0;
+    seen->closure_capacity = 0;
 }
 
 static int ptn_dump_seen_arrays_contains(PtnDumpSeenArrays *seen, PtnArray *array) {
@@ -4461,6 +4656,37 @@ static void ptn_dump_seen_objects_push(PtnDumpSeenArrays *seen, PtnObject *objec
 static void ptn_dump_seen_objects_pop(PtnDumpSeenArrays *seen) {
     if (seen->object_len > 0) {
         seen->object_len--;
+    }
+}
+
+static int ptn_dump_seen_closures_contains(PtnDumpSeenArrays *seen, PtnClosure *closure) {
+    for (size_t i = 0; i < seen->closure_len; i++) {
+        if (seen->closures[i] == closure) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_dump_seen_closures_push(PtnDumpSeenArrays *seen, PtnClosure *closure) {
+    if (seen->closure_len == seen->closure_capacity) {
+        size_t new_capacity = seen->closure_capacity == 0 ? 8 : seen->closure_capacity * 2;
+        if (new_capacity < seen->closure_capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnClosure **new_closures = realloc(seen->closures, new_capacity * sizeof(PtnClosure *));
+        if (new_closures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->closures = new_closures;
+        seen->closure_capacity = new_capacity;
+    }
+    seen->closures[seen->closure_len++] = closure;
+}
+
+static void ptn_dump_seen_closures_pop(PtnDumpSeenArrays *seen) {
+    if (seen->closure_len > 0) {
+        seen->closure_len--;
     }
 }
 
@@ -5352,7 +5578,7 @@ static void ptn_var_dump_closure_parameters(PtnFunctionMetadata metadata, size_t
     fputs("}\n", stdout);
 }
 
-static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
+static void ptn_var_dump_closure(PtnClosure *closure, size_t indent, PtnDumpSeenArrays *seen) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     PtnRuntime *runtime = ptn_var_dump_active_runtime != NULL
@@ -5360,6 +5586,7 @@ static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
         : closure->lifecycle_runtime;
     size_t field_count = ptn_closure_dump_field_count(runtime, closure);
     printf("object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    ptn_dump_seen_closures_push(seen, closure);
     if (location.found) {
         ptn_var_dump_string_property(
             indent,
@@ -5373,27 +5600,31 @@ static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
         ptn_var_dump_indent(indent + 1);
         printf("int(%zu)\n", location.line);
     }
-    if (ptn_closure_has_static_variables(runtime, closure)) {
-        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
-        ptn_var_dump_indent(indent + 1);
-        fputs("[\"static\"]=>\n", stdout);
-        PtnDumpSeenArrays static_seen;
-        ptn_dump_seen_arrays_init(&static_seen);
-        ptn_var_dump_value_indented(static_variables, indent + 1, &static_seen);
-        ptn_dump_seen_arrays_free(&static_seen);
-        ptn_value_destroy(&static_variables);
-    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_var_dump_indent(indent + 1);
         fputs("[\"function\"]=>\n", stdout);
         ptn_var_dump_indent(indent + 1);
         printf("string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
     }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_closure_static_variables(runtime, closure);
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"static\"]=>\n", stdout);
+        ptn_var_dump_value_indented(static_variables, indent + 1, seen);
+        ptn_value_destroy(&static_variables);
+    }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"this\"]=>\n", stdout);
+        ptn_var_dump_value_indented(closure_this, indent + 1, seen);
+    }
     if (metadata.found && metadata.parameter_count > 0) {
         ptn_var_dump_indent(indent + 1);
         fputs("[\"parameter\"]=>\n", stdout);
         ptn_var_dump_closure_parameters(metadata, indent + 1);
     }
+    ptn_dump_seen_closures_pop(seen);
     ptn_var_dump_indent(indent);
     fputs("}\n", stdout);
 }
@@ -5446,6 +5677,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         return;
     }
     if (value.type == PTN_OBJECT && ptn_dump_seen_objects_contains(seen, value.as.object)) {
+        ptn_var_dump_indent(indent);
+        fputs("*RECURSION*\n", stdout);
+        return;
+    }
+    if (value.type == PTN_CLOSURE && ptn_dump_seen_closures_contains(seen, value.as.closure)) {
         ptn_var_dump_indent(indent);
         fputs("*RECURSION*\n", stdout);
         return;
@@ -5525,7 +5761,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             break;
         }
         case PTN_CLOSURE:
-            ptn_var_dump_closure(value.as.closure, indent);
+            if (ptn_dump_seen_closures_contains(seen, value.as.closure)) {
+                fputs("*RECURSION*\n", stdout);
+                break;
+            }
+            ptn_var_dump_closure(value.as.closure, indent, seen);
             break;
         case PTN_EXCEPTION:
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
@@ -5714,7 +5954,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             }
             break;
         case PTN_CLOSURE:
-            ptn_var_dump_closure(value.as.closure, indent);
+            ptn_var_dump_closure(value.as.closure, indent, seen);
             break;
         case PTN_EXCEPTION:
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
@@ -5956,7 +6196,7 @@ static void ptn_print_r_array(
         ptn_print_r_key(buffer, array->entries[i].key);
         ptn_string_buffer_append(buffer, "] => ");
         PtnValue entry_value = ptn_value_deref(array->entries[i].value);
-        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT || entry_value.type == PTN_CLOSURE) {
             ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         } else {
@@ -6003,7 +6243,7 @@ static void ptn_print_r_object(
             ptn_print_r_object_key(buffer, object, object->properties->entries[i].key);
             ptn_string_buffer_append(buffer, "] => ");
             PtnValue entry_value = ptn_value_deref(object->properties->entries[i].value);
-            if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+            if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT || entry_value.type == PTN_CLOSURE) {
                 ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
                 ptn_string_buffer_append_char(buffer, '\n');
             } else {
@@ -6033,7 +6273,7 @@ static void ptn_print_r_object(
                 ptn_print_r_key(buffer, resolved_array.as.array->entries[i].key);
                 ptn_string_buffer_append(buffer, "] => ");
                 PtnValue entry_value = ptn_value_deref(resolved_array.as.array->entries[i].value);
-                if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+                if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT || entry_value.type == PTN_CLOSURE) {
                     ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
                     ptn_string_buffer_append_char(buffer, '\n');
                 } else {
@@ -6058,7 +6298,7 @@ static void ptn_print_r_object(
         ptn_print_r_object_key(buffer, object, object->properties->entries[i].key);
         ptn_string_buffer_append(buffer, "] => ");
         PtnValue entry_value = ptn_value_deref(object->properties->entries[i].value);
-        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT || entry_value.type == PTN_CLOSURE) {
             ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         } else {
@@ -6067,6 +6307,110 @@ static void ptn_print_r_object(
         }
     }
     ptn_dump_seen_objects_pop(seen);
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, ")\n");
+}
+
+static PtnValue ptn_closure_parameter_print_array(PtnFunctionMetadata metadata) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < metadata.parameter_count; i++) {
+        char fallback[32];
+        const char *parameter_name = ptn_function_metadata_parameter_name(
+            metadata,
+            i,
+            fallback,
+            sizeof(fallback)
+        );
+        const char *requiredness = i < metadata.required_parameter_count
+            ? "<required>"
+            : "<optional>";
+        size_t parameter_len = strlen(parameter_name);
+        char *key = malloc(parameter_len + 2);
+        if (key == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        key[0] = '$';
+        memcpy(key + 1, parameter_name, parameter_len + 1);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key(key), ptn_string(requiredness));
+        free(key);
+    }
+    return result;
+}
+
+static void ptn_print_r_closure_property(
+    PtnStringBuffer *buffer,
+    const char *name,
+    PtnValue value,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
+    ptn_string_buffer_append_indent(buffer, indent + 4);
+    ptn_string_buffer_append_char(buffer, '[');
+    ptn_string_buffer_append(buffer, name);
+    ptn_string_buffer_append(buffer, "] => ");
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY || resolved.type == PTN_OBJECT || resolved.type == PTN_CLOSURE) {
+        ptn_print_r_value_indented(buffer, resolved, indent + 8, seen);
+    } else {
+        ptn_print_r_value_indented(buffer, resolved, indent, seen);
+    }
+    ptn_string_buffer_append_char(buffer, '\n');
+}
+
+static void ptn_print_r_closure(
+    PtnStringBuffer *buffer,
+    PtnClosure *closure,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
+    PtnRuntime *runtime = closure->lifecycle_runtime;
+    PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
+    ptn_string_buffer_append(buffer, "Closure Object\n");
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "(\n");
+    ptn_dump_seen_closures_push(seen, closure);
+    if (location.found) {
+        ptn_print_r_closure_property(
+            buffer,
+            "name",
+            ptn_string_literal(closure->display_name, strlen(closure->display_name)),
+            indent,
+            seen
+        );
+        ptn_print_r_closure_property(
+            buffer,
+            "file",
+            ptn_string_literal(location.file, location.file_len),
+            indent,
+            seen
+        );
+        ptn_print_r_closure_property(buffer, "line", ptn_int((int64_t)location.line), indent, seen);
+    }
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        ptn_print_r_closure_property(
+            buffer,
+            "function",
+            ptn_string_literal(metadata.name, strlen(metadata.name)),
+            indent,
+            seen
+        );
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_closure_static_variables(runtime, closure);
+        ptn_print_r_closure_property(buffer, "static", static_variables, indent, seen);
+        ptn_value_destroy(&static_variables);
+    }
+    PtnValue closure_this;
+    if (ptn_closure_has_bound_this(closure, &closure_this)) {
+        ptn_print_r_closure_property(buffer, "this", closure_this, indent, seen);
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        PtnValue parameters = ptn_closure_parameter_print_array(metadata);
+        ptn_print_r_closure_property(buffer, "parameter", parameters, indent, seen);
+        ptn_value_destroy(&parameters);
+    }
+    ptn_dump_seen_closures_pop(seen);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, ")\n");
 }
@@ -6119,7 +6463,12 @@ static void ptn_print_r_value_indented(
             ptn_print_r_object(buffer, value.as.object, indent, seen);
             break;
         case PTN_CLOSURE:
-            ptn_string_buffer_append(buffer, "Object");
+            if (ptn_dump_seen_closures_contains(seen, value.as.closure)) {
+                ptn_string_buffer_append(buffer, "Closure Object\n");
+                ptn_string_buffer_append(buffer, " *RECURSION*");
+                break;
+            }
+            ptn_print_r_closure(buffer, value.as.closure, indent, seen);
             break;
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");
@@ -104459,6 +104808,12 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return ptn_reflection_function_doc_comment(metadata);
     }
     if (ptn_ascii_case_equal(name, "getStaticVariables")) {
+        if (data->has_closure) {
+            PtnValue closure = ptn_value_deref(data->closure);
+            if (closure.type == PTN_CLOSURE) {
+                return ptn_closure_static_variables(runtime, closure.as.closure);
+            }
+        }
         return ptn_reflection_function_static_variables(runtime, metadata);
     }
     if (ptn_ascii_case_equal(name, "getName")) {

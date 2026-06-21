@@ -532,6 +532,79 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line);
 static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, PtnResource *resource, size_t line);
 static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array);
+static PTN_UNUSED void ptn_throw_exception_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+);
+
+static PTN_UNUSED const char *ptn_array_key_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object != NULL && value.as.object->class_name != NULL
+                ? value.as.object->class_name
+                : "stdClass";
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception != NULL && value.as.exception->class_name != NULL
+                ? value.as.exception->class_name
+                : "Exception";
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "unknown";
+}
+
+static PTN_UNUSED int ptn_array_key_from_literal_value(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line,
+    PtnArrayKey *key_out
+) {
+    key_value = ptn_value_deref(key_value);
+    if (
+        key_value.type == PTN_ARRAY ||
+        key_value.type == PTN_OBJECT ||
+        key_value.type == PTN_CLOSURE ||
+        key_value.type == PTN_EXCEPTION
+    ) {
+        if (runtime == NULL) {
+            ptn_abort_illegal_array_key();
+        }
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot access offset of type %s on array",
+            ptn_array_key_type_name(key_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return 0;
+    }
+    *key_out = ptn_array_key_from_value(key_value);
+    return 1;
+}
 
 static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     PtnRuntime *runtime,
@@ -581,7 +654,9 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
         }
         PtnArrayKey key;
         if (entries[i].has_key) {
-            key = ptn_array_key_from_value(key_value);
+            if (!ptn_array_key_from_literal_value(runtime, key_value, line, &key)) {
+                continue;
+            }
         } else {
             if (runtime != NULL && !ptn_array_append_key_available(runtime, array)) {
                 continue;
