@@ -14493,6 +14493,90 @@ var_dump($constructorArray);
 }
 
 #[test]
+fn compile_named_call_forwarding_and_unpack_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-named-call-forwarding-unpack-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("named-call-forwarding-unpack-edges.php");
+    let output = root.join("named-call-forwarding-unpack-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function inc_named($a = null, &$b = null) {
+    $b++;
+}
+
+$ary = ['b' => 0];
+$copy = $ary;
+inc_named(...$ary);
+var_dump($ary, $copy);
+
+$test = function($a = 'a', $b = 'b', $c = 'c') {
+    echo "a = $a, b = $b, c = $c\n";
+};
+$test_variadic = function(...$args) {
+    var_dump($args);
+};
+
+$test->call(new class {}, 'A', c: 'C');
+$test_variadic->call(new class {}, 'A', c: 'C');
+var_dump(call_user_func('call_user_func', $test, c: 'D'));
+
+class TrampolineTest {
+    public function __call(string $name, array $arguments) {
+        var_dump($name, $arguments);
+    }
+}
+
+class ForwardScope {
+    public static function run($callback, $args) {
+        try {
+            forward_static_call_array($callback, $args);
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+ForwardScope::run([new TrampolineTest(), 'trampoline'], ['a' => 'b', 1]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"b\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"b\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "a = A, b = b, c = C\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"A\"\n",
+            "  [\"c\"]=>\n",
+            "  string(1) \"C\"\n",
+            "}\n",
+            "a = a, b = b, c = D\n",
+            "NULL\n",
+            "Cannot use positional argument after named argument\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_call_arguments_unpack_variable_with_parameter_modes"));
+    assert!(c_source.contains("use_plain_positional_after_named_message"));
+}
+
+#[test]
 fn compile_generator_foreach_current_and_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-generator-foreach-current");
     fs::create_dir_all(&root).unwrap();

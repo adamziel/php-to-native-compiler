@@ -4453,15 +4453,52 @@ impl<'a> LoweringContext<'a> {
             .collect();
         let mut lowered_names = argument_names.to_vec();
 
-        if name.eq_ignore_ascii_case("assert")
-            && arguments.len() == 1
-            && argument_names.iter().all(Option::is_none)
-        {
-            lowered_arguments.push(ValueExpr::String(format!(
-                "assert({})",
-                assertion_expr_text(&arguments[0])
-            )));
-            lowered_names.push(None);
+        if name.eq_ignore_ascii_case("assert") {
+            let description_supplied = argument_names
+                .iter()
+                .any(|argument_name| argument_name.as_deref() == Some("description"))
+                || (arguments.len() >= 2 && argument_names.get(1).is_none_or(Option::is_none));
+            let assertion_index = arguments.iter().enumerate().find_map(|(index, _)| {
+                match argument_names.get(index).and_then(|name| name.as_deref()) {
+                    Some("assertion") => Some(index),
+                    Some(_) => None,
+                    None if index == 0 => Some(index),
+                    None => None,
+                }
+            });
+
+            if let Some(assertion_index) = assertion_index {
+                if !description_supplied {
+                    let description = if argument_names
+                        .get(assertion_index)
+                        .and_then(|name| name.as_deref())
+                        == Some("assertion")
+                    {
+                        format!(
+                            "assert(assertion: {})",
+                            assertion_expr_text(&arguments[assertion_index])
+                        )
+                    } else {
+                        format!(
+                            "assert({})",
+                            assertion_expr_text(&arguments[assertion_index])
+                        )
+                    };
+                    lowered_arguments.push(ValueExpr::String(description));
+                    lowered_names.push(
+                        argument_names
+                            .iter()
+                            .any(Option::is_some)
+                            .then(|| "description".to_string()),
+                    );
+                }
+            } else if argument_names
+                .iter()
+                .any(|argument_name| argument_name.as_deref() == Some("description"))
+            {
+                lowered_arguments.push(ValueExpr::Null);
+                lowered_names.push(Some("description".to_string()));
+            }
         }
 
         (lowered_arguments, lowered_names)

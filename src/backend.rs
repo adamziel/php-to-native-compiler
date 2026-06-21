@@ -17015,7 +17015,7 @@ fn emit_method_dispatch(
     out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
     out.push_str("        metadata = resolved.as.closure->metadata;\n");
     out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"call\")) {\n");
-    out.push_str("        metadata = ptn_function_metadata_found(\"Closure::call\", 1, 2, 1, 1, PTN_CLOSURE_CALL_PARAMETERS, 0, NULL, NULL, 0, 0);\n");
+    out.push_str("        metadata = ptn_function_metadata_found(\"Closure::call\", 0, 2, 1, 1, PTN_CLOSURE_CALL_PARAMETERS, 0, NULL, NULL, 0, 0);\n");
     out.push_str("    }\n");
     out.push_str("    PtnNormalizedCallArguments normalized;\n");
     out.push_str("    int normalized_active = ptn_normalize_named_call_arguments(runtime, metadata, argc, args, arg_names, line, &normalized);\n");
@@ -24777,6 +24777,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static ASSERT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "assertion",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "description",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static EXTRACT_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "array",
@@ -25665,6 +25675,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&ARRAY_FILTER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_slice") {
         Some(&ARRAY_SLICE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("assert") {
+        Some(&ASSERT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
         Some(&GRAPHEME_EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
@@ -35036,13 +35048,44 @@ impl ValueEmitter {
         _discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
-            let result_temp = self.next_temp();
-            self.emit_fatal_value(
-                out,
-                &result_temp,
-                "named arguments currently support user-defined functions",
-            );
-            return result_temp;
+            let first_named_argument = argument_names.iter().find_map(|name| name.as_deref());
+            let class_uses_runtime_scope = self.class_name_fetch_uses_runtime_scope(class_name);
+            let compile_time_class_name = if class_uses_runtime_scope {
+                None
+            } else {
+                Some(self.class_name_fetch_name(class_name))
+            };
+            let declared_without_constructor = compile_time_class_name
+                .as_deref()
+                .and_then(|name| {
+                    self.classes.iter().find(|class| {
+                        (class.initially_declared || class.is_anonymous)
+                            && class.name.eq_ignore_ascii_case(name)
+                    })
+                })
+                .is_some_and(|declared_class| {
+                    class_constructor_method(declared_class, &self.classes).is_none()
+                        && inherited_modeled_internal_class_name(declared_class, &self.classes)
+                            .is_none()
+                        && !class_extends_builtin_throwable(declared_class, &self.classes)
+                });
+            if compile_time_class_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("stdClass"))
+                || declared_without_constructor
+            {
+                let result_temp = self.next_temp();
+                self.emit_error_value(
+                    out,
+                    &result_temp,
+                    &format!(
+                        "Unknown named parameter ${}",
+                        first_named_argument.unwrap_or("")
+                    ),
+                    line,
+                );
+                return result_temp;
+            }
         }
         let result_temp = self.next_temp();
         let class_uses_runtime_scope = self.class_name_fetch_uses_runtime_scope(class_name);
@@ -40164,6 +40207,13 @@ impl ValueEmitter {
             {
                 if let Some((by_ref_indices, by_ref_variadic_index)) = by_ref_unpack_modes.as_ref()
                 {
+                    let by_ref_parameter_names: Vec<&str> = by_ref_parameters
+                        .unwrap_or(&[])
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, parameter)| parameter.by_ref && !parameter.is_variadic)
+                        .map(|(_, parameter)| parameter.name.as_str())
+                        .collect();
                     let indices_temp = if by_ref_indices.is_empty() {
                         None
                     } else {
@@ -40181,6 +40231,25 @@ impl ValueEmitter {
                         Some(temp)
                     };
                     let indices_expr = indices_temp.as_deref().unwrap_or("NULL");
+                    let names_temp = if by_ref_parameter_names.is_empty() {
+                        None
+                    } else {
+                        let temp = self.next_temp();
+                        out.push_str("    const char *");
+                        out.push_str(&temp);
+                        out.push_str("[] = { ");
+                        for (index, parameter_name) in by_ref_parameter_names.iter().enumerate() {
+                            if index > 0 {
+                                out.push_str(", ");
+                            }
+                            out.push('"');
+                            out.push_str(&c_string(parameter_name));
+                            out.push('"');
+                        }
+                        out.push_str(" };\n");
+                        Some(temp)
+                    };
+                    let names_expr = names_temp.as_deref().unwrap_or("NULL");
                     let variadic_flag = if by_ref_variadic_index.is_some() {
                         "1"
                     } else {
@@ -40194,6 +40263,8 @@ impl ValueEmitter {
                         out.push_str(&c_string(name));
                         out.push_str("\", ");
                         out.push_str(indices_expr);
+                        out.push_str(", ");
+                        out.push_str(names_expr);
                         out.push_str(", ");
                         out.push_str(&by_ref_indices.len().to_string());
                         out.push_str(", ");
@@ -40216,6 +40287,8 @@ impl ValueEmitter {
                         out.push_str(&value_temp);
                         out.push_str(", ");
                         out.push_str(indices_expr);
+                        out.push_str(", ");
+                        out.push_str(names_expr);
                         out.push_str(", ");
                         out.push_str(&by_ref_indices.len().to_string());
                         out.push_str(", ");

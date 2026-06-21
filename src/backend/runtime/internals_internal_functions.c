@@ -4733,6 +4733,14 @@ static PtnFunctionMetadata ptn_named_call_callable_metadata(PtnRuntime *runtime,
     return ptn_function_metadata_not_found();
 }
 
+static int ptn_named_call_metadata_is_forwarding_wrapper(PtnFunctionMetadata metadata) {
+    return metadata.name != NULL &&
+        (ptn_ascii_case_equal(metadata.name, "call_user_func") ||
+         ptn_ascii_case_equal(metadata.name, "call_user_func_array") ||
+         ptn_ascii_case_equal(metadata.name, "forward_static_call") ||
+         ptn_ascii_case_equal(metadata.name, "forward_static_call_array"));
+}
+
 static PTN_UNUSED PtnValue ptn_call_function_named(
     PtnRuntime *runtime,
     const char *name,
@@ -4746,7 +4754,9 @@ static PTN_UNUSED PtnValue ptn_call_function_named(
     }
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
     if (ptn_ascii_case_equal(lookup_name, "call_user_func") ||
-        ptn_ascii_case_equal(lookup_name, "call_user_func_array")) {
+        ptn_ascii_case_equal(lookup_name, "call_user_func_array") ||
+        ptn_ascii_case_equal(lookup_name, "forward_static_call") ||
+        ptn_ascii_case_equal(lookup_name, "forward_static_call_array")) {
         const char *const *previous_arg_names = runtime->next_call_arg_names;
         runtime->next_call_arg_names = arg_names;
         PtnValue result = ptn_call_function(runtime, name, argc, args, line);
@@ -4800,6 +4810,13 @@ static PTN_UNUSED PtnValue ptn_call_callable_named(
         return ptn_call_callable(runtime, callable, argc, args, line, from_call_user_func);
     }
     PtnFunctionMetadata metadata = ptn_named_call_callable_metadata(runtime, callable);
+    if (ptn_named_call_metadata_is_forwarding_wrapper(metadata)) {
+        const char *const *previous_arg_names = runtime->next_call_arg_names;
+        runtime->next_call_arg_names = arg_names;
+        PtnValue result = ptn_call_callable(runtime, callable, argc, args, line, from_call_user_func);
+        runtime->next_call_arg_names = previous_arg_names;
+        return result;
+    }
     PtnNormalizedCallArguments normalized;
     int normalized_active = ptn_normalize_named_call_arguments(
         runtime,
@@ -6172,6 +6189,21 @@ static const PtnParameterMetadata PTN_INTERNAL_HEADERS_SENT_PARAMETERS[] = {
     { "line", NULL, NULL, 0, 0, 1, 0, 0, "null", NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_ASSERT_PARAMETERS[] = {
+    { "assertion", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL },
+    { "description", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS[] = {
+    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL },
+    { "args", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS[] = {
+    { "callback", "callable", "callable", 0, 0, 0, 0, 1, NULL, NULL },
+    { "args", "array", "array", 0, 1, 0, 0, 1, NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_ARRAY_SLICE_PARAMETERS[] = {
     { "array", "array", "array", 0, 1, 0, 0, 1, NULL, NULL },
     { "offset", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
@@ -6861,6 +6893,10 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
             for (size_t i = 0; i < frame->argc; i++) {
                 if (i != 0) {
                     ptn_string_buffer_append(&buffer, ", ");
+                }
+                if (frame->arg_names != NULL && frame->arg_names[i] != NULL) {
+                    ptn_string_buffer_append(&buffer, frame->arg_names[i]);
+                    ptn_string_buffer_append(&buffer, ": ");
                 }
                 PtnValue arg = ptn_trace_frame_arg_value(frame, i);
                 ptn_trace_append_arg(
@@ -67824,6 +67860,87 @@ static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t arg
     return result;
 }
 
+static PtnValue ptn_internal_forward_static_call_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    const char *const *call_arg_names = runtime->next_call_arg_names;
+    runtime->next_call_arg_names = NULL;
+    size_t callback_index = 0;
+    size_t arguments_index = 1;
+    if (!ptn_internal_named_argument_index(argc, call_arg_names, "callback", 0, &callback_index) ||
+        !ptn_internal_named_argument_index(argc, call_arg_names, "args", 1, &arguments_index)) {
+        ptn_throw_internal_argument_count_error(
+            runtime,
+            "forward_static_call_array",
+            "exactly",
+            2,
+            argc,
+            line,
+            args
+        );
+        return ptn_null();
+    }
+
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "forward_static_call_array", 1, "callback", args[callback_index]);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnCallArguments expanded;
+    ptn_call_arguments_init(&expanded);
+    expanded.use_plain_positional_after_named_message = 1;
+    ptn_call_arguments_unpack(runtime, &expanded, args[arguments_index], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_call_arguments_destroy(&expanded);
+        ptn_value_destroy(&callback);
+        return ptn_null();
+    }
+
+    if (runtime->current_class_name == NULL && runtime->current_called_class_name == NULL) {
+        ptn_call_arguments_destroy(&expanded);
+        ptn_value_destroy(&callback);
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot call forward_static_call_array() when no class scope is active",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+
+    size_t previous_call_site_line = runtime->call_site_line;
+    runtime->call_site_line = line;
+    const char *previous_forward_static_called_class_name =
+        runtime->forward_static_called_class_name;
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    const char *forward_called_class = runtime->current_called_class_name != NULL
+        ? runtime->current_called_class_name
+        : runtime->current_class_name;
+    runtime->forward_static_called_class_name = forward_called_class;
+    runtime->warn_by_ref_argument_mismatch = 1;
+
+    PtnValue result = ptn_null();
+    int ok = ptn_internal_call_callback_capturing_exception_impl(
+        runtime,
+        callback,
+        expanded.len,
+        expanded.values,
+        (const char *const *)expanded.names,
+        line,
+        1,
+        &result
+    );
+
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    runtime->forward_static_called_class_name = previous_forward_static_called_class_name;
+    runtime->call_site_line = previous_call_site_line;
+    ptn_call_arguments_destroy(&expanded);
+    ptn_value_destroy(&callback);
+    if (!ok) {
+        ptn_rethrow_exception(runtime);
+    }
+    return result;
+}
+
 static int ptn_spl_object_id(PtnValue value, size_t *id_out) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -86421,6 +86538,7 @@ static PtnValue ptn_internal_datetimezone_list_identifiers(PtnRuntime *runtime, 
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_enum_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_forward_static_call_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -86805,6 +86923,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "flock", 2, 3, ptn_internal_flock },
         { "fmod", 2, 2, ptn_internal_fmod },
         { "forward_static_call", 1, PTN_VARIADIC_ARGS, ptn_internal_forward_static_call },
+        { "forward_static_call_array", 2, 2, ptn_internal_forward_static_call_array },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fpassthru", 1, 1, ptn_internal_fpassthru },
         { "fpow", 2, 2, ptn_internal_fpow },
@@ -87776,6 +87895,53 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "array",
             0,
             1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "assert")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ASSERT_PARAMETERS) / sizeof(PTN_INTERNAL_ASSERT_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_ASSERT_PARAMETERS,
+            0,
+            "bool",
+            "bool",
+            0,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "call_user_func") ||
+        ptn_ascii_case_equal(function->name, "forward_static_call")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS) / sizeof(PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS[0]),
+            1,
+            1,
+            PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "call_user_func_array") ||
+        ptn_ascii_case_equal(function->name, "forward_static_call_array")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS) / sizeof(PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_CALL_USER_FUNC_ARRAY_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
         );
     }
     if (ptn_ascii_case_equal(function->name, "htmlspecialchars")) {

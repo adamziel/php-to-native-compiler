@@ -8044,6 +8044,7 @@ typedef struct {
     PtnValue *values;
     char **names;
     int saw_named;
+    int use_plain_positional_after_named_message;
 } PtnCallArguments;
 
 static PTN_UNUSED void ptn_call_arguments_init(PtnCallArguments *arguments) {
@@ -8052,6 +8053,7 @@ static PTN_UNUSED void ptn_call_arguments_init(PtnCallArguments *arguments) {
     arguments->values = NULL;
     arguments->names = NULL;
     arguments->saw_named = 0;
+    arguments->use_plain_positional_after_named_message = 0;
 }
 
 static PTN_UNUSED void ptn_call_arguments_reserve(PtnCallArguments *arguments, size_t additional) {
@@ -8093,7 +8095,9 @@ static PTN_UNUSED int ptn_call_arguments_can_append(
         ptn_throw_exception_at(
             runtime,
             "Error",
-            "Cannot use positional argument after named argument during unpacking",
+            arguments->use_plain_positional_after_named_message
+                ? "Cannot use positional argument after named argument"
+                : "Cannot use positional argument after named argument during unpacking",
             runtime->source_path,
             line
         );
@@ -8133,16 +8137,35 @@ static PTN_UNUSED void ptn_call_arguments_append_owned(PtnCallArguments *argumen
 
 static PTN_UNUSED int ptn_call_argument_index_is_by_ref(
     size_t index,
+    const char *name,
     const size_t *by_ref_indices,
+    const char *const *by_ref_names,
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
-    size_t by_ref_variadic_index
+    size_t by_ref_variadic_index,
+    size_t *parameter_position_out
 ) {
+    if (name != NULL && by_ref_names != NULL) {
+        for (size_t i = 0; i < by_ref_indices_len; i++) {
+            if (by_ref_names[i] != NULL && strcmp(by_ref_names[i], name) == 0) {
+                if (parameter_position_out != NULL) {
+                    *parameter_position_out = by_ref_indices[i] + 1;
+                }
+                return 1;
+            }
+        }
+    }
     if (has_by_ref_variadic && index >= by_ref_variadic_index) {
+        if (parameter_position_out != NULL) {
+            *parameter_position_out = index + 1;
+        }
         return 1;
     }
     for (size_t i = 0; i < by_ref_indices_len; i++) {
         if (by_ref_indices[i] == index) {
+            if (parameter_position_out != NULL) {
+                *parameter_position_out = by_ref_indices[i] + 1;
+            }
             return 1;
         }
     }
@@ -8254,6 +8277,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
     PtnCallArguments *arguments,
     PtnValue *source_value,
     const size_t *by_ref_indices,
+    const char *const *by_ref_names,
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
@@ -8291,17 +8315,21 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
                 ptn_value_destroy(&key);
 
                 PtnValue current = ptn_array_iterator_current_value(&iterator);
+                size_t by_ref_parameter_position = arguments->len + 1;
                 if (ptn_call_argument_index_is_by_ref(
                     arguments->len,
+                    argument_name,
                     by_ref_indices,
+                    by_ref_names,
                     by_ref_indices_len,
                     has_by_ref_variadic,
-                    by_ref_variadic_index
+                    by_ref_variadic_index,
+                    &by_ref_parameter_position
                 )) {
                     ptn_emit_unpack_traversable_by_ref_warning(
                         runtime,
                         function_name,
-                        arguments->len + 1,
+                        by_ref_parameter_position,
                         line
                     );
                     ptn_call_arguments_append_named_owned(
@@ -8327,16 +8355,27 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
 
     int needs_by_ref_entry = 0;
     for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        char *argument_name = NULL;
+        if (!ptn_call_arguments_unpack_name_from_array_key(runtime, arguments, entry->key, line, &argument_name)) {
+            free(argument_name);
+            return;
+        }
         if (ptn_call_argument_index_is_by_ref(
             arguments->len + i,
+            argument_name,
             by_ref_indices,
+            by_ref_names,
             by_ref_indices_len,
             has_by_ref_variadic,
-            by_ref_variadic_index
+            by_ref_variadic_index,
+            NULL
         )) {
             needs_by_ref_entry = 1;
+            free(argument_name);
             break;
         }
+        free(argument_name);
     }
     if (needs_by_ref_entry && storage != NULL) {
         PtnArray *detached = ptn_array_detach_value(storage);
@@ -8360,10 +8399,13 @@ static PTN_UNUSED void ptn_call_arguments_unpack_array_with_parameter_modes(
 
         if (ptn_call_argument_index_is_by_ref(
             arguments->len,
+            argument_name,
             by_ref_indices,
+            by_ref_names,
             by_ref_indices_len,
             has_by_ref_variadic,
-            by_ref_variadic_index
+            by_ref_variadic_index,
+            NULL
         )) {
             if (entry->value.type != PTN_REFERENCE) {
                 PtnValue current = entry->value;
@@ -8382,6 +8424,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_value_with_parameter_modes(
     PtnCallArguments *arguments,
     PtnValue *value,
     const size_t *by_ref_indices,
+    const char *const *by_ref_names,
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
@@ -8393,6 +8436,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_value_with_parameter_modes(
         arguments,
         value,
         by_ref_indices,
+        by_ref_names,
         by_ref_indices_len,
         has_by_ref_variadic,
         by_ref_variadic_index,
@@ -8406,6 +8450,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
     PtnCallArguments *arguments,
     const char *name,
     const size_t *by_ref_indices,
+    const char *const *by_ref_names,
     size_t by_ref_indices_len,
     int has_by_ref_variadic,
     size_t by_ref_variadic_index,
@@ -8419,6 +8464,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
             arguments,
             &globals,
             by_ref_indices,
+            by_ref_names,
             by_ref_indices_len,
             has_by_ref_variadic,
             by_ref_variadic_index,
@@ -8447,6 +8493,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
             arguments,
             &missing,
             by_ref_indices,
+            by_ref_names,
             by_ref_indices_len,
             has_by_ref_variadic,
             by_ref_variadic_index,
@@ -8461,6 +8508,7 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
         arguments,
         slot,
         by_ref_indices,
+        by_ref_names,
         by_ref_indices_len,
         has_by_ref_variadic,
         by_ref_variadic_index,
