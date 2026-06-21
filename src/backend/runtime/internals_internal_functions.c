@@ -8729,6 +8729,14 @@ static const PtnUnserializeAllowedClasses PTN_UNSERIALIZE_ALLOW_ALL = { 0, NULL,
 static const PtnUnserializeAllowedClasses PTN_UNSERIALIZE_ALLOW_NONE = { 1, NULL, 0 };
 
 typedef struct {
+    PtnValue object;
+    const char *method_name;
+    size_t argc;
+    PtnValue args[1];
+    size_t line;
+} PtnUnserializePendingCallback;
+
+typedef struct {
     const char *data;
     size_t len;
     size_t pos;
@@ -8738,6 +8746,9 @@ typedef struct {
     PtnUnserializeIdEntry *ids;
     size_t id_len;
     size_t id_capacity;
+    PtnUnserializePendingCallback *pending_callbacks;
+    size_t pending_callback_len;
+    size_t pending_callback_capacity;
     int failed;
     int bad_data;
     int unexpected_end;
@@ -8845,6 +8856,9 @@ static void ptn_unserialize_state_init(
     state->ids = NULL;
     state->id_len = 0;
     state->id_capacity = 0;
+    state->pending_callbacks = NULL;
+    state->pending_callback_len = 0;
+    state->pending_callback_capacity = 0;
     state->failed = 0;
     state->bad_data = 0;
     state->unexpected_end = 0;
@@ -8853,7 +8867,37 @@ static void ptn_unserialize_state_init(
     state->insufficient_present = 0;
 }
 
+static void ptn_unserialize_pending_callback_clear(PtnUnserializePendingCallback *callback) {
+    ptn_value_destroy(&callback->object);
+    callback->object = ptn_null();
+    for (size_t i = 0; i < callback->argc && i < 1; i++) {
+        ptn_value_destroy(&callback->args[i]);
+        callback->args[i] = ptn_null();
+    }
+    callback->method_name = NULL;
+    callback->argc = 0;
+    callback->line = 0;
+}
+
+static void ptn_unserialize_truncate_pending_callbacks(
+    PtnUnserializeState *state,
+    size_t len
+) {
+    if (len >= state->pending_callback_len) {
+        return;
+    }
+    for (size_t i = len; i < state->pending_callback_len; i++) {
+        ptn_unserialize_pending_callback_clear(&state->pending_callbacks[i]);
+    }
+    state->pending_callback_len = len;
+}
+
 static void ptn_unserialize_state_free(PtnUnserializeState *state) {
+    ptn_unserialize_truncate_pending_callbacks(state, 0);
+    free(state->pending_callbacks);
+    state->pending_callbacks = NULL;
+    state->pending_callback_len = 0;
+    state->pending_callback_capacity = 0;
     for (size_t i = 0; i < state->id_len; i++) {
         ptn_unserialize_id_entry_clear(&state->ids[i]);
     }
@@ -10263,6 +10307,71 @@ static void ptn_unserialize_call_magic_method(
     ptn_value_destroy(&result);
 }
 
+static void ptn_unserialize_queue_magic_callback(
+    PtnUnserializeState *state,
+    PtnValue object,
+    const char *method_name,
+    size_t argc,
+    PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        ptn_abort_out_of_memory();
+    }
+    if (state->pending_callback_len == state->pending_callback_capacity) {
+        size_t new_capacity = state->pending_callback_capacity == 0
+            ? 4
+            : state->pending_callback_capacity * 2;
+        if (new_capacity < state->pending_callback_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnUnserializePendingCallback)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnUnserializePendingCallback *new_callbacks = realloc(
+            state->pending_callbacks,
+            new_capacity * sizeof(PtnUnserializePendingCallback)
+        );
+        if (new_callbacks == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        state->pending_callbacks = new_callbacks;
+        state->pending_callback_capacity = new_capacity;
+    }
+
+    PtnUnserializePendingCallback *callback =
+        &state->pending_callbacks[state->pending_callback_len++];
+    callback->object = ptn_value_clone(object);
+    callback->method_name = method_name;
+    callback->argc = argc;
+    callback->line = line;
+    callback->args[0] = ptn_null();
+    for (size_t i = 0; i < argc; i++) {
+        callback->args[i] = ptn_value_clone(args[i]);
+    }
+}
+
+static void ptn_unserialize_flush_pending_callbacks(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    size_t start
+) {
+    if (runtime == NULL || start >= state->pending_callback_len) {
+        return;
+    }
+    for (size_t i = start; i < state->pending_callback_len; i++) {
+        PtnUnserializePendingCallback *callback = &state->pending_callbacks[i];
+        ptn_unserialize_call_magic_method(
+            runtime,
+            callback->object,
+            callback->method_name,
+            callback->argc,
+            callback->argc == 0 ? NULL : callback->args,
+            callback->line
+        );
+        ptn_unserialize_pending_callback_clear(callback);
+    }
+    state->pending_callback_len = start;
+}
+
 static const PtnObjectPropertyMetadata *ptn_unserialize_find_metadata_by_declared_name(
     PtnObject *object,
     const char *declaring_class,
@@ -11056,6 +11165,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             if (count > ptn_unserialize_remaining(state)) {
+                if (count == SIZE_MAX) {
+                    state->unexpected_end = 1;
+                }
                 ptn_unserialize_fail(state);
                 return result;
             }
@@ -11167,8 +11279,8 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                     ptn_value_destroy(&payload);
                     return result;
                 }
-                ptn_unserialize_call_magic_method(
-                    runtime,
+                ptn_unserialize_queue_magic_callback(
+                    state,
                     result.value,
                     "__unserialize",
                     1,
@@ -11205,8 +11317,8 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
             ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
             if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
-                ptn_unserialize_call_magic_method(
-                    runtime,
+                ptn_unserialize_queue_magic_callback(
+                    state,
                     result.value,
                     "__wakeup",
                     0,
@@ -11652,6 +11764,7 @@ static int ptn_unserialize_value_from_operand(
         saved.error_pos = active_state->error_pos;
         saved.line = active_state->line;
         size_t saved_id_len = active_state->id_len;
+        size_t saved_callback_len = active_state->pending_callback_len;
         saved.failed = active_state->failed;
         saved.bad_data = active_state->bad_data;
         saved.unexpected_end = active_state->unexpected_end;
@@ -11688,9 +11801,6 @@ static int ptn_unserialize_value_from_operand(
         if (!caught_exception) {
             parsed = ptn_unserialize_parse_value(active_state, runtime);
         }
-        if (runtime != NULL) {
-            ptn_try_frame_pop(runtime, &parse_frame);
-        }
         int failed = active_state->failed;
         int bad_data = active_state->bad_data;
         int unexpected_end = active_state->unexpected_end;
@@ -11713,8 +11823,23 @@ static int ptn_unserialize_value_from_operand(
         active_state->insufficient_present = saved.insufficient_present;
         active_state->allowed_classes = saved_allowed_classes;
 
+        if (!caught_exception && !failed) {
+            if (emit_diagnostics && parsed_pos != input.len) {
+                ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
+            }
+            ptn_unserialize_flush_pending_callbacks(
+                runtime,
+                active_state,
+                saved_callback_len
+            );
+        }
+        if (runtime != NULL) {
+            ptn_try_frame_pop(runtime, &parse_frame);
+        }
+
         if (caught_exception) {
             ptn_value_destroy(&parsed.value);
+            ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
             ptn_unserialize_truncate_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             ptn_rethrow_exception(runtime);
@@ -11742,14 +11867,18 @@ static int ptn_unserialize_value_from_operand(
                 ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             }
             ptn_value_destroy(&parsed.value);
+            ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
             ptn_unserialize_truncate_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             return 0;
         }
-        if (emit_diagnostics && parsed_pos != input.len) {
-            ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
+        ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
+        if (parsed.id != 0 && parsed.id <= active_state->id_len) {
+            ptn_unserialize_id_entry_retain_value(
+                &active_state->ids[parsed.id - 1],
+                parsed.value
+            );
         }
-        ptn_unserialize_truncate_ids(active_state, saved_id_len);
         ptn_string_operand_free(input);
         *out = parsed.value;
         return 1;
@@ -11791,8 +11920,16 @@ static int ptn_unserialize_value_from_operand(
     size_t error_pos = state.error_pos;
     size_t parsed_pos = state.pos;
     if (runtime != NULL) {
-        ptn_try_frame_pop(runtime, &parse_frame);
         runtime->active_unserialize_state = previous_active_state;
+    }
+    if (!caught_exception && !failed) {
+        if (emit_diagnostics && parsed_pos != input.len) {
+            ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
+        }
+        ptn_unserialize_flush_pending_callbacks(runtime, &state, 0);
+    }
+    if (runtime != NULL) {
+        ptn_try_frame_pop(runtime, &parse_frame);
     }
 
     if (caught_exception) {
@@ -11827,9 +11964,6 @@ static int ptn_unserialize_value_from_operand(
         ptn_unserialize_state_free(&state);
         ptn_string_operand_free(input);
         return 0;
-    }
-    if (emit_diagnostics && parsed_pos != input.len) {
-        ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
     }
     ptn_unserialize_state_free(&state);
     ptn_string_operand_free(input);

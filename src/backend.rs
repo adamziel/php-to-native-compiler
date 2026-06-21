@@ -22054,7 +22054,16 @@ fn collect_module_serializable_deprecations(module: &Module) -> Vec<Serializable
         .classes
         .iter()
         .filter(|class| {
+            let has_modern_serialization_hooks = class
+                .methods
+                .iter()
+                .any(|method| method.name.eq_ignore_ascii_case("__serialize"))
+                && class
+                    .methods
+                    .iter()
+                    .any(|method| method.name.eq_ignore_ascii_case("__unserialize"));
             !class.is_interface
+                && !has_modern_serialization_hooks
                 && class_transitive_interfaces(class, &module.classes)
                     .into_iter()
                     .any(|interface| interface.eq_ignore_ascii_case("Serializable"))

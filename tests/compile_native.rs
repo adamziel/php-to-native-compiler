@@ -11927,6 +11927,109 @@ var_dump(unserialize($encoded . 'tail'));
 }
 
 #[test]
+fn compile_serializable_with_modern_hooks_suppresses_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-modern-hooks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-modern-hooks.php");
+    let output = root.join("serializable-modern-hooks-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Modern implements Serializable {
+    public $value = 1;
+    public function __serialize(): array { return ["value" => $this->value]; }
+    public function __unserialize(array $data): void { $this->value = $data["value"]; }
+    public function serialize(): string { return "legacy"; }
+    public function unserialize($data): void { $this->value = $data; }
+}
+
+echo "start\n";
+var_dump(serialize(new Modern));
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        !stdout.contains("Deprecated: Modern implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("O:6:\"Modern\":1:{s:5:\"value\";i:1;}"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_magic_callbacks_after_extra_data_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-magic-callback-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-magic-callback-order.php");
+    let output = root.join("unserialize-magic-callback-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public function __unserialize(array $data): void {
+        echo "foo callback\n";
+        unserialize('O:3:"Bar":0:{}nested');
+    }
+}
+
+class Bar {
+    public function __unserialize(array $data): void {
+        echo "bar callback\n";
+    }
+}
+
+unserialize('O:3:"Foo":0:{}tail');
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let outer_warning = stdout
+        .find("Extra data starting at offset 14 of 18 bytes")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let foo_callback = stdout
+        .find("foo callback\n")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let nested_warning = stdout
+        .find("Extra data starting at offset 14 of 20 bytes")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let bar_callback = stdout
+        .find("bar callback\n")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(outer_warning < foo_callback, "{stdout}");
+    assert!(foo_callback < nested_warning, "{stdout}");
+    assert!(nested_warning < bar_callback, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_clone_payloads_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-clone-payloads");
     fs::create_dir_all(&root).unwrap();
