@@ -978,6 +978,9 @@ fn compile_and_run(
     command.args(args);
     command.env("PTN_SCRIPT_FILENAME", script);
     command.env("PTN_RUNTIME_SOURCE_PATH", script);
+    if let Ok(current_exe) = std::env::current_exe() {
+        command.env("PTN_DYNAMIC_INCLUDE_PHP", current_exe);
+    }
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }

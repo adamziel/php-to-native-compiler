@@ -170,6 +170,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
     emit_include_once_state(&mut out, &module.includes);
+    emit_include_source_path_table(&mut out, &module.includes);
     emit_include_runtime_helpers(&mut out);
     emit_source_snapshot_arrays(&mut out, module);
     emit_user_function_prototypes(
@@ -579,6 +580,25 @@ fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
     out.push_str("] = {0};\n");
 }
 
+fn emit_include_source_path_table(out: &mut String, includes: &[IncludeFile]) {
+    out.push_str("static PTN_UNUSED const char *ptn_include_source_paths[");
+    out.push_str(&includes.len().max(1).to_string());
+    out.push_str("] = {");
+    if includes.is_empty() {
+        out.push_str(" NULL");
+    } else {
+        for (index, include) in includes.iter().enumerate() {
+            if index > 0 {
+                out.push_str(",");
+            }
+            out.push_str("\n    \"");
+            out.push_str(&c_string(&include.source_file));
+            out.push('"');
+        }
+    }
+    out.push_str("\n};\n");
+}
+
 fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
     out.push_str("#if defined(_WIN32)\n");
@@ -775,6 +795,195 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    free(message);\n");
     out.push_str("    return ptn_bool(0);\n");
     out.push_str("}\n");
+    out.push_str(
+        r#"
+static PTN_UNUSED void ptn_dynamic_include_write_php_single_quoted(FILE *stream, const char *value) {
+    fputc('\'', stream);
+    if (value != NULL) {
+        for (const unsigned char *cursor = (const unsigned char *)value; *cursor != '\0'; cursor++) {
+            if (*cursor == '\\' || *cursor == '\'') {
+                fputc('\\', stream);
+            }
+            fputc((int)*cursor, stream);
+        }
+    }
+    fputc('\'', stream);
+}
+
+static PTN_UNUSED char *ptn_dynamic_include_write_prepend_wrapper(const char *const *include_paths, const unsigned char *include_seen, size_t include_count) {
+#if defined(_WIN32)
+    (void)include_paths;
+    (void)include_seen;
+    (void)include_count;
+    return NULL;
+#else
+    int has_seen_include = 0;
+    for (size_t i = 0; i < include_count; i++) {
+        if (include_seen != NULL && include_seen[i] && include_paths != NULL && include_paths[i] != NULL) {
+            has_seen_include = 1;
+            break;
+        }
+    }
+    if (!has_seen_include) {
+        return NULL;
+    }
+
+    char template_path[] = "/tmp/ptn-dynamic-include-XXXXXX";
+    int fd = mkstemp(template_path);
+    if (fd < 0) {
+        return NULL;
+    }
+    FILE *wrapper = fdopen(fd, "w");
+    if (wrapper == NULL) {
+        close(fd);
+        unlink(template_path);
+        return NULL;
+    }
+
+    fputs("<?php\nob_start();\n", wrapper);
+    for (size_t i = 0; i < include_count; i++) {
+        if (include_seen == NULL || !include_seen[i] || include_paths == NULL || include_paths[i] == NULL) {
+            continue;
+        }
+        fputs("require_once ", wrapper);
+        ptn_dynamic_include_write_php_single_quoted(wrapper, include_paths[i]);
+        fputs(";\n", wrapper);
+    }
+    fputs("ob_end_clean();\n", wrapper);
+    if (fclose(wrapper) != 0) {
+        unlink(template_path);
+        return NULL;
+    }
+    return ptn_duplicate_string(template_path);
+#endif
+}
+
+static PTN_UNUSED PtnValue ptn_dynamic_include_php_fallback(
+    PtnRuntime *runtime,
+    const char *kind,
+    const char *resolved_path,
+    const char *display_path,
+    const char *const *include_paths,
+    const unsigned char *include_seen,
+    size_t include_count,
+    size_t line,
+    int required
+) {
+#if defined(_WIN32)
+    return ptn_compiled_include_failure(runtime, kind, display_path, line, required);
+#else
+    if (resolved_path == NULL || access(resolved_path, R_OK) != 0) {
+        return ptn_compiled_include_failure(runtime, kind, display_path, line, required);
+    }
+
+    char *wrapper_path = ptn_dynamic_include_write_prepend_wrapper(include_paths, include_seen, include_count);
+    char *auto_prepend_arg = NULL;
+    char *opcache_preload_arg = NULL;
+    if (wrapper_path != NULL) {
+        const char *auto_prepend_prefix = "auto_prepend_file=";
+        const char *opcache_preload_prefix = "opcache.preload=";
+        size_t auto_prepend_prefix_len = strlen(auto_prepend_prefix);
+        size_t opcache_preload_prefix_len = strlen(opcache_preload_prefix);
+        size_t wrapper_len = strlen(wrapper_path);
+        auto_prepend_arg = malloc(auto_prepend_prefix_len + wrapper_len + 1);
+        opcache_preload_arg = malloc(opcache_preload_prefix_len + wrapper_len + 1);
+        if (auto_prepend_arg == NULL || opcache_preload_arg == NULL) {
+            free(auto_prepend_arg);
+            free(opcache_preload_arg);
+            free(wrapper_path);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(auto_prepend_arg, auto_prepend_prefix, auto_prepend_prefix_len);
+        memcpy(auto_prepend_arg + auto_prepend_prefix_len, wrapper_path, wrapper_len + 1);
+        memcpy(opcache_preload_arg, opcache_preload_prefix, opcache_preload_prefix_len);
+        memcpy(opcache_preload_arg + opcache_preload_prefix_len, wrapper_path, wrapper_len + 1);
+    }
+
+    int output_pipe[2];
+    if (pipe(output_pipe) != 0) {
+        if (wrapper_path != NULL) {
+            unlink(wrapper_path);
+            free(wrapper_path);
+        }
+        free(auto_prepend_arg);
+        free(opcache_preload_arg);
+        return ptn_bool(0);
+    }
+
+    pid_t child = fork();
+    if (child == 0) {
+        close(output_pipe[0]);
+        if (dup2(output_pipe[1], STDOUT_FILENO) < 0 || dup2(output_pipe[1], STDERR_FILENO) < 0) {
+            _exit(127);
+        }
+        close(output_pipe[1]);
+        const char *phpc_path = getenv("PTN_DYNAMIC_INCLUDE_PHP");
+        if (phpc_path != NULL && phpc_path[0] != '\0') {
+            if (opcache_preload_arg != NULL) {
+                execl(phpc_path, phpc_path, "-d", opcache_preload_arg, "-f", resolved_path, (char *)NULL);
+            } else {
+                execl(phpc_path, phpc_path, "-f", resolved_path, (char *)NULL);
+            }
+        } else if (auto_prepend_arg != NULL) {
+            execlp("php", "php", "-d", "display_errors=1", "-d", "log_errors=0", "-d", auto_prepend_arg, resolved_path, (char *)NULL);
+        } else {
+            execlp("php", "php", "-d", "display_errors=1", "-d", "log_errors=0", resolved_path, (char *)NULL);
+        }
+        _exit(127);
+    }
+    if (child < 0) {
+        close(output_pipe[0]);
+        close(output_pipe[1]);
+        if (wrapper_path != NULL) {
+            unlink(wrapper_path);
+            free(wrapper_path);
+        }
+        free(auto_prepend_arg);
+        free(opcache_preload_arg);
+        return ptn_bool(0);
+    }
+
+    close(output_pipe[1]);
+    char buffer[4096];
+    while (1) {
+        ssize_t read_count = read(output_pipe[0], buffer, sizeof(buffer));
+        if (read_count > 0) {
+            ptn_output_write(runtime, buffer, (size_t)read_count);
+            continue;
+        }
+        if (read_count < 0 && errno == EINTR) {
+            continue;
+        }
+        break;
+    }
+    close(output_pipe[0]);
+
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        status = 1;
+        break;
+    }
+    if (wrapper_path != NULL) {
+        unlink(wrapper_path);
+        free(wrapper_path);
+    }
+    free(auto_prepend_arg);
+    free(opcache_preload_arg);
+
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return ptn_int(1);
+    }
+    if (required) {
+        exit(WIFEXITED(status) ? WEXITSTATUS(status) : 255);
+    }
+    return ptn_bool(0);
+#endif
+}
+"#,
+    );
 }
 
 #[derive(Default)]
@@ -34914,10 +35123,21 @@ impl ValueEmitter {
         out.push_str("    } else {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_compiled_include_failure(&runtime, \"");
+        out.push_str(" = ptn_dynamic_include_php_fallback(&runtime, \"");
         out.push_str(include_kind_text(kind));
         out.push_str("\", ");
+        out.push_str(&resolved_temp);
+        out.push_str(", ");
         out.push_str(&display_path_temp);
+        out.push_str(", ");
+        out.push_str("ptn_include_source_paths, ");
+        if self.includes.is_empty() {
+            out.push_str("NULL");
+        } else {
+            out.push_str("ptn_include_seen");
+        }
+        out.push_str(", ");
+        out.push_str(&self.includes.len().to_string());
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", ");
