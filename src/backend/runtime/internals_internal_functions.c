@@ -542,7 +542,8 @@ static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *clos
 static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
     return metadata != NULL &&
         metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
-        ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
+        (ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") ||
+         ptn_ascii_case_equal(metadata->declaring_class, "ArrayIterator")) &&
         strcmp(metadata->display_name, "storage") == 0;
 }
 
@@ -10046,6 +10047,41 @@ static PtnValue ptn_unserialize_new_incomplete_object_shell(
     return object;
 }
 
+static PtnValue ptn_unserialize_new_date_interval_shell(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    const char *properties[] = {
+        "y",
+        "m",
+        "d",
+        "h",
+        "i",
+        "s",
+        "f",
+        "invert",
+        "days",
+        "from_string",
+    };
+    for (size_t i = 0; i < sizeof(properties) / sizeof(properties[0]); i++) {
+        ptn_unserialize_declare_internal_property_metadata(
+            runtime,
+            object,
+            properties[i],
+            "DateInterval",
+            PTN_PROPERTY_PUBLIC,
+            PTN_PROPERTY_TYPE_NONE,
+            NULL,
+            NULL,
+            0,
+            line
+        );
+    }
+    return object;
+}
+
 static void ptn_unserialize_emit_no_unserializer_warning(
     PtnRuntime *runtime,
     const char *class_name,
@@ -10088,6 +10124,9 @@ static PtnValue ptn_unserialize_new_object_shell(
         if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
             return ptn_zip_archive_new_shell(runtime, line);
         }
+        if (ptn_internal_class_name_is_date_interval(resolved_name)) {
+            return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
+        }
         if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
             return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
         }
@@ -10114,6 +10153,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_internal_class_name_is_date_interval(resolved_name)) {
+                return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
             }
             if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
                 return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
@@ -10151,6 +10193,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_internal_class_name_is_date_interval(resolved_name)) {
+                return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
             }
             if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
                 return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
@@ -10848,7 +10893,8 @@ static int ptn_unserialize_store_object_property_entry(
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
     } else if (metadata == NULL &&
                !ptn_unserialize_key_is_spl_dllist_payload_slot(object, property_key) &&
-               !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, property_key) &&
+               (allow_spl_member_key ||
+                !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, property_key)) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
         ptn_emit_dynamic_property_deprecation(
@@ -104306,7 +104352,9 @@ static PtnValue ptn_spl_prepare_backing_storage(
     const char *argument_name,
     PtnValue value,
     size_t line,
-    int emit_object_deprecation
+    int emit_object_deprecation,
+    size_t trace_argc,
+    const PtnValue *trace_args
 );
 
 static const PtnValue *ptn_unserialize_spl_array_backed_slot(PtnObject *object, char slot) {
@@ -104375,7 +104423,9 @@ static PtnValue ptn_unserialize_spl_array_backed_storage(
         "data",
         *slot,
         line,
-        storage.type == PTN_OBJECT
+        storage.type == PTN_OBJECT,
+        0,
+        NULL
     );
 }
 
@@ -104611,7 +104661,9 @@ static PtnValue ptn_spl_prepare_backing_storage(
     const char *argument_name,
     PtnValue value,
     size_t line,
-    int emit_object_deprecation
+    int emit_object_deprecation,
+    size_t trace_argc,
+    const PtnValue *trace_args
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -104654,10 +104706,28 @@ static PtnValue ptn_spl_prepare_backing_storage(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(
+            char trace_name[128];
+            written = snprintf(
+                trace_name,
+                sizeof(trace_name),
+                "%s->%s",
+                class_name,
+                method_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_owned_message_at_with_trace_frame(
                 runtime,
                 "InvalidArgumentException",
-                message
+                ptn_duplicate_string(message),
+                runtime->source_path,
+                line,
+                trace_name,
+                runtime->source_path,
+                line,
+                trace_argc,
+                trace_args
             );
             return ptn_null();
         }
@@ -104934,6 +105004,50 @@ static PtnArray *ptn_spl_storage_mutable_array(PtnValue *storage) {
     return NULL;
 }
 
+static PtnArray *ptn_spl_storage_mutable_array_with_lifetime_guard(
+    PtnValue *storage,
+    PtnValue *guard_out
+) {
+    if (guard_out != NULL) {
+        *guard_out = ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(*storage);
+    if (resolved.type == PTN_ARRAY) {
+        PtnArray *array = ptn_array_detach_value(storage);
+        if (guard_out != NULL && array != NULL) {
+            *guard_out = ptn_value_clone_deref(*storage);
+        }
+        return array;
+    }
+    if (resolved.type == PTN_OBJECT) {
+        PtnArrayObjectData *array_object = ptn_spl_array_object_data_from_value(resolved);
+        if (array_object != NULL) {
+            PtnValue nested = ptn_value_deref(array_object->storage);
+            if (!(nested.type == PTN_OBJECT && nested.as.object == resolved.as.object)) {
+                return ptn_spl_storage_mutable_array_with_lifetime_guard(
+                    &array_object->storage,
+                    guard_out
+                );
+            }
+        }
+        PtnArrayIteratorData *array_iterator = ptn_spl_array_iterator_data_from_value(resolved);
+        if (array_iterator != NULL) {
+            PtnValue nested = ptn_value_deref(array_iterator->storage);
+            if (!(nested.type == PTN_OBJECT && nested.as.object == resolved.as.object)) {
+                return ptn_spl_storage_mutable_array_with_lifetime_guard(
+                    &array_iterator->storage,
+                    guard_out
+                );
+            }
+        }
+        if (guard_out != NULL) {
+            *guard_out = ptn_value_clone_deref(*storage);
+        }
+        return resolved.as.object->properties;
+    }
+    return NULL;
+}
+
 static void ptn_spl_reorder_object_metadata_like_properties(PtnObject *object) {
     if (object == NULL ||
         object->properties == NULL ||
@@ -105150,26 +105264,58 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
     }
 }
 
-static PtnArrayObjectData *ptn_spl_array_object_data_for_array_as_props(
+typedef struct {
+    PtnValue *storage;
+    int64_t flags;
+    const char *declaring_class;
+} PtnSplArrayBackedArrayAsProps;
+
+static int ptn_spl_array_backed_data_for_array_as_props(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
     const char *access_scope,
-    int for_write
+    int for_write,
+    PtnSplArrayBackedArrayAsProps *access_out
 ) {
-    receiver = ptn_value_deref(receiver);
-    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
-    if (data == NULL ||
-        (data->flags & PTN_ARRAY_OBJECT_ARRAY_AS_PROPS) == 0 ||
-        receiver.type != PTN_OBJECT) {
-        return NULL;
+    if (access_out != NULL) {
+        access_out->storage = NULL;
+        access_out->flags = 0;
+        access_out->declaring_class = NULL;
     }
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || access_out == NULL) {
+        return 0;
+    }
+
+    PtnArrayObjectData *array_object = ptn_spl_array_object_data_from_value(receiver);
+    if (array_object != NULL) {
+        access_out->storage = &array_object->storage;
+        access_out->flags = array_object->flags;
+        access_out->declaring_class = "ArrayObject";
+    } else {
+        PtnArrayIteratorData *array_iterator = ptn_spl_array_iterator_data_from_value(receiver);
+        if (array_iterator == NULL) {
+            return 0;
+        }
+        access_out->storage = &array_iterator->storage;
+        access_out->flags = array_iterator->flags;
+        access_out->declaring_class = "ArrayIterator";
+    }
+
+    if ((access_out->flags & PTN_ARRAY_OBJECT_ARRAY_AS_PROPS) == 0) {
+        access_out->storage = NULL;
+        access_out->declaring_class = NULL;
+        return 0;
+    }
+
     PtnObjectPropertyMetadata *metadata =
         ptn_object_metadata_for_display_name(receiver.as.object, property);
     if (metadata != NULL) {
-        if (ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
-            strcmp(metadata->display_name, "storage") == 0) {
-            return NULL;
+        if (ptn_object_metadata_is_spl_array_backed_storage(metadata)) {
+            access_out->storage = NULL;
+            access_out->declaring_class = NULL;
+            return 0;
         }
         PtnPropertyVisibility visibility =
             for_write ? metadata->set_visibility : metadata->read_visibility;
@@ -105181,10 +105327,12 @@ static PtnArrayObjectData *ptn_spl_array_object_data_for_array_as_props(
             ) &&
             !metadata->is_unset &&
             ptn_object_property_storage_initialized(receiver.as.object, metadata->storage_name)) {
-            return NULL;
+            access_out->storage = NULL;
+            access_out->declaring_class = NULL;
+            return 0;
         }
     }
-    return data;
+    return 1;
 }
 
 static int ptn_spl_array_object_declares_offset_method(
@@ -105199,6 +105347,8 @@ static int ptn_spl_array_object_declares_offset_method(
         receiver.type == PTN_OBJECT &&
         receiver.as.object != NULL &&
         !ptn_ascii_case_equal(receiver.as.object->class_name, "ArrayObject") &&
+        !ptn_ascii_case_equal(receiver.as.object->class_name, "ArrayIterator") &&
+        !ptn_ascii_case_equal(receiver.as.object->class_name, "RecursiveArrayIterator") &&
         runtime->declared_method_exists(receiver.as.object->class_name, method_name);
 }
 
@@ -105210,9 +105360,15 @@ static PTN_UNUSED int ptn_internal_array_object_property_read(
     size_t line,
     PtnValue *value_out
 ) {
-    PtnArrayObjectData *data =
-        ptn_spl_array_object_data_for_array_as_props(runtime, receiver, property, access_scope, 0);
-    if (data == NULL) {
+    PtnSplArrayBackedArrayAsProps access;
+    if (!ptn_spl_array_backed_data_for_array_as_props(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            0,
+            &access
+        )) {
         return 0;
     }
     if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetGet")) {
@@ -105221,7 +105377,7 @@ static PTN_UNUSED int ptn_internal_array_object_property_read(
         return 1;
     }
     PtnArrayKey key = ptn_array_string_key(property);
-    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, *access.storage, key);
     if (entry == NULL) {
         ptn_emit_undefined_array_key_warning(runtime, key, line);
         *value_out = ptn_null();
@@ -105241,9 +105397,15 @@ static PTN_UNUSED int ptn_internal_array_object_property_write(
     size_t line,
     PtnValue *value_out
 ) {
-    PtnArrayObjectData *data =
-        ptn_spl_array_object_data_for_array_as_props(runtime, receiver, property, access_scope, 1);
-    if (data == NULL) {
+    PtnSplArrayBackedArrayAsProps access;
+    if (!ptn_spl_array_backed_data_for_array_as_props(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            1,
+            &access
+        )) {
         return 0;
     }
     if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetSet")) {
@@ -105259,19 +105421,22 @@ static PTN_UNUSED int ptn_internal_array_object_property_write(
             : ptn_null();
         return 1;
     }
-    PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+    PtnValue storage_guard;
+    PtnArray *array =
+        ptn_spl_storage_mutable_array_with_lifetime_guard(access.storage, &storage_guard);
     if (array == NULL) {
         *value_out = ptn_null();
         return 1;
     }
     PtnArrayKey key = ptn_array_string_key(property);
-    PtnObject *object = ptn_spl_storage_object(data->storage);
+    PtnObject *object = ptn_spl_storage_object(*access.storage);
     PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
     ptn_array_set_entry(array, storage_key, ptn_value_clone_deref(value));
+    ptn_value_destroy(&storage_guard);
     if (object != NULL) {
         ptn_array_key_free(key);
     }
-    ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+    ptn_spl_declare_storage_property(runtime, receiver, access.declaring_class, *access.storage, line);
     *value_out = ptn_value_clone_deref(value);
     return 1;
 }
@@ -105962,9 +106127,15 @@ static PTN_UNUSED int ptn_internal_array_object_property_isset(
     size_t line,
     int *isset_out
 ) {
-    PtnArrayObjectData *data =
-        ptn_spl_array_object_data_for_array_as_props(runtime, receiver, property, access_scope, 0);
-    if (data == NULL) {
+    PtnSplArrayBackedArrayAsProps access;
+    if (!ptn_spl_array_backed_data_for_array_as_props(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            0,
+            &access
+        )) {
         return 0;
     }
     if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists")) {
@@ -105975,7 +106146,7 @@ static PTN_UNUSED int ptn_internal_array_object_property_isset(
         return 1;
     }
     PtnArrayKey key = ptn_array_string_key(property);
-    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, *access.storage, key);
     ptn_array_key_free(key);
     *isset_out = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
     return 1;
@@ -105988,9 +106159,15 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
     const char *access_scope,
     size_t line
 ) {
-    PtnArrayObjectData *data =
-        ptn_spl_array_object_data_for_array_as_props(runtime, receiver, property, access_scope, 1);
-    if (data == NULL) {
+    PtnSplArrayBackedArrayAsProps access;
+    if (!ptn_spl_array_backed_data_for_array_as_props(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            1,
+            &access
+        )) {
         return 0;
     }
     if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetUnset")) {
@@ -105999,18 +106176,21 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
         ptn_value_destroy(&result);
         return 1;
     }
-    PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+    PtnValue storage_guard;
+    PtnArray *array =
+        ptn_spl_storage_mutable_array_with_lifetime_guard(access.storage, &storage_guard);
     if (array == NULL) {
         return 1;
     }
     PtnArrayKey key = ptn_array_string_key(property);
-    PtnObject *object = ptn_spl_storage_object(data->storage);
+    PtnObject *object = ptn_spl_storage_object(*access.storage);
     PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
     (void)ptn_array_unset_entry(array, storage_key);
+    ptn_value_destroy(&storage_guard);
     if (object != NULL) {
         ptn_array_key_free(key);
     }
-    ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+    ptn_spl_declare_storage_property(runtime, receiver, access.declaring_class, *access.storage, line);
     return 1;
 }
 
@@ -107000,7 +107180,9 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
             "array",
             args[0],
             line,
-            1
+            1,
+            argc,
+            args
         );
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&storage);
@@ -107139,7 +107321,9 @@ static PTN_UNUSED int ptn_array_object_initialize(
             "array",
             args[0],
             line,
-            1
+            1,
+            argc,
+            args
         );
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&storage);
@@ -111836,7 +112020,9 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetSet() expects exactly 2 arguments");
             return ptn_null();
         }
-        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        PtnValue storage_guard;
+        PtnArray *array =
+            ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
         if (array == NULL) {
             return ptn_null();
         }
@@ -111846,10 +112032,12 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         if (offset.type == PTN_NULL) {
             key = ptn_array_int_key(array->next_auto_key);
         } else if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", offset, line, 0, 0, &key)) {
+            ptn_value_destroy(&storage_guard);
             return ptn_null();
         }
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
         ptn_array_set_entry(array, storage_key, ptn_value_clone_deref(args[1]));
+        ptn_value_destroy(&storage_guard);
         if (object != NULL) {
             ptn_array_key_free(key);
         }
@@ -111874,17 +112062,21 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetUnset() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        PtnValue storage_guard;
+        PtnArray *array =
+            ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
         if (array == NULL) {
             return ptn_null();
         }
         PtnArrayKey key;
         if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", ptn_value_deref(args[0]), line, 0, 1, &key)) {
+            ptn_value_destroy(&storage_guard);
             return ptn_null();
         }
         PtnObject *object = ptn_spl_storage_object(data->storage);
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
         (void)ptn_array_unset_entry(array, storage_key);
+        ptn_value_destroy(&storage_guard);
         if (object != NULL) {
             ptn_array_key_free(key);
         }
@@ -111988,7 +112180,9 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             "array",
             current,
             line,
-            0
+            0,
+            argc,
+            args
         );
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&child_storage);
@@ -112149,6 +112343,34 @@ static int ptn_array_object_unserialize_legacy_payload(
     }
 
     data->flags = parsed_flags;
+    if (resolved_storage.type == PTN_OBJECT) {
+        ptn_spl_array_backing_deprecation(runtime, "ArrayObject", "unserialize", line);
+        if (runtime->exceptions->active_exception != NULL) {
+            goto done;
+        }
+    }
+
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type == PTN_OBJECT) {
+        for (size_t i = 0; i < resolved_members.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved_members.as.array->entries[i];
+            PtnUnserializeValue parsed;
+            parsed.value = ptn_value_clone(entry->value);
+            parsed.id = 0;
+            if (!ptn_unserialize_store_object_property_entry(
+                    runtime,
+                    state,
+                    resolved_receiver.as.object,
+                    ptn_array_key_clone(entry->key),
+                    parsed,
+                    1
+                )) {
+                goto done;
+            }
+        }
+    }
+    ptn_unserialize_retain_slot_value(state, &members.value);
+
     PtnValue new_storage = ptn_spl_prepare_backing_storage(
         runtime,
         "ArrayObject",
@@ -112156,7 +112378,9 @@ static int ptn_array_object_unserialize_legacy_payload(
         "data",
         storage.value,
         line,
-        resolved_storage.type == PTN_OBJECT
+        0,
+        0,
+        NULL
     );
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&new_storage);
@@ -112165,19 +112389,6 @@ static int ptn_array_object_unserialize_legacy_payload(
     ptn_spl_array_object_set_storage(runtime, receiver, data, new_storage, line);
     ptn_value_destroy(&new_storage);
     ptn_unserialize_update_slot(state, storage.id, &data->storage);
-
-    PtnValue resolved_receiver = ptn_value_deref(receiver);
-    if (resolved_receiver.type == PTN_OBJECT) {
-        for (size_t i = 0; i < resolved_members.as.array->len; i++) {
-            PtnArrayEntry *entry = &resolved_members.as.array->entries[i];
-            ptn_array_set_entry(
-                resolved_receiver.as.object->properties,
-                ptn_array_key_clone(entry->key),
-                ptn_value_clone_deref(entry->value)
-            );
-        }
-    }
-    ptn_unserialize_retain_slot_value(state, &members.value);
 
 done:
     if (state != NULL) {
@@ -112337,7 +112548,9 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             "array",
             args[0],
             line,
-            1
+            1,
+            argc,
+            args
         );
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&old_copy);
@@ -112402,7 +112615,9 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
                 "data",
                 decoded,
                 line,
-                decoded_resolved.type == PTN_OBJECT
+                decoded_resolved.type == PTN_OBJECT,
+                argc,
+                args
             );
             if (runtime->exceptions->active_exception == NULL) {
                 ptn_spl_array_object_set_storage(runtime, receiver, data, new_storage, line);
@@ -112559,7 +112774,9 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetSet() expects exactly 2 arguments");
             return ptn_null();
         }
-        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        PtnValue storage_guard;
+        PtnArray *array =
+            ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
         if (array == NULL) {
             return ptn_null();
         }
@@ -112569,10 +112786,12 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         if (offset.type == PTN_NULL) {
             key = ptn_array_int_key(array->next_auto_key);
         } else if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", offset, line, 0, 0, &key)) {
+            ptn_value_destroy(&storage_guard);
             return ptn_null();
         }
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
         ptn_array_set_entry(array, storage_key, ptn_value_clone_deref(args[1]));
+        ptn_value_destroy(&storage_guard);
         if (object != NULL) {
             ptn_array_key_free(key);
         }
@@ -112646,17 +112865,21 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetUnset() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        PtnValue storage_guard;
+        PtnArray *array =
+            ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
         if (array == NULL) {
             return ptn_null();
         }
         PtnArrayKey key;
         if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", ptn_value_deref(args[0]), line, 0, 1, &key)) {
+            ptn_value_destroy(&storage_guard);
             return ptn_null();
         }
         PtnObject *object = ptn_spl_storage_object(data->storage);
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
         (void)ptn_array_unset_entry(array, storage_key);
+        ptn_value_destroy(&storage_guard);
         if (object != NULL) {
             ptn_array_key_free(key);
         }
