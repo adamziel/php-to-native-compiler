@@ -649,6 +649,7 @@ typedef struct {
     size_t capacity;
     PtnSymbolIndexSlot *index_slots;
     size_t index_capacity;
+    uint64_t mutation_epoch;
 } PtnSymbolTable;
 
 typedef struct {

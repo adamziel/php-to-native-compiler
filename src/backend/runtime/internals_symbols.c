@@ -387,6 +387,7 @@ static void ptn_symbols_init(PtnSymbolTable *symbols) {
     symbols->capacity = 0;
     symbols->index_slots = NULL;
     symbols->index_capacity = 0;
+    symbols->mutation_epoch = 0;
 }
 
 static void ptn_symbols_free(PtnSymbolTable *symbols) {
@@ -401,6 +402,7 @@ static void ptn_symbols_free(PtnSymbolTable *symbols) {
     symbols->capacity = 0;
     symbols->index_slots = NULL;
     symbols->index_capacity = 0;
+    symbols->mutation_epoch = 0;
 }
 
 static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime) {
@@ -415,6 +417,7 @@ static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbo
     symbols->capacity = 0;
     symbols->index_slots = NULL;
     symbols->index_capacity = 0;
+    symbols->mutation_epoch = 0;
 }
 
 static PTN_UNUSED size_t ptn_symbol_index_capacity_for_entries(size_t expected_entries) {

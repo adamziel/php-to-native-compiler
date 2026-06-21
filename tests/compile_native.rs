@@ -13083,6 +13083,42 @@ var_dump($arrayObject["d1"], $arrayObject["scalar"], $arrayObject);
 }
 
 #[test]
+fn compile_array_object_nested_assign_op_updates_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-nested-assign-op");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-nested-assign-op.php");
+    let output = root.join("array-object-nested-assign-op-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$container = new ArrayObject();
+$dimension = 6;
+$container[$dimension][$dimension] = 5;
+$container[$dimension][$dimension] += 25;
+var_dump($container[$dimension][$dimension]);
+var_dump(isset($container[$dimension][$dimension]));
+var_dump(empty($container[$dimension][$dimension]));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(30)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_iterator_parent_style_internal_current_to_native_binary() {
     let root = temp_dir("ptn-native-array-iterator-parent-internal-current");
     fs::create_dir_all(&root).unwrap();
@@ -45521,6 +45557,37 @@ var_dump($a);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Err: Undefined variable $y\nErr: Undefined variable $y\nErr: String offset cast occurred\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_string_offset_write_skips_stale_root_after_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-string-offset-write-stale-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-string-offset-write-stale-root.php");
+    let output = root.join("nested-string-offset-write-stale-root-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $msg) {
+    echo "Err: $msg\n";
+    $GLOBALS['a'] = '';
+});
+$a = ['a'];
+$a[0][$d] = 'b';
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Err: Undefined variable $d\nErr: String offset cast occurred\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

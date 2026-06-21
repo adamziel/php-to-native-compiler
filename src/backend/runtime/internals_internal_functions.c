@@ -103915,7 +103915,7 @@ static int ptn_spl_offset_key_from_value(
     PtnArrayKey *key_out
 ) {
     offset = ptn_value_deref(offset);
-    ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, !for_unset);
+    ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, 1);
     if (ptn_array_offset_key_is_invalid(offset)) {
         const char *type_name = ptn_offset_key_type_name(offset);
         char message[256];
@@ -105034,6 +105034,65 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference_quiet(
     ptn_array_key_free(storage_key);
     ptn_array_key_free(key);
     ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_internal_array_object_uses_builtin_offsets(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        ptn_spl_array_object_data_from_value(receiver) == NULL) {
+        return 0;
+    }
+    return !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetGet") &&
+        !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetSet") &&
+        !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetUnset") &&
+        !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists");
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    PtnLookupResult *result_out
+) {
+    if (result_out == NULL) {
+        return 0;
+    }
+    *result_out = ptn_lookup_missing();
+    if (offset_value == NULL ||
+        !ptn_internal_array_object_uses_builtin_offsets(runtime, receiver)) {
+        return 0;
+    }
+
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL) {
+        return 0;
+    }
+
+    PtnArrayKey key;
+    if (!ptn_spl_offset_key_from_value(
+            runtime,
+            "ArrayObject",
+            ptn_value_deref(*offset_value),
+            line,
+            1,
+            0,
+            &key
+        )) {
+        return 1;
+    }
+
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 1;
+    }
+    *result_out = ptn_lookup_found(ptn_value_clone_deref(entry->value));
     return 1;
 }
 

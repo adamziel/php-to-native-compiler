@@ -59,6 +59,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
         PtnValue old_value = symbols->items[index].value;
         ptn_array_note_value_replacement(old_value, stored_value);
         symbols->items[index].value = stored_value;
+        symbols->mutation_epoch++;
         ptn_value_destroy(&old_value);
         return;
     }
@@ -75,6 +76,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
+    symbols->mutation_epoch++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
 }
 
@@ -91,6 +93,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
         PtnValue old_value = symbols->items[index].value;
         ptn_array_note_value_replacement(old_value, stored_value);
         symbols->items[index].value = stored_value;
+        symbols->mutation_epoch++;
         ptn_value_destroy_with_runtime_scope(runtime, &old_value);
         return;
     }
@@ -107,6 +110,7 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
+    symbols->mutation_epoch++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
 }
 
@@ -147,6 +151,7 @@ static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols,
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
     symbols->items[symbol_index].value = ptn_null();
     symbols->len++;
+    symbols->mutation_epoch++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
     return &symbols->items[symbol_index];
 }
@@ -157,6 +162,7 @@ static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *sy
         PtnValue current = symbol->value;
         PtnReference *reference = ptn_reference_new_owned(current);
         symbol->value = ptn_reference_value(reference);
+        symbols->mutation_epoch++;
     }
     return ptn_value_clone(symbol->value);
 }
@@ -216,6 +222,7 @@ static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const
     PtnValue old_value = symbol->value;
     ptn_array_note_value_replacement(old_value, reference);
     symbol->value = ptn_value_clone(reference);
+    symbols->mutation_epoch++;
     ptn_value_destroy(&old_value);
 }
 
@@ -366,6 +373,7 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
         symbols->items[i - 1] = symbols->items[i];
     }
     symbols->len--;
+    symbols->mutation_epoch++;
     ptn_symbols_rebuild_index(symbols, symbols->len);
     free(removed_name);
     ptn_value_destroy(&removed_value);
@@ -387,6 +395,7 @@ static PTN_UNUSED void ptn_symbols_unset_with_runtime_scope(
         symbols->items[i - 1] = symbols->items[i];
     }
     symbols->len--;
+    symbols->mutation_epoch++;
     ptn_symbols_rebuild_index(symbols, symbols->len);
     free(removed_name);
     ptn_value_destroy_with_runtime_scope(runtime, &removed_value);

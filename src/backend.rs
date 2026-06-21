@@ -19117,6 +19117,31 @@ fn emit_instruction(
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
             } else {
+                let pre_eval_root = if dimensions.len() > 1 {
+                    let root_lookup_temp = values.next_temp();
+                    let root_temp = values.next_temp();
+                    let root_epoch_temp = values.next_temp();
+                    out.push_str("    PtnLookupResult ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&root_temp);
+                    out.push_str(" = ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".exists ? ptn_value_clone_deref(");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".value) : ptn_null();\n");
+                    out.push_str("    uint64_t ");
+                    out.push_str(&root_epoch_temp);
+                    out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    Some((root_temp, root_epoch_temp))
+                } else {
+                    None
+                };
                 let path = emit_array_path_segments(out, values, dimensions);
                 let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
@@ -19125,19 +19150,42 @@ fn emit_instruction(
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
-                out.push_str(&c_string(array));
-                out.push_str("\", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(&snapshot_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                if let Some((root_temp, root_epoch_temp)) = &pre_eval_root {
+                    out.push_str(
+                        "    ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"",
+                    );
+                    out.push_str(&c_string(array));
+                    out.push_str("\", ");
+                    out.push_str(root_temp);
+                    out.push_str(", ");
+                    out.push_str(root_epoch_temp);
+                    out.push_str(", ");
+                    out.push_str(&path.name);
+                    out.push_str(", ");
+                    out.push_str(&path.len.to_string());
+                    out.push_str(", ");
+                    out.push_str(&snapshot_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                } else {
+                    out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\", ");
+                    out.push_str(&path.name);
+                    out.push_str(", ");
+                    out.push_str(&path.len.to_string());
+                    out.push_str(", ");
+                    out.push_str(&snapshot_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
+                if let Some((root_temp, _)) = pre_eval_root {
+                    emit_value_cleanup(out, "    ", &root_temp);
+                }
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
