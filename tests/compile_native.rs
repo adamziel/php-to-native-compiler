@@ -53390,6 +53390,132 @@ var_dump($bag);
 }
 
 #[test]
+fn compile_property_hook_indirect_write_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-indirect-write-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-indirect-write-paths.php");
+    let output = root.join("property-hook-indirect-write-paths-bin");
+    fs::write(
+        &input,
+        "<?php
+class ByValHook {
+    public $prop {
+        get { echo __METHOD__, \"\\n\"; return $this->prop; }
+        set { echo __METHOD__, \"\\n\"; $this->prop = $value; }
+    }
+}
+
+$byVal = new ByValHook();
+$byVal->prop = [];
+try {
+    $byVal->prop[] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+isset($byVal->prop);
+isset($byVal->prop[0]);
+var_dump($byVal->prop);
+
+class SetOnlyHook {
+    public $prop {
+        set { echo __METHOD__, \"\\n\"; $this->prop = $value; }
+    }
+}
+
+$setOnly = new SetOnlyHook();
+$setOnly->prop = [];
+try {
+    $setOnly->prop[] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $ref =& $setOnly->prop;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$ref = 42;
+var_dump($setOnly->prop);
+
+class HookCollection implements ArrayAccess {
+    public function offsetExists(mixed $offset): bool {
+        echo __METHOD__, \"\\n\";
+        return true;
+    }
+
+    public function offsetGet(mixed $offset): mixed {
+        echo __METHOD__, \"\\n\";
+        return true;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void {
+        echo __METHOD__, \"\\n\";
+    }
+
+    public function offsetUnset(mixed $offset): void {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+class ObjectHook {
+    public function __construct(public HookCollection $collection = new HookCollection()) {}
+    public $prop {
+        get => $this->collection;
+    }
+}
+
+$objectHook = new ObjectHook();
+var_dump($objectHook->prop['foo']);
+var_dump($objectHook->prop[] = 'foo');
+var_dump(isset($objectHook->prop['foo']));
+unset($objectHook->prop['foo']);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ByValHook::$prop::set\n",
+            "ByValHook::$prop::get\n",
+            "Indirect modification of ByValHook::$prop is not allowed\n",
+            "ByValHook::$prop::get\n",
+            "ByValHook::$prop::get\n",
+            "ByValHook::$prop::get\n",
+            "array(0) {\n",
+            "}\n",
+            "SetOnlyHook::$prop::set\n",
+            "Indirect modification of SetOnlyHook::$prop is not allowed\n",
+            "Indirect modification of SetOnlyHook::$prop is not allowed\n",
+            "array(0) {\n",
+            "}\n",
+            "HookCollection::offsetGet\n",
+            "bool(true)\n",
+            "HookCollection::offsetSet\n",
+            "string(3) \"foo\"\n",
+            "HookCollection::offsetExists\n",
+            "bool(true)\n",
+            "HookCollection::offsetUnset\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_indirect_write"));
+    assert!(c_source.contains("ptn_object_write_property_indirect"));
+    assert!(c_source.contains("ptn_object_array_path_unset"));
+}
+
+#[test]
 fn compile_simple_property_hook_setters_to_native_binary() {
     let root = temp_dir("ptn-native-simple-property-hook-setters");
     fs::create_dir_all(&root).unwrap();
