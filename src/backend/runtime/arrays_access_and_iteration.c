@@ -11079,6 +11079,13 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
     size_t segment_count,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_overloaded_assign_op(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+);
 
 static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     PtnRuntime *runtime,
@@ -12739,12 +12746,13 @@ static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
     ptn_value_array_path_set_from_assign_op(runtime, target, segments, segment_count, value, line);
 }
 
-static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
     PtnRuntime *runtime,
     PtnValue target,
     const PtnArrayPathSegment *segments,
     size_t segment_count,
-    size_t line
+    size_t line,
+    int emit_key_conversion_diagnostics
 ) {
     if (segment_count == 0) {
         return ptn_null();
@@ -12791,12 +12799,13 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
                 if (segment_count == 1) {
                     return reference;
                 }
-                PtnValue result = ptn_value_array_path_read_for_assign_op(
+                PtnValue result = ptn_value_array_path_read_for_assign_op_impl(
                     runtime,
                     reference,
                     segments + 1,
                     segment_count - 1,
-                    line
+                    line,
+                    emit_key_conversion_diagnostics
                 );
                 ptn_value_destroy(&reference);
                 return result;
@@ -12808,12 +12817,13 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
         if (segment_count == 1) {
             return nested;
         }
-        PtnValue result = ptn_value_array_path_read_for_assign_op(
+        PtnValue result = ptn_value_array_path_read_for_assign_op_impl(
             runtime,
             nested,
             segments + 1,
             segment_count - 1,
-            line
+            line,
+            emit_key_conversion_diagnostics
         );
         ptn_value_destroy(&nested);
         return result;
@@ -12829,9 +12839,17 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
         if (segment->append) {
             return ptn_null();
         }
-        ptn_emit_array_offset_key_conversion_diagnostic(runtime, segment->value, line, 1);
+        if (emit_key_conversion_diagnostics) {
+            ptn_emit_array_offset_key_conversion_diagnostic(runtime, segment->value, line, 1);
+        }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, segment->value, line, 0, &key)) {
+        if (!ptn_array_offset_key_from_value(
+            runtime,
+            segment->value,
+            line,
+            !emit_key_conversion_diagnostics,
+            &key
+        )) {
             return ptn_null();
         }
         if (container.type == PTN_ARRAY) {
@@ -12857,6 +12875,40 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
         return ptn_null();
     }
     return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    return ptn_value_array_path_read_for_assign_op_impl(
+        runtime,
+        target,
+        segments,
+        segment_count,
+        line,
+        1
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_overloaded_assign_op(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    return ptn_value_array_path_read_for_assign_op_impl(
+        runtime,
+        target,
+        segments,
+        segment_count,
+        line,
+        0
+    );
 }
 
 static PTN_UNUSED int ptn_array_unset_non_array_value(PtnRuntime *runtime, PtnValue value) {

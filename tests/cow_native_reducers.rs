@@ -93,6 +93,117 @@ fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
 }
 
 #[test]
+fn arrayaccess_nested_compound_scalar_offset_suppresses_inner_key_warnings() {
+    let root = temp_dir("ptn-native-arrayaccess-nested-compound-offset");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("arrayaccess-nested-compound-offset.php");
+    let output = root.join("arrayaccess-nested-compound-offset-bin");
+    let source = "<?php\n\
+class A implements ArrayAccess {\n\
+    function offsetSet($k, $v): void {}\n\
+    function offsetGet($k): mixed { echo \"get\\n\"; return 5; }\n\
+    function offsetExists($k): bool { return true; }\n\
+    function offsetUnset($k): void {}\n\
+}\n\
+$a = new A;\n\
+foreach ([null, 5.5, new stdClass] as $k) {\n\
+    try {\n\
+        $a[$k][$k] += 25;\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}";
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false })
+        .unwrap_or_else(|error| panic!("compile failed: {error}"));
+    let execution = Command::new(&output)
+        .output()
+        .unwrap_or_else(|error| panic!("run failed: {error}"));
+    assert!(
+        execution.status.success(),
+        "exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(
+        execution.stderr.is_empty(),
+        "unexpected stderr:\n{}",
+        String::from_utf8_lossy(&execution.stderr)
+    );
+
+    let expected_stdout = format!(
+        "get\n\nNotice: Indirect modification of overloaded element of A has no effect in {} on line 11\nCannot use a scalar value as an array\n\
+get\n\nNotice: Indirect modification of overloaded element of A has no effect in {} on line 11\nCannot use a scalar value as an array\n\
+get\n\nNotice: Indirect modification of overloaded element of A has no effect in {} on line 11\nCannot use a scalar value as an array\n",
+        input.display(),
+        input.display(),
+        input.display()
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&execution.stdout),
+        expected_stdout,
+        "stdout mismatch"
+    );
+}
+
+#[test]
+fn arrayobject_subclass_overloaded_reference_paths_use_offset_get() {
+    let root = temp_dir("ptn-native-arrayobject-overloaded-reference-paths");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("arrayobject-overloaded-reference-paths.php");
+    let output = root.join("arrayobject-overloaded-reference-paths-bin");
+    let source = "<?php\n\
+class B extends ArrayObject {\n\
+    function offsetSet($k, $v): void {}\n\
+    function offsetGet($k): mixed { echo \"get\\n\"; return 5; }\n\
+    function offsetExists($k): bool { return true; }\n\
+    function offsetUnset($k): void {}\n\
+}\n\
+$b = new B;\n\
+try {\n\
+    $ref =& $b[null];\n\
+    var_dump($ref);\n\
+} catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try {\n\
+    $b[new stdClass][new stdClass] = 5;\n\
+} catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+";
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false })
+        .unwrap_or_else(|error| panic!("compile failed: {error}"));
+    let execution = Command::new(&output)
+        .output()
+        .unwrap_or_else(|error| panic!("run failed: {error}"));
+    assert!(
+        execution.status.success(),
+        "exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(
+        execution.stderr.is_empty(),
+        "unexpected stderr:\n{}",
+        String::from_utf8_lossy(&execution.stderr)
+    );
+
+    let expected_stdout = format!(
+        "get\n\nNotice: Indirect modification of overloaded element of B has no effect in {} on line 10\nint(5)\n\
+get\n\nNotice: Indirect modification of overloaded element of B has no effect in {} on line 14\nCannot use a scalar value as an array\n",
+        input.display(),
+        input.display()
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&execution.stdout),
+        expected_stdout,
+        "stdout mismatch"
+    );
+}
+
+#[test]
 fn compile_focused_cow_reducers_to_native_binary() {
     let cases = [
         CowReducerCase {

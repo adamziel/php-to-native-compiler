@@ -103048,6 +103048,9 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     if (data == NULL) {
         return 0;
     }
+    if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetGet")) {
+        return 0;
+    }
     PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
     if (array == NULL) {
         *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));

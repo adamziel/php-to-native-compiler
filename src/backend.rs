@@ -18576,7 +18576,7 @@ fn emit_instruction(
                 out.push_str(&current_temp);
                 out.push_str(" = ");
                 out.push_str(&split_temp);
-                out.push_str(" ? ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(" ? ptn_value_array_path_read_for_overloaded_assign_op(&runtime, ");
                 out.push_str(&base_temp);
                 out.push_str(", ");
                 out.push_str(&path.name);
@@ -28867,7 +28867,7 @@ impl ValueEmitter {
                 out.push_str(&current_temp);
                 out.push_str(" = ");
                 out.push_str(&split_temp);
-                out.push_str(" ? ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(" ? ptn_value_array_path_read_for_overloaded_assign_op(&runtime, ");
                 out.push_str(&base_temp);
                 out.push_str(", ");
                 out.push_str(&path.name);
@@ -29513,7 +29513,7 @@ impl ValueEmitter {
         out.push_str(&current_temp);
         out.push_str(" = ");
         out.push_str(&split_temp);
-        out.push_str(" ? ptn_value_array_path_read_for_assign_op(&runtime, ");
+        out.push_str(" ? ptn_value_array_path_read_for_overloaded_assign_op(&runtime, ");
         out.push_str(&base_temp);
         out.push_str(", ");
         out.push_str(&path.name);
