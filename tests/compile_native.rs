@@ -32713,6 +32713,107 @@ var_dump($reader->getAttribute('baz'));
 }
 
 #[test]
+fn compile_xmlreader_libxml_schema_noent_and_stream_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-libxml-schema-noent-stream");
+    fs::create_dir_all(&root).unwrap();
+    let xsd = root.join("items.xsd");
+    let input = root.join("xmlreader-libxml-schema-noent-stream.php");
+    let output = root.join("xmlreader-libxml-schema-noent-stream-bin");
+    fs::write(
+        &xsd,
+        r#"<?xml version="1.0" encoding="UTF-8" ?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="items">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element name="item" type="xsd:integer" minOccurs="0" maxOccurs="unbounded" />
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$entityXml = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE root [
+<!ELEMENT root ANY>
+<!ENTITY x "y">
+]>
+<root>&x;</root>
+XML;
+
+$reader = new XMLReader();
+$reader->XML($entityXml, null, LIBXML_NOENT);
+while ($reader->read()) {{
+    echo $reader->nodeType, ", ", $reader->name, ", ", $reader->value, "\n";
+}}
+$reader->close();
+
+$schema = {};
+$valid = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<items><item>123</item><item>456</item></items>";
+$reader = new XMLReader();
+$reader->XML($valid);
+var_dump($reader->setSchema($schema));
+while ($reader->read()) {{
+    if ($reader->nodeType === XMLReader::ELEMENT && $reader->name === 'item') {{
+        $reader->read();
+        echo "item:", $reader->value, "\n";
+    }}
+}}
+$reader->close();
+
+$reader = new XMLReader();
+$reader->XML('<foo/>');
+var_dump($reader->setSchema($schema));
+while ($reader->read() && $reader->nodeType !== XMLReader::ELEMENT) {{}}
+$reader->close();
+
+$h = fopen("php://memory", "w+");
+fwrite($h, "<root><!--my comment-->");
+fseek($h, 0);
+$streamReader = XMLReader::fromStream($h, encoding: "UTF-8");
+$start = true;
+while ($result = @$streamReader->read()) {{
+    var_dump($result);
+    switch ($streamReader->nodeType) {{
+        case XMLReader::ELEMENT:
+            echo "Element: ", $streamReader->name, "\n";
+            break;
+        case XMLReader::COMMENT:
+            echo "Comment: ", $streamReader->value, "\n";
+            break;
+    }}
+    if ($start) {{
+        fwrite($h, "<child/></root>");
+        fclose($h);
+        $start = false;
+    }}
+}}
+var_dump($streamReader->depth);
+"#,
+            php_string_literal(&xsd)
+        ),
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("10, root, \n1, root, \n3, #text, y\n15, root, \n"));
+    assert!(stdout.contains("bool(true)\nitem:123\nitem:456\n"));
+    assert!(stdout.contains("Warning: XMLReader::read(): Element 'foo':"));
+    assert!(stdout.contains("bool(true)\nElement: root\nbool(true)\nComment: my comment\nint(1)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dom_element_node_value_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-node-value");
     fs::create_dir_all(&root).unwrap();

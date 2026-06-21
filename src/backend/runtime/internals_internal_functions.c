@@ -73914,8 +73914,16 @@ typedef struct {
     int parser_validate;
     int parser_subst_entities;
     int validation_enabled;
+    int parse_complete;
+    int stream_backed;
+    int native_reader_active;
+    int source_options;
+    char *source_data;
+    size_t source_len;
+    char *source_encoding;
     char *base_uri;
     PtnResource *source_resource;
+    void *native_reader;
     PtnXmlNode *document;
 } PtnXmlReaderData;
 
@@ -74140,6 +74148,8 @@ static const char *ptn_xml_reader_current_name(PtnXmlReaderData *data);
 static const char *ptn_xml_reader_current_value(PtnXmlReaderData *data);
 static int ptn_xml_reader_node_has_value(PtnXmlReaderData *data);
 static int ptn_xml_reader_property_known(const char *property);
+static int ptn_xml_reader_native_active(PtnXmlReaderData *data);
+static int ptn_xml_reader_native_property_read(PtnRuntime *runtime, PtnXmlReaderData *data, const char *property, PtnValue *value_out);
 static PtnSimpleXmlData *ptn_simplexml_data(PtnValue value);
 static PtnValue ptn_simplexml_property_value(PtnRuntime *runtime, PtnValue receiver, const char *property);
 static int ptn_simplexml_method_exists(const char *method_name);
@@ -75615,6 +75625,7 @@ typedef void *PtnLibxml2DocPtr;
 typedef void *PtnLibxml2ValidCtxtPtr;
 typedef void *PtnLibxml2ParserCtxtPtr;
 typedef void *PtnLibxml2ParserInputPtr;
+typedef void *PtnLibxml2TextReaderPtr;
 typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
 
 typedef struct {
@@ -75645,6 +75656,37 @@ typedef struct {
     PtnLibxml2ExternalEntityLoader (*xmlGetExternalEntityLoader)(void);
     void (*xmlSetExternalEntityLoader)(PtnLibxml2ExternalEntityLoader);
     PtnLibxml2ParserInputPtr (*xmlNewStringInputStream)(PtnLibxml2ParserCtxtPtr, const unsigned char *);
+    PtnLibxml2TextReaderPtr (*xmlReaderForMemory)(const char *, int, const char *, const char *, int);
+    void (*xmlFreeTextReader)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderRead)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderNodeType)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderDepth)(PtnLibxml2TextReaderPtr);
+    const unsigned char *(*xmlTextReaderConstName)(PtnLibxml2TextReaderPtr);
+    const unsigned char *(*xmlTextReaderConstLocalName)(PtnLibxml2TextReaderPtr);
+    const unsigned char *(*xmlTextReaderConstPrefix)(PtnLibxml2TextReaderPtr);
+    const unsigned char *(*xmlTextReaderConstNamespaceUri)(PtnLibxml2TextReaderPtr);
+    const unsigned char *(*xmlTextReaderConstValue)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderHasValue)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderHasAttributes)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderAttributeCount)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderIsEmptyElement)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderMoveToFirstAttribute)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderMoveToNextAttribute)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderMoveToAttribute)(PtnLibxml2TextReaderPtr, const unsigned char *);
+    int (*xmlTextReaderMoveToAttributeNo)(PtnLibxml2TextReaderPtr, int);
+    int (*xmlTextReaderMoveToAttributeNs)(PtnLibxml2TextReaderPtr, const unsigned char *, const unsigned char *);
+    int (*xmlTextReaderMoveToElement)(PtnLibxml2TextReaderPtr);
+    unsigned char *(*xmlTextReaderGetAttribute)(PtnLibxml2TextReaderPtr, const unsigned char *);
+    unsigned char *(*xmlTextReaderGetAttributeNo)(PtnLibxml2TextReaderPtr, int);
+    unsigned char *(*xmlTextReaderGetAttributeNs)(PtnLibxml2TextReaderPtr, const unsigned char *, const unsigned char *);
+    unsigned char *(*xmlTextReaderReadString)(PtnLibxml2TextReaderPtr);
+    unsigned char *(*xmlTextReaderReadInnerXml)(PtnLibxml2TextReaderPtr);
+    unsigned char *(*xmlTextReaderReadOuterXml)(PtnLibxml2TextReaderPtr);
+    int (*xmlTextReaderGetParserProp)(PtnLibxml2TextReaderPtr, int);
+    int (*xmlTextReaderSetParserProp)(PtnLibxml2TextReaderPtr, int, int);
+    int (*xmlTextReaderSchemaValidate)(PtnLibxml2TextReaderPtr, const char *);
+    int (*xmlTextReaderIsValid)(PtnLibxml2TextReaderPtr);
+    void (*xmlFree)(void *);
     void (*xmlSetGenericErrorFunc)(void *, void (*)(void *, const char *, ...));
     void (*xmlSetStructuredErrorFunc)(void *, void (*)(void *, const PtnLibxml2Error *));
 } PtnLibxml2Api;
@@ -75850,6 +75892,37 @@ static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
     PTN_LIBXML2_LOAD_REQUIRED(xmlGetExternalEntityLoader, "xmlGetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetExternalEntityLoader, "xmlSetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlNewStringInputStream, "xmlNewStringInputStream");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlReaderForMemory, "xmlReaderForMemory");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlFreeTextReader, "xmlFreeTextReader");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderRead, "xmlTextReaderRead");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderNodeType, "xmlTextReaderNodeType");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderDepth, "xmlTextReaderDepth");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderConstName, "xmlTextReaderConstName");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderConstLocalName, "xmlTextReaderConstLocalName");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderConstPrefix, "xmlTextReaderConstPrefix");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderConstNamespaceUri, "xmlTextReaderConstNamespaceUri");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderConstValue, "xmlTextReaderConstValue");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderHasValue, "xmlTextReaderHasValue");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderHasAttributes, "xmlTextReaderHasAttributes");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderAttributeCount, "xmlTextReaderAttributeCount");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderIsEmptyElement, "xmlTextReaderIsEmptyElement");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToFirstAttribute, "xmlTextReaderMoveToFirstAttribute");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToNextAttribute, "xmlTextReaderMoveToNextAttribute");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToAttribute, "xmlTextReaderMoveToAttribute");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToAttributeNo, "xmlTextReaderMoveToAttributeNo");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToAttributeNs, "xmlTextReaderMoveToAttributeNs");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderMoveToElement, "xmlTextReaderMoveToElement");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderGetAttribute, "xmlTextReaderGetAttribute");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderGetAttributeNo, "xmlTextReaderGetAttributeNo");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderGetAttributeNs, "xmlTextReaderGetAttributeNs");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderReadString, "xmlTextReaderReadString");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderReadInnerXml, "xmlTextReaderReadInnerXml");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderReadOuterXml, "xmlTextReaderReadOuterXml");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderGetParserProp, "xmlTextReaderGetParserProp");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderSetParserProp, "xmlTextReaderSetParserProp");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderSchemaValidate, "xmlTextReaderSchemaValidate");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderIsValid, "xmlTextReaderIsValid");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlFree, "xmlFree");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetStructuredErrorFunc, "xmlSetStructuredErrorFunc");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSetGenericErrorFunc, "xmlSetGenericErrorFunc");
     api->available = 1;
@@ -76538,8 +76611,9 @@ static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document
             ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, element);
         }
     }
+    int complete = stack_len <= 1;
     free(stack);
-    return 1;
+    return complete;
 }
 
 static PtnValue ptn_xml_document_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -78993,6 +79067,9 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             return 0;
         }
         PtnXmlReaderData *data = (PtnXmlReaderData *)receiver.as.object->native_data;
+        if (ptn_xml_reader_native_active(data)) {
+            return ptn_xml_reader_native_property_read(runtime, data, property, value_out);
+        }
         PtnXmlReaderEvent *event = ptn_xml_reader_current_event(data);
         PtnXmlNode *node = ptn_xml_reader_current_node(data);
         PtnXmlNode *element = ptn_xml_reader_current_element_for_attributes(data);
@@ -79743,11 +79820,41 @@ static PtnXmlReaderData *ptn_xml_reader_data_alloc(void) {
     return data;
 }
 
+static void ptn_xml_reader_free_native_reader(PtnXmlReaderData *data) {
+    if (data == NULL) {
+        return;
+    }
+    if (data->native_reader != NULL) {
+        PtnLibxml2Api *api = ptn_libxml2_api_load();
+        if (api != NULL) {
+            api->xmlFreeTextReader(data->native_reader);
+        }
+        data->native_reader = NULL;
+    }
+    data->native_reader_active = 0;
+}
+
+static void ptn_xml_reader_clear_native_source(PtnXmlReaderData *data) {
+    if (data == NULL) {
+        return;
+    }
+    ptn_xml_reader_free_native_reader(data);
+    free(data->source_data);
+    data->source_data = NULL;
+    data->source_len = 0;
+    free(data->source_encoding);
+    data->source_encoding = NULL;
+    data->source_options = 0;
+    data->stream_backed = 0;
+    data->parse_complete = 0;
+}
+
 static void ptn_xml_reader_data_free(void *raw) {
     PtnXmlReaderData *data = (PtnXmlReaderData *)raw;
     if (data == NULL) {
         return;
     }
+    ptn_xml_reader_clear_native_source(data);
     if (data->source_resource != NULL) {
         ptn_resource_release(data->source_resource);
     }
@@ -79842,6 +79949,7 @@ static void ptn_xml_reader_collect_events(PtnXmlReaderData *reader, PtnXmlNode *
 }
 
 static void ptn_xml_reader_reset_events(PtnXmlReaderData *data) {
+    ptn_xml_reader_clear_native_source(data);
     if (data->source_resource != NULL) {
         ptn_resource_release(data->source_resource);
         data->source_resource = NULL;
@@ -80151,6 +80259,229 @@ static int ptn_xml_reader_validate_encoding_arg(
     return 1;
 }
 
+static char *ptn_xml_reader_optional_encoding_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int *ok
+) {
+    *ok = 1;
+    if (argc < 2 || ptn_value_deref(args[1]).type == PTN_NULL) {
+        return NULL;
+    }
+    PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, function_name, 2, "encoding", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(encoding);
+        *ok = 0;
+        return NULL;
+    }
+    if (memchr(encoding.data, '\0', encoding.len) != NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($encoding) must not contain any null bytes",
+            function_name
+        );
+        ptn_string_operand_free(encoding);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        *ok = 0;
+        return NULL;
+    }
+    if (!ptn_xml_reader_encoding_supported(encoding)) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($encoding) must be a valid character encoding",
+            function_name
+        );
+        ptn_string_operand_free(encoding);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        *ok = 0;
+        return NULL;
+    }
+    char *copy = encoding.len == 0 ? NULL : ptn_duplicate_string_len(encoding.data, encoding.len);
+    ptn_string_operand_free(encoding);
+    return copy;
+}
+
+static int ptn_xml_reader_options_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 3) {
+        return 0;
+    }
+    int64_t options = ptn_internal_expect_integer_arg(runtime, function_name, 3, "options", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    return (int)options;
+}
+
+static void ptn_xml_reader_store_source(
+    PtnXmlReaderData *data,
+    const char *source,
+    size_t source_len,
+    const char *encoding,
+    int options,
+    int stream_backed
+) {
+    if (data == NULL) {
+        return;
+    }
+    free(data->source_data);
+    data->source_data = ptn_duplicate_string_len(source == NULL ? "" : source, source_len);
+    data->source_len = source_len;
+    free(data->source_encoding);
+    data->source_encoding = encoding == NULL ? NULL : ptn_duplicate_string(encoding);
+    data->source_options = options;
+    data->stream_backed = stream_backed;
+}
+
+static int ptn_xml_reader_native_should_open(PtnXmlReaderData *data) {
+    return data != NULL &&
+        !data->stream_backed &&
+        data->source_data != NULL &&
+        (data->source_options != 0 || data->validation_enabled || data->parser_validate || data->parser_subst_entities);
+}
+
+static int ptn_xml_reader_native_open(PtnXmlReaderData *data) {
+    if (!ptn_xml_reader_native_should_open(data) || data->source_len > (size_t)INT_MAX) {
+        return 0;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL) {
+        return 0;
+    }
+    ptn_xml_reader_free_native_reader(data);
+    PtnLibxml2TextReaderPtr reader = api->xmlReaderForMemory(
+        data->source_data,
+        (int)data->source_len,
+        data->base_uri == NULL || data->base_uri[0] == '\0' ? NULL : data->base_uri,
+        data->source_encoding,
+        data->source_options
+    );
+    if (reader == NULL) {
+        return 0;
+    }
+    data->native_reader = reader;
+    data->native_reader_active = 1;
+    if (data->parser_load_dtd) {
+        api->xmlTextReaderSetParserProp(reader, 1, 1);
+    }
+    if (data->parser_default_attrs) {
+        api->xmlTextReaderSetParserProp(reader, 2, 1);
+    }
+    if (data->parser_validate) {
+        api->xmlTextReaderSetParserProp(reader, 3, 1);
+    }
+    if (data->parser_subst_entities) {
+        api->xmlTextReaderSetParserProp(reader, 4, 1);
+    }
+    return 1;
+}
+
+static int ptn_xml_reader_native_active(PtnXmlReaderData *data) {
+    return data != NULL && data->native_reader_active && data->native_reader != NULL;
+}
+
+static PtnValue ptn_xml_reader_native_const_string_value(const unsigned char *value) {
+    return value == NULL
+        ? ptn_string("")
+        : ptn_owned_string(ptn_duplicate_string((const char *)value));
+}
+
+static PtnValue ptn_xml_reader_native_owned_string_value(PtnLibxml2Api *api, unsigned char *value) {
+    if (value == NULL) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_owned_string(ptn_duplicate_string((const char *)value));
+    api->xmlFree(value);
+    return result;
+}
+
+static int ptn_xml_reader_native_property_read(PtnRuntime *runtime, PtnXmlReaderData *data, const char *property, PtnValue *value_out) {
+    (void)runtime;
+    if (!ptn_xml_reader_native_active(data)) {
+        return 0;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL) {
+        return 0;
+    }
+    PtnLibxml2TextReaderPtr reader = data->native_reader;
+    if (ptn_ascii_case_equal(property, "attributeCount")) {
+        *value_out = ptn_int(api->xmlTextReaderAttributeCount(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "baseURI")) {
+        *value_out = ptn_owned_string(ptn_duplicate_string(data->base_uri == NULL ? "" : data->base_uri));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "xmlLang")) {
+        *value_out = ptn_string("");
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "depth")) {
+        *value_out = ptn_int(api->xmlTextReaderDepth(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "hasAttributes")) {
+        *value_out = ptn_bool(api->xmlTextReaderHasAttributes(reader) == 1);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "hasValue")) {
+        *value_out = ptn_bool(api->xmlTextReaderHasValue(reader) == 1);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "isDefault")) {
+        *value_out = ptn_bool(0);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "isEmptyElement")) {
+        *value_out = ptn_bool(api->xmlTextReaderIsEmptyElement(reader) == 1);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "localName")) {
+        *value_out = ptn_xml_reader_native_const_string_value(api->xmlTextReaderConstLocalName(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "name")) {
+        *value_out = ptn_xml_reader_native_const_string_value(api->xmlTextReaderConstName(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "namespaceURI")) {
+        *value_out = ptn_xml_reader_native_const_string_value(api->xmlTextReaderConstNamespaceUri(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "nodeType")) {
+        *value_out = ptn_int(api->xmlTextReaderNodeType(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "prefix")) {
+        *value_out = ptn_xml_reader_native_const_string_value(api->xmlTextReaderConstPrefix(reader));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "value")) {
+        *value_out = ptn_xml_reader_native_const_string_value(api->xmlTextReaderConstValue(reader));
+        return 1;
+    }
+    return 0;
+}
+
 static void ptn_xml_reader_emit_open_warning(PtnRuntime *runtime, const char *path, size_t line) {
     (void)path;
     char message[512];
@@ -80161,7 +80492,16 @@ static void ptn_xml_reader_emit_open_warning(PtnRuntime *runtime, const char *pa
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
-static PtnValue ptn_xml_reader_load_string(PtnRuntime *runtime, PtnValue receiver, const char *source, size_t source_len, const char *method_name) {
+static PtnValue ptn_xml_reader_load_string(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *source,
+    size_t source_len,
+    const char *method_name,
+    const char *encoding,
+    int options,
+    int stream_backed
+) {
     PtnXmlReaderData *data = ptn_xml_reader_ensure_data(receiver);
     if (data == NULL) {
         return ptn_bool(0);
@@ -80181,8 +80521,9 @@ static PtnValue ptn_xml_reader_load_string(PtnRuntime *runtime, PtnValue receive
         data,
         runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "php://memory"
     );
+    ptn_xml_reader_store_source(data, source, source_len, encoding, options, stream_backed);
     PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
-    ptn_xml_parse_document_into(runtime, document, source, source_len);
+    data->parse_complete = ptn_xml_parse_document_into(runtime, document, source, source_len);
     data->document = document;
     if (data->parser_default_attrs) {
         ptn_xml_reader_apply_default_attributes(runtime, data);
@@ -80190,11 +80531,22 @@ static PtnValue ptn_xml_reader_load_string(PtnRuntime *runtime, PtnValue receive
     for (size_t i = 0; i < document->child_count; i++) {
         ptn_xml_reader_collect_events(data, document->children[i], 0);
     }
+    if (ptn_xml_reader_native_should_open(data)) {
+        (void)ptn_xml_reader_native_open(data);
+    }
     data->loaded = 1;
     return ptn_bool(1);
 }
 
-static PtnValue ptn_xml_reader_load_file(PtnRuntime *runtime, PtnValue receiver, const char *path, const char *method_name, size_t line) {
+static PtnValue ptn_xml_reader_load_file(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *path,
+    const char *method_name,
+    const char *encoding,
+    int options,
+    size_t line
+) {
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         ptn_xml_reader_emit_open_warning(runtime, path, line);
@@ -80232,11 +80584,19 @@ static PtnValue ptn_xml_reader_load_file(PtnRuntime *runtime, PtnValue receiver,
     size_t read_len = fread(buffer, 1, (size_t)size, file);
     fclose(file);
     buffer[read_len] = '\0';
-    PtnValue result = ptn_xml_reader_load_string(runtime, receiver, buffer, read_len, method_name);
+    PtnValue result = ptn_xml_reader_load_string(runtime, receiver, buffer, read_len, method_name, encoding, options, 0);
     if (runtime->exceptions->active_exception == NULL && ptn_is_truthy(result)) {
         PtnXmlReaderData *data = ptn_xml_reader_data(receiver);
         ptn_xml_reader_set_base_uri(data, path);
         ptn_xml_reader_set_source_resource(data, path);
+        if (data != NULL) {
+            free(data->source_encoding);
+            data->source_encoding = encoding == NULL ? NULL : ptn_duplicate_string(encoding);
+            data->source_options = options;
+        }
+        if (ptn_xml_reader_native_should_open(data)) {
+            (void)ptn_xml_reader_native_open(data);
+        }
         if (data != NULL && data->parser_default_attrs) {
             ptn_xml_reader_apply_default_attributes(runtime, data);
         }
@@ -80452,6 +80812,9 @@ static PtnValue ptn_xml_reader_static_new_loaded(
     size_t source_len,
     const char *method_name,
     int source_is_file,
+    const char *encoding,
+    int options,
+    int stream_backed,
     size_t line
 ) {
     PtnValue object = ptn_ascii_case_equal(class_name, "XMLReader")
@@ -80465,8 +80828,8 @@ static PtnValue ptn_xml_reader_static_new_loaded(
     }
     ptn_xml_reader_ensure_data(object);
     PtnValue loaded = source_is_file
-        ? ptn_xml_reader_load_file(runtime, object, source, method_name, line)
-        : ptn_xml_reader_load_string(runtime, object, source, source_len, method_name);
+        ? ptn_xml_reader_load_file(runtime, object, source, method_name, encoding, options, line)
+        : ptn_xml_reader_load_string(runtime, object, source, source_len, method_name, encoding, options, stream_backed);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&loaded);
         ptn_value_destroy(&object);
@@ -80495,11 +80858,19 @@ static PtnValue ptn_xml_reader_static_call_method(
             return ptn_null();
         }
         const char *function_name = ptn_ascii_case_equal(name, "XML") ? "XMLReader::XML" : "XMLReader::fromString";
-        if (!ptn_xml_reader_validate_encoding_arg(runtime, function_name, argc, args, line)) {
+        int encoding_ok = 1;
+        char *encoding = ptn_xml_reader_optional_encoding_arg(runtime, function_name, argc, args, line, &encoding_ok);
+        if (!encoding_ok) {
+            return ptn_null();
+        }
+        int options = ptn_xml_reader_options_arg(runtime, function_name, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnStringOperand source = ptn_internal_expect_string_arg(runtime, function_name, 1, "source", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnValue result = ptn_xml_reader_static_new_loaded(
@@ -80509,8 +80880,12 @@ static PtnValue ptn_xml_reader_static_call_method(
             source.len,
             function_name,
             0,
+            encoding,
+            options,
+            0,
             line
         );
+        free(encoding);
         ptn_string_operand_free(source);
         return result;
     }
@@ -80520,15 +80895,24 @@ static PtnValue ptn_xml_reader_static_call_method(
             return ptn_null();
         }
         const char *function_name = ptn_ascii_case_equal(name, "open") ? "XMLReader::open" : "XMLReader::fromUri";
-        if (!ptn_xml_reader_validate_encoding_arg(runtime, function_name, argc, args, line)) {
+        int encoding_ok = 1;
+        char *encoding = ptn_xml_reader_optional_encoding_arg(runtime, function_name, argc, args, line, &encoding_ok);
+        if (!encoding_ok) {
+            return ptn_null();
+        }
+        int options = ptn_xml_reader_options_arg(runtime, function_name, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, 1, "uri", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         if (uri.len == 0) {
             ptn_string_operand_free(uri);
+            free(encoding);
             ptn_throw_exception(runtime, "ValueError", "XMLReader::fromUri(): Argument #1 ($uri) must not be empty");
             return ptn_null();
         }
@@ -80538,12 +80922,14 @@ static PtnValue ptn_xml_reader_static_call_method(
             FILE *probe = fopen(path, "rb");
             if (probe == NULL) {
                 free(path);
+                free(encoding);
                 ptn_throw_exception(runtime, "Error", "Unable to open source data");
                 return ptn_null();
             }
             fclose(probe);
         }
-        PtnValue result = ptn_xml_reader_static_new_loaded(runtime, class_name, path, strlen(path), function_name, 1, line);
+        PtnValue result = ptn_xml_reader_static_new_loaded(runtime, class_name, path, strlen(path), function_name, 1, encoding, options, 0, line);
+        free(encoding);
         free(path);
         return result;
     }
@@ -80556,7 +80942,14 @@ static PtnValue ptn_xml_reader_static_call_method(
         if (stream == NULL) {
             return ptn_null();
         }
-        if (!ptn_xml_reader_validate_encoding_arg(runtime, "XMLReader::fromStream", argc, args, line)) {
+        int encoding_ok = 1;
+        char *encoding = ptn_xml_reader_optional_encoding_arg(runtime, "XMLReader::fromStream", argc, args, line, &encoding_ok);
+        if (!encoding_ok) {
+            return ptn_null();
+        }
+        int options = ptn_xml_reader_options_arg(runtime, "XMLReader::fromStream", argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnStringBuffer buffer;
@@ -80576,8 +80969,20 @@ static PtnValue ptn_xml_reader_static_call_method(
             buffer.len,
             "XMLReader::fromStream",
             0,
+            encoding,
+            options,
+            1,
             line
         );
+        PtnXmlReaderData *data = ptn_xml_reader_data(result);
+        if (data != NULL) {
+            if (data->source_resource != NULL) {
+                ptn_resource_release(data->source_resource);
+            }
+            data->source_resource = stream;
+            ptn_resource_retain(stream);
+        }
+        free(encoding);
         free(buffer.data);
         return result;
     }
@@ -80594,33 +80999,52 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "XML")) {
-        if (!ptn_xml_reader_validate_encoding_arg(runtime, "XMLReader::XML", argc, args, line)) {
+        int encoding_ok = 1;
+        char *encoding = ptn_xml_reader_optional_encoding_arg(runtime, "XMLReader::XML", argc, args, line, &encoding_ok);
+        if (!encoding_ok) {
+            return ptn_null();
+        }
+        int options = ptn_xml_reader_options_arg(runtime, "XMLReader::XML", argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "XMLReader::XML", 1, "source", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
-        PtnValue result = ptn_xml_reader_load_string(runtime, receiver, source.data, source.len, "XMLReader::XML");
+        PtnValue result = ptn_xml_reader_load_string(runtime, receiver, source.data, source.len, "XMLReader::XML", encoding, options, 0);
+        free(encoding);
         ptn_string_operand_free(source);
         return result;
     }
     if (ptn_ascii_case_equal(name, "open")) {
-        if (!ptn_xml_reader_validate_encoding_arg(runtime, "XMLReader::open", argc, args, line)) {
+        int encoding_ok = 1;
+        char *encoding = ptn_xml_reader_optional_encoding_arg(runtime, "XMLReader::open", argc, args, line, &encoding_ok);
+        if (!encoding_ok) {
+            return ptn_null();
+        }
+        int options = ptn_xml_reader_options_arg(runtime, "XMLReader::open", argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, "XMLReader::open", 1, "uri", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
+            free(encoding);
             return ptn_null();
         }
         if (uri.len == 0) {
             ptn_string_operand_free(uri);
+            free(encoding);
             ptn_throw_exception(runtime, "ValueError", "XMLReader::open(): Argument #1 ($uri) must not be empty");
             return ptn_null();
         }
         char *path = ptn_duplicate_string_len(uri.data, uri.len);
         ptn_string_operand_free(uri);
-        PtnValue result = ptn_xml_reader_load_file(runtime, receiver, path, "XMLReader::open", line);
+        PtnValue result = ptn_xml_reader_load_file(runtime, receiver, path, "XMLReader::open", encoding, options, line);
+        free(encoding);
         free(path);
         return result;
     }
@@ -80629,8 +81053,46 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
             ptn_xml_reader_throw_data_not_loaded(runtime);
             return ptn_null();
         }
+        if (ptn_xml_reader_native_active(data)) {
+            PtnLibxml2Api *api = ptn_libxml2_api_load();
+            if (api == NULL) {
+                return ptn_bool(0);
+            }
+            PtnLibxml2DomParseErrorCapture capture;
+            memset(&capture, 0, sizeof(capture));
+            capture.runtime = runtime;
+            capture.function_name = "XMLReader::read";
+            capture.line = line;
+            capture.suppress_warnings = ptn_libxml_internal_errors ||
+                ((data->source_options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0);
+            if (api->xmlSetGenericErrorFunc != NULL) {
+                api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+            }
+            api->xmlSetStructuredErrorFunc(&capture, ptn_libxml2_dom_parse_structured_error);
+            int read_result = api->xmlTextReaderRead(data->native_reader);
+            api->xmlSetStructuredErrorFunc(NULL, NULL);
+            if (api->xmlSetGenericErrorFunc != NULL) {
+                api->xmlSetGenericErrorFunc(NULL, NULL);
+            }
+            if (read_result == 1) {
+                data->has_current = 1;
+                data->on_attribute = 0;
+                return ptn_bool(1);
+            }
+            return ptn_bool(0);
+        }
         if (data->cursor >= data->event_count) {
             data->has_current = 0;
+            data->on_attribute = 0;
+            return ptn_bool(0);
+        }
+        PtnXmlReaderEvent *next_event = &data->events[data->cursor];
+        if (data->stream_backed &&
+            !data->parse_complete &&
+            next_event->node_type == 15 &&
+            data->source_resource != NULL &&
+            !ptn_stream_resource_is_open(data->source_resource)) {
+            data->cursor = data->event_count;
             data->on_attribute = 0;
             return ptn_bool(0);
         }
@@ -80901,6 +81363,12 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
             ptn_throw_exception(runtime, "ValueError", "XMLReader::getParserProperty(): Argument #1 ($property) must be a valid parser property");
             return ptn_null();
         }
+        if (ptn_xml_reader_native_active(data)) {
+            PtnLibxml2Api *api = ptn_libxml2_api_load();
+            if (api != NULL) {
+                return ptn_bool(api->xmlTextReaderGetParserProp(data->native_reader, (int)property) == 1);
+            }
+        }
         return ptn_bool(ptn_xml_reader_parser_property_value(data, property));
     }
     if (ptn_ascii_case_equal(name, "setParserProperty")) {
@@ -80918,6 +81386,14 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
         }
         int enabled = argc >= 2 ? ptn_is_truthy(args[1]) : 0;
         ptn_xml_reader_set_parser_property_value(data, property, enabled);
+        if (ptn_xml_reader_native_active(data)) {
+            PtnLibxml2Api *api = ptn_libxml2_api_load();
+            if (api != NULL) {
+                (void)api->xmlTextReaderSetParserProp(data->native_reader, (int)property, enabled);
+            }
+        } else if (enabled && ptn_xml_reader_native_should_open(data)) {
+            (void)ptn_xml_reader_native_open(data);
+        }
         if (property == 2 && enabled) {
             ptn_xml_reader_apply_default_attributes(runtime, data);
         }
@@ -80945,13 +81421,23 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
         char *schema_path = ptn_duplicate_string_len(schema_check.data, schema_check.len);
         ptn_string_operand_free(schema_check);
         FILE *schema_file = fopen(schema_path, "rb");
-        free(schema_path);
         if (schema_file == NULL) {
+            free(schema_path);
             return ptn_bool(0);
         }
         fclose(schema_file);
         data->validation_enabled = 1;
-        return ptn_bool(1);
+        if (!ptn_xml_reader_native_active(data)) {
+            (void)ptn_xml_reader_native_open(data);
+        }
+        if (!ptn_xml_reader_native_active(data)) {
+            free(schema_path);
+            return ptn_bool(0);
+        }
+        PtnLibxml2Api *api = ptn_libxml2_api_load();
+        int schema_result = api == NULL ? -1 : api->xmlTextReaderSchemaValidate(data->native_reader, schema_path);
+        free(schema_path);
+        return ptn_bool(schema_result == 0);
     }
     if (ptn_ascii_case_equal(name, "setRelaxNGSchema") || ptn_ascii_case_equal(name, "setRelaxNGSchemaSource")) {
         PtnStringOperand schema = ptn_internal_expect_string_arg(runtime, ptn_ascii_case_equal(name, "setRelaxNGSchema") ? "XMLReader::setRelaxNGSchema" : "XMLReader::setRelaxNGSchemaSource", 1, "source", args[0], line);
@@ -80971,6 +81457,13 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "isValid")) {
+        if (ptn_xml_reader_native_active(data)) {
+            PtnLibxml2Api *api = ptn_libxml2_api_load();
+            if (api != NULL) {
+                int valid = api->xmlTextReaderIsValid(data->native_reader);
+                return valid < 0 ? ptn_bool(0) : ptn_bool(valid == 1);
+            }
+        }
         return ptn_bool(data->validation_enabled || data->parser_validate);
     }
     if (ptn_ascii_case_equal(name, "expand")) {
