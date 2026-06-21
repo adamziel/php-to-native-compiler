@@ -9093,7 +9093,22 @@ Foo::attempt();
 }
 
 #[test]
-fn parser_allows_trait_imported_abstract_methods_in_concrete_class() {
+fn parser_enforces_trait_imported_abstract_methods_in_concrete_class() {
+    let error = parser::parse(
+        "<?php
+trait TraitWithAbstract {
+    abstract public function fromTrait();
+}
+class TraitWorks {
+    use TraitWithAbstract;
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Class TraitWorks contains 1 abstract method and must therefore be declared abstract or implement the remaining method (TraitWorks::fromTrait)"
+    );
+
     let program = parser::parse(
         "<?php
 trait TraitWithAbstract {
@@ -9101,6 +9116,7 @@ trait TraitWithAbstract {
 }
 class TraitWorks {
     use TraitWithAbstract;
+    public function fromTrait() {}
 }
 abstract class Base {
     abstract public function directAbstract();
@@ -9108,10 +9124,10 @@ abstract class Base {
     )
     .unwrap();
 
-    assert_eq!(
-        program.classes[0].methods[0].trait_name.as_deref(),
-        Some("TraitWithAbstract")
-    );
+    assert!(program.classes[0]
+        .methods
+        .iter()
+        .any(|method| method.name == "fromTrait" && method.trait_name.is_none()));
 
     let error = parser::parse(
         "<?php

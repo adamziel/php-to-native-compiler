@@ -466,6 +466,7 @@ impl Parser<'_> {
             validate_traversable_implementations(&validation_classes)?;
             validate_method_signature_compatibility(
                 &validation_classes,
+                &validation_traits,
                 &self.runtime_class_aliases,
                 &mut self.compile_warnings,
             )?;
@@ -12582,6 +12583,7 @@ fn import_trait_members_into_trait(
 }
 
 fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+    let class_snapshot = classes.to_vec();
     let non_trait_names = classes
         .iter()
         .map(|class| class.name.to_ascii_lowercase())
@@ -12595,6 +12597,8 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             .iter()
             .map(|method| method.name.to_ascii_lowercase())
             .collect::<HashSet<_>>();
+        let parent_concrete_method_names =
+            visible_parent_concrete_method_names(class, &class_snapshot);
         let mut imported_method_names = HashSet::new();
         let mut property_origins = class
             .properties
@@ -12661,6 +12665,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
                 trait_decl,
                 trait_use,
                 &own_method_names,
+                &parent_concrete_method_names,
                 &mut imported_method_names,
                 &mut property_origins,
                 &mut static_property_origins,
@@ -12683,11 +12688,36 @@ fn defer_class_declaration_fatal(class: &mut ClassDecl, diagnostic: Diagnostic) 
     });
 }
 
+fn visible_parent_concrete_method_names(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        for method in &parent.methods {
+            if method.visibility != PropertyVisibility::Private && !method.is_abstract {
+                names.insert(method.name.to_ascii_lowercase());
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    names
+}
+
 fn import_trait_members_into_class(
     class: &mut ClassDecl,
     trait_decl: &TraitDecl,
     trait_use: &TraitUseDecl,
     own_method_names: &HashSet<String>,
+    parent_concrete_method_names: &HashSet<String>,
     imported_method_names: &mut HashSet<String>,
     property_origins: &mut HashMap<String, String>,
     static_property_origins: &mut HashMap<String, String>,
@@ -12770,6 +12800,7 @@ fn import_trait_members_into_class(
             trait_use,
             method,
             own_method_names,
+            parent_concrete_method_names,
             imported_method_names,
         )?;
     }
@@ -12815,6 +12846,7 @@ fn import_trait_method_into_method_list(
         trait_use,
         method,
         &own_method_names,
+        &HashSet::new(),
         &mut imported_method_names,
     )?;
     *methods = pseudo_class.methods;
@@ -12827,6 +12859,7 @@ fn import_trait_method_into_class(
     trait_use: &TraitUseDecl,
     method: &MethodDecl,
     own_method_names: &HashSet<String>,
+    parent_concrete_method_names: &HashSet<String>,
     imported_method_names: &mut HashSet<String>,
 ) -> Result<()> {
     let method_key = method.name.to_ascii_lowercase();
@@ -12856,6 +12889,7 @@ fn import_trait_method_into_class(
         trait_method_excluded_by_precedence(&trait_use.adaptations, &trait_decl.name, &method.name);
     if !original_excluded
         && !own_method_names.contains(&method_key)
+        && !(method.is_abstract && parent_concrete_method_names.contains(&method_key))
         && !(class.is_enum && method_key == "cases")
     {
         let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
@@ -13530,6 +13564,7 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
 
 fn validate_method_signature_compatibility(
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     runtime_class_aliases: &HashMap<String, String>,
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
@@ -13610,6 +13645,42 @@ fn validate_method_signature_compatibility(
                 false
             };
 
+            let mut trait_methods = Vec::new();
+            collect_class_trait_abstract_methods(class, &method.name, traits, &mut trait_methods);
+            for (trait_decl, trait_method) in trait_methods {
+                if trait_method.is_static != method.is_static {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot make {} method {}::{}() {} in class {}",
+                            if trait_method.is_static {
+                                "static"
+                            } else {
+                                "non static"
+                            },
+                            trait_decl.name,
+                            trait_method.name,
+                            if method.is_static {
+                                "static"
+                            } else {
+                                "non static"
+                            },
+                            class.name
+                        ),
+                        Some(method.span),
+                    ));
+                }
+                let normalized_trait_method =
+                    trait_abstract_method_for_class(&class.name, &trait_decl.name, trait_method);
+                validate_method_signature_pair_named(
+                    class,
+                    method,
+                    &trait_decl.name,
+                    &normalized_trait_method,
+                    classes,
+                    runtime_class_aliases,
+                )?;
+            }
+
             if method.visibility == PropertyVisibility::Private {
                 continue;
             }
@@ -13645,6 +13716,19 @@ fn validate_method_signature_compatibility(
             let mut interface_methods = Vec::new();
             collect_class_interface_methods(class, &method.name, classes, &mut interface_methods);
             for (interface, interface_method) in interface_methods {
+                if visibility_rank(method.visibility) > visibility_rank(interface_method.visibility)
+                {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Access level to {}::{}() must be {} (as in class {})",
+                            class.name,
+                            method.name,
+                            property_visibility_name(interface_method.visibility),
+                            interface.name
+                        ),
+                        Some(method.span),
+                    ));
+                }
                 validate_method_signature_pair(
                     class,
                     method,
@@ -13657,6 +13741,53 @@ fn validate_method_signature_compatibility(
         }
     }
     Ok(())
+}
+
+fn trait_abstract_method_for_class(
+    class_name: &str,
+    trait_name: &str,
+    method: &MethodDecl,
+) -> MethodDecl {
+    let mut normalized = method.clone();
+    for parameter in &mut normalized.parameters {
+        if let Some(type_hint) = &mut parameter.type_hint {
+            substitute_trait_self_type_hint(type_hint, trait_name, class_name);
+        }
+    }
+    if let Some(return_type) = &mut normalized.return_type {
+        substitute_trait_self_type_hint(return_type, trait_name, class_name);
+    }
+    normalized
+}
+
+fn substitute_trait_self_type_hint(type_hint: &mut TypeHint, trait_name: &str, class_name: &str) {
+    match type_hint {
+        TypeHint::Class(name) if name.eq_ignore_ascii_case(trait_name) => {
+            *name = class_name.to_string();
+        }
+        TypeHint::Nullable(inner) => substitute_trait_self_type_hint(inner, trait_name, class_name),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            for member in types {
+                substitute_trait_self_type_hint(member, trait_name, class_name);
+            }
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Callable
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Class(_) => {}
+    }
 }
 
 fn collect_class_interface_methods<'a>(
@@ -13709,6 +13840,45 @@ fn collect_class_interface_methods<'a>(
         &mut seen_interfaces,
         methods,
     );
+}
+
+fn collect_class_trait_abstract_methods<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    traits: &'a [TraitDecl],
+    methods: &mut Vec<(&'a TraitDecl, &'a MethodDecl)>,
+) {
+    let mut seen_traits = HashSet::new();
+    for trait_use in &class.trait_uses {
+        collect_trait_abstract_methods(
+            &trait_use.name,
+            method_name,
+            traits,
+            &mut seen_traits,
+            methods,
+        );
+    }
+}
+
+fn collect_trait_abstract_methods<'a>(
+    trait_name: &str,
+    method_name: &str,
+    traits: &'a [TraitDecl],
+    seen_traits: &mut HashSet<String>,
+    methods: &mut Vec<(&'a TraitDecl, &'a MethodDecl)>,
+) {
+    let lookup_name = trait_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen_traits.insert(lookup_name) {
+        return;
+    }
+    let Some(trait_decl) = find_trait(traits, trait_name) else {
+        return;
+    };
+    for method in &trait_decl.methods {
+        if method.is_abstract && method.name.eq_ignore_ascii_case(method_name) {
+            methods.push((trait_decl, method));
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -14038,21 +14208,39 @@ fn validate_method_signature_pair(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<()> {
+    validate_method_signature_pair_named(
+        class,
+        method,
+        &parent_class.name,
+        parent_method,
+        classes,
+        runtime_class_aliases,
+    )
+}
+
+fn validate_method_signature_pair_named(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class_name: &str,
+    parent_method: &MethodDecl,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
     if parent_method.return_by_ref && !method.return_by_ref {
-        return Err(method_signature_compatibility_error(
+        return Err(method_signature_compatibility_error_named(
             class,
             method,
-            parent_class,
+            parent_class_name,
             parent_method,
         ));
     }
 
     for (index, parent_parameter) in parent_method.parameters.iter().enumerate() {
         let Some(parameter) = method.parameters.get(index) else {
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         };
@@ -14060,10 +14248,10 @@ fn validate_method_signature_pair(
             || parameter.is_variadic != parent_parameter.is_variadic
             || (parent_parameter.default_value.is_some() && parameter.default_value.is_none())
         {
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         }
@@ -14073,10 +14261,10 @@ fn validate_method_signature_pair(
             classes,
             runtime_class_aliases,
         ) {
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         }
@@ -14087,10 +14275,10 @@ fn validate_method_signature_pair(
         .skip(parent_method.parameters.len())
     {
         if parameter.default_value.is_none() && !parameter.is_variadic {
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         }
@@ -14098,10 +14286,10 @@ fn validate_method_signature_pair(
 
     if let Some(parent_return_type) = &parent_method.return_type {
         let Some(return_type) = &method.return_type else {
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         };
@@ -14114,18 +14302,18 @@ fn validate_method_signature_pair(
             if let Some(unavailable_name) =
                 unresolved_compatibility_class(return_type, parent_return_type, classes)
             {
-                return Err(method_signature_unresolved_compatibility_error(
+                return Err(method_signature_unresolved_compatibility_error_named(
                     class,
                     method,
-                    parent_class,
+                    parent_class_name,
                     parent_method,
                     &unavailable_name,
                 ));
             }
-            return Err(method_signature_compatibility_error(
+            return Err(method_signature_compatibility_error_named(
                 class,
                 method,
-                parent_class,
+                parent_class_name,
                 parent_method,
             ));
         }
@@ -14218,10 +14406,10 @@ fn parameter_type_is_contravariant(
     }
 }
 
-fn method_signature_compatibility_error(
+fn method_signature_compatibility_error_named(
     class: &ClassDecl,
     method: &MethodDecl,
-    parent_class: &ClassDecl,
+    parent_class_name: &str,
     parent_method: &MethodDecl,
 ) -> Diagnostic {
     Diagnostic::new(
@@ -14229,7 +14417,7 @@ fn method_signature_compatibility_error(
             "Declaration of {} must be compatible with {}",
             class_method_signature_display(&class.name, method, method_signature_display),
             class_method_signature_display(
-                &parent_class.name,
+                parent_class_name,
                 parent_method,
                 method_signature_display
             )
@@ -14238,10 +14426,10 @@ fn method_signature_compatibility_error(
     )
 }
 
-fn method_signature_unresolved_compatibility_error(
+fn method_signature_unresolved_compatibility_error_named(
     class: &ClassDecl,
     method: &MethodDecl,
-    parent_class: &ClassDecl,
+    parent_class_name: &str,
     parent_method: &MethodDecl,
     unavailable_name: &str,
 ) -> Diagnostic {
@@ -14250,7 +14438,7 @@ fn method_signature_unresolved_compatibility_error(
             "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
             class.name,
             method_signature_display_canonical(method),
-            parent_class.name,
+            parent_class_name,
             method_signature_display_canonical(parent_method),
             unavailable_name
         ),
@@ -15777,6 +15965,14 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 ));
             }
         }
+        let private_methods = unsatisfied_private_trait_abstract_methods(class);
+        if !private_methods.is_empty() {
+            return Err(private_abstract_methods_diagnostic(
+                &class.name,
+                &private_methods,
+                class.span,
+            ));
+        }
         if class.is_abstract {
             continue;
         }
@@ -15801,6 +15997,14 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 Some(class.span),
             ));
         }
+        let methods = unsatisfied_trait_abstract_methods(class, classes);
+        if !methods.is_empty() {
+            return Err(abstract_methods_diagnostic(
+                &class.name,
+                &methods,
+                class.span,
+            ));
+        }
         let property_hooks = inherited_unsatisfied_abstract_property_hooks(class, classes);
         if !property_hooks.is_empty() {
             return Err(abstract_property_hooks_diagnostic(
@@ -15811,6 +16015,121 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(Clone)]
+struct RequiredAbstractMethod {
+    class_name: String,
+    method_name: String,
+}
+
+fn unsatisfied_trait_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<RequiredAbstractMethod> {
+    let mut methods = Vec::new();
+    let mut seen = HashSet::new();
+    for method in &class.methods {
+        if !method.is_abstract || method.trait_name.is_none() {
+            continue;
+        }
+        if trait_abstract_method_has_concrete_implementation(class, method, classes) {
+            continue;
+        }
+        let class_name = class.name.clone();
+        let method_name = method.name.clone();
+        if seen.insert((class_name.clone(), method_name.to_ascii_lowercase())) {
+            methods.push(RequiredAbstractMethod {
+                class_name,
+                method_name,
+            });
+        }
+    }
+    methods
+}
+
+fn unsatisfied_private_trait_abstract_methods(class: &ClassDecl) -> Vec<RequiredAbstractMethod> {
+    let mut methods = Vec::new();
+    let mut seen = HashSet::new();
+    for method in &class.methods {
+        if !method.is_abstract
+            || method.trait_name.is_none()
+            || method.visibility != PropertyVisibility::Private
+        {
+            continue;
+        }
+        if class.methods.iter().any(|candidate| {
+            !candidate.is_abstract
+                && candidate.visibility == PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case(&method.name)
+        }) {
+            continue;
+        }
+        let class_name = class.name.clone();
+        let method_name = method.name.clone();
+        if seen.insert((class_name.clone(), method_name.to_ascii_lowercase())) {
+            methods.push(RequiredAbstractMethod {
+                class_name,
+                method_name,
+            });
+        }
+    }
+    methods
+}
+
+fn trait_abstract_method_has_concrete_implementation(
+    class: &ClassDecl,
+    abstract_method: &MethodDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    if class.methods.iter().any(|method| {
+        !method.is_abstract && method.name.eq_ignore_ascii_case(&abstract_method.name)
+    }) {
+        return true;
+    }
+    find_visible_parent_method(class, &abstract_method.name, classes)
+        .is_some_and(|(_, method)| !method.is_abstract)
+}
+
+fn abstract_methods_diagnostic(
+    class_name: &str,
+    methods: &[RequiredAbstractMethod],
+    span: SourceSpan,
+) -> Diagnostic {
+    let count = methods.len();
+    let remaining = methods
+        .iter()
+        .map(|method| format!("{}::{}", method.class_name, method.method_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Diagnostic::new(
+        format!(
+            "Class {class_name} contains {count} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+            if count == 1 { "" } else { "s" },
+            if count == 1 { "" } else { "s" }
+        ),
+        Some(span),
+    )
+}
+
+fn private_abstract_methods_diagnostic(
+    class_name: &str,
+    methods: &[RequiredAbstractMethod],
+    span: SourceSpan,
+) -> Diagnostic {
+    let count = methods.len();
+    let remaining = methods
+        .iter()
+        .map(|method| format!("{}::{}", method.class_name, method.method_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Diagnostic::new(
+        format!(
+            "Class {class_name} must implement {count} abstract method{} ({remaining})",
+            if count == 1 { "" } else { "s" }
+        ),
+        Some(span),
+    )
 }
 
 #[derive(Clone)]
