@@ -33899,6 +33899,12 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if effective_hook_has_get { "1" } else { "0" });
             out.push_str(", ");
+            out.push_str(if property.hook_get_returns_by_ref {
+                "1"
+            } else {
+                "0"
+            });
+            out.push_str(", ");
             out.push_str(if effective_hook_has_set { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(c_property_type_kind(property.type_hint.as_ref()));

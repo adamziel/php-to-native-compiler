@@ -55239,6 +55239,88 @@ var_dump($bag);
 }
 
 #[test]
+fn compile_property_hook_object_foreach_lifecycle_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-object-foreach-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-object-foreach-lifecycle.php");
+    let output = root.join("property-hook-object-foreach-lifecycle-bin");
+    fs::write(
+        &input,
+        "<?php
+class ForeachHookBag {
+    private $slot = 'hooked';
+    public $hook {
+        get { echo __METHOD__, \"\\n\"; return $this->slot; }
+        set { echo __METHOD__, \"\\n\"; $this->slot = $value; }
+    }
+    public $plain = 'plain';
+}
+
+$bag = new ForeachHookBag();
+foreach ($bag as $name => $value) {
+    echo \"$name=$value\\n\";
+    $bag->{$name} = strtoupper($value);
+}
+var_dump($bag);
+
+class RefGuard {
+    public $ok {
+        &get {
+            $x = 42;
+            return $x;
+        }
+    }
+    public $bad = 'bad' {
+        get => $this->bad;
+        set => $value;
+    }
+}
+
+try {
+    foreach (new RefGuard() as &$value) {
+        var_dump($value);
+    }
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ForeachHookBag::$hook::get\n",
+            "hook=hooked\n",
+            "ForeachHookBag::$hook::set\n",
+            "plain=plain\n",
+            "object(ForeachHookBag)#1 (2) {\n",
+            "  [\"slot\":\"ForeachHookBag\":private]=>\n",
+            "  string(6) \"HOOKED\"\n",
+            "  [\"plain\"]=>\n",
+            "  string(5) \"PLAIN\"\n",
+            "}\n",
+            "int(42)\n",
+            "Cannot create reference to property RefGuard::$bad\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_from_object_properties"));
+    assert!(c_source.contains("hook_get_returns_by_ref"));
+}
+
+#[test]
 fn compile_property_hook_indirect_write_paths_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-indirect-write-paths");
     fs::create_dir_all(&root).unwrap();

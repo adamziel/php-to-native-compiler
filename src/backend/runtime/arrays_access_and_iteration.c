@@ -1246,6 +1246,7 @@ static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnO
             metadata->has_hooks,
             metadata->is_virtual,
             metadata->hook_has_get,
+            metadata->hook_get_returns_by_ref,
             metadata->hook_has_set,
             metadata->type_kind,
             metadata->type_class_name,
@@ -1916,6 +1917,25 @@ static PTN_UNUSED void ptn_throw_hooked_property_indirect_modification_error(
         message,
         sizeof(message),
         "Indirect modification of %s::$%s is not allowed",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_create_reference_to_property_error(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot create reference to property %s::$%s",
         metadata->declaring_class,
         metadata->display_name
     );
@@ -6510,6 +6530,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     if (
         metadata != NULL &&
         metadata->hook_has_get &&
+        !metadata->hook_get_returns_by_ref &&
+        !active_same_property_hook
+    ) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_create_reference_to_property_error(runtime, metadata, line);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    if (
+        metadata != NULL &&
+        metadata->hook_has_get &&
         !active_same_property_hook &&
         runtime != NULL &&
         runtime->property_hook_get != NULL
@@ -6836,6 +6867,7 @@ static PTN_UNUSED PtnValue ptn_object_declare_property_with_hooks(
     int has_hooks,
     int is_virtual,
     int hook_has_get,
+    int hook_get_returns_by_ref,
     int hook_has_set,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
@@ -6857,6 +6889,7 @@ static PTN_UNUSED PtnValue ptn_object_declare_property_with_hooks(
             has_hooks,
             is_virtual,
             hook_has_get,
+            hook_get_returns_by_ref,
             hook_has_set,
             type_kind,
             type_class_name,
@@ -6907,6 +6940,7 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
         read_visibility,
         set_visibility,
         is_readonly,
+        0,
         0,
         0,
         0,
@@ -8692,6 +8726,42 @@ static PTN_UNUSED PtnValue ptn_object_foreach_key_value(
     return ptn_owned_string_len(ptn_duplicate_string_len(key.as.string, key.string_len), key.string_len);
 }
 
+static PTN_UNUSED char *ptn_object_foreach_property_name(
+    PtnObject *object,
+    PtnArrayKey key
+) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        int needed = snprintf(NULL, 0, "%lld", (long long)key.as.integer);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *name = malloc((size_t)needed + 1);
+        if (name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(name, (size_t)needed + 1, "%lld", (long long)key.as.integer);
+        return name;
+    }
+    if (object != NULL) {
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, key.as.string);
+        if (metadata != NULL) {
+            return ptn_duplicate_string(metadata->display_name);
+        }
+    }
+    if (key.string_len >= 3 && key.as.string[0] == '\0') {
+        const char *second_nul = memchr(key.as.string + 1, '\0', key.string_len - 1);
+        if (second_nul != NULL) {
+            size_t prefix_len = (size_t)(second_nul - key.as.string) + 1;
+            if (prefix_len <= key.string_len) {
+                size_t display_len = key.string_len - prefix_len;
+                return ptn_duplicate_string_len(key.as.string + prefix_len, display_len);
+            }
+        }
+    }
+    return ptn_duplicate_string_len(key.as.string, key.string_len);
+}
+
 static PTN_UNUSED void ptn_array_iterator_skip_invisible_object_properties(PtnArrayIterator *iterator) {
     if (iterator->object == NULL || iterator->array == NULL) {
         return;
@@ -8991,21 +9061,89 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     size_t line
 ) {
     PtnArrayIterator iterator = ptn_array_iterator_empty();
-    if (object == NULL || object->properties == NULL) {
+    if (object == NULL) {
         return iterator;
     }
-    iterator.array = object->properties;
+    PtnValue keys_value = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *keys = keys_value.as.array;
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        int initialized = ptn_object_property_storage_initialized(object, metadata->storage_name);
+        if (
+            !initialized &&
+            !(metadata->has_hooks && metadata->hook_has_get)
+        ) {
+            continue;
+        }
+        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+        if (
+            ptn_object_property_visible_for_foreach(runtime, object, key, access_scope) &&
+            !ptn_property_is_set_only_virtual(metadata)
+        ) {
+            ptn_array_set_entry(keys, key, ptn_null());
+        } else {
+            ptn_array_key_free(key);
+        }
+    }
+    if (object->properties != NULL) {
+        for (size_t i = 0; i < object->properties->len; i++) {
+            PtnArrayEntry *entry = &object->properties->entries[i];
+            const PtnObjectPropertyMetadata *metadata =
+                entry->key.type == PTN_ARRAY_KEY_STRING
+                    ? ptn_object_property_metadata(object, entry->key.as.string)
+                    : NULL;
+            if (metadata != NULL) {
+                continue;
+            }
+            if (ptn_object_property_visible_for_foreach(runtime, object, entry->key, access_scope)) {
+                ptn_array_set_entry(keys, ptn_array_key_clone(entry->key), ptn_null());
+            }
+        }
+    }
+    iterator.array = keys;
     iterator.object = object;
     iterator.runtime = runtime;
     iterator.access_scope = access_scope;
     iterator.line = line;
     iterator.valid = iterator.array->len != 0;
-    iterator.live = 1;
+    iterator.length = iterator.array->len;
+    iterator.live = 0;
     ptn_object_retain(object);
-    ptn_array_iterator_retain(iterator.array);
-    ptn_array_iterator_skip_invisible_object_properties(&iterator);
     ptn_array_iterator_remember_current_key(&iterator);
     return iterator;
+}
+
+static PTN_UNUSED void ptn_array_iterator_sync_object_property_keys(PtnArrayIterator *iterator) {
+    if (iterator == NULL ||
+        iterator->object == NULL ||
+        iterator->generator != NULL ||
+        iterator->array == NULL ||
+        iterator->object->properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < iterator->object->properties->len; i++) {
+        PtnArrayEntry *entry = &iterator->object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata =
+            entry->key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
+                : NULL;
+        if (metadata != NULL && ptn_property_is_set_only_virtual(metadata)) {
+            continue;
+        }
+        if (!ptn_object_property_visible_for_foreach(
+                iterator->runtime,
+                iterator->object,
+                entry->key,
+                iterator->access_scope
+            )) {
+            continue;
+        }
+        if (ptn_array_find_key(iterator->array, entry->key) < iterator->array->len) {
+            continue;
+        }
+        ptn_array_set_entry(iterator->array, ptn_array_key_clone(entry->key), ptn_null());
+    }
+    iterator->length = iterator->array->len;
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
@@ -9460,7 +9598,21 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
         ptn_generator_emit_pending_reference_notice(iterator->runtime, iterator->generator, iterator->index);
     }
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
-    return ptn_value_borrow(iterator->array->entries[physical_index].value);
+    PtnArrayEntry *entry = &iterator->array->entries[physical_index];
+    if (iterator->object != NULL && iterator->generator == NULL) {
+        char *property_name = ptn_object_foreach_property_name(iterator->object, entry->key);
+        PtnValue receiver = ptn_value_borrow(ptn_object(iterator->object));
+        PtnValue value = ptn_object_read_property(
+            iterator->runtime,
+            receiver,
+            property_name,
+            iterator->access_scope,
+            iterator->line
+        );
+        free(property_name);
+        return value;
+    }
+    return ptn_value_borrow(entry->value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator *iterator) {
@@ -9487,6 +9639,32 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     }
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayEntry *entry = &iterator->array->entries[physical_index];
+    if (iterator->object != NULL && iterator->generator == NULL) {
+        if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+            const PtnObjectPropertyMetadata *metadata =
+                ptn_object_property_metadata(iterator->object, entry->key.as.string);
+            if (metadata != NULL && metadata->is_readonly) {
+                ptn_throw_readonly_property_reference_error(
+                    iterator->runtime,
+                    metadata->declaring_class,
+                    metadata->display_name,
+                    iterator->line
+                );
+                return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            }
+        }
+        char *property_name = ptn_object_foreach_property_name(iterator->object, entry->key);
+        PtnValue receiver = ptn_value_borrow(ptn_object(iterator->object));
+        PtnValue reference = ptn_object_reference_for_property(
+            iterator->runtime,
+            receiver,
+            property_name,
+            iterator->access_scope,
+            iterator->line
+        );
+        free(property_name);
+        return reference;
+    }
     if (iterator->object != NULL && iterator->generator == NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(iterator->object, entry->key.as.string);
@@ -9664,6 +9842,7 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     }
 
     ptn_array_iterator_refresh_watched_array(iterator);
+    ptn_array_iterator_sync_object_property_keys(iterator);
     ptn_array_iterator_clear_current_key(iterator);
     size_t limit = iterator->live ? iterator->array->len : iterator->length;
     if (limit > iterator->array->len) {

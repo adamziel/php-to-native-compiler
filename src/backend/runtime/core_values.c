@@ -756,6 +756,7 @@ typedef struct {
     int has_hooks;
     int is_virtual;
     int hook_has_get;
+    int hook_get_returns_by_ref;
     int hook_has_set;
     int is_unset;
     int lazy_skip;
