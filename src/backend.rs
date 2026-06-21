@@ -2441,6 +2441,7 @@ fn emit_user_functions(
         out.push_str("    }\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
         if function.is_anonymous {
             out.push_str("    free(ptn_closure_trace_name);\n");
@@ -11040,6 +11041,7 @@ fn emit_property_hook_get_helper(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
                 out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                out.push_str("        ptn_runtime_drop_call_frame_arguments(&runtime);\n");
                 out.push_str("        ptn_runtime_free(&runtime);\n");
                 out.push_str("        ptn_rethrow_exception(caller_runtime);\n");
                 out.push_str("        *value_out = ptn_null();\n");
@@ -11260,6 +11262,7 @@ fn emit_property_hook_set_helper(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
                 out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                out.push_str("        ptn_runtime_drop_call_frame_arguments(&runtime);\n");
                 out.push_str("        ptn_runtime_free(&runtime);\n");
                 out.push_str("        ptn_rethrow_exception(caller_runtime);\n");
                 out.push_str("        return 1;\n");

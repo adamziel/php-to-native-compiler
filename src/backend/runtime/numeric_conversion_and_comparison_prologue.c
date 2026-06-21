@@ -286,6 +286,20 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->suppress_user_call_frame_location = 0;
 }
 
+static PTN_UNUSED void ptn_runtime_drop_call_frame_arguments(PtnRuntime *runtime) {
+    if (runtime == NULL || runtime->call_frame == NULL || runtime->call_frame->args == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < runtime->call_frame->argc; i++) {
+        PtnValue arg = runtime->call_frame->args[i];
+        ptn_value_destroy(&arg);
+    }
+    runtime->owned_call_frame.argc = 0;
+    runtime->owned_call_frame.args = NULL;
+    runtime->owned_trace_frame.argc = 0;
+    runtime->owned_trace_frame.args = NULL;
+}
+
 static PTN_UNUSED void ptn_runtime_push_trace_frame(
     PtnRuntime *runtime,
     PtnTraceFrame *frame,
@@ -2855,6 +2869,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         runtime->exceptions->active_exception->path = path;
         runtime->exceptions->active_exception->line = line;
     }
+    ptn_value_destroy(&value);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }

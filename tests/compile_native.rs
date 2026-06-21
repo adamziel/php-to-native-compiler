@@ -53068,6 +53068,68 @@ var_dump($p->getValue($v1));
 }
 
 #[test]
+fn compile_sensitive_parameter_trace_value_releases_inner_object_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-trace-lifetime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-trace-lifetime.php");
+    let output = root.join("sensitive-parameter-trace-lifetime-bin");
+    fs::write(
+        &input,
+        "<?php
+class CustomDestructor {
+    public function __construct(private int $id) {
+        echo __METHOD__, \" - \", $this->id, PHP_EOL;
+    }
+
+    public function __destruct() {
+        echo __METHOD__, \" - \", $this->id, PHP_EOL;
+    }
+}
+
+function test(#[SensitiveParameter] CustomDestructor $o) {
+    throw new Exception('Error');
+}
+
+function wrapper() {
+    $o = new CustomDestructor(2);
+    test($o);
+}
+
+function main(): SensitiveParameterValue {
+    try {
+        wrapper();
+    } catch (Exception $e) {
+        echo \"catch\", PHP_EOL;
+        return $e->getTrace()[0]['args'][0];
+    }
+}
+
+$v = main();
+echo \"Before unset\", PHP_EOL;
+unset($v);
+echo \"After unset\", PHP_EOL;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "CustomDestructor::__construct - 2\n",
+            "catch\n",
+            "Before unset\n",
+            "CustomDestructor::__destruct - 2\n",
+            "After unset\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sensitive_parameter_value_rejects_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-sensitive-parameter-value-serialization");
     fs::create_dir_all(&root).unwrap();
