@@ -45919,7 +45919,13 @@ try { array_merge($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n
 try { array_merge_recursive($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_diff($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_diff_key($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { array_intersect($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+try { array_intersect($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$packed = array_fill(0, 2, $huge);\n\
+try { array_merge(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_merge_recursive(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff_key(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_intersect(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
     )
     .unwrap();
 
@@ -45931,6 +45937,11 @@ try { array_intersect($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "1048577\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
