@@ -43364,8 +43364,8 @@ try { range(\"A\", \"H\", 0.0); } catch (ValueError $e) { echo $e->getMessage(),
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "The supplied range exceeds the maximum array size by 999998951425.0 elements: start=0.0, end=100000000000.0, step=0.1. Max size: 1048576\n",
-            "The supplied range exceeds the maximum array size by 9223372036853727232 elements: start=0, end=9223372036854775807, step=1. Calculated size: 9223372036854775808. Maximum size: 1048576.\n",
+            "The supplied range exceeds the maximum array size by 999998951424.0 elements: start=0.0, end=100000000000.0, step=0.1. Max size: 1048577\n",
+            "The supplied range exceeds the maximum array size by 9223372036853727231 elements: start=0, end=9223372036854775807, step=1. Calculated size: 9223372036854775808. Maximum size: 1048577.\n",
             "array(4) {\n",
             "  [0]=>\n",
             "  float(4.5)\n",
@@ -45902,6 +45902,37 @@ try { array_merge([], 0); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_merge"));
     assert!(c_source.contains("ptn_array_merge_into"));
+}
+
+#[test]
+fn compile_array_total_elements_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-array-total-elements-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-total-elements-limit.php");
+    let output = root.join("array-total-elements-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$huge = range(0, 1048576);\n\
+echo count($huge), \"\\n\";\n\
+try { array_merge($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { array_diff($huge, [1]); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1048577\n",
+            "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

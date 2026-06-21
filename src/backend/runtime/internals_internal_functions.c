@@ -19178,6 +19178,14 @@ static int ptn_array_entry_matches_any(
     return 0;
 }
 
+static int ptn_array_operand_total_elements_exceed_limit(
+    PtnRuntime *runtime,
+    PtnArray *source,
+    size_t array_count,
+    PtnArray **arrays,
+    size_t line
+);
+
 static PtnValue ptn_array_intersect_or_diff(
     PtnRuntime *runtime,
     PtnArray *source,
@@ -19187,6 +19195,10 @@ static PtnValue ptn_array_intersect_or_diff(
     int keep_matches,
     size_t line
 ) {
+    if (ptn_array_operand_total_elements_exceed_limit(runtime, source, array_count, arrays, line)) {
+        return ptn_null();
+    }
+
     int emit_compare_array_warnings = keep_matches;
     if (array_count != 0 && !compare_keys && !keep_matches) {
         ptn_array_emit_set_operation_string_conversion_warnings(runtime, source, line);
@@ -19350,11 +19362,17 @@ static int ptn_array_entry_key_matches_any(PtnArrayEntry *entry, size_t array_co
 }
 
 static PtnValue ptn_array_key_intersect_or_diff(
+    PtnRuntime *runtime,
     PtnArray *source,
     size_t array_count,
     PtnArray **arrays,
-    int keep_matches
+    int keep_matches,
+    size_t line
 ) {
+    if (ptn_array_operand_total_elements_exceed_limit(runtime, source, array_count, arrays, line)) {
+        return ptn_null();
+    }
+
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
@@ -19373,10 +19391,9 @@ static PtnValue ptn_array_key_intersect_or_diff(
 }
 
 static PtnValue ptn_internal_array_diff_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_diff_key", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_diff_key", argc, args);
-    PtnValue result = ptn_array_key_intersect_or_diff(source, argc - 1, arrays, 0);
+    PtnValue result = ptn_array_key_intersect_or_diff(runtime, source, argc - 1, arrays, 0, line);
     free(arrays);
     return result;
 }
@@ -19398,10 +19415,9 @@ static PtnValue ptn_internal_array_intersect_assoc(PtnRuntime *runtime, size_t a
 }
 
 static PtnValue ptn_internal_array_intersect_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_intersect_key", 1, "array", args[0]);
     PtnArray **arrays = ptn_array_set_operation_arrays(runtime, "array_intersect_key", argc, args);
-    PtnValue result = ptn_array_key_intersect_or_diff(source, argc - 1, arrays, 1);
+    PtnValue result = ptn_array_key_intersect_or_diff(runtime, source, argc - 1, arrays, 1, line);
     free(arrays);
     return result;
 }
@@ -19514,6 +19530,10 @@ static PtnValue ptn_array_custom_set_operation(
     int keep_matches,
     size_t line
 ) {
+    if (ptn_array_operand_total_elements_exceed_limit(runtime, source, array_count, arrays, line)) {
+        return ptn_null();
+    }
+
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayEntry *entry = &source->entries[i];
@@ -19621,6 +19641,10 @@ static PtnValue ptn_array_value_callback_sorted_set_operation(
     int keep_matches,
     size_t line
 ) {
+    if (ptn_array_operand_total_elements_exceed_limit(runtime, source, array_count, arrays, line)) {
+        return ptn_null();
+    }
+
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnArray *sorted_source = ptn_array_value_callback_sorted_snapshot(
         runtime,
@@ -22431,21 +22455,48 @@ static void ptn_array_merge_into(PtnArray *target, PtnArray *source) {
     }
 }
 
-static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+static PtnArray **ptn_array_collect_variadic_array_args_at(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnArray **arrays = NULL;
+    if (argc != 0) {
+        arrays = malloc(argc * sizeof(PtnArray *));
+        if (arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    size_t total = 0;
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg_at(
+        arrays[i] = ptn_internal_expect_array_arg_at(
             runtime,
-            "array_merge",
+            function_name,
             i + 1,
             NULL,
             args[i],
             runtime->source_path,
             line
         );
-        ptn_array_merge_into(result.as.array, array);
+        if (ptn_array_total_elements_would_exceed_limit(runtime, total, arrays[i]->len, line)) {
+            return arrays;
+        }
+        total += arrays[i]->len;
     }
-    (void)line;
+
+    return arrays;
+}
+
+static PtnValue ptn_internal_array_merge(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(runtime, "array_merge", argc, args, line);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_array_merge_into(result.as.array, arrays[i]);
+    }
+    free(arrays);
     return result;
 }
 
@@ -22592,21 +22643,14 @@ static void ptn_array_merge_recursive_into(
 }
 
 static PtnValue ptn_internal_array_merge_recursive(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray **arrays = ptn_array_collect_variadic_array_args_at(runtime, "array_merge_recursive", argc, args, line);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     PtnCountSeenArrays seen = {0};
     for (size_t i = 0; i < argc; i++) {
-        PtnArray *array = ptn_internal_expect_array_arg_at(
-            runtime,
-            "array_merge_recursive",
-            i + 1,
-            NULL,
-            args[i],
-            runtime->source_path,
-            line
-        );
-        ptn_array_merge_recursive_into(runtime, result.as.array, array, &seen, line);
+        ptn_array_merge_recursive_into(runtime, result.as.array, arrays[i], &seen, line);
     }
     free(seen.items);
+    free(arrays);
     return result;
 }
 
