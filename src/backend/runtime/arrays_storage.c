@@ -573,8 +573,7 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
 
     ptn_array_note_mutation(array);
     ptn_array_note_iterator_unset(array, index);
-    ptn_array_key_free(array->entries[index].key);
-    ptn_value_destroy(&array->entries[index].value);
+    PtnArrayEntry removed = array->entries[index];
     for (size_t i = index + 1; i < array->len; i++) {
         array->entries[i - 1] = array->entries[i];
     }
@@ -586,6 +585,8 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
     }
     ptn_array_key_free(key);
     ptn_array_rebuild_index(array);
+    ptn_array_key_free(removed.key);
+    ptn_value_destroy(&removed.value);
     return 1;
 }
 

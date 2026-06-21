@@ -23925,6 +23925,42 @@ $p = null;
 }
 
 #[test]
+fn compile_array_unset_publishes_removal_before_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-array-unset-before-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-unset-before-destructor.php");
+    let output = root.join("array-unset-before-destructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $array;
+
+    public function __destruct() {
+        var_dump(count($this->array[0]));
+        var_dump($this->array[0]);
+    }
+}
+
+$array = [[new Foo]];
+$array[0][0]->array =& $array;
+unset($array[0][0]);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\narray(0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_static_property_destructors_precede_function_static_destructors_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-function-static-destructor-order");
     fs::create_dir_all(&root).unwrap();
