@@ -30268,6 +30268,90 @@ try { invalid_return(); } catch (TypeError $e) { echo \"return error: \", $e->ge
 }
 
 #[test]
+fn compile_composite_reflection_types_to_native_binary() {
+    let root = temp_dir("ptn-native-composite-reflection-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("composite-reflection-types.php");
+    let output = root.join("composite-reflection-types-bin");
+    fs::write(
+        &input,
+        "<?php
+interface X {}
+interface Y {}
+class C {}
+class Box {
+    public (X&Y)|null $dnf;
+    public iterable $items;
+    public ?iterable $maybe;
+    public function make(): static { return $this; }
+}
+function f_union(): X|Y|int|null {}
+function f_dnf(): (X&Y)|C|null {}
+function f_implicit(X&Y $value = null) {}
+function f_iterable(iterable $value): iterable { return $value; }
+function show(ReflectionType $type) {
+    echo $type::class, ' ', (string) $type, ' null=', ($type->allowsNull() ? '1' : '0'), \"\\n\";
+    if ($type instanceof ReflectionUnionType || $type instanceof ReflectionIntersectionType) {
+        foreach ($type->getTypes() as $inner) {
+            echo '  ', $inner::class, ' ', (string) $inner;
+            if ($inner instanceof ReflectionNamedType) {
+                echo ' name=', $inner->getName(), ' builtin=', ($inner->isBuiltin() ? '1' : '0');
+            }
+            echo ' null=', ($inner->allowsNull() ? '1' : '0'), \"\\n\";
+        }
+    } else if ($type instanceof ReflectionNamedType) {
+        echo '  name=', $type->getName(), ' builtin=', ($type->isBuiltin() ? '1' : '0'), \"\\n\";
+    }
+}
+show((new ReflectionFunction('f_union'))->getReturnType());
+show((new ReflectionFunction('f_dnf'))->getReturnType());
+show((new ReflectionFunction('f_implicit'))->getParameters()[0]->getType());
+show((new ReflectionFunction('f_iterable'))->getReturnType());
+show((new ReflectionClass(Box::class))->getProperty('dnf')->getType());
+show((new ReflectionClass(Box::class))->getProperty('items')->getType());
+show((new ReflectionClass(Box::class))->getProperty('maybe')->getType());
+show((new ReflectionMethod(Box::class, 'make'))->getReturnType());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: f_implicit(): Implicitly marking parameter $value as nullable is deprecated, the explicit nullable type must be used instead in ptn on line 13\n",
+            "ReflectionUnionType X|Y|int|null null=1\n",
+            "  ReflectionNamedType X name=X builtin=0 null=0\n",
+            "  ReflectionNamedType Y name=Y builtin=0 null=0\n",
+            "  ReflectionNamedType int name=int builtin=1 null=0\n",
+            "  ReflectionNamedType null name=null builtin=1 null=1\n",
+            "ReflectionUnionType (X&Y)|C|null null=1\n",
+            "  ReflectionIntersectionType X&Y null=0\n",
+            "  ReflectionNamedType C name=C builtin=0 null=0\n",
+            "  ReflectionNamedType null name=null builtin=1 null=1\n",
+            "ReflectionUnionType (X&Y)|null null=1\n",
+            "  ReflectionIntersectionType X&Y null=0\n",
+            "  ReflectionNamedType null name=null builtin=1 null=1\n",
+            "ReflectionNamedType iterable null=0\n",
+            "  name=iterable builtin=1\n",
+            "ReflectionUnionType (X&Y)|null null=1\n",
+            "  ReflectionIntersectionType X&Y null=0\n",
+            "  ReflectionNamedType null name=null builtin=1 null=1\n",
+            "ReflectionNamedType iterable null=0\n",
+            "  name=iterable builtin=1\n",
+            "ReflectionNamedType ?iterable null=1\n",
+            "  name=iterable builtin=1\n",
+            "ReflectionNamedType static null=0\n",
+            "  name=static builtin=0\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_union_typed_user_function_parameters_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-union-type");
     fs::create_dir_all(&root).unwrap();

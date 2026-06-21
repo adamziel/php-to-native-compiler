@@ -89587,6 +89587,20 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_named_type(const cha
     return ptn_ascii_case_equal(class_name, "ReflectionNamedType");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_union_type(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionUnionType");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_intersection_type(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionIntersectionType");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_type(const char *class_name) {
+    return ptn_internal_class_name_is_reflection_named_type(class_name) ||
+        ptn_internal_class_name_is_reflection_union_type(class_name) ||
+        ptn_internal_class_name_is_reflection_intersection_type(class_name);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_parameter(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionParameter");
 }
@@ -90971,11 +90985,20 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
 
-static int ptn_reflection_named_type_method_exists(const char *method_name) {
+static int ptn_reflection_type_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__toString")
-        || ptn_ascii_case_equal(method_name, "allowsNull")
+        || ptn_ascii_case_equal(method_name, "allowsNull");
+}
+
+static int ptn_reflection_named_type_method_exists(const char *method_name) {
+    return ptn_reflection_type_method_exists(method_name)
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "isBuiltin");
+}
+
+static int ptn_reflection_composite_type_method_exists(const char *method_name) {
+    return ptn_reflection_type_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "getTypes");
 }
 
 static int ptn_reflection_property_method_exists(const char *method_name) {
@@ -91507,6 +91530,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_reflection_named_type(class_name)) {
         return ptn_reflection_named_type_method_exists(method_name);
     }
+    if (
+        ptn_internal_class_name_is_reflection_union_type(class_name) ||
+        ptn_internal_class_name_is_reflection_intersection_type(class_name)
+    ) {
+        return ptn_reflection_composite_type_method_exists(method_name);
+    }
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         return ptn_reflection_method_method_exists(method_name);
     }
@@ -91515,6 +91544,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_named_type(class_name)) {
         return ptn_reflection_named_type_method_exists(method_name);
+    }
+    if (
+        ptn_internal_class_name_is_reflection_union_type(class_name) ||
+        ptn_internal_class_name_is_reflection_intersection_type(class_name)
+    ) {
+        return ptn_reflection_composite_type_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_reflection_property(class_name)) {
         return ptn_reflection_property_method_exists(method_name);
@@ -92287,6 +92322,18 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "allowsNull",
             "getName",
             "isBuiltin",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (
+        ptn_internal_class_name_is_reflection_union_type(class_name) ||
+        ptn_internal_class_name_is_reflection_intersection_type(class_name)
+    ) {
+        static const char *const names[] = {
+            "__toString",
+            "allowsNull",
+            "getTypes",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -94883,7 +94930,7 @@ typedef struct PtnSensitiveParameterValueData {
     PtnValue value;
 } PtnSensitiveParameterValueData;
 
-static PtnValue ptn_reflection_named_type_object_from_metadata(
+static PtnValue ptn_reflection_type_object_from_metadata(
     PtnRuntime *runtime,
     const char *name,
     const char *display_name,
@@ -96163,10 +96210,10 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     }
     if (ptn_ascii_case_equal(name, "getReturnType")) {
         PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
-        if (!metadata.found || metadata.return_type_name == NULL) {
+        if (!metadata.found || metadata.return_type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             metadata.return_type_name,
             metadata.return_type_display_name,
@@ -97866,11 +97913,11 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             &is_builtin,
             &is_readonly
         );
-        (void)type_display_name;
         (void)allows_null;
         (void)is_builtin;
         (void)is_readonly;
-        return ptn_bool(type_name != NULL);
+        (void)type_name;
+        return ptn_bool(type_display_name != NULL);
     }
     if (ptn_ascii_case_equal(name, "getType")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
@@ -97891,10 +97938,10 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             &is_readonly
         );
         (void)is_readonly;
-        if (type_name == NULL) {
+        if (type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             type_name,
             type_display_name,
@@ -97921,10 +97968,10 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             &is_readonly
         );
         (void)is_readonly;
-        if (type_name == NULL) {
+        if (type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             type_name,
             type_display_name,
@@ -100740,7 +100787,8 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         (void)allows_null;
         (void)is_builtin;
         free(constant_name);
-        return ptn_bool(found && type_name != NULL);
+        (void)type_name;
+        return ptn_bool(found && type_display_name != NULL);
     }
     if (ptn_ascii_case_equal(name, "getType")) {
         char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
@@ -100760,10 +100808,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
             &is_builtin
         );
         free(constant_name);
-        if (type_name == NULL) {
+        if (type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             type_name,
             type_display_name,
@@ -100874,12 +100922,19 @@ typedef struct {
     char *closure_scope_class_name;
 } PtnReflectionParameterData;
 
+typedef enum {
+    PTN_REFLECTION_TYPE_NAMED,
+    PTN_REFLECTION_TYPE_UNION,
+    PTN_REFLECTION_TYPE_INTERSECTION,
+} PtnReflectionTypeKind;
+
 typedef struct {
+    PtnReflectionTypeKind kind;
     char *name;
     char *display_name;
     int allows_null;
     int is_builtin;
-} PtnReflectionNamedTypeData;
+} PtnReflectionTypeData;
 
 typedef struct PtnDbTable {
     char *name;
@@ -103166,8 +103221,8 @@ static void ptn_reflection_parameter_data_free(void *data) {
     free(parameter_data);
 }
 
-static void ptn_reflection_named_type_data_free(void *data) {
-    PtnReflectionNamedTypeData *type_data = (PtnReflectionNamedTypeData *)data;
+static void ptn_reflection_type_data_free(void *data) {
+    PtnReflectionTypeData *type_data = (PtnReflectionTypeData *)data;
     if (type_data == NULL) {
         return;
     }
@@ -103354,17 +103409,17 @@ static PtnReflectionParameterData *ptn_reflection_parameter_data(PtnRuntime *run
     return (PtnReflectionParameterData *)receiver.as.object->native_data;
 }
 
-static PtnReflectionNamedTypeData *ptn_reflection_named_type_data(PtnRuntime *runtime, PtnValue receiver) {
+static PtnReflectionTypeData *ptn_reflection_type_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_reflection_named_type(receiver.as.object->class_name)
+        || !ptn_internal_class_name_is_reflection_type(receiver.as.object->class_name)
         || receiver.as.object->native_data == NULL
     ) {
-        ptn_throw_exception(runtime, "Error", "Invalid ReflectionNamedType object");
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionType object");
         return NULL;
     }
-    return (PtnReflectionNamedTypeData *)receiver.as.object->native_data;
+    return (PtnReflectionTypeData *)receiver.as.object->native_data;
 }
 
 static PtnSensitiveParameterValueData *ptn_sensitive_parameter_value_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -103781,29 +103836,248 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
-static PtnValue ptn_reflection_named_type_object_from_metadata(
+static int ptn_reflection_type_display_has_top_level_separator(
+    const char *display_name,
+    char separator
+) {
+    if (display_name == NULL) {
+        return 0;
+    }
+    int depth = 0;
+    for (const char *cursor = display_name; *cursor != '\0'; cursor++) {
+        if (*cursor == '(') {
+            depth++;
+            continue;
+        }
+        if (*cursor == ')') {
+            if (depth > 0) {
+                depth--;
+            }
+            continue;
+        }
+        if (*cursor == separator && depth == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnReflectionTypeKind ptn_reflection_type_kind_from_display(const char *display_name) {
+    if (ptn_reflection_type_display_has_top_level_separator(display_name, '|')) {
+        return PTN_REFLECTION_TYPE_UNION;
+    }
+    if (ptn_reflection_type_display_has_top_level_separator(display_name, '&')) {
+        return PTN_REFLECTION_TYPE_INTERSECTION;
+    }
+    return PTN_REFLECTION_TYPE_NAMED;
+}
+
+static int ptn_reflection_named_type_is_builtin_name(const char *name) {
+    return ptn_ascii_case_equal(name, "null") ||
+        ptn_ascii_case_equal(name, "array") ||
+        ptn_ascii_case_equal(name, "int") ||
+        ptn_ascii_case_equal(name, "float") ||
+        ptn_ascii_case_equal(name, "string") ||
+        ptn_ascii_case_equal(name, "bool") ||
+        ptn_ascii_case_equal(name, "true") ||
+        ptn_ascii_case_equal(name, "false") ||
+        ptn_ascii_case_equal(name, "callable") ||
+        ptn_ascii_case_equal(name, "object") ||
+        ptn_ascii_case_equal(name, "iterable") ||
+        ptn_ascii_case_equal(name, "mixed") ||
+        ptn_ascii_case_equal(name, "void") ||
+        ptn_ascii_case_equal(name, "never");
+}
+
+static char *ptn_reflection_type_trimmed_copy(const char *start, size_t len) {
+    while (len > 0 && isspace((unsigned char)*start)) {
+        start++;
+        len--;
+    }
+    while (len > 0 && isspace((unsigned char)start[len - 1])) {
+        len--;
+    }
+    return ptn_duplicate_string_len(start, len);
+}
+
+static int ptn_reflection_type_has_outer_parentheses(const char *display_name) {
+    size_t len = strlen(display_name);
+    if (len < 2 || display_name[0] != '(' || display_name[len - 1] != ')') {
+        return 0;
+    }
+    int depth = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (display_name[i] == '(') {
+            depth++;
+        } else if (display_name[i] == ')') {
+            depth--;
+            if (depth == 0 && i + 1 < len) {
+                return 0;
+            }
+        }
+    }
+    return depth == 0;
+}
+
+static char *ptn_reflection_type_member_display_copy(const char *start, size_t len) {
+    char *display = ptn_reflection_type_trimmed_copy(start, len);
+    while (ptn_reflection_type_has_outer_parentheses(display)) {
+        size_t display_len = strlen(display);
+        char *inner = ptn_reflection_type_trimmed_copy(display + 1, display_len - 2);
+        free(display);
+        display = inner;
+    }
+    return display;
+}
+
+static int ptn_reflection_type_display_has_null_member(const char *display_name) {
+    if (display_name == NULL) {
+        return 0;
+    }
+    const char *start = display_name;
+    int depth = 0;
+    for (const char *cursor = display_name;; cursor++) {
+        char ch = *cursor;
+        if (ch == '(') {
+            depth++;
+        } else if (ch == ')') {
+            if (depth > 0) {
+                depth--;
+            }
+        }
+        if ((ch == '|' && depth == 0) || ch == '\0') {
+            char *member = ptn_reflection_type_member_display_copy(start, (size_t)(cursor - start));
+            int is_null = ptn_ascii_case_equal(member, "null");
+            free(member);
+            if (is_null) {
+                return 1;
+            }
+            if (ch == '\0') {
+                break;
+            }
+            start = cursor + 1;
+        }
+    }
+    return 0;
+}
+
+static const char *ptn_reflection_type_class_name(PtnReflectionTypeKind kind) {
+    switch (kind) {
+        case PTN_REFLECTION_TYPE_UNION:
+            return "ReflectionUnionType";
+        case PTN_REFLECTION_TYPE_INTERSECTION:
+            return "ReflectionIntersectionType";
+        case PTN_REFLECTION_TYPE_NAMED:
+        default:
+            return "ReflectionNamedType";
+    }
+}
+
+static PtnValue ptn_reflection_type_object_from_metadata(
     PtnRuntime *runtime,
     const char *name,
     const char *display_name,
     int allows_null,
     int is_builtin
 ) {
-    if (name == NULL || display_name == NULL) {
+    if (display_name == NULL) {
         return ptn_null();
     }
-    PtnReflectionNamedTypeData *data = malloc(sizeof(PtnReflectionNamedTypeData));
+    PtnReflectionTypeKind kind = ptn_reflection_type_kind_from_display(display_name);
+    if (kind == PTN_REFLECTION_TYPE_NAMED && name == NULL) {
+        return ptn_null();
+    }
+    PtnReflectionTypeData *data = malloc(sizeof(PtnReflectionTypeData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    data->name = ptn_duplicate_string(name);
+    data->kind = kind;
+    data->name = name == NULL ? NULL : ptn_duplicate_string(name);
     data->display_name = ptn_duplicate_string(display_name);
-    data->allows_null = allows_null;
+    data->allows_null = allows_null || ptn_reflection_type_display_has_null_member(display_name);
     data->is_builtin = is_builtin;
 
-    PtnValue object = ptn_object_new_shell(runtime, "ReflectionNamedType");
+    PtnValue object = ptn_object_new_shell(runtime, ptn_reflection_type_class_name(kind));
     object.as.object->native_data = data;
-    object.as.object->native_data_free = ptn_reflection_named_type_data_free;
+    object.as.object->native_data_free = ptn_reflection_type_data_free;
     return object;
+}
+
+static PtnValue ptn_reflection_type_object_from_member_display(
+    PtnRuntime *runtime,
+    const char *start,
+    size_t len
+) {
+    char *display_name = ptn_reflection_type_member_display_copy(start, len);
+    PtnReflectionTypeKind kind = ptn_reflection_type_kind_from_display(display_name);
+    if (kind != PTN_REFLECTION_TYPE_NAMED) {
+        PtnValue result = ptn_reflection_type_object_from_metadata(
+            runtime,
+            NULL,
+            display_name,
+            ptn_reflection_type_display_has_null_member(display_name),
+            0
+        );
+        free(display_name);
+        return result;
+    }
+    const char *name_start = display_name;
+    int allows_null = 0;
+    if (*name_start == '?') {
+        allows_null = 1;
+        name_start++;
+    }
+    if (ptn_ascii_case_equal(name_start, "null")) {
+        allows_null = 1;
+    }
+    char *name = ptn_duplicate_string(name_start);
+    PtnValue result = ptn_reflection_type_object_from_metadata(
+        runtime,
+        name,
+        display_name,
+        allows_null,
+        ptn_reflection_named_type_is_builtin_name(name)
+    );
+    free(name);
+    free(display_name);
+    return result;
+}
+
+static PtnValue ptn_reflection_type_get_types(
+    PtnRuntime *runtime,
+    PtnReflectionTypeData *data
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (data == NULL || data->display_name == NULL) {
+        return result;
+    }
+    char separator = data->kind == PTN_REFLECTION_TYPE_INTERSECTION ? '&' : '|';
+    const char *start = data->display_name;
+    int depth = 0;
+    int64_t index = 0;
+    for (const char *cursor = data->display_name;; cursor++) {
+        char ch = *cursor;
+        if (ch == '(') {
+            depth++;
+        } else if (ch == ')') {
+            if (depth > 0) {
+                depth--;
+            }
+        }
+        if ((ch == separator && depth == 0) || ch == '\0') {
+            PtnValue type = ptn_reflection_type_object_from_member_display(
+                runtime,
+                start,
+                (size_t)(cursor - start)
+            );
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), type);
+            if (ch == '\0') {
+                break;
+            }
+            start = cursor + 1;
+        }
+    }
+    return result;
 }
 
 static void ptn_reflection_function_attach_name_property(
@@ -104825,7 +105099,7 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_call_method(
         const char *backing_type = ptn_declared_class_enum_backing_type_name(class_name);
         return backing_type == NULL
             ? ptn_null()
-            : ptn_reflection_named_type_object_from_metadata(
+            : ptn_reflection_type_object_from_metadata(
                 runtime,
                 backing_type,
                 backing_type,
@@ -113095,10 +113369,10 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
         return result;
     }
     if (ptn_ascii_case_equal(name, "getReturnType")) {
-        if (metadata.return_type_name == NULL) {
+        if (metadata.return_type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             metadata.return_type_name,
             metadata.return_type_display_name,
@@ -113261,25 +113535,28 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         return result;
     }
     if (ptn_ascii_case_equal(name, "hasType")) {
-        return ptn_bool(ptn_function_metadata_parameter_type_name(metadata, index) != NULL);
+        return ptn_bool(ptn_function_metadata_parameter_type_display_name(metadata, index) != NULL);
     }
     if (ptn_ascii_case_equal(name, "getType")) {
         const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
-        if (type_name == NULL) {
+        const char *type_display_name =
+            ptn_function_metadata_parameter_type_display_name(metadata, index);
+        if (type_display_name == NULL) {
             return ptn_null();
         }
-        return ptn_reflection_named_type_object_from_metadata(
+        return ptn_reflection_type_object_from_metadata(
             runtime,
             type_name,
-            ptn_function_metadata_parameter_type_display_name(metadata, index),
+            type_display_name,
             ptn_function_metadata_parameter_type_allows_null(metadata, index),
             ptn_function_metadata_parameter_type_is_builtin(metadata, index)
         );
     }
     if (ptn_ascii_case_equal(name, "allowsNull")) {
-        const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
+        const char *type_display_name =
+            ptn_function_metadata_parameter_type_display_name(metadata, index);
         return ptn_bool(
-            type_name == NULL ||
+            type_display_name == NULL ||
             ptn_function_metadata_parameter_type_allows_null(metadata, index)
         );
     }
@@ -113360,7 +113637,7 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     return ptn_null();
 }
 
-static PTN_UNUSED PtnValue ptn_reflection_named_type_call_method(
+static PTN_UNUSED PtnValue ptn_reflection_type_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
@@ -113370,25 +113647,33 @@ static PTN_UNUSED PtnValue ptn_reflection_named_type_call_method(
 ) {
     (void)args;
     (void)line;
-    ptn_reflection_check_no_arguments(runtime, "ReflectionNamedType", name, argc);
+    const char *class_name = "ReflectionType";
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type == PTN_OBJECT) {
+        class_name = resolved_receiver.as.object->class_name;
+    }
+    ptn_reflection_check_no_arguments(runtime, class_name, name, argc);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnReflectionNamedTypeData *data = ptn_reflection_named_type_data(runtime, receiver);
+    PtnReflectionTypeData *data = ptn_reflection_type_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
     }
-    if (ptn_ascii_case_equal(name, "getName")) {
-        return ptn_owned_string(ptn_duplicate_string(data->name));
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_owned_string(ptn_duplicate_string(data->display_name));
     }
     if (ptn_ascii_case_equal(name, "allowsNull")) {
         return ptn_bool(data->allows_null);
     }
+    if (ptn_ascii_case_equal(name, "getTypes")) {
+        return ptn_reflection_type_get_types(runtime, data);
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
     if (ptn_ascii_case_equal(name, "isBuiltin")) {
         return ptn_bool(data->is_builtin);
-    }
-    if (ptn_ascii_case_equal(name, "__toString")) {
-        return ptn_owned_string(ptn_duplicate_string(data->display_name));
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

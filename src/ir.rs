@@ -214,6 +214,7 @@ pub struct PropertyTypeHint {
     pub text: String,
     pub kind: PropertyTypeKind,
     pub allows_null: bool,
+    pub semantic_type: Option<TypeHint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3069,6 +3070,7 @@ fn lower_property_type_hint(type_hint: &crate::ast::PropertyTypeHint) -> Propert
             AstPropertyTypeKind::Unsupported => PropertyTypeKind::Unsupported,
         },
         allows_null: type_hint.allows_null,
+        semantic_type: type_hint.semantic_type.clone().map(lower_type_hint),
     }
 }
 

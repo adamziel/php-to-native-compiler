@@ -2622,24 +2622,19 @@ fn emit_function_metadata_parameters(
         if index > 0 {
             out.push_str(", ");
         }
-        let type_metadata = parameter
-            .type_hint
-            .as_ref()
-            .and_then(reflection_named_type_metadata);
+        let type_metadata = parameter.type_hint.as_ref().and_then(|type_hint| {
+            reflection_type_metadata_with_implicit_nullable(
+                type_hint,
+                parameter_default_value_is_null(parameter)
+                    && !type_hint_allows_null(Some(type_hint))
+                    && type_hint_allows_implicit_nullable_default(type_hint),
+            )
+        });
         out.push_str("{ \"");
         out.push_str(&c_string(&parameter.name));
         out.push_str("\", ");
         if let Some(type_metadata) = type_metadata {
-            out.push('"');
-            out.push_str(&c_string(&type_metadata.name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&type_metadata.display_name));
-            out.push_str("\", ");
-            let allows_null =
-                type_metadata.allows_null || parameter_default_value_is_null(parameter);
-            out.push_str(if allows_null { "1" } else { "0" });
-            out.push_str(", ");
-            out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+            emit_reflection_type_metadata_fields(out, &type_metadata);
         } else {
             out.push_str("NULL, NULL, 0, 0");
         }
@@ -4331,46 +4326,129 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
     }
 }
 
-struct ReflectionNamedTypeMetadata {
-    name: String,
+struct ReflectionTypeMetadata {
+    name: Option<String>,
     display_name: String,
     allows_null: bool,
     is_builtin: bool,
 }
 
-fn reflection_named_type_metadata(type_hint: &TypeHint) -> Option<ReflectionNamedTypeMetadata> {
-    let named_type = match type_hint {
-        TypeHint::Nullable(inner) => inner.as_ref(),
-        TypeHint::Union(_) | TypeHint::Intersection(_) => return None,
-        other => other,
-    };
-    Some(ReflectionNamedTypeMetadata {
-        name: reflection_named_type_name(named_type),
-        display_name: type_hint_label(type_hint),
-        allows_null: type_hint_allows_null(Some(type_hint)),
-        is_builtin: reflection_named_type_is_builtin(named_type),
+fn reflection_type_metadata(type_hint: &TypeHint) -> Option<ReflectionTypeMetadata> {
+    reflection_type_metadata_with_implicit_nullable(type_hint, false)
+}
+
+fn reflection_type_metadata_with_implicit_nullable(
+    type_hint: &TypeHint,
+    implicit_nullable: bool,
+) -> Option<ReflectionTypeMetadata> {
+    let allows_null = type_hint_allows_null(Some(type_hint)) || implicit_nullable;
+    if let Some(named_type) = reflection_nullable_named_type(type_hint) {
+        return Some(ReflectionTypeMetadata {
+            name: Some(reflection_named_type_name(named_type)),
+            display_name: reflection_named_type_display_name(named_type, allows_null),
+            allows_null,
+            is_builtin: reflection_named_type_is_builtin(named_type),
+        });
+    }
+    if matches!(type_hint, TypeHint::Void | TypeHint::Never) {
+        return Some(ReflectionTypeMetadata {
+            name: Some(reflection_named_type_name(type_hint)),
+            display_name: reflection_named_type_display_name(type_hint, allows_null),
+            allows_null,
+            is_builtin: reflection_named_type_is_builtin(type_hint),
+        });
+    }
+    Some(ReflectionTypeMetadata {
+        name: None,
+        display_name: if implicit_nullable {
+            reflection_implicit_nullable_type_label(type_hint)
+        } else {
+            type_hint_label(type_hint)
+        },
+        allows_null,
+        is_builtin: false,
     })
+}
+
+fn reflection_nullable_named_type(type_hint: &TypeHint) -> Option<&TypeHint> {
+    match type_hint {
+        TypeHint::Nullable(inner) => reflection_nullable_named_type(inner),
+        TypeHint::Union(types) if types.len() == 2 => {
+            let mut non_null = types
+                .iter()
+                .filter(|member| !matches!(member, TypeHint::Null));
+            let named = non_null.next()?;
+            if non_null.next().is_none()
+                && !matches!(named, TypeHint::Union(_) | TypeHint::Intersection(_))
+            {
+                Some(named)
+            } else {
+                None
+            }
+        }
+        TypeHint::Union(_) | TypeHint::Intersection(_) => None,
+        other => Some(other),
+    }
 }
 
 fn emit_reflection_type_metadata_arguments(out: &mut String, type_hint: Option<&TypeHint>) {
     out.push_str(", ");
-    if let Some(type_metadata) = type_hint.and_then(reflection_named_type_metadata) {
-        out.push('"');
-        out.push_str(&c_string(&type_metadata.name));
-        out.push_str("\", \"");
-        out.push_str(&c_string(&type_metadata.display_name));
-        out.push_str("\", ");
-        out.push_str(if type_metadata.allows_null { "1" } else { "0" });
-        out.push_str(", ");
-        out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+    if let Some(type_metadata) = type_hint.and_then(reflection_type_metadata) {
+        emit_reflection_type_metadata_fields(out, &type_metadata);
     } else {
         out.push_str("NULL, NULL, 0, 0");
     }
 }
 
+fn emit_reflection_type_metadata_fields(out: &mut String, type_metadata: &ReflectionTypeMetadata) {
+    if let Some(name) = &type_metadata.name {
+        out.push('"');
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+    } else {
+        out.push_str("NULL, ");
+    }
+    out.push('"');
+    out.push_str(&c_string(&type_metadata.display_name));
+    out.push_str("\", ");
+    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+    out.push_str(", ");
+    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+}
+
+fn emit_reflection_type_metadata_assignments(
+    out: &mut String,
+    indent: &str,
+    type_metadata: &ReflectionTypeMetadata,
+) {
+    out.push_str(indent);
+    if let Some(name) = &type_metadata.name {
+        out.push_str("*type_name = \"");
+        out.push_str(&c_string(name));
+        out.push_str("\";\n");
+    } else {
+        out.push_str("*type_name = NULL;\n");
+    }
+    out.push_str(indent);
+    out.push_str("*type_display_name = \"");
+    out.push_str(&c_string(&type_metadata.display_name));
+    out.push_str("\";\n");
+    out.push_str(indent);
+    out.push_str("*allows_null = ");
+    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+    out.push_str(";\n");
+    out.push_str(indent);
+    out.push_str("*is_builtin = ");
+    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+    out.push_str(";\n");
+}
+
 fn reflection_property_named_type_metadata(
     type_hint: &PropertyTypeHint,
-) -> Option<ReflectionNamedTypeMetadata> {
+) -> Option<ReflectionTypeMetadata> {
+    if let Some(semantic_type) = &type_hint.semantic_type {
+        return reflection_type_metadata(semantic_type);
+    }
     let name = match &type_hint.kind {
         PropertyTypeKind::Null => "null",
         PropertyTypeKind::Array => "array",
@@ -4381,8 +4459,8 @@ fn reflection_property_named_type_metadata(
         PropertyTypeKind::Mixed => "mixed",
         PropertyTypeKind::Object => "object",
         PropertyTypeKind::Class(class_name) => {
-            return Some(ReflectionNamedTypeMetadata {
-                name: class_name.clone(),
+            return Some(ReflectionTypeMetadata {
+                name: Some(class_name.clone()),
                 display_name: type_hint.text.clone(),
                 allows_null: type_hint.allows_null,
                 is_builtin: false,
@@ -4391,18 +4469,29 @@ fn reflection_property_named_type_metadata(
         PropertyTypeKind::Unsupported => {
             let name = type_hint.text.strip_prefix('?').unwrap_or(&type_hint.text);
             if matches!(name, "callable" | "iterable" | "true" | "false" | "static") {
-                return Some(ReflectionNamedTypeMetadata {
-                    name: name.to_string(),
+                return Some(ReflectionTypeMetadata {
+                    name: Some(name.to_string()),
                     display_name: type_hint.text.clone(),
                     allows_null: type_hint.allows_null,
                     is_builtin: !name.eq_ignore_ascii_case("static"),
                 });
             }
+            if name.contains('|') || name.contains('&') {
+                return Some(ReflectionTypeMetadata {
+                    name: None,
+                    display_name: type_hint.text.clone(),
+                    allows_null: type_hint.allows_null
+                        || name
+                            .split('|')
+                            .any(|member| member.trim().eq_ignore_ascii_case("null")),
+                    is_builtin: false,
+                });
+            }
             return None;
         }
     };
-    Some(ReflectionNamedTypeMetadata {
-        name: name.to_string(),
+    Some(ReflectionTypeMetadata {
+        name: Some(name.to_string()),
         display_name: type_hint.text.clone(),
         allows_null: type_hint.allows_null,
         is_builtin: true,
@@ -4449,8 +4538,24 @@ fn reflection_named_type_is_builtin(type_hint: &TypeHint) -> bool {
             | TypeHint::Mixed
             | TypeHint::Void
             | TypeHint::Never
-            | TypeHint::Static
     )
+}
+
+fn reflection_named_type_display_name(type_hint: &TypeHint, allows_null: bool) -> String {
+    let name = reflection_named_type_name(type_hint);
+    if allows_null && !matches!(type_hint, TypeHint::Null | TypeHint::Mixed) {
+        format!("?{name}")
+    } else {
+        name
+    }
+}
+
+fn reflection_implicit_nullable_type_label(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Intersection(_) => format!("({})|null", type_hint_label(type_hint)),
+        TypeHint::Union(_) => format!("{}|null", type_hint_label(type_hint)),
+        _ => reflection_named_type_display_name(type_hint, true),
+    }
 }
 
 fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
@@ -6765,6 +6870,9 @@ fn emit_class_metadata_helpers(
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("ReflectionFunction", "ReflectionFunctionAbstract"),
         ("ReflectionMethod", "ReflectionFunctionAbstract"),
+        ("ReflectionNamedType", "ReflectionType"),
+        ("ReflectionUnionType", "ReflectionType"),
+        ("ReflectionIntersectionType", "ReflectionType"),
         ("ReflectionEnum", "ReflectionClass"),
         ("ReflectionEnumBackedCase", "ReflectionEnumUnitCase"),
         ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
@@ -7695,20 +7803,9 @@ fn emit_class_metadata_helpers(
                 if let Some(type_metadata) = constant
                     .type_hint
                     .as_ref()
-                    .and_then(reflection_named_type_metadata)
+                    .and_then(reflection_type_metadata)
                 {
-                    out.push_str("            *type_name = \"");
-                    out.push_str(&c_string(&type_metadata.name));
-                    out.push_str("\";\n");
-                    out.push_str("            *type_display_name = \"");
-                    out.push_str(&c_string(&type_metadata.display_name));
-                    out.push_str("\";\n");
-                    out.push_str("            *allows_null = ");
-                    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
-                    out.push_str(";\n");
-                    out.push_str("            *is_builtin = ");
-                    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
-                    out.push_str(";\n");
+                    emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
                 } else {
                     out.push_str("            *type_name = NULL;\n");
                     out.push_str("            *type_display_name = NULL;\n");
@@ -7732,20 +7829,9 @@ fn emit_class_metadata_helpers(
                 if let Some(type_metadata) = constant
                     .type_hint
                     .as_ref()
-                    .and_then(reflection_named_type_metadata)
+                    .and_then(reflection_type_metadata)
                 {
-                    out.push_str("            *type_name = \"");
-                    out.push_str(&c_string(&type_metadata.name));
-                    out.push_str("\";\n");
-                    out.push_str("            *type_display_name = \"");
-                    out.push_str(&c_string(&type_metadata.display_name));
-                    out.push_str("\";\n");
-                    out.push_str("            *allows_null = ");
-                    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
-                    out.push_str(";\n");
-                    out.push_str("            *is_builtin = ");
-                    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
-                    out.push_str(";\n");
+                    emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
                 } else {
                     out.push_str("            *type_name = NULL;\n");
                     out.push_str("            *type_display_name = NULL;\n");
@@ -13165,18 +13251,7 @@ fn emit_class_reflection_metadata_helpers(
                 .type_hint
                 .and_then(reflection_property_named_type_metadata)
             {
-                out.push_str("            *type_name = \"");
-                out.push_str(&c_string(&type_metadata.name));
-                out.push_str("\";\n");
-                out.push_str("            *type_display_name = \"");
-                out.push_str(&c_string(&type_metadata.display_name));
-                out.push_str("\";\n");
-                out.push_str("            *allows_null = ");
-                out.push_str(if type_metadata.allows_null { "1" } else { "0" });
-                out.push_str(";\n");
-                out.push_str("            *is_builtin = ");
-                out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
-                out.push_str(";\n");
+                emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
             } else {
                 out.push_str("            *type_name = NULL;\n");
                 out.push_str("            *type_display_name = NULL;\n");
@@ -13204,18 +13279,7 @@ fn emit_class_reflection_metadata_helpers(
                 .type_hint
                 .and_then(reflection_property_named_type_metadata)
             {
-                out.push_str("            *type_name = \"");
-                out.push_str(&c_string(&type_metadata.name));
-                out.push_str("\";\n");
-                out.push_str("            *type_display_name = \"");
-                out.push_str(&c_string(&type_metadata.display_name));
-                out.push_str("\";\n");
-                out.push_str("            *allows_null = ");
-                out.push_str(if type_metadata.allows_null { "1" } else { "0" });
-                out.push_str(";\n");
-                out.push_str("            *is_builtin = ");
-                out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
-                out.push_str(";\n");
+                emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
             } else {
                 out.push_str("            *type_name = NULL;\n");
                 out.push_str("            *type_display_name = NULL;\n");
