@@ -16368,6 +16368,8 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_ISSET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
+        out.push_str("        PtnValue ptn_magic_receiver = ptn_value_clone_deref(resolved);\n");
+        out.push_str("        resolved = ptn_value_deref(ptn_magic_receiver);\n");
         out.push_str(
             "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_ISSET);\n",
         );
@@ -16387,6 +16389,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
+        out.push_str("        ptn_value_destroy(&ptn_magic_receiver);\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
@@ -16419,6 +16422,8 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
+        out.push_str("        PtnValue ptn_magic_receiver = ptn_value_clone_deref(resolved);\n");
+        out.push_str("        resolved = ptn_value_deref(ptn_magic_receiver);\n");
         out.push_str(
             "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET);\n",
         );
@@ -16445,6 +16450,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(
                 "                runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
+            out.push_str("                ptn_value_destroy(&ptn_magic_receiver);\n");
             out.push_str("                return 0;\n");
             out.push_str("            }\n");
             out.push_str("        }\n");
@@ -16456,6 +16462,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
+            out.push_str("            ptn_value_destroy(&ptn_magic_receiver);\n");
             out.push_str("            return 0;\n");
             out.push_str("        }\n");
         }
@@ -16474,6 +16481,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
+            out.push_str("            ptn_value_destroy(&ptn_magic_receiver);\n");
             out.push_str("            return 0;\n");
             out.push_str("        }\n");
             out.push_str("        *value_out = ptn_null();\n");
@@ -16482,6 +16490,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
+        out.push_str("        ptn_value_destroy(&ptn_magic_receiver);\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
@@ -17308,6 +17317,7 @@ fn emit_method_dispatch(
             out.push_str(")");
             if method.visibility == PropertyVisibility::Protected {
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                out.push_str(" || ptn_declared_classes_share_non_private_ancestor_method(runtime->current_class_name, class_name, method_name)");
             }
             out.push_str(") {\n");
             if method.is_abstract {
@@ -17560,6 +17570,7 @@ fn emit_method_dispatch(
             out.push_str(")");
             if method.visibility == PropertyVisibility::Protected {
                 out.push_str(" && !ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                out.push_str(" && !ptn_declared_classes_share_non_private_ancestor_method(runtime->current_class_name, class_name, method_name)");
             }
             out.push_str(") {\n");
             out.push_str("                return 0;\n");
@@ -17703,6 +17714,7 @@ fn emit_method_dispatch(
             out.push_str(")");
             if method.visibility == PropertyVisibility::Protected {
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, target_class_name, method_name)");
+                out.push_str(" || ptn_declared_classes_share_non_private_ancestor_method(runtime->current_class_name, target_class_name, method_name)");
             }
             out.push_str(")) {\n");
             if !method.name.eq_ignore_ascii_case("__construct") {
@@ -18397,7 +18409,7 @@ fn emit_callable_dispatch(
             "                    called_class_name = runtime->forward_static_called_class_name;\n",
         );
         out.push_str("                }\n");
-        out.push_str("                int ptn_scoped_callable_can_bind_current_receiver = ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\") || separator != NULL;\n");
+        out.push_str("                int ptn_scoped_callable_can_bind_current_receiver = ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\") || separator != NULL || runtime->suppress_scoped_callable_deprecation;\n");
         out.push_str("                if (!ptn_scoped_callable_can_bind_current_receiver && from_call_user_func && runtime->has_current_receiver) {\n");
         out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
@@ -18763,6 +18775,7 @@ fn emit_no_discard_callable_dispatch(
                 out.push_str(")");
                 if method.visibility == PropertyVisibility::Protected {
                     out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                    out.push_str(" || ptn_declared_classes_share_non_private_ancestor_method(runtime->current_class_name, class_name, method_name)");
                 }
                 out.push_str(") {\n");
                 if let Some(message) = no_discard_warning_message(function) {
@@ -18809,6 +18822,7 @@ fn emit_no_discard_callable_dispatch(
                 out.push_str(")");
                 if method.visibility == PropertyVisibility::Protected {
                     out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                    out.push_str(" || ptn_declared_classes_share_non_private_ancestor_method(runtime->current_class_name, class_name, method_name)");
                 }
                 out.push_str(") {\n");
                 if let Some(message) = no_discard_warning_message(function) {

@@ -98232,8 +98232,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             ptn_internal_class_name_is_reflection_object(resolved_receiver.as.object->class_name)) {
             return ptn_reflection_object_to_string(runtime, data);
         }
-        int include_enum_cases = resolved_receiver.type == PTN_OBJECT &&
-            ptn_internal_class_name_is_reflection_enum(resolved_receiver.as.object->class_name);
+        int include_enum_cases = ptn_declared_class_is_enum(class_name);
         return ptn_declared_class_reflection_to_string(runtime, class_name, include_enum_cases);
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {

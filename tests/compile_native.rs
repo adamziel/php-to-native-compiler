@@ -22962,6 +22962,63 @@ try {
 }
 
 #[test]
+fn compile_dynamic_static_magic_call_binds_current_receiver_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-magic-current-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-magic-current-receiver.php");
+    let output = root.join("dynamic-static-magic-current-receiver-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public function __call($name, $args) {
+        print \"nonstatic\\n\";
+        var_dump($name);
+    }
+
+    public static function __callStatic($name, $args) {
+        print \"static\\n\";
+        var_dump($name);
+    }
+
+    public function test() {
+        $this->fOoBaR();
+        self::foOBAr();
+        $this::fOOBAr();
+    }
+}
+
+$a = new Foo;
+$a->test();
+$a::bAr();
+foo::BAZ();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "nonstatic\n",
+            "string(6) \"fOoBaR\"\n",
+            "nonstatic\n",
+            "string(6) \"foOBAr\"\n",
+            "nonstatic\n",
+            "string(6) \"fOOBAr\"\n",
+            "static\n",
+            "string(3) \"bAr\"\n",
+            "static\n",
+            "string(3) \"BAZ\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_invokable_object_callables_to_native_binary() {
     let root = temp_dir("ptn-native-invokable-object-callables");
     fs::create_dir_all(&root).unwrap();
@@ -24768,7 +24825,7 @@ echo new ReflectionEnum(Suit::class);
     let reflection_outputs = stdout.split("---\n").collect::<Vec<_>>();
     assert_eq!(reflection_outputs.len(), 2, "{stdout}");
     assert!(
-        !reflection_outputs[0].contains("  - Enum cases [2] {"),
+        reflection_outputs[0].contains("  - Enum cases [2] {"),
         "{stdout}"
     );
     assert!(
@@ -24777,11 +24834,11 @@ echo new ReflectionEnum(Suit::class);
     );
     assert_eq!(
         stdout.matches("  - Enum cases [2] {").count(),
-        1,
+        2,
         "{stdout}"
     );
-    assert_eq!(stdout.matches("Case Hearts = H").count(), 1, "{stdout}");
-    assert_eq!(stdout.matches("Case Spades = S").count(), 1, "{stdout}");
+    assert_eq!(stdout.matches("Case Hearts = H").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("Case Spades = S").count(), 2, "{stdout}");
     assert_eq!(
         stdout
             .matches("Method [ <user, prototype MyStringable> public method toString ]")
@@ -59235,6 +59292,101 @@ isset($test[(string)'123']);
 }
 
 #[test]
+fn compile_magic_isset_and_arrayaccess_keep_receiver_and_key_alive_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-isset-arrayaccess-lifetime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-isset-arrayaccess-lifetime.php");
+    let output = root.join("magic-isset-arrayaccess-lifetime-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicCoalesce {
+    public function __isset($name) { $GLOBALS['obj'] = 24; return true; }
+    public function __get($name) { echo get_class($this), ':', $name, \"\\n\"; return 42; }
+}
+
+$obj = new MagicCoalesce;
+$name = 'foo';
+var_dump($obj->$name ?? 12);
+var_dump($obj);
+
+class MagicEmpty {
+    public function __isset($name) { $GLOBALS['obj_empty'] = 24; return true; }
+    public function __get($name) { echo get_class($this), ':', $name, \"\\n\"; return 42; }
+}
+
+$obj_empty = new MagicEmpty;
+$name = 'foo';
+var_dump(empty($obj_empty->$name));
+var_dump($obj_empty);
+
+class OffsetName implements ArrayAccess {
+    public function offsetExists($offset): bool { $GLOBALS['name'] = 24; return true; }
+    public function offsetGet($offset): mixed { var_dump($offset); return 42; }
+    public function offsetSet($offset, $value): void {}
+    public function offsetUnset($offset): void {}
+}
+
+$offset_name = new OffsetName;
+$name = 'foo';
+var_dump($offset_name[$name] ?? 12);
+var_dump($name);
+$name = 'bar';
+var_dump(empty($offset_name[$name]));
+var_dump($name);
+
+class OffsetObject implements ArrayAccess {
+    private string $globalName;
+    public function __construct(string $globalName) { $this->globalName = $globalName; }
+    public function offsetExists($offset): bool { $GLOBALS[$this->globalName] = 24; return true; }
+    public function offsetGet($offset): mixed { var_dump($offset); return 42; }
+    public function offsetSet($offset, $value): void {}
+    public function offsetUnset($offset): void {}
+}
+
+$obj2 = new OffsetObject('obj2');
+$name = 'foo';
+var_dump($obj2[$name] ?? 12);
+var_dump($obj2);
+$obj3 = new OffsetObject('obj3');
+$name = 'foo';
+var_dump(empty($obj3[$name]));
+var_dump($obj3);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "MagicCoalesce:foo\n",
+            "int(42)\n",
+            "int(24)\n",
+            "MagicEmpty:foo\n",
+            "bool(false)\n",
+            "int(24)\n",
+            "string(3) \"foo\"\n",
+            "int(42)\n",
+            "int(24)\n",
+            "string(3) \"bar\"\n",
+            "bool(false)\n",
+            "int(24)\n",
+            "string(3) \"foo\"\n",
+            "int(42)\n",
+            "int(24)\n",
+            "string(3) \"foo\"\n",
+            "bool(false)\n",
+            "int(24)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_arrayaccess_object_by_ref_argument_stays_silent_to_native_binary() {
     let root = temp_dir("ptn-native-arrayaccess-object-by-ref-argument");
     fs::create_dir_all(&root).unwrap();
@@ -62919,7 +63071,80 @@ foreach ($boxes as $box) {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_clone_value(&runtime"));
-    assert!(c_source.contains("root->method_dispatch(root, clone, \"__clone\""));
+    assert!(
+        c_source.contains("dispatch_runtime->method_dispatch(dispatch_runtime, clone, \"__clone\"")
+    );
+}
+
+#[test]
+fn compile_clone_magic_uses_calling_scope_for_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-clone-magic-calling-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("clone-magic-calling-scope.php");
+    let output = root.join("clone-magic-calling-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class HiddenClone {
+    private function __clone() {
+        echo \"HiddenClone::__clone\\n\";
+    }
+
+    private function __construct() {}
+
+    public static function make() {
+        return new static();
+    }
+
+    public function cloneIt() {
+        return clone $this;
+    }
+}
+
+class HiddenChild extends HiddenClone {}
+
+$copy = HiddenChild::make()->cloneIt();
+echo get_class($copy), \"\\n\";
+
+abstract class BaseClone {
+    abstract protected function __clone();
+}
+
+class MommasBoy extends BaseClone {
+    protected function __clone() {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+class LatchkeyKid extends BaseClone {
+    public function __construct() {
+        $kid = new MommasBoy();
+        $copy = clone $kid;
+        echo get_class($copy), \"\\n\";
+    }
+
+    public function __clone() {}
+}
+
+new LatchkeyKid();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "HiddenClone::__clone\n",
+            "HiddenChild\n",
+            "MommasBoy::__clone\n",
+            "MommasBoy\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

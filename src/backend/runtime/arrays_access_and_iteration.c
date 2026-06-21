@@ -1402,12 +1402,18 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
         ? runtime
         : runtime->lifecycle_root;
-    if (root != NULL &&
-        root->method_dispatch != NULL &&
-        root->declared_method_exists != NULL &&
-        root->declared_method_exists(cloned->class_name, "__clone")) {
+    PtnRuntime *dispatch_runtime = runtime;
+    if (dispatch_runtime == NULL ||
+        dispatch_runtime->method_dispatch == NULL ||
+        dispatch_runtime->declared_method_exists == NULL) {
+        dispatch_runtime = root;
+    }
+    if (dispatch_runtime != NULL &&
+        dispatch_runtime->method_dispatch != NULL &&
+        dispatch_runtime->declared_method_exists != NULL &&
+        dispatch_runtime->declared_method_exists(cloned->class_name, "__clone")) {
         cloned->readonly_clone_initializing = 1;
-        PtnValue result = root->method_dispatch(root, clone, "__clone", 0, NULL, line);
+        PtnValue result = dispatch_runtime->method_dispatch(dispatch_runtime, clone, "__clone", 0, NULL, line);
         cloned->readonly_clone_initializing = 0;
         ptn_value_destroy(&result);
     }
@@ -10917,7 +10923,9 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_call(
     PtnValue *args,
     size_t line
 ) {
-    PtnValue result = runtime->method_dispatch(runtime, ptn_value_deref(container), method_name, argc, args, line);
+    PtnValue receiver = ptn_value_clone_deref(container);
+    PtnValue result = runtime->method_dispatch(runtime, receiver, method_name, argc, args, line);
+    ptn_value_destroy(&receiver);
     if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&result);
         ptn_rethrow_exception(runtime);
