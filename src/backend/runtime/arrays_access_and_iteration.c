@@ -9562,6 +9562,29 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     size_t depth
 );
 
+static PTN_UNUSED PtnObject *ptn_lazy_object_foreach_effective_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    for (size_t depth = 0; object != NULL && depth < 64; depth++) {
+        if (object->lazy_uninitialized && !object->lazy_initializing) {
+            if (!ptn_lazy_object_initialize(runtime, ptn_value_borrow(ptn_object(object)), line)) {
+                return NULL;
+            }
+        }
+        if (!object->lazy_is_proxy || object->lazy_uninitialized) {
+            return object;
+        }
+        PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
+        if (real.type != PTN_OBJECT || real.as.object == NULL || real.as.object == object) {
+            return object;
+        }
+        object = real.as.object;
+    }
+    return object;
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_traversable_object(
     PtnRuntime *runtime,
     PtnValue value,
@@ -9683,6 +9706,14 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     if (value.type != PTN_OBJECT) {
         return ptn_array_iterator_empty();
     }
+    PtnObject *effective_object =
+        ptn_lazy_object_foreach_effective_object(runtime, value.as.object, line);
+    if (effective_object == NULL) {
+        return ptn_array_iterator_empty();
+    }
+    if (effective_object != value.as.object) {
+        value = ptn_value_borrow(ptn_object(effective_object));
+    }
     if (ptn_object_is_generator(value.as.object)) {
         return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
     }
@@ -9776,6 +9807,14 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_traversable_ob
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT) {
         return ptn_array_iterator_empty();
+    }
+    PtnObject *effective_object =
+        ptn_lazy_object_foreach_effective_object(runtime, value.as.object, line);
+    if (effective_object == NULL) {
+        return ptn_array_iterator_empty();
+    }
+    if (effective_object != value.as.object) {
+        value = ptn_value_borrow(ptn_object(effective_object));
     }
     if (ptn_object_is_generator(value.as.object)) {
         return ptn_array_iterator_from_generator(runtime, value.as.object, 1, path, line);

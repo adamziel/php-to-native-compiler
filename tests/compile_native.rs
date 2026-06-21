@@ -59017,6 +59017,26 @@ try {
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
+
+class TypedRefGuard {
+    private int $_num = 5;
+    public int $num {
+        &get {
+            $ref = &$this->_num;
+            return $ref;
+        }
+    }
+}
+
+$typed = new TypedRefGuard();
+foreach ($typed as $name => &$value) {
+    var_dump($name);
+    $value += 7;
+    var_dump($value);
+}
+foreach ($typed as $name => $value) {
+    var_dump($name, $value);
+}
 ",
     )
     .unwrap();
@@ -59045,6 +59065,10 @@ try {
             "}\n",
             "int(42)\n",
             "Cannot create reference to property RefGuard::$bad\n",
+            "string(3) \"num\"\n",
+            "int(12)\n",
+            "string(3) \"num\"\n",
+            "int(12)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -60201,6 +60225,66 @@ exercise_lazy_proxy_success_ref_source($okProxy);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reference_forget_property_type"));
     assert!(c_source.contains("ptn_lazy_object_initializer_snapshot_restore"));
+}
+
+#[test]
+fn compile_lazy_proxy_chain_foreach_initializes_real_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-chain-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-chain-foreach.php");
+    let output = root.join("lazy-proxy-chain-foreach-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyProxyChainBox {
+    public int $a;
+
+    public function __construct() {
+        echo \"ctor\\n\";
+        $this->a = 1;
+    }
+}
+
+$reflector = new ReflectionClass(LazyProxyChainBox::class);
+$outer = $reflector->newLazyProxy(function () use (&$inner) {
+    echo \"outer\\n\";
+    return $inner = new LazyProxyChainBox();
+});
+$reflector->initializeLazyObject($outer);
+$reflector->resetAsLazyProxy($inner, function () {
+    return new LazyProxyChainBox();
+});
+
+foreach ($outer as $name => $value) {
+    var_dump($name, $value);
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "outer\n",
+            "ctor\n",
+            "ctor\n",
+            "string(1) \"a\"\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_foreach_effective_object"));
 }
 
 #[test]

@@ -11498,10 +11498,35 @@ fn emit_property_hook_get_helper(
                 out.push_str("            ptn_runtime_free(&runtime);\n");
                 out.push_str("            return 1;\n");
                 out.push_str("        }\n");
-                out.push_str("        ptn_value_destroy(&");
-                out.push_str(&value_temp);
-                out.push_str(");\n");
-                typed_temp
+                if property.hook_get_returns_by_ref {
+                    out.push_str("        if (");
+                    out.push_str(&value_temp);
+                    out.push_str(".type == PTN_REFERENCE) {\n");
+                    out.push_str("            ptn_reference_assign(caller_runtime, ");
+                    out.push_str(&value_temp);
+                    out.push_str(".as.reference, ");
+                    out.push_str(typed_temp);
+                    out.push_str(");\n");
+                    out.push_str("            ptn_value_drop(&");
+                    out.push_str(typed_temp);
+                    out.push_str(");\n");
+                    out.push_str("        } else {\n");
+                    out.push_str("            ptn_value_drop(&");
+                    out.push_str(&value_temp);
+                    out.push_str(");\n");
+                    out.push_str("            ");
+                    out.push_str(&value_temp);
+                    out.push_str(" = ");
+                    out.push_str(typed_temp);
+                    out.push_str(";\n");
+                    out.push_str("        }\n");
+                    value_temp.as_str()
+                } else {
+                    out.push_str("        ptn_value_destroy(&");
+                    out.push_str(&value_temp);
+                    out.push_str(");\n");
+                    typed_temp
+                }
             } else {
                 value_temp.as_str()
             };
