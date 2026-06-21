@@ -26765,6 +26765,119 @@ var_dump(Worker::countIt());
 }
 
 #[test]
+fn compile_trait_constructor_promotion_declares_imported_property_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-constructor-promotion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-constructor-promotion.php");
+    let output = root.join("trait-constructor-promotion-bin");
+    fs::write(
+        &input,
+        "<?php
+trait Test {
+    public function __construct(public $prop) {}
+}
+
+class Test2 {
+    use Test;
+}
+
+$test = new Test2(42);
+var_dump($test->prop);
+var_dump(property_exists('Test2', 'prop'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(42)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_trait_duplicate_property_defaults_resolve_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-duplicate-property-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-duplicate-property-defaults.php");
+    let output = root.join("trait-duplicate-property-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+const VALUE = true;
+
+trait FooSame {
+    public $var = VALUE;
+}
+trait BarSame {
+    public $var = VALUE;
+}
+class BazSame {
+    use FooSame, BarSame;
+}
+
+trait FooResolved {
+    public $var = VALUE;
+}
+trait BarResolved {
+    public $var = true;
+}
+class BazResolved {
+    use FooResolved, BarResolved;
+}
+
+echo \"DONE\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "DONE\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_resolved_trait_property_default_mismatch() {
+    let program = parser::parse(
+        "<?php
+const VALUE = true;
+trait FooMismatch {
+    public $var = VALUE;
+}
+trait BarMismatch {
+    public $var = false;
+}
+class BazMismatch {
+    use FooMismatch, BarMismatch;
+}
+",
+    )
+    .unwrap();
+
+    let fatal = &program.classes[0].declaration_fatals[0];
+    assert!(fatal
+        .message
+        .contains("FooMismatch and BarMismatch define the same property ($var)"));
+}
+
+#[test]
 fn compile_get_class_legacy_scope_edges_to_native_binary() {
     let root = temp_dir("ptn-native-get-class-legacy-scope-edges");
     fs::create_dir_all(&root).unwrap();

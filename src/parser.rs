@@ -444,10 +444,11 @@ impl Parser<'_> {
         )?;
         functions.append(&mut self.nested_functions);
         classes.append(&mut self.anonymous_classes);
-        compose_traits(&mut traits)?;
+        let global_constant_values = collect_global_const_expr_static_values(&statements);
+        compose_traits(&mut traits, &global_constant_values)?;
         let mut trait_lookup = traits.clone();
         trait_lookup.extend(self.external_traits.iter().cloned());
-        compose_class_traits(&mut classes, &trait_lookup)?;
+        compose_class_traits(&mut classes, &trait_lookup, &global_constant_values)?;
         validate_class_names(&classes, &traits, &mut self.compile_warnings)?;
         validate_trait_names(&traits, &mut self.compile_warnings)?;
         validate_trait_magic_method_declarations(&traits)?;
@@ -1996,6 +1997,9 @@ impl Parser<'_> {
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member(false, false, true, &trait_name)? {
                 ParsedClassMember::Method(mut method) => {
+                    if method.name.eq_ignore_ascii_case("__construct") {
+                        properties.extend(promoted_properties_from_constructor(&method, false));
+                    }
                     method.trait_name = Some(trait_name.clone());
                     method.trait_method_name = Some(method.name.clone());
                     methods.push(method);
@@ -12422,12 +12426,21 @@ fn reject_unpacked_language_construct_arguments(
     Ok(())
 }
 
-fn compose_traits(traits: &mut [TraitDecl]) -> Result<()> {
+fn compose_traits(
+    traits: &mut [TraitDecl],
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> Result<()> {
     let originals = traits.to_vec();
     let mut cache = HashMap::new();
     let mut visiting = HashSet::new();
     for trait_decl in traits {
-        *trait_decl = compose_trait_decl(&trait_decl.name, &originals, &mut visiting, &mut cache)?;
+        *trait_decl = compose_trait_decl(
+            &trait_decl.name,
+            &originals,
+            &mut visiting,
+            &mut cache,
+            global_constant_values,
+        )?;
     }
     Ok(())
 }
@@ -12437,6 +12450,7 @@ fn compose_trait_decl(
     traits: &[TraitDecl],
     visiting: &mut HashSet<String>,
     cache: &mut HashMap<String, TraitDecl>,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<TraitDecl> {
     let lookup_name = name.to_ascii_lowercase();
     if let Some(cached) = cache.get(&lookup_name) {
@@ -12458,7 +12472,13 @@ fn compose_trait_decl(
     let mut composed = trait_decl.clone();
     let mut used_traits = Vec::new();
     for trait_use in &trait_decl.trait_uses {
-        let used_trait = compose_trait_decl(&trait_use.name, traits, visiting, cache)?;
+        let used_trait = compose_trait_decl(
+            &trait_use.name,
+            traits,
+            visiting,
+            cache,
+            global_constant_values,
+        )?;
         used_traits.push(used_trait);
     }
     let used_trait_refs = used_traits.iter().collect::<Vec<_>>();
@@ -12469,7 +12489,12 @@ fn compose_trait_decl(
         &used_trait_refs,
     )?;
     for (trait_use, used_trait) in trait_decl.trait_uses.iter().zip(used_traits.iter()) {
-        import_trait_members_into_trait(&mut composed, used_trait, trait_use)?;
+        import_trait_members_into_trait(
+            &mut composed,
+            used_trait,
+            trait_use,
+            global_constant_values,
+        )?;
     }
     visiting.remove(&lookup_name);
     cache.insert(lookup_name, composed.clone());
@@ -12713,6 +12738,7 @@ fn import_trait_members_into_trait(
     target: &mut TraitDecl,
     source: &TraitDecl,
     trait_use: &TraitUseDecl,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     for property in &source.properties {
         if let Some(existing) = target
@@ -12727,6 +12753,7 @@ fn import_trait_members_into_trait(
                 existing,
                 property,
                 target.span,
+                global_constant_values,
             )?;
         } else {
             target.properties.push(property.clone());
@@ -12745,6 +12772,7 @@ fn import_trait_members_into_trait(
                 existing,
                 property,
                 target.span,
+                global_constant_values,
             )?;
         } else {
             target.static_properties.push(property.clone());
@@ -12763,6 +12791,7 @@ fn import_trait_members_into_trait(
                 existing,
                 constant,
                 target.span,
+                global_constant_values,
             )?;
         } else {
             target.constants.push(constant.clone());
@@ -12774,7 +12803,11 @@ fn import_trait_members_into_trait(
     Ok(())
 }
 
-fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+fn compose_class_traits(
+    classes: &mut [ClassDecl],
+    traits: &[TraitDecl],
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> Result<()> {
     let class_snapshot = classes.to_vec();
     let non_trait_names = classes
         .iter()
@@ -12862,6 +12895,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
                 &mut property_origins,
                 &mut static_property_origins,
                 &mut constant_origins,
+                global_constant_values,
             ) {
                 defer_class_declaration_fatal(class, diagnostic);
                 class.trait_uses.clear();
@@ -12914,6 +12948,7 @@ fn import_trait_members_into_class(
     property_origins: &mut HashMap<String, String>,
     static_property_origins: &mut HashMap<String, String>,
     constant_origins: &mut HashMap<String, String>,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     for property in &trait_decl.properties {
         if let Some(existing) = class
@@ -12932,6 +12967,7 @@ fn import_trait_members_into_class(
                 existing,
                 property,
                 class.span,
+                global_constant_values,
             )?;
         } else {
             class.properties.push(property.clone());
@@ -12955,6 +12991,7 @@ fn import_trait_members_into_class(
                 existing,
                 property,
                 class.span,
+                global_constant_values,
             )?;
         } else {
             class.static_properties.push(property.clone());
@@ -12988,6 +13025,7 @@ fn import_trait_members_into_class(
                 existing,
                 constant,
                 class.span,
+                global_constant_values,
             )?;
         } else {
             class.constants.push(constant.clone());
@@ -13170,6 +13208,7 @@ fn validate_composed_property_compatibility(
     existing: &PropertyDecl,
     imported: &PropertyDecl,
     span: SourceSpan,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     if existing.has_hooks || imported.has_hooks {
         return Err(Diagnostic::new(
@@ -13186,7 +13225,11 @@ fn validate_composed_property_compatibility(
         && existing.is_abstract == imported.is_abstract
         && existing.is_readonly == imported.is_readonly
         && existing.type_hint == imported.type_hint
-        && existing.value == imported.value
+        && composed_property_defaults_compatible(
+            &existing.value,
+            &imported.value,
+            global_constant_values,
+        )
     {
         return Ok(());
     }
@@ -13206,12 +13249,17 @@ fn validate_composed_static_property_compatibility(
     existing: &StaticPropertyDecl,
     imported: &StaticPropertyDecl,
     span: SourceSpan,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     if existing.visibility == imported.visibility
         && existing.set_visibility == imported.set_visibility
         && existing.is_final == imported.is_final
         && existing.type_hint == imported.type_hint
-        && existing.value == imported.value
+        && composed_property_defaults_compatible(
+            &existing.value,
+            &imported.value,
+            global_constant_values,
+        )
     {
         return Ok(());
     }
@@ -13231,10 +13279,15 @@ fn validate_composed_constant_compatibility(
     existing: &ClassConstantDecl,
     imported: &ClassConstantDecl,
     span: SourceSpan,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
 ) -> Result<()> {
     if existing.visibility == imported.visibility
         && existing.is_final == imported.is_final
-        && !const_expr_values_provably_different(&existing.value, &imported.value)
+        && !const_expr_values_provably_different(
+            &existing.value,
+            &imported.value,
+            global_constant_values,
+        )
     {
         return Ok(());
     }
@@ -13257,33 +13310,86 @@ enum ConstExprStaticValue {
     Array(Vec<(Option<ConstExprStaticValue>, ConstExprStaticValue)>),
 }
 
-fn const_expr_values_provably_different(left: &Expr, right: &Expr) -> bool {
+fn collect_global_const_expr_static_values(
+    statements: &[Statement],
+) -> HashMap<String, ConstExprStaticValue> {
+    let mut values = HashMap::new();
+    collect_global_const_expr_static_values_in(statements, &mut values);
+    values
+}
+
+fn collect_global_const_expr_static_values_in(
+    statements: &[Statement],
+    values: &mut HashMap<String, ConstExprStaticValue>,
+) {
+    for statement in statements {
+        match statement {
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    if let Some(value) = const_expr_static_value(&declaration.value, values) {
+                        values.insert(declaration.name.to_ascii_lowercase(), value);
+                    }
+                }
+            }
+            Statement::Block { statements, .. } => {
+                collect_global_const_expr_static_values_in(statements, values);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn composed_property_defaults_compatible(
+    existing: &Option<Expr>,
+    imported: &Option<Expr>,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> bool {
+    match (existing, imported) {
+        (None, None) => true,
+        (Some(existing), Some(imported)) => {
+            !const_expr_values_provably_different(existing, imported, global_constant_values)
+        }
+        _ => false,
+    }
+}
+
+fn const_expr_values_provably_different(
+    left: &Expr,
+    right: &Expr,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> bool {
     match (
-        const_expr_static_value(left),
-        const_expr_static_value(right),
+        const_expr_static_value(left, global_constant_values),
+        const_expr_static_value(right, global_constant_values),
     ) {
         (Some(left), Some(right)) => left != right,
         _ => false,
     }
 }
 
-fn const_expr_static_value(expr: &Expr) -> Option<ConstExprStaticValue> {
+fn const_expr_static_value(
+    expr: &Expr,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> Option<ConstExprStaticValue> {
     match ungroup_const_expr(expr) {
         Expr::String(value, _) => Some(ConstExprStaticValue::String(value.clone())),
         Expr::Int(value, _) => Some(ConstExprStaticValue::Int(*value)),
         Expr::Float(value, _) => Some(ConstExprStaticValue::Float(value.to_bits())),
         Expr::Bool(value, _) => Some(ConstExprStaticValue::Bool(*value)),
         Expr::Null(_) => Some(ConstExprStaticValue::Null),
+        Expr::Constant(name, _) => global_constant_values
+            .get(&name.to_ascii_lowercase())
+            .cloned(),
         Expr::Unary {
             op: UnaryOp::Positive,
             expr,
             ..
-        } => const_expr_static_value(expr),
+        } => const_expr_static_value(expr, global_constant_values),
         Expr::Unary {
             op: UnaryOp::Negate,
             expr,
             ..
-        } => match const_expr_static_value(expr)? {
+        } => match const_expr_static_value(expr, global_constant_values)? {
             ConstExprStaticValue::Int(value) => value.checked_neg().map(ConstExprStaticValue::Int),
             ConstExprStaticValue::Float(value) => Some(ConstExprStaticValue::Float(
                 (-f64::from_bits(value)).to_bits(),
@@ -13296,8 +13402,8 @@ fn const_expr_static_value(expr: &Expr) -> Option<ConstExprStaticValue> {
             right,
             ..
         } => match (
-            const_expr_static_value(left)?,
-            const_expr_static_value(right)?,
+            const_expr_static_value(left, global_constant_values)?,
+            const_expr_static_value(right, global_constant_values)?,
         ) {
             (ConstExprStaticValue::String(left), ConstExprStaticValue::String(right)) => {
                 Some(ConstExprStaticValue::String(format!("{left}{right}")))
@@ -13307,19 +13413,21 @@ fn const_expr_static_value(expr: &Expr) -> Option<ConstExprStaticValue> {
         Expr::Binary {
             op, left, right, ..
         } => {
-            let left = const_expr_static_int_value(left)?;
-            let right = const_expr_static_int_value(right)?;
+            let left = const_expr_static_int_value(left, global_constant_values)?;
+            let right = const_expr_static_int_value(right, global_constant_values)?;
             const_expr_eval_int_binary(*op, left, right).map(ConstExprStaticValue::Int)
         }
         Expr::Array { elements, .. } => {
             let mut values = Vec::with_capacity(elements.len());
             for element in elements {
                 let key = match &element.key {
-                    Some(key) => Some(const_expr_static_value(key)?),
+                    Some(key) => Some(const_expr_static_value(key, global_constant_values)?),
                     None => None,
                 };
                 let value = match &element.value {
-                    ArrayElementValue::Value(value) => const_expr_static_value(value)?,
+                    ArrayElementValue::Value(value) => {
+                        const_expr_static_value(value, global_constant_values)?
+                    }
                     _ => return None,
                 };
                 values.push((key, value));
@@ -13330,8 +13438,11 @@ fn const_expr_static_value(expr: &Expr) -> Option<ConstExprStaticValue> {
     }
 }
 
-fn const_expr_static_int_value(expr: &Expr) -> Option<i64> {
-    match const_expr_static_value(expr)? {
+fn const_expr_static_int_value(
+    expr: &Expr,
+    global_constant_values: &HashMap<String, ConstExprStaticValue>,
+) -> Option<i64> {
+    match const_expr_static_value(expr, global_constant_values)? {
         ConstExprStaticValue::Int(value) => Some(value),
         _ => None,
     }
