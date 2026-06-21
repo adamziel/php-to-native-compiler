@@ -13829,6 +13829,9 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
         if (segment->append) {
             return ptn_null();
         }
+        if (container.type != PTN_ARRAY && container.type != PTN_NULL) {
+            return ptn_null();
+        }
         if (emit_key_conversion_diagnostics) {
             ptn_emit_array_offset_key_conversion_diagnostic(runtime, segment->value, line, 1);
         }
@@ -13842,27 +13845,22 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
         )) {
             return ptn_null();
         }
-        if (container.type == PTN_ARRAY) {
-            PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
-            if (entry == NULL) {
-                ptn_emit_undefined_array_key_warning(runtime, key, line);
-                ptn_array_key_free(key);
-                return ptn_null();
-            }
-            ptn_array_key_free(key);
-            if (i + 1 == segment_count) {
-                return ptn_value_clone(entry->value);
-            }
-            container = ptn_value_deref(entry->value);
-            continue;
-        }
         if (container.type == PTN_NULL) {
             ptn_emit_undefined_array_key_warning(runtime, key, line);
             ptn_array_key_free(key);
             return ptn_null();
         }
+        PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+        if (entry == NULL) {
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
+            ptn_array_key_free(key);
+            return ptn_null();
+        }
         ptn_array_key_free(key);
-        return ptn_null();
+        if (i + 1 == segment_count) {
+            return ptn_value_clone(entry->value);
+        }
+        container = ptn_value_deref(entry->value);
     }
     return ptn_null();
 }
