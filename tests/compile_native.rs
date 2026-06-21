@@ -38928,6 +38928,68 @@ var_dump($a);",
 }
 
 #[test]
+fn compile_array_dim_false_conversion_is_visible_to_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-array-dim-false-conversion-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-dim-false-conversion-handler.php");
+    let output = root.join("array-dim-false-conversion-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function() {\n\
+    $GLOBALS[\"x\"] = $GLOBALS[\"y\"];\n\
+});\n\
+function x(&$s) { $s[0] = 1; }\n\
+$y = false;\n\
+x($y);\n\
+var_dump($x, $y);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(1) {\n  [0]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_dim_missing_key_warning_runs_after_deferred_write_to_native_binary() {
+    let root = temp_dir("ptn-native-array-dim-missing-key-deferred");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-dim-missing-key-deferred.php");
+    let output = root.join("array-dim-missing-key-deferred-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function($code, $err) {\n\
+    echo \"Error: $err\\n\";\n\
+    $GLOBALS[\"a\"] = null;\n\
+});\n\
+$a[$y] = 1;\n\
+var_dump($a);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: Undefined variable $y\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_set_with_key_diagnostics"));
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_expressions_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-expressions");
     fs::create_dir_all(&root).unwrap();
@@ -59614,6 +59676,43 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_add(&runtime"));
     assert!(c_source.contains("ptn_multiply(&runtime"));
     assert!(c_source.contains("ptn_concat(&runtime"));
+}
+
+#[test]
+fn compile_unary_positive_typed_property_compound_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-unary-positive-typed-property-compound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unary-positive-typed-property-compound.php");
+    let output = root.join("unary-positive-typed-property-compound-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Foo {\n\
+    public int $bar = 0;\n\
+    function __construct() {\n\
+        try {\n\
+            +$this->bar += 1.3;\n\
+        } catch (Throwable $e) {\n\
+            echo get_class($e), \": \", $e->getMessage(), \"\\n\";\n\
+        }\n\
+    }\n\
+}\n\
+var_dump(new Foo);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nDeprecated: Implicit conversion from float 1.3 to int loses precision in {} on line 6\nobject(Foo)#1 (1) {{\n  [\"bar\"]=>\n  int(1)\n}}\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

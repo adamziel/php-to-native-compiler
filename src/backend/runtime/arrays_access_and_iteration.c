@@ -2950,6 +2950,14 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
             if (weak_scalar_coercion &&
                 resolved.type == PTN_FLOAT &&
                 ptn_property_double_fits_int(resolved.as.floating)) {
+                if (ptn_float_to_int_loses_precision(resolved.as.floating)) {
+                    ptn_emit_float_to_int_precision_deprecation_at(
+                        runtime == NULL ? NULL : &runtime->diagnostics,
+                        resolved.as.floating,
+                        runtime == NULL || runtime->source_path == NULL ? "ptn" : runtime->source_path,
+                        line
+                    );
+                }
                 *out = ptn_cast_int(resolved);
                 return 1;
             }
@@ -7329,8 +7337,9 @@ static PTN_UNUSED PtnArray *ptn_array_convertible_scalar_for_write(
         return ptn_value_replace_with_empty_array(value);
     }
     if (value->type == PTN_BOOL && !value->as.boolean) {
+        (void)ptn_value_replace_with_empty_array(value);
         ptn_emit_false_array_conversion_deprecation(runtime, line);
-        return ptn_value_replace_with_empty_array(value);
+        return ptn_array_detach_value(value);
     }
     return NULL;
 }
@@ -12772,12 +12781,13 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
     );
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
+static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result_impl(
     PtnRuntime *runtime,
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     PtnValue value,
-    size_t line
+    size_t line,
+    int emit_null_key_deprecation
 ) {
     if (segment_count == 0) {
         return ptn_value_clone_deref(value);
@@ -12837,6 +12847,23 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
         array,
         segments + 1,
         segment_count - 1,
+        value,
+        line,
+        emit_null_key_deprecation
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_globals_array_path_set_result_impl(
+        runtime,
+        segments,
+        segment_count,
         value,
         line,
         1
@@ -13010,6 +13037,26 @@ static PTN_UNUSED void ptn_runtime_array_path_set(
     ptn_runtime_array_path_set_impl(runtime, name, segments, segment_count, value, line, 1);
 }
 
+static PTN_UNUSED void ptn_runtime_array_path_set_with_key_diagnostics(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    ptn_runtime_array_path_set_impl(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        value,
+        line,
+        emit_null_key_deprecation
+    );
+}
+
 static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     PtnRuntime *runtime,
     const char *name,
@@ -13043,21 +13090,23 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
     );
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
+static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
     PtnRuntime *runtime,
     const char *name,
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     PtnValue value,
-    size_t line
+    size_t line,
+    int emit_null_key_deprecation
 ) {
     if (ptn_runtime_is_globals_name(name)) {
-        return ptn_runtime_globals_array_path_set_result(
+        return ptn_runtime_globals_array_path_set_result_impl(
             runtime,
             segments,
             segment_count,
             value,
-            line
+            line,
+            emit_null_key_deprecation
         );
     }
     if (segment_count == 0) {
@@ -13175,7 +13224,46 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
         segment_count,
         value,
         line,
+        emit_null_key_deprecation
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_array_path_set_result_impl(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        value,
+        line,
         1
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_with_key_diagnostics(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    return ptn_runtime_array_path_set_result_impl(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        value,
+        line,
+        emit_null_key_deprecation
     );
 }
 

@@ -22045,6 +22045,11 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             Some(span),
         )),
         Expr::Grouped { expr, .. } => assignment_target_from_expr(*expr),
+        Expr::Unary {
+            op: UnaryOp::Positive,
+            expr,
+            ..
+        } => assignment_target_from_expr(*expr),
         other => Err(Diagnostic::new(
             "unsupported assignment target",
             Some(other.span()),
