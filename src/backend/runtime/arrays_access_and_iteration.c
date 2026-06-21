@@ -1303,6 +1303,72 @@ static PTN_UNUSED void ptn_lazy_object_copy_clone_state(
 
 static PTN_UNUSED PtnValue ptn_dom_clone(PtnRuntime *runtime, PtnValue value, size_t line);
 
+static PTN_UNUSED const char *ptn_clone_method_visibility_name(int visibility) {
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        return "private";
+    }
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        return "protected";
+    }
+    return "public";
+}
+
+static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
+    PtnRuntime *runtime,
+    int visibility,
+    const char *declaring_class,
+    size_t line
+) {
+    const char *visibility_name = ptn_clone_method_visibility_name(visibility);
+    const char *scope = runtime == NULL ? NULL : runtime->current_class_name;
+    int needed;
+    if (scope == NULL) {
+        needed = snprintf(
+            NULL,
+            0,
+            "Call to %s %s::__clone() from global scope",
+            visibility_name,
+            declaring_class
+        );
+    } else {
+        needed = snprintf(
+            NULL,
+            0,
+            "Call to %s %s::__clone() from scope %s",
+            visibility_name,
+            declaring_class,
+            scope
+        );
+    }
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (scope == NULL) {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Call to %s %s::__clone() from global scope",
+            visibility_name,
+            declaring_class
+        );
+    } else {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Call to %s %s::__clone() from scope %s",
+            visibility_name,
+            declaring_class,
+            scope
+        );
+    }
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type != PTN_OBJECT) {
@@ -1412,8 +1478,89 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         dispatch_runtime->method_dispatch != NULL &&
         dispatch_runtime->declared_method_exists != NULL &&
         dispatch_runtime->declared_method_exists(cloned->class_name, "__clone")) {
+        const char *declaring_class = cloned->class_name;
+        int visibility = PTN_PROPERTY_PUBLIC;
+        int is_abstract = 0;
+        if (dispatch_runtime->declared_method_visibility_metadata != NULL &&
+            dispatch_runtime->declared_method_visibility_metadata(
+                cloned->class_name,
+                "__clone",
+                &declaring_class,
+                &visibility,
+                &is_abstract
+            )) {
+            if (is_abstract) {
+                char message[512];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Cannot call abstract method %s::__clone()",
+                    declaring_class
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception_at(
+                    dispatch_runtime,
+                    "Error",
+                    message,
+                    dispatch_runtime->source_path,
+                    line
+                );
+                return clone;
+            }
+            int visible = dispatch_runtime->declared_method_visible != NULL
+                ? dispatch_runtime->declared_method_visible(
+                    visibility,
+                    declaring_class,
+                    cloned->class_name,
+                    "__clone",
+                    dispatch_runtime->current_class_name
+                )
+                : visibility == PTN_PROPERTY_PUBLIC;
+            if (!visible) {
+                (void)ptn_throw_clone_method_visibility_error(
+                    dispatch_runtime,
+                    visibility,
+                    declaring_class,
+                    line
+                );
+                return clone;
+            }
+            if (dispatch_runtime->reflected_method_dispatch != NULL) {
+                const char *previous_scope = dispatch_runtime->current_class_name;
+                dispatch_runtime->current_class_name = declaring_class;
+                cloned->readonly_clone_initializing = 1;
+                PtnValue result = ptn_null();
+                int handled = dispatch_runtime->reflected_method_dispatch(
+                    dispatch_runtime,
+                    clone,
+                    cloned->class_name,
+                    "__clone",
+                    cloned->class_name,
+                    0,
+                    NULL,
+                    line,
+                    &result
+                );
+                cloned->readonly_clone_initializing = 0;
+                dispatch_runtime->current_class_name = previous_scope;
+                if (handled) {
+                    ptn_value_destroy(&result);
+                    return clone;
+                }
+                ptn_value_destroy(&result);
+            }
+        }
         cloned->readonly_clone_initializing = 1;
-        PtnValue result = dispatch_runtime->method_dispatch(dispatch_runtime, clone, "__clone", 0, NULL, line);
+        PtnValue result = dispatch_runtime->method_dispatch(
+            dispatch_runtime,
+            clone,
+            "__clone",
+            0,
+            NULL,
+            line
+        );
         cloned->readonly_clone_initializing = 0;
         ptn_value_destroy(&result);
     }

@@ -103,6 +103,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->declared_method_metadata = caller_runtime->declared_method_metadata;
+    runtime->declared_method_visible = caller_runtime->declared_method_visible;
+    runtime->declared_method_visibility_metadata = caller_runtime->declared_method_visibility_metadata;
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
     runtime->declared_class_allows_dynamic_properties =

@@ -10853,6 +10853,10 @@ class ReturnsNull {
         return null;
     }
 }
+class ReturnsNone {
+    public function __toString() {
+    }
+}
 class ReturnedObject {}
 class ReturnsObject {
     public function __toString() {
@@ -10877,7 +10881,7 @@ try {
 }
 echo (string) new ReturnsInt(), \"\\n\";
 echo \"[\", (string) new ReturnsFalse(), \"]\\n\";
-foreach ([new ReturnsArray(), new ReturnsNull(), new ReturnsObject()] as $bad) {
+foreach ([new ReturnsArray(), new ReturnsNull(), new ReturnsNone(), new ReturnsObject()] as $bad) {
     try {
         echo (string) $bad;
     } catch (TypeError $e) {
@@ -10905,6 +10909,7 @@ foreach ([new ReturnsArray(), new ReturnsNull(), new ReturnsObject()] as $bad) {
             "[]\n",
             "ReturnsArray::__toString(): Return value must be of type string, array returned\n",
             "ReturnsNull::__toString(): Return value must be of type string, null returned\n",
+            "ReturnsNone::__toString(): Return value must be of type string, none returned\n",
             "ReturnsObject::__toString(): Return value must be of type string, ReturnedObject returned\n",
         )
     );
@@ -42659,11 +42664,51 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
     parser::parse("<?php $items = [[1], [2]]; array_shift($items[0]);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_push($items[0], 3);").unwrap();
     parser::parse("<?php $items = [[1], [2]]; array_unshift($items[0], 0);").unwrap();
+    parser::parse("<?php class Box { public $items = []; function f() { array_pop($this->items); array_shift($this->items); array_push($this->items, 3); array_unshift($this->items, 0); } }").unwrap();
     parser::parse("<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));").unwrap();
     parser::parse(
         "<?php $stack = [[[1]]]; var_dump(array_shift(array_shift(array_shift($stack))));",
     )
     .unwrap();
+}
+
+#[test]
+fn compile_property_array_mutators_to_native_binary() {
+    let root = temp_dir("ptn-native-property-array-mutators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-array-mutators.php");
+    let output = root.join("property-array-mutators-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box
+{
+    private $items = array(1, 2);
+
+    public function run()
+    {
+        array_push($this->items, 3);
+        array_unshift($this->items, 0);
+        var_dump(array_shift($this->items));
+        var_dump(array_pop($this->items));
+        print_r($this->items);
+    }
+}
+
+(new Box())->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(3)\nArray\n(\n    [0] => 1\n    [1] => 2\n)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -63526,6 +63571,85 @@ new LatchkeyKid();
             "HiddenChild\n",
             "MommasBoy::__clone\n",
             "MommasBoy\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_clone_magic_respects_clone_expression_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-clone-magic-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("clone-magic-scope.php");
+    let output = root.join("clone-magic-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class PrivateBase {
+    private function __clone() {
+    }
+
+    public static function make() {
+        return new static();
+    }
+
+    public function copy() {
+        return clone $this;
+    }
+}
+
+class PrivateChild extends PrivateBase {
+}
+
+abstract class CloneBase {
+    abstract protected function __clone();
+}
+
+class CloneChild extends CloneBase {
+    protected function __clone() {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+class CloneSibling extends CloneBase {
+    public function __clone() {
+    }
+
+    public function run() {
+        $kid = new CloneChild();
+        $copy = clone $kid;
+        echo get_class($copy), \"\\n\";
+    }
+}
+
+class Hidden {
+    private function __clone() {
+    }
+}
+
+$copy = PrivateChild::make()->copy();
+echo get_class($copy), \"\\n\";
+(new CloneSibling())->run();
+try {
+    clone new Hidden();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "PrivateChild\n",
+            "CloneChild::__clone\n",
+            "CloneChild\n",
+            "Call to private Hidden::__clone() from global scope\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

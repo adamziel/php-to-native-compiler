@@ -1947,6 +1947,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->reflected_method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
     runtime->declared_method_metadata = NULL;
+    runtime->declared_method_visible = NULL;
+    runtime->declared_method_visibility_metadata = NULL;
     runtime->class_scope_allows = NULL;
     runtime->declared_class_is_readonly = NULL;
     runtime->declared_class_allows_dynamic_properties = NULL;

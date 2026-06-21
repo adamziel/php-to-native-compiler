@@ -16402,6 +16402,106 @@ static PTN_UNUSED PtnValue ptn_runtime_array_next_property(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_pop_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "array_pop",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_pop_value(array);
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_push_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    size_t value_count,
+    const PtnValue *values
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "array_push",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_int(ptn_array_push_values(runtime, array, value_count, values));
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shift_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "array_shift",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_array_shift_value(array);
+    ptn_value_destroy(&reference);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_unshift_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    size_t value_count,
+    const PtnValue *values
+) {
+    PtnValue reference = ptn_null();
+    PtnArray *array = ptn_internal_expect_mutable_array_property_arg(
+        runtime,
+        "array_unshift",
+        1,
+        "array",
+        receiver,
+        property,
+        access_scope,
+        line,
+        &reference
+    );
+    PtnValue result = ptn_int(ptn_array_unshift_values(array, value_count, values));
+    ptn_value_destroy(&reference);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_end_property(
     PtnRuntime *runtime,
     PtnValue receiver,

@@ -334,6 +334,8 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str(
             "    runtime.declared_method_metadata = ptn_declared_class_method_metadata;\n",
         );
+        out.push_str("    runtime.declared_method_visible = ptn_declared_method_visible;\n");
+        out.push_str("    runtime.declared_method_visibility_metadata = ptn_declared_class_method_visibility_metadata;\n");
     }
     if needs_magic_property_read {
         out.push_str("    runtime.magic_property_read = ptn_declared_magic_property_read;\n");
@@ -1890,17 +1892,17 @@ fn emit_user_functions(
         if function.is_anonymous {
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
+        let implicit_magic_return_type =
+            implicit_magic_method_return_type(function).filter(|_| function.return_type.is_none());
+        let effective_return_type = function
+            .return_type
+            .as_ref()
+            .or(implicit_magic_return_type.as_ref());
         let tracks_return_line = !function.is_generator
             && (function.return_by_ref
-                || function
-                    .return_type
-                    .as_ref()
-                    .is_some_and(return_type_needs_runtime_context));
+                || effective_return_type.is_some_and(return_type_needs_runtime_context));
         let tracks_return_value_was_set = !function.is_generator
-            && function
-                .return_type
-                .as_ref()
-                .is_some_and(return_type_needs_return_value_was_set);
+            && effective_return_type.is_some_and(return_type_needs_return_value_was_set);
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         if tracks_return_value_was_set {
             out.push_str("    int ptn_return_value_was_set = 0;\n");
@@ -2488,7 +2490,7 @@ fn emit_user_functions(
             }
             out.push_str("    }\n");
         }
-        if let Some(return_type) = function.return_type.as_ref() {
+        if let Some(return_type) = effective_return_type {
             emit_return_type_boundary(
                 out,
                 return_type,
@@ -3989,6 +3991,17 @@ fn emit_declaration_fatals(
 
 fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
     !matches!(return_type, TypeHint::Void)
+}
+
+fn implicit_magic_method_return_type(function: &FunctionDecl) -> Option<TypeHint> {
+    if function
+        .method_name
+        .as_deref()
+        .is_some_and(|name| name.eq_ignore_ascii_case("__toString"))
+    {
+        return Some(TypeHint::String);
+    }
+    None
 }
 
 fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
@@ -7878,6 +7891,48 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_function_metadata_not_found();\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_method_visibility_metadata(const char *class_name, const char *method_name, const char **declaring_class, int *visibility, int *is_abstract) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)declaring_class;\n");
+        out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)is_abstract;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            *declaring_class = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_abstract = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -28824,6 +28879,12 @@ impl ValueEmitter {
         } else {
             function.name.clone()
         };
+        let implicit_magic_return_type =
+            implicit_magic_method_return_type(function).filter(|_| function.return_type.is_none());
+        let effective_return_type = function
+            .return_type
+            .as_ref()
+            .or(implicit_magic_return_type.as_ref());
         Self::new_with_scope(
             source_file,
             source_dir,
@@ -28840,15 +28901,9 @@ impl ValueEmitter {
             function.is_generator,
             !function.is_generator
                 && (function.return_by_ref
-                    || function
-                        .return_type
-                        .as_ref()
-                        .is_some_and(return_type_needs_runtime_context)),
+                    || effective_return_type.is_some_and(return_type_needs_runtime_context)),
             !function.is_generator
-                && function
-                    .return_type
-                    .as_ref()
-                    .is_some_and(return_type_needs_return_value_was_set),
+                && effective_return_type.is_some_and(return_type_needs_return_value_was_set),
             function.is_anonymous,
             function.is_anonymous,
         )
@@ -42592,7 +42647,11 @@ impl ValueEmitter {
                 line: property_line,
             } = first_argument
             {
-                let property_helper = if name.eq_ignore_ascii_case("next") {
+                let property_helper = if name.eq_ignore_ascii_case("array_pop") {
+                    Some("ptn_runtime_array_pop_property")
+                } else if name.eq_ignore_ascii_case("array_shift") {
+                    Some("ptn_runtime_array_shift_property")
+                } else if name.eq_ignore_ascii_case("next") {
                     Some("ptn_runtime_array_next_property")
                 } else if name.eq_ignore_ascii_case("end") {
                     Some("ptn_runtime_array_end_property")
@@ -42687,6 +42746,78 @@ impl ValueEmitter {
         let Some((variable_helper, path_helper)) = helpers else {
             return None;
         };
+
+        if variable_name.is_none() {
+            if let ValueExpr::PropertyFetch {
+                receiver,
+                name: property_name,
+                line: property_line,
+            } = first_argument
+            {
+                let property_helper = if name.eq_ignore_ascii_case("array_push") {
+                    "ptn_runtime_array_push_property"
+                } else {
+                    "ptn_runtime_array_unshift_property"
+                };
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
+                for argument in &arguments[1..] {
+                    value_temps.push(self.emit_materialized_value(out, argument));
+                }
+
+                let values_temp = if value_temps.is_empty() {
+                    None
+                } else {
+                    let values_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&values_temp);
+                    out.push_str("[] = { ");
+                    for (index, temp) in value_temps.iter().enumerate() {
+                        if index > 0 {
+                            out.push_str(", ");
+                        }
+                        out.push_str("ptn_value_share(");
+                        out.push_str(temp);
+                        out.push(')');
+                    }
+                    out.push_str(" };\n");
+                    Some(values_temp)
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(property_helper);
+                out.push_str("(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(property_name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&property_line.to_string());
+                out.push_str(", ");
+                out.push_str(&value_temps.len().to_string());
+                out.push_str(", ");
+                if let Some(values_temp) = &values_temp {
+                    out.push_str(values_temp);
+                } else {
+                    out.push_str("NULL");
+                }
+                out.push_str(");\n");
+                if let Some(values_temp) = &values_temp {
+                    for index in 0..value_temps.len() {
+                        emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
+                    }
+                }
+                for temp in value_temps {
+                    emit_value_cleanup(out, "    ", &temp);
+                }
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                return Some(result_temp);
+            }
+        }
 
         let path_target = if variable_name.is_none() {
             match reference_array_dim_target_from_value(first_argument) {

@@ -1119,6 +1119,20 @@ typedef PtnFunctionMetadata (*PtnDeclaredMethodMetadataHandler)(
     const char *class_name,
     const char *method_name
 );
+typedef int (*PtnDeclaredMethodVisibilityHandler)(
+    int visibility,
+    const char *declaring_class,
+    const char *target_class_name,
+    const char *method_name,
+    const char *access_scope
+);
+typedef int (*PtnDeclaredMethodVisibilityMetadataHandler)(
+    const char *class_name,
+    const char *method_name,
+    const char **declaring_class,
+    int *visibility,
+    int *is_abstract
+);
 typedef int (*PtnClassScopeAllowsHandler)(
     const char *access_scope,
     const char *declaring_class
@@ -1270,6 +1284,8 @@ struct PtnRuntime {
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnDeclaredMethodMetadataHandler declared_method_metadata;
+    PtnDeclaredMethodVisibilityHandler declared_method_visible;
+    PtnDeclaredMethodVisibilityMetadataHandler declared_method_visibility_metadata;
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     PtnDeclaredClassAllowsDynamicPropertiesHandler declared_class_allows_dynamic_properties;

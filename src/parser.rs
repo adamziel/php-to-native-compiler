@@ -21398,6 +21398,13 @@ fn validate_mutating_array_internal_call(
     }
     if matches!(
         name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_push" | "array_shift" | "array_unshift"
+    ) && is_property_array_argument(&arguments[0])
+    {
+        return Ok(());
+    }
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
         "uasort" | "uksort" | "usort"
     ) && is_property_array_argument(&arguments[0])
     {
