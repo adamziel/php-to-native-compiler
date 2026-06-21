@@ -22911,19 +22911,13 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::DynamicVariable { .. } => Ok(()),
         AssignmentTarget::DynamicArrayDim { dimensions, .. } => {
             if dimensions.iter().any(Option::is_none) {
-                return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
-                    Some(span),
-                ));
+                return Err(Diagnostic::new("Cannot use [] for reading", Some(span)));
             }
             Ok(())
         }
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
-                return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
-                    Some(span),
-                ));
+                return Err(Diagnostic::new("Cannot use [] for reading", Some(span)));
             }
             Ok(())
         }
@@ -22943,10 +22937,7 @@ fn validate_coalesce_assignment_target(
             array, dimensions, ..
         } => {
             if dimensions.iter().any(Option::is_none) {
-                return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
-                    Some(span),
-                ));
+                return Err(Diagnostic::new("Cannot use [] for reading", Some(span)));
             }
             if let Some(call_span) = modeled_internal_write_context_error_span(array) {
                 return Err(Diagnostic::new(
