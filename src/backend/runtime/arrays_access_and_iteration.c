@@ -8867,7 +8867,7 @@ static PTN_UNUSED char *ptn_object_foreach_property_name(
 }
 
 static PTN_UNUSED void ptn_array_iterator_skip_invisible_object_properties(PtnArrayIterator *iterator) {
-    if (iterator->object == NULL || iterator->array == NULL) {
+    if (!iterator->object_property_iterator || iterator->object == NULL || iterator->array == NULL) {
         return;
     }
     size_t limit = iterator->live ? iterator->array->len : iterator->length;
@@ -8904,6 +8904,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     iterator.protocol_iterator = 0;
     iterator.spl_dllist_delete = 0;
     iterator.spl_dllist_reverse = 0;
+    iterator.object_property_iterator = 0;
     iterator.valid = 0;
     iterator.live = 0;
     return iterator;
@@ -9211,6 +9212,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     iterator.line = line;
     iterator.valid = iterator.array->len != 0;
     iterator.length = iterator.array->len;
+    iterator.object_property_iterator = 1;
     iterator.live = 0;
     ptn_object_retain(object);
     ptn_array_iterator_remember_current_key(&iterator);
@@ -9219,6 +9221,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
 
 static PTN_UNUSED void ptn_array_iterator_sync_object_property_keys(PtnArrayIterator *iterator) {
     if (iterator == NULL ||
+        !iterator->object_property_iterator ||
         iterator->object == NULL ||
         iterator->generator != NULL ||
         iterator->array == NULL ||
@@ -9680,7 +9683,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
     }
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayKey key = iterator->array->entries[physical_index].key;
-    if (iterator->object != NULL && iterator->generator == NULL) {
+    if (iterator->object_property_iterator && iterator->object != NULL && iterator->generator == NULL) {
         return ptn_object_foreach_key_value(iterator->object, key);
     }
     if (key.type == PTN_ARRAY_KEY_INT) {
@@ -9716,7 +9719,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
     }
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayEntry *entry = &iterator->array->entries[physical_index];
-    if (iterator->object != NULL && iterator->generator == NULL) {
+    if (iterator->object_property_iterator && iterator->object != NULL && iterator->generator == NULL) {
         const PtnObjectPropertyMetadata *metadata =
             entry->key.type == PTN_ARRAY_KEY_STRING
                 ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
@@ -9767,7 +9770,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     }
     size_t physical_index = ptn_array_iterator_effective_index(iterator);
     PtnArrayEntry *entry = &iterator->array->entries[physical_index];
-    if (iterator->object != NULL && iterator->generator == NULL) {
+    if (iterator->object_property_iterator && iterator->object != NULL && iterator->generator == NULL) {
         const PtnObjectPropertyMetadata *metadata =
             entry->key.type == PTN_ARRAY_KEY_STRING
                 ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
@@ -9826,6 +9829,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     }
     iterator->current_reference = entry->value.as.reference;
     if (
+        iterator->object_property_iterator &&
         iterator->object != NULL &&
         iterator->generator == NULL &&
         entry->key.type == PTN_ARRAY_KEY_STRING
@@ -9952,7 +9956,8 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     if (iterator->has_current_key && !iterator->spl_dllist_reverse) {
         size_t current_index = ptn_array_find_key(iterator->array, iterator->current_key);
         int current_identity_matches = current_index < iterator->array->len &&
-            (iterator->current_reference == NULL ||
+            (iterator->object_property_iterator ||
+             iterator->current_reference == NULL ||
              (iterator->array->entries[current_index].value.type == PTN_REFERENCE &&
               iterator->array->entries[current_index].value.as.reference == iterator->current_reference));
         if (!current_identity_matches && iterator->current_reference != NULL) {
@@ -10039,6 +10044,7 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
     iterator->protocol_iterator = 0;
     iterator->spl_dllist_delete = 0;
     iterator->spl_dllist_reverse = 0;
+    iterator->object_property_iterator = 0;
     iterator->live = 0;
 }
 

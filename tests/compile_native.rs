@@ -56332,6 +56332,52 @@ try {
 }
 
 #[test]
+fn compile_property_hook_by_ref_foreach_appended_dynamic_property_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-by-ref-foreach-appended-dynamic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-by-ref-foreach-appended-dynamic.php");
+    let output = root.join("property-hook-by-ref-foreach-appended-dynamic-bin");
+    fs::write(
+        &input,
+        "<?php
+class A extends stdClass {
+    public $foo {
+        &get => $this->foo;
+    }
+}
+
+$a = new A;
+foreach ($a as $k => &$v) {
+    if ($k == \"foo\") {
+        $a->bar = \"baz\";
+    }
+    var_dump($k);
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"foo\"\nstring(3) \"bar\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_from_object_properties"));
+    assert!(c_source.contains("object_property_iterator"));
+}
+
+#[test]
 fn compile_property_hook_indirect_write_paths_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-indirect-write-paths");
     fs::create_dir_all(&root).unwrap();

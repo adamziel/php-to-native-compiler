@@ -825,6 +825,7 @@ typedef struct {
     int protocol_iterator;
     int spl_dllist_delete;
     int spl_dllist_reverse;
+    int object_property_iterator;
     int valid;
     int live;
 } PtnArrayIterator;
