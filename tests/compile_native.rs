@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, CompileWarningKind,
@@ -36,6 +36,26 @@ fn generated_c_static_function_body<'a>(c_source: &'a str, marker: &str) -> &'a 
     let tail = &c_source[start..];
     let end = tail.find("\nstatic ").unwrap_or(tail.len());
     &tail[..end]
+}
+
+fn command_output_with_timeout(command: &mut Command, timeout: Duration) -> std::process::Output {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("command timed out after {timeout:?}");
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 fn discover_pcre2_library() -> Option<PathBuf> {
@@ -45925,13 +45945,20 @@ try { array_merge(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n
 try { array_merge_recursive(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_diff(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_diff_key(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
-try { array_intersect(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+try { array_intersect(...$packed); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$stress = array_fill(0, 4096, $huge);\n\
+try { array_merge(...$stress); } catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+    echo count($e->getTrace()[0]['args']), \"\\n\";\n\
+    echo count($e->getTrace()[0]['args'][0]), \"\\n\";\n\
+}",
     )
     .unwrap();
 
     compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
-    let execution = Command::new(&output).output().unwrap();
+    let mut command = Command::new(&output);
+    let execution = command_output_with_timeout(&mut command, Duration::from_secs(60));
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
@@ -45947,6 +45974,9 @@ try { array_intersect(...$packed); } catch (Error $e) { echo $e->getMessage(), \
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
+            "The total number of elements must be lower than 1048578\n",
+            "4096\n",
+            "1048577\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

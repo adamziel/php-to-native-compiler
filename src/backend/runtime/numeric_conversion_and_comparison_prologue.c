@@ -1155,9 +1155,15 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
     ptn_symbols_unset_with_runtime_scope(&runtime->symbols, name, runtime);
 }
 
+#define PTN_TRACE_ARRAY_DEEP_SNAPSHOT_MAX_ENTRIES 4096U
+
 static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t depth) {
     value = ptn_value_deref(value);
     if (value.type != PTN_ARRAY || depth > 64) {
+        return ptn_value_clone(value);
+    }
+    if (value.as.array->len > PTN_TRACE_ARRAY_DEEP_SNAPSHOT_MAX_ENTRIES) {
+        /* Large arrays still get snapshot isolation from normal array COW. */
         return ptn_value_clone(value);
     }
 
