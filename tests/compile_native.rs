@@ -558,6 +558,42 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
 }
 
 #[test]
+fn compile_spl_fixed_array_nested_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-nested-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-nested-foreach.php");
+    let output = root.join("spl-fixed-array-nested-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fixed = SplFixedArray::fromArray([0, 1]);
+foreach ($fixed as $outer) {
+    foreach ($fixed as $inner) {
+        echo "$outer $inner\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0 0\n0 1\n1 0\n1 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     let root = temp_dir("ptn-native-spl-file-list-surfaces");
     fs::create_dir_all(&root).unwrap();

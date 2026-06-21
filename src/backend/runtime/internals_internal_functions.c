@@ -110565,6 +110565,37 @@ static PtnValue ptn_spl_fixed_array_storage_to_array(PtnSplFixedArrayData *data)
     return result;
 }
 
+static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnArrayIterator *out
+) {
+    if (out == NULL) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    if (
+        value.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)
+    ) {
+        return 0;
+    }
+
+    PtnSplFixedArrayData *data = ptn_spl_fixed_array_data(runtime, value);
+    if (data == NULL || (runtime != NULL && runtime->exceptions->active_exception != NULL)) {
+        return 0;
+    }
+
+    PtnValue array = ptn_spl_fixed_array_storage_to_array(data);
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    iterator.array = array.as.array;
+    iterator.length = iterator.array->len;
+    iterator.valid = iterator.length != 0;
+    ptn_array_iterator_remember_current_key(&iterator);
+    *out = iterator;
+    return 1;
+}
+
 static void ptn_spl_fixed_array_throw_invalid_index(PtnRuntime *runtime) {
     ptn_throw_exception(runtime, "OutOfBoundsException", "Index invalid or out of range");
 }

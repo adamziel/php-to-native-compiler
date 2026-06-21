@@ -2363,6 +2363,11 @@ static PTN_UNUSED int ptn_spl_doubly_linked_list_iterator_from_object(
     size_t line,
     PtnArrayIterator *out
 );
+static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnArrayIterator *out
+);
 static PTN_UNUSED PtnArray *ptn_spl_doubly_linked_list_iterator_remove_index(
     PtnRuntime *runtime,
     PtnObject *object,
