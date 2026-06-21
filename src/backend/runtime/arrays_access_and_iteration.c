@@ -1090,6 +1090,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_filter_iterator(lookup_class_name)) {
         return ptn_filter_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_regex_iterator(lookup_class_name)) {
+        return ptn_regex_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_infinite_iterator(lookup_class_name)) {
         return ptn_infinite_iterator_new(runtime, argc, args, line);
     }
@@ -1115,6 +1118,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_spl_file_object(lookup_class_name)) {
         return ptn_spl_file_object_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_directory_iterator(lookup_class_name)) {
+        return ptn_directory_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);

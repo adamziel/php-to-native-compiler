@@ -7082,10 +7082,12 @@ fn emit_class_metadata_helpers(
         ("AppendIterator", "IteratorIterator"),
         ("CachingIterator", "IteratorIterator"),
         ("CallbackFilterIterator", "FilterIterator"),
+        ("DirectoryIterator", "SplFileInfo"),
         ("FilterIterator", "IteratorIterator"),
         ("InfiniteIterator", "IteratorIterator"),
         ("LimitIterator", "IteratorIterator"),
         ("NoRewindIterator", "IteratorIterator"),
+        ("RegexIterator", "FilterIterator"),
         ("RecursiveCallbackFilterIterator", "CallbackFilterIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("ReflectionFunction", "ReflectionFunctionAbstract"),
@@ -24998,11 +25000,13 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CachingIterator")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
+                || class_name.eq_ignore_ascii_case("DirectoryIterator")
                 || class_name.eq_ignore_ascii_case("FilterIterator")
                 || class_name.eq_ignore_ascii_case("InfiniteIterator")
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("NoRewindIterator")
+                || class_name.eq_ignore_ascii_case("RegexIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")

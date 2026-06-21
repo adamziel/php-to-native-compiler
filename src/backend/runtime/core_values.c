@@ -1791,6 +1791,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_queue(const char *class_nam
 static PTN_UNUSED int ptn_internal_class_name_is_spl_stack(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_directory_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_regex_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
@@ -2415,7 +2417,35 @@ static PTN_UNUSED PtnValue ptn_spl_file_object_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_directory_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_directory_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_regex_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

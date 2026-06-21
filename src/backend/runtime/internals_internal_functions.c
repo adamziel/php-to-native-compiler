@@ -5647,6 +5647,17 @@ typedef struct {
 
 typedef struct {
     PtnSplFileInfoData info;
+    char *directory_path;
+#if !defined(_WIN32)
+    DIR *directory;
+#endif
+    char *current_name;
+    int64_t key;
+    int valid;
+} PtnDirectoryIteratorData;
+
+typedef struct {
+    PtnSplFileInfoData info;
     PtnValue stream;
     int64_t flags;
     int64_t key;
@@ -91205,6 +91216,14 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
     return ptn_ascii_case_equal(class_name, "SplFileObject");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_directory_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "DirectoryIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_regex_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RegexIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Directory");
 }
@@ -91494,6 +91513,8 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_spl_stack(class_name)
         || ptn_internal_class_name_is_spl_file_info(class_name)
         || ptn_internal_class_name_is_spl_file_object(class_name)
+        || ptn_internal_class_name_is_directory_iterator(class_name)
+        || ptn_internal_class_name_is_regex_iterator(class_name)
         || ptn_internal_class_name_is_directory(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_internal_class_name_is_fiber(class_name)
@@ -92775,6 +92796,32 @@ static int ptn_spl_file_object_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_directory_iterator_method_exists(const char *method_name) {
+    return ptn_spl_file_info_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "getChildren")
+        || ptn_ascii_case_equal(method_name, "hasChildren")
+        || ptn_ascii_case_equal(method_name, "isDot")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "seek")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_regex_iterator_method_exists(const char *method_name) {
+    return ptn_iterator_iterator_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "accept")
+        || ptn_ascii_case_equal(method_name, "getFlags")
+        || ptn_ascii_case_equal(method_name, "getMode")
+        || ptn_ascii_case_equal(method_name, "getPregFlags")
+        || ptn_ascii_case_equal(method_name, "getRegex")
+        || ptn_ascii_case_equal(method_name, "setFlags")
+        || ptn_ascii_case_equal(method_name, "setMode")
+        || ptn_ascii_case_equal(method_name, "setPregFlags");
+}
+
 static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
         || ptn_ascii_case_equal(method_name, "bind")
@@ -92905,6 +92952,9 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
         return ptn_ascii_case_equal(property_name, "path")
             || ptn_ascii_case_equal(property_name, "handle");
     }
+    if (ptn_internal_class_name_is_regex_iterator(class_name)) {
+        return ptn_ascii_case_equal(property_name, "replacement");
+    }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         return ptn_ascii_case_equal(property_name, "value");
     }
@@ -92957,6 +93007,7 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
             || ptn_ascii_case_equal(property_name, "heap");
     }
     if (ptn_internal_class_name_is_spl_file_info(class_name) ||
+        ptn_internal_class_name_is_directory_iterator(class_name) ||
         ptn_internal_class_name_is_spl_file_object(class_name)) {
         return ptn_ascii_case_equal(property_name, "pathName")
             || ptn_ascii_case_equal(property_name, "fileName");
@@ -93151,6 +93202,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_iterator_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_regex_iterator(class_name)) {
+        return ptn_regex_iterator_method_exists(method_name);
+    }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
         return ptn_recursive_iterator_iterator_method_exists(method_name);
     }
@@ -93166,6 +93220,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_spl_file_object(class_name)) {
         return ptn_spl_file_object_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_directory_iterator(class_name)) {
+        return ptn_directory_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_spl_file_info(class_name)) {
         return ptn_spl_file_info_method_exists(method_name);
@@ -94216,6 +94273,28 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
+    if (ptn_internal_class_name_is_regex_iterator(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "accept",
+            "current",
+            "getFlags",
+            "getInnerIterator",
+            "getMode",
+            "getPregFlags",
+            "getRegex",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "setFlags",
+            "setMode",
+            "setPregFlags",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
     if (ptn_internal_class_name_is_limit_iterator(class_name)) {
         static const char *const names[] = {
             "current",
@@ -94369,6 +94448,49 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "setCsvControl",
             "setFlags",
             "setMaxLineLen",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_directory_iterator(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "current",
+            "getATime",
+            "getBasename",
+            "getChildren",
+            "getCTime",
+            "getExtension",
+            "getFileInfo",
+            "getFilename",
+            "getGroup",
+            "getInode",
+            "getMTime",
+            "getOwner",
+            "getPath",
+            "getPathInfo",
+            "getPathname",
+            "getPerms",
+            "getRealPath",
+            "getSize",
+            "getType",
+            "hasChildren",
+            "isDir",
+            "isDot",
+            "isExecutable",
+            "isFile",
+            "isLink",
+            "isReadable",
+            "isWritable",
+            "key",
+            "next",
+            "openFile",
+            "rewind",
+            "seek",
+            "setFileClass",
+            "setInfoClass",
             "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -96287,9 +96409,11 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_recursive_array_iterator(class_name)
             || ptn_internal_class_name_is_array_object(class_name)
             || ptn_internal_class_name_is_callback_filter_iterator(class_name)
+            || ptn_internal_class_name_is_directory_iterator(class_name)
             || ptn_internal_class_name_is_infinite_iterator(class_name)
             || ptn_internal_class_name_is_iterator_iterator(class_name)
             || ptn_internal_class_name_is_limit_iterator(class_name)
+            || ptn_internal_class_name_is_regex_iterator(class_name)
             || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
             || ptn_internal_class_name_is_spl_queue(class_name)
             || ptn_internal_class_name_is_spl_stack(class_name)
@@ -100722,10 +100846,12 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_recursive_array_iterator(class_name) ||
         ptn_internal_class_name_is_array_object(class_name) ||
         ptn_internal_class_name_is_callback_filter_iterator(class_name) ||
+        ptn_internal_class_name_is_directory_iterator(class_name) ||
         ptn_internal_class_name_is_filter_iterator(class_name) ||
         ptn_internal_class_name_is_infinite_iterator(class_name) ||
         ptn_internal_class_name_is_iterator_iterator(class_name) ||
         ptn_internal_class_name_is_limit_iterator(class_name) ||
+        ptn_internal_class_name_is_regex_iterator(class_name) ||
         ptn_internal_class_name_is_spl_fixed_array(class_name) ||
         ptn_internal_class_name_is_spl_object_storage(class_name) ||
         ptn_internal_class_name_is_spl_heap(class_name) ||
@@ -100796,6 +100922,16 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("STD_PROP_LIST"), ptn_int(1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ARRAY_AS_PROPS"), ptn_int(2));
+        return;
+    }
+    if (ptn_internal_class_name_is_regex_iterator(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("MATCH"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("GET_MATCH"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("ALL_MATCHES"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SPLIT"), ptn_int(3));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REPLACE"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("USE_KEY"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("INVERT_MATCH"), ptn_int(2));
         return;
     }
     if (ptn_internal_class_name_is_xml_reader(class_name)) {
@@ -105119,6 +105255,14 @@ typedef struct {
 } PtnIteratorIteratorData;
 
 typedef struct {
+    PtnValue inner;
+    char *pattern;
+    int64_t mode;
+    int64_t flags;
+    int64_t preg_flags;
+} PtnRegexIteratorData;
+
+typedef struct {
     PtnValue iterator;
     PtnValue post_value;
     PtnValue post_key;
@@ -105329,6 +105473,22 @@ static void ptn_spl_file_info_data_free(void *data) {
     free(info_data);
 }
 
+static void ptn_directory_iterator_data_free(void *data) {
+    PtnDirectoryIteratorData *iterator_data = (PtnDirectoryIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_spl_file_info_data_clear(&iterator_data->info);
+    free(iterator_data->directory_path);
+#if !defined(_WIN32)
+    if (iterator_data->directory != NULL) {
+        closedir(iterator_data->directory);
+    }
+#endif
+    free(iterator_data->current_name);
+    free(iterator_data);
+}
+
 static void ptn_spl_file_object_data_free(void *data) {
     PtnSplFileObjectData *file_data = (PtnSplFileObjectData *)data;
     if (file_data == NULL) {
@@ -105346,6 +105506,16 @@ static void ptn_iterator_iterator_data_free(void *data) {
         return;
     }
     ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data);
+}
+
+static void ptn_regex_iterator_data_free(void *data) {
+    PtnRegexIteratorData *iterator_data = (PtnRegexIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data->pattern);
     free(iterator_data);
 }
 
@@ -105621,6 +105791,32 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
         return NULL;
     }
     return (PtnIteratorIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnDirectoryIteratorData *ptn_directory_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "DirectoryIterator")
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid DirectoryIterator object");
+        return NULL;
+    }
+    return (PtnDirectoryIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnRegexIteratorData *ptn_regex_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "RegexIterator")
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid RegexIterator object");
+        return NULL;
+    }
+    return (PtnRegexIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
@@ -113739,6 +113935,314 @@ static PTN_UNUSED PtnValue ptn_spl_file_info_clone(
     return clone;
 }
 
+static char *ptn_directory_iterator_entry_path(PtnDirectoryIteratorData *data, const char *entry_name) {
+    const char *directory = data->directory_path == NULL ? "" : data->directory_path;
+    size_t directory_len = strlen(directory);
+    size_t entry_len = strlen(entry_name == NULL ? "" : entry_name);
+    int needs_separator = directory_len > 0 && directory[directory_len - 1] != '/';
+    char *path = malloc(directory_len + (needs_separator ? 1 : 0) + entry_len + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, directory, directory_len);
+    size_t offset = directory_len;
+    if (needs_separator) {
+        path[offset++] = '/';
+    }
+    memcpy(path + offset, entry_name == NULL ? "" : entry_name, entry_len);
+    path[offset + entry_len] = '\0';
+    return path;
+}
+
+static void ptn_directory_iterator_set_current(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnDirectoryIteratorData *data,
+    const char *entry_name,
+    size_t line
+) {
+    free(data->current_name);
+    data->current_name = ptn_duplicate_string(entry_name == NULL ? "" : entry_name);
+    free(data->info.path);
+    data->info.path = ptn_spl_path_normalize_allocated(
+        ptn_directory_iterator_entry_path(data, data->current_name)
+    );
+    data->valid = 1;
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->info.path, line);
+}
+
+static void ptn_directory_iterator_read_current(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnDirectoryIteratorData *data,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)runtime;
+    (void)object;
+    (void)line;
+    data->valid = 0;
+#else
+    if (data == NULL || data->directory == NULL) {
+        if (data != NULL) {
+            data->valid = 0;
+        }
+        return;
+    }
+    errno = 0;
+    struct dirent *entry = readdir(data->directory);
+    if (entry == NULL) {
+        data->valid = 0;
+        free(data->current_name);
+        data->current_name = NULL;
+        return;
+    }
+    ptn_directory_iterator_set_current(runtime, object, data, entry->d_name, line);
+#endif
+}
+
+static PTN_UNUSED PtnValue ptn_directory_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DirectoryIterator::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    char *path = ptn_spl_file_path_arg(runtime, "DirectoryIterator::__construct", 1, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || path == NULL) {
+        free(path);
+        return ptn_null();
+    }
+
+    PtnDirectoryIteratorData *data = malloc(sizeof(PtnDirectoryIteratorData));
+    if (data == NULL) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    data->directory_path = ptn_duplicate_string(path);
+#if !defined(_WIN32)
+    data->directory = opendir(path);
+    int open_errno = errno;
+#endif
+    data->current_name = NULL;
+    data->key = 0;
+    data->valid = 0;
+    ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
+
+#if defined(_WIN32)
+    ptn_directory_iterator_data_free(data);
+    ptn_throw_exception(runtime, "UnexpectedValueException", "DirectoryIterator::__construct(): Failed to open directory: directory streams are unsupported on this platform");
+    return ptn_null();
+#else
+    if (data->directory == NULL) {
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DirectoryIterator::__construct(%s): Failed to open directory: %s",
+            data->directory_path,
+            strerror(open_errno)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_directory_iterator_data_free(data);
+            ptn_abort_out_of_memory();
+        }
+        ptn_directory_iterator_data_free(data);
+        ptn_throw_exception(runtime, "UnexpectedValueException", message);
+        return ptn_null();
+    }
+#endif
+
+    PtnValue object = ptn_object_new_shell(runtime, "DirectoryIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_directory_iterator_data_free;
+    ptn_directory_iterator_read_current(runtime, object, data, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_directory_iterator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnDirectoryIteratorData *new_data =
+                (PtnDirectoryIteratorData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_directory_iterator_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_directory_iterator_data_free;
+            ptn_spl_file_info_sync_properties(
+                runtime,
+                resolved_receiver,
+                "SplFileInfo",
+                new_data->info.path,
+                line
+            );
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(data->current_name == NULL ? "" : data->current_name));
+    }
+    if (ptn_internal_class_method_exists("SplFileInfo", name) &&
+        !ptn_ascii_case_equal(name, "getFilename") &&
+        !ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getFilename")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(data->current_name == NULL ? "" : data->current_name));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_value_clone_deref(receiver);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->key);
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->valid);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->valid) {
+            data->key++;
+            ptn_directory_iterator_read_current(runtime, receiver, data, line);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+#if !defined(_WIN32)
+        if (data->directory != NULL) {
+            rewinddir(data->directory);
+        }
+#endif
+        data->key = 0;
+        ptn_directory_iterator_read_current(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "DirectoryIterator::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t target = ptn_internal_expect_integer_arg(
+            runtime,
+            "DirectoryIterator::seek",
+            1,
+            "offset",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (target < 0) {
+            ptn_throw_exception(runtime, "OutOfBoundsException", "Seek position must be non-negative");
+            return ptn_null();
+        }
+        PtnValue rewind_result =
+            ptn_directory_iterator_call_method(runtime, receiver, "rewind", 0, NULL, line);
+        ptn_value_destroy(&rewind_result);
+        while (runtime->exceptions->active_exception == NULL && data->valid && data->key < target) {
+            PtnValue next_result =
+                ptn_directory_iterator_call_method(runtime, receiver, "next", 0, NULL, line);
+            ptn_value_destroy(&next_result);
+        }
+        if (runtime->exceptions->active_exception == NULL && !data->valid) {
+            ptn_throw_exception(runtime, "OutOfBoundsException", "Seek position is out of range");
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "isDot")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_bool(
+            data->valid &&
+            (strcmp(data->current_name == NULL ? "" : data->current_name, ".") == 0 ||
+             strcmp(data->current_name == NULL ? "" : data->current_name, "..") == 0)
+        );
+    }
+    if (ptn_ascii_case_equal(name, "hasChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL || !data->valid) {
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+        }
+        PtnValue is_dot = ptn_directory_iterator_call_method(runtime, receiver, "isDot", 0, NULL, line);
+        int dot = runtime->exceptions->active_exception == NULL && ptn_is_truthy(is_dot);
+        ptn_value_destroy(&is_dot);
+        if (dot || runtime->exceptions->active_exception != NULL) {
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+        }
+        PtnValue is_dir = ptn_spl_file_info_call_method(runtime, receiver, "isDir", 0, NULL, line);
+        int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(is_dir);
+        ptn_value_destroy(&is_dir);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(result);
+    }
+    if (ptn_ascii_case_equal(name, "getChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL || !data->valid) {
+            return ptn_null();
+        }
+        PtnValue path_arg = ptn_owned_string(ptn_duplicate_string(data->info.path == NULL ? "" : data->info.path));
+        PtnValue result = ptn_directory_iterator_new(runtime, 1, &path_arg, line);
+        ptn_value_destroy(&path_arg);
+        return result;
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static PtnValue ptn_spl_file_info_make_info_object(
     PtnRuntime *runtime,
     PtnSplFileInfoData *data,
@@ -115135,6 +115639,101 @@ static PTN_UNUSED PtnValue ptn_filter_iterator_new(
         return ptn_null();
     }
     return ptn_iterator_iterator_new_for_class(runtime, "FilterIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_regex_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "RegexIterator::__construct() expects at least 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (argc > 5) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "RegexIterator::__construct() expects at most 5 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue inner = ptn_iterator_iterator_resolve_inner(runtime, "RegexIterator", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand pattern =
+        ptn_internal_expect_string_arg(runtime, "RegexIterator::__construct", 2, "pattern", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
+    int64_t mode = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 3, "mode", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
+    int64_t flags = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 4, "flags", args[3], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
+    int64_t preg_flags = argc >= 5
+        ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 5, "pregFlags", args[4], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
+
+    PtnRegexIteratorData *data = malloc(sizeof(PtnRegexIteratorData));
+    if (data == NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        ptn_abort_out_of_memory();
+    }
+    data->inner = inner;
+    data->pattern = ptn_duplicate_string_len(pattern.data, pattern.len);
+    data->mode = mode;
+    data->flags = flags;
+    data->preg_flags = preg_flags;
+    ptn_string_operand_free(pattern);
+
+    PtnValue object = ptn_object_new_shell(runtime, "RegexIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_regex_iterator_data_free;
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("replacement"),
+        ptn_string("")
+    );
+    return object;
 }
 
 static PTN_UNUSED PtnValue ptn_infinite_iterator_new(
@@ -117152,6 +117751,256 @@ static int ptn_iterator_inner_valid(PtnRuntime *runtime, PtnValue inner, size_t 
     int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
     ptn_value_destroy(&valid);
     return result;
+}
+
+static PtnValue ptn_regex_iterator_pattern_value(PtnRegexIteratorData *data) {
+    return ptn_owned_string(ptn_duplicate_string(data->pattern == NULL ? "" : data->pattern));
+}
+
+static PtnValue ptn_regex_iterator_replacement_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    PtnLookupResult lookup =
+        ptn_object_property_lookup_quiet(runtime, receiver, "replacement", "RegexIterator", line);
+    if (!lookup.exists) {
+        return ptn_string("");
+    }
+    return lookup.value;
+}
+
+static PtnValue ptn_regex_iterator_subject_value(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    const char *method = (data->flags & 1) != 0 ? "key" : "current";
+    return ptn_iterator_inner_call_no_args(runtime, data->inner, method, line);
+}
+
+static int ptn_regex_iterator_accepts_current(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
+    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&pattern);
+        ptn_value_destroy(&subject);
+        return 0;
+    }
+    PtnValue match_args[2] = { pattern, subject };
+    PtnValue result = ptn_call_internal(runtime, "preg_match", 2, match_args, line);
+    int accepted = runtime->exceptions->active_exception == NULL && ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&match_args[0]);
+    ptn_value_destroy(&match_args[1]);
+    if ((data->flags & 2) != 0) {
+        accepted = !accepted;
+    }
+    return accepted;
+}
+
+static void ptn_regex_iterator_skip_rejected(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    while (runtime->exceptions->active_exception == NULL &&
+        ptn_iterator_inner_valid(runtime, data->inner, line)) {
+        if (ptn_regex_iterator_accepts_current(runtime, data, line)) {
+            return;
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+    }
+}
+
+static PtnValue ptn_regex_iterator_current_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&current);
+        return ptn_null();
+    }
+    if (data->mode != 4) {
+        return current;
+    }
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
+    PtnValue replacement = ptn_regex_iterator_replacement_value(runtime, receiver, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&pattern);
+        ptn_value_destroy(&replacement);
+        ptn_value_destroy(&current);
+        return ptn_null();
+    }
+    PtnValue replace_args[3] = { pattern, replacement, current };
+    PtnValue result = ptn_call_internal(runtime, "preg_replace", 3, replace_args, line);
+    ptn_value_destroy(&replace_args[0]);
+    ptn_value_destroy(&replace_args[1]);
+    ptn_value_destroy(&replace_args[2]);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnRegexIteratorData *data = ptn_regex_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_regex_iterator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnRegexIteratorData *new_data =
+                (PtnRegexIteratorData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_regex_iterator_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_regex_iterator_data_free;
+            PtnArrayEntry *replacement_entry = ptn_array_entry_for_key(
+                replacement.as.object->properties,
+                ptn_array_string_key("replacement")
+            );
+            if (replacement_entry != NULL) {
+                ptn_array_set_entry(
+                    resolved_receiver.as.object->properties,
+                    ptn_array_string_key("replacement"),
+                    ptn_value_clone_deref(replacement_entry->value)
+                );
+            }
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInnerIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_value_clone_deref(data->inner);
+    }
+    if (ptn_ascii_case_equal(name, "getRegex")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_regex_iterator_pattern_value(data);
+    }
+    if (ptn_ascii_case_equal(name, "getMode")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->mode);
+    }
+    if (ptn_ascii_case_equal(name, "getFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "getPregFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->preg_flags);
+    }
+    if (ptn_ascii_case_equal(name, "setMode") ||
+        ptn_ascii_case_equal(name, "setFlags") ||
+        ptn_ascii_case_equal(name, "setPregFlags")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "RegexIterator::%s() expects exactly 1 argument",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        char function_name[64];
+        int written = snprintf(function_name, sizeof(function_name), "RegexIterator::%s", name);
+        if (written < 0 || (size_t)written >= sizeof(function_name)) {
+            ptn_abort_out_of_memory();
+        }
+        int64_t value =
+            ptn_internal_expect_integer_arg(runtime, function_name, 1, "flags", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "setMode")) {
+            data->mode = value;
+        } else if (ptn_ascii_case_equal(name, "setFlags")) {
+            data->flags = value;
+        } else {
+            data->preg_flags = value;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
+        ptn_value_destroy(&rewind);
+        ptn_regex_iterator_skip_rejected(runtime, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
+        ptn_value_destroy(&next);
+        ptn_regex_iterator_skip_rejected(runtime, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "accept")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_regex_iterator_accepts_current(runtime, data, line));
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_iterator_inner_valid(runtime, data->inner, line));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_regex_iterator_current_value(runtime, receiver, data, line);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_limit_iterator_seek_inner(
