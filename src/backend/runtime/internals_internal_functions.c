@@ -17976,14 +17976,31 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
-static int ptn_array_unique_contains_string_value(
+static PtnStringOperand ptn_array_unique_string_operand(
     PtnRuntime *runtime,
-    PtnArray *array,
     PtnValue value,
     size_t line
 ) {
+    ptn_array_emit_string_conversion_warning_for_value(runtime, value, line);
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static int ptn_array_unique_contains_string_value(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnStringOperand value_string,
+    size_t line
+) {
     for (size_t i = 0; i < array->len; i++) {
-        if (ptn_array_value_strings_equal(runtime, value, array->entries[i].value, line, 0)) {
+        PtnStringOperand existing_string = ptn_value_to_string_operand_with_runtime(
+            runtime,
+            array->entries[i].value,
+            line
+        );
+        int equal = value_string.len == existing_string.len &&
+            memcmp(value_string.data, existing_string.data, value_string.len) == 0;
+        ptn_string_operand_free(existing_string);
+        if (equal) {
             return 1;
         }
     }
@@ -18007,7 +18024,10 @@ static PtnValue ptn_internal_array_unique(PtnRuntime *runtime, size_t argc, cons
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
-        if (ptn_array_unique_contains_string_value(runtime, result.as.array, entry->value, line)) {
+        PtnStringOperand entry_string = ptn_array_unique_string_operand(runtime, entry->value, line);
+        int duplicate = ptn_array_unique_contains_string_value(runtime, result.as.array, entry_string, line);
+        ptn_string_operand_free(entry_string);
+        if (duplicate) {
             continue;
         }
         ptn_array_set_entry(
@@ -42526,6 +42546,49 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
     return result;
 }
 
+static PtnStringOperand ptn_file_put_contents_value_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        return ptn_string_operand_borrowed("");
+    }
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static PtnStringOperand ptn_file_put_contents_data_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return ptn_file_put_contents_value_operand(runtime, value, line);
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        PtnStringOperand entry = ptn_file_put_contents_value_operand(
+            runtime,
+            value.as.array->entries[i].value,
+            line
+        );
+        ptn_string_buffer_append_len(&buffer, entry.data, entry.len);
+        ptn_string_operand_free(entry);
+    }
+    return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+}
+
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
         runtime,
@@ -42539,7 +42602,7 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    PtnStringOperand data = ptn_value_to_string_operand(args[1]);
+    PtnStringOperand data = ptn_file_put_contents_data_operand(runtime, args[1], line);
     int64_t flags = 0;
     if (argc >= 3) {
         flags = ptn_internal_expect_integer_arg(runtime, "file_put_contents", 3, "flags", args[2], line);
@@ -47057,12 +47120,7 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
         converted = ptn_cast_float_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
-        PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, current, line);
-        converted = ptn_owned_string_len(
-            ptn_duplicate_string_len(string.data, string.len),
-            string.len
-        );
-        ptn_string_operand_free(string);
+        converted = ptn_cast_string_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "boolean") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "bool")) {
         converted = ptn_bool(ptn_is_truthy(current));
@@ -47070,6 +47128,10 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         converted = ptn_cast_array(current);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "object")) {
         converted = ptn_cast_object(runtime, current);
+    } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "resource")) {
+        ptn_string_operand_free(type);
+        ptn_throw_exception(runtime, "ValueError", "Cannot convert to resource type");
+        return ptn_null();
     } else {
         valid = 0;
         converted = ptn_null();

@@ -15171,6 +15171,59 @@ echo bin2hex(sha1($s, true)), \"\\n\";\n",
 }
 
 #[test]
+fn compile_file_put_contents_array_and_object_data_to_native_binary() {
+    let root = temp_dir("ptn-native-file-put-contents-array-object-data");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-put-contents-array-object-data.php");
+    let output = root.join("file-put-contents-array-object-data-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function($errno, $message) { echo \"warn:$message\\n\"; });\n\
+class WithToString { public function __toString() { return \"Class A object\"; } }\n\
+class WithoutToString {}\n\
+$path = __DIR__ . \"/write-data.txt\";\n\
+$cases = [\n\
+    'empty array' => [],\n\
+    'int indexed array' => [1, 2, 3],\n\
+    'associative array' => ['one' => 1, 'two' => 2],\n\
+    'nested arrays' => ['foo', [1, 2, 3], ['one' => 1, 'two' => 2]],\n\
+    'instance of classWithToString' => new WithToString(),\n\
+    'instance of classWithoutToString' => new WithoutToString(),\n\
+];\n\
+foreach ($cases as $label => $value) {\n\
+    file_put_contents($path, $value);\n\
+    echo $label, ':', file_get_contents($path), \"\\n\";\n\
+}\n\
+@unlink($path);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "empty array:\n",
+            "int indexed array:123\n",
+            "associative array:12\n",
+            "warn:Array to string conversion\n",
+            "warn:Array to string conversion\n",
+            "nested arrays:fooArrayArray\n",
+            "instance of classWithToString:Class A object\n",
+            "instance of classWithoutToString:\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_file_put_contents_data_operand"));
+    assert!(c_source.contains("ptn_try_object_to_string_operand"));
+}
+
+#[test]
 fn compile_sha1_file_binary_safe_and_error_suppression_to_native_binary() {
     let root = temp_dir("ptn-native-sha1-file-binary-safe");
     fs::create_dir_all(&root).unwrap();
@@ -27143,6 +27196,10 @@ $value = \"42\";
 var_dump(settype($value, \"int\"), gettype($value), $value);
 $value = 0;
 var_dump(settype($value, \"bool\"), gettype($value), $value);
+$value = [1, 2];
+var_dump(settype($value, \"string\"), gettype($value), $value);
+$value = 12;
+try { var_dump(settype($value, \"resource\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }
 var_dump(function_exists(\"settype\"));",
     )
     .unwrap();
@@ -27163,6 +27220,11 @@ var_dump(function_exists(\"settype\"));",
             "bool(true)\n",
             "string(7) \"boolean\"\n",
             "bool(false)\n",
+            "\nWarning: Array to string conversion in ptn on line 9\n",
+            "bool(true)\n",
+            "string(6) \"string\"\n",
+            "string(5) \"Array\"\n",
+            "Cannot convert to resource type\n",
             "bool(true)\n",
         )
     );
@@ -36027,6 +36089,8 @@ $unique[0] = \"changed\";\n\
 var_dump($unique, $items);\n\
 var_dump(array_unique([], SORT_STRING));\n\
 try { array_unique($items, SORT_REGULAR); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$nested = [[1], [2], [1]];\n\
+var_dump(array_unique($nested, SORT_STRING));\n\
 var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), defined(\"SORT_STRING\"));",
     )
     .unwrap();
@@ -36067,6 +36131,16 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
             "array(0) {\n",
             "}\n",
             "array_unique() flags are unsupported; default string value comparison is supported\n",
+            "\nWarning: Array to string conversion in ptn on line 9\n",
+            "\nWarning: Array to string conversion in ptn on line 9\n",
+            "\nWarning: Array to string conversion in ptn on line 9\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "}\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n"
@@ -36076,6 +36150,7 @@ var_dump(function_exists(\"array_unique\"), function_exists(\"ARRAY_UNIQUE\"), d
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_unique"));
+    assert!(c_source.contains("ptn_array_unique_string_operand"));
     assert!(c_source.contains("ptn_array_unique_contains_string_value"));
 }
 
