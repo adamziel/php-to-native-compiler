@@ -19732,7 +19732,37 @@ fn emit_instruction(
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                if let Some((root_temp, root_epoch_temp)) = &pre_eval_root {
+                let post_value_root = if pre_eval_root.is_none()
+                    && !path.deferred_undefined_variable_warnings.is_empty()
+                {
+                    let root_lookup_temp = values.next_temp();
+                    let root_temp = values.next_temp();
+                    let root_epoch_temp = values.next_temp();
+                    out.push_str("    PtnLookupResult ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&root_temp);
+                    out.push_str(" = ");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".exists ? ptn_value_clone_deref(");
+                    out.push_str(&root_lookup_temp);
+                    out.push_str(".value) : ptn_null();\n");
+                    out.push_str("    uint64_t ");
+                    out.push_str(&root_epoch_temp);
+                    out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\");\n");
+                    emit_deferred_undefined_variable_warnings(out, &path, source_path);
+                    Some((root_temp, root_epoch_temp))
+                } else {
+                    None
+                };
+                if let Some((root_temp, root_epoch_temp)) =
+                    pre_eval_root.as_ref().or(post_value_root.as_ref())
+                {
                     out.push_str(
                         "    ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"",
                     );
@@ -19774,11 +19804,13 @@ fn emit_instruction(
                         emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
                     }
                     out.push_str(");\n");
-                    emit_deferred_undefined_variable_warnings(out, &path, source_path);
                 }
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
                 if let Some((root_temp, _)) = pre_eval_root {
+                    emit_value_cleanup(out, "    ", &root_temp);
+                }
+                if let Some((root_temp, _)) = post_value_root {
                     emit_value_cleanup(out, "    ", &root_temp);
                 }
                 for segment_temp in path.value_temps {
@@ -30518,10 +30550,40 @@ impl ValueEmitter {
             out.push_str(" = ptn_value_snapshot_for_array_path_write(");
             out.push_str(&value_temp);
             out.push_str(");\n");
+            let post_value_root = if pre_eval_root.is_none()
+                && !path.deferred_undefined_variable_warnings.is_empty()
+            {
+                let root_lookup_temp = self.next_temp();
+                let root_temp = self.next_temp();
+                let root_epoch_temp = self.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&root_temp);
+                out.push_str(" = ");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".exists ? ptn_value_clone_deref(");
+                out.push_str(&root_lookup_temp);
+                out.push_str(".value) : ptn_null();\n");
+                out.push_str("    uint64_t ");
+                out.push_str(&root_epoch_temp);
+                out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\");\n");
+                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
+                Some((root_temp, root_epoch_temp))
+            } else {
+                None
+            };
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            if let Some((root_temp, root_epoch_temp)) = &pre_eval_root {
+            if let Some((root_temp, root_epoch_temp)) =
+                pre_eval_root.as_ref().or(post_value_root.as_ref())
+            {
                 out.push_str(";\n");
                 out.push_str("    if (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
                 out.push_str(&c_string(array));
@@ -30589,11 +30651,16 @@ impl ValueEmitter {
                     emit_deferred_missing_variable_null_key_deprecation_flag(out, &path);
                 }
                 out.push_str(");\n");
-                emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
+                if post_value_root.is_none() {
+                    emit_deferred_undefined_variable_warnings(out, &path, &self.source_file);
+                }
             }
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             if let Some((root_temp, _)) = pre_eval_root {
+                emit_value_cleanup(out, "    ", &root_temp);
+            }
+            if let Some((root_temp, _)) = post_value_root {
                 emit_value_cleanup(out, "    ", &root_temp);
             }
             for segment_temp in path.value_temps {
@@ -30726,6 +30793,7 @@ impl ValueEmitter {
             }
 
             if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let value_temp = self.emit_materialized_value(out, value);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -30736,7 +30804,6 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str("));\n");
-                let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.emit_compound_binary_value(
                     out,
                     &current_temp,
@@ -30778,6 +30845,7 @@ impl ValueEmitter {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             self.emit_dynamic_this_reassignment_guard(out, &name_temp, *line);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let value_temp = self.emit_materialized_value(out, value);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -30788,7 +30856,6 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str("));\n");
-                let value_temp = self.emit_materialized_value(out, value);
                 let result_temp = self.emit_compound_binary_value(
                     out,
                     &current_temp,

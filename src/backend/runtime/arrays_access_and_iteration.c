@@ -11069,7 +11069,7 @@ static PTN_UNUSED void ptn_emit_invalidated_array_path_write_diagnostics(
     size_t segment_count,
     size_t line
 ) {
-    if (segment_count < 2) {
+    if (segment_count == 0) {
         return;
     }
 
@@ -11103,7 +11103,7 @@ static PTN_UNUSED void ptn_emit_invalidated_array_path_write_diagnostics(
         break;
     }
 
-    if (container.type == PTN_STRING && segment_count > 1) {
+    if (container.type == PTN_STRING) {
         const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
         if (!leaf->append) {
             int64_t offset = 0;

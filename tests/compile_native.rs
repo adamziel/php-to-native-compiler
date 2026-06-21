@@ -53979,7 +53979,7 @@ fn compile_compound_assignments_with_grouping_and_casts_to_native_binary() {
 }
 
 #[test]
-fn compound_assignments_read_left_before_rhs_and_then_write() {
+fn compound_assignments_read_rhs_before_left_and_then_write() {
     let root = temp_dir("ptn-native-compound-assignment-order");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("compound-order.php");
@@ -53998,8 +53998,8 @@ fn compound_assignments_read_left_before_rhs_and_then_write() {
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             "{}0\n{}[]\n",
-            undefined_variable_warnings(&input, &[("total", 1), ("missing_number", 1)]),
-            undefined_variable_warnings(&input, &[("text", 1), ("missing_text", 1)])
+            undefined_variable_warnings(&input, &[("missing_number", 1), ("total", 1)]),
+            undefined_variable_warnings(&input, &[("missing_text", 1), ("text", 1)])
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
