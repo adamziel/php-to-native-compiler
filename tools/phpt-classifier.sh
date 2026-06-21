@@ -1857,7 +1857,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/(class_constants\/101|error_on_enum)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/override\/01[45][.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass(Constant_isEnumCase|_isEnum)[.]phpt$/ ||
-                ptn_path ~ /ext\/reflection\/tests\/ReflectionEnum_(construct|getBackingType|getCase|getCases|hasCase|isBacked|toString)[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionEnum_(construct|getBackingType|getCase|getCases|hasCase|isBacked|toString(_(backed_int|backed_string|unbacked))?)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumUnitCase_(construct|getDocComment|getEnum|getValue)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumBackedCase_getBackingValue[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
