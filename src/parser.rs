@@ -42,6 +42,7 @@ const POWER_PRECEDENCE: u8 = 40;
 const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
     "class constant fetches are unsupported; class constants and enum cases require class metadata";
 const NULLSAFE_WRITE_CONTEXT_MESSAGE: &str = "Can't use nullsafe operator in write context";
+const TEMPORARY_WRITE_CONTEXT_MESSAGE: &str = "Cannot use temporary expression in write context";
 const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe chain";
 
 fn nullsafe_write_context_diagnostic(span: SourceSpan) -> Diagnostic {
@@ -6910,6 +6911,9 @@ impl Parser<'_> {
                 return Err(diagnostic);
             }
             Err(diagnostic) if is_nullsafe_write_context_diagnostic(&diagnostic) => {
+                return Err(diagnostic);
+            }
+            Err(diagnostic) if diagnostic.message == TEMPORARY_WRITE_CONTEXT_MESSAGE => {
                 return Err(diagnostic);
             }
             Err(diagnostic) if list_assignment_diagnostic_should_surface(&diagnostic) => {
@@ -22244,7 +22248,7 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
             }
             _ => {
                 return Err(Diagnostic::new(
-                    "unsupported assignment target",
+                    TEMPORARY_WRITE_CONTEXT_MESSAGE,
                     Some(current.span()),
                 ));
             }
@@ -22433,6 +22437,17 @@ fn validate_expression_assignment_target(
 ) -> Result<()> {
     validate_coalesce_assignment_target(op, target, span)?;
     reject_this_assignment_target(target)?;
+
+    if matches!(op, AssignmentOp::Assign) {
+        if let AssignmentTarget::ValueArrayDim { array, .. } = target {
+            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
+                return Err(Diagnostic::new(
+                    "Cannot use result of built-in function in write context",
+                    Some(call_span),
+                ));
+            }
+        }
+    }
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
         return Ok(());
