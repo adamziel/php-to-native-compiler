@@ -7915,11 +7915,11 @@ static void ptn_serialize_append_spl_array_backed_object(
         strlen(object->class_name),
         object->class_name
     );
-    ptn_string_buffer_append_format(
-        buffer,
-        "i:0;i:%lld;i:1;",
-        (long long)ptn_serialize_spl_array_backed_flags(object)
-    );
+    ptn_string_buffer_append(buffer, "i:0;");
+    PtnValue flags = ptn_int(ptn_serialize_spl_array_backed_flags(object));
+    ptn_serialize_append_value_with_id(buffer, flags, state, 0);
+    ptn_value_destroy(&flags);
+    ptn_string_buffer_append(buffer, "i:1;");
     PtnValue storage = ptn_serialize_spl_storage_value(object);
     ptn_serialize_append_value_with_id(buffer, storage, state, 0);
     ptn_value_destroy(&storage);
@@ -7929,11 +7929,14 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_value_destroy(&properties);
     ptn_string_buffer_append(buffer, "i:3;");
     const char *iterator_class = ptn_serialize_spl_array_object_iterator_class(object);
+    PtnValue iterator_class_value = ptn_null();
     if (iterator_class == NULL) {
-        ptn_string_buffer_append(buffer, "N;");
+        iterator_class_value = ptn_null();
     } else {
-        ptn_serialize_append_string(buffer, iterator_class, strlen(iterator_class));
+        iterator_class_value = ptn_string(iterator_class);
     }
+    ptn_serialize_append_value_with_id(buffer, iterator_class_value, state, 0);
+    ptn_value_destroy(&iterator_class_value);
     ptn_string_buffer_append_char(buffer, '}');
 }
 
@@ -8673,22 +8676,6 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
     (void)argc;
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    PtnSerializeState *active_state = runtime == NULL
-        ? NULL
-        : (PtnSerializeState *)runtime->active_serialize_state;
-    if (active_state != NULL) {
-        size_t saved_reference_len = active_state->reference_len;
-        size_t saved_object_len = active_state->object_len;
-        size_t saved_exception_len = active_state->exception_len;
-        ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
-        ptn_serialize_truncate_nested_ids(
-            active_state,
-            saved_reference_len,
-            saved_object_len,
-            saved_exception_len
-        );
-        return ptn_owned_string_len(buffer.data, buffer.len);
-    }
 
     PtnSerializeState state;
     ptn_serialize_state_init(&state, runtime, line);
@@ -10202,14 +10189,32 @@ static void ptn_unserialize_call_magic_method(
     PtnValue *args,
     size_t line
 ) {
-    PtnValue result = runtime->method_dispatch(
-        runtime,
-        object,
-        method_name,
-        argc,
-        args,
-        line
-    );
+    void *saved_active_unserialize_state = runtime->active_unserialize_state;
+    runtime->active_unserialize_state = NULL;
+    PtnValue result = ptn_null();
+    int caught_exception = 0;
+    PtnTryFrame magic_frame;
+    ptn_try_frame_push(runtime, &magic_frame);
+    if (setjmp(magic_frame.jump) != 0) {
+        caught_exception = 1;
+    }
+    if (!caught_exception) {
+        result = runtime->method_dispatch(
+            runtime,
+            object,
+            method_name,
+            argc,
+            args,
+            line
+        );
+    }
+    ptn_try_frame_pop(runtime, &magic_frame);
+    runtime->active_unserialize_state = saved_active_unserialize_state;
+    if (caught_exception) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(runtime);
+        return;
+    }
     ptn_value_destroy(&result);
 }
 
@@ -11376,6 +11381,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             result.value = ptn_unserialize_object_reference_for_id(state, id);
+            if (!state->failed) {
+                result.id = ptn_unserialize_add_slot(state, &result.value);
+            }
             return result;
         }
         default:
@@ -113633,6 +113641,26 @@ static void ptn_eval_scan_class_constants(
     }
 }
 
+static int ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(
+    const char *code,
+    size_t class_pos
+) {
+    size_t start = class_pos;
+    while (start > 0) {
+        char ch = code[start - 1];
+        if (ch == ';' || ch == '{' || ch == '}') {
+            break;
+        }
+        start--;
+    }
+    for (size_t pos = start; pos < class_pos; pos++) {
+        if (ptn_eval_keyword_at(code, class_pos, pos, "allowdynamicproperties")) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
     size_t len = strlen(code);
     for (size_t pos = 0; pos < len; pos++) {
@@ -113652,6 +113680,8 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
             cursor++;
         }
         char *class_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+        int allows_dynamic_properties =
+            ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(code, pos);
         char *parent_name = NULL;
         size_t metadata_cursor = ptn_eval_skip_ws(code, len, cursor);
         if (ptn_eval_keyword_at(code, len, metadata_cursor, "extends")) {
@@ -113668,7 +113698,12 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
                 );
             }
         }
-        ptn_runtime_register_dynamic_class_with_parent(runtime, class_name, parent_name);
+        ptn_runtime_register_dynamic_class_ex(
+            runtime,
+            class_name,
+            parent_name,
+            allows_dynamic_properties
+        );
         size_t body_open = cursor;
         while (body_open < len && code[body_open] != '{' && code[body_open] != ';') {
             if (code[body_open] == '\'' || code[body_open] == '"') {

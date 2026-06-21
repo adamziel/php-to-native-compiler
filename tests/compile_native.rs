@@ -11714,6 +11714,16 @@ fn compile_serialize_unserialize_reference_identity_to_native_binary() {
     fs::write(
         &input,
         r#"<?php
+class RefA { public $b; public $b1; public $c; public $c1; }
+class RefB {}
+class SleepBox {
+    public $x;
+    public function __sleep() {
+        echo serialize($this->x), "\n";
+        return ["x"];
+    }
+}
+
 $a = [];
 $a[0] = 1;
 $a[1] =& $a[0];
@@ -11731,6 +11741,18 @@ $d = unserialize($ser);
 var_dump($d);
 $d[0] = "changed";
 var_dump($d);
+
+$payload = 'O:4:"RefA":4:{s:1:"b";O:4:"RefB":0:{}s:2:"b1";r:2;s:1:"c";O:4:"RefB":0:{}s:2:"c1";r:4;}';
+$obj = unserialize($payload);
+var_dump($obj->b === $obj->b1, $obj->c === $obj->c1, $obj === $obj->b1);
+
+$shared = new RefB;
+var_dump(serialize([new ArrayIterator(), $shared, $shared]));
+
+$box = new SleepBox;
+$shared = new RefB;
+$box->x = [$shared, $shared];
+echo serialize($box), "\n";
 "#,
     )
     .unwrap();
@@ -11761,6 +11783,12 @@ var_dump($d);
             "  [0]=>\n",
             "  string(7) \"changed\"\n",
             "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "string(96) \"a:3:{i:0;O:13:\"ArrayIterator\":4:{i:0;i:0;i:1;a:0:{}i:2;a:0:{}i:3;N;}i:1;O:4:\"RefB\":0:{}i:2;r:7;}\"\n",
+            "a:2:{i:0;O:4:\"RefB\":0:{}i:1;r:2;}\n",
+            "O:8:\"SleepBox\":1:{s:1:\"x\";a:2:{i:0;O:4:\"RefB\":0:{}i:1;r:3;}}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -55679,6 +55707,10 @@ echo $bag->dyn, \"\\n\";
 $child = new Child;
 $child->dyn = 3;
 echo $child->dyn, \"\\n\";
+eval(\"#[AllowDynamicProperties] class EvalBag {}\");
+$evalBag = new EvalBag;
+$evalBag->dyn = 4;
+echo $evalBag->dyn, \"\\n\";
 ",
     )
     .unwrap();
@@ -55690,7 +55722,7 @@ echo $child->dyn, \"\\n\";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "\nDeprecated: Creation of dynamic property Plain::$dyn is deprecated in {} on line 7\n2\n3\n",
+            "\nDeprecated: Creation of dynamic property Plain::$dyn is deprecated in {} on line 7\n2\n3\n4\n",
             input.display()
         )
     );

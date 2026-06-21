@@ -3881,6 +3881,9 @@ static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
     if (ptn_ascii_case_equal(class_name, "__PHP_Incomplete_Class")) {
         return 1;
     }
+    if (ptn_runtime_dynamic_class_allows_dynamic_properties(runtime, class_name)) {
+        return 1;
+    }
     return runtime != NULL &&
         runtime->declared_class_allows_dynamic_properties != NULL &&
         runtime->declared_class_allows_dynamic_properties(class_name);

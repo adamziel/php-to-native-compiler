@@ -3388,14 +3388,28 @@ static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, cons
     return found;
 }
 
-static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
-    ptn_runtime_register_dynamic_class_with_parent(runtime, class_name, NULL);
+static PtnValue ptn_runtime_dynamic_class_marker_field(PtnValue marker, const char *name) {
+    marker = ptn_value_deref(marker);
+    if (marker.type != PTN_ARRAY || marker.as.array == NULL) {
+        return ptn_null();
+    }
+    size_t name_len = strlen(name);
+    for (size_t i = 0; i < marker.as.array->len; i++) {
+        PtnArrayEntry *entry = &marker.as.array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_STRING &&
+            entry->key.string_len == name_len &&
+            memcmp(entry->key.as.string, name, name_len) == 0) {
+            return ptn_value_deref(entry->value);
+        }
+    }
+    return ptn_null();
 }
 
-static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
+static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *parent_name
+    const char *parent_name,
+    int allows_dynamic_properties
 ) {
     if (class_name == NULL || *class_name == '\0') {
         return;
@@ -3408,9 +3422,27 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
     PtnValue parent_value = parent_name == NULL || *parent_name == '\0'
         ? ptn_null()
         : ptn_owned_string(ptn_duplicate_string(parent_name));
-    ptn_symbols_set(classes, key, parent_value);
+    PtnArrayLiteralEntry entries[] = {
+        { 1, ptn_string("parent"), parent_value },
+        { 1, ptn_string("allow_dynamic"), ptn_bool(allows_dynamic_properties) },
+    };
+    PtnValue marker = ptn_array_from_literal_entries(2, entries);
+    ptn_symbols_set(classes, key, marker);
+    ptn_value_destroy(&marker);
     ptn_value_destroy(&parent_value);
     free(key);
+}
+
+static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, NULL, 0);
+}
+
+static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *parent_name
+) {
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, parent_name, 0);
 }
 
 static PTN_UNUSED const char *ptn_runtime_dynamic_class_parent_name(
@@ -3429,7 +3461,60 @@ static PTN_UNUSED const char *ptn_runtime_dynamic_class_parent_name(
         return NULL;
     }
     parent = ptn_value_deref(parent);
-    return parent.type == PTN_STRING ? (const char *)parent.as.string.data : NULL;
+    if (parent.type == PTN_STRING) {
+        return (const char *)parent.as.string.data;
+    }
+    PtnValue parent_field = ptn_runtime_dynamic_class_marker_field(parent, "parent");
+    return parent_field.type == PTN_STRING ? (const char *)parent_field.as.string.data : NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_dynamic_class_allows_dynamic_properties_depth(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t depth
+) {
+    if (class_name == NULL || depth > 64) {
+        return 0;
+    }
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL) {
+        return 0;
+    }
+    char *key = ptn_class_alias_key(class_name);
+    PtnValue marker;
+    int found = ptn_symbols_get(classes, key, &marker);
+    free(key);
+    if (!found) {
+        return 0;
+    }
+    marker = ptn_value_deref(marker);
+    if (marker.type != PTN_ARRAY) {
+        return 0;
+    }
+    if (ptn_is_truthy(ptn_runtime_dynamic_class_marker_field(marker, "allow_dynamic"))) {
+        return 1;
+    }
+    PtnValue parent = ptn_runtime_dynamic_class_marker_field(marker, "parent");
+    if (parent.type != PTN_STRING) {
+        return 0;
+    }
+    const char *parent_name = (const char *)parent.as.string.data;
+    if (ptn_ascii_case_equal(parent_name, "stdClass")) {
+        return 1;
+    }
+    if (ptn_runtime_dynamic_class_allows_dynamic_properties_depth(runtime, parent_name, depth + 1)) {
+        return 1;
+    }
+    return runtime != NULL &&
+        runtime->declared_class_allows_dynamic_properties != NULL &&
+        runtime->declared_class_allows_dynamic_properties(parent_name);
+}
+
+static PTN_UNUSED int ptn_runtime_dynamic_class_allows_dynamic_properties(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    return ptn_runtime_dynamic_class_allows_dynamic_properties_depth(runtime, class_name, 0);
 }
 
 static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
