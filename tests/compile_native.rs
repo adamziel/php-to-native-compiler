@@ -65613,10 +65613,7 @@ fn parser_rejects_append_null_coalescing_assignment_with_explicit_diagnostics() 
 
     for (name, source) in cases {
         let error = parser::parse(source).unwrap_err();
-        assert_eq!(
-            error.message, "null coalescing assignment cannot use append array access",
-            "{name}"
-        );
+        assert_eq!(error.message, "Cannot use [] for reading", "{name}");
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
         let span = error.span.unwrap();
         let operator_offset = source.find("??=").unwrap();
@@ -65668,7 +65665,7 @@ fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: null coalescing assignment cannot use append array access in {} on line 2\n",
+            "Fatal error: Cannot use [] for reading in {} on line 2\n",
             input.display()
         )
     );

@@ -22912,7 +22912,7 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::DynamicArrayDim { dimensions, .. } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
+                    "Cannot use [] for reading",
                     Some(span),
                 ));
             }
@@ -22921,7 +22921,7 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
+                    "Cannot use [] for reading",
                     Some(span),
                 ));
             }
@@ -22944,7 +22944,7 @@ fn validate_coalesce_assignment_target(
         } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
+                    "Cannot use [] for reading",
                     Some(span),
                 ));
             }
