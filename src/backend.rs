@@ -22797,6 +22797,40 @@ fn array_dimensions_may_emit_key_conversion_diagnostic(dimensions: &[Option<Valu
         .any(array_dimension_may_emit_key_conversion_diagnostic)
 }
 
+fn value_expr_is_simple_binary_rhs(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::String(_)
+            | ValueExpr::Int(_)
+            | ValueExpr::Float(_)
+            | ValueExpr::Bool(_)
+            | ValueExpr::Null
+            | ValueExpr::Load { .. }
+            | ValueExpr::LegacyDollarBraceStringVariable { .. }
+            | ValueExpr::MagicConstant { .. }
+    )
+}
+
+fn binary_should_defer_direct_variable_lhs(left: &ValueExpr, right: &ValueExpr) -> bool {
+    value_expr_is_direct_variable_read(left) && !value_expr_is_simple_binary_rhs(right)
+}
+
+fn concat_tree_needs_deferred_direct_variable_lhs(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Binary {
+            op: BinaryOp::Concat,
+            left,
+            right,
+            ..
+        } => {
+            binary_should_defer_direct_variable_lhs(left, right)
+                || concat_tree_needs_deferred_direct_variable_lhs(left)
+                || concat_tree_needs_deferred_direct_variable_lhs(right)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ControlTargetKind {
     Loop,
@@ -39123,11 +39157,22 @@ impl ValueEmitter {
         right: &ValueExpr,
         line: usize,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
-        out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
-        out.push_str(&left_temp);
-        out.push_str(");\n");
-        let right_temp = self.emit_materialized_value(out, right);
+        let defer_left = binary_should_defer_direct_variable_lhs(left, right);
+        let (left_temp, right_temp) = if defer_left {
+            let right_temp = self.emit_materialized_value(out, right);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&right_temp);
+            out.push_str(");\n");
+            let left_temp = self.emit_materialized_value(out, left);
+            (left_temp, right_temp)
+        } else {
+            let left_temp = self.emit_materialized_value(out, left);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&left_temp);
+            out.push_str(");\n");
+            let right_temp = self.emit_materialized_value(out, right);
+            (left_temp, right_temp)
+        };
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -39151,6 +39196,63 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_binary_concat(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+        line: usize,
+        defer_left: bool,
+    ) -> String {
+        let (left_temp, right_temp) = if defer_left {
+            let right_temp = self.emit_materialized_value(out, right);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&right_temp);
+            out.push_str(");\n");
+            let left_temp = self.emit_materialized_value(out, left);
+            (left_temp, right_temp)
+        } else {
+            let left_temp = self.emit_materialized_value(out, left);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&left_temp);
+            out.push_str(");\n");
+            let right_temp = self.emit_materialized_value(out, right);
+            (left_temp, right_temp)
+        };
+        let left_line = value_expr_runtime_line(left).unwrap_or(line);
+        let right_line = value_expr_runtime_line(right).unwrap_or(line);
+        let operands_temp = self.next_temp();
+        out.push_str("    PtnConcatOperand ");
+        out.push_str(&operands_temp);
+        out.push_str("[] = { { ");
+        out.push_str(&left_temp);
+        out.push_str(", ");
+        out.push_str(&left_line.to_string());
+        out.push_str(" }, { ");
+        out.push_str(&right_temp);
+        out.push_str(", ");
+        out.push_str(&right_line.to_string());
+        out.push_str(" } };\n");
+
+        let strings_temp = self.next_temp();
+        out.push_str("    PtnStringOperand ");
+        out.push_str(&strings_temp);
+        out.push_str("[2];\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_concat_many(&runtime, ");
+        out.push_str(&operands_temp);
+        out.push_str(", 2, ");
+        out.push_str(&strings_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
+        emit_value_cleanup(out, "    ", &left_temp);
+        emit_value_cleanup(out, "    ", &right_temp);
+        result_temp
+    }
+
     fn emit_concat(
         &mut self,
         out: &mut String,
@@ -39158,6 +39260,14 @@ impl ValueEmitter {
         right: &ValueExpr,
         line: usize,
     ) -> String {
+        let defer_left = binary_should_defer_direct_variable_lhs(left, right);
+        if defer_left
+            || concat_tree_needs_deferred_direct_variable_lhs(left)
+            || concat_tree_needs_deferred_direct_variable_lhs(right)
+        {
+            return self.emit_binary_concat(out, left, right, line, defer_left);
+        }
+
         let mut operands = Vec::new();
         collect_concat_operands(left, line, &mut operands);
         collect_concat_operands(right, line, &mut operands);
@@ -39214,8 +39324,19 @@ impl ValueEmitter {
         right: &ValueExpr,
         line: usize,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
-        let right_temp = self.emit_materialized_value(out, right);
+        let defer_left = binary_should_defer_direct_variable_lhs(left, right);
+        let (left_temp, right_temp) = if defer_left {
+            let right_temp = self.emit_materialized_value(out, right);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&right_temp);
+            out.push_str(");\n");
+            let left_temp = self.emit_materialized_value(out, left);
+            (left_temp, right_temp)
+        } else {
+            let left_temp = self.emit_materialized_value(out, left);
+            let right_temp = self.emit_materialized_value(out, right);
+            (left_temp, right_temp)
+        };
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -39226,6 +39347,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str("));\n");
+        if defer_left {
+            out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
+        }
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
         result_temp
@@ -39994,8 +40118,19 @@ impl ValueEmitter {
         right: &ValueExpr,
         line: usize,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
-        let right_temp = self.emit_materialized_value(out, right);
+        let defer_left = binary_should_defer_direct_variable_lhs(left, right);
+        let (left_temp, right_temp) = if defer_left {
+            let right_temp = self.emit_materialized_value(out, right);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&right_temp);
+            out.push_str(");\n");
+            let left_temp = self.emit_materialized_value(out, left);
+            (left_temp, right_temp)
+        } else {
+            let left_temp = self.emit_materialized_value(out, left);
+            let right_temp = self.emit_materialized_value(out, right);
+            (left_temp, right_temp)
+        };
         let result_temp = self.next_temp();
         let comparison = match op {
             BinaryOp::Equal => {
@@ -40029,6 +40164,9 @@ impl ValueEmitter {
         out.push_str(" = ptn_bool(");
         out.push_str(&comparison);
         out.push_str(");\n");
+        if defer_left {
+            out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
+        }
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
         result_temp
@@ -40042,8 +40180,19 @@ impl ValueEmitter {
         right: &ValueExpr,
         line: usize,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
-        let right_temp = self.emit_materialized_value(out, right);
+        let defer_left = binary_should_defer_direct_variable_lhs(left, right);
+        let (left_temp, right_temp) = if defer_left {
+            let right_temp = self.emit_materialized_value(out, right);
+            out.push_str("    ptn_runtime_push_temporary_root(&runtime, ");
+            out.push_str(&right_temp);
+            out.push_str(");\n");
+            let left_temp = self.emit_materialized_value(out, left);
+            (left_temp, right_temp)
+        } else {
+            let left_temp = self.emit_materialized_value(out, left);
+            let right_temp = self.emit_materialized_value(out, right);
+            (left_temp, right_temp)
+        };
         let predicate = match op {
             BinaryOp::Equal => {
                 format!("ptn_compare_equal(&runtime, {left_temp}, {right_temp}, {line})")
@@ -40077,6 +40226,9 @@ impl ValueEmitter {
         out.push_str(" = ");
         out.push_str(&predicate);
         out.push_str(";\n");
+        if defer_left {
+            out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
+        }
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
         result_temp

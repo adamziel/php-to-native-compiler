@@ -38695,6 +38695,55 @@ echo $ee[0], ':', $ee[\"array entry created after f()\"][1], \"\\n\";\n",
 }
 
 #[test]
+fn compile_direct_variable_binary_operands_read_after_rhs_effects_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-variable-binary-operand-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-variable-binary-operand-order.php");
+    let output = root.join("direct-variable-binary-operand-order-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function set_a_good() { global $a; $a = 'good'; return 'good'; }\n\
+function set_x_three() { global $x; $x = 3; return 3; }\n\
+\n\
+$a = 'bad'; $b = 'good'; var_dump($a . ($a = $b));\n\
+$a = 'bad'; var_dump($a . set_a_good());\n\
+$x = 1; var_dump($x - ($x++));\n\
+$x = 1; var_dump($x - (++$x));\n\
+$x = 1; $y = 3; var_dump($x - ($x = $y));\n\
+$a = 100; $b = 200; var_dump($a + ($a = $b));\n\
+$x = 1; var_dump($x == set_x_three());\n\
+$x = 1; var_dump($x <=> set_x_three());\n\
+$arr = [100]; var_dump($arr[0] + ($arr[0] = 400));\n\
+class BinaryOperandOrderProbe { public $value = 10; public static $stat = 20; }\n\
+var_dump(BinaryOperandOrderProbe::$stat + (BinaryOperandOrderProbe::$stat = 200));\n\
+$object = new BinaryOperandOrderProbe(); var_dump($object->value + ($object->value = 200));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"goodgood\"\n",
+            "string(8) \"goodgood\"\n",
+            "int(1)\n",
+            "int(0)\n",
+            "int(0)\n",
+            "int(400)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "int(500)\n",
+            "int(220)\n",
+            "int(210)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_false_array_offset_unset_deprecates_to_native_binary() {
     let root = temp_dir("ptn-native-false-array-offset-unset-deprecates");
     fs::create_dir_all(&root).unwrap();
