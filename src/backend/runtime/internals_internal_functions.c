@@ -1,4 +1,12 @@
-    ptn_runtime_define_constant(runtime, name, value);
+    PtnConstantArrayStack ptn_constant_stack = { NULL, 0, 0 };
+    PtnValue constant_value = ptn_null();
+    if (!ptn_constant_clone_value(runtime, value, line, &ptn_constant_stack, &constant_value)) {
+        free(ptn_constant_stack.items);
+        return 0;
+    }
+    free(ptn_constant_stack.items);
+    ptn_runtime_define_constant(runtime, name, constant_value);
+    ptn_value_destroy(&constant_value);
     return 1;
 }
 
@@ -89091,6 +89099,7 @@ static int ptn_generator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "throw")
         || ptn_ascii_case_equal(method_name, "valid");
 }
 

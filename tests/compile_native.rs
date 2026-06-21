@@ -14335,6 +14335,63 @@ var_dump($leaf->valid(), $left->valid(), $right->valid());
 }
 
 #[test]
+fn compile_generator_throw_closes_current_chain_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-close");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-close.php");
+    let output = root.join("generator-throw-close-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function array_source() {
+    yield from [1, 2, 3];
+}
+function leaf_source() {
+    yield 1;
+    yield 2;
+}
+function delegated_source() {
+    yield from leaf_source();
+}
+function check($generator) {
+    var_dump($generator->current());
+    try {
+        $generator->throw(new Exception("boom"));
+    } catch (Exception $e) {
+        echo $e->getMessage(), "\n";
+    }
+    var_dump($generator->current());
+    var_dump($generator->valid());
+}
+check(array_source());
+echo "--\n";
+check(delegated_source());
+$generator = array_source();
+var_dump(method_exists($generator, "throw"));
+try {
+    $generator->throw(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nboom\nNULL\nbool(false)\n--\nint(1)\nboom\nNULL\nbool(false)\nbool(true)\nGenerator::throw(): Argument #1 ($exception) must be of type Throwable, stdClass given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_throw"));
+}
+
+#[test]
 fn compile_by_reference_generator_foreach_to_native_binary() {
     let root = temp_dir("ptn-native-generator-by-ref-foreach");
     fs::create_dir_all(&root).unwrap();

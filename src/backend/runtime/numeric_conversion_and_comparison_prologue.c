@@ -5508,6 +5508,17 @@ static PTN_UNUSED PtnValue ptn_call_method(
             }
             return ptn_generator_rewind(runtime, receiver, line);
         }
+        if (ptn_ascii_case_equal(name, "throw")) {
+            if (argc != 1) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::throw() expects exactly 1 argument"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_throw(runtime, receiver, args[0], line);
+        }
         if (ptn_ascii_case_equal(name, "valid")) {
             if (argc != 0) {
                 ptn_throw_exception(

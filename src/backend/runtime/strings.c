@@ -3071,6 +3071,109 @@ static PTN_UNUSED int ptn_reserved_constant_name(const char *name) {
     return strcmp(name, "__COMPILER_HALT_OFFSET__") == 0;
 }
 
+typedef struct {
+    PtnArray **items;
+    size_t len;
+    size_t capacity;
+} PtnConstantArrayStack;
+
+static PTN_UNUSED int ptn_constant_array_stack_contains(PtnConstantArrayStack *stack, PtnArray *array) {
+    for (size_t i = 0; i < stack->len; i++) {
+        if (stack->items[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_constant_array_stack_push(PtnConstantArrayStack *stack, PtnArray *array) {
+    if (stack->len == stack->capacity) {
+        size_t next_capacity = stack->capacity == 0 ? 8 : stack->capacity * 2;
+        if (next_capacity < stack->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **items = realloc(stack->items, next_capacity * sizeof(PtnArray *));
+        if (items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        stack->items = items;
+        stack->capacity = next_capacity;
+    }
+    stack->items[stack->len++] = array;
+}
+
+static PTN_UNUSED void ptn_constant_array_stack_pop(PtnConstantArrayStack *stack) {
+    if (stack->len != 0) {
+        stack->len--;
+    }
+}
+
+static PTN_UNUSED int ptn_constant_clone_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnConstantArrayStack *stack,
+    PtnValue *out
+);
+
+static PTN_UNUSED int ptn_constant_clone_array(
+    PtnRuntime *runtime,
+    PtnArray *source,
+    size_t line,
+    PtnConstantArrayStack *stack,
+    PtnValue *out
+) {
+    if (ptn_constant_array_stack_contains(stack, source)) {
+        ptn_throw_exception_at(
+            runtime,
+            "ValueError",
+            "define(): Argument #2 ($value) cannot be a recursive array",
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        return 0;
+    }
+
+    ptn_constant_array_stack_push(stack, source);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < source->len; i++) {
+        PtnValue cloned = ptn_null();
+        if (!ptn_constant_clone_value(runtime, source->entries[i].value, line, stack, &cloned)) {
+            ptn_value_destroy(&result);
+            ptn_constant_array_stack_pop(stack);
+            return 0;
+        }
+        ptn_array_set_entry_with_by_ref_argument_eligibility(
+            result.as.array,
+            ptn_array_key_clone(source->entries[i].key),
+            cloned,
+            source->entries[i].by_ref_argument_eligible
+        );
+    }
+    result.as.array->next_auto_key = source->next_auto_key;
+    result.as.array->current_index = source->current_index <= source->len
+        ? source->current_index
+        : source->len;
+    ptn_constant_array_stack_pop(stack);
+    *out = result;
+    return 1;
+}
+
+static PTN_UNUSED int ptn_constant_clone_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnConstantArrayStack *stack,
+    PtnValue *out
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY) {
+        return ptn_constant_clone_array(runtime, resolved.as.array, line, stack, out);
+    }
+    *out = ptn_value_deep_clone(resolved);
+    return 1;
+}
+
 static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
     PtnRuntime *runtime,
     const char *name,

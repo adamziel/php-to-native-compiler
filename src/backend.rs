@@ -16991,6 +16991,13 @@ fn emit_method_dispatch(
     out.push_str("            (void)args;\n");
     out.push_str("            return ptn_generator_rewind(runtime, resolved, line);\n");
     out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"throw\")) {\n");
+    out.push_str("            if (argc != 1) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::throw() expects exactly 1 argument\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_generator_throw(runtime, resolved, args[0], line);\n");
+    out.push_str("        }\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"valid\")) {\n");
     out.push_str("            if (argc != 0) {\n");
     out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::valid() expects exactly 0 arguments\");\n");

@@ -7572,6 +7572,90 @@ static PTN_UNUSED void ptn_generator_release_consumed_reference(PtnGenerator *ge
     entry->value = replacement;
 }
 
+static PTN_UNUSED void ptn_generator_close(PtnGenerator *generator) {
+    if (generator == NULL || generator->values == NULL) {
+        return;
+    }
+    if (generator->position < generator->values->len) {
+        ptn_generator_release_consumed_reference(generator, generator->position);
+    }
+    if (generator->delegate_sources != NULL) {
+        for (size_t i = 0; i < generator->delegate_sources->len; i++) {
+            PtnGenerator *source = ptn_generator_delegate_source(generator, i);
+            if (source != NULL) {
+                ptn_generator_close(source);
+            }
+        }
+    }
+    generator->position = generator->values->len;
+}
+
+static PTN_UNUSED const char *ptn_generator_throw_given_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->class_name != NULL) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL && value.as.exception->class_name != NULL) {
+        return value.as.exception->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PTN_UNUSED PtnValue ptn_generator_throw(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue exception,
+    size_t line
+) {
+    PtnValue resolved_exception = ptn_value_deref(exception);
+    int is_throwable = resolved_exception.type == PTN_EXCEPTION ||
+        (resolved_exception.type == PTN_OBJECT &&
+            ptn_object_is_declared_throwable(runtime, resolved_exception.as.object));
+    if (!is_throwable) {
+        const char *given = ptn_generator_throw_given_name(resolved_exception);
+        int needed = snprintf(
+            NULL,
+            0,
+            "Generator::throw(): Argument #1 ($exception) must be of type Throwable, %s given",
+            given
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Generator::throw(): Argument #1 ($exception) must be of type Throwable, %s given",
+            given
+        );
+        ptn_throw_exception_owned_message_at(
+            runtime,
+            "TypeError",
+            message,
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        return ptn_null();
+    }
+
+    PtnGenerator *generator = ptn_generator_from_value(receiver);
+    ptn_generator_close(generator);
+    PtnValue thrown = ptn_value_clone_deref(resolved_exception);
+    return ptn_throw_value(
+        runtime,
+        thrown,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line) {
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
