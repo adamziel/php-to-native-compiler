@@ -7378,6 +7378,19 @@ static void ptn_serialize_remove_object_id(PtnSerializeState *state, PtnObject *
     }
 }
 
+static void ptn_serialize_truncate_nested_ids(
+    PtnSerializeState *state,
+    size_t reference_len,
+    size_t object_len
+) {
+    if (state->reference_len > reference_len) {
+        state->reference_len = reference_len;
+    }
+    if (state->object_len > object_len) {
+        state->object_len = object_len;
+    }
+}
+
 static int ptn_serialize_append_value_with_id(
     PtnStringBuffer *buffer,
     PtnValue value,
@@ -8343,7 +8356,14 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
         ? NULL
         : (PtnSerializeState *)runtime->active_serialize_state;
     if (active_state != NULL) {
+        size_t saved_reference_len = active_state->reference_len;
+        size_t saved_object_len = active_state->object_len;
         ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
+        ptn_serialize_truncate_nested_ids(
+            active_state,
+            saved_reference_len,
+            saved_object_len
+        );
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
 
@@ -8559,6 +8579,41 @@ static int ptn_unserialize_require(PtnUnserializeState *state, size_t count) {
         return 0;
     }
     return 1;
+}
+
+static int ptn_unserialize_require_declared_payload(
+    PtnUnserializeState *state,
+    size_t count,
+    size_t fail_pos
+) {
+    if (!ptn_unserialize_has(state, count)) {
+        ptn_unserialize_fail_at(state, fail_pos);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_unserialize_class_name_is_forbidden(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+        ptn_ascii_case_equal(class_name, "Generator") ||
+        ptn_ascii_case_equal(class_name, "WeakReference") ||
+        ptn_ascii_case_equal(class_name, "WeakMap") ||
+        ptn_ascii_case_equal(class_name, "SplFileInfo") ||
+        ptn_ascii_case_equal(class_name, "SplFileObject");
+}
+
+static void ptn_unserialize_throw_forbidden_class(PtnRuntime *runtime, const char *class_name) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Unserialization of '%s' is not allowed",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
 }
 
 static size_t ptn_unserialize_remaining(PtnUnserializeState *state) {
@@ -9637,12 +9692,14 @@ static int ptn_unserialize_has_internal_custom_payload_method(PtnValue receiver)
     if (receiver.type != PTN_OBJECT) {
         return 0;
     }
-    if (ptn_internal_class_method_exists(receiver.as.object->class_name, "unserialize")) {
+    if (ptn_internal_class_exists_name(receiver.as.object->class_name) &&
+        ptn_internal_class_method_exists(receiver.as.object->class_name, "unserialize")) {
         return 1;
     }
     const char *parent = ptn_declared_class_parent_name(receiver.as.object->class_name);
     while (parent != NULL) {
-        if (ptn_internal_class_method_exists(parent, "unserialize")) {
+        if (ptn_internal_class_exists_name(parent) &&
+            ptn_internal_class_method_exists(parent, "unserialize")) {
             return 1;
         }
         parent = ptn_declared_class_parent_name(parent);
@@ -10512,10 +10569,14 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 'i': {
             int64_t integer = 0;
-            if (!ptn_unserialize_parse_int64(state, &integer) ||
-                !ptn_unserialize_consume(state, ';')) {
+            if (!ptn_unserialize_parse_int64(state, &integer)) {
                 return result;
             }
+            if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != ';') {
+                ptn_unserialize_fail_at(state, value_start);
+                return result;
+            }
+            state->pos++;
             result.value = ptn_int(integer);
             result.id = ptn_unserialize_add_slot(state, &result.value);
             return result;
@@ -10547,10 +10608,11 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 's': {
             size_t len = 0;
+            size_t len_start = state->pos;
             if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_require(state, len)) {
+                !ptn_unserialize_require_declared_payload(state, len, len_start)) {
                 return result;
             }
             const char *string = state->data + state->pos;
@@ -10597,31 +10659,19 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         case 'O': {
             size_t class_len = 0;
             size_t property_count = 0;
+            size_t class_len_start = state->pos;
             if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &class_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_require(state, class_len)) {
+                !ptn_unserialize_require_declared_payload(state, class_len, class_len_start)) {
                 return result;
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
             state->pos += class_len;
             size_t class_name_end = state->pos;
-            if (ptn_ascii_case_equal(class_name, "ReflectionReference") ||
-                ptn_ascii_case_equal(class_name, "Generator") ||
-                ptn_internal_class_name_is_weak_reference(class_name) ||
-                ptn_internal_class_name_is_weak_map(class_name)) {
-                char message[96];
-                int written = snprintf(
-                    message,
-                    sizeof(message),
-                    "Unserialization of '%s' is not allowed",
-                    class_name
-                );
-                if (written < 0 || (size_t)written >= sizeof(message)) {
-                    ptn_abort_out_of_memory();
-                }
+            if (ptn_unserialize_class_name_is_forbidden(class_name)) {
+                ptn_unserialize_throw_forbidden_class(runtime, class_name);
                 free(class_name);
-                ptn_throw_exception(runtime, "Exception", message);
                 result.value = ptn_null();
                 result.id = ptn_unserialize_add_slot(state, &result.value);
                 return result;
@@ -10729,10 +10779,11 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         case 'C': {
             size_t class_len = 0;
             size_t payload_len = 0;
+            size_t class_len_start = state->pos;
             if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &class_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_require(state, class_len)) {
+                !ptn_unserialize_require_declared_payload(state, class_len, class_len_start)) {
                 return result;
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
@@ -10746,21 +10797,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
-            if (ptn_ascii_case_equal(class_name, "Generator") ||
-                ptn_internal_class_name_is_weak_reference(class_name) ||
-                ptn_internal_class_name_is_weak_map(class_name)) {
-                char message[96];
-                int written = snprintf(
-                    message,
-                    sizeof(message),
-                    "Unserialization of '%s' is not allowed",
-                    class_name
-                );
-                if (written < 0 || (size_t)written >= sizeof(message)) {
-                    ptn_abort_out_of_memory();
-                }
+            if (ptn_unserialize_class_name_is_forbidden(class_name)) {
+                ptn_unserialize_throw_forbidden_class(runtime, class_name);
                 free(class_name);
-                ptn_throw_exception(runtime, "Exception", message);
                 result.value = ptn_null();
                 result.id = ptn_unserialize_add_slot(state, &result.value);
                 return result;
@@ -10817,7 +10856,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 runtime->method_dispatch != NULL &&
                 result.value.type == PTN_OBJECT &&
                 !ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class") &&
-                ptn_declared_class_method_exists(class_name, "unserialize")) {
+                ptn_declared_class_method_exists(result.value.as.object->class_name, "unserialize")) {
                 PtnValue payload_arg = ptn_owned_string_len(
                     ptn_duplicate_string_len(payload, payload_len),
                     payload_len

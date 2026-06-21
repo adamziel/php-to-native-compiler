@@ -11641,6 +11641,75 @@ var_dump(unserialize($encoded . 'tail'));
 }
 
 #[test]
+fn compile_serializable_clone_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-clone-payloads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-clone-payloads.php");
+    let output = root.join("serializable-clone-payloads-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public $a = array();
+
+    public function __construct() {
+        $this->a[] = new B(1);
+        $this->a[] = new B(2);
+    }
+}
+
+class B implements Serializable {
+    public $b;
+
+    public function __construct($c) {
+        $this->b = new C($c);
+    }
+
+    public function serialize() {
+        return serialize(clone $this->b);
+    }
+
+    public function unserialize($data) {
+        $this->b = unserialize($data);
+    }
+}
+
+class C {
+    public $c;
+
+    public function __construct($c) {
+        $this->c = $c;
+    }
+}
+
+$a = unserialize(serialize(new A()));
+print $a->a[0]->b->c . "\n";
+print $a->a[1]->b->c . "\n";
+echo "Done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: B implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("1\n2\nDone\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_magic_serialize_hooks_to_native_binary() {
     let root = temp_dir("ptn-native-magic-serialize-hooks");
     fs::create_dir_all(&root).unwrap();
@@ -11997,6 +12066,80 @@ var_dump(unserialize('O:8:\"00000000\":'));
         "{stdout}"
     );
     assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_declared_payload_length_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-declared-payload-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-declared-payload-offsets.php");
+    let output = root.join("unserialize-declared-payload-offsets-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize("i:823"));
+var_dump(unserialize("O:1000:\"stdClass\":0:{}"));
+var_dump(unserialize("a:2:{i:0;s:2:\"12\";i:1;s:3000:\"123"));
+var_dump(unserialize("s:3000:\"123\";"));
+var_dump(unserialize("s:3000:\"123"));
+var_dump(unserialize("s:3:\"123;"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        !stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 0 of 5 bytes in {} on line 2",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 2 of 22 bytes in {} on line 3",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 24 of 33 bytes in {} on line 4",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 2 of 13 bytes in {} on line 5",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 2 of 11 bytes in {} on line 6",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 8 of 9 bytes in {} on line 7",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 6, "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -63458,6 +63601,12 @@ try {
 }
 
 try {
+    unserialize('O:13:"SplFileObject":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
     serialize(new SensitiveParameterValue('secret'));
 } catch (Exception $e) {
     echo $e->getMessage(), "\n";
@@ -63480,6 +63629,7 @@ try {
         "Serialization of 'Generator' is not allowed\n\
 Unserialization of 'Generator' is not allowed\n\
 Unserialization of 'Generator' is not allowed\n\
+Unserialization of 'SplFileObject' is not allowed\n\
 Serialization of 'SensitiveParameterValue' is not allowed\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
