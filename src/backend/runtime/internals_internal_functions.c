@@ -105209,6 +105209,26 @@ static PTN_UNUSED PtnValue ptn_limit_iterator_new(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    int64_t offset = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    int64_t limit = argc >= 3 ? ptn_value_to_integer(args[2]) : -1;
+    if (offset < 0) {
+        ptn_value_destroy(&inner);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "LimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0"
+        );
+        return ptn_null();
+    }
+    if (limit < -1) {
+        ptn_value_destroy(&inner);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "LimitIterator::__construct(): Argument #3 ($limit) must be greater than or equal to -1"
+        );
+        return ptn_null();
+    }
 
     PtnLimitIteratorData *data = malloc(sizeof(PtnLimitIteratorData));
     if (data == NULL) {
@@ -105216,8 +105236,8 @@ static PTN_UNUSED PtnValue ptn_limit_iterator_new(
         ptn_abort_out_of_memory();
     }
     data->inner = inner;
-    data->offset = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
-    data->limit = argc >= 3 ? ptn_value_to_integer(args[2]) : -1;
+    data->offset = offset;
+    data->limit = limit;
     data->position = 0;
     data->cached_key = ptn_null();
     data->has_cached_key = 0;

@@ -770,6 +770,16 @@ try {
 } catch (OutOfBoundsException $e) {
     echo $e->getMessage(), "\n";
 }
+try {
+    new LimitIterator(new ArrayIterator([1]), -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    new LimitIterator(new ArrayIterator([1]), 0, -2);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
 
 $recursive = new RecursiveArrayIterator([1, [2, 3], 4]);
 $recursive->rewind();
@@ -824,6 +834,8 @@ var_dump($ref->implementsInterface("OuterIterator"));
             "Cannot seek to 0 which is below the offset 1\n",
             "int(30)\n",
             "Cannot seek to 3 which is behind offset 1 plus count 2\n",
+            "LimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0\n",
+            "LimitIterator::__construct(): Argument #3 ($limit) must be greater than or equal to -1\n",
             "bool(false)\n",
             "bool(true)\n",
             "r:2\n",
