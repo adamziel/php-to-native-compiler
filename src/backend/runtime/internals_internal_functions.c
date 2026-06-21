@@ -9211,6 +9211,21 @@ static void ptn_unserialize_truncate_ids(PtnUnserializeState *state, size_t len)
     state->id_len = len;
 }
 
+static void ptn_unserialize_preserve_failed_nested_ids(
+    PtnUnserializeState *state,
+    size_t saved_len
+) {
+    if (state == NULL || saved_len > state->id_len) {
+        return;
+    }
+    if (state->id_len == saved_len) {
+        (void)ptn_unserialize_add_slot(state, NULL);
+    }
+    for (size_t i = saved_len; i < state->id_len; i++) {
+        ptn_unserialize_id_entry_clear(&state->ids[i]);
+    }
+}
+
 static void ptn_unserialize_invalidate_slot(PtnUnserializeState *state, PtnValue *slot) {
     if (slot == NULL) {
         return;
@@ -11909,7 +11924,7 @@ static int ptn_unserialize_value_from_operand(
         if (caught_exception) {
             ptn_value_destroy(&parsed.value);
             ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
-            ptn_unserialize_truncate_ids(active_state, saved_id_len);
+            ptn_unserialize_preserve_failed_nested_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             ptn_rethrow_exception(runtime);
             return 0;
@@ -11937,7 +11952,7 @@ static int ptn_unserialize_value_from_operand(
             }
             ptn_value_destroy(&parsed.value);
             ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
-            ptn_unserialize_truncate_ids(active_state, saved_id_len);
+            ptn_unserialize_preserve_failed_nested_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             return 0;
         }

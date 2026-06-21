@@ -13300,11 +13300,28 @@ class obj implements Serializable {
     public function unserialize($data): void { $this->data = unserialize($data); }
 }
 
-$inner = 'a:1:{i:0;O:9:"Exception":2:{s:7:"' . "\0" . '*' . "\0" . 'file";s:0:"";}';
-$exploit = 'a:2:{i:0;C:3:"obj":' . strlen($inner) . ':{' . $inner . '}i:1;R:4;}';
+$fakezval = ptr2str(1122334455);
+$fakezval .= ptr2str(0);
+$fakezval .= "\x00\x00\x00\x00";
+$fakezval .= "\x01";
+$fakezval .= "\x00";
+$fakezval .= "\x00\x00";
+
+$inner = 'C:3:"obj":3:{rya}';
+$exploit = 'a:4:{i:0;i:1;i:1;C:3:"obj":' . strlen($inner) . ':{' . $inner . '}i:2;s:' . strlen($fakezval) . ':"' . $fakezval . '";i:3;R:5;}';
 
 var_dump(unserialize($exploit));
 echo "DONE\n";
+
+function ptr2str($ptr)
+{
+    $out = '';
+    for ($i = 0; $i < 8; $i++) {
+        $out .= chr($ptr & 0xff);
+        $ptr >>= 8;
+    }
+    return $out;
+}
 "#,
     )
     .unwrap();
@@ -13324,15 +13341,11 @@ echo "DONE\n";
         "{stdout}"
     );
     assert!(
-        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        stdout.contains("Warning: unserialize(): Error at offset 0 of 3 bytes"),
         "{stdout}"
     );
     assert!(
-        stdout.contains("Warning: unserialize(): Error at offset 49 of 50 bytes"),
-        "{stdout}"
-    );
-    assert!(
-        stdout.contains("Warning: unserialize(): Error at offset 82 of 83 bytes"),
+        stdout.contains("Warning: unserialize(): Error at offset 93 of 94 bytes"),
         "{stdout}"
     );
     assert!(stdout.ends_with("bool(false)\nDONE\n"), "{stdout}");
