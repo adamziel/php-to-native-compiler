@@ -62887,6 +62887,57 @@ var_dump($c);
 }
 
 #[test]
+fn compile_var_dump_orders_uninitialized_declared_properties_before_dynamic_to_native_binary() {
+    let root = temp_dir("ptn-native-uninitialized-declared-dynamic-var-dump-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uninitialized-declared-dynamic-var-dump-order.php");
+    let output = root.join("uninitialized-declared-dynamic-var-dump-order-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class DumpOrder {
+    public int $a;
+    public $b;
+}
+
+$object = new DumpOrder();
+$object->dyn = 1;
+var_dump($object);
+var_dump(unserialize(serialize($object)));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(DumpOrder)#1 (2) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "  [\"b\"]=>\n",
+            "  NULL\n",
+            "  [\"dyn\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "object(DumpOrder)#2 (2) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "  [\"b\"]=>\n",
+            "  NULL\n",
+            "  [\"dyn\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_asymmetric_property_indirect_write_and_unset_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-asymmetric-property-indirect-unset");
     fs::create_dir_all(&root).unwrap();

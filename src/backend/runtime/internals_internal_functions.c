@@ -1595,6 +1595,21 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_uninitialized_properties
     }
 }
 
+static PTN_UNUSED void ptn_direct_value_var_dump_object_uninitialized_metadata(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t indent
+) {
+    const char *type_name = ptn_property_metadata_uninitialized_type_name(metadata);
+    if (type_name == NULL) {
+        return;
+    }
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+    ptn_direct_dump_printf(runtime, "uninitialized(%s)\n", type_name);
+}
+
 static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
@@ -1979,15 +1994,16 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
                 continue;
             }
             PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry == NULL) {
+            if (entry != NULL &&
+                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+                ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
                 continue;
             }
-            if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-                continue;
+            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                ptn_direct_value_var_dump_object_uninitialized_metadata(runtime, metadata, indent);
             }
-            ptn_direct_value_var_dump_indent(runtime, indent + 1);
-            ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
-            ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
         }
         for (size_t i = 0; i < object->properties->len; i++) {
             PtnArrayEntry *entry = &object->properties->entries[i];
@@ -2011,15 +2027,16 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
                 continue;
             }
             PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry == NULL) {
+            if (entry != NULL &&
+                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+                ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
                 continue;
             }
-            if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-                continue;
+            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                ptn_direct_value_var_dump_object_uninitialized_metadata(runtime, metadata, indent);
             }
-            ptn_direct_value_var_dump_indent(runtime, indent + 1);
-            ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
-            ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
         }
     }
     if (ptn_object_is_xml_reader_instance(object)) {
@@ -2174,7 +2191,6 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             if (!ptn_direct_value_var_dump_object_proxy_instance(runtime, object, indent, seen)) {
                 ptn_direct_value_var_dump_object_initialized_properties(runtime, object, indent, seen);
             }
-            ptn_direct_value_var_dump_object_uninitialized_properties(runtime, object, indent);
             ptn_direct_value_dump_seen_object_pop(seen);
             ptn_direct_value_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
@@ -5609,7 +5625,7 @@ static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
         ptn_dom_var_dump_virtual_property_count(object);
 }
 
-static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size_t indent) {
+static PTN_UNUSED void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size_t indent) {
     if (object != NULL &&
         object->lazy_is_proxy &&
         !object->lazy_uninitialized &&
@@ -5630,6 +5646,20 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
         }
         printf("uninitialized(%s)\n", type_name);
     }
+}
+
+static void ptn_var_dump_object_uninitialized_metadata(
+    const PtnObjectPropertyMetadata *metadata,
+    size_t indent
+) {
+    const char *type_name = ptn_property_metadata_uninitialized_type_name(metadata);
+    if (type_name == NULL) {
+        return;
+    }
+    ptn_var_dump_indent(indent + 1);
+    ptn_var_dump_object_property_metadata_key(metadata);
+    ptn_var_dump_indent(indent + 1);
+    printf("uninitialized(%s)\n", type_name);
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
@@ -5742,15 +5772,16 @@ static void ptn_var_dump_object_initialized_properties(
                 continue;
             }
             PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry == NULL) {
+            if (entry != NULL &&
+                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                ptn_var_dump_indent(indent + 1);
+                ptn_var_dump_object_property_metadata_key(metadata);
+                ptn_var_dump_value_indented(entry->value, indent + 1, seen);
                 continue;
             }
-            if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-                continue;
+            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                ptn_var_dump_object_uninitialized_metadata(metadata, indent);
             }
-            ptn_var_dump_indent(indent + 1);
-            ptn_var_dump_object_property_metadata_key(metadata);
-            ptn_var_dump_value_indented(entry->value, indent + 1, seen);
         }
         for (size_t i = 0; i < object->properties->len; i++) {
             PtnArrayEntry *entry = &object->properties->entries[i];
@@ -5773,15 +5804,16 @@ static void ptn_var_dump_object_initialized_properties(
                 continue;
             }
             PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry == NULL) {
+            if (entry != NULL &&
+                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                ptn_var_dump_indent(indent + 1);
+                ptn_var_dump_object_property_metadata_key(metadata);
+                ptn_var_dump_value_indented(entry->value, indent + 1, seen);
                 continue;
             }
-            if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-                continue;
+            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                ptn_var_dump_object_uninitialized_metadata(metadata, indent);
             }
-            ptn_var_dump_indent(indent + 1);
-            ptn_var_dump_object_property_metadata_key(metadata);
-            ptn_var_dump_value_indented(entry->value, indent + 1, seen);
         }
     }
     if (!ptn_object_is_xml_reader_instance(object)) {
@@ -5842,15 +5874,16 @@ static void ptn_debug_zval_dump_object_initialized_properties(
             continue;
         }
         PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-        if (entry == NULL) {
+        if (entry != NULL &&
+            !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+            ptn_var_dump_indent(indent + 1);
+            ptn_var_dump_object_property_metadata_key(metadata);
+            ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
             continue;
         }
-        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-            continue;
+        if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+            ptn_var_dump_object_uninitialized_metadata(metadata, indent);
         }
-        ptn_var_dump_indent(indent + 1);
-        ptn_var_dump_object_property_metadata_key(metadata);
-        ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
     }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
@@ -5873,15 +5906,16 @@ static void ptn_debug_zval_dump_object_initialized_properties(
             continue;
         }
         PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-        if (entry == NULL) {
+        if (entry != NULL &&
+            !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+            ptn_var_dump_indent(indent + 1);
+            ptn_var_dump_object_property_metadata_key(metadata);
+            ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
             continue;
         }
-        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
-            continue;
+        if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+            ptn_var_dump_object_uninitialized_metadata(metadata, indent);
         }
-        ptn_var_dump_indent(indent + 1);
-        ptn_var_dump_object_property_metadata_key(metadata);
-        ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
     }
     if (!ptn_object_is_xml_reader_instance(object)) {
         return;
@@ -6614,7 +6648,6 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             if (!ptn_var_dump_object_proxy_instance(object, indent, seen, 0)) {
                 ptn_var_dump_object_initialized_properties(object, indent, seen);
             }
-            ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
@@ -6781,7 +6814,6 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             if (!ptn_var_dump_object_proxy_instance(object, indent, seen, 1)) {
                 ptn_debug_zval_dump_object_initialized_properties(object, indent, seen);
             }
-            ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
