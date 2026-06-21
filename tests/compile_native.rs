@@ -53466,7 +53466,7 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "Non-static method StaticCallableProbe::instance() cannot be called statically\n",
-            "Non-static method MagicStaticCallableProbe::missing() cannot be called statically\n",
+            "Call to undefined method MagicStaticCallableProbe::missing()\n",
             "Class \"MissingCallableProbe\" not found\n",
             "Array callback has to contain indices 0 and 1\n",
         )
@@ -62905,6 +62905,62 @@ done\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source
         .contains("The magic method MagicVisibility::__unset() must have public visibility"));
+}
+
+#[test]
+fn compile_non_public_invoke_magic_callable_ignores_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-non-public-invoke-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-public-invoke-callable.php");
+    let output = root.join("non-public-invoke-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bar {
+    private function __invoke() {
+        return __CLASS__;
+    }
+}
+
+$b = new Bar;
+echo $b(), \"\\n\";
+
+try {
+    echo $b->__invoke();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+class ParentInvoke {
+    protected function __invoke() {
+        return __CLASS__;
+    }
+}
+class ChildInvoke extends ParentInvoke {}
+
+echo (new ChildInvoke)(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The magic method Bar::__invoke() must have public visibility in {} on line 3\n\
+\n\
+Warning: The magic method ParentInvoke::__invoke() must have public visibility in {} on line 18\n\
+Bar\n\
+Call to private method Bar::__invoke() from global scope\n\
+ParentInvoke\n",
+            input.display(),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

@@ -5425,19 +5425,6 @@ fn emit_user_function_dispatch(
     out.push_str("            *found = 1;\n");
     out.push_str("            return ptn_static_magic_result;\n");
     out.push_str("        }\n");
-    out.push_str(
-        "        if (ptn_declared_class_has_call_magic(ptn_static_magic_resolved_class)) {\n",
-    );
-    out.push_str("            char ptn_nonstatic_magic_message[512];\n");
-    out.push_str("            int ptn_nonstatic_magic_written = snprintf(ptn_nonstatic_magic_message, sizeof(ptn_nonstatic_magic_message), \"Non-static method %s::%s() cannot be called statically\", ptn_static_magic_class, ptn_static_magic_method);\n");
-    out.push_str("            if (ptn_nonstatic_magic_written < 0 || (size_t)ptn_nonstatic_magic_written >= sizeof(ptn_nonstatic_magic_message)) {\n");
-    out.push_str("                ptn_abort_out_of_memory();\n");
-    out.push_str("            }\n");
-    out.push_str("            free(ptn_static_magic_name);\n");
-    out.push_str("            *found = 1;\n");
-    out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_magic_message, runtime->source_path, line);\n");
-    out.push_str("            return ptn_null();\n");
-    out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    free(ptn_static_magic_name);\n");
     out.push_str("    *found = 0;\n");
@@ -16301,10 +16288,10 @@ fn class_magic_invoke_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<&'a crate::ir::MethodDecl> {
-    class_public_method_lookup_chain(class, classes)
+    class_method_lookup_chain(class, classes)
         .into_iter()
-        .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__invoke"))
-        .map(|method| method.method)
+        .find(|entry| !entry.method.is_static && entry.method.name.eq_ignore_ascii_case("__invoke"))
+        .map(|entry| entry.method)
 }
 
 fn class_magic_isset_method<'a>(
@@ -18268,6 +18255,38 @@ fn emit_callable_dispatch(
     out.push_str("    return fallback;\n");
     out.push_str("}\n");
 
+    if needs_method_dispatch {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_call_declared_invoke_magic(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {\n",
+        );
+        out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+        out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+        out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+        out.push_str("    (void)class_name;\n");
+        for class in classes {
+            let Some(invoke_method) = class_magic_invoke_method(class, classes) else {
+                continue;
+            };
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+            out.push_str("        runtime->called_class_name_override = class_name;\n");
+            out.push_str("        PtnValue ptn_invoke_result = ");
+            out.push_str(&user_function_c_name(invoke_method.function_index));
+            out.push_str("(runtime, resolved, argc, args, line);\n");
+            out.push_str(
+                "        runtime->called_class_name_override = ptn_previous_called_class;\n",
+            );
+            out.push_str("        return ptn_invoke_result;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
+        out.push_str("}\n");
+    }
+
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func) {\n",
     );
@@ -18447,7 +18466,9 @@ fn emit_callable_dispatch(
         out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_OBJECT && ptn_declared_class_has_invoke_magic(resolved.as.object->class_name)) {\n");
-        out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
+        out.push_str(
+            "        return ptn_call_declared_invoke_magic(runtime, resolved, argc, args, line);\n",
+        );
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_OBJECT || resolved.type == PTN_EXCEPTION) {\n");
         out.push_str("        const char *ptn_not_callable_class = resolved.type == PTN_OBJECT ? resolved.as.object->class_name : resolved.as.exception->class_name;\n");
@@ -22835,6 +22856,7 @@ fn magic_method_requires_public_visibility(name: &str) -> bool {
             | "__serialize"
             | "__unserialize"
             | "__tostring"
+            | "__invoke"
             | "__set_state"
             | "__debuginfo"
     )
