@@ -27809,6 +27809,42 @@ var_dump((new ReflectionConstant(\"\\\\REFLECT_OK_CONST\"))->getName());
 }
 
 #[test]
+fn compile_reflection_constant_construct_reinitializes_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-constant-construct-reinitializes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-constant-construct-reinitializes.php");
+    let output = root.join("reflection-constant-construct-reinitializes-bin");
+    fs::write(
+        &input,
+        "<?php
+const REFLECT_REINIT_A = 1;
+const REFLECT_REINIT_B = 2;
+
+$reflection = new ReflectionConstant('REFLECT_REINIT_A');
+var_dump($reflection->getName());
+$reflection->__construct('REFLECT_REINIT_B');
+var_dump($reflection->getName());
+var_dump(method_exists('ReflectionConstant', '__construct'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(16) \"REFLECT_REINIT_A\"\n",
+            "string(16) \"REFLECT_REINIT_B\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_parameter_type_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-parameter-type-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -28664,6 +28700,70 @@ var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_constants"));
     assert!(c_source.contains("ptn_reflection_class_constant_call_method"));
+}
+
+#[test]
+fn compile_reflection_class_name_arguments_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-name-argument-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-name-argument-type-errors.php");
+    let output = root.join("reflection-class-name-argument-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+class RefNameBox {
+    public const VALUE = 1;
+    public $prop = 1;
+    public function run() {}
+}
+
+$rc = new ReflectionClass(RefNameBox::class);
+$bad = [[1], new RefNameBox()];
+
+foreach ($bad as $arg) {
+    try { $rc->getMethod($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+foreach ($bad as $arg) {
+    try { $rc->hasMethod($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+foreach ($bad as $arg) {
+    try { $rc->hasProperty($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+foreach ($bad as $arg) {
+    try { $rc->getConstant($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+foreach ($bad as $arg) {
+    try { $rc->getReflectionConstant($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+foreach ($bad as $arg) {
+    try { $rc->hasConstant($arg); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ReflectionClass::getMethod(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::getMethod(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+            "ReflectionClass::hasMethod(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::hasMethod(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+            "ReflectionClass::hasProperty(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::hasProperty(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+            "ReflectionClass::getConstant(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::getConstant(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+            "ReflectionClass::getReflectionConstant(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::getReflectionConstant(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+            "ReflectionClass::hasConstant(): Argument #1 ($name) must be of type string, array given\n",
+            "ReflectionClass::hasConstant(): Argument #1 ($name) must be of type string, RefNameBox given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -32655,6 +32755,40 @@ fn compile_getrandmax_registry_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mt_rand_aliases_to_native_binary() {
+    let root = temp_dir("ptn-native-mt-rand-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mt-rand-aliases.php");
+    let output = root.join("mt-rand-aliases-bin");
+    fs::write(
+        &input,
+        "<?php
+mt_srand(123);
+var_dump(function_exists(\"mt_rand\"), function_exists(\"MT_GETRANDMAX\"), function_exists(\"mt_srand\"));
+var_dump(mt_getrandmax());
+var_dump(mt_rand(1, 1));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(2147483647)\n",
+            "int(1)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
