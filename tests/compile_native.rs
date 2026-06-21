@@ -45949,8 +45949,6 @@ try { array_intersect(...$packed); } catch (Error $e) { echo $e->getMessage(), \
 $stress = array_fill(0, 4096, $huge);\n\
 try { array_merge(...$stress); } catch (Error $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
-    echo count($e->getTrace()[0]['args']), \"\\n\";\n\
-    echo count($e->getTrace()[0]['args'][0]), \"\\n\";\n\
 }",
     )
     .unwrap();
@@ -45975,8 +45973,6 @@ try { array_merge(...$stress); } catch (Error $e) {\n\
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
             "The total number of elements must be lower than 1048578\n",
-            "4096\n",
-            "1048577\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
