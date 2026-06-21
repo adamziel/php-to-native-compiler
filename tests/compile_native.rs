@@ -835,15 +835,24 @@ class B {\n\
 class C { protected function __construct() {} }\n\
 class D { private function __construct() {} }\n\
 class E {}\n\
+class ArrayChild extends ArrayObject {\n\
+    public function __construct() {\n\
+        echo \"ArrayChild constructor should not run\\n\";\n\
+        parent::__construct([\"ctor\"]);\n\
+    }\n\
+}\n\
 \n\
 $rcB = new ReflectionClass(\"B\");\n\
 $rcC = new ReflectionClass(\"C\");\n\
 $rcD = new ReflectionClass(\"D\");\n\
 $rcE = new ReflectionClass(\"E\");\n\
 $rcStd = new ReflectionClass(\"stdClass\");\n\
+$rcDateTime = new ReflectionClass(\"DateTime\");\n\
+$rcArrayChild = new ReflectionClass(\"ArrayChild\");\n\
 \n\
 try { $rcB->newInstance(); } catch (Throwable $e) { echo \"B0:\" . $e->getMessage() . \"\\n\"; }\n\
 try { $rcB->newInstanceArgs(); } catch (Throwable $e) { echo \"Bargs0:\" . $e->getMessage() . \"\\n\"; }\n\
+try { $rcB->newInstanceArgs(\"x\"); } catch (Throwable $e) { echo \"BargsScalar:\" . get_class($e) . \":\" . $e->getMessage() . \"\\n\"; }\n\
 var_dump($rcB->newInstance(\"x\", 123) instanceof B);\n\
 var_dump($rcB->newInstanceArgs([\"y\", 456]) instanceof B);\n\
 try { $rcC->newInstance(); } catch (Exception $e) { echo \"C:\" . $e->getMessage() . \"\\n\"; }\n\
@@ -852,7 +861,14 @@ var_dump($rcE->newInstance() instanceof E);\n\
 try { $rcE->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"Eargs:\" . $e->getMessage() . \"\\n\"; }\n\
 var_dump($rcStd->newInstance() instanceof stdClass);\n\
 var_dump($rcStd->newInstanceWithoutConstructor() instanceof stdClass);\n\
-try { $rcStd->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"StdArgs:\" . $e->getMessage() . \"\\n\"; }\n",
+try { $rcStd->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"StdArgs:\" . $e->getMessage() . \"\\n\"; }\n\
+var_dump($rcDateTime->newInstanceWithoutConstructor() instanceof DateTime);\n\
+echo get_class($rcDateTime->newInstanceWithoutConstructor()), \"\\n\";\n\
+$arrayChild = $rcArrayChild->newInstanceWithoutConstructor();\n\
+var_dump($arrayChild instanceof ArrayChild);\n\
+var_dump($arrayChild instanceof ArrayObject);\n\
+var_dump($arrayChild->getArrayCopy());\n\
+try { (new ReflectionClass(\"Generator\"))->newInstanceWithoutConstructor(); } catch (ReflectionException $e) { echo \"Generator:\" . $e->getMessage() . \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -863,6 +879,7 @@ try { $rcStd->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"StdArgs:
     let expected =
         "B0:Too few arguments to function B::__construct(), 0 passed and exactly 2 expected\n\
 Bargs0:Too few arguments to function B::__construct(), 0 passed and exactly 2 expected\n\
+BargsScalar:TypeError:ReflectionClass::newInstanceArgs(): Argument #1 ($args) must be of type array, string given\n\
 In constructor of class B with args x, 123\n\
 bool(true)\n\
 In constructor of class B with args y, 456\n\
@@ -873,7 +890,14 @@ bool(true)\n\
 Eargs:Class E does not have a constructor, so you cannot pass any constructor arguments\n\
 bool(true)\n\
 bool(true)\n\
-StdArgs:Class stdClass does not have a constructor, so you cannot pass any constructor arguments\n";
+StdArgs:Class stdClass does not have a constructor, so you cannot pass any constructor arguments\n\
+bool(true)\n\
+DateTime\n\
+bool(true)\n\
+bool(true)\n\
+array(0) {\n\
+}\n\
+Generator:Class Generator is an internal class marked as final that cannot be instantiated without invoking its constructor\n";
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -27760,6 +27784,57 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
     assert!(c_source.contains("ptn_declared_class_reflection_method_prototype"));
     assert!(c_source.contains("ptn_internal_reflection_method_create_from_method_name"));
     assert!(c_source.contains("ptn_declared_trait_exists"));
+}
+
+#[test]
+fn compile_reflection_method_class_scoped_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-scoped-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-method-scoped-defaults.php");
+    let output = root.join("reflection-method-scoped-defaults-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class F {
+    public function bar($x = self::class) {}
+}
+
+trait T {
+    public function bar($x = self::class) {}
+}
+
+class B {
+    use T;
+}
+
+$cases = [
+    [F::class, 'Parameter #0 [ <optional> $x = \'F\' ]'],
+    [T::class, 'Parameter #0 [ <optional> $x = self::class ]'],
+    [B::class, 'Parameter #0 [ <optional> $x = self::class ]'],
+];
+
+foreach ($cases as [$className, $needle]) {
+    $method = new ReflectionMethod($className, 'bar');
+    echo $className, str_contains((string) $method, $needle) ? ":string\n" : ":missing\n";
+}
+
+foreach ([F::class, B::class] as $className) {
+    $method = new ReflectionMethod($className, 'bar');
+    echo $className, ":", $method->getParameters()[0]->getDefaultValue(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("F:string\n", "T:string\n", "B:string\n", "F:F\n", "B:B\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

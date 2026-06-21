@@ -14839,7 +14839,18 @@ fn reflection_trait_method_to_string(
     out.push_str(&method.line.to_string());
     out.push_str(" - ");
     out.push_str(&method.line.to_string());
-    out.push_str("\n}\n");
+    out.push('\n');
+    if !method.parameters.is_empty() {
+        out.push('\n');
+        reflection_parameters_to_string_with_indent(
+            &mut out,
+            &method.parameters,
+            required_parameter_count(&method.parameters),
+            "  ",
+            "    ",
+        );
+    }
+    out.push_str("}\n");
     out
 }
 

@@ -3735,6 +3735,7 @@ static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const cha
 static const char *ptn_runtime_unserialize_callback_func(PtnRuntime *runtime);
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal);
 static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent);
+static PTN_UNUSED PtnValue ptn_array_object_new_uninitialized(PtnRuntime *runtime);
 
 static char *ptn_format_missing_class_callback_reason(const char *class_name) {
     int needed = snprintf(NULL, 0, "class \"%s\" not found", class_name);
@@ -94671,6 +94672,7 @@ static PtnValue ptn_reflection_class_source_location_value(
 static int ptn_reflection_class_collect_new_instance_args(
     PtnRuntime *runtime,
     PtnValue arg,
+    size_t line,
     PtnCallArguments *arguments_out
 ) {
     PtnValue resolved = ptn_value_deref(arg);
@@ -94685,7 +94687,18 @@ static int ptn_reflection_class_collect_new_instance_args(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "TypeError", message);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "TypeError",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            "ReflectionClass->newInstanceArgs",
+            runtime->source_path,
+            line,
+            1,
+            &arg
+        );
         return 0;
     }
     ptn_call_arguments_reserve(arguments_out, resolved.as.array->len);
@@ -101518,7 +101531,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         PtnCallArguments ctor_args;
         ptn_call_arguments_init(&ctor_args);
         if (argc == 1) {
-            if (!ptn_reflection_class_collect_new_instance_args(runtime, args[0], &ctor_args)) {
+            if (!ptn_reflection_class_collect_new_instance_args(runtime, args[0], line, &ctor_args)) {
                 return ptn_null();
             }
         }
@@ -101554,11 +101567,35 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             ptn_throw_exception(runtime, "ReflectionException", message);
             return ptn_null();
         }
+        if (ptn_ascii_case_equal(class_name, "Generator")) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Class Generator is an internal class marked as final that cannot be instantiated without invoking its constructor"
+            );
+            return ptn_null();
+        }
         if (ptn_declared_class_exists(class_name) && runtime->new_instance_without_constructor != NULL) {
-            return runtime->new_instance_without_constructor(runtime, class_name, line);
+            PtnValue instance = runtime->new_instance_without_constructor(runtime, class_name, line);
+            if (runtime->exceptions->active_exception != NULL || ptn_value_deref(instance).type != PTN_OBJECT) {
+                return instance;
+            }
+            if (ptn_declared_class_is_same_or_descendant(class_name, "ArrayObject")) {
+                PtnValue parent = ptn_array_object_new_uninitialized(runtime);
+                ptn_adopt_internal_parent_object_state(instance, parent);
+                ptn_value_destroy(&parent);
+            }
+            return instance;
         }
         if (ptn_internal_class_name_is_stdclass_name(class_name)) {
             return ptn_object_new_shell(runtime, "stdClass");
+        }
+        if (ptn_ascii_case_equal(class_name, "DateTime") ||
+            ptn_internal_class_name_is_datetime_immutable(class_name)) {
+            return ptn_object_new_shell(runtime, class_name);
+        }
+        if (ptn_internal_class_name_is_array_object(class_name)) {
+            return ptn_array_object_new_uninitialized(runtime);
         }
         if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
             return ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
@@ -114798,11 +114835,48 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         const char *constant_name =
             ptn_function_metadata_parameter_default_constant_name(metadata, index);
         if (constant_name != NULL) {
+            if (ptn_ascii_case_equal(constant_name, "self::class")) {
+                char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+                if (scope_class_name != NULL) {
+                    return ptn_owned_string(scope_class_name);
+                }
+            }
+            if (ptn_ascii_case_equal(constant_name, "parent::class")) {
+                char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+                if (scope_class_name != NULL) {
+                    const char *parent_name = ptn_declared_class_parent_name(scope_class_name);
+                    if (parent_name != NULL) {
+                        PtnValue value = ptn_owned_string(ptn_duplicate_string(parent_name));
+                        free(scope_class_name);
+                        return value;
+                    }
+                    free(scope_class_name);
+                }
+            }
             return ptn_read_constant(runtime, constant_name, runtime->source_path, line);
+        }
+        const char *display = ptn_function_metadata_parameter_default_display(metadata, index);
+        if (display != NULL && ptn_ascii_case_equal(display, "self::class")) {
+            char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+            if (scope_class_name != NULL) {
+                return ptn_owned_string(scope_class_name);
+            }
+        }
+        if (display != NULL && ptn_ascii_case_equal(display, "parent::class")) {
+            char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+            if (scope_class_name != NULL) {
+                const char *parent_name = ptn_declared_class_parent_name(scope_class_name);
+                if (parent_name != NULL) {
+                    PtnValue value = ptn_owned_string(ptn_duplicate_string(parent_name));
+                    free(scope_class_name);
+                    return value;
+                }
+                free(scope_class_name);
+            }
         }
         return ptn_reflection_parameter_default_value_from_display(
             runtime,
-            ptn_function_metadata_parameter_default_display(metadata, index),
+            display,
             line
         );
     }

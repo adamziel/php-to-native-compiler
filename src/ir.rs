@@ -154,6 +154,7 @@ pub struct TraitMethodDecl {
     pub attributes: AttributeMetadata,
     pub is_static: bool,
     pub is_abstract: bool,
+    pub parameters: Vec<FunctionParameter>,
     pub line: usize,
 }
 
@@ -1926,7 +1927,18 @@ impl<'a> LoweringContext<'a> {
                     .parameters
                     .iter()
                     .map(|parameter| {
-                        self.lower_parameter_for_class_scope(parameter, &class.name, parent_name)
+                        let mut lowered = self.lower_parameter_for_class_scope(
+                            parameter,
+                            &class.name,
+                            parent_name,
+                        );
+                        if method.trait_name.is_some() {
+                            lowered.default_value = parameter
+                                .default_value
+                                .as_ref()
+                                .map(|value| self.lower_expr(value));
+                        }
+                        lowered
                     })
                     .collect();
                 let deprecated_metadata = self.function_deprecated_metadata(
@@ -2415,6 +2427,9 @@ impl<'a> LoweringContext<'a> {
             current_class,
             current_parent,
         );
+        lowered.default_value = lowered.default_value.map(|value| {
+            resolve_class_scoped_parameter_default(value, current_class, current_parent)
+        });
         lowered
     }
 
@@ -2601,10 +2616,96 @@ impl<'a> LoweringContext<'a> {
                     attributes: self.annotate_attribute_metadata(&method.attributes),
                     is_static: method.is_static,
                     is_abstract: method.is_abstract,
+                    parameters: method
+                        .parameters
+                        .iter()
+                        .map(|parameter| self.lower_parameter(parameter))
+                        .collect(),
                     line: method.span.line,
                 })
                 .collect(),
         }
+    }
+}
+
+fn resolve_class_scoped_parameter_default(
+    value: ValueExpr,
+    current_class: &str,
+    current_parent: Option<&str>,
+) -> ValueExpr {
+    match value {
+        ValueExpr::ClassConstantFetch {
+            class_name,
+            name,
+            line,
+        } if name.eq_ignore_ascii_case("class") && class_name.eq_ignore_ascii_case("self") => {
+            let _ = line;
+            ValueExpr::String(current_class.to_string())
+        }
+        ValueExpr::ClassConstantFetch {
+            class_name,
+            name,
+            line,
+        } if name.eq_ignore_ascii_case("class") && class_name.eq_ignore_ascii_case("parent") => {
+            let _ = line;
+            current_parent
+                .map(|parent| ValueExpr::String(parent.to_string()))
+                .unwrap_or(ValueExpr::ClassConstantFetch {
+                    class_name,
+                    name,
+                    line,
+                })
+        }
+        ValueExpr::Array(elements) => ValueExpr::Array(
+            elements
+                .into_iter()
+                .map(|element| ArrayElement {
+                    key: element.key.map(|key| {
+                        resolve_class_scoped_parameter_default(key, current_class, current_parent)
+                    }),
+                    value: match element.value {
+                        ArrayElementValue::Value(value) => {
+                            ArrayElementValue::Value(resolve_class_scoped_parameter_default(
+                                value,
+                                current_class,
+                                current_parent,
+                            ))
+                        }
+                        ArrayElementValue::Reference(target) => {
+                            ArrayElementValue::Reference(target)
+                        }
+                        ArrayElementValue::Unpack { value, line } => ArrayElementValue::Unpack {
+                            value: resolve_class_scoped_parameter_default(
+                                value,
+                                current_class,
+                                current_parent,
+                            ),
+                            line,
+                        },
+                    },
+                    line: element.line,
+                })
+                .collect(),
+        ),
+        ValueExpr::NewObject {
+            class_name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            line,
+        } => ValueExpr::NewObject {
+            class_name,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| {
+                    resolve_class_scoped_parameter_default(argument, current_class, current_parent)
+                })
+                .collect(),
+            argument_names,
+            argument_unpacks,
+            line,
+        },
+        other => other,
     }
 }
 
