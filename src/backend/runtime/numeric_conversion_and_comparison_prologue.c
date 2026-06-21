@@ -5651,8 +5651,11 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_object_is_internal_or_descendant(receiver, "SplDoublyLinkedList")
-        && ptn_internal_class_method_exists("SplDoublyLinkedList", name)
+        && (ptn_object_is_internal_or_descendant(receiver, "SplDoublyLinkedList") ||
+            ptn_object_is_internal_or_descendant(receiver, "SplQueue") ||
+            ptn_object_is_internal_or_descendant(receiver, "SplStack"))
+        && (ptn_internal_class_method_exists("SplDoublyLinkedList", name) ||
+            ptn_internal_class_method_exists("SplQueue", name))
     ) {
         return ptn_spl_doubly_linked_list_call_method(runtime, receiver, name, argc, args, line);
     }

@@ -4771,6 +4771,14 @@ typedef struct {
     int64_t flags;
 } PtnSplDoublyLinkedListData;
 
+static void ptn_spl_doubly_linked_list_data_free(void *data);
+static void ptn_spl_dllist_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplDoublyLinkedListData *data,
+    size_t line
+);
+
 typedef struct {
     char *path;
     char *file_class;
@@ -4850,6 +4858,24 @@ static int ptn_object_metadata_is_spl_array_backed_storage(const PtnObjectProper
         (ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") ||
          ptn_ascii_case_equal(metadata->declaring_class, "ArrayIterator")) &&
         strcmp(metadata->display_name, "storage") == 0;
+}
+
+static int ptn_class_name_is_spl_dllist_family(const char *class_name) {
+    return class_name != NULL &&
+        (ptn_ascii_case_equal(class_name, "SplDoublyLinkedList") ||
+         ptn_ascii_case_equal(class_name, "SplQueue") ||
+         ptn_ascii_case_equal(class_name, "SplStack") ||
+         ptn_declared_class_is_same_or_descendant(class_name, "SplDoublyLinkedList") ||
+         ptn_declared_class_is_same_or_descendant(class_name, "SplQueue") ||
+         ptn_declared_class_is_same_or_descendant(class_name, "SplStack"));
+}
+
+static int ptn_object_metadata_is_spl_dllist_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        ptn_ascii_case_equal(metadata->declaring_class, "SplDoublyLinkedList") &&
+        (strcmp(metadata->display_name, "flags") == 0 ||
+         strcmp(metadata->display_name, "dllist") == 0);
 }
 
 static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
@@ -6847,6 +6873,76 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_string_buffer_append_char(buffer, '}');
 }
 
+static int ptn_serialize_object_is_spl_dllist(PtnObject *object) {
+    return object != NULL && ptn_class_name_is_spl_dllist_family(object->class_name);
+}
+
+static PtnValue ptn_serialize_spl_dllist_storage_value(PtnObject *object) {
+    if (object != NULL && object->native_data != NULL) {
+        PtnSplDoublyLinkedListData *data = (PtnSplDoublyLinkedListData *)object->native_data;
+        return ptn_value_clone_deref(data->storage);
+    }
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static int64_t ptn_serialize_spl_dllist_flags(PtnObject *object) {
+    if (object != NULL && object->native_data != NULL) {
+        PtnSplDoublyLinkedListData *data = (PtnSplDoublyLinkedListData *)object->native_data;
+        return data->flags;
+    }
+    if (object != NULL && ptn_ascii_case_equal(object->class_name, "SplStack")) {
+        return 6;
+    }
+    if (object != NULL && ptn_ascii_case_equal(object->class_name, "SplQueue")) {
+        return 4;
+    }
+    return 0;
+}
+
+static PtnValue ptn_serialize_spl_dllist_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_dllist_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
+static void ptn_serialize_append_spl_dllist_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":3:{i:0;i:%lld;i:1;",
+        strlen(object->class_name),
+        object->class_name,
+        (long long)ptn_serialize_spl_dllist_flags(object)
+    );
+    PtnValue storage = ptn_serialize_spl_dllist_storage_value(object);
+    ptn_serialize_append_value_with_id(buffer, storage, state, 0);
+    ptn_value_destroy(&storage);
+    ptn_string_buffer_append(buffer, "i:2;");
+    PtnValue properties = ptn_serialize_spl_dllist_properties_value(object);
+    ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_value_destroy(&properties);
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
 static int ptn_serialize_object_is_spl_object_storage(PtnObject *object) {
     return object != NULL && ptn_declared_class_is_same_or_descendant(object->class_name, "SplObjectStorage");
 }
@@ -6937,6 +7033,7 @@ static int ptn_serialize_append_serializable_object(
     *handled = 0;
     if (state->runtime == NULL ||
         state->runtime->method_dispatch == NULL ||
+        ptn_serialize_object_is_spl_dllist(object) ||
         !ptn_declared_class_implements_interface(object->class_name, "Serializable")) {
         return 0;
     }
@@ -7319,6 +7416,10 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
+        return 1;
+    }
+    if (ptn_serialize_object_is_spl_dllist(object)) {
+        ptn_serialize_append_spl_dllist_object(buffer, object, state);
         return 1;
     }
     if (ptn_serialize_object_is_spl_object_storage(object)) {
@@ -8927,6 +9028,15 @@ static PtnArrayKey ptn_unserialize_object_property_key(PtnObject *object, PtnArr
     return ptn_array_string_key(buffer);
 }
 
+static int ptn_unserialize_key_is_spl_dllist_payload_slot(PtnObject *object, PtnArrayKey key) {
+    return object != NULL &&
+        ptn_class_name_is_spl_dllist_family(object->class_name) &&
+        key.type == PTN_ARRAY_KEY_STRING &&
+        key.string_len == 1 &&
+        key.as.string[0] >= '0' &&
+        key.as.string[0] <= '2';
+}
+
 static int ptn_unserialize_property_type_coerce_assignment(
     PtnRuntime *runtime,
     const PtnObjectPropertyMetadata *metadata,
@@ -9395,6 +9505,7 @@ static int ptn_unserialize_store_object_property_entry(
     if (existing_index < properties->len) {
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
     } else if (metadata == NULL &&
+               !ptn_unserialize_key_is_spl_dllist_payload_slot(object, property_key) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
         ptn_emit_dynamic_property_deprecation(
@@ -85760,6 +85871,12 @@ static int ptn_spl_doubly_linked_list_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_spl_queue_method_exists(const char *method_name) {
+    return ptn_spl_doubly_linked_list_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "dequeue")
+        || ptn_ascii_case_equal(method_name, "enqueue");
+}
+
 static int ptn_spl_file_info_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
@@ -86190,8 +86307,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_limit_iterator(class_name)) {
         return ptn_limit_iterator_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_spl_queue(class_name)) {
+        return ptn_spl_queue_method_exists(method_name);
+    }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
-        ptn_internal_class_name_is_spl_queue(class_name) ||
         ptn_internal_class_name_is_spl_stack(class_name)) {
         return ptn_spl_doubly_linked_list_method_exists(method_name);
     }
@@ -87226,8 +87345,37 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
+    if (ptn_internal_class_name_is_spl_queue(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "add",
+            "bottom",
+            "count",
+            "current",
+            "dequeue",
+            "enqueue",
+            "getIteratorMode",
+            "isEmpty",
+            "key",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "pop",
+            "prev",
+            "push",
+            "rewind",
+            "setIteratorMode",
+            "shift",
+            "top",
+            "unshift",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
-        ptn_internal_class_name_is_spl_queue(class_name) ||
         ptn_internal_class_name_is_spl_stack(class_name)) {
         static const char *const names[] = {
             "__construct",
@@ -99851,6 +99999,17 @@ static const PtnValue *ptn_unserialize_spl_array_backed_slot(PtnObject *object, 
     return NULL;
 }
 
+static void ptn_unserialize_remove_spl_array_backed_slots(PtnObject *object, const char *slots) {
+    if (object == NULL || object->properties == NULL || slots == NULL) {
+        return;
+    }
+    for (const char *slot = slots; *slot != '\0'; slot++) {
+        ptn_array_unset_entry(object->properties, ptn_array_int_key((int64_t)(*slot - '0')));
+        char key[2] = { *slot, '\0' };
+        ptn_array_unset_entry(object->properties, ptn_array_string_key(key));
+    }
+}
+
 static int64_t ptn_unserialize_spl_array_backed_flags(PtnObject *object) {
     const PtnValue *slot = ptn_unserialize_spl_array_backed_slot(object, '0');
     if (slot == NULL) {
@@ -99988,6 +100147,23 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
         data->sorting = 0;
         ptn_unserialize_replace_native_data(instance, data, ptn_array_object_data_free);
         ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+    }
+    if (ptn_class_name_is_spl_dllist_family(instance->class_name)) {
+        PtnSplDoublyLinkedListData *data = malloc(sizeof(PtnSplDoublyLinkedListData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->storage = ptn_unserialize_spl_array_backed_storage(instance);
+        if (ptn_value_deref(data->storage).type != PTN_ARRAY) {
+            ptn_value_destroy(&data->storage);
+            data->storage = ptn_array_from_literal_entries(0, NULL);
+        }
+        data->index = 0;
+        data->flags = ptn_unserialize_spl_array_backed_flags(instance);
+        ptn_unserialize_replace_native_data(instance, data, ptn_spl_doubly_linked_list_data_free);
+        ptn_spl_dllist_sync_properties(runtime, object, data, line);
+        ptn_unserialize_remove_spl_array_backed_slots(instance, "012");
+        return;
     }
 }
 
@@ -101209,7 +101385,21 @@ static int ptn_spl_dllist_offset_index(
     int64_t *index_out
 ) {
     PtnValue resolved = ptn_value_deref(value);
-    if (resolved.type != PTN_INT) {
+    if (resolved.type == PTN_INT) {
+        *index_out = resolved.as.integer;
+        (void)line;
+        return 1;
+    }
+    if (resolved.type == PTN_STRING &&
+        ptn_string_is_integer_array_key_len(
+            (const char *)resolved.as.string.data,
+            resolved.as.string.len,
+            index_out
+        )) {
+        (void)line;
+        return 1;
+    }
+    {
         char message[192];
         int written = snprintf(
             message,
@@ -101223,12 +101413,9 @@ static int ptn_spl_dllist_offset_index(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "TypeError", message);
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
         return 0;
     }
-    *index_out = resolved.as.integer;
-    (void)line;
-    return 1;
 }
 
 static PtnValue ptn_spl_dllist_rebuild_with_insert(
@@ -101311,6 +101498,71 @@ static PtnValue ptn_spl_dllist_entry_at(PtnSplDoublyLinkedListData *data, size_t
         return ptn_null();
     }
     return ptn_value_clone_deref(array->entries[physical_index].value);
+}
+
+static PTN_UNUSED int ptn_spl_doubly_linked_list_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    size_t line,
+    PtnArrayIterator *out
+) {
+    if (out == NULL) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplDoublyLinkedList") ||
+        value.as.object->native_data == NULL) {
+        return 0;
+    }
+    PtnSplDoublyLinkedListData *data = (PtnSplDoublyLinkedListData *)value.as.object->native_data;
+    PtnArray *array = ptn_spl_dllist_array(data);
+    if (array == NULL) {
+        return 0;
+    }
+
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    iterator.array = array;
+    iterator.object = value.as.object;
+    iterator.runtime = runtime;
+    iterator.access_scope = access_scope;
+    iterator.line = line;
+    iterator.valid = array->len != 0;
+    iterator.live = 1;
+    iterator.watched_slot = &data->storage;
+    iterator.spl_dllist_reverse = ptn_spl_dllist_uses_lifo(data);
+    iterator.spl_dllist_delete = (data->flags & PTN_SPL_DLLIST_IT_MODE_DELETE) != 0;
+    ptn_object_retain(value.as.object);
+    ptn_array_iterator_retain(array);
+    ptn_array_iterator_remember_current_key(&iterator);
+    *out = iterator;
+    return 1;
+}
+
+static PTN_UNUSED PtnArray *ptn_spl_doubly_linked_list_iterator_remove_index(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t physical_index,
+    size_t line
+) {
+    if (object == NULL ||
+        !ptn_declared_class_is_same_or_descendant(object->class_name, "SplDoublyLinkedList") ||
+        object->native_data == NULL) {
+        return NULL;
+    }
+    PtnSplDoublyLinkedListData *data = (PtnSplDoublyLinkedListData *)object->native_data;
+    if (physical_index >= ptn_spl_dllist_count(data)) {
+        return ptn_spl_dllist_array(data);
+    }
+    PtnValue rebuilt = ptn_spl_dllist_rebuild_without_index(data, physical_index, NULL);
+    PtnValue receiver = ptn_value_borrow(ptn_object(object));
+    ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
+    ptn_value_destroy(&rebuilt);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    return ptn_spl_dllist_array(data);
 }
 
 static void ptn_spl_throw_empty_dllist(PtnRuntime *runtime, const char *method_name) {
@@ -103571,12 +103823,13 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
     if (data == NULL) {
         return ptn_null();
     }
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    const char *receiver_class_name = resolved_receiver.type == PTN_OBJECT
+        ? resolved_receiver.as.object->class_name
+        : "SplDoublyLinkedList";
+    int is_queue = ptn_declared_class_is_same_or_descendant(receiver_class_name, "SplQueue");
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue resolved_receiver = ptn_value_deref(receiver);
-        const char *class_name = resolved_receiver.type == PTN_OBJECT
-            ? resolved_receiver.as.object->class_name
-            : "SplDoublyLinkedList";
-        PtnValue replacement = ptn_spl_doubly_linked_list_new(runtime, class_name, argc, args, line);
+        PtnValue replacement = ptn_spl_doubly_linked_list_new(runtime, receiver_class_name, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
             return ptn_null();
@@ -103595,6 +103848,11 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
+    }
+    if (is_queue && ptn_ascii_case_equal(name, "enqueue")) {
+        name = "push";
+    } else if (is_queue && ptn_ascii_case_equal(name, "dequeue")) {
+        name = "shift";
     }
     if (ptn_ascii_case_equal(name, "push")) {
         if (argc != 1) {

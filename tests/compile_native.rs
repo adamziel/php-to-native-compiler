@@ -515,6 +515,80 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_dllist_iterator_modes_and_queue_aliases_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-dllist-iterator-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-dllist-iterator-modes.php");
+    let output = root.join("spl-dllist-iterator-modes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$list = new SplDoublyLinkedList();
+$list->push(2);
+$list->push(3);
+$list->push(4);
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+foreach ($list as $outerKey => $outer) {
+    echo "outer:$outerKey=$outer\n";
+    foreach ($list as $innerKey => $inner) {
+        echo "inner:$innerKey=$inner\n";
+    }
+}
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO | SplDoublyLinkedList::IT_MODE_DELETE);
+foreach ($list as $key => $value) {
+    echo "delete:$key=$value\n";
+}
+echo "count=", count($list), "\n";
+
+$queue = new SplQueue();
+$queue->enqueue("a");
+$queue->enqueue("b");
+echo $queue->dequeue(), $queue->dequeue(), "\n";
+try {
+    $queue["x"];
+} catch (TypeError $e) {
+    echo "offset type caught\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "outer:2=4\n",
+            "inner:2=4\n",
+            "inner:1=3\n",
+            "inner:0=2\n",
+            "outer:1=3\n",
+            "inner:2=4\n",
+            "inner:1=3\n",
+            "inner:0=2\n",
+            "outer:0=2\n",
+            "inner:2=4\n",
+            "inner:1=3\n",
+            "inner:0=2\n",
+            "delete:0=2\n",
+            "delete:0=3\n",
+            "delete:0=4\n",
+            "count=0\n",
+            "ab\n",
+            "offset type caught\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_and_method_source_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-source-metadata");
     fs::create_dir_all(&root).unwrap();

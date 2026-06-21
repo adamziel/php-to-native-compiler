@@ -817,6 +817,8 @@ typedef struct {
     int has_current_key;
     int has_iterator_object;
     int protocol_iterator;
+    int spl_dllist_delete;
+    int spl_dllist_reverse;
     int valid;
     int live;
 } PtnArrayIterator;
@@ -2256,6 +2258,19 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
     const char *name,
     size_t argc,
     const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED int ptn_spl_doubly_linked_list_iterator_from_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    size_t line,
+    PtnArrayIterator *out
+);
+static PTN_UNUSED PtnArray *ptn_spl_doubly_linked_list_iterator_remove_index(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t physical_index,
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_spl_file_info_new(

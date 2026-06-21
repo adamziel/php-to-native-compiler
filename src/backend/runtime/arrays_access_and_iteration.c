@@ -8427,9 +8427,24 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_empty(void) {
     iterator.has_current_key = 0;
     iterator.has_iterator_object = 0;
     iterator.protocol_iterator = 0;
+    iterator.spl_dllist_delete = 0;
+    iterator.spl_dllist_reverse = 0;
     iterator.valid = 0;
     iterator.live = 0;
     return iterator;
+}
+
+static PTN_UNUSED size_t ptn_array_iterator_effective_index(PtnArrayIterator *iterator) {
+    if (iterator == NULL || iterator->array == NULL) {
+        return 0;
+    }
+    if (!iterator->spl_dllist_reverse) {
+        return iterator->index;
+    }
+    if (iterator->index >= iterator->array->len) {
+        return iterator->array->len;
+    }
+    return iterator->array->len - 1 - iterator->index;
 }
 
 static PTN_UNUSED void ptn_array_iterator_clear_current_key(PtnArrayIterator *iterator) {
@@ -8450,13 +8465,14 @@ static PTN_UNUSED void ptn_array_iterator_remember_current_key(PtnArrayIterator 
     if (
         iterator->array == NULL ||
         !iterator->valid ||
-        iterator->index >= iterator->array->len
+        ptn_array_iterator_effective_index(iterator) >= iterator->array->len
     ) {
         return;
     }
-    iterator->current_key = ptn_array_key_clone(iterator->array->entries[iterator->index].key);
-    iterator->current_reference = iterator->array->entries[iterator->index].value.type == PTN_REFERENCE
-        ? iterator->array->entries[iterator->index].value.as.reference
+    size_t physical_index = ptn_array_iterator_effective_index(iterator);
+    iterator->current_key = ptn_array_key_clone(iterator->array->entries[physical_index].key);
+    iterator->current_reference = iterator->array->entries[physical_index].value.type == PTN_REFERENCE
+        ? iterator->array->entries[physical_index].value.as.reference
         : NULL;
     iterator->has_current_key = 1;
     if (iterator->live) {
@@ -8706,6 +8722,24 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     if (ptn_object_is_generator(value.as.object)) {
         return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
     }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_object_is_internal_or_descendant(value, "SplDoublyLinkedList")) {
+        PtnArrayIterator iterator = ptn_array_iterator_empty();
+        if (ptn_spl_doubly_linked_list_iterator_from_object(
+            runtime,
+            value,
+            access_scope,
+            line,
+            &iterator
+        )) {
+            return iterator;
+        }
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return iterator;
+        }
+    }
+#endif
 
     if (
         ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
@@ -9088,7 +9122,8 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
     ) {
         return ptn_value_clone_deref(iterator->generator->keys->entries[iterator->index].value);
     }
-    PtnArrayKey key = iterator->array->entries[iterator->index].key;
+    size_t physical_index = ptn_array_iterator_effective_index(iterator);
+    PtnArrayKey key = iterator->array->entries[physical_index].key;
     if (iterator->object != NULL && iterator->generator == NULL) {
         return ptn_object_foreach_key_value(iterator->object, key);
     }
@@ -9123,7 +9158,8 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
     if (iterator->generator != NULL) {
         ptn_generator_emit_pending_reference_notice(iterator->runtime, iterator->generator, iterator->index);
     }
-    return ptn_value_borrow(iterator->array->entries[iterator->index].value);
+    size_t physical_index = ptn_array_iterator_effective_index(iterator);
+    return ptn_value_borrow(iterator->array->entries[physical_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator *iterator) {
@@ -9148,7 +9184,8 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     if (iterator->generator != NULL) {
         ptn_generator_emit_pending_reference_notice(iterator->runtime, iterator->generator, iterator->index);
     }
-    PtnArrayEntry *entry = &iterator->array->entries[iterator->index];
+    size_t physical_index = ptn_array_iterator_effective_index(iterator);
+    PtnArrayEntry *entry = &iterator->array->entries[physical_index];
     if (iterator->object != NULL && iterator->generator == NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(iterator->object, entry->key.as.string);
@@ -9253,8 +9290,45 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         }
     }
 
+    if (iterator->spl_dllist_delete && iterator->valid) {
+        size_t physical_index = ptn_array_iterator_effective_index(iterator);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        PtnArray *replacement = NULL;
+        if (physical_index < iterator->array->len) {
+            replacement = ptn_spl_doubly_linked_list_iterator_remove_index(
+                iterator->runtime,
+                iterator->object,
+                physical_index,
+                iterator->line
+            );
+            if (iterator->runtime != NULL && iterator->runtime->exceptions->active_exception != NULL) {
+                iterator->valid = 0;
+                ptn_array_iterator_clear_current_key(iterator);
+                return;
+            }
+            if (replacement != NULL && replacement != iterator->array) {
+                ptn_array_iterator_retain(replacement);
+                ptn_array_iterator_release(iterator->array);
+                iterator->array = replacement;
+            }
+        }
+        if (replacement == NULL) {
+            ptn_array_iterator_refresh_watched_array(iterator);
+        }
+#else
+        iterator->valid = 0;
+        ptn_array_iterator_clear_current_key(iterator);
+        return;
+#endif
+        ptn_array_iterator_clear_current_key(iterator);
+        size_t limit = iterator->array == NULL ? 0 : iterator->array->len;
+        iterator->valid = iterator->index < limit;
+        ptn_array_iterator_remember_current_key(iterator);
+        return;
+    }
+
     size_t next_index = iterator->index + 1;
-    if (iterator->has_current_key) {
+    if (iterator->has_current_key && !iterator->spl_dllist_reverse) {
         size_t current_index = ptn_array_find_key(iterator->array, iterator->current_key);
         int current_identity_matches = current_index < iterator->array->len &&
             (iterator->current_reference == NULL ||
@@ -9341,6 +9415,8 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
     iterator->line = 0;
     iterator->valid = 0;
     iterator->protocol_iterator = 0;
+    iterator->spl_dllist_delete = 0;
+    iterator->spl_dllist_reverse = 0;
     iterator->live = 0;
 }
 
@@ -9946,7 +10022,13 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_call(
     PtnValue *args,
     size_t line
 ) {
-    return runtime->method_dispatch(runtime, ptn_value_deref(container), method_name, argc, args, line);
+    PtnValue result = runtime->method_dispatch(runtime, ptn_value_deref(container), method_name, argc, args, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_arrayaccess_read(
