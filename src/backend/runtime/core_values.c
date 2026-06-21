@@ -1306,6 +1306,7 @@ struct PtnRuntime {
     PtnStaticPropertyInitializerHandler static_property_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;
+    size_t active_spl_object_storage_get_hash_depth;
     PtnMagicPropertyFrame *magic_property_frames;
     size_t magic_property_frame_len;
     size_t magic_property_frame_capacity;

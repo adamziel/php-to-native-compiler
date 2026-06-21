@@ -9376,6 +9376,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_method_exists("SplDoublyLinkedList", method_name)) {
         return 1;
     }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplObjectStorage") &&
+        ptn_internal_class_method_exists("SplObjectStorage", method_name)) {
+        return 1;
+    }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFileObject") &&
         ptn_internal_class_method_exists("SplFileObject", method_name)) {
         return 1;

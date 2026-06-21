@@ -126,6 +126,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->static_property_initializer = caller_runtime->static_property_initializer;
     runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
+    runtime->active_spl_object_storage_get_hash_depth = 0;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = caller_runtime->magic_property_frame_len;
     runtime->magic_property_frame_capacity = caller_runtime->magic_property_frame_len;

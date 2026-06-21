@@ -1969,6 +1969,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->static_property_initializer = NULL;
     runtime->new_instance_without_constructor = NULL;
     runtime->in_magic_property_dispatch = 0;
+    runtime->active_spl_object_storage_get_hash_depth = 0;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = 0;
     runtime->magic_property_frame_capacity = 0;

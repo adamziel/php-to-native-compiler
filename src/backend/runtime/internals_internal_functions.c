@@ -109064,6 +109064,22 @@ static PtnValue ptn_spl_object_storage_default_hash(size_t object_id) {
     return ptn_owned_string_len(ptn_duplicate_string_len(buffer, 32), 32);
 }
 
+static int ptn_spl_object_storage_mutation_allowed(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->active_spl_object_storage_get_hash_depth != 0) {
+        root->active_spl_object_storage_get_hash_depth = 0;
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Modification of SplObjectStorage during getHash() is prohibited",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return 0;
+    }
+    return 1;
+}
+
 static int ptn_spl_object_storage_hash_for_object(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -109088,7 +109104,14 @@ static int ptn_spl_object_storage_hash_for_object(
         !ptn_ascii_case_equal(receiver_class_name, "SplObjectStorage") &&
         runtime->declared_method_exists(receiver_class_name, "getHash")
     ) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root != NULL) {
+            root->active_spl_object_storage_get_hash_depth++;
+        }
         PtnValue hash = runtime->method_dispatch(runtime, resolved_receiver, "getHash", 1, &object, line);
+        if (root != NULL) {
+            root->active_spl_object_storage_get_hash_depth--;
+        }
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&hash);
             return 0;
@@ -109264,6 +109287,9 @@ static void ptn_spl_object_storage_attach_value(
     PtnValue info,
     size_t line
 ) {
+    if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+        return;
+    }
     PtnValue hash = ptn_null();
     if (!ptn_spl_object_storage_hash_for_object(runtime, receiver, method_name, object, line, &hash)) {
         return;
@@ -109311,6 +109337,9 @@ static void ptn_spl_object_storage_remove_index(
     size_t remove_index,
     size_t line
 ) {
+    if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+        return;
+    }
     size_t count = ptn_spl_object_storage_count(data);
     if (remove_index >= count) {
         return;
@@ -109449,18 +109478,21 @@ static PTN_UNUSED PtnValue ptn_spl_object_storage_clone(
     if (source_data == NULL) {
         return ptn_null();
     }
-    PtnValue clone = ptn_spl_object_storage_new(runtime, 0, NULL, line);
+    source = ptn_value_deref(source);
+    PtnValue clone = ptn_clone_object_storage(runtime, source.as.object);
     if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
         return ptn_null();
     }
-    PtnSplObjectStorageData *clone_data = (PtnSplObjectStorageData *)clone.as.object->native_data;
-    ptn_value_destroy(&clone_data->objects);
-    ptn_value_destroy(&clone_data->infos);
-    ptn_value_destroy(&clone_data->hashes);
+    PtnSplObjectStorageData *clone_data = malloc(sizeof(PtnSplObjectStorageData));
+    if (clone_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
     clone_data->objects = ptn_array(ptn_array_clone(ptn_value_deref(source_data->objects).as.array));
     clone_data->infos = ptn_array(ptn_array_clone(ptn_value_deref(source_data->infos).as.array));
     clone_data->hashes = ptn_array(ptn_array_clone(ptn_value_deref(source_data->hashes).as.array));
     clone_data->index = source_data->index;
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_spl_object_storage_data_free;
     ptn_spl_object_storage_sync_properties(runtime, clone, clone_data, line);
     return clone;
 }
@@ -109478,6 +109510,9 @@ static PtnValue ptn_spl_object_storage_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__construct")) {
+        if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+            return ptn_null();
+        }
         PtnValue replacement = ptn_spl_object_storage_new(runtime, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
@@ -109596,6 +109631,9 @@ static PtnValue ptn_spl_object_storage_call_method(
     if (ptn_ascii_case_equal(name, "addAll") ||
         ptn_ascii_case_equal(name, "removeAll") ||
         ptn_ascii_case_equal(name, "removeAllExcept")) {
+        if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+            return ptn_null();
+        }
         if (argc != 1) {
             char message[160];
             int written = snprintf(
@@ -109636,10 +109674,19 @@ static PtnValue ptn_spl_object_storage_call_method(
         size_t count = ptn_spl_object_storage_count(data);
         for (size_t i = 0; i < count; i++) {
             PtnValue object = ptn_spl_object_storage_object_at(data, i);
-            PtnValue hash = ptn_spl_object_storage_hash_at(data, i);
-            int in_other = ptn_spl_object_storage_find_hash(other, hash) >= 0;
+            PtnValue other_hash = ptn_null();
+            if (!ptn_spl_object_storage_hash_for_object(runtime, args[0], name, object, line, &other_hash)) {
+                ptn_value_destroy(&object);
+                ptn_value_destroy(&objects);
+                ptn_value_destroy(&infos);
+                ptn_value_destroy(&hashes);
+                return ptn_null();
+            }
+            int in_other = ptn_spl_object_storage_find_hash(other, other_hash) >= 0;
+            ptn_value_destroy(&other_hash);
             int keep = ptn_ascii_case_equal(name, "removeAllExcept") ? in_other : !in_other;
             if (keep) {
+                PtnValue hash = ptn_spl_object_storage_hash_at(data, i);
                 ptn_array_set_entry(objects.as.array, ptn_array_int_key(next), object);
                 ptn_array_set_entry(
                     infos.as.array,
@@ -109650,7 +109697,6 @@ static PtnValue ptn_spl_object_storage_call_method(
                 next++;
             } else {
                 ptn_value_destroy(&object);
-                ptn_value_destroy(&hash);
             }
         }
         ptn_value_destroy(&data->objects);
@@ -109672,6 +109718,9 @@ static PtnValue ptn_spl_object_storage_call_method(
             : ptn_spl_object_storage_info_at(data, data->index);
     }
     if (ptn_ascii_case_equal(name, "setInfo")) {
+        if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+            return ptn_null();
+        }
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::setInfo() expects exactly 1 argument");
             return ptn_null();
@@ -109748,6 +109797,9 @@ static PtnValue ptn_spl_object_storage_call_method(
         return result;
     }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
+            return ptn_null();
+        }
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::__unserialize() expects exactly 1 argument");
             return ptn_null();
