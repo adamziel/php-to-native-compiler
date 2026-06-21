@@ -134,7 +134,15 @@ pub struct TraitDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitUseDecl {
     pub name: String,
+    pub aliases: Vec<TraitAliasDecl>,
     pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitAliasDecl {
+    pub trait_name: Option<String>,
+    pub method_name: String,
+    pub alias: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2937,6 +2945,20 @@ fn lower_trait_uses(trait_uses: &[crate::ast::TraitUseDecl]) -> Vec<TraitUseDecl
         .iter()
         .map(|trait_use| TraitUseDecl {
             name: trait_use.name.clone(),
+            aliases: trait_use
+                .adaptations
+                .iter()
+                .filter_map(|adaptation| match adaptation {
+                    crate::ast::TraitAdaptation::Alias(alias) => {
+                        alias.alias.as_ref().map(|alias_name| TraitAliasDecl {
+                            trait_name: alias.method.trait_name.clone(),
+                            method_name: alias.method.method_name.clone(),
+                            alias: alias_name.clone(),
+                        })
+                    }
+                    crate::ast::TraitAdaptation::Precedence(_) => None,
+                })
+                .collect(),
             line: trait_use.span.line,
         })
         .collect()

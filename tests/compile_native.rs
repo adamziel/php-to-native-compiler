@@ -23424,6 +23424,105 @@ try {
 }
 
 #[test]
+fn compile_reflection_class_trait_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-trait-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-trait-metadata.php");
+    let output = root.join("reflection-class-trait-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+trait T1 {
+    public function m1() {}
+    public function m2() {}
+}
+trait T2 {
+    public function run() {}
+    public function say() {}
+}
+trait T3 {
+    public function run() {}
+    public function say() {}
+}
+
+class NoTraits {}
+class OneTrait {
+    use T1;
+}
+class OneAlias {
+    use T1 {
+        m1 as a1;
+    }
+}
+class TwoAliases {
+    use T1 {
+        m1 as a1;
+        m2 as a2;
+    }
+}
+class MultiTrait {
+    use T2, T3 {
+        T2::run as execute;
+        T2::say insteadof T3;
+        T3::run insteadof T2;
+        T3::say as talk;
+    }
+}
+
+function dump_list($items) {
+    foreach ($items as $key => $value) {
+        echo $key, '=', $value, '|';
+    }
+    echo \"\\n\";
+}
+
+function dump_trait_objects($class) {
+    foreach ((new ReflectionClass($class))->getTraits() as $name => $reflection) {
+        echo $name, '=', $reflection->getName(), ':', get_class($reflection), '|';
+    }
+    echo \"\\n\";
+}
+
+dump_list((new ReflectionClass('NoTraits'))->getTraitNames());
+dump_list((new ReflectionClass('OneTrait'))->getTraitNames());
+dump_list((new ReflectionClass('NoTraits'))->getTraitAliases());
+dump_list((new ReflectionClass('OneAlias'))->getTraitAliases());
+dump_list((new ReflectionClass('TwoAliases'))->getTraitAliases());
+dump_list((new ReflectionClass('MultiTrait'))->getTraitAliases());
+dump_trait_objects('MultiTrait');
+var_dump((new ReflectionClass('T1'))->isTrait());
+var_dump((new ReflectionClass('TwoAliases'))->isTrait());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\n",
+            "0=T1|\n",
+            "\n",
+            "a1=T1::m1|\n",
+            "a1=T1::m1|a2=T1::m2|\n",
+            "execute=T2::run|talk=T3::say|\n",
+            "T2=T2:ReflectionClass|T3=T3:ReflectionClass|\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_trait_aliases"));
+    assert!(c_source.contains("ptn_declared_class_reflection_traits"));
+    assert!(c_source.contains("ptn_reflection_class_call_method"));
+}
+
+#[test]
 fn compile_direct_get_class_helper_links_without_internal_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-direct-get-class-helper-link");
     fs::create_dir_all(&root).unwrap();

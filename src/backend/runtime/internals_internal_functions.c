@@ -84773,6 +84773,8 @@ static int ptn_declared_class_reflection_property_type_metadata(const char *clas
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_property_to_string(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects);
+static PtnValue ptn_declared_class_reflection_traits(PtnRuntime *runtime, const char *class_name, int objects);
+static PtnValue ptn_declared_class_reflection_trait_aliases(PtnRuntime *runtime, const char *class_name);
 static PtnValue ptn_declared_class_reflection_attributes(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_class_method_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_class_property_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *property_name, size_t argc, const PtnValue *args, size_t line);
@@ -87704,6 +87706,9 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticProperties")
         || ptn_ascii_case_equal(method_name, "getStaticPropertyValue")
+        || ptn_ascii_case_equal(method_name, "getTraitAliases")
+        || ptn_ascii_case_equal(method_name, "getTraitNames")
+        || ptn_ascii_case_equal(method_name, "getTraits")
         || ptn_ascii_case_equal(method_name, "hasConstant")
         || ptn_ascii_case_equal(method_name, "hasMethod")
         || ptn_ascii_case_equal(method_name, "hasProperty")
@@ -87721,6 +87726,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isIterable")
         || ptn_ascii_case_equal(method_name, "isIterateable")
         || ptn_ascii_case_equal(method_name, "isReadOnly")
+        || ptn_ascii_case_equal(method_name, "isTrait")
         || ptn_ascii_case_equal(method_name, "initializeLazyObject")
         || ptn_ascii_case_equal(method_name, "isLazy")
         || ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")
@@ -88943,6 +88949,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getStartLine",
             "getStaticProperties",
             "getStaticPropertyValue",
+            "getTraitAliases",
+            "getTraitNames",
+            "getTraits",
             "hasConstant",
             "hasMethod",
             "hasProperty",
@@ -88959,6 +88968,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isIterable",
             "isIterateable",
             "isReadOnly",
+            "isTrait",
             "isSubclassOf",
             "isUserDefined",
             "newInstance",
@@ -89001,6 +89011,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getStartLine",
             "getStaticProperties",
             "getStaticPropertyValue",
+            "getTraitAliases",
+            "getTraitNames",
+            "getTraits",
             "hasCase",
             "hasConstant",
             "hasMethod",
@@ -89020,6 +89033,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isIterable",
             "isIterateable",
             "isReadOnly",
+            "isTrait",
             "isSubclassOf",
             "isUserDefined",
             "newInstance",
@@ -90248,6 +90262,9 @@ static const char *ptn_reflection_class_canonical_method_name(const char *method
     if (ptn_ascii_case_equal(method_name, "getStartLine")) return "getStartLine";
     if (ptn_ascii_case_equal(method_name, "getStaticProperties")) return "getStaticProperties";
     if (ptn_ascii_case_equal(method_name, "getStaticPropertyValue")) return "getStaticPropertyValue";
+    if (ptn_ascii_case_equal(method_name, "getTraitAliases")) return "getTraitAliases";
+    if (ptn_ascii_case_equal(method_name, "getTraitNames")) return "getTraitNames";
+    if (ptn_ascii_case_equal(method_name, "getTraits")) return "getTraits";
     if (ptn_ascii_case_equal(method_name, "hasConstant")) return "hasConstant";
     if (ptn_ascii_case_equal(method_name, "hasMethod")) return "hasMethod";
     if (ptn_ascii_case_equal(method_name, "hasProperty")) return "hasProperty";
@@ -90264,6 +90281,7 @@ static const char *ptn_reflection_class_canonical_method_name(const char *method
     if (ptn_ascii_case_equal(method_name, "isIterable")) return "isIterable";
     if (ptn_ascii_case_equal(method_name, "isIterateable")) return "isIterateable";
     if (ptn_ascii_case_equal(method_name, "isReadOnly")) return "isReadOnly";
+    if (ptn_ascii_case_equal(method_name, "isTrait")) return "isTrait";
     if (ptn_ascii_case_equal(method_name, "initializeLazyObject")) return "initializeLazyObject";
     if (ptn_ascii_case_equal(method_name, "isLazy")) return "isLazy";
     if (ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")) return "isUninitializedLazyObject";
@@ -96378,6 +96396,24 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             ? ptn_null()
             : ptn_declared_class_reflection_interfaces(runtime, class_name, 1);
     }
+    if (ptn_ascii_case_equal(name, "getTraitNames")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_declared_class_reflection_traits(runtime, class_name, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getTraits")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_declared_class_reflection_traits(runtime, class_name, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getTraitAliases")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_declared_class_reflection_trait_aliases(runtime, class_name);
+    }
     if (ptn_ascii_case_equal(name, "getExtensionName")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL
@@ -96785,6 +96821,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     if (ptn_ascii_case_equal(name, "isInterface")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_reflection_class_is_interface_name(class_name));
+    }
+    if (ptn_ascii_case_equal(name, "isTrait")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_declared_trait_exists(class_name));
     }
     if (ptn_ascii_case_equal(name, "isEnum")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);

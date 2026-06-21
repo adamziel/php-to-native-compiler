@@ -6454,6 +6454,81 @@ fn emit_class_metadata_helpers(
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_traits(PtnRuntime *runtime, const char *class_name, int objects) {\n",
+    );
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    int64_t index = 0;\n");
+    if classes.iter().all(|class| class.trait_uses.is_empty()) {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)objects;\n");
+        out.push_str("    (void)index;\n");
+    }
+    for class in classes {
+        if class.trait_uses.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for trait_use in &class.trait_uses {
+            let trait_name =
+                canonical_trait_name(traits, &trait_use.name).unwrap_or(trait_use.name.as_str());
+            out.push_str("        if (objects) {\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
+            out.push_str(&c_string(trait_name));
+            out.push_str("\"), ptn_reflection_class_object_from_name(runtime, \"");
+            out.push_str(&c_string(trait_name));
+            out.push_str("\"));\n");
+            out.push_str("        } else {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+            out.push_str(&c_string(trait_name));
+            out.push_str("\"));\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_trait_aliases(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes
+        .iter()
+        .all(|class| class_reflection_trait_alias_entries(class, traits).is_empty())
+    {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        let aliases = class_reflection_trait_alias_entries(class, traits);
+        if aliases.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for alias in aliases {
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(&alias.alias));
+            out.push_str("\"), ptn_string(\"");
+            out.push_str(&c_string(&alias.trait_name));
+            out.push_str("::");
+            out.push_str(&c_string(&alias.method_name));
+            out.push_str("\"));\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_readonly(const char *name) {\n");
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
@@ -15650,6 +15725,84 @@ fn inherited_modeled_internal_class_name(
         parent_name = class_by_name(classes, name).and_then(|parent| parent.parent_name.as_deref());
     }
     None
+}
+
+struct ReflectionTraitAliasEntry {
+    alias: String,
+    trait_name: String,
+    method_name: String,
+}
+
+fn class_reflection_trait_alias_entries(
+    class: &ClassDecl,
+    traits: &[TraitDecl],
+) -> Vec<ReflectionTraitAliasEntry> {
+    let mut entries = Vec::new();
+    let mut seen = HashSet::new();
+    for trait_use in &class.trait_uses {
+        for alias in &trait_use.aliases {
+            let Some(trait_name) =
+                reflection_trait_alias_trait_name(class, traits, trait_use, alias)
+            else {
+                continue;
+            };
+            let key = format!(
+                "{}\0{}\0{}",
+                alias.alias.to_ascii_lowercase(),
+                trait_name.to_ascii_lowercase(),
+                alias.method_name.to_ascii_lowercase()
+            );
+            if !seen.insert(key) {
+                continue;
+            }
+            entries.push(ReflectionTraitAliasEntry {
+                alias: alias.alias.clone(),
+                trait_name,
+                method_name: alias.method_name.clone(),
+            });
+        }
+    }
+    entries
+}
+
+fn reflection_trait_alias_trait_name(
+    class: &ClassDecl,
+    traits: &[TraitDecl],
+    trait_use: &TraitUseDecl,
+    alias: &crate::ir::TraitAliasDecl,
+) -> Option<String> {
+    if let Some(trait_name) = alias.trait_name.as_deref() {
+        return Some(
+            canonical_trait_name(traits, trait_name)
+                .unwrap_or(trait_name)
+                .to_string(),
+        );
+    }
+    let mut matches = class.trait_uses.iter().filter_map(|candidate_use| {
+        let trait_decl = traits
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&candidate_use.name))?;
+        trait_decl
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case(&alias.method_name))
+            .then_some(trait_decl.name.as_str())
+    });
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    if trait_use.name.eq_ignore_ascii_case(first) {
+        return Some(first.to_string());
+    }
+    Some(first.to_string())
+}
+
+fn canonical_trait_name<'a>(traits: &'a [TraitDecl], name: &str) -> Option<&'a str> {
+    traits
+        .iter()
+        .find(|trait_decl| trait_decl.name.eq_ignore_ascii_case(name))
+        .map(|trait_decl| trait_decl.name.as_str())
 }
 
 fn class_magic_call_method<'a>(
