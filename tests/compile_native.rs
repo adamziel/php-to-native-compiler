@@ -34182,6 +34182,93 @@ foreach ($object as $v1) {\n\
 }
 
 #[test]
+fn compile_foreach_object_declared_property_unset_during_iteration_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-object-declared-property-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-object-declared-property-unset.php");
+    let output = root.join("foreach-object-declared-property-unset-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class C {\n\
+    public $a = \"Original a\";\n\
+    public $b = \"Original b\";\n\
+    public $c = \"Original c\";\n\
+    public $d = \"Original d\";\n\
+    public $e = \"Original e\";\n\
+}\n\
+\n\
+$obj = new C;\n\
+foreach ($obj as $v) {\n\
+    if ($v === $obj->a) {\n\
+        unset($obj->c);\n\
+    }\n\
+    var_dump($v);\n\
+}\n\
+var_dump($obj);\n\
+\n\
+$obj = new C;\n\
+foreach ($obj as $v) {\n\
+    if ($v === $obj->b) {\n\
+        unset($obj->a);\n\
+    }\n\
+    var_dump($v);\n\
+}\n\
+var_dump($obj);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(10) \"Original a\"\n",
+            "string(10) \"Original b\"\n",
+            "string(10) \"Original d\"\n",
+            "string(10) \"Original e\"\n",
+            "object(C)#1 (4) {\n",
+            "  [\"a\"]=>\n",
+            "  string(10) \"Original a\"\n",
+            "  [\"b\"]=>\n",
+            "  string(10) \"Original b\"\n",
+            "  [\"d\"]=>\n",
+            "  string(10) \"Original d\"\n",
+            "  [\"e\"]=>\n",
+            "  string(10) \"Original e\"\n",
+            "}\n",
+            "string(10) \"Original a\"\n",
+            "string(10) \"Original b\"\n",
+            "string(10) \"Original c\"\n",
+            "string(10) \"Original d\"\n",
+            "string(10) \"Original e\"\n",
+            "object(C)#2 (4) {\n",
+            "  [\"b\"]=>\n",
+            "  string(10) \"Original b\"\n",
+            "  [\"c\"]=>\n",
+            "  string(10) \"Original c\"\n",
+            "  [\"d\"]=>\n",
+            "  string(10) \"Original d\"\n",
+            "  [\"e\"]=>\n",
+            "  string(10) \"Original e\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_property_iterable_for_foreach"));
+    assert!(c_source.contains("object_property_iterator"));
+}
+
+#[test]
 fn compile_foreach_declared_object_property_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-object-property-visibility");
     fs::create_dir_all(&root).unwrap();

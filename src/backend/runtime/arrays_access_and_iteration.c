@@ -8811,6 +8811,33 @@ static PTN_UNUSED int ptn_object_property_visible_for_foreach(
     );
 }
 
+static PTN_UNUSED int ptn_object_property_iterable_for_foreach(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnArrayKey key,
+    const char *access_scope
+) {
+    if (!ptn_object_property_visible_for_foreach(runtime, object, key, access_scope)) {
+        return 0;
+    }
+    if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
+        return 1;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata != NULL) {
+        if (ptn_property_is_set_only_virtual(metadata)) {
+            return 0;
+        }
+        return ptn_object_property_storage_initialized(object, metadata->storage_name) ||
+            (metadata->has_hooks && metadata->hook_has_get);
+    }
+    if (object->properties == NULL) {
+        return 0;
+    }
+    return ptn_array_find_key(object->properties, key) < object->properties->len;
+}
+
 static PTN_UNUSED PtnValue ptn_object_foreach_key_value(
     PtnObject *object,
     PtnArrayKey key
@@ -8883,7 +8910,7 @@ static PTN_UNUSED void ptn_array_iterator_skip_invisible_object_properties(PtnAr
     }
     size_t limit = iterator->live ? iterator->array->len : iterator->length;
     while (iterator->index < limit &&
-        !ptn_object_property_visible_for_foreach(
+        !ptn_object_property_iterable_for_foreach(
             iterator->runtime,
             iterator->object,
             iterator->array->entries[iterator->index].key,
@@ -9184,18 +9211,8 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     PtnArray *keys = keys_value.as.array;
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-        int initialized = ptn_object_property_storage_initialized(object, metadata->storage_name);
-        if (
-            !initialized &&
-            !(metadata->has_hooks && metadata->hook_has_get)
-        ) {
-            continue;
-        }
         PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
-        if (
-            ptn_object_property_visible_for_foreach(runtime, object, key, access_scope) &&
-            !ptn_property_is_set_only_virtual(metadata)
-        ) {
+        if (ptn_object_property_iterable_for_foreach(runtime, object, key, access_scope)) {
             ptn_array_set_entry(keys, key, ptn_null());
         } else {
             ptn_array_key_free(key);
@@ -9245,10 +9262,7 @@ static PTN_UNUSED void ptn_array_iterator_sync_object_property_keys(PtnArrayIter
             entry->key.type == PTN_ARRAY_KEY_STRING
                 ? ptn_object_property_metadata(iterator->object, entry->key.as.string)
                 : NULL;
-        if (metadata != NULL && ptn_property_is_set_only_virtual(metadata)) {
-            continue;
-        }
-        if (!ptn_object_property_visible_for_foreach(
+        if (!ptn_object_property_iterable_for_foreach(
                 iterator->runtime,
                 iterator->object,
                 entry->key,
@@ -9821,7 +9835,12 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
         free(property_name);
         return reference;
     }
-    if (iterator->object != NULL && iterator->generator == NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
+    if (
+        iterator->object_property_iterator &&
+        iterator->object != NULL &&
+        iterator->generator == NULL &&
+        entry->key.type == PTN_ARRAY_KEY_STRING
+    ) {
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(iterator->object, entry->key.as.string);
         if (metadata != NULL && metadata->is_readonly) {
