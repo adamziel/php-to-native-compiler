@@ -7210,7 +7210,7 @@ impl Parser<'_> {
         match self.peek().kind {
             TokenKind::Plus => {
                 let token = self.advance().clone();
-                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let expr = self.parse_prefix_operator_operand_expr()?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Positive,
@@ -7220,7 +7220,7 @@ impl Parser<'_> {
             }
             TokenKind::Minus => {
                 let token = self.advance().clone();
-                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let expr = self.parse_prefix_operator_operand_expr()?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Negate,
@@ -7230,7 +7230,7 @@ impl Parser<'_> {
             }
             TokenKind::Bang => {
                 let token = self.advance().clone();
-                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let expr = self.parse_prefix_operator_operand_expr()?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Not,
@@ -7240,7 +7240,7 @@ impl Parser<'_> {
             }
             TokenKind::Tilde => {
                 let token = self.advance().clone();
-                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let expr = self.parse_prefix_operator_operand_expr()?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::BitwiseNot,
@@ -7250,7 +7250,7 @@ impl Parser<'_> {
             }
             TokenKind::At => {
                 let token = self.advance().clone();
-                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let expr = self.parse_prefix_operator_operand_expr()?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::ErrorSuppress,
@@ -7272,7 +7272,7 @@ impl Parser<'_> {
             TokenKind::Clone => self.parse_clone_expr(),
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
-                    let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                    let expr = self.parse_prefix_operator_operand_expr()?;
                     let span = combine_spans(span, expr.span());
                     Ok(Expr::Cast {
                         kind,
@@ -7284,6 +7284,15 @@ impl Parser<'_> {
                 }
             }
             _ => self.parse_postfix_expr(),
+        }
+    }
+
+    fn parse_prefix_operator_operand_expr(&mut self) -> Result<Expr> {
+        let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+        if self.peek_is_expression_assignment_op() {
+            self.parse_assignment_expr_from_left(expr)
+        } else {
+            Ok(expr)
         }
     }
 

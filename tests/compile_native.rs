@@ -1958,6 +1958,73 @@ fn parser_accepts_power_as_right_associative_above_unary() {
 }
 
 #[test]
+fn parser_accepts_assignment_operands_under_prefix_operators() {
+    let program = parser::parse(
+        "<?php if (!$link = connect()) {} echo -$value + 1; echo (int)$raw = value();",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    let Statement::If { condition, .. } = &program.statements[0] else {
+        panic!("expected if statement");
+    };
+    let Expr::Unary {
+        op: UnaryOp::Not,
+        expr,
+        ..
+    } = condition
+    else {
+        panic!("expected not expression around assignment");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Assign {
+            target: AssignmentTarget::Variable { name, .. },
+            ..
+        } if name == "link"
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::Add,
+        left,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected addition outside unary negation");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::Negate,
+            expr,
+            ..
+        } if matches!(expr.as_ref(), Expr::Variable(name, _) if name == "value")
+    ));
+
+    let Statement::Echo { expressions, .. } = &program.statements[2] else {
+        panic!("expected cast echo statement");
+    };
+    let Expr::Cast {
+        kind: CastKind::Int,
+        expr,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected int cast around assignment");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Assign {
+            target: AssignmentTarget::Variable { name, .. },
+            ..
+        } if name == "raw"
+    ));
+}
+
+#[test]
 fn parser_accepts_print_as_statement() {
     let program = parser::parse("<?php print \"hello\" . 2 + 3;").unwrap();
     assert_eq!(program.statements.len(), 1);
@@ -63550,6 +63617,29 @@ fn compile_prefix_unary_assignment_precedence_to_native_binary() {
          string(2) \"42\"\n\
          bool(false)\n\
          int(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_prefix_operator_assignment_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-prefix-assignment-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("prefix-assignment-operands.php");
+    let output = root.join("prefix-assignment-operands-bin");
+    fs::write(
+        &input,
+        "<?php\nfunction mark($value) { echo \"mark=$value\\n\"; return $value; }\nvar_dump(!$a = mark(0));\nvar_dump($a);\nvar_dump(-$b = 2);\nvar_dump($b);\nvar_dump(~$c = 2);\nvar_dump($c);\nvar_dump((int)$d = \"4\");\nvar_dump($d);\nvar_dump(@$e = 5);\nvar_dump($e);\n$f = 2;\nvar_dump(-$f + 1);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "mark=0\nbool(true)\nint(0)\nint(-2)\nint(2)\nint(-3)\nint(2)\nint(4)\nstring(1) \"4\"\nint(5)\nint(5)\nint(-1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
