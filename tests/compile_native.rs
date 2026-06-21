@@ -19442,6 +19442,77 @@ dump_order();\n",
 }
 
 #[test]
+fn compile_iconv_encoding_state_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-encoding-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-encoding-state.php");
+    let output = root.join("iconv-encoding-state-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('iconv_get_encoding'), function_exists('iconv_set_encoding'));\n\
+var_dump(ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+var_dump(ini_get('iconv.internal_encoding'), ini_get('iconv.input_encoding'), ini_get('iconv.output_encoding'));\n\
+var_dump(iconv_get_encoding());\n\
+var_dump(iconv_get_encoding('foo'));\n\
+var_dump(iconv_set_encoding('input_encoding', 'UTF-8'));\n\
+var_dump(iconv_set_encoding('output_encoding', 'ISO-8859-1'));\n\
+var_dump(iconv_set_encoding('internal_encoding', 'CP1252'));\n\
+var_dump(ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+var_dump(ini_get('iconv.internal_encoding'), ini_get('iconv.input_encoding'), ini_get('iconv.output_encoding'));\n\
+var_dump(iconv_get_encoding('all'));\n\
+var_dump(iconv_set_encoding('foo', 'UTF-8'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "array(3) {\n",
+            "  [\"input_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "  [\"output_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "  [\"internal_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "}\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(6) \"CP1252\"\n",
+            "string(5) \"UTF-8\"\n",
+            "string(10) \"ISO-8859-1\"\n",
+            "array(3) {\n",
+            "  [\"input_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "  [\"output_encoding\"]=>\n",
+            "  string(10) \"ISO-8859-1\"\n",
+            "  [\"internal_encoding\"]=>\n",
+            "  string(6) \"CP1252\"\n",
+            "}\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
     let root = temp_dir("ptn-native-mb-strimwidth-marker");
     fs::create_dir_all(&root).unwrap();
@@ -47707,6 +47778,75 @@ echo ini_get('arg_separator.input'), \"\\n\";",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
             "&\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_iconv_ini_aliases_feed_iconv_encoding_state() {
+    let root = temp_dir("ptn-phpc-iconv-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+var_dump(ini_get('iconv.internal_encoding'), ini_get('iconv.input_encoding'), ini_get('iconv.output_encoding'));\n\
+var_dump(iconv_get_encoding());\n\
+var_dump(ini_set('iconv.internal_encoding', 'UTF-8'), ini_set('iconv.input_encoding', 'UTF-8'), ini_set('iconv.output_encoding', 'UTF-8'));\n\
+var_dump(iconv_get_encoding('all'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("default_charset=ISO-8859-1")
+        .arg("-d")
+        .arg("internal_encoding=")
+        .arg("-d")
+        .arg("input_encoding=")
+        .arg("-d")
+        .arg("output_encoding=")
+        .arg("-d")
+        .arg("iconv.internal_encoding=CP1252")
+        .arg("-d")
+        .arg("iconv.input_encoding=EUC-JP")
+        .arg("-d")
+        .arg("iconv.output_encoding=KOI8-R")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(6) \"CP1252\"\n",
+            "string(6) \"EUC-JP\"\n",
+            "string(6) \"KOI8-R\"\n",
+            "array(3) {\n",
+            "  [\"input_encoding\"]=>\n",
+            "  string(6) \"EUC-JP\"\n",
+            "  [\"output_encoding\"]=>\n",
+            "  string(6) \"KOI8-R\"\n",
+            "  [\"internal_encoding\"]=>\n",
+            "  string(6) \"CP1252\"\n",
+            "}\n",
+            "string(6) \"CP1252\"\n",
+            "string(6) \"EUC-JP\"\n",
+            "string(6) \"KOI8-R\"\n",
+            "array(3) {\n",
+            "  [\"input_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "  [\"output_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "  [\"internal_encoding\"]=>\n",
+            "  string(5) \"UTF-8\"\n",
+            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

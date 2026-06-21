@@ -227,6 +227,9 @@ struct RuntimeIni {
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
+    iconv_internal_encoding: Option<String>,
+    iconv_input_encoding: Option<String>,
+    iconv_output_encoding: Option<String>,
     mbstring_internal_encoding: Option<String>,
     mbstring_http_output: Option<String>,
     mbstring_language: Option<String>,
@@ -446,6 +449,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.input_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_encoding") {
         ini.output_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("iconv.internal_encoding") {
+        ini.iconv_internal_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("iconv.input_encoding") {
+        ini.iconv_input_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("iconv.output_encoding") {
+        ini.iconv_output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.internal_encoding") {
         ini.mbstring_internal_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.http_output") {
@@ -894,6 +903,9 @@ fn compile_and_run(
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
+        iconv_internal_encoding: ini.iconv_internal_encoding.clone(),
+        iconv_input_encoding: ini.iconv_input_encoding.clone(),
+        iconv_output_encoding: ini.iconv_output_encoding.clone(),
         mbstring_internal_encoding: ini.mbstring_internal_encoding.clone(),
         mbstring_http_output: ini.mbstring_http_output.clone(),
         mbstring_language: ini.mbstring_language.clone(),
@@ -1047,6 +1059,15 @@ fn compile_and_run(
     }
     if let Some(output_encoding) = &ini.output_encoding {
         command.env("PTN_OUTPUT_ENCODING", output_encoding);
+    }
+    if let Some(iconv_internal_encoding) = &ini.iconv_internal_encoding {
+        command.env("PTN_ICONV_INTERNAL_ENCODING", iconv_internal_encoding);
+    }
+    if let Some(iconv_input_encoding) = &ini.iconv_input_encoding {
+        command.env("PTN_ICONV_INPUT_ENCODING", iconv_input_encoding);
+    }
+    if let Some(iconv_output_encoding) = &ini.iconv_output_encoding {
+        command.env("PTN_ICONV_OUTPUT_ENCODING", iconv_output_encoding);
     }
     if let Some(mbstring_internal_encoding) = &ini.mbstring_internal_encoding {
         command.env("PTN_MBSTRING_INTERNAL_ENCODING", mbstring_internal_encoding);

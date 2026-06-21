@@ -1352,6 +1352,9 @@ struct PtnRuntime {
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;
+    char *iconv_internal_encoding;
+    char *iconv_input_encoding;
+    char *iconv_output_encoding;
     int date_timezone_startup_warning_emitted;
     char *variables_order;
     char *register_argc_argv;

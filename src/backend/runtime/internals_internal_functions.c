@@ -3677,7 +3677,14 @@ static const char *ptn_runtime_highlight_html(PtnRuntime *runtime);
 static const char *ptn_runtime_highlight_keyword(PtnRuntime *runtime);
 static const char *ptn_runtime_highlight_string(PtnRuntime *runtime);
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime);
+static const char *ptn_runtime_input_encoding(PtnRuntime *runtime);
 static const char *ptn_runtime_output_encoding(PtnRuntime *runtime);
+static const char *ptn_runtime_iconv_internal_encoding(PtnRuntime *runtime);
+static const char *ptn_runtime_iconv_input_encoding(PtnRuntime *runtime);
+static const char *ptn_runtime_iconv_output_encoding(PtnRuntime *runtime);
+static void ptn_runtime_set_iconv_internal_encoding(PtnRuntime *runtime, const char *value);
+static void ptn_runtime_set_iconv_input_encoding(PtnRuntime *runtime, const char *value);
+static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const char *value);
 static const char *ptn_runtime_unserialize_callback_func(PtnRuntime *runtime);
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal);
 static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent);
@@ -51822,26 +51829,222 @@ static size_t ptn_text_find_bytes(
     return SIZE_MAX;
 }
 
+static size_t ptn_text_find_last_bytes(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len
+) {
+    if (needle_len == 0 || needle_len > haystack_len) {
+        return SIZE_MAX;
+    }
+    for (size_t end = haystack_len - needle_len + 1; end > 0; end--) {
+        size_t i = end - 1;
+        if (memcmp(haystack + i, needle, needle_len) == 0) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static const char *ptn_iconv_effective_internal_encoding(PtnRuntime *runtime);
+
+static int ptn_iconv_encoding_name_is_utf8(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "UTF-8") || ptn_ascii_case_equal(encoding, "UTF8"));
+}
+
+static int ptn_iconv_encoding_operand_is_utf8(PtnStringOperand encoding) {
+    return ptn_string_operand_ascii_case_equal(encoding, "UTF-8") ||
+        ptn_string_operand_ascii_case_equal(encoding, "UTF8");
+}
+
+static int ptn_iconv_optional_encoding_is_utf8(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const PtnValue *value,
+    const char *fallback,
+    size_t line,
+    int *ok
+) {
+    *ok = 1;
+    if (value == NULL || ptn_value_deref(*value).type == PTN_NULL) {
+        return ptn_iconv_encoding_name_is_utf8(fallback);
+    }
+    PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, function_name, position, "encoding", *value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(encoding);
+        *ok = 0;
+        return 0;
+    }
+    if (encoding.len > 64) {
+        char *message = NULL;
+        int needed = snprintf(
+            NULL,
+            0,
+            "%s(): Encoding parameter exceeds the maximum allowed length of 64 characters",
+            function_name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s(): Encoding parameter exceeds the maximum allowed length of 64 characters",
+            function_name
+        );
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        ptn_string_operand_free(encoding);
+        *ok = 0;
+        return 0;
+    }
+    int is_utf8 = ptn_iconv_encoding_operand_is_utf8(encoding);
+    ptn_string_operand_free(encoding);
+    return is_utf8;
+}
+
+static PtnValue ptn_iconv_substr_units(PtnStringOperand string, int64_t offset, int has_length, int64_t length, int use_utf8_units) {
+    size_t unit_count = use_utf8_units
+        ? ptn_text_utf8_char_count(string.data, string.len)
+        : string.len;
+    int64_t start_signed = offset < 0 ? (int64_t)unit_count + offset : offset;
+    if (start_signed < 0) {
+        start_signed = 0;
+    }
+    if ((uint64_t)start_signed > (uint64_t)unit_count) {
+        start_signed = (int64_t)unit_count;
+    }
+    size_t start_unit = (size_t)start_signed;
+    size_t end_unit = unit_count;
+    if (has_length) {
+        int64_t end_signed;
+        if (length >= 0) {
+            if ((uint64_t)length > (uint64_t)unit_count - start_unit) {
+                end_unit = unit_count;
+            } else {
+                end_unit = start_unit + (size_t)length;
+            }
+        } else {
+            end_signed = (int64_t)unit_count + length;
+            if (end_signed < 0) {
+                end_signed = 0;
+            }
+            end_unit = (uint64_t)end_signed > (uint64_t)unit_count ? unit_count : (size_t)end_signed;
+            if (end_unit < start_unit) {
+                end_unit = start_unit;
+            }
+        }
+    }
+    size_t start = use_utf8_units
+        ? ptn_text_utf8_byte_offset_for_char(string.data, string.len, start_unit)
+        : start_unit;
+    size_t end = use_utf8_units
+        ? ptn_text_utf8_byte_offset_for_char(string.data, string.len, end_unit)
+        : end_unit;
+    return ptn_owned_string_len(ptn_duplicate_string_len(string.data + start, end - start), end - start);
+}
+
+static PtnValue ptn_internal_iconv_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "iconv_strlen", 1, "string", args[0], line);
+    int ok = 1;
+    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+        runtime,
+        "iconv_strlen",
+        2,
+        argc >= 2 ? &args[1] : NULL,
+        ptn_iconv_effective_internal_encoding(runtime),
+        line,
+        &ok
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    if (!ok) {
+        ptn_string_operand_free(string);
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_count(string.data, string.len) : string.len));
+    ptn_string_operand_free(string);
+    return result;
+}
+
 static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "iconv_strpos", 1, "haystack", args[0], line);
     PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "iconv_strpos", 2, "needle", args[1], line);
     int64_t offset = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    int ok = 1;
+    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+        runtime,
+        "iconv_strpos",
+        4,
+        argc >= 4 ? &args[3] : NULL,
+        ptn_iconv_effective_internal_encoding(runtime),
+        line,
+        &ok
+    );
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         return ptn_null();
     }
-    size_t char_count = ptn_text_utf8_char_count(haystack.data, haystack.len);
+    if (!ok || needle.len == 0) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_bool(0);
+    }
+    size_t char_count = use_utf8_units ? ptn_text_utf8_char_count(haystack.data, haystack.len) : haystack.len;
     if (offset < 0 || (size_t)offset > char_count) {
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         return ptn_bool(0);
     }
-    size_t start = ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)offset);
+    size_t start = use_utf8_units
+        ? ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)offset)
+        : (size_t)offset;
     size_t found = ptn_text_find_bytes(haystack.data, haystack.len, needle.data, needle.len, start);
     PtnValue result = found == SIZE_MAX
         ? ptn_bool(0)
-        : ptn_int((int64_t)ptn_text_utf8_char_index_for_byte(haystack.data, haystack.len, found));
+        : ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_index_for_byte(haystack.data, haystack.len, found) : found));
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    return result;
+}
+
+static PtnValue ptn_internal_iconv_strrpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 2, "needle", args[1], line);
+    int ok = 1;
+    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+        runtime,
+        "iconv_strrpos",
+        3,
+        argc >= 3 ? &args[2] : NULL,
+        ptn_iconv_effective_internal_encoding(runtime),
+        line,
+        &ok
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+    if (!ok || needle.len == 0) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_bool(0);
+    }
+    size_t found = ptn_text_find_last_bytes(haystack.data, haystack.len, needle.data, needle.len);
+    PtnValue result = found == SIZE_MAX
+        ? ptn_bool(0)
+        : ptn_int((int64_t)(use_utf8_units ? ptn_text_utf8_char_index_for_byte(haystack.data, haystack.len, found) : found));
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
     return result;
@@ -51850,28 +52053,125 @@ static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_iconv_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "iconv_substr", 1, "string", args[0], line);
     int64_t offset = ptn_value_to_integer(args[1]);
-    int64_t length = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL ? ptn_value_to_integer(args[2]) : INT64_MAX;
+    int has_length = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL;
+    int64_t length = has_length ? ptn_value_to_integer(args[2]) : 0;
+    int ok = 1;
+    int use_utf8_units = ptn_iconv_optional_encoding_is_utf8(
+        runtime,
+        "iconv_substr",
+        4,
+        argc >= 4 ? &args[3] : NULL,
+        ptn_iconv_effective_internal_encoding(runtime),
+        line,
+        &ok
+    );
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(string);
         return ptn_null();
     }
-    size_t char_count = ptn_text_utf8_char_count(string.data, string.len);
-    int64_t start_char = offset < 0 ? (int64_t)char_count + offset : offset;
-    if (start_char < 0 || (size_t)start_char > char_count || length < 0) {
+    if (!ok) {
         ptn_string_operand_free(string);
         return ptn_bool(0);
     }
-    size_t start = ptn_text_utf8_byte_offset_for_char(string.data, string.len, (size_t)start_char);
-    size_t end_char = length == INT64_MAX || (uint64_t)length > (uint64_t)SIZE_MAX
-        ? char_count
-        : (size_t)start_char + (size_t)length;
-    if (end_char > char_count) {
-        end_char = char_count;
-    }
-    size_t end = ptn_text_utf8_byte_offset_for_char(string.data, string.len, end_char);
-    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(string.data + start, end - start), end - start);
+    PtnValue result = ptn_iconv_substr_units(string, offset, has_length, length, use_utf8_units);
     ptn_string_operand_free(string);
     return result;
+}
+
+static const char *ptn_iconv_effective_internal_encoding(PtnRuntime *runtime) {
+    const char *encoding = ptn_runtime_iconv_internal_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_internal_encoding(runtime);
+    return encoding != NULL && encoding[0] != '\0' ? encoding : ptn_runtime_default_charset(runtime);
+}
+
+static const char *ptn_iconv_effective_input_encoding(PtnRuntime *runtime) {
+    const char *encoding = ptn_runtime_iconv_input_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_input_encoding(runtime);
+    return encoding != NULL && encoding[0] != '\0' ? encoding : ptn_runtime_default_charset(runtime);
+}
+
+static const char *ptn_iconv_effective_output_encoding(PtnRuntime *runtime) {
+    const char *encoding = ptn_runtime_iconv_output_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_output_encoding(runtime);
+    return encoding != NULL && encoding[0] != '\0' ? encoding : ptn_runtime_default_charset(runtime);
+}
+
+static PtnValue ptn_iconv_encoding_array(PtnRuntime *runtime) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("input_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_input_encoding(runtime))));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("output_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_output_encoding(runtime))));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("internal_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_internal_encoding(runtime))));
+    return result;
+}
+
+static PtnValue ptn_internal_iconv_get_encoding(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        return ptn_iconv_encoding_array(runtime);
+    }
+    PtnStringOperand type = ptn_internal_expect_string_arg(runtime, "iconv_get_encoding", 1, "type", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(type);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(type, "all")) {
+        ptn_string_operand_free(type);
+        return ptn_iconv_encoding_array(runtime);
+    }
+    if (ptn_string_operand_ascii_case_equal(type, "input_encoding")) {
+        ptn_string_operand_free(type);
+        return ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_input_encoding(runtime)));
+    }
+    if (ptn_string_operand_ascii_case_equal(type, "output_encoding")) {
+        ptn_string_operand_free(type);
+        return ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_output_encoding(runtime)));
+    }
+    if (ptn_string_operand_ascii_case_equal(type, "internal_encoding")) {
+        ptn_string_operand_free(type);
+        return ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_internal_encoding(runtime)));
+    }
+    ptn_string_operand_free(type);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_iconv_set_encoding(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand type = ptn_internal_expect_string_arg(runtime, "iconv_set_encoding", 1, "type", args[0], line);
+    PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, "iconv_set_encoding", 2, "encoding", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(type);
+        ptn_string_operand_free(encoding);
+        return ptn_null();
+    }
+    if (encoding.len > 64) {
+        ptn_emit_warning(&runtime->diagnostics, "iconv_set_encoding(): Encoding parameter exceeds the maximum allowed length of 64 characters", line);
+        ptn_string_operand_free(type);
+        ptn_string_operand_free(encoding);
+        return ptn_bool(0);
+    }
+    char *next = ptn_duplicate_string_len(encoding.data, encoding.len);
+    int known = 1;
+    if (ptn_string_operand_ascii_case_equal(type, "input_encoding")) {
+        ptn_runtime_set_iconv_input_encoding(runtime, next);
+    } else if (ptn_string_operand_ascii_case_equal(type, "output_encoding")) {
+        ptn_runtime_set_iconv_output_encoding(runtime, next);
+    } else if (ptn_string_operand_ascii_case_equal(type, "internal_encoding")) {
+        ptn_runtime_set_iconv_internal_encoding(runtime, next);
+    } else {
+        known = 0;
+    }
+    free(next);
+    ptn_string_operand_free(type);
+    ptn_string_operand_free(encoding);
+    return ptn_bool(known);
 }
 
 static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -60371,6 +60671,30 @@ static const char *ptn_runtime_output_encoding(PtnRuntime *runtime) {
     return root->output_encoding;
 }
 
+static const char *ptn_runtime_iconv_internal_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->iconv_internal_encoding == NULL) {
+        return "";
+    }
+    return root->iconv_internal_encoding;
+}
+
+static const char *ptn_runtime_iconv_input_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->iconv_input_encoding == NULL) {
+        return "";
+    }
+    return root->iconv_input_encoding;
+}
+
+static const char *ptn_runtime_iconv_output_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->iconv_output_encoding == NULL) {
+        return "";
+    }
+    return root->iconv_output_encoding;
+}
+
 static const char *ptn_runtime_variables_order(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->variables_order == NULL) {
@@ -61168,8 +61492,16 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_input_encoding(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "internal_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_internal_encoding(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.internal_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_internal_encoding(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "open_basedir")) {
@@ -61257,6 +61589,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
@@ -61466,6 +61802,21 @@ static void ptn_runtime_set_output_encoding(PtnRuntime *runtime, const char *val
     ptn_runtime_set_ini_string(&root->output_encoding, value);
 }
 
+static void ptn_runtime_set_iconv_internal_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->iconv_internal_encoding, value);
+}
+
+static void ptn_runtime_set_iconv_input_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->iconv_input_encoding, value);
+}
+
+static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->iconv_output_encoding, value);
+}
+
 static void ptn_runtime_set_user_agent(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->user_agent, value);
@@ -61660,13 +62011,28 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.internal_encoding")) {
+        ptn_runtime_set_iconv_internal_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "input_encoding")) {
         ptn_runtime_set_input_encoding(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
+        ptn_runtime_set_iconv_input_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
         ptn_runtime_set_output_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
+        ptn_runtime_set_iconv_output_encoding(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -62022,6 +62388,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.internal_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_internal_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_iconv_internal_encoding(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "input_encoding")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_input_encoding(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
@@ -62032,11 +62408,31 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_iconv_input_encoding(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_output_encoding(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_iconv_output_encoding(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -85589,7 +85985,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "headers_sent", 0, 2, ptn_internal_headers_sent },
         { "hypot", 2, 2, ptn_internal_hypot },
         { "iconv", 3, 3, ptn_internal_iconv },
+        { "iconv_get_encoding", 0, 1, ptn_internal_iconv_get_encoding },
+        { "iconv_set_encoding", 2, 2, ptn_internal_iconv_set_encoding },
+        { "iconv_strlen", 1, 2, ptn_internal_iconv_strlen },
         { "iconv_strpos", 2, 4, ptn_internal_iconv_strpos },
+        { "iconv_strrpos", 2, 3, ptn_internal_iconv_strrpos },
         { "iconv_substr", 2, 4, ptn_internal_iconv_substr },
         { "idate", 1, 2, ptn_internal_idate },
         { "implode", 1, 2, ptn_internal_implode },

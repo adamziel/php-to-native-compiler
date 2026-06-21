@@ -2037,6 +2037,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
+    const char *configured_iconv_internal_encoding = getenv("PTN_ICONV_INTERNAL_ENCODING");
+    const char *configured_iconv_input_encoding = getenv("PTN_ICONV_INPUT_ENCODING");
+    const char *configured_iconv_output_encoding = getenv("PTN_ICONV_OUTPUT_ENCODING");
     const char *configured_variables_order = getenv("PTN_VARIABLES_ORDER");
     const char *configured_register_argc_argv = getenv("PTN_REGISTER_ARGC_ARGV");
     const char *configured_enable_post_data_reading = getenv("PTN_ENABLE_POST_DATA_READING");
@@ -2149,6 +2152,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->output_encoding = ptn_duplicate_string(
         configured_output_encoding == NULL ? "" : configured_output_encoding
+    );
+    runtime->iconv_internal_encoding = ptn_duplicate_string(
+        configured_iconv_internal_encoding == NULL ? "" : configured_iconv_internal_encoding
+    );
+    runtime->iconv_input_encoding = ptn_duplicate_string(
+        configured_iconv_input_encoding == NULL ? "" : configured_iconv_input_encoding
+    );
+    runtime->iconv_output_encoding = ptn_duplicate_string(
+        configured_iconv_output_encoding == NULL ? "" : configured_iconv_output_encoding
     );
     runtime->variables_order = ptn_duplicate_string(
         configured_variables_order == NULL ? "EGPCS" : configured_variables_order

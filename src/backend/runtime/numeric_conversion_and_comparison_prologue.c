@@ -584,6 +584,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->input_encoding = NULL;
         free(runtime->output_encoding);
         runtime->output_encoding = NULL;
+        free(runtime->iconv_internal_encoding);
+        runtime->iconv_internal_encoding = NULL;
+        free(runtime->iconv_input_encoding);
+        runtime->iconv_input_encoding = NULL;
+        free(runtime->iconv_output_encoding);
+        runtime->iconv_output_encoding = NULL;
         free(runtime->variables_order);
         runtime->variables_order = NULL;
         free(runtime->register_argc_argv);
