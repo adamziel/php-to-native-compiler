@@ -894,10 +894,16 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Mt19937\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\PcgOneseq128XslRr64\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Xoshiro256StarStar\")) {\n");
+    out.push_str(
+        "        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Xoshiro256StarStar\")) {\n",
+    );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Random\\\\Engine\") ||\n");
-    out.push_str("            (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\") &&\n");
-    out.push_str("             ptn_ascii_case_equal(interface_name, \"Random\\\\CryptoSafeEngine\"));\n");
+    out.push_str(
+        "            (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\") &&\n",
+    );
+    out.push_str(
+        "             ptn_ascii_case_equal(interface_name, \"Random\\\\CryptoSafeEngine\"));\n",
+    );
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");

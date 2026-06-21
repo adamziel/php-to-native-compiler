@@ -1691,6 +1691,9 @@ static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_randomizer(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_builtin(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_interval_boundary(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo_statement(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo_exception(const char *class_name);

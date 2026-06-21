@@ -57319,7 +57319,11 @@ static int ptn_randomizer_engine_bytes(
             continue;
         }
 
-        PtnValue generated = ptn_call_method(runtime, resolved_engine, "generate", 0, NULL, line);
+        if (runtime == NULL || runtime->method_dispatch == NULL) {
+            ptn_throw_undefined_method_for_receiver(runtime, resolved_engine, "generate", line);
+            return 0;
+        }
+        PtnValue generated = runtime->method_dispatch(runtime, resolved_engine, "generate", 0, NULL, line);
         if (runtime->exceptions->active_exception != NULL) {
             return 0;
         }
@@ -85868,6 +85872,9 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
         return ptn_ascii_case_equal(property_name, "value")
             || ptn_ascii_case_equal(property_name, "scale");
     }
+    if (ptn_internal_class_name_is_randomizer(class_name)) {
+        return ptn_ascii_case_equal(property_name, "engine");
+    }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return ptn_ascii_case_equal(property_name, "id")
             || ptn_ascii_case_equal(property_name, "text")
@@ -86010,6 +86017,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "floor")
             || ptn_ascii_case_equal(method_name, "round")
             || ptn_ascii_case_equal(method_name, "compare");
+    }
+    if (ptn_internal_class_name_is_randomizer(class_name)) {
+        return ptn_randomizer_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_random_engine_builtin(class_name)) {
+        return ptn_random_engine_method_exists(class_name, method_name);
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return ptn_ascii_case_equal(method_name, "getTokenName");
@@ -86354,6 +86367,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "fromStream");
     }
     if (ptn_internal_class_name_is_rounding_mode(class_name)) {
+        return ptn_ascii_case_equal(method_name, "cases");
+    }
+    if (ptn_internal_class_name_is_random_interval_boundary(class_name)) {
         return ptn_ascii_case_equal(method_name, "cases");
     }
     if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) ||
@@ -86821,6 +86837,39 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "compare",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_randomizer(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "getBytes",
+            "getBytesFromString",
+            "getFloat",
+            "getInt",
+            "nextFloat",
+            "nextInt",
+            "pickArrayKeys",
+            "shuffleArray",
+            "shuffleBytes",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_random_engine_builtin(class_name)) {
+        static const char *const common_names[] = {
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "generate",
+        };
+        ptn_append_method_names(result, &index, common_names, sizeof(common_names) / sizeof(common_names[0]));
+        if (ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64") ||
+            ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+            ptn_append_method_name(result, &index, "jump");
+            ptn_append_method_name(result, &index, "jumpLong");
+        }
         return result;
     }
     if (ptn_internal_class_name_is_attribute(class_name) ||
