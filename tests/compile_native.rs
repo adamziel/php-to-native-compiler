@@ -12069,6 +12069,46 @@ var_dump($x);
 }
 
 #[test]
+fn compile_gc_destructor_resurrection_nested_reference_cycle_counts_zero_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-nested-reference-resurrection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-nested-reference-resurrection.php");
+    let output = root.join("gc-destructor-nested-reference-resurrection-bin");
+    fs::write(
+        &input,
+        "<?php
+class ryat {
+    var $ryat;
+    var $chtg;
+    var $nested;
+    function __destruct() {
+        $GLOBALS['x'] = $this;
+    }
+}
+$o = new ryat;
+$o->nested = [];
+$o->nested[] =& $o->nested;
+$o->ryat = $o;
+$x =& $o->chtg;
+unset($o);
+var_dump(gc_collect_cycles());
+var_dump($x);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nobject(ryat)#1 (3) {\n  [\"ryat\"]=>\n  *RECURSION*\n  [\"chtg\"]=>\n  *RECURSION*\n  [\"nested\"]=>\n  &array(1) {\n    [0]=>\n    *RECURSION*\n  }\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_status_to_native_binary() {
     let root = temp_dir("ptn-native-gc-status");
     fs::create_dir_all(&root).unwrap();
@@ -54454,7 +54494,7 @@ $a->b->a = $a;
 $c = new CycleA;
 $array = [$c];
 unset($c);
-for ($i = 0; $i < 8; $i++) {
+for ($i = 0; $i < 9998; $i++) {
     $t = [];
     $t[] = &$t;
     unset($t);

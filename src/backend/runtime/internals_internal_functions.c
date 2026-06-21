@@ -59561,6 +59561,20 @@ static int ptn_gc_collected_object_contains(PtnObject **objects, size_t len, Ptn
     return 0;
 }
 
+static size_t ptn_gc_destructed_object_count(PtnObject *object) {
+    if (
+        object == NULL ||
+        (
+            object->destructor_called &&
+            (object->properties == NULL || object->properties->len == 0) &&
+            !ptn_gc_array_reference_auto_flushed()
+        )
+    ) {
+        return 0;
+    }
+    return 1;
+}
+
 static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -59576,6 +59590,9 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
     PtnObject **destructed_objects = NULL;
     size_t destructed_objects_len = 0;
     size_t destructed_objects_capacity = 0;
+    PtnObject **counted_destructed_objects = NULL;
+    size_t counted_destructed_objects_len = 0;
+    size_t counted_destructed_objects_capacity = 0;
 
     for (size_t i = 0; i < root->live_objects_len; i++) {
         PtnObject *object = root->live_objects[i];
@@ -59588,23 +59605,43 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
         ) {
             continue;
         }
-        if (collected > SIZE_MAX - 1) {
-            ptn_abort_out_of_memory();
-        }
-        collected += 1;
+        ptn_object_retain(object);
         ptn_gc_collected_object_push(
             &destructed_objects,
             &destructed_objects_len,
             &destructed_objects_capacity,
             object
         );
-        ptn_object_retain(object);
         ptn_object_run_destructor_ex(object, 1);
-        ptn_object_release(object);
     }
 
-    if (destructed_objects_len != 0) {
-        epoch = ptn_runtime_mark_gc_roots(runtime, root);
+    epoch = ptn_runtime_mark_gc_roots(runtime, root);
+
+    for (size_t i = 0; i < destructed_objects_len; i++) {
+        PtnObject *object = destructed_objects[i];
+        size_t object_count = 0;
+        if (
+            object != NULL &&
+            object->refcount > 0 &&
+            object->native_data == NULL &&
+            object->gc_mark_epoch != epoch &&
+            !ptn_object_has_pending_declared_destructor(object)
+        ) {
+            object_count = ptn_gc_destructed_object_count(object);
+        }
+        if (object_count != 0) {
+            if (collected > SIZE_MAX - object_count) {
+                ptn_abort_out_of_memory();
+            }
+            collected += object_count;
+            ptn_gc_collected_object_push(
+                &counted_destructed_objects,
+                &counted_destructed_objects_len,
+                &counted_destructed_objects_capacity,
+                object
+            );
+        }
+        ptn_object_release(object);
     }
 
     size_t index = root->live_objects_len;
@@ -59620,8 +59657,14 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
         ) {
             size_t nested = ptn_gc_count_unreachable_contained_values_in_object_properties(object, epoch);
             int object_already_counted =
-                ptn_gc_collected_object_contains(destructed_objects, destructed_objects_len, object);
-            size_t object_count = object_already_counted ? 0 : 1;
+                ptn_gc_collected_object_contains(
+                    counted_destructed_objects,
+                    counted_destructed_objects_len,
+                    object
+                );
+            size_t object_count = object_already_counted
+                ? 0
+                : ptn_gc_destructed_object_count(object);
             if (collected > SIZE_MAX - object_count ||
                 collected + object_count > SIZE_MAX - nested) {
                 ptn_abort_out_of_memory();
@@ -59636,6 +59679,7 @@ static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
         }
     }
     free(destructed_objects);
+    free(counted_destructed_objects);
     return collected;
 }
 

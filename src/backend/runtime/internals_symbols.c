@@ -38,6 +38,16 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     return reference;
 }
 
+static PTN_UNUSED void ptn_reference_retain(PtnReference *reference) {
+    if (reference == NULL) {
+        return;
+    }
+    if (reference->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    reference->refcount++;
+}
+
 static PTN_UNUSED void ptn_gc_begin_replaced_reference_cycle_suppression(
     PtnReference *reference
 );
@@ -194,6 +204,10 @@ static PTN_UNUSED void ptn_array_break_reference_cycle(PtnArray *array, PtnRefer
 
 static size_t ptn_pending_array_cycle_collections = 0;
 static int ptn_pending_array_cycle_auto_flushed = 0;
+static PtnReference **ptn_pending_destructor_array_cycle_references = NULL;
+static size_t ptn_pending_destructor_array_cycle_references_len = 0;
+static size_t ptn_pending_destructor_array_cycle_references_capacity = 0;
+static int ptn_pending_destructor_array_cycle_references_draining = 0;
 static PtnReference *ptn_replaced_reference_cycle_suppressed_reference = NULL;
 static size_t ptn_replaced_reference_cycle_suppression_depth = 0;
 
@@ -212,6 +226,153 @@ static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
         ptn_pending_array_cycle_collections = 0;
         ptn_pending_array_cycle_auto_flushed = 1;
     }
+}
+
+static PTN_UNUSED int ptn_gc_array_reference_auto_flushed(void) {
+    return ptn_pending_array_cycle_auto_flushed;
+}
+
+static PTN_UNUSED void ptn_gc_enqueue_pending_destructor_array_cycle(PtnReference *reference) {
+    if (reference == NULL || reference->refcount == 0) {
+        return;
+    }
+    for (size_t i = 0; i < ptn_pending_destructor_array_cycle_references_len; i++) {
+        if (ptn_pending_destructor_array_cycle_references[i] == reference) {
+            return;
+        }
+    }
+    if (
+        ptn_pending_destructor_array_cycle_references_len ==
+        ptn_pending_destructor_array_cycle_references_capacity
+    ) {
+        size_t new_capacity = ptn_pending_destructor_array_cycle_references_capacity == 0
+            ? 8
+            : ptn_pending_destructor_array_cycle_references_capacity * 2;
+        if (
+            new_capacity < ptn_pending_destructor_array_cycle_references_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnReference *)
+        ) {
+            ptn_abort_out_of_memory();
+        }
+        PtnReference **new_references = realloc(
+            ptn_pending_destructor_array_cycle_references,
+            new_capacity * sizeof(PtnReference *)
+        );
+        if (new_references == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_pending_destructor_array_cycle_references = new_references;
+        ptn_pending_destructor_array_cycle_references_capacity = new_capacity;
+    }
+    ptn_reference_retain(reference);
+    ptn_pending_destructor_array_cycle_references[
+        ptn_pending_destructor_array_cycle_references_len++
+    ] = reference;
+}
+
+static void ptn_gc_detach_unreachable_destructed_objects_in_value(
+    PtnRuntime *root,
+    PtnValue *value,
+    size_t depth
+);
+
+static void ptn_gc_detach_unreachable_destructed_objects_in_array(
+    PtnRuntime *root,
+    PtnArray *array,
+    size_t depth
+) {
+    if (array == NULL || depth > 1024) {
+        return;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_gc_detach_unreachable_destructed_objects_in_value(
+            root,
+            &array->entries[i].value,
+            depth + 1
+        );
+    }
+}
+
+static void ptn_gc_detach_unreachable_destructed_objects_in_value(
+    PtnRuntime *root,
+    PtnValue *value,
+    size_t depth
+) {
+    if (value == NULL || depth > 1024) {
+        return;
+    }
+    if (value->type == PTN_REFERENCE && value->as.reference != NULL) {
+        ptn_gc_detach_unreachable_destructed_objects_in_value(
+            root,
+            &value->as.reference->value,
+            depth + 1
+        );
+        return;
+    }
+    PtnValue deref = ptn_value_deref(*value);
+    if (deref.type == PTN_ARRAY) {
+        ptn_gc_detach_unreachable_destructed_objects_in_array(
+            root,
+            deref.as.array,
+            depth + 1
+        );
+        return;
+    }
+    if (deref.type != PTN_OBJECT || deref.as.object == NULL) {
+        return;
+    }
+    PtnObject *object = deref.as.object;
+    if (
+        !object->destructor_called ||
+        object->refcount == 0 ||
+        ptn_runtime_roots_reach_object(root, object)
+    ) {
+        return;
+    }
+    PtnValue old = *value;
+    *value = ptn_null();
+    ptn_value_destroy(&old);
+}
+
+static PTN_UNUSED void ptn_gc_drain_pending_destructor_array_cycles(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (
+        root == NULL ||
+        ptn_pending_destructor_array_cycle_references_draining ||
+        ptn_pending_destructor_array_cycle_references_len == 0
+    ) {
+        return;
+    }
+
+    ptn_pending_destructor_array_cycle_references_draining = 1;
+    size_t len = ptn_pending_destructor_array_cycle_references_len;
+    PtnReference **references = ptn_pending_destructor_array_cycle_references;
+    ptn_pending_destructor_array_cycle_references = NULL;
+    ptn_pending_destructor_array_cycle_references_len = 0;
+    ptn_pending_destructor_array_cycle_references_capacity = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        PtnReference *reference = references[i];
+        if (
+            reference != NULL &&
+            reference->refcount != 0 &&
+            reference->value.type == PTN_ARRAY &&
+            reference->value.as.array != NULL
+        ) {
+            ptn_runtime_run_static_property_value_destructors(reference->value, 0);
+            ptn_gc_detach_unreachable_destructed_objects_in_value(
+                root,
+                &reference->value,
+                0
+            );
+        }
+        ptn_reference_release(reference);
+    }
+    free(references);
+    ptn_pending_destructor_array_cycle_references_draining = 0;
 }
 
 static PTN_UNUSED void ptn_gc_begin_replaced_reference_cycle_suppression(
@@ -257,6 +418,7 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     if (reference->refcount == 0) {
         return;
     }
+    int enqueue_pending_destructor_cycle = 0;
     if (reference->value.type == PTN_ARRAY &&
         reference->value.as.array != NULL &&
         reference->value.as.array->refcount == 1) {
@@ -264,14 +426,22 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
         if (
             internal_refs > 0 &&
             reference->refcount == internal_refs + 1 &&
-            !ptn_gc_suppresses_replaced_reference_cycle(reference) &&
-            !ptn_array_contains_pending_destructor(reference->value.as.array, 0)
+            !ptn_gc_suppresses_replaced_reference_cycle(reference)
         ) {
-            ptn_gc_note_array_reference_cycles(internal_refs);
-            ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
+            int contains_pending_destructor =
+                ptn_array_contains_pending_destructor(reference->value.as.array, 0);
+            if (!contains_pending_destructor) {
+                ptn_gc_note_array_reference_cycles(internal_refs);
+                ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
+            } else if (ptn_gc_array_reference_auto_flushed()) {
+                enqueue_pending_destructor_cycle = 1;
+            }
         }
     }
     reference->refcount--;
+    if (enqueue_pending_destructor_cycle && reference->refcount != 0) {
+        ptn_gc_enqueue_pending_destructor_array_cycle(reference);
+    }
     if (reference->refcount != 0) {
         return;
     }
