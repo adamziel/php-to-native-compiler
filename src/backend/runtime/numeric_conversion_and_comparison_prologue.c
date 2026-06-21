@@ -741,7 +741,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
         }
         entries[entry_count].has_key = 1;
         entries[entry_count].key = ptn_string(globals->items[i].name);
-        entries[entry_count].value = ptn_value_deref(globals->items[i].value);
+        entries[entry_count].value = globals->items[i].value;
         entry_count++;
     }
 

@@ -53933,6 +53933,48 @@ var_dump($value, $paired);
 }
 
 #[test]
+fn compile_array_map_globals_preserves_reference_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-array-map-globals-reference-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-map-globals-reference-slots.php");
+    let output = root.join("array-map-globals-reference-slots-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = 1;
+array_map(function($x) use (&$lastval) { $lastval = $x; }, $GLOBALS);
+var_dump(gettype($lastval), $lastval);
+
+$linked = 3;
+$GLOBALS['linked'] =& $linked;
+$snapshot = $GLOBALS;
+$snapshot['linked'] = 4;
+var_dump($linked, $GLOBALS['linked'], $snapshot['linked']);
+
+$plain = 5;
+$snapshot = $GLOBALS;
+$snapshot['plain'] = 6;
+var_dump($plain, $GLOBALS['plain'], $snapshot['plain']);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(7) \"integer\"\nint(1)\nint(4)\nint(4)\nint(4)\nint(5)\nint(5)\nint(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_globals_snapshot"));
+    assert!(c_source.contains("ptn_internal_array_map"));
+}
+
+#[test]
 fn compile_namespaced_registered_internals_fall_back_to_global_runtime() {
     let root = temp_dir("ptn-native-namespaced-registered-internal-fallback");
     fs::create_dir_all(&root).unwrap();
