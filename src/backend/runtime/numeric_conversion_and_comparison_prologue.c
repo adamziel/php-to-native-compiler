@@ -3463,6 +3463,46 @@ static PTN_UNUSED const char *ptn_uri_comparison_mode_case_name(const char *case
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_uri_url_validation_error_type_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "DomainToAscii",
+        "DomainToUnicode",
+        "DomainInvalidCodePoint",
+        "HostInvalidCodePoint",
+        "Ipv4EmptyPart",
+        "Ipv4TooManyParts",
+        "Ipv4NonNumericPart",
+        "Ipv4NonDecimalPart",
+        "Ipv4OutOfRangePart",
+        "Ipv6Unclosed",
+        "Ipv6InvalidCompression",
+        "Ipv6TooManyPieces",
+        "Ipv6MultipleCompression",
+        "Ipv6InvalidCodePoint",
+        "Ipv6TooFewPieces",
+        "Ipv4InIpv6TooManyPieces",
+        "Ipv4InIpv6InvalidCodePoint",
+        "Ipv4InIpv6OutOfRangePart",
+        "Ipv4InIpv6TooFewParts",
+        "InvalidUrlUnit",
+        "SpecialSchemeMissingFollowingSolidus",
+        "MissingSchemeNonRelativeUrl",
+        "InvalidReverseSolidus",
+        "InvalidCredentials",
+        "HostMissing",
+        "PortOutOfRange",
+        "PortInvalid",
+        "FileInvalidWindowsDriveLetter",
+        "FileInvalidWindowsDriveLetterHost",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *class_name,
     size_t class_len,
@@ -4424,6 +4464,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (url_host_type_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlHostType", url_host_type_case);
+    }
+    const char *url_validation_error_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlValidationErrorType")
+        ? ptn_uri_url_validation_error_type_case_name(constant)
+        : NULL;
+    if (url_validation_error_type_case != NULL) {
+        return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlValidationErrorType", url_validation_error_type_case);
     }
     const char *uri_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\Rfc3986\\UriType")
         ? ptn_uri_type_case_name(constant)

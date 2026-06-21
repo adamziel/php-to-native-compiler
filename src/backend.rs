@@ -3034,6 +3034,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
         return Some("rest_index");
     }
+    if (name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse")
+        || name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::__construct"))
+        && argument_index == 2
+    {
+        return Some("errors");
+    }
     if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
         return Some("next");
     }
@@ -5644,6 +5650,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationError",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -6138,6 +6146,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationError",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(&c_string(builtin));
@@ -15359,6 +15369,10 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
                 "uri\\rfc3986\\urihosttype" => Some("Uri\\Rfc3986\\UriHostType"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
+                "uri\\whatwg\\urlvalidationerror" => Some("Uri\\WhatWg\\UrlValidationError"),
+                "uri\\whatwg\\urlvalidationerrortype" => {
+                    Some("Uri\\WhatWg\\UrlValidationErrorType")
+                }
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -22927,6 +22941,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationError")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationErrorType")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -32982,6 +32998,7 @@ impl ValueEmitter {
                 out,
                 &result_temp,
                 &class_lookup_temp,
+                compile_time_class_name.as_deref(),
                 arguments,
                 argument_unpacks,
                 line,
@@ -33072,6 +33089,7 @@ impl ValueEmitter {
                 out,
                 &result_temp,
                 &class_resolved_temp,
+                None,
                 arguments,
                 argument_unpacks,
                 line,
@@ -33083,6 +33101,7 @@ impl ValueEmitter {
                 out,
                 &result_temp,
                 &class_resolved_temp,
+                None,
                 arguments,
                 argument_unpacks,
                 line,
@@ -33722,6 +33741,7 @@ impl ValueEmitter {
         out: &mut String,
         result_temp: &str,
         class_name: &str,
+        known_class_name: Option<&str>,
         arguments: &[ValueExpr],
         argument_unpacks: &[bool],
         line: usize,
@@ -33763,9 +33783,35 @@ impl ValueEmitter {
             return;
         }
 
+        let constructor_function_name =
+            known_class_name.map(|class_name| format!("{class_name}::__construct"));
         let mut argument_temps = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            argument_temps.push(self.emit_materialized_value(out, argument));
+        let mut unwrap_array_dim_reference_temps = Vec::new();
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if let Some(parameter_name) = constructor_function_name
+                .as_deref()
+                .and_then(|name| internal_by_ref_parameter_name(name, argument_index))
+            {
+                let function_name = constructor_function_name.as_deref().unwrap();
+                let allow_temporary =
+                    internal_by_ref_temporary_argument_allowed(function_name, argument_index);
+                let temp = self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    function_name,
+                    argument_index,
+                    parameter_name,
+                    line,
+                    allow_temporary,
+                    true,
+                );
+                if value_is_array_dim_reference_target(argument) {
+                    unwrap_array_dim_reference_temps.push(temp.clone());
+                }
+                argument_temps.push(temp);
+            } else {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
         }
         if argument_temps.is_empty() {
             out.push_str("    ");
@@ -33811,6 +33857,9 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+        }
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for argument_temp in argument_temps {
             emit_value_cleanup(out, "    ", &argument_temp);

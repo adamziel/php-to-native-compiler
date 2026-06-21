@@ -11418,7 +11418,7 @@ fn is_known_internal_enum_class(class_name: &str) -> bool {
             .trim_start_matches('\\')
             .to_ascii_lowercase()
             .as_str(),
-        "random\\intervalboundary" | "roundingmode"
+        "random\\intervalboundary" | "roundingmode" | "uri\\whatwg\\urlvalidationerrortype"
     )
 }
 
@@ -11712,7 +11712,11 @@ fn is_modeled_archive_network_class_name(name: &str) -> bool {
 fn is_modeled_builtin_uri_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "uri\\whatwg\\url" | "uri\\uricomparisonmode" | "uri\\whatwg\\urlhosttype"
+        "uri\\whatwg\\url"
+            | "uri\\uricomparisonmode"
+            | "uri\\whatwg\\urlhosttype"
+            | "uri\\whatwg\\urlvalidationerror"
+            | "uri\\whatwg\\urlvalidationerrortype"
     )
 }
 
