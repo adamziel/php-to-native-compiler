@@ -38653,7 +38653,16 @@ $x2 = [[2], 2];\n\
 $x3 = [[3], 3];\n\
 $bx = [10];\n\
 $x[replace_x($x1)][replace_x($x2)] = $bx[replace_x($x3)];\n\
-var_dump($x);\n",
+echo $x[0][0], ':', $x[1], \"\\n\";\n\
+\n\
+$c = [];\n\
+try { $c[$c = 1] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($c);\n\
+\n\
+$ee = [\"original array\"];\n\
+function replace_ee() { global $ee; $ee = [\"array created in f()\"]; return 1; }\n\
+$ee[\"array entry created after f()\"][replace_ee()] = \"hello\";\n\
+echo $ee[0], ':', $ee[\"array entry created after f()\"][1], \"\\n\";\n",
     )
     .unwrap();
 
@@ -38667,28 +38676,22 @@ var_dump($x);\n",
             "int(15)\n",
             "bool(true)\n",
             "bool(true)\n",
-            "array(2) {\n",
-            "  [0]=>\n",
-            "  array(1) {\n",
-            "    [0]=>\n",
-            "    int(10)\n",
-            "  }\n",
-            "  [1]=>\n",
-            "  int(3)\n",
-            "}\n"
+            "10:3\n",
+            "Cannot use a scalar value as an array\n",
+            "int(1)\n",
+            "array created in f():hello\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"arr\""));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"items\""));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, \"x\""));
-    assert!(!c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"arr\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"arr\""));
     assert!(
-        !c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"items\"")
+        c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"items\"")
     );
-    assert!(!c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"x\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"x\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"c\""));
+    assert!(c_source.contains("ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"ee\""));
 }
 
 #[test]

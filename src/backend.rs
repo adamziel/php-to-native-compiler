@@ -20201,9 +20201,14 @@ fn emit_instruction(
                     value_expr_is_direct_variable_read(value);
                 let dimensions_may_emit_key_conversion_diagnostic =
                     array_dimensions_may_emit_key_conversion_diagnostic(dimensions);
-                let pre_eval_root = if value_may_emit_undefined_variable_warning
-                    || dimensions_may_emit_key_conversion_diagnostic
-                {
+                let path = if has_deferred_dimension_warnings {
+                    emit_array_path_segments_with_deferred_variable_warnings(
+                        out, values, dimensions,
+                    )
+                } else {
+                    emit_array_path_segments(out, values, dimensions)
+                };
+                let pre_value_root = if value_may_emit_undefined_variable_warning {
                     let root_lookup_temp = values.next_temp();
                     let root_temp = values.next_temp();
                     let root_epoch_temp = values.next_temp();
@@ -20228,13 +20233,6 @@ fn emit_instruction(
                 } else {
                     None
                 };
-                let path = if pre_eval_root.is_some() || has_deferred_dimension_warnings {
-                    emit_array_path_segments_with_deferred_variable_warnings(
-                        out, values, dimensions,
-                    )
-                } else {
-                    emit_array_path_segments(out, values, dimensions)
-                };
                 let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
@@ -20242,8 +20240,9 @@ fn emit_instruction(
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                let post_value_root = if pre_eval_root.is_none()
-                    && !path.deferred_undefined_variable_warnings.is_empty()
+                let post_value_root = if pre_value_root.is_none()
+                    && (!path.deferred_undefined_variable_warnings.is_empty()
+                        || dimensions_may_emit_key_conversion_diagnostic)
                 {
                     let root_lookup_temp = values.next_temp();
                     let root_temp = values.next_temp();
@@ -20270,7 +20269,7 @@ fn emit_instruction(
                     None
                 };
                 if let Some((root_temp, root_epoch_temp)) =
-                    pre_eval_root.as_ref().or(post_value_root.as_ref())
+                    pre_value_root.as_ref().or(post_value_root.as_ref())
                 {
                     out.push_str(
                         "    ptn_runtime_array_path_set_after_dimension_eval(&runtime, \"",
@@ -20316,7 +20315,7 @@ fn emit_instruction(
                 }
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
-                if let Some((root_temp, _)) = pre_eval_root {
+                if let Some((root_temp, _)) = pre_value_root {
                     emit_value_cleanup(out, "    ", &root_temp);
                 }
                 if let Some((root_temp, _)) = post_value_root {
@@ -31150,9 +31149,12 @@ impl ValueEmitter {
                 value_expr_is_direct_variable_read(value);
             let dimensions_may_emit_key_conversion_diagnostic =
                 array_dimensions_may_emit_key_conversion_diagnostic(dimensions);
-            let pre_eval_root = if value_may_emit_undefined_variable_warning
-                || dimensions_may_emit_key_conversion_diagnostic
-            {
+            let path = if has_deferred_dimension_warnings {
+                emit_array_path_segments_with_deferred_variable_warnings(out, self, dimensions)
+            } else {
+                emit_array_path_segments(out, self, dimensions)
+            };
+            let pre_value_root = if value_may_emit_undefined_variable_warning {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
                 let root_epoch_temp = self.next_temp();
@@ -31177,11 +31179,6 @@ impl ValueEmitter {
             } else {
                 None
             };
-            let path = if pre_eval_root.is_some() || has_deferred_dimension_warnings {
-                emit_array_path_segments_with_deferred_variable_warnings(out, self, dimensions)
-            } else {
-                emit_array_path_segments(out, self, dimensions)
-            };
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -31189,8 +31186,9 @@ impl ValueEmitter {
             out.push_str(" = ptn_value_snapshot_for_array_path_write(");
             out.push_str(&value_temp);
             out.push_str(");\n");
-            let post_value_root = if pre_eval_root.is_none()
-                && !path.deferred_undefined_variable_warnings.is_empty()
+            let post_value_root = if pre_value_root.is_none()
+                && (!path.deferred_undefined_variable_warnings.is_empty()
+                    || dimensions_may_emit_key_conversion_diagnostic)
             {
                 let root_lookup_temp = self.next_temp();
                 let root_temp = self.next_temp();
@@ -31220,7 +31218,7 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             if let Some((root_temp, root_epoch_temp)) =
-                pre_eval_root.as_ref().or(post_value_root.as_ref())
+                pre_value_root.as_ref().or(post_value_root.as_ref())
             {
                 out.push_str(
                     " = ptn_runtime_array_path_set_result_after_dimension_eval(&runtime, \"",
@@ -31266,7 +31264,7 @@ impl ValueEmitter {
             }
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);
-            if let Some((root_temp, _)) = pre_eval_root {
+            if let Some((root_temp, _)) = pre_value_root {
                 emit_value_cleanup(out, "    ", &root_temp);
             }
             if let Some((root_temp, _)) = post_value_root {
