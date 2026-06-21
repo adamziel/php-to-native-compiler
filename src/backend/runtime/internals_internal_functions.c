@@ -1834,6 +1834,13 @@ static PTN_UNUSED int ptn_direct_value_var_dump_spl_fixed_array_object(
     size_t indent,
     PtnDirectValueDumpSeen *seen
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         return 0;
     }
@@ -1859,6 +1866,7 @@ static PTN_UNUSED int ptn_direct_value_var_dump_spl_fixed_array_object(
     ptn_direct_dump_write_cstr(runtime, "}\n");
     ptn_value_destroy(&array);
     return 1;
+#endif
 }
 
 static PTN_UNUSED int ptn_direct_var_dump_weak_map_object(
@@ -2290,9 +2298,11 @@ static PTN_UNUSED int ptn_direct_value_var_dump_magic_debug_info(
         runtime->magic_debug_info == NULL) {
         return 0;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_spl_fixed_array(resolved.as.object->class_name)) {
         return 0;
     }
+#endif
     PtnValue debug_info = ptn_null();
     if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
         return 0;
@@ -3219,6 +3229,13 @@ static PTN_UNUSED int ptn_direct_var_dump_spl_fixed_array_object(
     size_t indent,
     PtnDirectDumpSeen *seen
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         return 0;
     }
@@ -3252,6 +3269,7 @@ static PTN_UNUSED int ptn_direct_var_dump_spl_fixed_array_object(
     ptn_output_write_cstr(runtime, "}\n");
     ptn_value_destroy(&array);
     return 1;
+#endif
 }
 
 static PTN_UNUSED void ptn_direct_var_dump_object_indented(
@@ -6126,6 +6144,13 @@ static int ptn_var_dump_spl_fixed_array_object(
     PtnDumpSeenArrays *seen,
     int debug
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)debug;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         return 0;
     }
@@ -6153,6 +6178,7 @@ static int ptn_var_dump_spl_fixed_array_object(
     fputs("}\n", stdout);
     ptn_value_destroy(&array);
     return 1;
+#endif
 }
 
 static int ptn_var_dump_object_proxy_instance(
@@ -7303,6 +7329,7 @@ static void ptn_print_r_object(
         ptn_string_buffer_append(buffer, ")\n");
         return;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (object != NULL && ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         PtnSplFixedArrayData *data = object->native_data == NULL
             ? NULL
@@ -7335,6 +7362,7 @@ static void ptn_print_r_object(
         ptn_string_buffer_append(buffer, ")\n");
         return;
     }
+#endif
     ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, "(\n");
@@ -10356,6 +10384,179 @@ static void ptn_unserialize_emit_no_unserializer_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static void ptn_unserialize_emit_callback_missing_class_warning(
+    PtnRuntime *runtime,
+    const char *callback_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): Function %s() hasn't defined the class it was called for",
+        callback_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): Function %s() hasn't defined the class it was called for",
+        callback_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static char *ptn_unserialize_invalid_callback_reason(PtnRuntime *runtime, PtnValue callback) {
+    PtnValue resolved = ptn_value_deref(callback);
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        int needed = snprintf(
+            NULL,
+            0,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *reason = malloc((size_t)needed + 1);
+        if (reason == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            reason,
+            (size_t)needed + 1,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        free(name);
+        return reason;
+    }
+    if (resolved.type == PTN_ARRAY) {
+        char *reason = ptn_invalid_array_callback_reason(runtime, resolved);
+        return reason == NULL ? ptn_duplicate_string("not a valid method callback") : reason;
+    }
+    return ptn_duplicate_string("no array or string given");
+}
+
+static void ptn_unserialize_throw_invalid_callback(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t line
+) {
+    char *name = ptn_callable_output_name(callback);
+    char *reason = ptn_unserialize_invalid_callback_reason(runtime, callback);
+    int needed = snprintf(NULL, 0, "Invalid callback %s, %s", name, reason);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Invalid callback %s, %s", name, reason);
+    free(name);
+    free(reason);
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static int ptn_unserialize_resolved_class_exists(
+    PtnRuntime *runtime,
+    const char *resolved_name
+) {
+    return (runtime != NULL
+        ? ptn_declared_runtime_class_exists(runtime, resolved_name)
+        : ptn_declared_class_exists(resolved_name)) ||
+        ptn_internal_class_exists_name(resolved_name);
+}
+
+static PtnValue ptn_unserialize_new_resolved_object_shell(
+    PtnRuntime *runtime,
+    const char *resolved_name,
+    size_t line
+) {
+    if (runtime != NULL &&
+        runtime->new_instance_without_constructor != NULL &&
+        ptn_declared_user_class_or_interface_exists(resolved_name)) {
+        return runtime->new_instance_without_constructor(runtime, resolved_name, line);
+    }
+    if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
+        return ptn_zip_archive_new_shell(runtime, line);
+    }
+    if (ptn_internal_class_name_is_date_interval(resolved_name)) {
+        return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
+    }
+    if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
+        return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
+    }
+    if (ptn_internal_class_name_is_attribute(resolved_name) ||
+        ptn_internal_class_name_is_deprecated(resolved_name) ||
+        ptn_internal_class_name_is_no_discard(resolved_name)) {
+        return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
+    }
+    return ptn_object_new_shell(runtime, resolved_name);
+}
+
+static void ptn_unserialize_autoload_class_isolated(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    void *saved_active_unserialize_state = runtime->active_unserialize_state;
+    int caught_exception = 0;
+    PtnTryFrame autoload_frame;
+    ptn_try_frame_push(runtime, &autoload_frame);
+    if (setjmp(autoload_frame.jump) != 0) {
+        caught_exception = 1;
+    }
+    if (!caught_exception) {
+        runtime->active_unserialize_state = NULL;
+        runtime->call_site_line = line;
+        ptn_runtime_autoload_class(runtime, class_name, line);
+    }
+    ptn_try_frame_pop(runtime, &autoload_frame);
+    runtime->active_unserialize_state = saved_active_unserialize_state;
+    if (caught_exception) {
+        ptn_rethrow_exception(runtime);
+    }
+}
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PtnValue ptn_unserialize_call_callback_isolated(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    void *saved_active_unserialize_state = runtime->active_unserialize_state;
+    PtnValue result = ptn_null();
+    int caught_exception = 0;
+    PtnTryFrame callback_frame;
+    ptn_try_frame_push(runtime, &callback_frame);
+    if (setjmp(callback_frame.jump) != 0) {
+        caught_exception = 1;
+    }
+    if (!caught_exception) {
+        runtime->active_unserialize_state = NULL;
+        result = ptn_internal_call_callback(runtime, callback, argc, args, line);
+    }
+    ptn_try_frame_pop(runtime, &callback_frame);
+    runtime->active_unserialize_state = saved_active_unserialize_state;
+    if (caught_exception) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(runtime);
+    }
+    return result;
+}
+#endif
+
 static PtnValue ptn_unserialize_new_object_shell(
     PtnUnserializeState *state,
     PtnRuntime *runtime,
@@ -10367,102 +10568,54 @@ static PtnValue ptn_unserialize_new_object_shell(
         return ptn_unserialize_new_incomplete_object_shell(runtime, class_name);
     }
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
-    int class_exists = (runtime != NULL
-        ? ptn_declared_runtime_class_exists(runtime, resolved_name)
-        : ptn_declared_class_exists(resolved_name)) ||
-        ptn_internal_class_exists_name(resolved_name);
-    if (class_exists) {
-        if (runtime != NULL &&
-            runtime->new_instance_without_constructor != NULL &&
-            ptn_declared_user_class_or_interface_exists(resolved_name)) {
-            return runtime->new_instance_without_constructor(runtime, resolved_name, line);
-        }
-        if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
-            return ptn_zip_archive_new_shell(runtime, line);
-        }
-        if (ptn_internal_class_name_is_date_interval(resolved_name)) {
-            return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
-        }
-        if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
-            return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
-        }
-        if (ptn_internal_class_name_is_attribute(resolved_name) ||
-            ptn_internal_class_name_is_deprecated(resolved_name) ||
-            ptn_internal_class_name_is_no_discard(resolved_name)) {
-            return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
-        }
-        return ptn_object_new_shell(runtime, resolved_name);
+    if (ptn_unserialize_resolved_class_exists(runtime, resolved_name)) {
+        return ptn_unserialize_new_resolved_object_shell(runtime, resolved_name, line);
     }
 
     if (runtime != NULL && ptn_class_name_should_autoload(lookup_name)) {
-        runtime->call_site_line = line;
-        ptn_runtime_autoload_class(runtime, lookup_name, line);
+        ptn_unserialize_autoload_class_isolated(runtime, lookup_name, line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
-        if (ptn_declared_runtime_class_exists(runtime, resolved_name) ||
-            ptn_internal_class_exists_name(resolved_name)) {
-            if (runtime->new_instance_without_constructor != NULL &&
-                ptn_declared_user_class_or_interface_exists(resolved_name)) {
-                return runtime->new_instance_without_constructor(runtime, resolved_name, line);
-            }
-            if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
-                return ptn_zip_archive_new_shell(runtime, line);
-            }
-            if (ptn_internal_class_name_is_date_interval(resolved_name)) {
-                return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
-            }
-            if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
-                return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
-            }
-            if (ptn_internal_class_name_is_attribute(resolved_name) ||
-                ptn_internal_class_name_is_deprecated(resolved_name) ||
-                ptn_internal_class_name_is_no_discard(resolved_name)) {
-                return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
-            }
-            return ptn_object_new_shell(runtime, resolved_name);
+        if (ptn_unserialize_resolved_class_exists(runtime, resolved_name)) {
+            return ptn_unserialize_new_resolved_object_shell(runtime, resolved_name, line);
         }
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    const char *callback_name = ptn_runtime_unserialize_callback_func(runtime);
+    const char *callback_name = runtime == NULL
+        ? NULL
+        : ptn_runtime_unserialize_callback_func(runtime);
     if (callback_name != NULL && callback_name[0] != '\0') {
         PtnValue callback = ptn_string(callback_name);
+        if (!ptn_callable_is_valid(runtime, callback, 0)) {
+            ptn_unserialize_throw_invalid_callback(runtime, callback, line);
+            return ptn_null();
+        }
         PtnValue callback_arg = ptn_owned_string(ptn_duplicate_string(class_name));
         PtnValue callback_result =
-            ptn_internal_call_callback(runtime, callback, 1, &callback_arg, line);
+            ptn_unserialize_call_callback_isolated(runtime, callback, 1, &callback_arg, line);
         ptn_value_destroy(&callback_result);
         ptn_value_destroy(&callback_arg);
-        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
-        if ((runtime != NULL
-                ? ptn_declared_runtime_class_exists(runtime, resolved_name)
-                : ptn_declared_class_exists(resolved_name)) ||
-            ptn_internal_class_exists_name(resolved_name)) {
-            if (runtime != NULL &&
-                runtime->new_instance_without_constructor != NULL &&
-                ptn_declared_user_class_or_interface_exists(resolved_name)) {
-                return runtime->new_instance_without_constructor(runtime, resolved_name, line);
-            }
-            if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
-                return ptn_zip_archive_new_shell(runtime, line);
-            }
-            if (ptn_internal_class_name_is_date_interval(resolved_name)) {
-                return ptn_unserialize_new_date_interval_shell(runtime, resolved_name, line);
-            }
-            if (ptn_builtin_exception_class_name(resolved_name) != NULL) {
-                return ptn_unserialize_new_internal_exception_shell(runtime, resolved_name, line);
-            }
-            if (ptn_internal_class_name_is_attribute(resolved_name) ||
-                ptn_internal_class_name_is_deprecated(resolved_name) ||
-                ptn_internal_class_name_is_no_discard(resolved_name)) {
-                return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
-            }
-            return ptn_object_new_shell(runtime, resolved_name);
+        if (ptn_unserialize_resolved_class_exists(runtime, resolved_name)) {
+            return ptn_unserialize_new_resolved_object_shell(runtime, resolved_name, line);
         }
+        if (ptn_class_name_should_autoload(lookup_name)) {
+            ptn_unserialize_autoload_class_isolated(runtime, lookup_name, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+            if (ptn_unserialize_resolved_class_exists(runtime, resolved_name)) {
+                return ptn_unserialize_new_resolved_object_shell(runtime, resolved_name, line);
+            }
+        }
+        ptn_unserialize_emit_callback_missing_class_warning(runtime, callback_name, line);
     }
 #endif
 

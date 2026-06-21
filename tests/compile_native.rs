@@ -52483,6 +52483,108 @@ var_dump(unserialize('O:1:\"C\":0:{}'));
 }
 
 #[test]
+fn compile_unserialize_callback_func_missing_class_sequence_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-callback-func-sequence");
+    fs::create_dir_all(&root).unwrap();
+
+    let run_case = |name: &str, source: &str| {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+        let execution = Command::new(&output).output().unwrap();
+        assert!(
+            execution.status.success(),
+            "{name} exited with {:?}\nstderr:\n{}",
+            execution.status.code(),
+            String::from_utf8_lossy(&execution.stderr)
+        );
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+        String::from_utf8(execution.stdout).unwrap()
+    };
+
+    let callback_sequence = run_case(
+        "callback-sequence",
+        r#"<?php
+spl_autoload_register(function ($name) {
+    echo "in autoload($name)\n";
+});
+
+ini_set('unserialize_callback_func','check');
+
+function check($name) {
+    echo "in check($name)\n";
+}
+
+var_dump(unserialize('O:3:"FOO":0:{}'));
+"#,
+    );
+    assert!(
+        callback_sequence.starts_with(
+            "in autoload(FOO)\nin check(FOO)\nin autoload(FOO)\n\nWarning: unserialize(): Function check() hasn't defined the class it was called for"
+        ),
+        "{callback_sequence}"
+    );
+    assert!(
+        callback_sequence.contains("object(__PHP_Incomplete_Class)#"),
+        "{callback_sequence}"
+    );
+    assert!(
+        callback_sequence.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n  string(3) \"FOO\""),
+        "{callback_sequence}"
+    );
+
+    let invalid_callback = run_case(
+        "invalid-callback",
+        r#"<?php
+ini_set('unserialize_callback_func','Nonexistent');
+try {
+    unserialize('O:3:"FOO":0:{}');
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    );
+    assert_eq!(
+        invalid_callback,
+        "Invalid callback Nonexistent, function \"Nonexistent\" not found or invalid function name\n"
+    );
+
+    let nested_context = run_case(
+        "nested-context",
+        r#"<?php
+ini_set('unserialize_callback_func', 'evil');
+
+function evil() {
+    spl_autoload_register(function ($arg) {
+        var_dump(unserialize('R:1;'));
+    });
+}
+
+var_dump(unserialize('a:2:{i:0;i:42;i:1;O:4:"evil":0:{}}'));
+"#,
+    );
+    assert!(
+        nested_context.contains("Warning: unserialize(): Error at offset 4 of 4 bytes"),
+        "{nested_context}"
+    );
+    assert!(
+        nested_context.contains(
+            "bool(false)\n\nWarning: unserialize(): Function evil() hasn't defined the class it was called for"
+        ),
+        "{nested_context}"
+    );
+    assert!(
+        nested_context.contains("[0]=>\n  int(42)"),
+        "{nested_context}"
+    );
+    assert!(
+        nested_context.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"evil\""),
+        "{nested_context}"
+    );
+}
+
+#[test]
 fn compile_dynamic_new_invalid_class_name_skips_autoload() {
     let root = temp_dir("ptn-native-dynamic-new-invalid-class-name");
     fs::create_dir_all(&root).unwrap();
