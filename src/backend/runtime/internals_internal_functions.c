@@ -5471,6 +5471,22 @@ static void ptn_spl_object_storage_sync_properties(
     PtnSplObjectStorageData *data,
     size_t line
 );
+static void ptn_spl_object_storage_load_members(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue members,
+    size_t line
+);
+static void ptn_spl_object_storage_attach_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    const char *method_name,
+    PtnValue object,
+    PtnValue info,
+    size_t line
+);
+static PtnValue ptn_spl_object_storage_flat_pairs_array(PtnSplObjectStorageData *data);
 
 typedef struct {
     PtnValue values;
@@ -5601,6 +5617,13 @@ static int ptn_object_metadata_is_spl_dllist_storage(const PtnObjectPropertyMeta
         ptn_ascii_case_equal(metadata->declaring_class, "SplDoublyLinkedList") &&
         (strcmp(metadata->display_name, "flags") == 0 ||
          strcmp(metadata->display_name, "dllist") == 0);
+}
+
+static int ptn_object_metadata_is_spl_object_storage_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        ptn_ascii_case_equal(metadata->declaring_class, "SplObjectStorage") &&
+        strcmp(metadata->display_name, "storage") == 0;
 }
 
 static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
@@ -8057,6 +8080,28 @@ static int ptn_serialize_object_is_spl_object_storage(PtnObject *object) {
     return object != NULL && ptn_declared_class_is_same_or_descendant(object->class_name, "SplObjectStorage");
 }
 
+static PtnValue ptn_serialize_spl_object_storage_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
 static void ptn_serialize_append_spl_object_storage_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -8065,32 +8110,20 @@ static void ptn_serialize_append_spl_object_storage_object(
     PtnSplObjectStorageData *data = object->native_data == NULL
         ? NULL
         : (PtnSplObjectStorageData *)object->native_data;
-    PtnValue objects_value = data == NULL ? ptn_null() : ptn_value_deref(data->objects);
-    PtnValue infos_value = data == NULL ? ptn_null() : ptn_value_deref(data->infos);
-    PtnArray *objects = objects_value.type == PTN_ARRAY ? objects_value.as.array : NULL;
-    PtnArray *infos = infos_value.type == PTN_ARRAY ? infos_value.as.array : NULL;
-    size_t count = objects == NULL ? 0 : objects->len;
-    if (infos == NULL || infos->len < count) {
-        count = 0;
-    }
     ptn_string_buffer_append_format(
         buffer,
-        "O:%zu:\"%s\":2:{i:0;a:%zu:{",
+        "O:%zu:\"%s\":2:{i:0;",
         strlen(object->class_name),
-        object->class_name,
-        count
+        object->class_name
     );
-    for (size_t i = 0; i < count; i++) {
-        if (i > (size_t)INT64_MAX) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_string_buffer_append_format(buffer, "i:%zu;a:2:{i:0;", i);
-        ptn_serialize_append_value_with_id(buffer, objects->entries[i].value, state, 0);
-        ptn_string_buffer_append(buffer, "i:1;");
-        ptn_serialize_append_value_with_id(buffer, infos->entries[i].value, state, 0);
-        ptn_string_buffer_append_char(buffer, '}');
-    }
-    ptn_string_buffer_append(buffer, "}i:1;a:0:{}}");
+    PtnValue pairs = ptn_spl_object_storage_flat_pairs_array(data);
+    ptn_serialize_append_value_with_id(buffer, pairs, state, 0);
+    ptn_value_destroy(&pairs);
+    ptn_string_buffer_append(buffer, "i:1;");
+    PtnValue properties = ptn_serialize_spl_object_storage_properties_value(object);
+    ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_value_destroy(&properties);
+    ptn_string_buffer_append_char(buffer, '}');
 }
 
 static int ptn_serialize_object_is_spl_heap(PtnObject *object) {
@@ -10305,11 +10338,18 @@ static int ptn_unserialize_declared_magic_method_exists(
     const char *method_name
 ) {
     PtnValue resolved = ptn_value_deref(object);
-    return runtime != NULL &&
-        runtime->method_dispatch != NULL &&
-        resolved.type == PTN_OBJECT &&
-        !ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class") &&
-        ptn_declared_class_method_exists(resolved.as.object->class_name, method_name);
+    if (runtime == NULL ||
+        runtime->method_dispatch == NULL ||
+        resolved.type != PTN_OBJECT ||
+        ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
+        return 0;
+    }
+    if (ptn_declared_class_method_exists(resolved.as.object->class_name, method_name)) {
+        return 1;
+    }
+    return ptn_ascii_case_equal(method_name, "__unserialize") &&
+        ptn_declared_class_is_same_or_descendant(resolved.as.object->class_name, "SplObjectStorage") &&
+        ptn_internal_class_method_exists("SplObjectStorage", "__unserialize");
 }
 
 static void ptn_unserialize_call_magic_method(
@@ -10766,11 +10806,6 @@ static void ptn_spl_object_storage_throw_unserialize_error(
     size_t len,
     size_t line
 ) {
-    ptn_emit_warning(
-        &runtime->diagnostics,
-        "SplObjectStorage::unserialize(): Unexpected end of serialized data",
-        line
-    );
     char message[96];
     int written = snprintf(
         message,
@@ -10782,60 +10817,8 @@ static void ptn_spl_object_storage_throw_unserialize_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Exception", message);
-}
-
-static void ptn_spl_object_storage_validate_payload(
-    PtnRuntime *runtime,
-    const char *payload,
-    size_t payload_len,
-    size_t line
-) {
-    PtnUnserializeState probe;
-    ptn_unserialize_state_init(&probe, payload, payload_len, line);
-    size_t count = 0;
-    if (!ptn_unserialize_consume(&probe, 'x') ||
-        !ptn_unserialize_consume(&probe, ':') ||
-        !ptn_unserialize_consume(&probe, 'i') ||
-        !ptn_unserialize_consume(&probe, ':') ||
-        !ptn_unserialize_parse_unsigned(&probe, &count) ||
-        !ptn_unserialize_consume(&probe, ';')) {
-        size_t offset = probe.error_pos;
-        ptn_unserialize_state_free(&probe);
-        ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
-        return;
-    }
-
-    for (size_t i = 0; i < count; i++) {
-        PtnUnserializeValue object = ptn_unserialize_parse_value(&probe, runtime);
-        if (probe.failed) {
-            size_t offset = probe.error_pos;
-            ptn_value_destroy(&object.value);
-            ptn_unserialize_state_free(&probe);
-            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
-            return;
-        }
-        ptn_value_destroy(&object.value);
-
-        if (!ptn_unserialize_consume(&probe, ',')) {
-            size_t offset = probe.error_pos;
-            ptn_unserialize_state_free(&probe);
-            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
-            return;
-        }
-
-        PtnUnserializeValue info = ptn_unserialize_parse_value(&probe, runtime);
-        if (probe.failed || !ptn_unserialize_consume(&probe, ';')) {
-            size_t offset = probe.error_pos;
-            ptn_value_destroy(&info.value);
-            ptn_unserialize_state_free(&probe);
-            ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
-            return;
-        }
-        ptn_value_destroy(&info.value);
-    }
-
-    ptn_unserialize_state_free(&probe);
+    (void)line;
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
 }
 
 static int ptn_unserialize_store_entry(
@@ -11100,6 +11083,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     const char *payload,
     size_t payload_len,
     size_t line,
+    int register_count_slot,
     PtnUnserializeValue *result
 );
 
@@ -11414,6 +11398,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                         payload,
                         payload_len,
                         state->line,
+                        1,
                         &result
                     )) {
                     free(class_name);
@@ -11612,6 +11597,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     const char *payload,
     size_t payload_len,
     size_t line,
+    int register_count_slot,
     PtnUnserializeValue *result
 ) {
     (void)class_name;
@@ -11643,9 +11629,6 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     result->value = ptn_object_new_shell(runtime, "SplObjectStorage");
     result->id = ptn_unserialize_add_slot(state, &result->value);
     PtnSplObjectStorageData *data = ptn_spl_object_storage_data(runtime, result->value);
-    PtnArray *objects = ptn_value_deref(data->objects).as.array;
-    PtnArray *infos = ptn_value_deref(data->infos).as.array;
-    PtnArray *hashes = ptn_value_deref(data->hashes).as.array;
 
     size_t count = 0;
     PtnUnserializeValue count_value;
@@ -11656,59 +11639,85 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     members.id = 0;
 
     if (!ptn_unserialize_consume(state, 'x') ||
+        !ptn_unserialize_consume(state, ':') ||
+        !ptn_unserialize_consume(state, 'i') ||
         !ptn_unserialize_consume(state, ':')) {
         goto fail;
     }
-
-    count_value = ptn_unserialize_parse_value(state, runtime);
-    PtnValue resolved_count = ptn_value_deref(count_value.value);
-    if (state->failed ||
-        resolved_count.type != PTN_INT ||
-        resolved_count.as.integer < 0) {
-        goto fail;
+    if (register_count_slot) {
+        state->pos -= 2;
+        count_value = ptn_unserialize_parse_value(state, runtime);
+        PtnValue resolved_count = ptn_value_deref(count_value.value);
+        if (state->failed ||
+            resolved_count.type != PTN_INT ||
+            resolved_count.as.integer < 0) {
+            goto fail;
+        }
+        count = (size_t)resolved_count.as.integer;
+        if ((int64_t)count != resolved_count.as.integer) {
+            goto fail;
+        }
+        ptn_unserialize_retain_slot_value(state, &count_value.value);
+        ptn_value_destroy(&count_value.value);
+        count_value.value = ptn_null();
+    } else {
+        int64_t parsed_count = 0;
+        if (!ptn_unserialize_parse_int64(state, &parsed_count) ||
+            parsed_count < 0 ||
+            !ptn_unserialize_consume(state, ';')) {
+            goto fail;
+        }
+        count = (size_t)parsed_count;
+        if ((int64_t)count != parsed_count) {
+            goto fail;
+        }
     }
-    count = (size_t)resolved_count.as.integer;
-    if ((int64_t)count != resolved_count.as.integer) {
-        goto fail;
-    }
-    ptn_unserialize_retain_slot_value(state, &count_value.value);
-    ptn_value_destroy(&count_value.value);
-    count_value.value = ptn_null();
 
     for (size_t i = 0; i < count; i++) {
         if (i > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
+        size_t object_start = state->pos;
         PtnUnserializeValue object = ptn_unserialize_parse_value(state, runtime);
         PtnValue resolved_object = ptn_value_deref(object.value);
-        if (state->failed || resolved_object.type != PTN_OBJECT) {
+        if (state->failed ||
+            object.value.type == PTN_REFERENCE ||
+            resolved_object.type != PTN_OBJECT) {
+            if (!state->failed) {
+                ptn_unserialize_fail_at(state, object_start);
+            }
             ptn_value_destroy(&object.value);
             goto fail;
         }
-        size_t object_id = object.id;
-        if (!ptn_unserialize_store_entry(
-                runtime,
-                state,
-                objects,
-                ptn_array_int_key((int64_t)i),
-                object
-            )) {
+        PtnUnserializeValue info;
+        info.value = ptn_null();
+        info.id = 0;
+        if (ptn_unserialize_has(state, 1) && state->data[state->pos] == ',') {
+            state->pos++;
+            info = ptn_unserialize_parse_value(state, runtime);
+            if (state->failed || !ptn_unserialize_consume(state, ';')) {
+                ptn_value_destroy(&object.value);
+                ptn_value_destroy(&info.value);
+                goto fail;
+            }
+        } else if (!ptn_unserialize_consume(state, ';')) {
+            ptn_value_destroy(&object.value);
             goto fail;
         }
-        if (object_id != 0 && object_id <= state->id_len) {
-            PtnUnserializeIdEntry *entry = &state->ids[object_id - 1];
-            entry->slot = NULL;
-            entry->reference = NULL;
-            entry->slot_is_container_entry = 0;
-            entry->property_metadata = NULL;
-        }
-        ptn_array_set_entry(infos, ptn_array_int_key((int64_t)i), ptn_null());
-        ptn_array_set_entry(
-            hashes,
-            ptn_array_int_key((int64_t)i),
-            ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0)
+        ptn_unserialize_retain_slot_value(state, &object.value);
+        ptn_unserialize_retain_slot_value(state, &info.value);
+        ptn_spl_object_storage_attach_value(
+            runtime,
+            result->value,
+            data,
+            "unserialize",
+            object.value,
+            info.value,
+            line
         );
-        if (!ptn_unserialize_consume(state, ';')) {
+        ptn_value_destroy(&object.value);
+        ptn_value_destroy(&info.value);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
             goto fail;
         }
     }
@@ -11718,9 +11727,11 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
         goto fail;
     }
     members = ptn_unserialize_parse_value(state, runtime);
-    if (state->failed) {
+    PtnValue resolved_members = ptn_value_deref(members.value);
+    if (state->failed || resolved_members.type != PTN_ARRAY) {
         goto fail;
     }
+    ptn_spl_object_storage_load_members(runtime, result->value, resolved_members, line);
     ptn_unserialize_retain_slot_value(state, &members.value);
     ptn_value_destroy(&members.value);
     members.value = ptn_null();
@@ -109345,6 +109356,67 @@ static void ptn_spl_object_storage_sync_properties(
     ptn_value_destroy(&storage);
 }
 
+static void ptn_spl_object_storage_load_members(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue members,
+    size_t line
+) {
+    (void)runtime;
+    (void)line;
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    PtnValue resolved_members = ptn_value_deref(members);
+    if (resolved_receiver.type != PTN_OBJECT ||
+        resolved_receiver.as.object == NULL ||
+        resolved_receiver.as.object->properties == NULL ||
+        resolved_members.type != PTN_ARRAY) {
+        return;
+    }
+    PtnObject *object = resolved_receiver.as.object;
+    for (size_t i = 0; i < resolved_members.as.array->len; i++) {
+        PtnArrayEntry *entry = &resolved_members.as.array->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            object->properties,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+}
+
+static void ptn_spl_object_storage_copy_members_from_object(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnObject *source,
+    size_t line
+) {
+    if (source == NULL || source->properties == NULL) {
+        return;
+    }
+    PtnValue members = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < source->properties->len; i++) {
+        PtnArrayEntry *entry = &source->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(source, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            members.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    ptn_spl_object_storage_load_members(runtime, receiver, members, line);
+    ptn_value_destroy(&members);
+}
+
 static void ptn_spl_object_storage_attach_value(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -109496,7 +109568,7 @@ static PtnValue ptn_spl_object_storage_serialized_payload(
         ptn_string_operand_free(info_payload);
         ptn_value_destroy(&info_serialized);
     }
-    ptn_string_buffer_append(&buffer, ";m:a:0:{}");
+    ptn_string_buffer_append(&buffer, "m:a:0:{}");
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
@@ -109840,7 +109912,51 @@ static PtnValue ptn_spl_object_storage_call_method(
             ptn_string_operand_free(payload);
             return ptn_null();
         }
-        ptn_spl_object_storage_validate_payload(runtime, payload.data, payload.len, line);
+        if (payload.len == 0) {
+            ptn_string_operand_free(payload);
+            return ptn_null();
+        }
+        PtnUnserializeState state;
+        ptn_unserialize_state_init(&state, payload.data, payload.len, line);
+        PtnUnserializeValue parsed;
+        parsed.value = ptn_null();
+        parsed.id = 0;
+        int ok = ptn_unserialize_spl_object_storage_legacy_payload(
+            runtime,
+            &state,
+            "SplObjectStorage",
+            payload.data,
+            payload.len,
+            line,
+            0,
+            &parsed
+        );
+        if (ok && runtime != NULL && runtime->exceptions->active_exception == NULL) {
+            PtnValue parsed_value = ptn_value_deref(parsed.value);
+            PtnValue resolved_receiver = ptn_value_deref(receiver);
+            if (parsed_value.type == PTN_OBJECT &&
+                parsed_value.as.object != NULL &&
+                parsed_value.as.object->native_data != NULL &&
+                resolved_receiver.type == PTN_OBJECT) {
+                PtnSplObjectStorageData *new_data =
+                    (PtnSplObjectStorageData *)parsed_value.as.object->native_data;
+                parsed_value.as.object->native_data = NULL;
+                parsed_value.as.object->native_data_free = NULL;
+                ptn_spl_object_storage_data_free(resolved_receiver.as.object->native_data);
+                resolved_receiver.as.object->native_data = new_data;
+                resolved_receiver.as.object->native_data_free = ptn_spl_object_storage_data_free;
+                ptn_spl_object_storage_copy_members_from_object(
+                    runtime,
+                    resolved_receiver,
+                    parsed_value.as.object,
+                    line
+                );
+                ptn_spl_object_storage_sync_properties(runtime, resolved_receiver, new_data, line);
+            }
+            ptn_unserialize_flush_pending_callbacks(runtime, &state, 0);
+        }
+        ptn_value_destroy(&parsed.value);
+        ptn_unserialize_state_free(&state);
         ptn_string_operand_free(payload);
         return ptn_null();
     }
@@ -109894,6 +110010,13 @@ static PtnValue ptn_spl_object_storage_call_method(
         if (pairs_entry != NULL) {
             pairs = ptn_value_deref(pairs_entry->value);
         }
+        PtnValue members = ptn_null();
+        PtnArrayKey members_key = ptn_array_int_key(1);
+        PtnArrayEntry *members_entry = ptn_array_entry_for_key(payload.as.array, members_key);
+        ptn_array_key_free(members_key);
+        if (members_entry != NULL) {
+            members = ptn_value_deref(members_entry->value);
+        }
 
         ptn_value_destroy(&data->objects);
         ptn_value_destroy(&data->infos);
@@ -109903,6 +110026,7 @@ static PtnValue ptn_spl_object_storage_call_method(
         data->hashes = ptn_array_from_literal_entries(0, NULL);
         data->index = 0;
         ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+        ptn_spl_object_storage_load_members(runtime, receiver, members, line);
 
         if (pairs.type != PTN_ARRAY) {
             return ptn_null();
