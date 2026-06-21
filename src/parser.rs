@@ -13408,7 +13408,11 @@ fn validate_method_signature_compatibility(
                         Some(method.span),
                     ));
                 }
-                if visibility_rank(method.visibility) > visibility_rank(parent_method.visibility) {
+                if method_requires_parent_visibility_compatibility(method, parent_method)
+                    && !method_visibility_compatibility_deferred_to_runtime(method)
+                    && visibility_rank(method.visibility)
+                        > visibility_rank(parent_method.visibility)
+                {
                     let (required_class, required_method) =
                         method_visibility_requirement_source(parent_class, parent_method, classes);
                     let suffix = if required_method.visibility == PropertyVisibility::Public {
@@ -13750,6 +13754,37 @@ fn method_requires_parent_signature_compatibility(
     parent_method: &MethodDecl,
 ) -> bool {
     !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+fn method_requires_parent_visibility_compatibility(
+    method: &MethodDecl,
+    parent_method: &MethodDecl,
+) -> bool {
+    !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+fn method_visibility_compatibility_deferred_to_runtime(method: &MethodDecl) -> bool {
+    method.visibility != PropertyVisibility::Public
+        && magic_method_requires_public_visibility_name(&method.name)
+}
+
+fn magic_method_requires_public_visibility_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "__call"
+            | "__callstatic"
+            | "__get"
+            | "__set"
+            | "__isset"
+            | "__unset"
+            | "__sleep"
+            | "__wakeup"
+            | "__serialize"
+            | "__unserialize"
+            | "__tostring"
+            | "__set_state"
+            | "__debuginfo"
+    )
 }
 
 fn method_visibility_requirement_source<'a>(

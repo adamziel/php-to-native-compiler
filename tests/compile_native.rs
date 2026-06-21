@@ -58094,6 +58094,82 @@ echo \"unreachable\\n\";
 }
 
 #[test]
+fn compile_magic_visibility_warning_before_inherited_access_fatal() {
+    let root = temp_dir("ptn-native-magic-method-visibility-before-access-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-method-visibility-before-access-fatal.php");
+    let output = root.join("magic-method-visibility-before-access-fatal-bin");
+    fs::write(
+        &input,
+        "<?php
+abstract class b {
+    abstract function __set($a, $b);
+}
+
+class a extends b {
+    private function __set($a, $b) {
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The magic method a::__set() must have public visibility in {} on line 7\n",
+            input.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Access level to a::__set() must be public (as in class b) in {} on line 7\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_child_constructor_can_narrow_concrete_parent_constructor_visibility() {
+    let root = temp_dir("ptn-native-concrete-constructor-visibility-narrowing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concrete-constructor-visibility-narrowing.php");
+    let output = root.join("concrete-constructor-visibility-narrowing-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function __construct() {
+        static $foo;
+    }
+}
+
+class B extends A { }
+
+class C extends B {
+    private function __construct() {}
+}
+
+echo \"OK\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_magic_method_declaration_fatals_to_native_binary() {
     let cases = [
         (

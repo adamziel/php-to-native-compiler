@@ -13936,6 +13936,11 @@ struct RuntimeAbstractMethodRequirement {
     method_name: String,
 }
 
+struct RuntimeMethodVisibilityOverrideFatal {
+    message: String,
+    line: usize,
+}
+
 fn class_runtime_unsatisfied_abstract_methods(
     class: &ClassDecl,
     classes: &[ClassDecl],
@@ -13958,6 +13963,71 @@ fn class_runtime_unsatisfied_abstract_methods(
             seen.insert(key) && !class_has_concrete_method(class, &required.method_name, classes)
         })
         .collect()
+}
+
+fn class_runtime_method_visibility_override_fatal(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<RuntimeMethodVisibilityOverrideFatal> {
+    for method in &class.methods {
+        if method.visibility == PropertyVisibility::Public
+            || !magic_method_requires_public_visibility(&method.name)
+        {
+            continue;
+        }
+        let Some((parent_class, parent_method)) =
+            find_runtime_visible_parent_method(class, &method.name, classes)
+        else {
+            continue;
+        };
+        if property_visibility_rank(method.visibility)
+            >= property_visibility_rank(parent_method.visibility)
+        {
+            continue;
+        }
+        let suffix = if parent_method.visibility == PropertyVisibility::Public {
+            ""
+        } else {
+            " or weaker"
+        };
+        return Some(RuntimeMethodVisibilityOverrideFatal {
+            message: format!(
+                "Access level to {}::{}() must be {} (as in class {}){}",
+                class.name,
+                method.name,
+                method_visibility_name(parent_method.visibility),
+                parent_class.name,
+                suffix
+            ),
+            line: method.line,
+        });
+    }
+    None
+}
+
+fn find_runtime_visible_parent_method<'a>(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a crate::ir::MethodDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case(method_name)
+        }) {
+            return Some((parent, method));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
 }
 
 fn collect_parent_runtime_abstract_methods(
@@ -17900,6 +17970,15 @@ fn emit_class_declaration_validation(
         out.push_str(&c_string(source_path));
         out.push_str("\", ");
         out.push_str(&conflict.line.to_string());
+        out.push_str(");\n");
+    }
+    if let Some(fatal) = class_runtime_method_visibility_override_fatal(class, classes) {
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(&fatal.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
         out.push_str(");\n");
     }
     let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes);
