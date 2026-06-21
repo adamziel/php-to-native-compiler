@@ -1122,6 +1122,12 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
         ptn_owned_string(ptn_duplicate_string(effective_path)),
         ptn_int((int64_t)line),
     };
+    PtnValue call_args[4] = {
+        ptn_value_borrow(args[0]),
+        ptn_value_borrow(args[1]),
+        ptn_value_borrow(args[2]),
+        ptn_value_borrow(args[3]),
+    };
     PtnValue saved_handler = ptn_value_clone(handler_diagnostics->error_handler);
     int64_t saved_handler_levels = handler_diagnostics->error_handler_levels;
     ptn_diagnostics_clear_current_error_handler(handler_diagnostics);
@@ -1156,7 +1162,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
     if (suppress_user_call_frame_location) {
         runtime->suppress_user_call_frame_location = 1;
     }
-    result = ptn_call_callable(runtime, saved_handler, 4, args, line, 0);
+    result = ptn_call_callable(runtime, saved_handler, 4, call_args, line, 0);
     ptn_try_frame_pop(runtime, &handler_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =

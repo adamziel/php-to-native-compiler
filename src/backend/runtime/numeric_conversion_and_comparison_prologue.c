@@ -5559,6 +5559,11 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     const char *access_scope,
     size_t line
 ) {
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     (void)line;
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
@@ -6960,6 +6965,26 @@ static PTN_UNUSED PtnValue ptn_not(PtnValue value) {
     return ptn_bool(!ptn_is_truthy(value));
 }
 
+static PTN_UNUSED int ptn_float_to_int_out_of_range(double value);
+static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
+    PtnDiagnosticSink *diagnostics,
+    double value,
+    size_t line
+);
+
+static PTN_UNUSED int64_t ptn_float_string_to_php_integer(double value) {
+    if (!isfinite(value)) {
+        return value < 0.0 ? INT64_MIN : INT64_MAX;
+    }
+    if (value >= 9223372036854775808.0) {
+        return INT64_MAX;
+    }
+    if (value < -9223372036854775808.0) {
+        return INT64_MIN;
+    }
+    return ptn_float_to_php_integer(value);
+}
+
 static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
     value = ptn_value_deref(value);
     int64_t integer = 0;
@@ -6968,6 +6993,17 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
     }
     if (value.type == PTN_FLOAT) {
         return ptn_int(ptn_float_to_php_integer(value.as.floating));
+    }
+
+    if (value.type == PTN_STRING) {
+        if (ptn_string_has_embedded_nul(value.as.string)) {
+            return ptn_int(0);
+        }
+        PtnNumber string_number = ptn_string_to_number((const char *)value.as.string.data);
+        if (string_number.type == PTN_NUMBER_FLOAT) {
+            return ptn_int(ptn_float_string_to_php_integer(string_number.floating));
+        }
+        return ptn_int(string_number.integer);
     }
 
     PtnNumber number = ptn_to_number(value);
@@ -7029,6 +7065,12 @@ static PTN_UNUSED void ptn_emit_object_numeric_cast_warning(
 
 static PTN_UNUSED PtnValue ptn_cast_int_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     ptn_emit_object_numeric_cast_warning(runtime, value, "int", line);
+    PtnValue resolved = ptn_value_deref(value);
+    if (runtime != NULL &&
+        resolved.type == PTN_FLOAT &&
+        ptn_float_to_int_out_of_range(resolved.as.floating)) {
+        ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, resolved.as.floating, line);
+    }
     return ptn_cast_int(value);
 }
 

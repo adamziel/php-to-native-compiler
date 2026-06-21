@@ -58,6 +58,12 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     const char *type_text,
     int type_allows_null
 );
+static PTN_UNUSED void ptn_emit_array_offset_key_conversion_diagnostic(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line,
+    int emit_null_key_deprecation
+);
 static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_property_metadata(
     PtnObject *object,
     const char *storage_name
@@ -903,11 +909,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     for (size_t i = 0; i < entry_count; i++) {
         PtnValue key_value = entries[i].has_key ? ptn_value_deref(entries[i].key) : ptn_null();
         if (runtime != NULL && entries[i].has_key) {
-            if (key_value.type == PTN_NULL) {
-                ptn_emit_null_array_offset_deprecation(runtime, line);
-            } else if (key_value.type == PTN_RESOURCE) {
-                ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
-            }
+            ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
         }
         PtnArrayKey key;
         if (entries[i].has_key) {
