@@ -26860,6 +26860,18 @@ class ReflectMethodSubject extends ReflectBaseMethod {
     public function __construct() {}
 }
 
+trait ReflectMethodTrait {
+    public function traitMethod() {}
+}
+
+class ReflectMethodFactoryEx extends ReflectionMethod {}
+
+class ReflectMethodFactoryOverride extends ReflectionMethod {
+    public static function createFromMethodName($method) {
+        return \"override:\" . $method;
+    }
+}
+
 $inherited = new ReflectionMethod(\"ReflectMethodSubject\", \"inherited\");
 var_dump($inherited->getName());
 var_dump($inherited->getDeclaringClass()->getName());
@@ -26881,6 +26893,16 @@ var_dump($static->getName());
 var_dump($static->isPublic());
 var_dump($static->isStatic());
 var_dump($static->isConstructor());
+
+$factory = ReflectMethodFactoryEx::createFromMethodName(\"ReflectMethodSubject::fresh\");
+var_dump(get_class($factory));
+var_dump($factory->class);
+var_dump($factory->name);
+var_dump(ReflectMethodFactoryOverride::createFromMethodName(\"ReflectMethodSubject::fresh\"));
+
+$trait = new ReflectionMethod(\"ReflectMethodTrait\", \"traitMethod\");
+var_dump($trait->class);
+var_dump($trait->name);
 
 $private = new ReflectionMethod(\"ReflectMethodSubject\", \"hidden\");
 var_dump($private->isPrivate());
@@ -26921,6 +26943,12 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
+            "string(22) \"ReflectMethodFactoryEx\"\n",
+            "string(20) \"ReflectMethodSubject\"\n",
+            "string(5) \"fresh\"\n",
+            "string(36) \"override:ReflectMethodSubject::fresh\"\n",
+            "string(18) \"ReflectMethodTrait\"\n",
+            "string(11) \"traitMethod\"\n",
             "bool(true)\n",
             "int(4)\n",
             "array(1) {\n",
@@ -26948,6 +26976,7 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
     assert!(c_source.contains("ptn_declared_class_reflection_method_metadata"));
     assert!(c_source.contains("ptn_declared_class_reflection_method_prototype"));
     assert!(c_source.contains("ptn_internal_reflection_method_create_from_method_name"));
+    assert!(c_source.contains("ptn_declared_trait_exists"));
 }
 
 #[test]
@@ -57668,6 +57697,7 @@ var_dump($privateSet->__toString());
 $readonly = new ReflectionProperty(\"ReflectPropModifiers\", \"readonlyValue\");
 var_dump($readonly->isReadOnly());
 var_dump($readonly->getModifiers());
+var_dump($readonly->__toString());
 $readonlyType = $readonly->getType();
 var_dump($readonly->hasType(), $readonlyType->getName(), (string) $readonlyType, $readonlyType->allowsNull(), $readonlyType->isBuiltin());
 $nullable = new ReflectionProperty(\"ReflectPropModifiers\", \"nullableName\");
@@ -57771,6 +57801,8 @@ try {
             "\"\n",
             "bool(true)\n",
             "int(2177)\n",
+            "string(63) \"Property [ public protected(set) readonly int $readonlyValue ]\n",
+            "\"\n",
             "bool(true)\n",
             "string(3) \"int\"\n",
             "string(3) \"int\"\n",

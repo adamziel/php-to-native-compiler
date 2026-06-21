@@ -5525,7 +5525,7 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
-    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
     out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_static_call_result;\n");
@@ -13969,6 +13969,7 @@ trait ReflectionPropertySummary {
     fn reflection_is_static(&self) -> bool;
     fn reflection_is_final(&self) -> bool;
     fn reflection_is_abstract(&self) -> bool;
+    fn reflection_is_readonly(&self) -> bool;
     fn reflection_is_virtual(&self) -> bool;
     fn reflection_has_hooks(&self) -> bool;
     fn reflection_hook_has_get(&self) -> bool;
@@ -14003,6 +14004,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_is_abstract(&self) -> bool {
         self.is_abstract
+    }
+
+    fn reflection_is_readonly(&self) -> bool {
+        self.is_readonly
     }
 
     fn reflection_is_virtual(&self) -> bool {
@@ -14067,6 +14072,10 @@ impl ReflectionPropertySummary for crate::ir::PropertyDecl {
         self.is_abstract
     }
 
+    fn reflection_is_readonly(&self) -> bool {
+        self.is_readonly
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         self.is_virtual
     }
@@ -14126,6 +14135,10 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
     }
 
     fn reflection_is_abstract(&self) -> bool {
+        false
+    }
+
+    fn reflection_is_readonly(&self) -> bool {
         false
     }
 
@@ -14189,6 +14202,9 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     }
     if property.reflection_is_virtual() {
         out.push_str(" virtual");
+    }
+    if property.reflection_is_readonly() {
+        out.push_str(" readonly");
     }
     if let Some(type_hint) = property.reflection_type_hint() {
         out.push(' ');

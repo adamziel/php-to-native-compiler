@@ -85233,6 +85233,7 @@ static void ptn_xmlwriter_append_method_names(PtnValue result, int64_t *index) {
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
@@ -85277,6 +85278,21 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_internal_class_name_is_reflection_reference(class_name)) {
         if (ptn_ascii_case_equal(name, "fromArrayElement")) {
             return ptn_internal_reflection_reference_from_array_element(runtime, argc, args, line);
+        }
+    }
+    if (ptn_internal_class_name_is_reflection_method(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "ReflectionMethod")) {
+        if (ptn_ascii_case_equal(name, "createFromMethodName")) {
+            PtnValue method = ptn_internal_reflection_method_create_from_method_name(runtime, argc, args, line);
+            if (runtime->exceptions->active_exception != NULL ||
+                method.type != PTN_OBJECT ||
+                ptn_internal_class_name_is_reflection_method(class_name)) {
+                return method;
+            }
+            PtnValue object = ptn_object_new_shell(runtime, class_name);
+            ptn_adopt_internal_parent_object_state(object, method);
+            ptn_value_destroy(&method);
+            return object;
         }
     }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
@@ -91619,6 +91635,10 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_internal_class_name_is_reflection_reference(class_name)) {
         return ptn_ascii_case_equal(method_name, "fromArrayElement");
     }
+    if (ptn_internal_class_name_is_reflection_method(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "ReflectionMethod")) {
+        return ptn_ascii_case_equal(method_name, "createFromMethodName");
+    }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
     }
@@ -97079,8 +97099,8 @@ static PtnValue ptn_reflection_property_to_string(
     );
     (void)allows_null;
     (void)is_builtin;
-    (void)is_readonly;
     const char *type_repr = type_display_name != NULL ? type_display_name : type_name;
+    const char *readonly_prefix = is_readonly ? " readonly" : "";
     const char *visibility_name = "public";
     if (visibility == PTN_PROPERTY_PRIVATE) {
         visibility_name = "private";
@@ -97101,10 +97121,11 @@ static PtnValue ptn_reflection_property_to_string(
         NULL,
         0,
         has_default
-            ? "Property [ %s%s%s%s $%s = %s ]\n"
-            : "Property [ %s%s%s%s $%s ]\n",
+            ? "Property [ %s%s%s%s%s $%s = %s ]\n"
+            : "Property [ %s%s%s%s%s $%s ]\n",
         visibility_name,
         is_static ? " static" : "",
+        readonly_prefix,
         type_repr == NULL ? "" : " ",
         type_repr == NULL ? "" : type_repr,
         data->name,
@@ -97123,10 +97144,11 @@ static PtnValue ptn_reflection_property_to_string(
         result,
         (size_t)needed + 1,
         has_default
-            ? "Property [ %s%s%s%s $%s = %s ]\n"
-            : "Property [ %s%s%s%s $%s ]\n",
+            ? "Property [ %s%s%s%s%s $%s = %s ]\n"
+            : "Property [ %s%s%s%s%s $%s ]\n",
         visibility_name,
         is_static ? " static" : "",
+        readonly_prefix,
         type_repr == NULL ? "" : " ",
         type_repr == NULL ? "" : type_repr,
         data->name,
