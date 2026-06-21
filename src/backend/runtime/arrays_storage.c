@@ -2398,6 +2398,18 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_debug_zval_argument(PtnValue *value) {
+    if (value == NULL) {
+        return ptn_null();
+    }
+    if (value->owned) {
+        PtnValue moved = *value;
+        *value = ptn_null();
+        return moved;
+    }
+    return ptn_value_share(*value);
+}
+
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     if (value.type == PTN_STRING && value.as.string.payload == NULL) {
         PtnValue clone = ptn_owned_string_len(

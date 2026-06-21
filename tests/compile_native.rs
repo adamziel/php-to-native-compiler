@@ -24483,6 +24483,45 @@ try {
 }
 
 #[test]
+fn compile_enum_cases_discard_releases_case_references_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-cases-discard-refcount");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-cases-discard-refcount.php");
+    let output = root.join("enum-cases-discard-refcount-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo {
+    case Bar;
+}
+
+function callCases() {
+    Foo::cases();
+}
+
+callCases();
+debug_zval_dump(Foo::Bar);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Foo)#1 (1) refcount(2){\n",
+            "  [\"name\"]=>\n",
+            "  string(3) \"Bar\" interned\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_enum_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-enum-metadata");
     fs::create_dir_all(&root).unwrap();

@@ -37701,6 +37701,62 @@ impl ValueEmitter {
         result_temp.to_string()
     }
 
+    fn emit_direct_debug_zval_dump_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        resolved_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_call_function(&runtime, \"");
+            out.push_str(&c_string(resolved_name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp.to_string();
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, "debug_zval_dump", argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_debug_zval_argument(&");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_call_function(&runtime, \"");
+        out.push_str(&c_string(resolved_name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp.to_string()
+    }
+
     fn emit_direct_array_fill_call(
         &mut self,
         out: &mut String,
@@ -38080,6 +38136,18 @@ impl ValueEmitter {
 
         let result_temp = self.next_temp();
         let resolved_name = self.resolved_function_call_name(name);
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("debug_zval_dump")
+        {
+            return self.emit_direct_debug_zval_dump_call(
+                out,
+                &result_temp,
+                &resolved_name,
+                arguments,
+                line,
+            );
+        }
         if !has_named_arguments && !has_unpacked_arguments {
             if let Some((target_class_name, method_name)) =
                 self.split_static_call_name(&resolved_name)
