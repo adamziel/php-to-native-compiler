@@ -49506,6 +49506,102 @@ static PtnValue ptn_internal_get_current_user(PtnRuntime *runtime, size_t argc, 
 #endif
 }
 
+static void ptn_internal_settype_emit_nan_warning(PtnRuntime *runtime, const char *type_name, size_t line) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unexpected NAN value was coerced to %s",
+        type_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_internal_settype_cast_int(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_out_of_range(value.as.floating)) {
+            ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, value.as.floating, line);
+            return ptn_int(ptn_float_to_php_integer(value.as.floating));
+        }
+        if (ptn_float_to_int_loses_precision(value.as.floating)) {
+            ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
+        }
+        return ptn_int((int64_t)value.as.floating);
+    }
+    return ptn_cast_int_with_runtime(runtime, value, line);
+}
+
+static PtnValue ptn_internal_settype_cast_bool(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT) {
+        int boolean = value.as.floating != 0.0;
+        if (isnan(value.as.floating)) {
+            ptn_internal_settype_emit_nan_warning(runtime, "bool", line);
+        }
+        return ptn_bool(boolean);
+    }
+    return ptn_bool(ptn_is_truthy(value));
+}
+
+static PtnValue ptn_internal_settype_cast_null(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_internal_settype_emit_nan_warning(runtime, "null", line);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_settype_cast_string(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    PtnValue converted = ptn_cast_string_with_runtime(runtime, value, line);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_internal_settype_emit_nan_warning(runtime, "string", line);
+    }
+    return converted;
+}
+
+static PtnValue ptn_internal_settype_scalar_array(PtnValue value) {
+    PtnValue array_value = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        array_value.as.array,
+        ptn_array_int_key(0),
+        ptn_value_clone(ptn_value_deref(value))
+    );
+    return array_value;
+}
+
+static PtnValue ptn_internal_settype_cast_array(PtnRuntime *runtime, PtnReference *reference, size_t line) {
+    PtnValue value = ptn_value_deref(reference->value);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_internal_settype_emit_nan_warning(runtime, "array", line);
+        return ptn_internal_settype_scalar_array(reference->value);
+    }
+    return ptn_cast_array(value);
+}
+
+static PtnValue ptn_internal_settype_scalar_object(PtnRuntime *runtime, PtnValue value) {
+    PtnValue object_value = ptn_object_new_shell(runtime, "stdClass");
+    ptn_array_set_entry(
+        object_value.as.object->properties,
+        ptn_array_string_key("scalar"),
+        ptn_value_clone(ptn_value_deref(value))
+    );
+    return object_value;
+}
+
+static PtnValue ptn_internal_settype_cast_object(PtnRuntime *runtime, PtnReference *reference, size_t line) {
+    PtnValue value = ptn_value_deref(reference->value);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_internal_settype_emit_nan_warning(runtime, "object", line);
+        return ptn_internal_settype_scalar_object(runtime, reference->value);
+    }
+    return ptn_cast_object(runtime, value);
+}
+
 static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     if (args[0].type != PTN_REFERENCE) {
@@ -49523,22 +49619,22 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
     int valid = 1;
 
     if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "null")) {
-        converted = ptn_null();
+        converted = ptn_internal_settype_cast_null(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "integer") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "int")) {
-        converted = ptn_cast_int_with_runtime(runtime, current, line);
+        converted = ptn_internal_settype_cast_int(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "double") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
         converted = ptn_cast_float_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
-        converted = ptn_cast_string_with_runtime(runtime, current, line);
+        converted = ptn_internal_settype_cast_string(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "boolean") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "bool")) {
-        converted = ptn_bool(ptn_is_truthy(current));
+        converted = ptn_internal_settype_cast_bool(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "array")) {
-        converted = ptn_cast_array(current);
+        converted = ptn_internal_settype_cast_array(runtime, args[0].as.reference, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "object")) {
-        converted = ptn_cast_object(runtime, current);
+        converted = ptn_internal_settype_cast_object(runtime, args[0].as.reference, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "resource")) {
         ptn_string_operand_free(type);
         ptn_throw_exception(runtime, "ValueError", "Cannot convert to resource type");
@@ -60461,6 +60557,54 @@ static PtnValue ptn_internal_random_int(PtnRuntime *runtime, size_t argc, const 
     uint64_t span = (uint64_t)(max - min) + 1;
     int64_t value = min + (int64_t)((uint64_t)rand() % span);
     return ptn_int(value);
+}
+
+static int ptn_random_bytes_fill(unsigned char *buffer, size_t len) {
+    FILE *source = fopen("/dev/urandom", "rb");
+    if (source != NULL) {
+        size_t offset = 0;
+        while (offset < len) {
+            size_t read_len = fread(buffer + offset, 1, len - offset, source);
+            if (read_len == 0) {
+                break;
+            }
+            offset += read_len;
+        }
+        fclose(source);
+        if (offset == len) {
+            return 1;
+        }
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        buffer[i] = (unsigned char)(rand() & 0xff);
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "random_bytes", 1, "length", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length <= 0) {
+        ptn_throw_exception(runtime, "ValueError", "random_bytes(): Argument #1 ($length) must be greater than 0");
+        return ptn_null();
+    }
+
+    size_t len = (size_t)length;
+    char *bytes = malloc(len + 1);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (!ptn_random_bytes_fill((unsigned char *)bytes, len)) {
+        free(bytes);
+        ptn_throw_exception(runtime, "Random\\RandomException", "random_bytes(): Failed to retrieve random bytes");
+        return ptn_null();
+    }
+    bytes[len] = '\0';
+    return ptn_owned_string_len(bytes, len);
 }
 
 static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -86600,6 +86744,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
+        { "random_bytes", 1, 1, ptn_internal_random_bytes },
         { "random_int", 2, 2, ptn_internal_random_int },
         { "srand", 0, 2, ptn_internal_srand },
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
