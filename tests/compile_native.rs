@@ -24181,6 +24181,52 @@ echo \"done\\n\";
 }
 
 #[test]
+fn compile_shutdown_destructor_static_property_resurrection_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-destructor-static-resurrection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-destructor-static-resurrection.php");
+    let output = root.join("shutdown-destructor-static-resurrection-bin");
+    fs::write(
+        &input,
+        "<?php
+class B {
+    public function __destruct() {
+        echo \"B\\n\";
+    }
+}
+
+class A {
+    public static $b;
+    public static $new;
+    public static $max = 4;
+
+    public function __destruct() {
+        if (self::$max-- <= 0) {
+            return;
+        }
+        echo \"A\\n\";
+        self::$b = new B;
+        self::$new[] = new A;
+    }
+}
+
+new A;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "A\nB\nA\nB\nA\nB\nA\nB\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_top_level_static_binding_replaces_variable_and_preserves_slot_to_native_binary() {
     let root = temp_dir("ptn-native-top-level-static-binding");
     fs::create_dir_all(&root).unwrap();

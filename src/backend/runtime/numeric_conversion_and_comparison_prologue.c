@@ -479,6 +479,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
         ptn_runtime_run_object_destructors(runtime);
+        ptn_runtime_run_static_property_destructors(runtime);
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
@@ -3035,6 +3036,16 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_set_visibility_tab
         : runtime->static_property_set_visibility;
 }
 
+static PTN_UNUSED int ptn_runtime_static_property_declaration_exists(
+    PtnRuntime *runtime,
+    const char *key
+) {
+    return ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key) != NULL ||
+        ptn_symbols_value_slot(ptn_runtime_static_property_initialized_table(runtime), key) != NULL ||
+        ptn_symbols_value_slot(ptn_runtime_static_property_read_visibility_table(runtime), key) != NULL ||
+        ptn_symbols_value_slot(ptn_runtime_static_property_set_visibility_table(runtime), key) != NULL;
+}
+
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_table(PtnRuntime *runtime) {
     return runtime->class_constants == NULL ? &runtime->owned_class_constants : runtime->class_constants;
 }
@@ -3317,7 +3328,7 @@ static PTN_UNUSED char *ptn_runtime_resolve_static_property_key(
     const char *lookup_class_name = class_name;
     while (lookup_class_name != NULL) {
         char *key = ptn_static_property_key(lookup_class_name, property);
-        if (ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key) != NULL) {
+        if (ptn_runtime_static_property_declaration_exists(runtime, key)) {
             if (declaring_class_out != NULL) {
                 *declaring_class_out = lookup_class_name;
             }
@@ -4859,15 +4870,16 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
         property,
         &declaring_class
     );
-    PtnValue value;
-    if (key != NULL && ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+    if (key != NULL) {
         if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
             free(key);
             return ptn_null();
         }
+        PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
+        PtnValue value;
         if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
-            free(key);
-            return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+            ptn_symbols_set(static_properties, key, ptn_null());
+            value = ptn_null();
         }
         PtnValue visibility_value;
         PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
@@ -4912,15 +4924,16 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
         property,
         &declaring_class
     );
-    PtnValue value;
-    if (key != NULL && ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
+    if (key != NULL) {
         if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
             free(key);
             return ptn_lookup_missing();
         }
+        PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
+        PtnValue value;
         if (!ptn_symbols_get(ptn_runtime_static_property_table(runtime), key, &value)) {
-            free(key);
-            return ptn_lookup_missing();
+            ptn_symbols_set(static_properties, key, ptn_null());
+            value = ptn_null();
         }
         PtnValue visibility_value;
         PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
@@ -5082,8 +5095,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
 
     PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_static_property_table(runtime), key);
     if (slot == NULL) {
-        free(key);
-        return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+        PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
+        ptn_symbols_set(static_properties, key, ptn_null());
+        slot = ptn_symbols_value_slot(static_properties, key);
+        if (slot == NULL) {
+            free(key);
+            return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+        }
     }
     if (slot->type != PTN_REFERENCE) {
         PtnValue current = *slot;
