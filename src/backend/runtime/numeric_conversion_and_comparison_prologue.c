@@ -131,8 +131,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
             runtime->magic_property_frames[i].object_id =
                 caller_runtime->magic_property_frames[i].object_id;
+            runtime->magic_property_frames[i].property_len =
+                caller_runtime->magic_property_frames[i].property_len;
             runtime->magic_property_frames[i].property =
-                ptn_duplicate_string(caller_runtime->magic_property_frames[i].property);
+                ptn_duplicate_string_len(
+                    caller_runtime->magic_property_frames[i].property,
+                    caller_runtime->magic_property_frames[i].property_len
+                );
         }
     }
     runtime->source_path = caller_runtime->source_path;

@@ -267,6 +267,10 @@ impl IncludeCollector {
                         UnsetTarget::Property { receiver, .. } => {
                             self.collect_expr(receiver, source_file, source_dir)?;
                         }
+                        UnsetTarget::DynamicProperty { receiver, name, .. } => {
+                            self.collect_expr(receiver, source_file, source_dir)?;
+                            self.collect_expr(name, source_file, source_dir)?;
+                        }
                         UnsetTarget::StaticProperty { .. } => {}
                         UnsetTarget::DynamicVariable { name, .. } => {
                             self.collect_expr(name, source_file, source_dir)?;

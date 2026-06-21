@@ -917,6 +917,7 @@ typedef struct {
 typedef struct {
     size_t object_id;
     char *property;
+    size_t property_len;
 } PtnMagicPropertyFrame;
 
 typedef enum {
@@ -1136,6 +1137,7 @@ typedef int (*PtnMagicPropertySetHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    size_t property_len,
     PtnValue value,
     size_t line
 );
@@ -1143,6 +1145,7 @@ typedef int (*PtnMagicPropertyUnsetHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    size_t property_len,
     size_t line
 );
 typedef int (*PtnMagicDebugInfoHandler)(

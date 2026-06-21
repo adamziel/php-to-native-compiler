@@ -53278,6 +53278,55 @@ $object->{\"\\0\"} = 1;
 }
 
 #[test]
+fn compile_magic_dynamic_property_leading_nul_dispatches_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-dynamic-property-leading-nul");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-dynamic-property-leading-nul.php");
+    let output = root.join("magic-dynamic-property-leading-nul-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public function __set($prop, $value) {
+        echo "__set:", strlen($prop), "\n";
+        $this->$prop = $value;
+    }
+
+    public function __unset($prop) {
+        echo "__unset:", strlen($prop), "\n";
+        unset($this->$prop);
+    }
+}
+
+$prop = "\0";
+try {
+    $a = new A;
+    $a->$prop = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $a = new A;
+    unset($a->$prop);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "__set:1\nCannot access property starting with \"\\0\"\n__unset:1\nCannot access property starting with \"\\0\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_this_outside_object_context_throws_to_native_binary() {
     let root = temp_dir("ptn-native-this-outside-object-context");
     fs::create_dir_all(&root).unwrap();

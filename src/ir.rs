@@ -408,6 +408,11 @@ pub enum Instruction {
         name: String,
         line: usize,
     },
+    UnsetDynamicProperty {
+        receiver: ValueExpr,
+        name: ValueExpr,
+        line: usize,
+    },
     UnsetStaticProperty {
         class_name: String,
         name: String,
@@ -3750,6 +3755,15 @@ impl<'a> LoweringContext<'a> {
             } => Instruction::UnsetProperty {
                 receiver: self.lower_expr(receiver),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstUnsetTarget::DynamicProperty {
+                receiver,
+                name,
+                span,
+            } => Instruction::UnsetDynamicProperty {
+                receiver: self.lower_expr(receiver),
+                name: self.lower_expr(name),
                 line: span.line,
             },
             AstUnsetTarget::StaticProperty {

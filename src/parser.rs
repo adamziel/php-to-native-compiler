@@ -5927,6 +5927,16 @@ impl Parser<'_> {
                 name,
                 span,
             }),
+            Expr::DynamicPropertyFetch {
+                receiver,
+                name,
+                span,
+                ..
+            } => Ok(UnsetTarget::DynamicProperty {
+                receiver,
+                name,
+                span,
+            }),
             Expr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -17661,6 +17671,10 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
         UnsetTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        UnsetTarget::DynamicProperty { receiver, name, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
+        }
         UnsetTarget::StaticProperty { .. } => {}
         UnsetTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
@@ -18653,6 +18667,9 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().any(expr_contains_yield),
         UnsetTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        UnsetTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
         UnsetTarget::ArrayDim(target) => {
             target.dimensions.iter().flatten().any(expr_contains_yield)
         }
@@ -23615,6 +23632,10 @@ fn unset_target_uses_this_property(target: &UnsetTarget, property_name: &str) ->
         UnsetTarget::Property { receiver, name, .. } => {
             receiver_is_this_property(receiver, name, property_name)
                 || expr_uses_this_property(receiver, property_name)
+        }
+        UnsetTarget::DynamicProperty { receiver, name, .. } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
         }
         UnsetTarget::ArrayDim(target) => array_dim_target_uses_this_property(target, property_name),
         UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions

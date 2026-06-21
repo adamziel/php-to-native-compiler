@@ -10679,6 +10679,13 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         Instruction::UnsetProperty { receiver, .. } => value_mentions_variable(receiver, name),
+        Instruction::UnsetDynamicProperty {
+            receiver,
+            name: property_name,
+            ..
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
         Instruction::UnsetStaticProperty { .. }
         | Instruction::DeclareFunction { .. }
         | Instruction::EarlyDeclareClass { .. }
@@ -15895,10 +15902,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_magic_property_set(PtnRuntime *runtime, PtnValue receiver, const char *property, PtnValue value, size_t line) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_set(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t property_len, PtnValue value, size_t line) {\n",
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)property;\n");
+    out.push_str("    (void)property_len;\n");
     out.push_str("    (void)value;\n");
     out.push_str("    (void)line;\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
@@ -15914,18 +15922,18 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
         out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
         out.push_str("        PtnValue ptn_set_args[2];\n");
-        out.push_str("        ptn_set_args[0] = ptn_string(property);\n");
+        out.push_str("        ptn_set_args[0] = ptn_owned_string_len(ptn_duplicate_string_len(property, property_len), property_len);\n");
         out.push_str("        ptn_set_args[1] = ptn_value_clone_deref(value);\n");
         out.push_str("        PtnValue ptn_set_result = ");
         out.push_str(&user_function_c_name(set_method.function_index));
@@ -15944,10 +15952,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_magic_property_unset(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_unset(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t property_len, size_t line) {\n",
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)property;\n");
+    out.push_str("    (void)property_len;\n");
     out.push_str("    (void)line;\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
@@ -15962,18 +15971,18 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
         out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
         out.push_str("        PtnValue ptn_unset_args[1];\n");
-        out.push_str("        ptn_unset_args[0] = ptn_string(property);\n");
+        out.push_str("        ptn_unset_args[0] = ptn_owned_string_len(ptn_duplicate_string_len(property, property_len), property_len);\n");
         out.push_str("        PtnValue ptn_unset_result = ");
         out.push_str(&user_function_c_name(unset_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_unset_args, line);\n");
@@ -19080,6 +19089,30 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &receiver_temp);
             }
         }
+        Instruction::UnsetDynamicProperty {
+            receiver,
+            name,
+            line,
+        } => {
+            let receiver_temp = values.emit_materialized_value(out, receiver);
+            let (name_temp, name_len_temp) =
+                values.emit_dynamic_property_name_for_write(out, name, *line);
+            out.push_str("    ptn_object_unset_property_len(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&name_len_temp);
+            out.push_str(", ");
+            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &receiver_temp);
+        }
         Instruction::UnsetStaticProperty {
             class_name,
             name,
@@ -21893,6 +21926,10 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        Instruction::UnsetDynamicProperty { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         Instruction::UnsetStaticProperty { .. } => {}
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
@@ -22662,6 +22699,10 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        Instruction::UnsetDynamicProperty { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         Instruction::UnsetStaticProperty { .. } => {}
         Instruction::InternalCall {
@@ -26641,6 +26682,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::UnsetStaticPropertyArrayDim { line, .. }
         | Instruction::UnsetDynamicStaticPropertyArrayDim { line, .. }
         | Instruction::UnsetProperty { line, .. }
+        | Instruction::UnsetDynamicProperty { line, .. }
         | Instruction::UnsetStaticProperty { line, .. }
         | Instruction::DefineConstant { line, .. }
         | Instruction::InternalCall { line, .. }
@@ -27280,8 +27322,11 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
             dimensions,
             ..
         } => value_expr_uses_this(receiver) || dimensions.iter().any(value_expr_uses_this),
-        Instruction::UnsetProperty { receiver, .. }
-        | Instruction::DefineConstant {
+        Instruction::UnsetProperty { receiver, .. } => value_expr_uses_this(receiver),
+        Instruction::UnsetDynamicProperty { receiver, name, .. } => {
+            value_expr_uses_this(receiver) || value_expr_uses_this(name)
+        }
+        Instruction::DefineConstant {
             value: receiver, ..
         }
         | Instruction::Expression(receiver)
@@ -28508,6 +28553,31 @@ impl ValueEmitter {
         name_temp
     }
 
+    fn emit_dynamic_property_name_for_write(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> (String, String) {
+        let value_temp = self.emit_materialized_value(out, name);
+        let len_temp = self.next_temp();
+        out.push_str("    size_t ");
+        out.push_str(&len_temp);
+        out.push_str(" = 0;\n");
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_dynamic_property_name_for_write(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&len_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        (name_temp, len_temp)
+    }
+
     fn emit_materialized_indirect_write_receiver(
         &mut self,
         out: &mut String,
@@ -29204,7 +29274,8 @@ impl ValueEmitter {
         } = target
         {
             let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
-            let name_temp = self.emit_dynamic_property_name(out, name, *line);
+            let (name_temp, name_len_temp) =
+                self.emit_dynamic_property_name_for_write(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
@@ -29240,10 +29311,12 @@ impl ValueEmitter {
             let assigned_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_write_property(&runtime, ");
+            out.push_str(" = ptn_object_write_property_len(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&name_len_temp);
             out.push_str(", ");
             self.emit_access_scope(out);
             out.push_str(", ");

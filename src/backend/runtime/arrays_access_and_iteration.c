@@ -3207,10 +3207,52 @@ static PTN_UNUSED void ptn_throw_reference_property_bind_incompatibility(
     ptn_throw_exception(runtime, "TypeError", message);
 }
 
+static PTN_UNUSED int ptn_magic_property_is_active_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len
+);
+static PTN_UNUSED size_t ptn_magic_property_push_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len
+);
+static PTN_UNUSED int ptn_magic_property_set_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    PtnValue value,
+    size_t line
+);
+static PTN_UNUSED int ptn_magic_property_unset_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    size_t line
+);
+
 static PTN_UNUSED int ptn_magic_property_is_active(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property
+) {
+    return ptn_magic_property_is_active_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property)
+    );
+}
+
+static PTN_UNUSED int ptn_magic_property_is_active_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len
 ) {
     if (runtime == NULL || property == NULL) {
         return 0;
@@ -3224,7 +3266,8 @@ static PTN_UNUSED int ptn_magic_property_is_active(
         if (
             frame->object_id == receiver.as.object->object_id &&
             frame->property != NULL &&
-            strcmp(frame->property, property) == 0
+            frame->property_len == property_len &&
+            memcmp(frame->property, property, property_len) == 0
         ) {
             return 1;
         }
@@ -3236,6 +3279,20 @@ static PTN_UNUSED size_t ptn_magic_property_push(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property
+) {
+    return ptn_magic_property_push_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property)
+    );
+}
+
+static PTN_UNUSED size_t ptn_magic_property_push_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len
 ) {
     size_t mark = runtime->magic_property_frame_len;
     receiver = ptn_value_deref(receiver);
@@ -3265,7 +3322,8 @@ static PTN_UNUSED size_t ptn_magic_property_push(
     PtnMagicPropertyFrame *frame =
         &runtime->magic_property_frames[runtime->magic_property_frame_len++];
     frame->object_id = receiver.as.object->object_id;
-    frame->property = ptn_duplicate_string(property);
+    frame->property = ptn_duplicate_string_len(property, property_len);
+    frame->property_len = property_len;
     return mark;
 }
 
@@ -3325,12 +3383,30 @@ static PTN_UNUSED int ptn_magic_property_set(
     PtnValue value,
     size_t line
 ) {
+    return ptn_magic_property_set_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        value,
+        line
+    );
+}
+
+static PTN_UNUSED int ptn_magic_property_set_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    PtnValue value,
+    size_t line
+) {
     if (runtime == NULL ||
         runtime->magic_property_set == NULL ||
-        ptn_magic_property_is_active(runtime, receiver, property)) {
+        ptn_magic_property_is_active_len(runtime, receiver, property, property_len)) {
         return 0;
     }
-    return runtime->magic_property_set(runtime, receiver, property, value, line);
+    return runtime->magic_property_set(runtime, receiver, property, property_len, value, line);
 }
 
 static PTN_UNUSED int ptn_magic_property_unset(
@@ -3339,12 +3415,28 @@ static PTN_UNUSED int ptn_magic_property_unset(
     const char *property,
     size_t line
 ) {
+    return ptn_magic_property_unset_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        line
+    );
+}
+
+static PTN_UNUSED int ptn_magic_property_unset_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    size_t line
+) {
     if (runtime == NULL ||
         runtime->magic_property_unset == NULL ||
-        ptn_magic_property_is_active(runtime, receiver, property)) {
+        ptn_magic_property_is_active_len(runtime, receiver, property, property_len)) {
         return 0;
     }
-    return runtime->magic_property_unset(runtime, receiver, property, line);
+    return runtime->magic_property_unset(runtime, receiver, property, property_len, line);
 }
 
 static PTN_UNUSED void ptn_throw_overloaded_property_reference_error(
@@ -5488,10 +5580,11 @@ static PTN_UNUSED int ptn_object_property_is_set(
     return ptn_value_deref(entry->value).type != PTN_NULL;
 }
 
-static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
+static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    size_t property_len,
     const char *access_scope,
     PtnValue value,
     size_t line,
@@ -5595,14 +5688,24 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         blocked_metadata != NULL &&
         ptn_blocked_property_write_should_call_magic_set(blocked_metadata)
     ) {
-        if (ptn_magic_property_set(runtime, receiver, property, value, line)) {
+        if (ptn_magic_property_set_len(runtime, receiver, property, property_len, value, line)) {
             return ptn_value_clone_deref(value);
         }
     }
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
-        ptn_magic_property_set(runtime, receiver, property, value, line)) {
+        ptn_magic_property_set_len(runtime, receiver, property, property_len, value, line)) {
         return ptn_value_clone_deref(value);
+    }
+    if (property_len > 0 && property[0] == '\0') {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot access property starting with \"\\0\"",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_null();
     }
     ptn_emit_static_property_non_static_notice_if_accessible(
         runtime,
@@ -5794,6 +5897,27 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line,
+    int indirect_write
+) {
+    return ptn_object_write_property_with_mode_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        access_scope,
+        value,
+        line,
+        indirect_write
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_object_write_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -5806,6 +5930,27 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         runtime,
         receiver,
         property,
+        access_scope,
+        value,
+        line,
+        0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_object_write_property_with_mode_len(
+        runtime,
+        receiver,
+        property,
+        property_len,
         access_scope,
         value,
         line,
@@ -6465,10 +6610,11 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     return ptn_value_clone(entry->value);
 }
 
-static PTN_UNUSED void ptn_object_unset_property(
+static PTN_UNUSED void ptn_object_unset_property_len(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
+    size_t property_len,
     const char *access_scope,
     size_t line
 ) {
@@ -6504,7 +6650,7 @@ static PTN_UNUSED void ptn_object_unset_property(
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
     if (blocked_metadata != NULL && blocked_metadata->is_unset) {
-        if (ptn_magic_property_unset(runtime, receiver, property, line)) {
+        if (ptn_magic_property_unset_len(runtime, receiver, property, property_len, line)) {
             return;
         }
     }
@@ -6522,7 +6668,17 @@ static PTN_UNUSED void ptn_object_unset_property(
     }
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
-        ptn_magic_property_unset(runtime, receiver, property, line)) {
+        ptn_magic_property_unset_len(runtime, receiver, property, property_len, line)) {
+        return;
+    }
+    if (property_len > 0 && property[0] == '\0') {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot access property starting with \"\\0\"",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
         return;
     }
     ptn_emit_static_property_non_static_notice_if_accessible(
@@ -6581,6 +6737,23 @@ static PTN_UNUSED void ptn_object_unset_property(
         }
     }
     free(storage_key);
+}
+
+static PTN_UNUSED void ptn_object_unset_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    ptn_object_unset_property_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        access_scope,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_object_declare_property_with_hooks(
