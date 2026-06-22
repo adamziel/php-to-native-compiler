@@ -6045,7 +6045,8 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     const char *access_scope,
     PtnValue value,
     size_t line,
-    int indirect_write
+    int indirect_write,
+    int reference_context
 ) {
     (void)line;
     const char *declaring_class = NULL;
@@ -6128,8 +6129,29 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
             ptn_reference_adopt_property_type(current.as.reference, metadata_ptr);
         }
         if (!indirect_write) {
+            if (!reference_context && metadata_ptr != NULL) {
+                PtnValue directly_coerced = ptn_null();
+                if (!ptn_runtime_static_property_type_coerce_assignment(
+                    runtime,
+                    metadata_ptr,
+                    value,
+                    0,
+                    line,
+                    &directly_coerced
+                )) {
+                    free(key);
+                    return ptn_null();
+                }
+                ptn_value_destroy(&directly_coerced);
+            }
             PtnValue result = ptn_null();
-            if (ptn_reference_assign_publish_first_result(runtime, current.as.reference, value, &result)) {
+            if (ptn_reference_assign_publish_first_result_with_context(
+                runtime,
+                current.as.reference,
+                value,
+                1,
+                &result
+            )) {
                 ptn_symbols_set(
                     ptn_runtime_static_property_initialized_table(runtime),
                     key,
@@ -6191,6 +6213,27 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
         access_scope,
         value,
         line,
+        0,
+        1
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_static_property_direct(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_write_static_property_impl(
+        runtime,
+        class_name,
+        property,
+        access_scope,
+        value,
+        line,
+        0,
         0
     );
 }
@@ -6210,6 +6253,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_indirect(
         access_scope,
         value,
         line,
+        1,
         1
     );
 }

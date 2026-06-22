@@ -33043,7 +33043,7 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, ");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -33074,7 +33074,7 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", ");
         out.push_str(&name_temp);
@@ -33105,7 +33105,7 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", ");
         out.push_str(&name_temp);
@@ -34544,7 +34544,7 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+                out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
@@ -40575,7 +40575,7 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         out.push_str("        ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
@@ -40633,7 +40633,7 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         out.push_str("        ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, ");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -40695,7 +40695,7 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
         out.push_str("        ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_direct(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", ");
         out.push_str(&name_temp);

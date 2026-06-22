@@ -62100,7 +62100,83 @@ echo Counter::$value, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
-    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_direct(&runtime"));
+}
+
+#[test]
+fn compile_direct_static_property_assignment_uses_property_type_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-static-property-reference-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-static-property-reference-type.php");
+    let output = root.join("direct-static-property-reference-type-bin");
+    fs::write(
+        &input,
+        "<?php
+class StaticRefBox {
+    public static int $i = 4;
+}
+
+$ref =& StaticRefBox::$i;
+
+try {
+    StaticRefBox::$i = null;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($ref, StaticRefBox::$i);
+
+try {
+    $ref = null;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($ref, StaticRefBox::$i);
+
+class StaticPairBox {
+    public static iterable $it = [];
+    public static ?array $a;
+}
+
+StaticPairBox::$a =& StaticPairBox::$it;
+try {
+    StaticPairBox::$it = new ArrayIterator();
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump(StaticPairBox::$it);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot assign null to property StaticRefBox::$i of type int\n",
+            "int(4)\n",
+            "int(4)\n",
+            "Cannot assign null to reference held by property StaticRefBox::$i of type int\n",
+            "int(4)\n",
+            "int(4)\n",
+            "Cannot assign ArrayIterator to reference held by property StaticPairBox::$a of type ?array\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_write_static_property_direct(&runtime"));
+    assert!(c_source.contains("ptn_runtime_reference_for_static_property(&runtime"));
 }
 
 #[test]
@@ -65774,7 +65850,7 @@ Counter::initSelf();
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
-    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_direct(&runtime"));
 }
 
 #[test]

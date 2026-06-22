@@ -58,9 +58,22 @@ static PTN_UNUSED void ptn_gc_end_replaced_reference_cycle_suppression(
     PtnReference *reference
 );
 
-static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out) {
+static PTN_UNUSED int ptn_reference_assign_result_with_context(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue value,
+    int reference_context,
+    PtnValue *result_out
+) {
     PtnValue stored_value = ptn_null();
-    if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
+    if (!ptn_property_reference_coerce_assignment(
+        runtime,
+        reference,
+        value,
+        reference_context,
+        0,
+        &stored_value
+    )) {
         return 0;
     }
     ptn_gc_attach_value_runtime(
@@ -78,6 +91,10 @@ static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnRefere
     return 1;
 }
 
+static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out) {
+    return ptn_reference_assign_result_with_context(runtime, reference, value, 1, result_out);
+}
+
 static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
     PtnValue result = ptn_null();
     if (!ptn_reference_assign_result(runtime, reference, value, &result)) {
@@ -87,14 +104,22 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
     return 1;
 }
 
-static PTN_UNUSED int ptn_reference_assign_publish_first_result(
+static PTN_UNUSED int ptn_reference_assign_publish_first_result_with_context(
     PtnRuntime *runtime,
     PtnReference *reference,
     PtnValue value,
+    int reference_context,
     PtnValue *result_out
 ) {
     PtnValue stored_value = ptn_null();
-    if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
+    if (!ptn_property_reference_coerce_assignment(
+        runtime,
+        reference,
+        value,
+        reference_context,
+        0,
+        &stored_value
+    )) {
         return 0;
     }
     ptn_gc_attach_value_runtime(
@@ -113,6 +138,21 @@ static PTN_UNUSED int ptn_reference_assign_publish_first_result(
         ptn_value_destroy(&result);
     }
     return 1;
+}
+
+static PTN_UNUSED int ptn_reference_assign_publish_first_result(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue value,
+    PtnValue *result_out
+) {
+    return ptn_reference_assign_publish_first_result_with_context(
+        runtime,
+        reference,
+        value,
+        1,
+        result_out
+    );
 }
 
 static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
