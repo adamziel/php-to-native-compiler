@@ -14940,8 +14940,50 @@ fn validate_method_signature_pair_named(
         ));
     }
 
-    for (index, parent_parameter) in parent_method.parameters.iter().enumerate() {
-        let Some(parameter) = method.parameters.get(index) else {
+    let mut parameter_index = 0;
+    for parent_parameter in &parent_method.parameters {
+        if parent_parameter.is_variadic {
+            let mut has_covering_variadic = false;
+            while let Some(parameter) = method.parameters.get(parameter_index) {
+                if !parameter_can_satisfy_parent_parameter(
+                    parameter,
+                    parent_parameter,
+                    classes,
+                    runtime_class_aliases,
+                ) {
+                    return Err(method_signature_compatibility_error_named(
+                        class,
+                        method,
+                        parent_class_name,
+                        parent_method,
+                    ));
+                }
+                if !parameter.is_variadic && parameter.default_value.is_none() {
+                    return Err(method_signature_compatibility_error_named(
+                        class,
+                        method,
+                        parent_class_name,
+                        parent_method,
+                    ));
+                }
+                if parameter.is_variadic {
+                    has_covering_variadic = true;
+                    break;
+                }
+                parameter_index += 1;
+            }
+            if !has_covering_variadic {
+                return Err(method_signature_compatibility_error_named(
+                    class,
+                    method,
+                    parent_class_name,
+                    parent_method,
+                ));
+            }
+            return Ok(());
+        }
+
+        let Some(parameter) = method.parameters.get(parameter_index) else {
             return Err(method_signature_compatibility_error_named(
                 class,
                 method,
@@ -14949,9 +14991,14 @@ fn validate_method_signature_pair_named(
                 parent_method,
             ));
         };
-        if parameter.by_ref != parent_parameter.by_ref
-            || parameter.is_variadic != parent_parameter.is_variadic
-            || (parent_parameter.default_value.is_some() && parameter.default_value.is_none())
+        if !parameter_can_satisfy_parent_parameter(
+            parameter,
+            parent_parameter,
+            classes,
+            runtime_class_aliases,
+        ) || (parent_parameter.default_value.is_some()
+            && parameter.default_value.is_none()
+            && !parameter.is_variadic)
         {
             return Err(method_signature_compatibility_error_named(
                 class,
@@ -14960,25 +15007,11 @@ fn validate_method_signature_pair_named(
                 parent_method,
             ));
         }
-        if !parameter_type_is_contravariant(
-            parameter,
-            parent_parameter,
-            classes,
-            runtime_class_aliases,
-        ) {
-            return Err(method_signature_compatibility_error_named(
-                class,
-                method,
-                parent_class_name,
-                parent_method,
-            ));
+        if !parameter.is_variadic {
+            parameter_index += 1;
         }
     }
-    for parameter in method
-        .parameters
-        .iter()
-        .skip(parent_method.parameters.len())
-    {
+    for parameter in method.parameters.iter().skip(parameter_index) {
         if parameter.default_value.is_none() && !parameter.is_variadic {
             return Err(method_signature_compatibility_error_named(
                 class,
@@ -15025,6 +15058,21 @@ fn validate_method_signature_pair_named(
     }
 
     Ok(())
+}
+
+fn parameter_can_satisfy_parent_parameter(
+    parameter: &FunctionParameter,
+    parent_parameter: &FunctionParameter,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
+    parameter.by_ref == parent_parameter.by_ref
+        && parameter_type_is_contravariant(
+            parameter,
+            parent_parameter,
+            classes,
+            runtime_class_aliases,
+        )
 }
 
 fn unresolved_compatibility_class(
@@ -26023,7 +26071,7 @@ fn validate_function_parameter_defaults(parameters: &[FunctionParameter]) -> Res
     for parameter in parameters {
         if parameter.is_variadic && parameter.default_value.is_some() {
             return Err(Diagnostic::new(
-                "variadic function parameter cannot have a default value",
+                "Variadic parameter cannot have a default value",
                 Some(parameter.span),
             ));
         }

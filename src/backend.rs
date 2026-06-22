@@ -2935,15 +2935,11 @@ fn emit_variadic_parameter_binding(
             out.push_str(&c_string(&function.name));
             out.push_str("\", ");
             out.push_str(&index_temp);
-            out.push_str(" + 1, \"");
-            out.push_str(&c_string(&parameter.name));
-            out.push_str("\", \"");
+            out.push_str(" + 1, NULL, \"");
             out.push_str(&c_string(&type_hint_label(type_hint)));
             out.push_str("\", args[");
             out.push_str(&index_temp);
-            out.push_str("], line");
-            emit_user_function_declaration_location_args(out, function);
-            out.push_str(");\n");
+            out.push_str("], line, NULL, 0);\n");
             out.push_str("            return ptn_null();\n");
             out.push_str("        }\n");
         }
@@ -2960,17 +2956,13 @@ fn emit_variadic_parameter_binding(
         out.push_str(&c_string(&function.display_name));
         out.push_str("\", ");
         out.push_str(&index_temp);
-        out.push_str(" + 1, \"");
-        out.push_str(&c_string(&parameter.name));
-        out.push_str("\", \"");
+        out.push_str(" + 1, NULL, \"");
         out.push_str(&c_string(&type_hint_label(
             type_hint.expect("effective null type has source type hint"),
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line");
-        emit_user_function_declaration_location_args(out, function);
-        out.push_str(");\n");
+        out.push_str("], line, NULL, 0);\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
@@ -2991,17 +2983,13 @@ fn emit_variadic_parameter_binding(
         out.push_str(&c_string(&function.display_name));
         out.push_str("\", ");
         out.push_str(&index_temp);
-        out.push_str(" + 1, \"");
-        out.push_str(&c_string(&parameter.name));
-        out.push_str("\", \"");
+        out.push_str(" + 1, NULL, \"");
         out.push_str(&c_string(&type_hint_label(
             type_hint.expect("effective array type has source type hint"),
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line");
-        emit_user_function_declaration_location_args(out, function);
-        out.push_str(");\n");
+        out.push_str("], line, NULL, 0);\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
@@ -3024,17 +3012,13 @@ fn emit_variadic_parameter_binding(
         out.push_str(&c_string(&function.name));
         out.push_str("\", ");
         out.push_str(&index_temp);
-        out.push_str(" + 1, \"");
-        out.push_str(&c_string(&parameter.name));
-        out.push_str("\", \"");
+        out.push_str(" + 1, NULL, \"");
         out.push_str(&c_string(&type_hint_label(
             type_hint.expect("effective class type has source type hint"),
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line");
-        emit_user_function_declaration_location_args(out, function);
-        out.push_str(");\n");
+        out.push_str("], line, NULL, 0);\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }

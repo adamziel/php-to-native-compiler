@@ -4341,6 +4341,73 @@ fn parser_accepts_variadic_function_parameters() {
 }
 
 #[test]
+fn parser_validates_variadic_method_signature_variance() {
+    parser::parse(
+        "<?php
+interface DB {
+    public function query($query, string ...$params);
+}
+class MySQL implements DB {
+    public function query($query, ?string $extraParam = null, string ...$params) {}
+}
+",
+    )
+    .unwrap();
+
+    parser::parse(
+        "<?php
+class VariadicBase {
+    public function test1($a, $b) {}
+    public function test2(int $a, int $b) {}
+    public function test3(int $a, string $b) {}
+    public function test4(&$a, &$b) {}
+}
+class VariadicChild extends VariadicBase {
+    public function test1(...$args) {}
+    public function test2(int ...$args) {}
+    public function test3(int|string ...$args) {}
+    public function test4(&...$args) {}
+}
+",
+    )
+    .unwrap();
+
+    parser::parse(
+        "<?php
+interface VariadicInterface {
+    public function query($query, ...$params);
+}
+class VariadicImplementation implements VariadicInterface {
+    public function query(...$params) {}
+}
+",
+    )
+    .unwrap();
+
+    let error = parser::parse(
+        "<?php
+interface InfiniteTail {
+    public function query(...$params);
+}
+class FiniteTail implements InfiniteTail {
+    public function query($param = null) {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of FiniteTail::query($param = null) must be compatible with InfiniteTail::query(...$params)"
+    );
+
+    let error = parser::parse("<?php function invalid(...$args = []) {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Variadic parameter cannot have a default value"
+    );
+}
+
+#[test]
 fn parser_rejects_duplicate_user_function_declarations() {
     let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
     assert_eq!(
@@ -24592,6 +24659,46 @@ fn compile_variadic_user_function_arguments_to_native_binary() {
     assert!(c_source
         .contains("ptn_runtime_set_call_frame(&runtime, argc, args, ptn_call_arg_names, 1, ptn_parameter_names"));
     assert!(c_source.contains("ptn_array_set_entry(ptn_variadic_1.as.array"));
+}
+
+#[test]
+fn compile_variadic_user_function_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-variadic-user-function-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variadic-user-function-type-errors.php");
+    let output = root.join("variadic-user-function-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+function inspect(array ...$values) {
+    var_dump($values);
+}
+
+try {
+    inspect([0], [1], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "inspect(): Argument #3 must be of type array, int given, called in {} on line 7\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_user_parameter_class_type_error"));
+    assert!(c_source.contains(" + 1, NULL, \"array\""));
 }
 
 #[test]
