@@ -6808,6 +6808,10 @@ static PTN_UNUSED void ptn_throw_undefined_method_for_receiver(
     receiver = ptn_value_deref(receiver);
     const char *class_name = NULL;
     if (receiver.type == PTN_OBJECT) {
+        if (ptn_object_is_incomplete_class(receiver.as.object)) {
+            ptn_throw_incomplete_object_method_call(runtime, receiver.as.object, line);
+            return;
+        }
         class_name = receiver.as.object->class_name;
     } else if (receiver.type == PTN_EXCEPTION) {
         class_name = receiver.as.exception->class_name;

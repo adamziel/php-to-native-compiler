@@ -15518,6 +15518,55 @@ try {
 }
 
 #[test]
+fn compile_incomplete_class_quiet_access_and_method_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-class-quiet-access-and-method-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-class-quiet-access-and-method-errors.php");
+    let output = root.join("incomplete-class-quiet-access-and-method-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$z = unserialize('O:1:"A":0:{}');
+var_dump(isset($z->x));
+var_dump(empty($z->x));
+try {
+    $z->x = "new";
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($z->x);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $z->f();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let access_warning = "Warning: main(): The script tried to access a property on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition";
+    assert_eq!(stdout.matches(access_warning).count(), 2, "{stdout}");
+    let modification_message = "The script tried to modify a property on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition";
+    assert_eq!(stdout.matches(modification_message).count(), 2, "{stdout}");
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.ends_with("The script tried to call a method on an incomplete object. Please ensure that the class definition \"A\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_allowed_classes_options_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-allowed-classes-options");
     fs::create_dir_all(&root).unwrap();

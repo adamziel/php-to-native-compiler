@@ -20233,6 +20233,13 @@ fn emit_method_dispatch(
             out.push_str("                ptn_scoped_modeled_parent = ptn_declared_class_parent_name(ptn_scoped_modeled_parent);\n");
             out.push_str("            }\n");
             out.push_str("#endif\n");
+            out.push_str(
+                "            if (ptn_object_is_incomplete_class(resolved_receiver.as.object)) {\n",
+            );
+            out.push_str("                ptn_throw_incomplete_object_method_call(runtime, resolved_receiver.as.object, line);\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
             out.push_str("            int ptn_undefined_method_needed = snprintf(NULL, 0, \"Call to undefined method %s::%s()\", target_class_name, method_name);\n");
             out.push_str("            if (ptn_undefined_method_needed < 0) {\n");
             out.push_str("                ptn_abort_out_of_memory();\n");

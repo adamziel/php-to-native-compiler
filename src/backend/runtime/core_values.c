@@ -1580,6 +1580,12 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
+static PTN_UNUSED int ptn_object_is_incomplete_class(PtnObject *object);
+static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);

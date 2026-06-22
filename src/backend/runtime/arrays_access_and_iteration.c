@@ -2050,6 +2050,11 @@ static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
     PtnObject *object,
     size_t line
 );
+static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+);
 static PTN_UNUSED void ptn_emit_incomplete_object_property_access_warning(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -4375,6 +4380,41 @@ static PTN_UNUSED void ptn_throw_incomplete_object_property_modification(
     ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_incomplete_object_method_call(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    char *class_name = ptn_incomplete_object_original_class_name(object);
+    int needed = snprintf(
+        NULL,
+        0,
+        "The script tried to call a method on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    if (needed < 0) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "The script tried to call a method on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        class_name
+    );
+    free(class_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_emit_incomplete_object_property_access_warning(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -6448,6 +6488,10 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
+        return ptn_lookup_missing();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_lookup_missing();
@@ -6546,6 +6590,10 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         goto done;
     }
     if (receiver.type != PTN_OBJECT) {
+        goto done;
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
         goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
@@ -6669,6 +6717,10 @@ static PTN_UNUSED int ptn_object_property_is_set(
         goto done;
     }
     if (receiver.type != PTN_OBJECT) {
+        goto done;
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
         goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
@@ -7995,6 +8047,10 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         if (ptn_value_is_from_string_offset(receiver)) {
             ptn_throw_string_offset_as_object_error(runtime, line);
         }
+        return;
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
         return;
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
