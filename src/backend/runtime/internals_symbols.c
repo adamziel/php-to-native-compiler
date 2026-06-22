@@ -624,6 +624,48 @@ static PTN_UNUSED int ptn_gc_suppresses_replaced_reference_cycle(
         ptn_replaced_reference_cycle_suppressed_reference == reference;
 }
 
+static PTN_UNUSED size_t ptn_array_count_pending_destroy_reference_cycles(PtnArray *array, size_t depth) {
+    if (array == NULL || depth > 1024) {
+        return 0;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = array->entries[i].value;
+        if (value.type == PTN_ARRAY) {
+            size_t nested = ptn_array_count_pending_destroy_reference_cycles(
+                value.as.array,
+                depth + 1
+            );
+            if (count > SIZE_MAX - nested) {
+                ptn_abort_out_of_memory();
+            }
+            count += nested;
+            continue;
+        }
+        if (value.type != PTN_REFERENCE || value.as.reference == NULL) {
+            continue;
+        }
+        PtnReference *reference = value.as.reference;
+        if (reference->value.type != PTN_ARRAY || reference->value.as.array == NULL) {
+            continue;
+        }
+        size_t internal_refs = ptn_array_count_reference(reference->value.as.array, reference, 0);
+        if (
+            internal_refs == 0 ||
+            reference->refcount < internal_refs ||
+            reference->refcount - internal_refs > 1
+        ) {
+            continue;
+        }
+        if (count > SIZE_MAX - internal_refs) {
+            ptn_abort_out_of_memory();
+        }
+        count += internal_refs;
+    }
+    return count;
+}
+
 static PTN_UNUSED void ptn_reference_destroy_storage(PtnReference *reference) {
     if (reference == NULL) {
         return;

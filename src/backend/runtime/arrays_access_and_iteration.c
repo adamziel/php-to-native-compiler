@@ -10987,6 +10987,9 @@ static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array) {
     }
     array->iterator_refcount--;
     if (array->iterator_refcount == 0 && array->refcount == 0) {
+        size_t pending_cycles =
+            ptn_array_count_pending_destroy_reference_cycles(array, 0);
+        ptn_gc_note_array_reference_cycles(pending_cycles);
         ptn_runtime_unregister_array(array->lifecycle_runtime, array);
         ptn_array_destroy_storage(array);
     }
