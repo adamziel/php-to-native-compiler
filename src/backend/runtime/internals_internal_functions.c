@@ -19292,7 +19292,15 @@ static int ptn_array_column_lookup(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, row, key.property_name, line, 1, value_out)
+            runtime->magic_property_read(
+                runtime,
+                row,
+                key.property_name,
+                strlen(key.property_name),
+                line,
+                1,
+                value_out
+            )
         ) {
             return 1;
         }

@@ -60153,9 +60153,9 @@ $example::$dynamicStatic();
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_dynamic_property_name(&runtime"));
+    assert!(c_source.contains("ptn_dynamic_property_name_for_read(&runtime"));
     assert!(c_source.contains("ptn_object_write_property_len(&runtime"));
-    assert!(c_source.contains("ptn_object_read_property(&runtime"));
+    assert!(c_source.contains("ptn_object_read_property_len(&runtime"));
 }
 
 #[test]
@@ -60335,6 +60335,65 @@ try {
         "__set:1\nCannot access property starting with \"\\0\"\n__unset:1\nCannot access property starting with \"\\0\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_magic_dynamic_property_read_leading_nul_and_reference_error_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-dynamic-property-read-leading-nul");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-dynamic-property-read-leading-nul.php");
+    let output = root.join("magic-dynamic-property-read-leading-nul-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class NulGet {
+    public function __get($prop) {
+        echo "__get:", strlen($prop), "\n";
+        var_dump($this->$prop);
+    }
+}
+
+$prop = "\0";
+try {
+    var_dump((new NulGet)->$prop);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+    echo $e->getTrace()[0]["function"], "\n";
+}
+
+class MagicBase {
+    public function &__get($name) {
+        return $this->test;
+    }
+}
+
+class MagicChild extends MagicBase {
+    private $test;
+}
+
+try {
+    var_dump((new MagicChild)->test);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "__get:1\nCannot access property starting with \"\\0\"\n__get\nCannot access private property MagicChild::$test\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_property_name_for_read(&runtime"));
+    assert!(c_source.contains("ptn_object_read_property_len(&runtime"));
+    assert!(c_source.contains("ptn_string_literal(property, property_len)"));
 }
 
 #[test]

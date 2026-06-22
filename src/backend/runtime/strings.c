@@ -380,6 +380,34 @@ static PTN_UNUSED char *ptn_dynamic_property_name(PtnRuntime *runtime, PtnValue 
     return ptn_dynamic_variable_name(runtime, value, line);
 }
 
+static PTN_UNUSED char *ptn_dynamic_property_name_for_read(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    size_t *len_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING) {
+        if (
+            value.as.string.len > 0 &&
+            value.as.string.data[0] != '\0' &&
+            ptn_string_has_embedded_nul(value.as.string)
+        ) {
+            ptn_emit_type_error(
+                &runtime->diagnostics,
+                "Unsupported dynamic property name containing embedded NUL"
+            );
+            exit(255);
+        }
+        *len_out = value.as.string.len;
+        return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+    }
+
+    char *name = ptn_dynamic_property_name(runtime, value, line);
+    *len_out = strlen(name);
+    return name;
+}
+
 static PTN_UNUSED char *ptn_dynamic_property_name_for_write(
     PtnRuntime *runtime,
     PtnValue value,

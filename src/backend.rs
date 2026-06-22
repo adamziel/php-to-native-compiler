@@ -17072,10 +17072,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t line, int require_isset, PtnValue *value_out) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_magic_property_read(PtnRuntime *runtime, PtnValue receiver, const char *property, size_t property_len, size_t line, int require_isset, PtnValue *value_out) {\n",
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)property;\n");
+    out.push_str("    (void)property_len;\n");
     out.push_str("    (void)line;\n");
     out.push_str("    (void)require_isset;\n");
     out.push_str("    (void)value_out;\n");
@@ -17097,13 +17098,13 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET)) {\n");
+        out.push_str("        if (ptn_magic_property_is_active_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_GET)) {\n");
         out.push_str("            return 0;\n");
         out.push_str("        }\n");
         out.push_str("        PtnValue ptn_magic_receiver = ptn_value_clone_deref(resolved);\n");
         out.push_str("        resolved = ptn_value_deref(ptn_magic_receiver);\n");
         out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property, PTN_MAGIC_PROPERTY_GET);\n",
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_GET);\n",
         );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
@@ -17112,7 +17113,9 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         if let Some(isset_method) = isset_method {
             out.push_str("        if (require_isset) {\n");
             out.push_str("            PtnValue ptn_isset_args[1];\n");
-            out.push_str("            ptn_isset_args[0] = ptn_string(property);\n");
+            out.push_str(
+                "            ptn_isset_args[0] = ptn_string_literal(property, property_len);\n",
+            );
             out.push_str("            PtnValue ptn_isset_result = ");
             out.push_str(&user_function_c_name(isset_method.function_index));
             out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
@@ -17146,7 +17149,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         }
         if let Some(get_method) = get_method {
             out.push_str("        PtnValue ptn_get_args[1];\n");
-            out.push_str("        ptn_get_args[0] = ptn_string(property);\n");
+            out.push_str("        ptn_get_args[0] = ptn_string_literal(property, property_len);\n");
             out.push_str("        *value_out = ");
             out.push_str(&user_function_c_name(get_method.function_index));
             out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
@@ -30738,6 +30741,31 @@ impl ValueEmitter {
         (name_temp, len_temp)
     }
 
+    fn emit_dynamic_property_name_for_read(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> (String, String) {
+        let value_temp = self.emit_materialized_value(out, name);
+        let len_temp = self.next_temp();
+        out.push_str("    size_t ");
+        out.push_str(&len_temp);
+        out.push_str(" = 0;\n");
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_dynamic_property_name_for_read(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&len_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        (name_temp, len_temp)
+    }
+
     fn emit_materialized_indirect_write_receiver(
         &mut self,
         out: &mut String,
@@ -37997,17 +38025,20 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(")) {\n");
             }
-            let name_temp = self.emit_dynamic_property_name(out, name, line);
+            let (name_temp, name_len_temp) =
+                self.emit_dynamic_property_name_for_read(out, name, line);
             out.push_str(if self.in_const_declaration {
                 "            "
             } else {
                 "        "
             });
             out.push_str(&result_temp);
-            out.push_str(" = ptn_object_read_property(&runtime, ");
+            out.push_str(" = ptn_object_read_property_len(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&name_len_temp);
             out.push_str(", ");
             self.emit_access_scope(out);
             out.push_str(", ");
@@ -38037,7 +38068,8 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(")) {\n");
             }
-            let name_temp = self.emit_dynamic_property_name(out, name, line);
+            let (name_temp, name_len_temp) =
+                self.emit_dynamic_property_name_for_read(out, name, line);
             if !self.in_const_declaration {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -38047,10 +38079,12 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
             }
-            out.push_str("ptn_object_read_property(&runtime, ");
+            out.push_str("ptn_object_read_property_len(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
+            out.push_str(", ");
+            out.push_str(&name_len_temp);
             out.push_str(", ");
             self.emit_access_scope(out);
             out.push_str(", ");

@@ -3734,6 +3734,15 @@ static PTN_UNUSED int ptn_magic_property_get_exists(PtnRuntime *runtime, PtnValu
     return runtime->magic_property_get_exists(runtime, receiver);
 }
 
+static PTN_UNUSED int ptn_magic_property_get_exists_inactive(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property
+) {
+    return ptn_magic_property_get_exists(runtime, receiver) &&
+        !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET);
+}
+
 static PTN_UNUSED int ptn_magic_property_isset(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3916,7 +3925,8 @@ static PTN_UNUSED int ptn_object_reject_overloaded_property_reference_assignment
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
-    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
+    if (blocked_metadata != NULL &&
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
         ptn_call_magic_get_then_throw_overloaded_property_reference_error(
             runtime,
             receiver,
@@ -3928,7 +3938,7 @@ static PTN_UNUSED int ptn_object_reject_overloaded_property_reference_assignment
     }
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
-        ptn_magic_property_get_exists(runtime, receiver)) {
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
         ptn_call_magic_get_then_throw_overloaded_property_reference_error(
             runtime,
             receiver,
@@ -5396,7 +5406,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             PtnValue read_value = ptn_value_clone_deref(magic_value);
             ptn_value_destroy(&magic_value);
@@ -5506,7 +5524,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             PtnValue read_value = ptn_value_clone_deref(magic_value);
             ptn_value_destroy(&magic_value);
@@ -5565,6 +5591,72 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         );
     }
     return ptn_value_clone_deref(entry->value);
+}
+
+static PTN_UNUSED PtnValue ptn_object_read_property_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    const char *access_scope,
+    size_t line
+) {
+    if (property == NULL || property_len == strlen(property)) {
+        return ptn_object_read_property(runtime, receiver, property, access_scope, line);
+    }
+    if (property_len == 0 || property[0] != '\0') {
+        ptn_emit_type_error(
+            &runtime->diagnostics,
+            "Unsupported dynamic property name containing embedded NUL"
+        );
+        exit(255);
+    }
+
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        ptn_emit_undefined_exception_property_warning(runtime, receiver.as.exception, property, line);
+        return ptn_null();
+    }
+    if (receiver.type == PTN_CLOSURE) {
+        ptn_emit_closure_undefined_property_warning(runtime, property, line);
+        return ptn_null();
+    }
+    if (receiver.type != PTN_OBJECT) {
+        ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
+    if (ptn_object_is_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
+
+    PtnValue magic_value;
+    if (
+        runtime != NULL &&
+        runtime->magic_property_read != NULL &&
+        runtime->magic_property_read(
+            runtime,
+            receiver,
+            property,
+            property_len,
+            line,
+            0,
+            &magic_value
+        )
+    ) {
+        PtnValue read_value = ptn_value_clone_deref(magic_value);
+        ptn_value_destroy(&magic_value);
+        return read_value;
+    }
+
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Cannot access property starting with \"\\0\"",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+    return ptn_null();
 }
 
 static PTN_UNUSED int ptn_constant_expression_property_receiver_allowed(
@@ -5699,7 +5791,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             return magic_value;
         }
@@ -5824,7 +5924,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
             metadata == NULL &&
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             return magic_value;
         }
@@ -5968,7 +6076,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             return magic_value;
         }
@@ -6032,7 +6148,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                0,
+                &magic_value
+            )
         ) {
             return magic_value;
         }
@@ -6177,7 +6301,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                1,
+                &magic_value
+            )
         ) {
             return ptn_lookup_found(magic_value);
         }
@@ -6194,7 +6326,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                1,
+                &magic_value
+            )
         ) {
             return ptn_lookup_found(magic_value);
         }
@@ -6249,7 +6389,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                1,
+                &magic_value
+            )
         ) {
             result = ptn_lookup_found(magic_value);
             goto done;
@@ -6304,7 +6452,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         if (
             runtime != NULL &&
             runtime->magic_property_read != NULL &&
-            runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
+            runtime->magic_property_read(
+                runtime,
+                receiver,
+                property,
+                strlen(property),
+                line,
+                1,
+                &magic_value
+            )
         ) {
             result = ptn_lookup_found(magic_value);
             goto done;
@@ -7100,7 +7256,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
-    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
+    if (blocked_metadata != NULL &&
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
         ptn_call_magic_get_then_throw_overloaded_property_reference_error(
             runtime,
             receiver,
@@ -7120,7 +7277,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     );
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
-        ptn_magic_property_get_exists(runtime, receiver)) {
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
         ptn_call_magic_get_then_throw_overloaded_property_reference_error(
             runtime,
             receiver,
@@ -7313,7 +7470,8 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     PtnValue magic_receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, magic_receiver.as.object, property, access_scope, 1);
-    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, magic_receiver)) {
+    if (blocked_metadata != NULL &&
+        ptn_magic_property_get_exists_inactive(runtime, magic_receiver, property)) {
         ptn_throw_overloaded_property_reference_error(runtime, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
@@ -7477,6 +7635,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         ptn_property_type_is_declared(metadata->type_kind)) {
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, magic_receiver, property, line, &magic_value)) {
+            if (ptn_runtime_has_active_exception(runtime)) {
+                ptn_value_destroy(&magic_value);
+                ptn_array_key_free(key);
+                free(storage_key);
+                return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            }
             if (magic_value.type == PTN_REFERENCE) {
                 PtnValue coerced = ptn_null();
                 if (!ptn_coerce_unset_typed_property_magic_value(
@@ -7511,6 +7675,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         }
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, magic_receiver, property, line, &magic_value)) {
+            if (ptn_runtime_has_active_exception(runtime)) {
+                ptn_value_destroy(&magic_value);
+                ptn_array_key_free(key);
+                free(storage_key);
+                return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            }
             if (magic_value.type == PTN_REFERENCE) {
                 ptn_array_key_free(key);
                 free(storage_key);
