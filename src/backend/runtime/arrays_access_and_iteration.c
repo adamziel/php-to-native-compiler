@@ -8452,6 +8452,10 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->delegate_sources != NULL) {
         ptn_array_free(generator->delegate_sources);
     }
+    if (generator->output_chunks != NULL) {
+        ptn_array_free(generator->output_chunks);
+    }
+    free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
     free(generator);
 }
@@ -8479,11 +8483,14 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue keys = ptn_array_from_literal_entries(0, NULL);
     PtnValue reference_notice_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue delegate_sources = ptn_array_from_literal_entries(0, NULL);
+    PtnValue output_chunks = ptn_array_from_literal_entries(0, NULL);
     generator->values = values.as.array;
     generator->keys = keys.as.array;
     generator->return_value = ptn_null();
     generator->reference_notice_lines = reference_notice_lines.as.array;
     generator->delegate_sources = delegate_sources.as.array;
+    generator->output_chunks = output_chunks.as.array;
+    ptn_string_buffer_init(&generator->pending_output);
     generator->closure_owner = ptn_null();
     if (
         runtime != NULL &&
@@ -8574,6 +8581,73 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     return object;
 }
 
+static PTN_UNUSED void ptn_generator_flush_output_chunk(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t index
+) {
+    if (
+        generator == NULL ||
+        generator->output_chunks == NULL ||
+        index >= generator->output_chunks->len
+    ) {
+        return;
+    }
+    PtnArrayEntry *entry = &generator->output_chunks->entries[index];
+    PtnValue chunk = ptn_value_deref(entry->value);
+    if (chunk.type != PTN_STRING || chunk.as.string.len == 0) {
+        return;
+    }
+    PtnGenerator *saved_current_generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (runtime != NULL && saved_current_generator == generator) {
+        runtime->current_generator = NULL;
+    }
+    ptn_output_write(runtime, (const char *)chunk.as.string.data, chunk.as.string.len);
+    if (runtime != NULL && saved_current_generator == generator) {
+        runtime->current_generator = saved_current_generator;
+    }
+    ptn_value_destroy(&entry->value);
+    entry->value = ptn_null();
+}
+
+static PTN_UNUSED void ptn_generator_flush_pending_output(
+    PtnRuntime *runtime,
+    PtnGenerator *generator
+) {
+    if (
+        generator == NULL ||
+        generator->pending_output.data == NULL ||
+        generator->pending_output.len == 0
+    ) {
+        return;
+    }
+    PtnGenerator *saved_current_generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (runtime != NULL && saved_current_generator == generator) {
+        runtime->current_generator = NULL;
+    }
+    ptn_output_write(runtime, generator->pending_output.data, generator->pending_output.len);
+    if (runtime != NULL && saved_current_generator == generator) {
+        runtime->current_generator = saved_current_generator;
+    }
+    generator->pending_output.len = 0;
+    generator->pending_output.data[0] = '\0';
+}
+
+static PTN_UNUSED PtnValue ptn_generator_take_pending_output(PtnGenerator *generator) {
+    if (generator == NULL || generator->pending_output.len == 0) {
+        return ptn_null();
+    }
+    PtnValue output = ptn_owned_string_len(
+        ptn_duplicate_string_len(generator->pending_output.data, generator->pending_output.len),
+        generator->pending_output.len
+    );
+    generator->pending_output.len = 0;
+    if (generator->pending_output.data != NULL) {
+        generator->pending_output.data[0] = '\0';
+    }
+    return output;
+}
+
 static PTN_UNUSED PtnValue ptn_generator_yield(
     PtnRuntime *runtime,
     int has_key,
@@ -8588,7 +8662,8 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
         generator->values == NULL ||
         generator->keys == NULL ||
         generator->reference_notice_lines == NULL ||
-        generator->delegate_sources == NULL
+        generator->delegate_sources == NULL ||
+        generator->output_chunks == NULL
     ) {
         return ptn_null();
     }
@@ -8630,7 +8705,8 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
         !ptn_array_append_key_available(runtime, generator->values) ||
         !ptn_array_append_key_available(runtime, generator->keys) ||
         !ptn_array_append_key_available(runtime, generator->reference_notice_lines) ||
-        !ptn_array_append_key_available(runtime, generator->delegate_sources)
+        !ptn_array_append_key_available(runtime, generator->delegate_sources) ||
+        !ptn_array_append_key_available(runtime, generator->output_chunks)
     ) {
         ptn_value_destroy(&stored);
         ptn_value_destroy(&raw_key);
@@ -8641,10 +8717,12 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     PtnArrayKey raw_key_index = ptn_array_int_key(generator->keys->next_auto_key);
     PtnArrayKey notice_key = ptn_array_int_key(generator->reference_notice_lines->next_auto_key);
     PtnArrayKey delegate_key = ptn_array_int_key(generator->delegate_sources->next_auto_key);
+    PtnArrayKey output_key = ptn_array_int_key(generator->output_chunks->next_auto_key);
     ptn_array_set_entry(generator->values, value_key, stored);
     ptn_array_set_entry(generator->keys, raw_key_index, raw_key);
     ptn_array_set_entry(generator->reference_notice_lines, notice_key, reference_notice_line);
     ptn_array_set_entry(generator->delegate_sources, delegate_key, ptn_null());
+    ptn_array_set_entry(generator->output_chunks, output_key, ptn_generator_take_pending_output(generator));
     return ptn_value_clone_deref(value);
 }
 
@@ -8698,6 +8776,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
         generator->keys == NULL ||
         generator->reference_notice_lines == NULL ||
         generator->delegate_sources == NULL ||
+        generator->output_chunks == NULL ||
         resolved.type != PTN_OBJECT ||
         !ptn_object_is_generator(resolved.as.object)
     ) {
@@ -8708,7 +8787,8 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
         !ptn_array_append_key_available(runtime, generator->values) ||
         !ptn_array_append_key_available(runtime, generator->keys) ||
         !ptn_array_append_key_available(runtime, generator->reference_notice_lines) ||
-        !ptn_array_append_key_available(runtime, generator->delegate_sources)
+        !ptn_array_append_key_available(runtime, generator->delegate_sources) ||
+        !ptn_array_append_key_available(runtime, generator->output_chunks)
     ) {
         return ptn_null();
     }
@@ -8717,10 +8797,12 @@ static PTN_UNUSED PtnValue ptn_generator_yield_delegate(
     PtnArrayKey raw_key_index = ptn_array_int_key(generator->keys->next_auto_key);
     PtnArrayKey notice_key = ptn_array_int_key(generator->reference_notice_lines->next_auto_key);
     PtnArrayKey delegate_key = ptn_array_int_key(generator->delegate_sources->next_auto_key);
+    PtnArrayKey output_key = ptn_array_int_key(generator->output_chunks->next_auto_key);
     ptn_array_set_entry(generator->values, value_key, ptn_null());
     ptn_array_set_entry(generator->keys, raw_key_index, ptn_null());
     ptn_array_set_entry(generator->reference_notice_lines, notice_key, ptn_int(0));
     ptn_array_set_entry(generator->delegate_sources, delegate_key, ptn_value_clone_deref(resolved));
+    ptn_array_set_entry(generator->output_chunks, output_key, ptn_generator_take_pending_output(generator));
     return ptn_generator_get_return(runtime, resolved, line);
 }
 
@@ -8861,8 +8943,10 @@ static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue r
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_position_valid(generator)) {
+        ptn_generator_flush_pending_output(runtime, generator);
         return ptn_null();
     }
+    ptn_generator_flush_output_chunk(runtime, generator, generator->position);
     PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
@@ -8889,12 +8973,13 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
 }
 
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)runtime;
     (void)line;
     PtnGenerator *generator = ptn_generator_from_value(receiver);
     if (!ptn_generator_position_valid(generator)) {
+        ptn_generator_flush_pending_output(runtime, generator);
         return ptn_null();
     }
+    ptn_generator_flush_output_chunk(runtime, generator, generator->position);
     PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
     if (delegate_source != NULL) {
         PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
@@ -8946,19 +9031,24 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
     return ptn_null();
 }
 
-static PTN_UNUSED void ptn_generator_set_return_value(PtnGenerator *generator, PtnValue value) {
+static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value) {
     if (generator == NULL) {
         return;
     }
     ptn_value_destroy(&generator->return_value);
     generator->return_value = ptn_value_clone_deref(value);
     generator->completed = 1;
+    ptn_generator_flush_pending_output(runtime, generator);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {
-    (void)runtime;
     (void)line;
-    return ptn_bool(ptn_generator_position_valid(ptn_generator_from_value(receiver)));
+    PtnGenerator *generator = ptn_generator_from_value(receiver);
+    int valid = ptn_generator_position_valid(generator);
+    if (!valid) {
+        ptn_generator_flush_pending_output(runtime, generator);
+    }
+    return ptn_bool(valid);
 }
 
 static PTN_UNUSED void ptn_emit_unpack_traversable_by_ref_warning(
@@ -10408,6 +10498,18 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         runtime->declared_method_exists(object->class_name, method_name);
 }
 
+static PTN_UNUSED int ptn_object_declares_iterator_method(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *method_name
+) {
+    return runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        object != NULL &&
+        object->class_name != NULL &&
+        runtime->declared_method_exists(object->class_name, method_name);
+}
+
 static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
     PtnArrayIterator *iterator,
     const char *method_name
@@ -10692,8 +10794,12 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
     }
 
+    int has_declared_get_iterator =
+        ptn_object_declares_iterator_method(runtime, value.as.object, "getIterator");
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
+    if (!has_declared_get_iterator &&
+        ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
         PtnArrayIterator iterator = ptn_array_iterator_empty();
         if (ptn_spl_fixed_array_iterator_from_object(
             runtime,
@@ -11137,6 +11243,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
         return ptn_protocol_iterator_call(iterator, "key");
     }
     if (iterator->generator != NULL) {
+        ptn_generator_flush_output_chunk(iterator->runtime, iterator->generator, iterator->index);
         PtnValue *delegate_source =
             ptn_generator_delegate_source_value(iterator->generator, iterator->index);
         if (delegate_source != NULL) {
@@ -11177,6 +11284,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
         return ptn_protocol_iterator_call(iterator, "current");
     }
     if (iterator->generator != NULL) {
+        ptn_generator_flush_output_chunk(iterator->runtime, iterator->generator, iterator->index);
         PtnValue *delegate_source =
             ptn_generator_delegate_source_value(iterator->generator, iterator->index);
         if (delegate_source != NULL) {
@@ -11514,6 +11622,9 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     iterator->index = next_index;
     iterator->valid = iterator->index < limit;
     ptn_array_iterator_skip_invisible_object_properties(iterator);
+    if (!iterator->valid && iterator->generator != NULL) {
+        ptn_generator_flush_pending_output(iterator->runtime, iterator->generator);
+    }
     ptn_array_iterator_remember_current_key(iterator);
 }
 

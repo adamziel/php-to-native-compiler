@@ -1509,9 +1509,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFixedArray\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplObjectStorage\")) {\n");
@@ -3084,7 +3082,7 @@ fn emit_user_functions(
         out.push_str(":\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
-            out.push_str("    ptn_generator_set_return_value(runtime.current_generator, ptn_return_value);\n");
+            out.push_str("    ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
             out.push_str("    runtime.current_generator = NULL;\n");
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");

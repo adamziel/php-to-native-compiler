@@ -875,6 +875,12 @@ typedef struct {
 } PtnArrayIndexSlot;
 
 typedef struct {
+    char *data;
+    size_t len;
+    size_t capacity;
+} PtnStringBuffer;
+
+typedef struct {
     PtnArray *array;
     PtnObject *object;
     PtnGenerator *generator;
@@ -904,6 +910,8 @@ struct PtnGenerator {
     PtnValue return_value;
     PtnArray *reference_notice_lines;
     PtnArray *delegate_sources;
+    PtnArray *output_chunks;
+    PtnStringBuffer pending_output;
     PtnValue closure_owner;
     size_t position;
     int64_t next_auto_key;
@@ -968,12 +976,6 @@ typedef struct {
     PtnValue key;
     PtnValue value;
 } PtnArrayLiteralEntry;
-
-typedef struct {
-    char *data;
-    size_t len;
-    size_t capacity;
-} PtnStringBuffer;
 
 typedef struct {
     PtnStringBuffer buffer;
@@ -1583,7 +1585,7 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
-static PTN_UNUSED void ptn_generator_set_return_value(PtnGenerator *generator, PtnValue value);
+static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
