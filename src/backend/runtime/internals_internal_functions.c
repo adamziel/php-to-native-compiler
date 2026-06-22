@@ -13361,7 +13361,9 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
             PtnArray *objects = ptn_value_deref(data->objects).as.array;
             PtnArray *infos = ptn_value_deref(data->infos).as.array;
             if (storage_index < objects->len && storage_index < infos->len) {
-                ptn_unserialize_update_entry_slot(
+                /* SplObjectStorage key objects preserve identity, but the key slot
+                 * itself is not a PHP referenceable container entry. */
+                ptn_unserialize_update_slot(
                     state,
                     object.id,
                     &objects->entries[storage_index].value

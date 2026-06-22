@@ -15996,6 +15996,47 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_unserialize_key_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-storage-unserialize-key-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-storage-unserialize-key-reference.php");
+    let output = root.join("spl-storage-unserialize-key-reference-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$inner = 'x:i:1;O:8:"stdClass":0:{};m:a:0:{}';
+$payload = 'a:2:{i:0;C:16:"SplObjectStorage":' . strlen($inner) . ':{' . $inner . '}i:1;R:4;}';
+$value = unserialize($payload);
+ob_start();
+var_dump($value);
+$dump = ob_get_clean();
+var_dump(str_contains($dump, "=>\n  &object(stdClass)"));
+var_dump($value[0]->offsetExists($value[1]));
+$value[1]->marker = 42;
+foreach ($value[0] as $object) {
+    var_dump($object === $value[1], $object->marker);
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("bool(false)\n", "bool(true)\n", "bool(true)\n", "int(42)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_get_hash_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-get-hash");
     fs::create_dir_all(&root).unwrap();
