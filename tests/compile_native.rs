@@ -35509,6 +35509,125 @@ try {{
 }
 
 #[test]
+fn compile_dom_entity_reference_stale_child_nodes_wrappers_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-entity-reference-stale-childnodes");
+    fs::create_dir_all(&root).unwrap();
+    let legacy_input = root.join("dom-entity-reference-stale01.php");
+    let legacy_output = root.join("dom-entity-reference-stale01-bin");
+    fs::write(
+        &legacy_input,
+        r#"<?php
+$dom = new DOMDocument;
+$dom->loadXML(<<<XML
+<!DOCTYPE foo [
+<!ENTITY foo "bar">
+]>
+<foo>&foo;</foo>
+XML);
+
+$ref = $dom->documentElement->firstChild;
+$decl = $ref->firstChild;
+$nodes = $ref->childNodes;
+$dom->removeChild($dom->doctype);
+unset($decl);
+var_dump($nodes);
+var_dump($ref->childNodes);
+"#,
+    )
+    .unwrap();
+
+    let legacy_compiled = compile_file(
+        &legacy_input,
+        &legacy_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let legacy_execution = Command::new(&legacy_output).output().unwrap();
+    assert!(
+        legacy_execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        legacy_execution.status.code(),
+        String::from_utf8_lossy(&legacy_execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(legacy_execution.stdout).unwrap(),
+        concat!(
+            "object(DOMNodeList)#4 (1) {\n",
+            "  [\"length\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(DOMNodeList)#2 (1) {\n",
+            "  [\"length\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(legacy_execution.stderr).unwrap(), "");
+
+    let modern_input = root.join("dom-entity-reference-stale03.php");
+    let modern_output = root.join("dom-entity-reference-stale03-bin");
+    fs::write(
+        &modern_input,
+        r#"<?php
+foreach (['firstChild', 'lastChild', 'textContent', 'childNodes'] as $prop) {
+    $dom = Dom\XMLDocument::createFromString(<<<XML
+    <!DOCTYPE foo [
+    <!ENTITY foo "bar">
+    ]>
+    <foo>&foo;</foo>
+    XML);
+
+    $ref = $dom->documentElement->firstChild;
+    $decl = $ref->firstChild;
+    $nodes = $ref->childNodes;
+    $dom->removeChild($dom->doctype);
+    unset($decl);
+
+    var_dump($ref->$prop);
+}
+"#,
+    )
+    .unwrap();
+
+    let modern_compiled = compile_file(
+        &modern_input,
+        &modern_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let execution = Command::new(&modern_output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "object(Dom\\NodeList)#1 (1) {\n",
+            "  [\"length\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let legacy_c_source = fs::read_to_string(legacy_compiled.c_source.unwrap()).unwrap();
+    let modern_c_source = fs::read_to_string(modern_compiled.c_source.unwrap()).unwrap();
+    assert!(legacy_c_source.contains("ptn_xml_child_nodes_object"));
+    assert!(modern_c_source.contains("ptn_xml_child_nodes_object"));
+    assert!(modern_c_source.contains("PtnObject *parent_object"));
+    assert!(!legacy_c_source.contains("PtnObject *child_nodes_object"));
+    assert!(!modern_c_source.contains("PtnObject *child_nodes_object"));
+}
+
+#[test]
 fn compile_dom_element_attribute_map_and_parent_mutators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-attribute-map-parent-mutators");
     fs::create_dir_all(&root).unwrap();

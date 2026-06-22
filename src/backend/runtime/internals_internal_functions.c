@@ -77632,7 +77632,6 @@ struct PtnXmlNode {
     size_t attribute_count;
     size_t attribute_capacity;
     PtnObject *object;
-    PtnObject *child_nodes_object;
     int uninitialized;
     int modern_dom;
     int html_document;
@@ -77640,6 +77639,7 @@ struct PtnXmlNode {
 
 typedef struct {
     PtnXmlNode *parent;
+    PtnObject *parent_object;
     PtnXmlNode **items;
     size_t item_count;
     size_t item_capacity;
@@ -77846,10 +77846,6 @@ static const char *ptn_xml_node_class_name(PtnXmlNode *node) {
 static void ptn_xml_node_native_data_free(void *data) {
     PtnXmlNode *node = (PtnXmlNode *)data;
     if (node != NULL) {
-        if (node->child_nodes_object != NULL) {
-            ptn_object_release(node->child_nodes_object);
-            node->child_nodes_object = NULL;
-        }
         node->object = NULL;
     }
 }
@@ -78819,6 +78815,10 @@ static void ptn_xml_node_list_data_free(void *data) {
     if (list == NULL) {
         return;
     }
+    if (list->parent_object != NULL) {
+        ptn_object_release(list->parent_object);
+        list->parent_object = NULL;
+    }
     free(list->items);
     free(list->tag_name);
     free(list->namespace_uri);
@@ -78837,6 +78837,10 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
         ptn_abort_out_of_memory();
     }
     data->parent = parent;
+    data->parent_object = parent == NULL ? NULL : parent->object;
+    if (data->parent_object != NULL) {
+        ptn_object_retain(data->parent_object);
+    }
     data->items = NULL;
     data->item_count = 0;
     data->item_capacity = 0;
@@ -78854,23 +78858,7 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
 }
 
 static PtnValue ptn_xml_child_nodes_object(PtnRuntime *runtime, PtnXmlNode *parent) {
-    if (parent == NULL) {
-        return ptn_xml_node_list_object(runtime, NULL);
-    }
-    const char *class_name = ptn_xml_node_list_class_name_for_parent(parent);
-    if (parent->child_nodes_object != NULL &&
-        !ptn_ascii_case_equal(parent->child_nodes_object->class_name, class_name)) {
-        ptn_object_release(parent->child_nodes_object);
-        parent->child_nodes_object = NULL;
-    }
-    if (parent->child_nodes_object != NULL) {
-        ptn_object_retain(parent->child_nodes_object);
-        return ptn_object(parent->child_nodes_object);
-    }
-    PtnValue object = ptn_xml_node_list_object(runtime, parent);
-    parent->child_nodes_object = object.as.object;
-    ptn_object_retain(parent->child_nodes_object);
-    return object;
+    return ptn_xml_node_list_object(runtime, parent);
 }
 
 static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *element) {
@@ -78879,6 +78867,10 @@ static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *e
         ptn_abort_out_of_memory();
     }
     data->parent = element;
+    data->parent_object = element == NULL ? NULL : element->object;
+    if (data->parent_object != NULL) {
+        ptn_object_retain(data->parent_object);
+    }
     data->items = NULL;
     data->item_count = 0;
     data->item_capacity = 0;
@@ -78903,6 +78895,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
         ptn_abort_out_of_memory();
     }
     data->parent = NULL;
+    data->parent_object = NULL;
     data->items = NULL;
     data->item_count = 0;
     data->item_capacity = 0;
