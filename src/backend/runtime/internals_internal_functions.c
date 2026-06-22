@@ -128048,6 +128048,8 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
         int allows_dynamic_properties =
             ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(code, pos);
         char *parent_name = NULL;
+        PtnValue interface_names = ptn_array_from_literal_entries(0, NULL);
+        int64_t interface_index = 0;
         size_t metadata_cursor = ptn_eval_skip_ws(code, len, cursor);
         if (ptn_eval_keyword_at(code, len, metadata_cursor, "extends")) {
             metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + strlen("extends"));
@@ -128063,12 +128065,40 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
                 );
             }
         }
+        metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor);
+        if (ptn_eval_keyword_at(code, len, metadata_cursor, "implements")) {
+            metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + strlen("implements"));
+            while (metadata_cursor < len &&
+                ptn_eval_identifier_start((unsigned char)code[metadata_cursor])) {
+                size_t interface_start = metadata_cursor;
+                while (metadata_cursor < len &&
+                    ptn_eval_identifier_part((unsigned char)code[metadata_cursor])) {
+                    metadata_cursor++;
+                }
+                char *interface_name = ptn_duplicate_string_len(
+                    code + interface_start,
+                    metadata_cursor - interface_start
+                );
+                ptn_array_set_entry(
+                    interface_names.as.array,
+                    ptn_array_int_key(interface_index++),
+                    ptn_owned_string(interface_name)
+                );
+                metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor);
+                if (metadata_cursor >= len || code[metadata_cursor] != ',') {
+                    break;
+                }
+                metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + 1);
+            }
+        }
         ptn_runtime_register_dynamic_class_ex(
             runtime,
             class_name,
             parent_name,
-            allows_dynamic_properties
+            allows_dynamic_properties,
+            interface_names
         );
+        ptn_value_destroy(&interface_names);
         if (ptn_eval_class_uses_deprecated_serializable(runtime, class_name)) {
             ptn_eval_emit_serializable_deprecation(runtime, class_name, line);
         }

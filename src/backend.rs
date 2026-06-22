@@ -7771,7 +7771,10 @@ fn emit_class_metadata_helpers(
             );
             out.push_str(&c_string(property.name));
             out.push_str("\"), ");
-            out.push_str(&c_property_default_value(property.value));
+            out.push_str(&c_property_default_value_for_class(
+                property.value,
+                class_by_name(classes, property.declaring_class),
+            ));
             out.push_str(");\n");
             out.push_str("        }\n");
         }
@@ -13958,7 +13961,10 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
             out.push_str(&c_string(entry.name));
             out.push_str("\"), ");
-            out.push_str(&c_property_default_value(entry.value));
+            out.push_str(&c_property_default_value_for_class(
+                entry.value,
+                class_by_name(classes, entry.declaring_class),
+            ));
             out.push_str(");\n");
         }
         out.push_str("        return result;\n");
@@ -14318,7 +14324,10 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(&c_string(entry.name));
             out.push_str("\") == 0) {\n");
             out.push_str("            return ");
-            out.push_str(&c_property_default_value(entry.value));
+            out.push_str(&c_property_default_value_for_class(
+                entry.value,
+                class_by_name(classes, entry.declaring_class),
+            ));
             out.push_str(";\n");
             out.push_str("        }\n");
         }
@@ -46831,6 +46840,44 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
         }
         _ => "ptn_null()".to_string(),
     }
+}
+
+fn c_property_default_value_for_class(
+    value: Option<&ValueExpr>,
+    declaring_class: Option<&ClassDecl>,
+) -> String {
+    let (
+        Some(ValueExpr::ClassConstantFetch {
+            class_name,
+            name,
+            line,
+        }),
+        Some(declaring_class),
+    ) = (value, declaring_class)
+    else {
+        return c_property_default_value(value);
+    };
+    let lookup_class_name =
+        if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
+            Some(declaring_class.name.as_str())
+        } else if class_name.eq_ignore_ascii_case("parent") {
+            declaring_class.parent_name.as_deref()
+        } else {
+            Some(class_name.trim_start_matches('\\'))
+        };
+    let Some(lookup_class_name) = lookup_class_name else {
+        return "ptn_null()".to_string();
+    };
+    if name.eq_ignore_ascii_case("class") {
+        return format!("ptn_string(\"{}\")", c_string(lookup_class_name));
+    }
+    format!(
+        "ptn_runtime_read_class_constant_with_scope(runtime, \"{}\", \"{}\", \"{}\", {})",
+        c_string(lookup_class_name),
+        c_string(name),
+        c_string(&declaring_class.name),
+        line
+    )
 }
 
 fn c_property_default_binary_value(

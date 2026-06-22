@@ -28215,6 +28215,51 @@ try {
 }
 
 #[test]
+fn compile_get_class_vars_resolves_class_constant_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-get-class-vars-class-constant-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-class-vars-class-constant-defaults.php");
+    let output = root.join("get-class-vars-class-constant-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+class VarsConstBase {
+    const BASE = 1;
+    public $base = self::BASE;
+}
+
+class VarsConstChild extends VarsConstBase {
+    const CHILD = 2;
+    public $child = self::CHILD;
+}
+
+var_dump(get_class_vars(\"VarsConstChild\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"child\"]=>\n",
+            "  int(2)\n",
+            "  [\"base\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope"));
+}
+
+#[test]
 fn compile_simple_trait_composition_to_native_binary() {
     let root = temp_dir("ptn-native-simple-trait-composition");
     fs::create_dir_all(&root).unwrap();
@@ -31176,6 +31221,46 @@ var_dump(C::X, C::$a, D::X, D::$a, E::X, E::$a);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_static_property_initializer"));
     assert!(c_source.contains("ptn_runtime_register_dynamic_class_with_parent"));
+}
+
+#[test]
+fn compile_eval_class_implements_interface_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-class-implements-interface-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-class-implements-interface-constants.php");
+    let output = root.join("eval-class-implements-interface-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    const X = 'X' . self::Y;
+    const Y = 'Y';
+}
+
+interface I {
+    const X2 = 'X2' . self::Y2;
+    const Y2 = 'Y2';
+}
+
+eval('class B extends A implements I {}');
+var_dump(B::X, B::X2);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("string(2) \"XY\"\n", "string(4) \"X2Y2\"\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_register_dynamic_class_ex"));
+    assert!(c_source.contains("ptn_runtime_read_dynamic_interface_class_constant"));
 }
 
 #[test]
