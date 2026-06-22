@@ -10244,6 +10244,46 @@ class NotAbstract {
 }
 
 #[test]
+fn compile_abstract_static_method_call_throws_error_to_native_binary() {
+    let root = temp_dir("ptn-native-abstract-static-method-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("abstract-static-method-call.php");
+    let output = root.join("abstract-static-method-call-bin");
+    fs::write(
+        &input,
+        "<?php
+abstract class Test {
+    abstract static function method();
+}
+
+try {
+    Test::method(new stdClass);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$ret = new stdClass;
+try {
+    $ret = Test::method(new stdClass);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot call abstract method Test::method()\nCannot call abstract method Test::method()\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_tracks_constructor_final_and_abstract_prototype_contracts() {
     let error = parser::parse(
         "<?php

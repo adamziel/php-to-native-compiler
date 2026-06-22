@@ -5879,8 +5879,8 @@ fn emit_user_function_dispatch(
         out.push_str("        }\n");
         out.push_str("        *found = 1;\n");
         if function.is_static {
-            if let Some((declaring_class, method_name, visibility)) =
-                static_method_visibility_for_function(index, classes)
+            if let Some((declaring_class, method_name, visibility, is_abstract)) =
+                static_method_metadata_for_function(index, classes)
             {
                 out.push_str("        if (!ptn_declared_method_visible(");
                 out.push_str(c_property_visibility(visibility));
@@ -5899,6 +5899,19 @@ fn emit_user_function_dispatch(
                 out.push_str(c_property_visibility(visibility));
                 out.push_str(", line);\n");
                 out.push_str("        }\n");
+                if is_abstract {
+                    out.push_str("        char ptn_static_abstract_message[512];\n");
+                    out.push_str("        int ptn_static_abstract_written = snprintf(ptn_static_abstract_message, sizeof(ptn_static_abstract_message), \"Cannot call abstract method %s::%s()\", \"");
+                    out.push_str(&c_string(declaring_class));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(method_name));
+                    out.push_str("\");\n");
+                    out.push_str("        if (ptn_static_abstract_written < 0 || (size_t)ptn_static_abstract_written >= sizeof(ptn_static_abstract_message)) {\n");
+                    out.push_str("            ptn_abort_out_of_memory();\n");
+                    out.push_str("        }\n");
+                    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_static_abstract_message, runtime->source_path, line);\n");
+                    out.push_str("        return ptn_null();\n");
+                }
             }
         }
         emit_deprecated_function_warning(
@@ -16189,16 +16202,23 @@ fn class_extends_builtin_throwable(class: &ClassDecl, classes: &[ClassDecl]) -> 
     false
 }
 
-fn static_method_visibility_for_function(
+fn static_method_metadata_for_function(
     function_index: usize,
     classes: &[ClassDecl],
-) -> Option<(&str, &str, PropertyVisibility)> {
+) -> Option<(&str, &str, PropertyVisibility, bool)> {
     classes.iter().find_map(|class| {
         class
             .methods
             .iter()
             .find(|method| method.function_index == function_index && method.is_static)
-            .map(|method| (class.name.as_str(), method.name.as_str(), method.visibility))
+            .map(|method| {
+                (
+                    class.name.as_str(),
+                    method.name.as_str(),
+                    method.visibility,
+                    method.is_abstract,
+                )
+            })
     })
 }
 
@@ -31516,11 +31536,10 @@ impl ValueEmitter {
                         .class_name
                         .as_deref()
                         .zip(function.method_name.as_deref())
-                        .is_none_or(|(class_name, method_name)| {
-                            self.static_method_visibility_error(&format!(
-                                "{class_name}::{method_name}"
-                            ))
-                            .is_none()
+                        .is_none_or(|_| {
+                            self.static_method_lookup_entry(name)
+                                .is_none_or(|entry| !entry.is_abstract)
+                                && self.static_method_visibility_error(name).is_none()
                         })
             })
     }
@@ -31533,17 +31552,13 @@ impl ValueEmitter {
         if !function.is_static {
             return None;
         }
-        let (target_class_name, method_name) =
-            self.split_static_call_name(resolved_name).or_else(|| {
-                Some((
-                    function.class_name.as_deref()?,
-                    function.method_name.as_deref()?,
-                ))
-            })?;
-        let class = class_by_name(&self.classes, target_class_name)?;
-        let method = class_method_lookup_chain(class, &self.classes)
-            .into_iter()
-            .find(|method| method.is_static && method.name.eq_ignore_ascii_case(method_name))?;
+        let (target_class_name, _) = self.split_static_call_name(resolved_name).or_else(|| {
+            Some((
+                function.class_name.as_deref()?,
+                function.method_name.as_deref()?,
+            ))
+        })?;
+        let method = self.static_method_lookup_entry(resolved_name)?;
         Some(StaticMethodVisibilityCheck {
             target_class_name: target_class_name.to_string(),
             declaring_class_name: method.declaring_class.to_string(),
@@ -31555,6 +31570,17 @@ impl ValueEmitter {
     fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
         let resolved_name = self.resolved_function_call_name(name);
         self.direct_user_function_by_resolved_name(&resolved_name)
+    }
+
+    fn static_method_lookup_entry(
+        &self,
+        resolved_name: &str,
+    ) -> Option<ClassMethodLookupEntry<'_>> {
+        let (class_name, method_name) = self.split_static_call_name(resolved_name)?;
+        let class = class_by_name(&self.classes, class_name)?;
+        class_method_lookup_chain(class, &self.classes)
+            .into_iter()
+            .find(|method| method.is_static && method.name.eq_ignore_ascii_case(method_name))
     }
 
     fn class_is_same_or_descendant(&self, class_name: &str, ancestor_name: &str) -> bool {
