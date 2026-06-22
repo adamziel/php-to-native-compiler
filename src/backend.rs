@@ -3258,6 +3258,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
         return Some("next");
     }
+    if (name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::__construct")
+        || name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse"))
+        && argument_index == 2
+    {
+        return Some("errors");
+    }
+    if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::resolve") && argument_index == 1 {
+        return Some("errors");
+    }
     if (name.eq_ignore_ascii_case("datefmt_localtime")
         || name.eq_ignore_ascii_case("datefmt_parse")
         || name.eq_ignore_ascii_case("datefmt_parse_to_calendar"))
@@ -18172,7 +18181,9 @@ fn emit_method_dispatch(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(class_name)) {\n");
+    out.push_str(
+        "    if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(class_name)) {\n",
+    );
     out.push_str(
         "        return ptn_uri_url_validation_error_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );

@@ -28796,7 +28796,6 @@ static void ptn_uri_validation_errors_append(
         line
     );
     ptn_array_set_entry(errors.as.array, ptn_array_int_key((*next_index)++), error);
-    ptn_value_destroy(&error);
 }
 
 static PtnValue ptn_uri_validation_errors_for_input(
@@ -28884,12 +28883,17 @@ static PtnValue ptn_uri_validation_errors_for_failure(
             const char *context_start = at + 1;
             const char *slash = memchr(context_start, '/', input.data + input.len - context_start);
             if (slash != NULL && slash + 1 < input.data + input.len) {
+                const char *port_context = slash + 1;
+                const char *userinfo_colon = memchr(context_start, ':', slash - context_start);
+                if (userinfo_colon != NULL && userinfo_colon + 1 < input.data + input.len) {
+                    port_context = userinfo_colon + 1;
+                }
                 ptn_uri_validation_errors_append(
                     runtime,
                     errors,
                     &next_index,
-                    slash + 1,
-                    (size_t)(input.data + input.len - (slash + 1)),
+                    port_context,
+                    (size_t)(input.data + input.len - port_context),
                     "PortInvalid",
                     1,
                     line
