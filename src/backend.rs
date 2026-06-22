@@ -3235,6 +3235,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
         return Some("result");
     }
+    if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") && argument_index == 2 {
+        return Some("errors");
+    }
     if name.eq_ignore_ascii_case("mb_parse_str") && argument_index == 1 {
         return Some("result");
     }
@@ -26852,6 +26855,30 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static URI_RFC3986_URI_PARSE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "uri",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "baseUrl",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static URI_WHATWG_URL_PARSE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "uri",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "baseUrl",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "errors",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static EXTRACT_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "array",
@@ -27930,6 +27957,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {
         Some(&UNPACK_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri::parse") {
+        Some(&URI_RFC3986_URI_PARSE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") {
+        Some(&URI_WHATWG_URL_PARSE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("XMLReader::fromStream")
         || name
             .rsplit_once("::")

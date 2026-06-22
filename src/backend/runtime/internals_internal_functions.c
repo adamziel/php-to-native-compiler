@@ -6829,6 +6829,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
         return 1;
     }
+    if (index == 2 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::parse")) {
+        return 1;
+    }
     if (index == 1 && ptn_ascii_case_equal(name, "mb_parse_str")) {
         return 1;
     }
@@ -6988,6 +6991,17 @@ static const PtnParameterMetadata PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS[] = 
     { "longitude", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
     { "zenith", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
     { "utcOffset", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_URI_RFC3986_URI_PARSE_PARAMETERS[] = {
+    { "uri", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "baseUrl", "Uri\\Rfc3986\\Uri", "?Uri\\Rfc3986\\Uri", 1, 0, 0, 0, 1, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_URI_WHATWG_URL_PARSE_PARAMETERS[] = {
+    { "uri", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "baseUrl", "Uri\\WhatWg\\Url", "?Uri\\WhatWg\\Url", 1, 0, 0, 0, 1, "null", NULL, NULL },
+    { "errors", "array", "?array", 1, 1, 1, 0, 0, "null", NULL, NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -28324,6 +28338,79 @@ static PtnValue ptn_uri_construct_data(
     return ptn_bool(1);
 }
 
+static void ptn_uri_throw_parse_argument_count(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    size_t min_args,
+    size_t max_args
+) {
+    char message[160];
+    int written = min_args == max_args
+        ? snprintf(message, sizeof(message), "%s() expects exactly %zu argument%s, %zu given", function_name, min_args, min_args == 1 ? "" : "s", argc)
+        : snprintf(message, sizeof(message), "%s() expects between %zu and %zu arguments, %zu given", function_name, min_args, max_args, argc);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static int ptn_uri_parse_base_argument(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *class_name,
+    PtnValue value,
+    size_t line,
+    PtnValue *base_out
+) {
+    (void)line;
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($baseUrl) must be of type ?%s, %s given",
+            function_name,
+            class_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    int type_ok = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url")
+        ? ptn_internal_class_name_is_uri_whatwg_url(value.as.object->class_name)
+        : ptn_internal_class_name_is_uri_rfc3986_uri(value.as.object->class_name);
+    if (!type_ok || value.as.object->native_data == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($baseUrl) must be of type ?%s, %s given",
+            function_name,
+            class_name,
+            value.as.object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *base_out = value;
+    return 1;
+}
+
+static int ptn_uri_parse_assign_whatwg_errors(PtnRuntime *runtime, PtnValue errors_arg) {
+    if (errors_arg.type != PTN_REFERENCE) {
+        return 1;
+    }
+    return ptn_reference_assign(runtime, errors_arg.as.reference, ptn_array_from_literal_entries(0, NULL));
+}
+
 static PTN_UNUSED PtnValue ptn_uri_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -28357,23 +28444,80 @@ static PTN_UNUSED PtnValue ptn_uri_parse_static(
     const PtnValue *args,
     size_t line
 ) {
-    PtnUriData *data = NULL;
     int whatwg = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url");
-    PtnValue status = ptn_uri_construct_data(
-        runtime,
-        whatwg ? "Uri\\WhatWg\\Url::parse" : "Uri\\Rfc3986\\Uri::parse",
-        argc,
-        args,
-        line,
-        whatwg ? 1 : 0,
-        whatwg,
-        &data
-    );
-    ptn_value_destroy(&status);
-    if (runtime->exceptions->active_exception != NULL || data == NULL) {
+    const char *function_name = whatwg ? "Uri\\WhatWg\\Url::parse" : "Uri\\Rfc3986\\Uri::parse";
+    size_t max_args = whatwg ? 3 : 2;
+    if (argc < 1 || argc > max_args) {
+        ptn_uri_throw_parse_argument_count(runtime, function_name, argc, 1, max_args);
         return ptn_null();
     }
-    return ptn_uri_object_from_data(runtime, class_name, data);
+
+    PtnValue result = ptn_null();
+    PtnValue base = ptn_null();
+    PtnValue uri_arg = args[0];
+    int has_base = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL;
+    int has_errors = whatwg && argc >= 3;
+
+    if (whatwg && argc == 2 && args[1].type == PTN_REFERENCE) {
+        has_base = 0;
+        has_errors = 1;
+    }
+
+    if (has_base) {
+        if (!ptn_uri_parse_base_argument(runtime, function_name, class_name, args[1], line, &base)) {
+            return ptn_null();
+        }
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, 1, "uri", uri_arg, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(uri);
+            return ptn_null();
+        }
+        PtnValue reference_arg = ptn_owned_string_len(ptn_duplicate_string_len(uri.data, uri.len), uri.len);
+        result = whatwg
+            ? ptn_uri_whatwg_resolve(runtime, base, 1, &reference_arg, line)
+            : ptn_uri_rfc3986_resolve(runtime, base, 1, &reference_arg, line);
+        ptn_value_destroy(&reference_arg);
+        ptn_string_operand_free(uri);
+    } else {
+        PtnUriData *data = NULL;
+        PtnValue status = ptn_uri_construct_data(
+            runtime,
+            function_name,
+            1,
+            &uri_arg,
+            line,
+            whatwg ? 1 : 0,
+            whatwg,
+            &data
+        );
+        ptn_value_destroy(&status);
+        if (runtime->exceptions->active_exception != NULL || data == NULL) {
+            return ptn_null();
+        }
+        result = ptn_uri_object_from_data(runtime, class_name, data);
+    }
+
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
+    if (has_errors) {
+        PtnValue errors_arg = (argc >= 3) ? args[2] : args[1];
+        if (!ptn_uri_parse_assign_whatwg_errors(runtime, errors_arg)) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+    }
+    return result;
+}
+
+static PtnValue ptn_uri_rfc3986_uri_static_parse(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_uri_parse_static(runtime, "Uri\\Rfc3986\\Uri", argc, args, line);
 }
 
 static PTN_UNUSED PtnValue ptn_uri_call_method(
@@ -97280,7 +97424,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "uasort", 2, 2, ptn_internal_uasort },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "ucwords", 1, 2, ptn_internal_ucwords },
-        { "Uri\\WhatWg\\Url::parse", 1, 1, ptn_uri_whatwg_url_static_parse },
+        { "Uri\\Rfc3986\\Uri::parse", 1, 2, ptn_uri_rfc3986_uri_static_parse },
+        { "Uri\\WhatWg\\Url::parse", 1, 3, ptn_uri_whatwg_url_static_parse },
         { "uksort", 2, 2, ptn_internal_uksort },
         { "umask", 0, 1, ptn_internal_umask },
         { "unixtojd", 0, 1, ptn_internal_unixtojd },
@@ -97890,6 +98035,38 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "string|int|float|false",
             "string|int|float|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Uri\\Rfc3986\\Uri::parse")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_URI_RFC3986_URI_PARSE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_URI_RFC3986_URI_PARSE_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_URI_RFC3986_URI_PARSE_PARAMETERS,
+            0,
+            "Uri\\Rfc3986\\Uri",
+            "Uri\\Rfc3986\\Uri",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Uri\\WhatWg\\Url::parse")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_URI_WHATWG_URL_PARSE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_URI_WHATWG_URL_PARSE_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_URI_WHATWG_URL_PARSE_PARAMETERS,
+            0,
+            "Uri\\WhatWg\\Url",
+            "Uri\\WhatWg\\Url",
             0,
             0
         );

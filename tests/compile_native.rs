@@ -1962,9 +1962,60 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "array(0) {\n",
             "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uri_static_parse_base_and_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-static-parse-base-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-static-parse-base-errors.php");
+    let output = root.join("uri-static-parse-base-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$rfc = Uri\Rfc3986\Uri::parse("/with-base", new Uri\Rfc3986\Uri("https://example.com"));
+echo $rfc->toString(), "\n";
+
+$whatwg = Uri\WhatWg\Url::parse("/with-base", new Uri\WhatWg\Url("https://example.com"));
+echo $whatwg->toAsciiString(), "\n";
+
+Uri\WhatWg\Url::parse("https://example.com", errors: $errors);
+var_dump($errors);
+
+class Foo { public string $x = ""; }
+$f = new Foo();
+try {
+    Uri\WhatWg\Url::parse(" https://example.org ", errors: $f->x);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "https://example.com/with-base\n",
+            "https://example.com/with-base\n",
+            "array(0) {\n",
+            "}\n",
+            "TypeError: Cannot assign array to reference held by property Foo::$x of type string\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
