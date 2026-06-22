@@ -1382,7 +1382,7 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
     fputc('\n', stream);
 }
 
-static PTN_UNUSED void ptn_emit_fatal_error_at(
+static PTN_UNUSED void ptn_emit_fatal_error_message_at(
     PtnRuntime *runtime,
     const char *message,
     const char *path,
@@ -1404,6 +1404,15 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
     }
+}
+
+static PTN_UNUSED void ptn_emit_fatal_error_at(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    ptn_emit_fatal_error_message_at(runtime, message, path, line);
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }

@@ -11482,6 +11482,53 @@ echo \"|\", $contents, \"|\", $length, \"|\", ob_get_level(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_ob_start_display_handler_bailout_runs_shutdown_buffers_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-display-handler-bailout");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-display-handler-bailout.php");
+    let output = root.join("output-buffer-display-handler-bailout-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+register_shutdown_function(function () {\n\
+    ob_start(function ($input) {\n\
+        echo \"bar\";\n\
+        return strtoupper($input);\n\
+    });\n\
+});\n\
+\n\
+ob_start(function () {\n\
+    ob_start();\n\
+}, 1);\n\
+\n\
+echo \"foo\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stderr}{stdout}");
+    assert_eq!(stdout.matches("foo").count(), 0, "{combined}");
+    assert_eq!(stdout.matches("bar").count(), 0, "{combined}");
+    assert_eq!(
+        combined
+            .matches("ob_start(): Cannot use output buffering in output buffering display handlers")
+            .count(),
+        1,
+        "{combined}"
+    );
+    assert!(
+        combined.contains("Notice: ob_start(): Failed to create buffer"),
+        "{combined}"
+    );
+    assert!(!combined.contains(" on line 3"), "{combined}");
+}
+
+#[test]
 fn compile_exit_flushes_throwing_output_buffer_handler_to_native_binary() {
     let root = temp_dir("ptn-native-exit-throwing-output-buffer");
     fs::create_dir_all(&root).unwrap();

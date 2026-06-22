@@ -5665,6 +5665,18 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
     }
 }
 
+static void ptn_output_buffer_discard_all(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    while (root->output_buffers_len != 0) {
+        root->output_buffers_len--;
+        ptn_output_buffer_destroy(&root->output_buffers[root->output_buffers_len]);
+    }
+    root->output_buffer_callback_depth = 0;
+}
+
 static int ptn_array_user_compare(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -71309,6 +71321,19 @@ static int ptn_output_buffer_forbid_display_handler_operation(
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
+    }
+    if (strcmp(function_name, "ob_start") == 0) {
+        ptn_emit_fatal_error_message_at(runtime, message, runtime->source_path, line);
+        ptn_output_buffer_discard_all(runtime);
+        ptn_emit_notice_with_handler_frame(
+            &runtime->diagnostics,
+            "ob_start(): Failed to create buffer",
+            line,
+            1,
+            1
+        );
+        ptn_runtime_shutdown_before_exit(runtime);
+        exit(255);
     }
     ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
     return 1;
