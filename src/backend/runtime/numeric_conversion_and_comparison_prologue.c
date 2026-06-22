@@ -7172,6 +7172,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_random_engine(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_random_engine_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && (ptn_object_is_internal_or_descendant(receiver, "SoapClient") ||
             ptn_object_is_internal_or_descendant(receiver, "SoapServer") ||
             ptn_object_is_internal_or_descendant(receiver, "SoapHeader"))
