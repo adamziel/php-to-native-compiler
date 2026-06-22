@@ -98366,6 +98366,14 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
                 free(name);
                 return ptn_null();
             }
+            int is_static_trait_method = ptn_declared_trait_exists(class_name);
+            if (
+                is_static_trait_method &&
+                !ptn_runtime_emit_static_trait_method_deprecation(runtime, class_name, method_name, line)
+            ) {
+                free(name);
+                return ptn_null();
+            }
             if (!ptn_declared_method_visibility_allows(
                 runtime == NULL ? NULL : runtime->current_class_name,
                 class_name,
@@ -98382,6 +98390,9 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
                 return ptn_null();
             }
             PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
+            if (is_static_trait_method && result.type == PTN_CLOSURE) {
+                result.as.closure->suppress_wrapped_callable_deprecation = 1;
+            }
             free(name);
             return result;
         }

@@ -329,6 +329,8 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
     }
     if (source->has_wrapped_callable) {
         copy.as.closure->has_wrapped_callable = 1;
+        copy.as.closure->suppress_wrapped_callable_deprecation =
+            source->suppress_wrapped_callable_deprecation;
         copy.as.closure->wrapped_callable = ptn_value_clone(source->wrapped_callable);
     }
     if (source->bound_scope_name != NULL) {

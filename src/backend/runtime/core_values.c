@@ -719,6 +719,7 @@ struct PtnClosure {
     int uses_this;
     PtnSymbolTable captures;
     int has_wrapped_callable;
+    int suppress_wrapped_callable_deprecation;
     PtnValue wrapped_callable;
     char *bound_scope_name;
 };
@@ -3499,6 +3500,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->captures.index_slots = NULL;
     closure->captures.index_capacity = 0;
     closure->has_wrapped_callable = 0;
+    closure->suppress_wrapped_callable_deprecation = 0;
     closure->wrapped_callable = ptn_null();
     closure->bound_scope_name = NULL;
     PtnValue value;

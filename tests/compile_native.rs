@@ -60952,6 +60952,98 @@ var_dump($staticReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_first_class_callable_static_trait_method_initializer_to_native_binary() {
+    let root = temp_dir("ptn-native-first-class-callable-static-trait-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-static-trait-method.php");
+    let output = root.join("first-class-callable-static-trait-method-bin");
+    fs::write(
+        &input,
+        "<?php
+trait FccTraitCallable {
+    public static function myMethod(string $foo) {
+        echo \"Called \", __METHOD__, \"\\n\";
+        var_dump($foo);
+    }
+}
+
+const TRAIT_FCC = FccTraitCallable::myMethod(...);
+
+var_dump(TRAIT_FCC);
+(TRAIT_FCC)(\"abc\");
+
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+
+trait FccTraitCallableThrows {
+    public static function myMethod(string $foo) {
+        echo \"Called \", __METHOD__, \"\\n\";
+        var_dump($foo);
+    }
+}
+
+function fcc_trait_default(Closure $c = FccTraitCallableThrows::myMethod(...)) {
+    var_dump($c);
+    $c(\"abc\");
+}
+
+try {
+    fcc_trait_default();
+} catch (ErrorException $e) {
+    echo \"Caught: \", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Calling static trait method FccTraitCallable::myMethod")
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(Closure)#"), "{stdout}");
+    assert!(stdout.contains(concat!(
+        "  [\"function\"]=>\n",
+        "  string(26) \"FccTraitCallable::myMethod\"\n",
+        "  [\"parameter\"]=>\n",
+        "  array(1) {\n",
+        "    [\"$foo\"]=>\n",
+        "    string(10) \"<required>\"\n",
+        "  }\n",
+    )));
+    assert!(
+        stdout.contains("Called FccTraitCallable::myMethod\nstring(3) \"abc\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(
+        "Caught: Calling static trait method FccTraitCallableThrows::myMethod is deprecated"
+    ));
+    assert!(
+        !stdout.contains("Called FccTraitCallableThrows::myMethod"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_emit_static_trait_method_deprecation"));
+    assert!(c_source.contains("suppress_wrapped_callable_deprecation"));
+    assert!(c_source.contains("FccTraitCallable::myMethod"));
+}
+
+#[test]
 fn compile_constexpr_closure_and_fcc_initializer_scope_to_native_binary() {
     let root = temp_dir("ptn-native-constexpr-closure-fcc-scope");
     fs::create_dir_all(&root).unwrap();

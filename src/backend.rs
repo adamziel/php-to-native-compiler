@@ -5767,6 +5767,45 @@ fn emit_user_function_dispatch(
         }
     }
     for (trait_index, trait_decl) in traits.iter().enumerate() {
+        for method in &trait_decl.methods {
+            let function = &functions[method.function_index];
+            let required_parameter_count = function_required_parameter_count(function);
+            let is_variadic = function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.is_variadic);
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            let parameters = emit_function_metadata_parameters(
+                out,
+                "        ",
+                &format!("ptn_trait_method_{}_parameters", method.function_index),
+                &function.parameters,
+            );
+            out.push_str(
+                "        return ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
+            );
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", 0, ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(", ");
+            out.push_str(&required_parameter_count.to_string());
+            out.push_str(", ");
+            out.push_str(if is_variadic { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&parameters);
+            out.push_str(", ");
+            out.push_str(if function.return_by_ref { "1" } else { "0" });
+            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            emit_function_metadata_source_suffix(out, function, method.function_index);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+        }
         for (property_index, property) in trait_decl.properties.iter().enumerate() {
             if property.hook_has_get {
                 let hook_method_name = property_hook_method_name(&property.name, "get");
@@ -9245,7 +9284,7 @@ fn emit_class_metadata_helpers(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             out.push_str(
-                "            if (!ptn_runtime_emit_static_trait_method_deprecation(runtime, \"",
+                "            if ((runtime == NULL || !runtime->suppress_scoped_callable_deprecation) && !ptn_runtime_emit_static_trait_method_deprecation(runtime, \"",
             );
             out.push_str(&c_string(&trait_decl.name));
             out.push_str("\", method_name, line)) {\n");
@@ -9307,7 +9346,7 @@ fn emit_class_metadata_helpers(
         if let Some(method) = trait_magic_call_static_method(trait_decl) {
             let function = &functions[method.function_index];
             out.push_str(
-                "        if (!ptn_runtime_emit_static_trait_method_deprecation(runtime, \"",
+                "        if ((runtime == NULL || !runtime->suppress_scoped_callable_deprecation) && !ptn_runtime_emit_static_trait_method_deprecation(runtime, \"",
             );
             out.push_str(&c_string(&trait_decl.name));
             out.push_str("\", method_name, line)) {\n");
@@ -20324,7 +20363,12 @@ fn emit_callable_dispatch(
     out.push_str("                    }\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
+    out.push_str("            int ptn_wrapped_previous_suppress_scoped_callable_deprecation = runtime->suppress_scoped_callable_deprecation;\n");
+    out.push_str("            if (resolved.as.closure->suppress_wrapped_callable_deprecation) {\n");
+    out.push_str("                runtime->suppress_scoped_callable_deprecation = 1;\n");
+    out.push_str("            }\n");
     out.push_str("            PtnValue result = ptn_call_callable(runtime, ptn_wrapped_callable, argc, args, line, from_call_user_func);\n");
+    out.push_str("            runtime->suppress_scoped_callable_deprecation = ptn_wrapped_previous_suppress_scoped_callable_deprecation;\n");
     out.push_str("            if (ptn_wrapped_callable_is_temporary) {\n");
     out.push_str("                ptn_value_destroy(&ptn_wrapped_callable);\n");
     out.push_str("            }\n");
