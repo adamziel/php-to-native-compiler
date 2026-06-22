@@ -2707,6 +2707,65 @@ static PTN_UNUSED void ptn_exception_set_soap_fault_headerfault(
     exception->soap_fault_headerfault = headerfault;
 }
 
+static PTN_UNUSED int ptn_exception_validate_soap_fault_code(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc == 0) {
+        return 1;
+    }
+    PtnValue code = ptn_value_deref(args[0]);
+    if (code.type == PTN_NULL) {
+        return 1;
+    }
+    if (code.type == PTN_STRING) {
+        if (code.as.string.len > 0) {
+            return 1;
+        }
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "SoapFault::__construct(): Argument #1 ($code) is not a valid fault code"
+        );
+        return 0;
+    }
+    if (code.type == PTN_ARRAY) {
+        if (code.as.array != NULL && code.as.array->len == 2) {
+            return 1;
+        }
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "SoapFault::__construct(): Argument #1 ($code) is not a valid fault code"
+        );
+        return 0;
+    }
+
+    const char *given = ptn_exception_constructor_given_type(code);
+    int needed = snprintf(
+        NULL,
+        0,
+        "SoapFault::__construct(): Argument #1 ($code) must be of type array|string|null, %s given",
+        given
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "SoapFault::__construct(): Argument #1 ($code) must be of type array|string|null, %s given",
+        given
+    );
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -2737,6 +2796,13 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    if (
+        ptn_exception_name_equal(declaring_class, "SoapFault") &&
+        !ptn_exception_validate_soap_fault_code(runtime, argc, args)
+    ) {
         return ptn_null();
     }
 
@@ -7175,7 +7241,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && (ptn_object_is_internal_or_descendant(receiver, "SoapClient") ||
             ptn_object_is_internal_or_descendant(receiver, "SoapServer") ||
             ptn_object_is_internal_or_descendant(receiver, "SoapHeader"))
-        && (ptn_internal_class_method_exists("SoapClient", name) ||
+        && (ptn_object_is_internal_or_descendant(receiver, "SoapClient") ||
             ptn_internal_class_method_exists("SoapServer", name) ||
             ptn_internal_class_method_exists("SoapHeader", name))
     ) {

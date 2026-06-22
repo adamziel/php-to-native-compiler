@@ -1571,6 +1571,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(5);
         return 1;
     }
+    if (strcmp(name, "XML_SAX_IMPL") == 0) {
+        *out = ptn_string("libxml");
+        return 1;
+    }
     if (strcmp(name, "XML_ERROR_NONE") == 0) {
         *out = ptn_int(0);
         return 1;

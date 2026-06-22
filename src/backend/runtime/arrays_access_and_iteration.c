@@ -669,6 +669,9 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         );
         return ptn_null();
     }
+    if (is_soap_fault && !ptn_exception_validate_soap_fault_code(runtime, argc, args)) {
+        return ptn_null();
+    }
     PtnStringOperand message = ptn_exception_constructor_message(
         runtime,
         declaring_class,
