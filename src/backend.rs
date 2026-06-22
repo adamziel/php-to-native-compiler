@@ -6033,6 +6033,7 @@ fn emit_class_metadata_helpers(
         "BcMath\\Number",
         "Generator",
         "Fiber",
+        "Closure",
         "Attribute",
         "AllowDynamicProperties",
         "DelayedTargetValidation",

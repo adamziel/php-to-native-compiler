@@ -251,6 +251,158 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     return ptn_compare_arrays_equal(runtime, left->properties, right->properties, line, stack);
 }
 
+static int ptn_compare_optional_names_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) {
+        return left == right;
+    }
+    return ptn_ascii_case_equal(left, right);
+}
+
+static int ptn_compare_value_strings_case_equal(PtnString left, PtnString right) {
+    if (left.len != right.len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left.len; i++) {
+        if (tolower((unsigned char)left.data[i]) != tolower((unsigned char)right.data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_compare_array_callable_parts(
+    PtnValue callable,
+    PtnValue *receiver_out,
+    PtnValue *method_out
+) {
+    callable = ptn_value_deref(callable);
+    if (callable.type != PTN_ARRAY || callable.as.array->len != 2) {
+        return 0;
+    }
+
+    PtnArrayKey receiver_key = ptn_array_int_key(0);
+    PtnArrayKey method_key = ptn_array_int_key(1);
+    PtnArrayEntry *receiver_entry = ptn_array_entry_for_key(callable.as.array, receiver_key);
+    PtnArrayEntry *method_entry = ptn_array_entry_for_key(callable.as.array, method_key);
+    ptn_array_key_free(receiver_key);
+    ptn_array_key_free(method_key);
+
+    if (receiver_entry == NULL || method_entry == NULL) {
+        return 0;
+    }
+    *receiver_out = ptn_value_deref(receiver_entry->value);
+    *method_out = ptn_value_deref(method_entry->value);
+    return 1;
+}
+
+static int ptn_compare_callable_receiver_identity(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_compare_value_strings_case_equal(left.as.string, right.as.string);
+    }
+    if (left.type == PTN_OBJECT && right.type == PTN_OBJECT) {
+        return left.as.object == right.as.object;
+    }
+    if (left.type == PTN_EXCEPTION && right.type == PTN_EXCEPTION) {
+        return left.as.exception == right.as.exception;
+    }
+    if (left.type == PTN_CLOSURE && right.type == PTN_CLOSURE) {
+        return left.as.closure == right.as.closure;
+    }
+    return ptn_compare_identical_inner(runtime, left, right, line, stack);
+}
+
+static int ptn_compare_callable_method_identity(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_compare_value_strings_case_equal(left.as.string, right.as.string);
+    }
+    return 0;
+}
+
+static int ptn_compare_wrapped_callable_identity(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_compare_value_strings_case_equal(left.as.string, right.as.string);
+    }
+
+    PtnValue left_receiver;
+    PtnValue left_method;
+    PtnValue right_receiver;
+    PtnValue right_method;
+    if (ptn_compare_array_callable_parts(left, &left_receiver, &left_method) &&
+        ptn_compare_array_callable_parts(right, &right_receiver, &right_method)) {
+        return ptn_compare_callable_receiver_identity(runtime, left_receiver, right_receiver, line, stack) &&
+            ptn_compare_callable_method_identity(left_method, right_method);
+    }
+
+    return ptn_compare_identical_inner(runtime, left, right, line, stack);
+}
+
+static int ptn_compare_closure_captures_identical(
+    PtnRuntime *runtime,
+    PtnClosure *left,
+    PtnClosure *right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    if (left->captures.len != right->captures.len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left->captures.len; i++) {
+        PtnSymbol *left_capture = &left->captures.items[i];
+        PtnValue right_value;
+        if (!ptn_symbols_get(&right->captures, left_capture->name, &right_value)) {
+            return 0;
+        }
+        if (!ptn_compare_identical_inner(runtime, left_capture->value, right_value, line, stack)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_compare_closures_equal(
+    PtnRuntime *runtime,
+    PtnClosure *left,
+    PtnClosure *right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    if (left == right) {
+        return 1;
+    }
+    if (!left->has_wrapped_callable || !right->has_wrapped_callable) {
+        return 0;
+    }
+    return ptn_compare_optional_names_equal(left->scope_class_name, right->scope_class_name) &&
+        ptn_compare_optional_names_equal(left->called_class_name, right->called_class_name) &&
+        ptn_compare_optional_names_equal(left->bound_scope_name, right->bound_scope_name) &&
+        ptn_compare_closure_captures_identical(runtime, left, right, line, stack) &&
+        ptn_compare_wrapped_callable_identity(
+            runtime,
+            left->wrapped_callable,
+            right->wrapped_callable,
+            line,
+            stack
+        );
+}
+
 static PTN_UNUSED int ptn_compare_arrays_order(
     PtnRuntime *runtime,
     PtnArray *left,
@@ -451,7 +603,7 @@ static int ptn_compare_equal_inner(
             case PTN_OBJECT:
                 return ptn_compare_objects_equal(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
-                return left.as.closure == right.as.closure;
+                return ptn_compare_closures_equal(runtime, left.as.closure, right.as.closure, line, stack);
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception;
             case PTN_RESOURCE:
@@ -627,7 +779,9 @@ static int ptn_compare_order_inner(
             case PTN_OBJECT:
                 return ptn_compare_objects_order(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
-                return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
+                return ptn_compare_closures_equal(runtime, left.as.closure, right.as.closure, line, stack)
+                    ? PTN_COMPARE_EQUAL
+                    : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_RESOURCE:

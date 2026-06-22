@@ -24223,6 +24223,83 @@ Stack trace:\n\
 }
 
 #[test]
+fn compile_wrapped_closure_comparison_to_native_binary() {
+    let root = temp_dir("ptn-native-wrapped-closure-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("wrapped-closure-comparison.php");
+    let output = root.join("wrapped-closure-comparison-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function ptn_compare_target() {}\n\
+class ClosureCompareBox {\n\
+    public function run() {}\n\
+    public function other() {}\n\
+}\n\
+$left = Closure::fromCallable('ptn_compare_target');\n\
+$right = Closure::fromCallable('PTN_COMPARE_TARGET');\n\
+var_dump($left == $right);\n\
+var_dump($left === $right);\n\
+$box = new ClosureCompareBox();\n\
+$method_left = Closure::fromCallable([$box, 'run']);\n\
+$method_right = Closure::fromCallable([$box, 'RUN']);\n\
+$other_method = Closure::fromCallable([$box, 'other']);\n\
+$other_box = Closure::fromCallable([new ClosureCompareBox(), 'run']);\n\
+var_dump($method_left == $method_right);\n\
+var_dump($method_left != $other_method);\n\
+var_dump($method_left != $other_box);\n\
+$invoke_left = Closure::fromCallable([$method_left, '__invoke']);\n\
+$invoke_right = Closure::fromCallable([$method_left, '__INVOKE']);\n\
+var_dump($invoke_left == $invoke_right);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_closure_static_property_uses_canonical_class_name() {
+    let root = temp_dir("ptn-native-dynamic-closure-static-property-canonical");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-closure-static-property-canonical.php");
+    let output = root.join("dynamic-closure-static-property-canonical-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace closure;\n\
+class closure { static $x = 1; }\n\
+$name = __NAMESPACE__;\n\
+var_dump(closure::$x);\n\
+var_dump($name::$x);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Access to undeclared static property Closure::$x in {}:6\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 6\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_root_static_callables_to_native_binary() {
     let root = temp_dir("ptn-native-root-static-callables");
     fs::create_dir_all(&root).unwrap();
