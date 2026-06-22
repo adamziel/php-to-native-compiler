@@ -959,6 +959,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_function(lookup_class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_generator(lookup_class_name)) {
+        return ptn_reflection_generator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_reflection_method(lookup_class_name)) {
         return ptn_reflection_method_new(runtime, argc, args, line);
     }
@@ -8554,6 +8557,8 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     }
     free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
+    free(generator->function_name);
+    free(generator->source_file);
     free(generator);
 }
 
@@ -8599,6 +8604,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->send_call_lines = send_call_lines.as.array;
     ptn_string_buffer_init(&generator->pending_output);
     generator->closure_owner = ptn_null();
+    generator->function_name = NULL;
+    generator->source_file = NULL;
+    generator->source_line = 0;
     if (
         runtime != NULL &&
         runtime->owned_call_frame.has_current_closure &&
@@ -8663,6 +8671,15 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
             snprintf(owned_function_name, (size_t)needed + 1, "{closure:%s():%zu}", caller_name, line);
             function_name = owned_function_name;
         }
+    }
+    generator->function_name = ptn_duplicate_string(function_name);
+    if (runtime != NULL && runtime->trace_frame != NULL) {
+        if (runtime->trace_frame->file != NULL) {
+            generator->source_file = ptn_duplicate_string(runtime->trace_frame->file);
+        }
+        generator->source_line = runtime->trace_frame->line;
+    } else if (runtime != NULL && runtime->source_path != NULL) {
+        generator->source_file = ptn_duplicate_string(runtime->source_path);
     }
     PtnValue function_value = owned_function_name == NULL
         ? ptn_string(function_name)
