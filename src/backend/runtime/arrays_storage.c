@@ -76,6 +76,8 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
 static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object);
 static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object);
 static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index);
+static PTN_UNUSED void ptn_runtime_register_closure(PtnRuntime *runtime, PtnClosure *closure);
+static PTN_UNUSED void ptn_runtime_unregister_closure(PtnRuntime *runtime, PtnClosure *closure);
 static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnValue value);
 static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
@@ -1034,6 +1036,49 @@ static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObj
             object->live_index = 0;
             return;
         }
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_register_closure(PtnRuntime *runtime, PtnClosure *closure) {
+    if (runtime == NULL || closure == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->live_closures_len == root->live_closures_capacity) {
+        size_t new_capacity = root->live_closures_capacity == 0
+            ? 8
+            : root->live_closures_capacity * 2;
+        if (new_capacity < root->live_closures_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnClosure *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnClosure **new_closures = realloc(
+            root->live_closures,
+            new_capacity * sizeof(PtnClosure *)
+        );
+        if (new_closures == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->live_closures = new_closures;
+        root->live_closures_capacity = new_capacity;
+    }
+    root->live_closures[root->live_closures_len++] = closure;
+}
+
+static PTN_UNUSED void ptn_runtime_unregister_closure(PtnRuntime *runtime, PtnClosure *closure) {
+    if (runtime == NULL || closure == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->live_closures_len; i++) {
+        if (root->live_closures[i] != closure) {
+            continue;
+        }
+        for (size_t j = i + 1; j < root->live_closures_len; j++) {
+            root->live_closures[j - 1] = root->live_closures[j];
+        }
+        root->live_closures_len--;
+        return;
     }
 }
 

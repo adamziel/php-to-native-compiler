@@ -8803,11 +8803,11 @@ echo \"after\\n\";
 }
 
 #[test]
-fn compile_error_handler_callback_trace_uses_internal_frame_to_native_binary() {
-    let root = temp_dir("ptn-native-error-handler-internal-frame");
+fn compile_error_handler_call_user_func_trace_skips_forwarder_to_native_binary() {
+    let root = temp_dir("ptn-native-error-handler-call-user-func-forwarder");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("error-handler-internal-frame.php");
-    let output = root.join("error-handler-internal-frame-bin");
+    let input = root.join("error-handler-call-user-func-forwarder.php");
+    let output = root.join("error-handler-call-user-func-forwarder-bin");
     fs::write(
         &input,
         "<?php
@@ -8835,16 +8835,21 @@ call_user_func(function (array &$ref) {}, 'not_an_array_variable');
         "{stderr}"
     );
     assert!(
-        stderr.contains("\n#0 [internal function]: {closure:"),
+        stderr.contains("error-handler-call-user-func-forwarder.php(6): {closure:"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("\n#1 {main}"), "{stderr}");
+    assert!(
+        !stderr.contains("[internal function]: {closure:"),
         "{stderr}"
     );
     assert!(
-        stderr.contains("call_user_func(Object(Closure), 'not_an_array_va...')"),
+        !stderr.contains("call_user_func(Object(Closure)"),
         "{stderr}"
     );
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("suppress_user_call_frame_location = 1"));
+    assert!(c_source.contains("ptn_internal_trace_frame_is_user_call_forwarder"));
 }
 
 #[test]
@@ -12244,6 +12249,47 @@ var_dump($wr->get());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_reference_to_generator_closure_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-reference-generator-closure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-reference-generator-closure.php");
+    let output = root.join("weak-reference-generator-closure-bin");
+    fs::write(
+        &input,
+        "<?php
+$factory = function () {
+    yield 1;
+    yield 2;
+    yield 3;
+};
+
+$wr = WeakReference::create($factory);
+$generator = $factory();
+unset($factory);
+
+var_dump($wr->get() instanceof Closure);
+foreach ($generator as $value) {
+    var_dump($value);
+}
+var_dump($wr->get() instanceof Closure);
+unset($generator);
+var_dump($wr->get());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(1)\nint(2)\nint(3)\nbool(true)\nNULL\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -66941,7 +66987,19 @@ try {
 }
 
 try {
-    Missing::$value = 1;
+    echo MissingRead::$value;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    MissingWrite::$value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump(isset(MissingQuiet::$value));
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -66955,7 +67013,12 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Access to undeclared static property Known::$missing\nAccess to undeclared static property Missing::$value\n"
+        concat!(
+            "Access to undeclared static property Known::$missing\n",
+            "Class \"MissingRead\" not found\n",
+            "Class \"MissingWrite\" not found\n",
+            "Class \"MissingQuiet\" not found\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

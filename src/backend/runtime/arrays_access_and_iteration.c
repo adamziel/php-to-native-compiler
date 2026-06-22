@@ -8349,6 +8349,7 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->delegate_sources != NULL) {
         ptn_array_free(generator->delegate_sources);
     }
+    ptn_value_destroy(&generator->closure_owner);
     free(generator);
 }
 
@@ -8380,6 +8381,14 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->return_value = ptn_null();
     generator->reference_notice_lines = reference_notice_lines.as.array;
     generator->delegate_sources = delegate_sources.as.array;
+    generator->closure_owner = ptn_null();
+    if (
+        runtime != NULL &&
+        runtime->owned_call_frame.has_current_closure &&
+        ptn_value_deref(runtime->owned_call_frame.current_closure).type == PTN_CLOSURE
+    ) {
+        generator->closure_owner = ptn_value_share(runtime->owned_call_frame.current_closure);
+    }
     generator->position = 0;
     generator->next_auto_key = 0;
     generator->completed = 0;

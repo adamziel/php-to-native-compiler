@@ -904,6 +904,7 @@ struct PtnGenerator {
     PtnValue return_value;
     PtnArray *reference_notice_lines;
     PtnArray *delegate_sources;
+    PtnValue closure_owner;
     size_t position;
     int64_t next_auto_key;
     int completed;
@@ -1343,6 +1344,9 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    PtnClosure **live_closures;
+    size_t live_closures_len;
+    size_t live_closures_capacity;
     PtnArray **live_arrays;
     size_t live_arrays_len;
     size_t live_arrays_capacity;
@@ -1884,6 +1888,9 @@ static PTN_UNUSED void ptn_runtime_release_object_id_after_next_allocation(
     root->has_deferred_free_object_id = 1;
 }
 
+static PTN_UNUSED void ptn_runtime_register_closure(PtnRuntime *runtime, PtnClosure *closure);
+static PTN_UNUSED void ptn_runtime_unregister_closure(PtnRuntime *runtime, PtnClosure *closure);
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name);
@@ -2173,7 +2180,7 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_clone(
     PtnValue source,
     size_t line
 );
-static PtnObject *ptn_weak_reference_object_referent(PtnObject *object);
+static PtnValue ptn_weak_reference_referent_value(PtnObject *object);
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3503,6 +3510,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->suppress_wrapped_callable_deprecation = 0;
     closure->wrapped_callable = ptn_null();
     closure->bound_scope_name = NULL;
+    ptn_runtime_register_closure(runtime, closure);
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;

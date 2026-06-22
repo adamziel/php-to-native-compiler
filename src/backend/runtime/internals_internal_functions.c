@@ -1926,7 +1926,8 @@ static PTN_UNUSED int ptn_direct_value_var_dump_weak_reference_object(
     if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
         return 0;
     }
-    PtnObject *referent = ptn_weak_reference_object_referent(object);
+    PtnValue referent_value = ptn_weak_reference_referent_value(object);
+    PtnValue referent = ptn_value_deref(referent_value);
     size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
     ptn_direct_dump_printf(
         runtime,
@@ -1938,12 +1939,10 @@ static PTN_UNUSED int ptn_direct_value_var_dump_weak_reference_object(
     ptn_direct_value_dump_seen_object_push(seen, object);
     ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"object\"]=>\n");
-    if (referent == NULL) {
+    if (referent.type == PTN_NULL) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "NULL\n");
     } else {
-        PtnValue referent_value = ptn_object(referent);
-        referent_value.owned = 0;
         ptn_direct_value_var_dump_value_indented(runtime, referent_value, indent + 1, seen);
     }
     ptn_direct_value_dump_seen_object_pop(seen);
@@ -3500,7 +3499,8 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_reference_object(
     if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
         return 0;
     }
-    PtnObject *referent = ptn_weak_reference_object_referent(object);
+    PtnValue referent_value = ptn_weak_reference_referent_value(object);
+    PtnValue referent = ptn_value_deref(referent_value);
     size_t class_name_len = ptn_direct_var_dump_class_name_len(object->class_name);
     ptn_direct_var_dump_writef(
         runtime,
@@ -3512,12 +3512,10 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_reference_object(
     ptn_direct_dump_seen_object_push(seen, object);
     ptn_direct_var_dump_indent(runtime, indent + 1);
     ptn_output_write_cstr(runtime, "[\"object\"]=>\n");
-    if (referent == NULL) {
+    if (referent.type == PTN_NULL) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_output_write_cstr(runtime, "NULL\n");
     } else {
-        PtnValue referent_value = ptn_object(referent);
-        referent_value.owned = 0;
         ptn_direct_var_dump_value_indented(runtime, referent_value, indent + 1, seen);
     }
     ptn_direct_dump_seen_object_pop(seen);
@@ -4782,6 +4780,13 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
     );
 }
 
+static int ptn_internal_trace_frame_is_user_call_forwarder(PtnTraceFrame *frame) {
+    return frame != NULL &&
+        frame->function_name != NULL &&
+        (ptn_ascii_case_equal(frame->function_name, "call_user_func") ||
+         ptn_ascii_case_equal(frame->function_name, "call_user_func_array"));
+}
+
 static int ptn_internal_call_callback_capturing_exception_impl(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -4819,7 +4824,18 @@ static int ptn_internal_call_callback_capturing_exception_impl(
         runtime->suppress_user_call_frame_location = 1;
         runtime->suppress_user_argument_count_location = 1;
     }
+    PtnTraceFrame *forwarding_trace_frame = NULL;
+    if (
+        include_user_call_site &&
+        ptn_internal_trace_frame_is_user_call_forwarder(runtime->trace_frame)
+    ) {
+        forwarding_trace_frame = runtime->trace_frame;
+        runtime->trace_frame = forwarding_trace_frame->previous;
+    }
     *result_out = ptn_call_callable_named(runtime, callback, argc, args, arg_names, line, include_user_call_site);
+    if (forwarding_trace_frame != NULL) {
+        runtime->trace_frame = forwarding_trace_frame;
+    }
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =
@@ -6774,21 +6790,28 @@ static int ptn_var_dump_weak_reference_object(
         return 0;
     }
 
-    PtnObject *referent = ptn_weak_reference_object_referent(object);
+    PtnValue referent_value = ptn_weak_reference_referent_value(object);
+    PtnValue referent = ptn_value_deref(referent_value);
     ptn_var_dump_object_header(object, 1, debug);
     ptn_dump_seen_objects_push(seen, object);
     ptn_var_dump_indent(indent + 1);
     fputs("[\"object\"]=>\n", stdout);
-    if (referent == NULL) {
+    if (referent.type == PTN_NULL) {
         ptn_var_dump_indent(indent + 1);
         fputs("NULL\n", stdout);
     } else {
-        PtnValue referent_value = ptn_object(referent);
-        referent_value.owned = 0;
         if (debug) {
-            referent->refcount++;
+            if (referent.type == PTN_OBJECT) {
+                referent.as.object->refcount++;
+            } else if (referent.type == PTN_CLOSURE) {
+                referent.as.closure->refcount++;
+            }
             ptn_debug_zval_dump_value_indented(referent_value, indent + 1, seen);
-            referent->refcount--;
+            if (referent.type == PTN_OBJECT) {
+                referent.as.object->refcount--;
+            } else if (referent.type == PTN_CLOSURE) {
+                referent.as.closure->refcount--;
+            }
         } else {
             ptn_var_dump_value_indented(referent_value, indent + 1, seen);
         }
@@ -94778,7 +94801,11 @@ static PTN_UNUSED PtnValue ptn_fiber_call_method(
 
 typedef struct PtnWeakReferenceData {
     PtnRuntime *runtime;
-    PtnObject *object;
+    PtnType referent_type;
+    union {
+        PtnObject *object;
+        PtnClosure *closure;
+    } as;
     size_t object_id;
 } PtnWeakReferenceData;
 
@@ -94787,7 +94814,12 @@ static void ptn_weak_reference_data_free(void *data) {
 }
 
 static PtnObject *ptn_weak_reference_live_object(PtnWeakReferenceData *data) {
-    if (data == NULL || data->runtime == NULL || data->object == NULL) {
+    if (
+        data == NULL ||
+        data->referent_type != PTN_OBJECT ||
+        data->runtime == NULL ||
+        data->as.object == NULL
+    ) {
         return NULL;
     }
     PtnRuntime *root = ptn_runtime_root(data->runtime);
@@ -94796,7 +94828,7 @@ static PtnObject *ptn_weak_reference_live_object(PtnWeakReferenceData *data) {
     }
     for (size_t i = 0; i < root->live_objects_len; i++) {
         PtnObject *object = root->live_objects[i];
-        if (object == data->object &&
+        if (object == data->as.object &&
             object->object_id == data->object_id &&
             object->refcount != 0) {
             return object;
@@ -94818,16 +94850,52 @@ static PtnWeakReferenceData *ptn_weak_reference_data(PtnRuntime *runtime, PtnVal
     return (PtnWeakReferenceData *)receiver.as.object->native_data;
 }
 
-static PtnObject *ptn_weak_reference_object_referent(PtnObject *object) {
+static PtnClosure *ptn_weak_reference_live_closure(PtnWeakReferenceData *data) {
+    if (
+        data == NULL ||
+        data->referent_type != PTN_CLOSURE ||
+        data->runtime == NULL ||
+        data->as.closure == NULL
+    ) {
+        return NULL;
+    }
+    PtnRuntime *root = ptn_runtime_root(data->runtime);
+    if (root == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < root->live_closures_len; i++) {
+        PtnClosure *closure = root->live_closures[i];
+        if (closure == data->as.closure &&
+            closure->object_id == data->object_id &&
+            closure->refcount != 0) {
+            return closure;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_weak_reference_referent_value(PtnObject *object) {
     if (object == NULL ||
         !ptn_internal_class_name_is_weak_reference(object->class_name) ||
         object->native_data == NULL) {
-        return NULL;
+        return ptn_null();
     }
-    return ptn_weak_reference_live_object((PtnWeakReferenceData *)object->native_data);
-}
-
-static PtnValue ptn_weak_reference_value(PtnObject *referent) {
+    PtnWeakReferenceData *data = (PtnWeakReferenceData *)object->native_data;
+    if (data->referent_type == PTN_CLOSURE) {
+        PtnClosure *referent = ptn_weak_reference_live_closure(data);
+        if (referent == NULL) {
+            return ptn_null();
+        }
+        PtnValue value;
+        value.type = PTN_CLOSURE;
+        value.owned = 0;
+        value.by_ref_return_fallback = 0;
+        value.by_ref_argument_source_disabled = 0;
+        value.from_string_offset = 0;
+        value.as.closure = referent;
+        return value;
+    }
+    PtnObject *referent = ptn_weak_reference_live_object(data);
     if (referent == NULL) {
         return ptn_null();
     }
@@ -94872,7 +94940,54 @@ static PtnValue ptn_weak_reference_object_from_referent(PtnRuntime *runtime, Ptn
         ptn_abort_out_of_memory();
     }
     data->runtime = ptn_runtime_root(runtime);
-    data->object = referent;
+    data->referent_type = PTN_OBJECT;
+    data->as.object = referent;
+    data->object_id = referent == NULL ? 0 : referent->object_id;
+
+    PtnValue object = ptn_object_new_shell(runtime, "WeakReference");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_weak_reference_data_free;
+    return object;
+}
+
+static PtnObject *ptn_weak_reference_find_existing_closure(PtnRuntime *runtime, PtnClosure *referent) {
+    if (runtime == NULL || referent == NULL) {
+        return NULL;
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (object == NULL ||
+            object->refcount == 0 ||
+            !ptn_internal_class_name_is_weak_reference(object->class_name) ||
+            object->native_data == NULL) {
+            continue;
+        }
+        PtnWeakReferenceData *data = (PtnWeakReferenceData *)object->native_data;
+        if (ptn_weak_reference_live_closure(data) == referent) {
+            return object;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_weak_reference_object_from_closure(PtnRuntime *runtime, PtnClosure *referent) {
+    PtnObject *existing = ptn_weak_reference_find_existing_closure(runtime, referent);
+    if (existing != NULL) {
+        ptn_object_retain(existing);
+        return ptn_object(existing);
+    }
+
+    PtnWeakReferenceData *data = malloc(sizeof(PtnWeakReferenceData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->runtime = ptn_runtime_root(runtime);
+    data->referent_type = PTN_CLOSURE;
+    data->as.closure = referent;
     data->object_id = referent == NULL ? 0 : referent->object_id;
 
     PtnValue object = ptn_object_new_shell(runtime, "WeakReference");
@@ -94903,13 +95018,16 @@ static PTN_UNUSED PtnValue ptn_weak_reference_create(
         return ptn_null();
     }
     PtnValue object = ptn_value_deref(args[0]);
-    if (object.type != PTN_OBJECT) {
+    if (object.type != PTN_OBJECT && object.type != PTN_CLOSURE) {
         ptn_throw_exception(
             runtime,
             "TypeError",
             "WeakReference::create(): Argument #1 ($object) must be of type object"
         );
         return ptn_null();
+    }
+    if (object.type == PTN_CLOSURE) {
+        return ptn_weak_reference_object_from_closure(runtime, object.as.closure);
     }
     return ptn_weak_reference_object_from_referent(runtime, object.as.object);
 }
@@ -126353,7 +126471,27 @@ static PTN_UNUSED PtnValue ptn_weak_reference_call_method(
     if (data == NULL) {
         return ptn_null();
     }
-    return ptn_weak_reference_value(ptn_weak_reference_live_object(data));
+    if (data->referent_type == PTN_CLOSURE) {
+        PtnClosure *referent = ptn_weak_reference_live_closure(data);
+        if (referent == NULL) {
+            return ptn_null();
+        }
+        referent->refcount++;
+        PtnValue value;
+        value.type = PTN_CLOSURE;
+        value.owned = 1;
+        value.by_ref_return_fallback = 0;
+        value.by_ref_argument_source_disabled = 0;
+        value.from_string_offset = 0;
+        value.as.closure = referent;
+        return value;
+    }
+    PtnObject *referent = ptn_weak_reference_live_object(data);
+    if (referent == NULL) {
+        return ptn_null();
+    }
+    ptn_object_retain(referent);
+    return ptn_object(referent);
 }
 
 static PTN_UNUSED PtnValue ptn_weak_map_call_method(

@@ -757,6 +757,7 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
+    ptn_runtime_unregister_closure(closure->lifecycle_runtime, closure);
     ptn_runtime_release_object_id(closure->lifecycle_runtime, closure->object_id);
     free(closure->scope_class_name);
     free(closure->called_class_name);
