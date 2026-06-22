@@ -10399,7 +10399,6 @@ static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *valu
 static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *key) {
     size_t key_start = state->pos;
     if (!ptn_unserialize_has(state, 2)) {
-        state->unexpected_end = 1;
         ptn_unserialize_fail_at(state, key_start);
         return 0;
     }

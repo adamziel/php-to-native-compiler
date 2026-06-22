@@ -14293,6 +14293,45 @@ var_dump(unserialize('O:8:\"00000000\":'));
 }
 
 #[test]
+fn compile_unserialize_truncated_object_property_key_reports_offset_only_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-truncated-object-property-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-truncated-object-property-key.php");
+    let output = root.join("unserialize-truncated-object-property-key-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class obj {
+    public $ryat;
+    public function __destruct() { $this->ryat = null; }
+}
+
+var_dump(unserialize('O:3:"obj":1:{'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        !stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(&format!(
+            "Warning: unserialize(): Error at offset 13 of 13 bytes in {} on line 7",
+            input.display()
+        )),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_declared_payload_length_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-declared-payload-offsets");
     fs::create_dir_all(&root).unwrap();
