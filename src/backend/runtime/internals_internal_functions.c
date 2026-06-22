@@ -4923,13 +4923,6 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
     );
 }
 
-static int ptn_internal_trace_frame_is_user_call_forwarder(PtnTraceFrame *frame) {
-    return frame != NULL &&
-        frame->function_name != NULL &&
-        (ptn_ascii_case_equal(frame->function_name, "call_user_func") ||
-         ptn_ascii_case_equal(frame->function_name, "call_user_func_array"));
-}
-
 static int ptn_internal_call_callback_capturing_exception_impl(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -4967,18 +4960,7 @@ static int ptn_internal_call_callback_capturing_exception_impl(
         runtime->suppress_user_call_frame_location = 1;
         runtime->suppress_user_argument_count_location = 1;
     }
-    PtnTraceFrame *forwarding_trace_frame = NULL;
-    if (
-        include_user_call_site &&
-        ptn_internal_trace_frame_is_user_call_forwarder(runtime->trace_frame)
-    ) {
-        forwarding_trace_frame = runtime->trace_frame;
-        runtime->trace_frame = forwarding_trace_frame->previous;
-    }
     *result_out = ptn_call_callable_named(runtime, callback, argc, args, arg_names, line, include_user_call_site);
-    if (forwarding_trace_frame != NULL) {
-        runtime->trace_frame = forwarding_trace_frame;
-    }
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =

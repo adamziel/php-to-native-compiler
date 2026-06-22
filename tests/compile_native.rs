@@ -8809,7 +8809,7 @@ echo \"after\\n\";
 }
 
 #[test]
-fn compile_error_handler_call_user_func_trace_skips_forwarder_to_native_binary() {
+fn compile_error_handler_call_user_func_trace_keeps_forwarder_to_native_binary() {
     let root = temp_dir("ptn-native-error-handler-call-user-func-forwarder");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("error-handler-call-user-func-forwarder.php");
@@ -8826,7 +8826,7 @@ call_user_func(function (array &$ref) {}, 'not_an_array_variable');
     )
     .unwrap();
 
-    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert_eq!(execution.status.code(), Some(255));
@@ -8841,21 +8841,14 @@ call_user_func(function (array &$ref) {}, 'not_an_array_variable');
         "{stderr}"
     );
     assert!(
-        stderr.contains("error-handler-call-user-func-forwarder.php(6): {closure:"),
-        "{stderr}"
-    );
-    assert!(stderr.contains("\n#1 {main}"), "{stderr}");
-    assert!(
-        !stderr.contains("[internal function]: {closure:"),
+        stderr.contains("[internal function]: {closure:"),
         "{stderr}"
     );
     assert!(
-        !stderr.contains("call_user_func(Object(Closure)"),
+        stderr.contains("error-handler-call-user-func-forwarder.php(6): call_user_func("),
         "{stderr}"
     );
-
-    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_trace_frame_is_user_call_forwarder"));
+    assert!(stderr.contains("\n#2 {main}"), "{stderr}");
 }
 
 #[test]
