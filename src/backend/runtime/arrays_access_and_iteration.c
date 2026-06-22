@@ -2550,6 +2550,26 @@ static PTN_UNUSED void ptn_throw_property_type_assignment_error(
     ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_object_released_while_assigning_property(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object was released while assigning to property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED int ptn_property_string_is_numeric(PtnString string, double *number) {
     char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);
     int is_numeric = ptn_is_numeric_string(copy, number);
@@ -6126,15 +6146,22 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
         !ptn_lazy_object_initialize_for_dynamic_property_compound(runtime, receiver, line)) {
         return ptn_null();
     }
-    if (!ptn_object_preflight_dynamic_property_creation(
-            runtime,
-            receiver,
-            property,
-            access_scope,
-            PTN_PROPERTY_ACCESS_WRITE,
-            line
-        )) {
-        return ptn_null();
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    int has_magic_get = resolved_receiver.type == PTN_OBJECT &&
+        runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        runtime->declared_method_exists(resolved_receiver.as.object->class_name, "__get");
+    if (!has_magic_get) {
+        if (!ptn_object_preflight_dynamic_property_creation(
+                runtime,
+                receiver,
+                property,
+                access_scope,
+                PTN_PROPERTY_ACCESS_WRITE,
+                line
+            )) {
+            return ptn_null();
+        }
     }
     return ptn_object_read_property(runtime, receiver, property, access_scope, line);
 }
@@ -7019,8 +7046,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         );
     }
     PtnValue stored = ptn_null();
-    if (metadata != NULL &&
-        !ptn_property_type_coerce_assignment(
+    if (metadata != NULL) {
+        PtnObject *assignment_receiver = receiver.as.object;
+        size_t refcount_before_coercion = assignment_receiver->refcount;
+        ptn_object_retain(assignment_receiver);
+        int coerced = ptn_property_type_coerce_assignment(
             runtime,
             metadata->type_kind,
             metadata->type_class_name,
@@ -7032,10 +7062,25 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             0,
             line,
             &stored
-        )) {
-        ptn_array_key_free(key);
-        free(storage_key);
-        return ptn_null();
+        );
+        int receiver_invalidated = assignment_receiver->refcount <= refcount_before_coercion;
+        int active_exception = ptn_runtime_has_active_exception(runtime);
+        if (receiver_invalidated && !active_exception) {
+            ptn_throw_object_released_while_assigning_property(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            active_exception = 1;
+        }
+        ptn_object_release(assignment_receiver);
+        if (!coerced || receiver_invalidated || active_exception) {
+            ptn_value_destroy(&stored);
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_null();
+        }
     }
     if (metadata == NULL) {
         stored = ptn_value_clone_deref(value);

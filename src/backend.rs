@@ -34217,6 +34217,10 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&assigned_temp);
         out.push_str(" = ptn_object_write_property(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
@@ -34228,6 +34232,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    }\n");
 
         emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);

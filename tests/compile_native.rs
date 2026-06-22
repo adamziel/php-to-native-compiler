@@ -46664,6 +46664,67 @@ var_dump($obj->prop);
 }
 
 #[test]
+fn compile_typed_property_assignment_detects_receiver_release_during_coercion_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-release-during-coercion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-release-during-coercion.php");
+    let output = root.join("typed-property-release-during-coercion-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public string $prop;
+}
+class B {
+    public function __toString() {
+        global $a;
+        $a = null;
+        return str_repeat('a', 1);
+    }
+}
+
+$a = new A();
+try {
+    $a->prop = new B();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$a = new A();
+$a->prop = '';
+try {
+    $a->prop = new B();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Object was released while assigning to property A::$prop\n",
+            "Object was released while assigning to property A::$prop\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_object_released_while_assigning_property"));
+    assert!(c_source.contains("ptn_property_type_coerce_assignment"));
+}
+
+#[test]
 fn compile_typed_property_references_dump_in_declaration_order_to_native_binary() {
     let root = temp_dir("ptn-native-typed-property-reference-dump-order");
     fs::create_dir_all(&root).unwrap();
@@ -62595,6 +62656,46 @@ var_dump($ignored instanceof stdClass);
     assert!(c_source.contains("ptn_new_object(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_property_compound_assignment_skips_write_after_get_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-property-compound-get-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-compound-get-exception.php");
+    let output = root.join("property-compound-get-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public function __get($name) {
+        throw new Exception;
+    }
+}
+
+$test = new Test;
+try {
+    $test->prop += 42;
+} catch (Exception $e) {
+}
+var_dump($test);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#1 (0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_compound_assignment"));
+    assert!(c_source.contains("runtime.exceptions->active_exception == NULL"));
 }
 
 #[test]
