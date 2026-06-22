@@ -4322,8 +4322,28 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(0);
             return 1;
         }
+        if (strcmp(constant, "LONG") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "MEDIUM") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "SHORT") == 0) {
+            *out = ptn_int(3);
+            return 1;
+        }
+        if (strcmp(constant, "NONE") == 0) {
+            *out = ptn_int(-1);
+            return 1;
+        }
         if (strcmp(constant, "GREGORIAN") == 0) {
             *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "TRADITIONAL") == 0) {
+            *out = ptn_int(0);
             return 1;
         }
     }

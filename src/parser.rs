@@ -21857,6 +21857,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "datefmt_parse"
             | "datefmt_parse_to_calendar"
             | "grapheme_extract"
+            | "intl_get_error_code"
+            | "intl_get_error_message"
             | "intltz_get_offset"
             | "locale_compose"
             | "locale_lookup"

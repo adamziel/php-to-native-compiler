@@ -35762,6 +35762,51 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_date_formatter_style_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-date-formatter-style-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-date-formatter-style-constants.php");
+    let output = root.join("intl-date-formatter-style-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(\n\
+    IntlDateFormatter::FULL,\n\
+    IntlDateFormatter::LONG,\n\
+    IntlDateFormatter::MEDIUM,\n\
+    IntlDateFormatter::SHORT,\n\
+    IntlDateFormatter::NONE,\n\
+    IntlDateFormatter::GREGORIAN,\n\
+    IntlDateFormatter::TRADITIONAL,\n\
+    constant('intldateformatter::LONG'),\n\
+    defined('IntlDateFormatter::NONE')\n\
+);\n\
+var_dump(datefmt_create('en_US', IntlDateFormatter::FULL, IntlDateFormatter::FULL, 'UTC', IntlDateFormatter::GREGORIAN, null) instanceof IntlDateFormatter);\n\
+$fmt = datefmt_create('en_US', IntlDateFormatter::SHORT, IntlDateFormatter::SHORT, 'GMT-10:00', IntlDateFormatter::GREGORIAN, null);\n\
+$local = ['tm_sec' => 24, 'tm_min' => 3, 'tm_hour' => 19, 'tm_mday' => 3, 'tm_mon' => 3, 'tm_year' => 105];\n\
+echo datefmt_format($fmt, $local), \"\\n\";\n\
+echo $fmt->format($local), \"\\n\";\n\
+$full = datefmt_create('en_US', IntlDateFormatter::FULL, IntlDateFormatter::FULL, 'GMT-10:00', IntlDateFormatter::GREGORIAN, null);\n\
+echo datefmt_format($full, new DateTime('2010-01-01 01:02:03', new DateTimeZone('UTC'))), \"\\n\";\n\
+var_dump(intl_get_error_code(), U_ZERO_ERROR, intl_get_error_code() == U_ZERO_ERROR, intl_get_error_message());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(1)\nint(2)\nint(3)\nint(-1)\nint(1)\nint(0)\nint(1)\nbool(true)\nbool(true)\n4/3/05, 7:03 PM\n4/3/05, 7:03 PM\nThursday, December 31, 2009 at 3:02:03 PM GMT-10:00\nint(0)\nint(0)\nbool(true)\nstring(12) \"U_ZERO_ERROR\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_builtin_class_constant_value_span"));
+}
+
+#[test]
 fn compile_xmlwriter_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-xmlwriter-extension-surface");
     fs::create_dir_all(&root).unwrap();

@@ -1256,6 +1256,7 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_string(PTN_INTL_ICU_VERSION);
         return 1;
     }
+    PTN_BUILTIN_INT_CONSTANT("U_ZERO_ERROR", 0)
     PTN_BUILTIN_INT_CONSTANT("T_INCLUDE", PTN_T_INCLUDE)
     PTN_BUILTIN_INT_CONSTANT("T_INCLUDE_ONCE", PTN_T_INCLUDE_ONCE)
     PTN_BUILTIN_INT_CONSTANT("T_EVAL", PTN_T_EVAL)
