@@ -4061,6 +4061,8 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DirectoryIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "FilesystemIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "GlobIterator") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveDirectoryIterator")) {
         if (strcmp(constant, "SKIP_DOTS") == 0) {
             *out = ptn_int(4096);

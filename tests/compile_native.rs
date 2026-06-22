@@ -37705,6 +37705,133 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_build_from_iterator_filesystem_overrides_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-filesystem");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-filesystem.php");
+    let output = root.join("phar-build-from-iterator-filesystem-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyGlobIterator extends GlobIterator {
+    public function &getPathname(): string {
+        echo "[getPathname]\n";
+        static $data = parent::getPathname();
+        return $data;
+    }
+}
+
+class MyIterator extends RecursiveDirectoryIterator {
+    public function current(): SplFileInfo {
+        echo "[Found]\n";
+        return new MyGlobIterator(parent::current()->getPath() . '/*');
+    }
+}
+
+$workdir = __DIR__ . '/phar_iter_path';
+mkdir($workdir . '/content', recursive: true);
+file_put_contents($workdir . '/content/hello.txt', 'Hello world.');
+
+$phar = new Phar($workdir . '/test.phar');
+$phar->buildFromIterator(
+    new RecursiveIteratorIterator(
+        new MyIterator($workdir . '/content', FilesystemIterator::SKIP_DOTS)
+    ),
+    $workdir
+);
+
+$result = new Phar($workdir . '/test.phar');
+var_dump(isset($result['content/hello.txt']));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "[Found]\n[getPathname]\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_build_from_iterator_result"));
+    assert!(c_source.contains("GlobIterator"));
+}
+
+#[test]
+fn compile_phar_iterator_mtime_and_add_from_string_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-iterator-mtime-add-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-iterator-mtime-add-string.php");
+    let output = root.join("phar-iterator-mtime-add-string-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MySplFileInfo extends SplFileInfo {
+    public function &getMTime(): int|false {
+        static $data = 123;
+        echo "[MTime]\n";
+        return $data;
+    }
+}
+
+class MyIterator extends RecursiveDirectoryIterator {
+    public function current(): SplFileInfo {
+        return new MySplFileInfo(parent::current()->getPathname());
+    }
+}
+
+$workdir = __DIR__ . '/phar_iter_mtime';
+mkdir($workdir . '/content', recursive: true);
+file_put_contents($workdir . '/content/hello.txt', 'Hello world.');
+
+$phar = new Phar($workdir . '/test.phar');
+$phar->buildFromIterator(
+    new RecursiveIteratorIterator(
+        new MyIterator($workdir . '/content', FilesystemIterator::SKIP_DOTS)
+    ),
+    $workdir
+);
+$phar->addFromString('inline.txt', 'hello world');
+
+$result = new Phar($workdir . '/test.phar');
+echo $result['content/hello.txt']->getATime(), "\n";
+echo $result['content/hello.txt']->getMTime(), "\n";
+echo $result['content/hello.txt']->getCTime(), "\n";
+echo $result['inline.txt']->getContent(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "[MTime]\n123\n123\n123\nhello world\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_set_entry_with_timestamp"));
+    assert!(c_source.contains("addFromString"));
+}
+
+#[test]
 fn compile_soap_client_invalid_headers_fatal_to_native_binary() {
     let root = temp_dir("ptn-native-soap-client-invalid-headers-fatal");
     fs::create_dir_all(&root).unwrap();
