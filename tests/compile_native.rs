@@ -581,6 +581,55 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
 }
 
 #[test]
+fn compile_spl_fixed_array_recursive_export_and_debug_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-recursive-debug");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-recursive-debug.php");
+    let output = root.join("spl-fixed-array-recursive-debug-bin");
+    fs::write(
+        &input,
+        r#"<?php
+call_user_func(function () {
+    $x = new SplFixedArray(1);
+    $x[0] = $x;
+    var_export($x); echo "\n";
+    debug_zval_dump($x); echo "\n";
+});
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: var_export does not handle circular references"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("\\SplFixedArray::__set_state(array(\n   0 => NULL,\n))\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("object(SplFixedArray)#") && stdout.contains(" (1) refcount("),
+        "{stdout}"
+    );
+    assert!(stdout.contains("  [0]=>\n  *RECURSION*\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_var_export_append_spl_fixed_array_object"));
+}
+
+#[test]
 fn compile_spl_fixed_array_size_changes_during_foreach_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-resize-foreach");
     fs::create_dir_all(&root).unwrap();

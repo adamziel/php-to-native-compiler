@@ -14608,6 +14608,56 @@ static void ptn_var_export_append_object_state_array(
     ptn_string_buffer_append_char(buffer, ')');
 }
 
+static int ptn_var_export_append_spl_fixed_array_object(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
+) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)buffer;
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)line;
+    return 0;
+#else
+    if (object == NULL || !ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        return 0;
+    }
+    ptn_string_buffer_append_char(buffer, '\\');
+    ptn_string_buffer_append(buffer, object->class_name);
+    ptn_string_buffer_append(buffer, "::__set_state(array(\n");
+
+    PtnValue array = ptn_spl_fixed_array_debug_properties(object);
+    PtnValue resolved_array = ptn_value_deref(array);
+    ptn_dump_seen_objects_push(seen, object);
+    if (resolved_array.type == PTN_ARRAY) {
+        for (size_t i = 0; i < resolved_array.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved_array.as.array->entries[i];
+            PtnValue entry_value = ptn_value_deref(entry->value);
+            ptn_string_buffer_append_indent(buffer, indent + 3);
+            ptn_var_export_append_key(buffer, entry->key);
+            ptn_string_buffer_append(buffer, " => ");
+            if (ptn_var_export_should_break_value(entry_value, seen)) {
+                ptn_string_buffer_append_char(buffer, '\n');
+                ptn_string_buffer_append_indent(buffer, indent + 2);
+            }
+            ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
+            ptn_string_buffer_append(buffer, ",\n");
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_value_destroy(&array);
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "))");
+    return 1;
+#endif
+}
+
 static void ptn_var_export_append_object(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
@@ -14636,6 +14686,9 @@ static void ptn_var_export_append_object(
         ptn_string_buffer_append(buffer, object->class_name);
         ptn_string_buffer_append(buffer, "::");
         ptn_string_buffer_append(buffer, object->enum_case_name);
+        return;
+    }
+    if (ptn_var_export_append_spl_fixed_array_object(buffer, runtime, object, indent, seen, line)) {
         return;
     }
     ptn_dump_seen_objects_push(seen, object);
