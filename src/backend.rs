@@ -10301,6 +10301,9 @@ fn attribute_flag_argument_expression_value(
         AttributeArgumentExpression::Array(_) => {
             Err(AttributeFlagError::Type { type_name: "array" })
         }
+        AttributeArgumentExpression::NewObject { .. } => Err(AttributeFlagError::Type {
+            type_name: "object",
+        }),
         AttributeArgumentExpression::Constant(_) => Err(AttributeFlagError::InvalidValue),
         AttributeArgumentExpression::ClassConstant {
             class_name, name, ..
@@ -10905,6 +10908,9 @@ fn emit_declared_attribute_result_for_class_like(
         out.push_str("            PtnValue attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("            PtnValue attribute_arg_reprs_");
+        out.push_str(&attribute_index.to_string());
+        out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
         out.push_str("            PtnValue constructor_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_null();\n");
@@ -10932,6 +10938,8 @@ fn emit_declared_attribute_result_for_class_like(
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
             out.push_str(&c_string(&instance.name));
             out.push_str("\", attribute_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(", attribute_arg_reprs_");
             out.push_str(&attribute_index.to_string());
             out.push_str(", constructor_args_");
             out.push_str(&attribute_index.to_string());
@@ -10961,6 +10969,22 @@ fn emit_declared_attribute_result_for_class_like(
             let mut positional_index = 0usize;
             for (argument_index, argument) in instance.arguments.iter().enumerate() {
                 let argument_temp = format!("attribute_arg_{attribute_index}_{argument_index}");
+                let key_expression = if let Some(name) = &argument.name {
+                    format!("ptn_array_string_key(\"{}\")", c_string(name))
+                } else {
+                    let expression = format!("ptn_array_int_key({positional_index})");
+                    positional_index += 1;
+                    expression
+                };
+                out.push_str("            ptn_array_set_entry(attribute_arg_reprs_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(".as.array, ");
+                out.push_str(&key_expression);
+                out.push_str(", ptn_string(\"");
+                out.push_str(&c_string(&attribute_argument_value_display_text(
+                    &argument.value,
+                )));
+                out.push_str("\"));\n");
                 emit_attribute_argument_value(
                     out,
                     &argument_temp,
@@ -10982,16 +11006,7 @@ fn emit_declared_attribute_result_for_class_like(
                 out.push_str("            ptn_array_set_entry(attribute_args_");
                 out.push_str(&attribute_index.to_string());
                 out.push_str(".as.array, ");
-                if let Some(name) = &argument.name {
-                    out.push_str("ptn_array_string_key(\"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\")");
-                } else {
-                    out.push_str("ptn_array_int_key(");
-                    out.push_str(&positional_index.to_string());
-                    out.push(')');
-                    positional_index += 1;
-                }
+                out.push_str(&key_expression);
                 out.push_str(", attribute_arg_");
                 out.push_str(&attribute_index.to_string());
                 out.push('_');
@@ -11035,6 +11050,8 @@ fn emit_declared_attribute_result_for_class_like(
             out.push_str(&c_string(&instance.name));
             out.push_str("\", attribute_args_");
             out.push_str(&attribute_index.to_string());
+            out.push_str(", attribute_arg_reprs_");
+            out.push_str(&attribute_index.to_string());
             out.push_str(", constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(", ");
@@ -11069,6 +11086,8 @@ fn emit_declared_attribute_result_for_class_like(
             out.push_str(&c_string(&instance.name));
             out.push_str("\", attribute_args_");
             out.push_str(&attribute_index.to_string());
+            out.push_str(", attribute_arg_reprs_");
+            out.push_str(&attribute_index.to_string());
             out.push_str(", constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(", ");
@@ -11090,6 +11109,9 @@ fn emit_declared_attribute_result_for_class_like(
         out.push_str("            ptn_value_destroy(&constructor_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(");\n");
+        out.push_str("            ptn_value_destroy(&attribute_arg_reprs_");
+        out.push_str(&attribute_index.to_string());
+        out.push_str(");\n");
         out.push_str("            ptn_value_destroy(&attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(");\n");
@@ -11103,6 +11125,116 @@ fn c_attribute_source_file(instance: &crate::ast::AttributeInstance) -> String {
         "NULL".to_string()
     } else {
         format!("\"{}\"", c_string(&instance.source_file))
+    }
+}
+
+fn attribute_argument_value_display_text(value: &AttributeArgumentValue) -> String {
+    value
+        .expression
+        .as_ref()
+        .map(attribute_argument_expression_display_text)
+        .unwrap_or_else(|| match value.kind {
+            AttributeArgumentKind::String => {
+                format!(
+                    "'{}'",
+                    value.text.replace('\\', "\\\\").replace('\'', "\\'")
+                )
+            }
+            AttributeArgumentKind::Int
+            | AttributeArgumentKind::Float
+            | AttributeArgumentKind::Constant
+            | AttributeArgumentKind::ClassConstant
+            | AttributeArgumentKind::NativeEnumCase { .. } => value.text.clone(),
+            AttributeArgumentKind::Bool if value.text.is_empty() => "false".to_string(),
+            AttributeArgumentKind::Bool => "true".to_string(),
+            AttributeArgumentKind::Null => "NULL".to_string(),
+            AttributeArgumentKind::Array => "Array".to_string(),
+        })
+}
+
+fn attribute_argument_expression_display_text(expression: &AttributeArgumentExpression) -> String {
+    match expression {
+        AttributeArgumentExpression::String(value) => {
+            format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+        }
+        AttributeArgumentExpression::Int(value) | AttributeArgumentExpression::Float(value) => {
+            value.clone()
+        }
+        AttributeArgumentExpression::Bool(true) => "true".to_string(),
+        AttributeArgumentExpression::Bool(false) => "false".to_string(),
+        AttributeArgumentExpression::Null => "NULL".to_string(),
+        AttributeArgumentExpression::Constant(name) => name.clone(),
+        AttributeArgumentExpression::ClassName { class_name, .. } => class_name.clone(),
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } => format!("{class_name}::{name}"),
+        AttributeArgumentExpression::NewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            let mut display = format!("new \\{}(", class_name.trim_start_matches('\\'));
+            for (index, argument) in arguments.iter().enumerate() {
+                if index > 0 {
+                    display.push_str(", ");
+                }
+                display.push_str(&attribute_argument_expression_display_text(argument));
+            }
+            display.push(')');
+            display
+        }
+        AttributeArgumentExpression::Array(_) => "Array".to_string(),
+        AttributeArgumentExpression::Unary { op, expr } => {
+            let prefix = match op {
+                AstUnaryOp::Positive => "+",
+                AstUnaryOp::Negate => "-",
+                AstUnaryOp::Not => "!",
+                AstUnaryOp::BitwiseNot => "~",
+                AstUnaryOp::ErrorSuppress => "@",
+            };
+            format!(
+                "{prefix}{}",
+                attribute_argument_expression_display_text(expr)
+            )
+        }
+        AttributeArgumentExpression::Binary {
+            op, left, right, ..
+        } => format!(
+            "{} {} {}",
+            attribute_argument_expression_display_text(left),
+            attribute_argument_binary_display_operator(*op),
+            attribute_argument_expression_display_text(right)
+        ),
+    }
+}
+
+fn attribute_argument_binary_display_operator(op: AstBinaryOp) -> &'static str {
+    match op {
+        AstBinaryOp::Add => "+",
+        AstBinaryOp::Subtract => "-",
+        AstBinaryOp::Multiply => "*",
+        AstBinaryOp::Divide => "/",
+        AstBinaryOp::Modulo => "%",
+        AstBinaryOp::Power => "**",
+        AstBinaryOp::Concat => ".",
+        AstBinaryOp::BitwiseAnd => "&",
+        AstBinaryOp::BitwiseOr => "|",
+        AstBinaryOp::BitwiseXor => "^",
+        AstBinaryOp::ShiftLeft => "<<",
+        AstBinaryOp::ShiftRight => ">>",
+        AstBinaryOp::Equal => "==",
+        AstBinaryOp::Identical => "===",
+        AstBinaryOp::NotEqual => "!=",
+        AstBinaryOp::NotIdentical => "!==",
+        AstBinaryOp::Less => "<",
+        AstBinaryOp::LessEqual => "<=",
+        AstBinaryOp::Greater => ">",
+        AstBinaryOp::GreaterEqual => ">=",
+        AstBinaryOp::Spaceship => "<=>",
+        AstBinaryOp::And => "&&",
+        AstBinaryOp::Xor => "xor",
+        AstBinaryOp::Or => "||",
+        AstBinaryOp::Coalesce => "??",
     }
 }
 
@@ -11416,6 +11548,65 @@ fn emit_attribute_argument_expression(
                 )
             };
             emit_attribute_argument_simple(out, target, indent, &read_expression);
+        }
+        AttributeArgumentExpression::NewObject {
+            class_name,
+            arguments,
+            line,
+        } => {
+            for (index, argument) in arguments.iter().enumerate() {
+                let argument_temp = format!("{target}_arg_{index}");
+                emit_attribute_argument_expression(
+                    out,
+                    &argument_temp,
+                    argument,
+                    indent,
+                    *line,
+                    attribute_scope_class_var,
+                );
+            }
+            out.push_str(indent);
+            out.push_str("PtnValue ");
+            out.push_str(target);
+            out.push_str(";\n");
+            out.push_str(indent);
+            out.push_str("{\n");
+            out.push_str(indent);
+            out.push_str("    PtnValue ptn_attribute_new_args[");
+            out.push_str(&arguments.len().max(1).to_string());
+            out.push_str("];\n");
+            for index in 0..arguments.len() {
+                out.push_str(indent);
+                out.push_str("    ptn_attribute_new_args[");
+                out.push_str(&index.to_string());
+                out.push_str("] = ");
+                out.push_str(target);
+                out.push_str("_arg_");
+                out.push_str(&index.to_string());
+                out.push_str(";\n");
+            }
+            out.push_str(indent);
+            out.push_str("    ");
+            out.push_str(target);
+            out.push_str(" = ptn_new_object(runtime, \"");
+            out.push_str(&c_string(class_name.trim_start_matches('\\')));
+            out.push_str("\", ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            if arguments.is_empty() {
+                out.push_str("NULL");
+            } else {
+                out.push_str("ptn_attribute_new_args");
+            }
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str(indent);
+            out.push_str("}\n");
+            for index in 0..arguments.len() {
+                let argument_temp = format!("{target}_arg_{index}");
+                emit_value_cleanup(out, indent, &argument_temp);
+            }
         }
         AttributeArgumentExpression::Array(elements) => {
             out.push_str(indent);
@@ -14299,16 +14490,112 @@ fn emit_reflection_class_to_string_runtime(
         return;
     }
     let header = reflection_class_to_string_header(class);
-    let methods = reflection_class_to_string_methods_tail(class, classes, functions);
     out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
     out.push_str("        ptn_string_buffer_init(&ptn_reflection_buffer);\n");
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&header));
     out.push_str("\");\n");
     emit_reflection_class_constants_to_string_runtime(out, class, true);
+    let visible_properties = reflection_class_visible_property_entries(class, classes);
+    let static_properties = visible_properties
+        .iter()
+        .copied()
+        .filter(|entry| entry.is_static)
+        .collect::<Vec<_>>();
+    emit_reflection_class_property_section_to_string_runtime(
+        out,
+        "Static properties",
+        &static_properties,
+    );
+    let visible_methods = reflection_class_visible_method_entries(class, classes);
+    let static_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| entry.method.is_static)
+        .collect::<Vec<_>>();
+    let instance_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| !entry.method.is_static)
+        .collect::<Vec<_>>();
+    let mut static_methods_text = String::new();
+    reflection_class_methods_to_string(
+        &mut static_methods_text,
+        "Static methods",
+        class,
+        classes,
+        &static_methods,
+        functions,
+    );
+    static_methods_text.push('\n');
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
-    out.push_str(&c_string(&methods));
+    out.push_str(&c_string(&static_methods_text));
     out.push_str("\");\n");
+    let properties = visible_properties
+        .iter()
+        .copied()
+        .filter(|entry| !entry.is_static)
+        .collect::<Vec<_>>();
+    emit_reflection_class_property_section_to_string_runtime(out, "Properties", &properties);
+    let mut methods_text = String::new();
+    reflection_class_methods_to_string(
+        &mut methods_text,
+        "Methods",
+        class,
+        classes,
+        &instance_methods,
+        functions,
+    );
+    methods_text.push_str("}\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&methods_text));
+    out.push_str("\");\n");
+}
+
+fn emit_reflection_class_property_section_to_string_runtime(
+    out: &mut String,
+    label: &str,
+    properties: &[ClassPropertyExistsEntry<'_>],
+) {
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  - ");
+    out.push_str(&c_string(label));
+    out.push_str(" [");
+    out.push_str(&properties.len().to_string());
+    out.push_str("] {\\n\");\n");
+    for (index, property) in properties.iter().enumerate() {
+        if reflection_property_to_string_needs_runtime_default(property) {
+            let default_temp = format!("ptn_reflection_property_default_{index}");
+            let repr_temp = format!("ptn_reflection_property_default_repr_{index}");
+            out.push_str("        PtnValue ");
+            out.push_str(&default_temp);
+            out.push_str(" = ");
+            out.push_str(&c_property_default_value(property.reflection_value()));
+            out.push_str(";\n");
+            out.push_str("        char *");
+            out.push_str(&repr_temp);
+            out.push_str(" = ptn_reflection_property_default_repr(");
+            out.push_str(&default_temp);
+            out.push_str(");\n");
+            out.push_str("        ptn_string_buffer_append_format(&ptn_reflection_buffer, \"    ");
+            out.push_str(&c_string(
+                &reflection_property_to_string_runtime_default_prefix(property),
+            ));
+            out.push_str("%s ]\\n\", ");
+            out.push_str(&repr_temp);
+            out.push_str(");\n");
+            out.push_str("        free(");
+            out.push_str(&repr_temp);
+            out.push_str(");\n");
+            out.push_str("        ptn_value_destroy(&");
+            out.push_str(&default_temp);
+            out.push_str(");\n");
+        } else {
+            out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"    ");
+            out.push_str(&c_string(&reflection_property_to_string(property)));
+            out.push_str("\");\n");
+        }
+    }
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  }\\n\\n\");\n");
 }
 
 fn emit_reflection_trait_to_string_runtime(
@@ -14545,60 +14832,6 @@ fn reflection_trait_to_string_header(trait_decl: &TraitDecl) -> String {
 
 fn reflection_trait_constants_to_string() -> String {
     "  - Constants [0] {\n  }\n\n".to_string()
-}
-
-fn reflection_class_to_string_methods_tail(
-    class: &ClassDecl,
-    classes: &[ClassDecl],
-    functions: &[FunctionDecl],
-) -> String {
-    let mut out = String::new();
-    let visible_properties = reflection_class_visible_property_entries(class, classes);
-    let static_properties = visible_properties
-        .iter()
-        .copied()
-        .filter(|entry| entry.is_static)
-        .collect::<Vec<_>>();
-    reflection_class_properties_to_string(&mut out, "Static properties", &static_properties);
-
-    let visible_methods = reflection_class_visible_method_entries(class, classes);
-    let static_methods = visible_methods
-        .iter()
-        .copied()
-        .filter(|entry| entry.method.is_static)
-        .collect::<Vec<_>>();
-    let instance_methods = visible_methods
-        .iter()
-        .copied()
-        .filter(|entry| !entry.method.is_static)
-        .collect::<Vec<_>>();
-    reflection_class_methods_to_string(
-        &mut out,
-        "Static methods",
-        class,
-        classes,
-        &static_methods,
-        functions,
-    );
-    out.push('\n');
-
-    let properties = visible_properties
-        .iter()
-        .copied()
-        .filter(|entry| !entry.is_static)
-        .collect::<Vec<_>>();
-    reflection_class_properties_to_string(&mut out, "Properties", &properties);
-    reflection_class_methods_to_string(
-        &mut out,
-        "Methods",
-        class,
-        classes,
-        &instance_methods,
-        functions,
-    );
-
-    out.push_str("}\n");
-    out
 }
 
 fn reflection_trait_to_string_methods_tail(
@@ -15134,6 +15367,47 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
         out.push_str(&reflection_default_repr(property.reflection_value()));
     }
     out.push_str(" ]\n");
+    out
+}
+
+fn reflection_property_to_string_runtime_default_prefix<T: ReflectionPropertySummary>(
+    property: &T,
+) -> String {
+    let mut out = String::new();
+    out.push_str("Property [ ");
+    if property.reflection_is_abstract() {
+        out.push_str("abstract ");
+    }
+    if property.reflection_is_final()
+        || (property.reflection_set_visibility() != property.reflection_visibility()
+            && property.reflection_set_visibility() == PropertyVisibility::Private)
+    {
+        out.push_str("final ");
+    }
+    out.push_str(method_visibility_name(property.reflection_visibility()));
+    if property.reflection_set_visibility() != property.reflection_visibility() {
+        out.push(' ');
+        out.push_str(method_visibility_name(property.reflection_set_visibility()));
+        out.push_str("(set)");
+    }
+    if property.reflection_is_static() {
+        out.push_str(" static");
+    }
+    if property.reflection_is_virtual() {
+        out.push_str(" virtual");
+    }
+    if property.reflection_is_readonly() {
+        out.push_str(" readonly");
+    }
+    if let Some(type_hint) = property.reflection_type_hint() {
+        out.push(' ');
+        out.push_str(&type_hint.text);
+    }
+    out.push_str(" $");
+    out.push_str(property.reflection_name());
+    if property.reflection_has_default() {
+        out.push_str(" = ");
+    }
     out
 }
 

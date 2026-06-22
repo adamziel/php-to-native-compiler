@@ -6883,6 +6883,27 @@ impl Parser<'_> {
                 name: name.clone(),
                 scope_relative: class_name.eq_ignore_ascii_case("self"),
             }),
+            Expr::NewObject {
+                class_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                anonymous_class_source,
+                span,
+                ..
+            } if anonymous_class_source.is_none()
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack) =>
+            {
+                Ok(AttributeArgumentExpression::NewObject {
+                    class_name: class_name.clone(),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| self.attribute_argument_expression_from_expr(argument))
+                        .collect::<Result<Vec<_>>>()?,
+                    line: span.line,
+                })
+            }
             Expr::Array { elements, .. } => {
                 let mut attribute_elements = Vec::with_capacity(elements.len());
                 for element in elements {
@@ -12083,6 +12104,11 @@ fn parsed_attribute_argument_expression_metadata(
                 }),
             )
         }
+        AttributeArgumentExpression::NewObject { class_name, .. } => (
+            format!("new \\{}()", class_name.trim_start_matches('\\')),
+            ParsedAttributeArgumentKind::Constant,
+            None,
+        ),
         AttributeArgumentExpression::Array(_) => (
             "Array".to_string(),
             ParsedAttributeArgumentKind::Array,

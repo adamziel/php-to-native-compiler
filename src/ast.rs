@@ -378,6 +378,11 @@ pub enum AttributeArgumentExpression {
         name: String,
         scope_relative: bool,
     },
+    NewObject {
+        class_name: String,
+        arguments: Vec<AttributeArgumentExpression>,
+        line: usize,
+    },
     Array(Vec<AttributeArgumentArrayElement>),
     Unary {
         op: UnaryOp,
