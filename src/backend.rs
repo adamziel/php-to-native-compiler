@@ -9252,9 +9252,9 @@ fn emit_reflection_attribute_metadata_helpers(
     emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_property_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_constant_reflection_attributes(out, classes, traits, functions);
-    emit_declared_function_reflection_attributes(out, classes, functions);
-    emit_declared_function_parameter_reflection_attributes(out, classes, functions);
-    emit_declared_constant_attributes(out, classes, functions, instructions);
+    emit_declared_function_reflection_attributes(out, classes, traits, functions);
+    emit_declared_function_parameter_reflection_attributes(out, classes, traits, functions);
+    emit_declared_constant_attributes(out, classes, traits, functions, instructions);
     emit_declared_constant_is_deprecated(out, instructions);
     emit_declared_attribute_class_flags(out, classes);
 }
@@ -9522,6 +9522,7 @@ fn emit_declared_class_reflection_attributes(
             1,
             label_namespace,
             classes,
+            traits,
             functions,
             Some("class_name"),
             false,
@@ -9545,6 +9546,7 @@ fn emit_declared_class_reflection_attributes(
             1,
             label_namespace,
             classes,
+            traits,
             functions,
             Some("class_name"),
             false,
@@ -9610,6 +9612,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9632,6 +9635,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     label_namespace,
                     classes,
+                    traits,
                     functions,
                     Some("class_name"),
                     true,
@@ -9653,6 +9657,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     label_namespace,
                     classes,
+                    traits,
                     functions,
                     Some("class_name"),
                     true,
@@ -9680,6 +9685,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9702,6 +9708,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     label_namespace,
                     classes,
+                    traits,
                     functions,
                     Some("class_name"),
                     true,
@@ -9723,6 +9730,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     label_namespace,
                     classes,
+                    traits,
                     functions,
                     Some("class_name"),
                     true,
@@ -9789,6 +9797,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9813,6 +9822,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9839,6 +9849,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9863,6 +9874,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9920,6 +9932,7 @@ fn emit_declared_class_constant_reflection_attributes(
                 16,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9946,6 +9959,7 @@ fn emit_declared_class_constant_reflection_attributes(
                 16,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("class_name"),
                 false,
@@ -9961,6 +9975,7 @@ fn emit_declared_class_constant_reflection_attributes(
 fn emit_declared_function_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
@@ -9994,6 +10009,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             label_namespace,
             classes,
+            traits,
             functions,
             None,
             false,
@@ -10030,6 +10046,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             label_namespace,
             classes,
+            traits,
             functions,
             Some("ptn_attribute_scope_class_name"),
             false,
@@ -10405,6 +10422,7 @@ fn declared_class_is_same_or_descendant_compile_time(
 fn emit_declared_function_parameter_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
@@ -10449,6 +10467,7 @@ fn emit_declared_function_parameter_reflection_attributes(
                 32,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 scope_class_expr.as_deref(),
                 false,
@@ -10499,6 +10518,7 @@ fn emit_declared_function_parameter_reflection_attributes(
                 32,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 Some("ptn_attribute_scope_class_name"),
                 false,
@@ -10514,6 +10534,7 @@ fn emit_declared_function_parameter_reflection_attributes(
 fn emit_declared_constant_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
     instructions: &[Instruction],
 ) {
@@ -10550,6 +10571,7 @@ fn emit_declared_constant_attributes(
                 64,
                 label_namespace,
                 classes,
+                traits,
                 functions,
                 None,
                 false,
@@ -10728,6 +10750,7 @@ fn emit_declared_attribute_result(
     target: i32,
     label_namespace: usize,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
     attribute_scope_class_var: Option<&str>,
     property_hook_context: bool,
@@ -10740,6 +10763,7 @@ fn emit_declared_attribute_result(
         target,
         label_namespace,
         classes,
+        traits,
         functions,
         attribute_scope_class_var,
         property_hook_context,
@@ -10755,6 +10779,7 @@ fn emit_declared_attribute_result_for_class_like(
     target: i32,
     label_namespace: usize,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
     attribute_scope_class_var: Option<&str>,
     property_hook_context: bool,
@@ -10791,7 +10816,7 @@ fn emit_declared_attribute_result_for_class_like(
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_null();\n");
         let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
-        let mut constructor_error = reflection_attribute_arguments_error(instance, classes)
+        let mut constructor_error = reflection_attribute_arguments_error(instance, classes, traits)
             .or_else(|| {
                 if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
                     Some(error.clone())
@@ -11075,13 +11100,16 @@ fn delayed_builtin_class_like_attribute_error(
 fn reflection_attribute_arguments_error(
     instance: &crate::ast::AttributeInstance,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
 ) -> Option<String> {
     instance.arguments.iter().find_map(|argument| {
         argument
             .value
             .expression
             .as_ref()
-            .and_then(|expression| attribute_expression_arguments_error(expression, classes))
+            .and_then(|expression| {
+                attribute_expression_arguments_error(expression, classes, traits)
+            })
             .or_else(|| {
                 let AttributeConstantReference::ClassConstant { class_name, name } =
                     argument.value.constant_reference.as_ref()?
@@ -11095,7 +11123,7 @@ fn reflection_attribute_arguments_error(
                 ) {
                     return None;
                 }
-                attribute_class_constant_arguments_error(class_name, name, classes)
+                attribute_class_constant_arguments_error(class_name, name, classes, traits)
             })
     })
 }
@@ -11103,24 +11131,25 @@ fn reflection_attribute_arguments_error(
 fn attribute_expression_arguments_error(
     expression: &AttributeArgumentExpression,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
 ) -> Option<String> {
     match expression {
         AttributeArgumentExpression::ClassConstant {
             class_name, name, ..
-        } => attribute_class_constant_arguments_error(class_name, name, classes),
+        } => attribute_class_constant_arguments_error(class_name, name, classes, traits),
         AttributeArgumentExpression::Array(elements) => elements.iter().find_map(|element| {
             element
                 .key
                 .as_ref()
-                .and_then(|key| attribute_expression_arguments_error(key, classes))
-                .or_else(|| attribute_expression_arguments_error(&element.value, classes))
+                .and_then(|key| attribute_expression_arguments_error(key, classes, traits))
+                .or_else(|| attribute_expression_arguments_error(&element.value, classes, traits))
         }),
         AttributeArgumentExpression::Unary { expr, .. } => {
-            attribute_expression_arguments_error(expr, classes)
+            attribute_expression_arguments_error(expr, classes, traits)
         }
         AttributeArgumentExpression::Binary { left, right, .. } => {
-            attribute_expression_arguments_error(left, classes)
-                .or_else(|| attribute_expression_arguments_error(right, classes))
+            attribute_expression_arguments_error(left, classes, traits)
+                .or_else(|| attribute_expression_arguments_error(right, classes, traits))
         }
         _ => None,
     }
@@ -11130,6 +11159,7 @@ fn attribute_class_constant_arguments_error(
     class_name: &str,
     name: &str,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
 ) -> Option<String> {
     if class_name.eq_ignore_ascii_case("self") {
         return None;
@@ -11138,14 +11168,21 @@ fn attribute_class_constant_arguments_error(
         return Some(format!("Undefined constant {class_name}::{name}"));
     }
     let lookup_class_name = class_name.trim_start_matches('\\');
-    if !attribute_class_constant_class_available(lookup_class_name, classes) {
+    if !attribute_class_constant_class_available(lookup_class_name, classes, traits) {
         return Some(format!("Class \"{lookup_class_name}\" not found"));
     }
     None
 }
 
-fn attribute_class_constant_class_available(class_name: &str, classes: &[ClassDecl]) -> bool {
+fn attribute_class_constant_class_available(
+    class_name: &str,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+) -> bool {
     class_by_name(classes, class_name).is_some()
+        || traits
+            .iter()
+            .any(|trait_decl| trait_decl.name.eq_ignore_ascii_case(class_name))
         || class_name.eq_ignore_ascii_case("stdClass")
         || class_name.eq_ignore_ascii_case("Attribute")
         || class_name.eq_ignore_ascii_case("ReflectionAttribute")
