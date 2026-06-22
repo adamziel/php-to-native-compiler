@@ -10422,6 +10422,15 @@ fn parser_rejects_dynamic_global_const_initializer() {
 }
 
 #[test]
+fn parser_rejects_dynamic_enum_case_initializer_with_zend_message() {
+    let error = parser::parse("<?php enum Foo: int { case Bar = 1 + $x; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Constant expression contains invalid operations"
+    );
+}
+
+#[test]
 fn parser_rejects_nested_global_const_declaration() {
     let error = parser::parse("<?php if (true) const C = 1;").unwrap_err();
     assert!(error
@@ -39129,6 +39138,46 @@ echo ((new stdClass) >= (new Test)) ? "bad\n" : "unordered-ge\n";
 }
 
 #[test]
+fn compile_enum_case_relational_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-case-relational-comparisons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-case-relational-comparisons.php");
+    let output = root.join("enum-case-relational-comparisons-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo {
+    case Bar;
+    case Baz;
+}
+
+$bar = Foo::Bar;
+$baz = Foo::Baz;
+var_dump($bar < $baz);
+var_dump($bar <= $baz);
+var_dump($bar > $baz);
+var_dump($bar >= $baz);
+var_dump($bar <= $bar);
+var_dump($bar >= $bar);
+var_dump(Foo::Bar <= Foo::Bar);
+var_dump($bar > true);
+var_dump($bar >= true);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_object_scalar_cast_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-object-scalar-cast-warnings");
     fs::create_dir_all(&root).unwrap();
@@ -42219,6 +42268,52 @@ fn compile_const_array_literal_unpack_non_array_error_to_native_binary() {
             input.display()
         )
     );
+}
+
+#[test]
+fn compile_const_array_access_rejects_objects_before_arrayaccess_dispatch() {
+    let root = temp_dir("ptn-native-const-array-access-object-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("const-array-access-object-error.php");
+    let output = root.join("const-array-access-object-error-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo implements ArrayAccess {
+    case Bar;
+
+    public function offsetGet($key): mixed {
+        return 42;
+    }
+
+    public function offsetExists($key): bool {
+        return false;
+    }
+
+    public function offsetSet($key, $value): void {}
+    public function offsetUnset($key): void {}
+}
+
+class X {
+    const FOO_BAR = Foo::Bar[0];
+}
+
+var_dump(X::FOO_BAR);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Cannot use [] on objects in constant expression"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("[constant expression]()"), "{stderr}");
 }
 
 #[test]

@@ -12496,6 +12496,30 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
     return result.value;
 }
 
+static PTN_UNUSED PtnValue ptn_constant_expression_array_read(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(container);
+    if (
+        resolved.type == PTN_OBJECT ||
+        resolved.type == PTN_CLOSURE ||
+        resolved.type == PTN_EXCEPTION
+    ) {
+        const char *message = "Cannot use [] on objects in constant expression";
+        if (runtime != NULL) {
+            ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        } else {
+            fprintf(stderr, "Fatal error: %s\n", message);
+            exit(255);
+        }
+        return ptn_null();
+    }
+    return ptn_array_read(runtime, container, key_value, line);
+}
+
 static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     PtnRuntime *runtime,
     PtnValue container,

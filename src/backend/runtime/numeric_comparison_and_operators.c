@@ -485,6 +485,17 @@ static PTN_UNUSED int ptn_compare_objects_order(
     if (left == right) {
         return PTN_COMPARE_EQUAL;
     }
+    if (left->enum_case_name != NULL || right->enum_case_name != NULL) {
+        if (
+            left->enum_case_name != NULL &&
+            right->enum_case_name != NULL &&
+            ptn_compare_class_names(left->class_name, right->class_name) == PTN_COMPARE_EQUAL &&
+            strcmp(left->enum_case_name, right->enum_case_name) == 0
+        ) {
+            return PTN_COMPARE_EQUAL;
+        }
+        return PTN_COMPARE_UNORDERED;
+    }
     if (ptn_compare_class_names(left->class_name, right->class_name) != PTN_COMPARE_EQUAL) {
         return PTN_COMPARE_UNORDERED;
     }

@@ -1910,7 +1910,7 @@ impl Parser<'_> {
                     }
                     if !is_supported_const_declaration_expr(&value) {
                         return Err(Diagnostic::new(
-                            "enum case value must be a supported constant expression",
+                            "Constant expression contains invalid operations",
                             Some(value.span()),
                         ));
                     }

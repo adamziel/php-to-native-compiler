@@ -36610,6 +36610,11 @@ impl ValueEmitter {
             ValueExpr::ArrayAccess { array, index, line } => {
                 let array_temp = self.emit_materialized_value(out, array);
                 let result_temp = self.next_temp();
+                let read_function = if self.in_const_declaration {
+                    "ptn_constant_expression_array_read"
+                } else {
+                    "ptn_array_read"
+                };
                 if value_expr_is_nullsafe_chain(array) {
                     out.push_str("    PtnValue ");
                     out.push_str(&result_temp);
@@ -36626,7 +36631,9 @@ impl ValueEmitter {
                     let index_temp = self.emit_materialized_value(out, index);
                     out.push_str("        ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(" = ");
+                    out.push_str(read_function);
+                    out.push_str("(&runtime, ");
                     out.push_str(&array_snapshot_temp);
                     out.push_str(", ");
                     out.push_str(&index_temp);
@@ -36646,7 +36653,9 @@ impl ValueEmitter {
                     let index_temp = self.emit_materialized_value(out, index);
                     out.push_str("    PtnValue ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_array_read(&runtime, ");
+                    out.push_str(" = ");
+                    out.push_str(read_function);
+                    out.push_str("(&runtime, ");
                     out.push_str(&array_snapshot_temp);
                     out.push_str(", ");
                     out.push_str(&index_temp);
