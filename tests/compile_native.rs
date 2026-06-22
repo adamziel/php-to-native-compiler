@@ -5623,6 +5623,8 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     );
     assert_eq!(builtin_offset_write.kind, DiagnosticKind::Fatal);
 
+    parser::parse("<?php chr(0)[0] = 1; chr(0)[0][] = 1; chr(0)[0] ??= 'x';").unwrap();
+
     let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
     assert_eq!(unset_append.message, "Cannot use [] for unsetting");
     assert_eq!(unset_append.kind, DiagnosticKind::Fatal);
@@ -53427,6 +53429,56 @@ var_dump($str);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         expected_stdout
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_call_result_string_offset_write_contexts_to_native_binary() {
+    let root = temp_dir("ptn-native-call-result-string-offset-write-contexts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-result-string-offset-write-contexts.php");
+    let output = root.join("call-result-string-offset-write-contexts-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    chr(0)[0][] = 1;
+} catch (Error $e) {
+    var_dump($e->getMessage());
+}
+try {
+    unset(chr(0)[0][0]);
+} catch (Error $e) {
+    var_dump($e->getMessage());
+}
+eval("function runtimetest(&\$a) {} ");
+try {
+    runtimetest(chr(0)[0]);
+} catch (Error $e) {
+    var_dump($e->getMessage());
+}
+try {
+    ++chr(0)[0];
+} catch (Error $e) {
+    var_dump($e->getMessage());
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(36) \"Cannot use string offset as an array\"\n",
+            "string(36) \"Cannot use string offset as an array\"\n",
+            "string(47) \"Cannot create references to/from string offsets\"\n",
+            "string(41) \"Cannot increment/decrement string offsets\"\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

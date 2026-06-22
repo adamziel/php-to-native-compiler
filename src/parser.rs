@@ -6164,6 +6164,16 @@ impl Parser<'_> {
             self.index = start_index;
             return self.parse_expression_statement();
         }
+        if let Some(statement) = self.literal_eval_function_declaration_statement(
+            &name,
+            &arguments,
+            &argument_names,
+            &argument_unpacks,
+            span,
+        )? {
+            self.expect_statement_terminator()?;
+            return Ok(statement);
+        }
         validate_mutating_array_internal_call(&name, &arguments, span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
@@ -6173,6 +6183,56 @@ impl Parser<'_> {
             argument_unpacks,
             span,
         })
+    }
+
+    fn literal_eval_function_declaration_statement(
+        &mut self,
+        name: &str,
+        arguments: &[Expr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        span: SourceSpan,
+    ) -> Result<Option<Statement>> {
+        if !name.eq_ignore_ascii_case("eval")
+            || arguments.len() != 1
+            || argument_names.iter().any(Option::is_some)
+            || argument_unpacks.iter().any(|unpack| *unpack)
+        {
+            return Ok(None);
+        }
+
+        let Some(eval_source) = compile_time_string_literal(&arguments[0]) else {
+            return Ok(None);
+        };
+        let eval_source = eval_source.trim();
+        if !eval_source.to_ascii_lowercase().starts_with("function") {
+            return Ok(None);
+        }
+
+        let eval_program = parse_with_options(
+            &format!("<?php {eval_source}"),
+            &self.runtime_class_aliases,
+            &self.external_classes,
+            &self.external_traits,
+            self.validate_method_signatures,
+        )?;
+        if !eval_program.classes.is_empty()
+            || !eval_program.traits.is_empty()
+            || eval_program.functions.len() != 1
+            || !eval_program.statements.is_empty()
+        {
+            return Ok(None);
+        }
+
+        let mut function = eval_program
+            .functions
+            .into_iter()
+            .next()
+            .expect("checked one eval function");
+        function.is_conditionally_declared = true;
+        let name = function.name.clone();
+        self.nested_functions.push(function);
+        Ok(Some(Statement::FunctionDeclaration { name, span }))
     }
 
     fn parse_unset_statement(&mut self) -> Result<Statement> {
@@ -12821,6 +12881,14 @@ fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {
         Expr::String(value, _) if !value.contains('\0') => Some(value.clone()),
         Expr::Int(value, _) => Some(value.to_string()),
         Expr::DynamicVariable { name, .. } => literal_member_name_from_expr(name),
+        _ => None,
+    }
+}
+
+fn compile_time_string_literal(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::String(value, _) => Some(value),
+        Expr::Grouped { expr, .. } => compile_time_string_literal(expr),
         _ => None,
     }
 }
@@ -23808,6 +23876,7 @@ fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> 
     match expr {
         Expr::Call { name, span, .. }
             if is_modeled_internal_function_name(name)
+                && !modeled_internal_may_return_string(name)
                 && !modeled_internal_has_by_ref_parameter(name) =>
         {
             Some(*span)
@@ -23815,6 +23884,93 @@ fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> 
         Expr::Grouped { expr, .. } => modeled_internal_write_context_error_span(expr),
         _ => None,
     }
+}
+
+fn modeled_internal_may_return_string(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "addcslashes"
+            | "addslashes"
+            | "base64_decode"
+            | "base64_encode"
+            | "bin2hex"
+            | "chop"
+            | "chr"
+            | "chunk_split"
+            | "convert_uudecode"
+            | "convert_uuencode"
+            | "crypt"
+            | "dirname"
+            | "escapeshellarg"
+            | "hash"
+            | "hash_final"
+            | "hex2bin"
+            | "html_entity_decode"
+            | "htmlentities"
+            | "iconv"
+            | "iconv_substr"
+            | "implode"
+            | "join"
+            | "lcfirst"
+            | "ltrim"
+            | "md5"
+            | "md5_file"
+            | "metaphone"
+            | "mb_chr"
+            | "mb_convert_case"
+            | "mb_convert_encoding"
+            | "mb_convert_kana"
+            | "mb_decode_mimeheader"
+            | "mb_encode_mimeheader"
+            | "mb_lcfirst"
+            | "mb_ltrim"
+            | "mb_preferred_mime_name"
+            | "mb_rtrim"
+            | "mb_scrub"
+            | "mb_str_pad"
+            | "mb_strcut"
+            | "mb_strimwidth"
+            | "mb_stristr"
+            | "mb_strtolower"
+            | "mb_strtoupper"
+            | "mb_substitute_character"
+            | "mb_substr"
+            | "mb_trim"
+            | "mb_ucfirst"
+            | "ob_get_contents"
+            | "pack"
+            | "quoted_printable_decode"
+            | "quoted_printable_encode"
+            | "quotemeta"
+            | "rawurldecode"
+            | "rawurlencode"
+            | "rtrim"
+            | "sha1"
+            | "sha1_file"
+            | "soundex"
+            | "sprintf"
+            | "str_increment"
+            | "str_pad"
+            | "str_repeat"
+            | "str_rot13"
+            | "stristr"
+            | "strpbrk"
+            | "strrev"
+            | "strstr"
+            | "strtolower"
+            | "strtoupper"
+            | "strip_tags"
+            | "stripcslashes"
+            | "stripslashes"
+            | "substr"
+            | "trim"
+            | "ucfirst"
+            | "urldecode"
+            | "urlencode"
+            | "utf8_decode"
+            | "utf8_encode"
+            | "vsprintf"
+    )
 }
 
 fn validate_expression_assignment_target(
