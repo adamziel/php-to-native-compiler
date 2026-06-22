@@ -72197,22 +72197,10 @@ static int ptn_iterator_to_array_key(
     PtnArrayKey *key_out
 ) {
     PtnValue key = ptn_value_deref(key_value);
-    if (key.type == PTN_INT || key.type == PTN_STRING) {
-        *key_out = ptn_array_key_from_value(key);
-        return 1;
+    if (key.type == PTN_FLOAT || key.type == PTN_NULL || key.type == PTN_RESOURCE) {
+        ptn_emit_array_offset_key_conversion_diagnostic(runtime, key, line, 1);
     }
-    char message[160];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "Illegal offset type %s",
-        ptn_offset_container_type_name(key)
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
-    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
-    return 0;
+    return ptn_array_offset_key_from_value(runtime, key, line, 0, key_out);
 }
 
 static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -131704,9 +131692,19 @@ static PtnValue ptn_callback_filter_iterator_new_for_class(
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
+    char callback_scope[96];
+    int callback_scope_len = snprintf(
+        callback_scope,
+        sizeof(callback_scope),
+        "%s::__construct",
+        class_name
+    );
+    if (callback_scope_len < 0 || (size_t)callback_scope_len >= sizeof(callback_scope)) {
+        ptn_abort_out_of_memory();
+    }
     PtnValue callback = ptn_internal_expect_callback_arg(
         runtime,
-        class_name,
+        callback_scope,
         2,
         "callback",
         args[1]
@@ -134076,8 +134074,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     if (ptn_internal_class_name_is_caching_iterator(receiver_class_name)) {
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
     }
-    ptn_throw_exception(runtime, "Error", "Call to undefined method");
-    return ptn_null();
+    return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
 }
 
 static void ptn_recursive_iterator_iterator_rewind_data(
