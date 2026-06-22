@@ -37248,7 +37248,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 3);
     push_u32(&mut manifest, 0);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0x000001b6);
     push_u32(&mut manifest, 0);
 
     let mut source = Vec::new();
@@ -37256,9 +37256,21 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
         b"<?php\n\
 $phar = new Phar(__FILE__);\n\
 var_dump($phar->getMetadata());\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+var_dump($phar->copy(\"test.txt\", \"copied.txt\"));\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+echo $phar[\"copied.txt\"]->getContent();\n\
+$phar->setMetadata(\"bye\");\n\
+var_dump($phar->getMetadata());\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 $phar[\"test.txt\"] = \"changed\\n\";\n\
 echo $phar[\"test.txt\"]->getContent();\n\
+var_dump($phar[\"test.txt\"]->getMetadata());\n\
+$phar[\"test.txt\"]->setMetadata(\"file\");\n\
+var_dump($phar[\"test.txt\"]->getMetadata());\n\
+printf(\"%o\\n\", fileperms(\"phar://\" . __FILE__ . \"/test.txt\"));\n\
+$phar[\"test.txt\"]->chmod(0444);\n\
+printf(\"%o\\n\", fileperms(\"phar://\" . __FILE__ . \"/test.txt\"));\n\
 mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
 var_dump(is_dir(\"phar://\" . __FILE__ . \"/dir\"), isset($phar[\"dir\"]));\n\
 Phar::mount(\"mounted.txt\", \"phar://\" . __FILE__ . \"/test.txt\");\n\
@@ -37278,7 +37290,24 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"hi\"\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
+        concat!(
+            "string(2) \"hi\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "hi\n",
+            "string(3) \"bye\"\n",
+            "hi\n",
+            "changed\n",
+            "NULL\n",
+            "string(4) \"file\"\n",
+            "100666\n",
+            "100444\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "changed\n",
+            "bool(false)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

@@ -4263,6 +4263,7 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
 typedef struct PtnPharArchiveState PtnPharArchiveState;
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
 static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out);
+static int ptn_phar_uri_entry_stat(const char *uri, struct stat *info);
 static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, size_t *len_out);
 static int ptn_phar_uri_set_entry(const char *uri, const unsigned char *data, size_t len);
 static int ptn_phar_uri_rename_entry(const char *source_uri, const char *dest_uri);
@@ -49908,6 +49909,15 @@ static int ptn_stat_path_from_value(
         return 0;
     }
 
+    if (strncmp(path, "phar://", 7) == 0) {
+        int ok = ptn_phar_uri_entry_stat(path, info);
+        if (!ok) {
+            ptn_emit_stat_warning(runtime, function_name, failure_kind, path, line);
+        }
+        free(path);
+        return ok;
+    }
+
     int ok = use_lstat ? ptn_lstat_path(path, info) == 0 : ptn_stat_path(path, info) == 0;
     if (!ok && ptn_current_source_snapshot_stat(runtime, path, info)) {
         ok = 1;
@@ -93180,6 +93190,31 @@ static int ptn_phar_archive_rename_entry(
     return 1;
 }
 
+static int ptn_phar_archive_copy_entry(
+    PtnPharArchiveState *archive,
+    const char *source_name,
+    const char *dest_name
+) {
+    size_t source_index = 0;
+    if (archive == NULL ||
+        source_name == NULL ||
+        dest_name == NULL ||
+        !ptn_phar_archive_find_entry_index(archive, source_name, &source_index)) {
+        return 0;
+    }
+    PtnPharArchiveEntry *source = &archive->entries[source_index];
+    ptn_phar_archive_set_manifest_entry(
+        archive,
+        dest_name,
+        source->content,
+        source->content_len,
+        source->metadata,
+        source->metadata_len,
+        source->flags
+    );
+    return 1;
+}
+
 static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const char *name) {
     size_t index = 0;
     if (!ptn_phar_archive_find_entry_index(archive, name, &index)) {
@@ -93691,6 +93726,38 @@ static PtnValue ptn_phar_metadata_value(const unsigned char *data, size_t len) {
     return ptn_owned_string_len(ptn_duplicate_string_len((const char *)data, len), len);
 }
 
+static unsigned char *ptn_phar_serialize_metadata_value(PtnValue value, size_t *len_out) {
+    value = ptn_value_deref(value);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(&buffer, "N;");
+            break;
+        case PTN_BOOL:
+            ptn_string_buffer_append_format(&buffer, "b:%d;", value.as.boolean ? 1 : 0);
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(&buffer, "i:%lld;", (long long)value.as.integer);
+            break;
+        case PTN_STRING:
+            ptn_string_buffer_append_format(&buffer, "s:%zu:\"", value.as.string.len);
+            ptn_string_buffer_append_len(&buffer, (const char *)value.as.string.data, value.as.string.len);
+            ptn_string_buffer_append(&buffer, "\";");
+            break;
+        default: {
+            PtnStringOperand operand = ptn_value_to_string_operand(value);
+            ptn_string_buffer_append_format(&buffer, "s:%zu:\"", operand.len);
+            ptn_string_buffer_append_len(&buffer, operand.data, operand.len);
+            ptn_string_buffer_append(&buffer, "\";");
+            ptn_string_operand_free(operand);
+            break;
+        }
+    }
+    *len_out = buffer.len;
+    return (unsigned char *)buffer.data;
+}
+
 static PtnValue ptn_phar_file_info_new(
     PtnRuntime *runtime,
     PtnPharArchiveState *archive,
@@ -93920,6 +93987,25 @@ static PtnValue ptn_phar_call_method(
         free(entry_name);
         return ptn_bool(removed);
     }
+    if (ptn_ascii_case_equal(name, "copy")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::copy() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        char *source_name = ptn_phar_string_arg(runtime, "Phar::copy", 1, "from", args[0], line);
+        if (source_name == NULL) {
+            return ptn_null();
+        }
+        char *dest_name = ptn_phar_string_arg(runtime, "Phar::copy", 2, "to", args[1], line);
+        if (dest_name == NULL) {
+            free(source_name);
+            return ptn_null();
+        }
+        int copied = ptn_phar_archive_copy_entry(data->archive, source_name, dest_name);
+        free(dest_name);
+        free(source_name);
+        return ptn_bool(copied);
+    }
     if (ptn_ascii_case_equal(name, "getMetadata")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
             return ptn_null();
@@ -93931,6 +94017,18 @@ static PtnValue ptn_phar_call_method(
             return ptn_null();
         }
         return ptn_phar_signature_array(runtime, data->archive);
+    }
+    if (ptn_ascii_case_equal(name, "setMetadata")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setMetadata() expects exactly 1 argument");
+            return ptn_null();
+        }
+        size_t metadata_len = 0;
+        unsigned char *metadata = ptn_phar_serialize_metadata_value(args[0], &metadata_len);
+        free(data->archive->metadata);
+        data->archive->metadata = metadata;
+        data->archive->metadata_len = metadata_len;
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getAlias")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
@@ -94202,6 +94300,18 @@ static PtnValue ptn_phar_file_info_call_method(
         }
         return ptn_phar_metadata_value(entry->metadata, entry->metadata_len);
     }
+    if (ptn_ascii_case_equal(name, "setMetadata")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "PharFileInfo::setMetadata() expects exactly 1 argument");
+            return ptn_null();
+        }
+        size_t metadata_len = 0;
+        unsigned char *metadata = ptn_phar_serialize_metadata_value(args[0], &metadata_len);
+        free(entry->metadata);
+        entry->metadata = metadata;
+        entry->metadata_len = metadata_len;
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "delMetadata")) {
         if (!ptn_phar_expect_no_arguments(runtime, "PharFileInfo", name, argc)) {
             return ptn_null();
@@ -94235,6 +94345,18 @@ static PtnValue ptn_phar_file_info_call_method(
             return ptn_null();
         }
         entry->flags &= ~(uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "chmod")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "PharFileInfo::chmod() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t mode = ptn_internal_expect_integer_arg(runtime, "PharFileInfo::chmod", 1, "permissions", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        entry->flags = (entry->flags & ~(uint32_t)0777) | ((uint32_t)mode & 0777);
         return ptn_bool(1);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -94359,6 +94481,30 @@ static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out) {
 
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri) {
     return ptn_phar_uri_entry_status(uri, NULL);
+}
+
+static int ptn_phar_uri_entry_stat(const char *uri, struct stat *info) {
+    PtnPharArchiveState *archive = NULL;
+    char *entry_name = NULL;
+    if (!ptn_phar_uri_archive_and_entry(uri, &archive, &entry_name)) {
+        return 0;
+    }
+    size_t index = 0;
+    if (!ptn_phar_archive_find_entry_index(archive, entry_name, &index)) {
+        free(entry_name);
+        return 0;
+    }
+    PtnPharArchiveEntry *entry = &archive->entries[index];
+    memset(info, 0, sizeof(*info));
+    uint32_t mode = entry->flags & 0777;
+    if (mode == 0) {
+        mode = ptn_phar_archive_entry_is_dir(entry) ? 0777 : 0666;
+    }
+    info->st_mode = (mode_t)((ptn_phar_archive_entry_is_dir(entry) ? 0040000 : 0100000) | (mode & 0777));
+    info->st_nlink = 1;
+    info->st_size = (off_t)entry->content_len;
+    free(entry_name);
+    return 1;
 }
 
 static int ptn_phar_uri_read_entry(const char *uri, unsigned char **data_out, size_t *len_out) {
@@ -105181,6 +105327,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "buildFromDirectory")
             || ptn_ascii_case_equal(method_name, "buildFromIterator")
             || ptn_ascii_case_equal(method_name, "compressFiles")
+            || ptn_ascii_case_equal(method_name, "copy")
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "delete")
             || ptn_ascii_case_equal(method_name, "decompressFiles")
@@ -105198,6 +105345,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "setAlias")
             || ptn_ascii_case_equal(method_name, "setDefaultStub")
             || ptn_ascii_case_equal(method_name, "setSignatureAlgorithm")
+            || ptn_ascii_case_equal(method_name, "setMetadata")
             || ptn_ascii_case_equal(method_name, "setStub")
             || ptn_ascii_case_equal(method_name, "valid")
             || ptn_ascii_case_equal(method_name, "apiVersion")
@@ -105209,12 +105357,14 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "mount");
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
-        return ptn_ascii_case_equal(method_name, "compress")
+        return ptn_ascii_case_equal(method_name, "chmod")
+            || ptn_ascii_case_equal(method_name, "compress")
             || ptn_ascii_case_equal(method_name, "decompress")
             || ptn_ascii_case_equal(method_name, "delMetadata")
             || ptn_ascii_case_equal(method_name, "getContent")
             || ptn_ascii_case_equal(method_name, "getMetadata")
-            || ptn_ascii_case_equal(method_name, "isCompressed");
+            || ptn_ascii_case_equal(method_name, "isCompressed")
+            || ptn_ascii_case_equal(method_name, "setMetadata");
     }
     if (ptn_internal_class_name_is_random_randomizer(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -106567,6 +106717,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "canCompress");
         ptn_append_method_name(result, &index, "canWrite");
         ptn_append_method_name(result, &index, "compressFiles");
+        ptn_append_method_name(result, &index, "copy");
         ptn_append_method_name(result, &index, "current");
         ptn_append_method_name(result, &index, "delete");
         ptn_append_method_name(result, &index, "decompressFiles");
@@ -106588,17 +106739,20 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "setAlias");
         ptn_append_method_name(result, &index, "setDefaultStub");
         ptn_append_method_name(result, &index, "setSignatureAlgorithm");
+        ptn_append_method_name(result, &index, "setMetadata");
         ptn_append_method_name(result, &index, "setStub");
         ptn_append_method_name(result, &index, "valid");
         return result;
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
+        ptn_append_method_name(result, &index, "chmod");
         ptn_append_method_name(result, &index, "compress");
         ptn_append_method_name(result, &index, "decompress");
         ptn_append_method_name(result, &index, "delMetadata");
         ptn_append_method_name(result, &index, "getContent");
         ptn_append_method_name(result, &index, "getMetadata");
         ptn_append_method_name(result, &index, "isCompressed");
+        ptn_append_method_name(result, &index, "setMetadata");
         return result;
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
