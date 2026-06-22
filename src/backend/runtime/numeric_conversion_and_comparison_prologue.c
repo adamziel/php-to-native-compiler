@@ -4189,12 +4189,40 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(3);
             return 1;
         }
+        if (strcmp(constant, "NONE") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "COMPRESSED") == 0) {
+            *out = ptn_int(0xf000);
+            return 1;
+        }
         if (strcmp(constant, "MD5") == 0) {
             *out = ptn_int(0x0001);
             return 1;
         }
         if (strcmp(constant, "SHA1") == 0) {
             *out = ptn_int(0x0002);
+            return 1;
+        }
+        if (strcmp(constant, "SHA256") == 0) {
+            *out = ptn_int(0x0003);
+            return 1;
+        }
+        if (strcmp(constant, "SHA512") == 0) {
+            *out = ptn_int(0x0004);
+            return 1;
+        }
+        if (strcmp(constant, "OPENSSL") == 0) {
+            *out = ptn_int(0x0010);
+            return 1;
+        }
+        if (strcmp(constant, "OPENSSL_SHA256") == 0) {
+            *out = ptn_int(0x0011);
+            return 1;
+        }
+        if (strcmp(constant, "OPENSSL_SHA512") == 0) {
+            *out = ptn_int(0x0012);
             return 1;
         }
         if (strcmp(constant, "GZ") == 0) {
