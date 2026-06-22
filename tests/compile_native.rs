@@ -39450,8 +39450,10 @@ var_dump($nested);",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        normalized_stdout,
         "Cannot use a scalar value as an array\nint(7)\nCannot use a scalar value as an array\nint(3)\nCannot use a scalar value as an array\nbool(true)\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 13\narray(1) {\n  [0]=>\n  string(2) \"ok\"\n}\n\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 16\nCannot use a scalar value as an array\narray(3) {\n  [0]=>\n  array(1) {\n    [1]=>\n    string(9) \"converted\"\n  }\n  [1]=>\n  array(1) {\n    [2]=>\n    string(14) \"null-converted\"\n  }\n  [2]=>\n  int(1)\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -39874,8 +39876,10 @@ var_dump($b);\n",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        normalized_stdout,
         "\nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 3\nbool(false)\n\
 \nDeprecated: Automatic conversion of false to array is deprecated in ptn on line 6\nbool(false)\n"
     );

@@ -8116,7 +8116,7 @@ static PTN_UNUSED void ptn_emit_false_array_conversion_deprecation(PtnRuntime *r
     )) {
         return;
     }
-    ptn_emit_array_runtime_diagnostic_at_path(runtime, "Deprecated", message, "ptn", line);
+    ptn_emit_array_runtime_diagnostic(runtime, "Deprecated", message, line);
 }
 
 static PTN_UNUSED PtnArray *ptn_array_convertible_scalar_for_write(
