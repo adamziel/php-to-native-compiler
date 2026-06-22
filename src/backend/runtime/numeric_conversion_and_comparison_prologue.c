@@ -348,10 +348,7 @@ static PTN_UNUSED void ptn_runtime_drop_call_frame_arguments(PtnRuntime *runtime
     if (runtime == NULL || runtime->call_frame == NULL || runtime->call_frame->args == NULL) {
         return;
     }
-    for (size_t i = 0; i < runtime->call_frame->argc; i++) {
-        PtnValue arg = runtime->call_frame->args[i];
-        ptn_value_destroy(&arg);
-    }
+    /* Call-frame arguments are borrowed from the caller; only detach stale frame pointers. */
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
     runtime->owned_trace_frame.argc = 0;

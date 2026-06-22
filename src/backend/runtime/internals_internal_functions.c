@@ -17550,11 +17550,7 @@ static void ptn_array_walk_call_function(
         if (has_userdata) {
             ptn_value_destroy(&callback_args[2]);
         }
-        if (
-            created_reference &&
-            created_walk_reference != NULL &&
-            created_walk_reference->refcount <= 2
-        ) {
+        if (created_reference && created_walk_reference != NULL) {
             for (size_t i = 0; i < array->len; i++) {
                 ptn_value_unwrap_reference_slots(&array->entries[i].value, created_walk_reference, 0);
             }
@@ -17714,6 +17710,7 @@ static PtnValue ptn_array_walk_checked(
         runtime->by_ref_argument_notice_emitted = 0;
         runtime->by_ref_argument_notice_line = line;
     }
+    PtnValue stable_userdata = has_userdata ? ptn_value_clone_deref(userdata) : ptn_null();
     PtnValue result = ptn_array_walk_slot(
         runtime,
         name,
@@ -17721,9 +17718,10 @@ static PtnValue ptn_array_walk_checked(
         value,
         checked_callback,
         has_userdata,
-        userdata,
+        stable_userdata,
         line
     );
+    ptn_value_destroy(&stable_userdata);
     runtime->by_ref_argument_notice_line = previous_by_ref_argument_notice_line;
     runtime->by_ref_argument_notice_emitted = previous_by_ref_argument_notice_emitted;
     runtime->by_ref_argument_notice_pending = previous_by_ref_argument_notice_pending;
@@ -17951,18 +17949,20 @@ static PtnValue ptn_array_walk_recursive_checked(
         runtime->by_ref_argument_notice_emitted = 0;
         runtime->by_ref_argument_notice_line = line;
     }
+    PtnValue stable_userdata = has_userdata ? ptn_value_clone_deref(userdata) : ptn_null();
     ptn_array_walk_recursive_array(
         runtime,
         array,
         object,
         checked_callback,
         has_userdata,
-        userdata,
+        stable_userdata,
         name,
         local_slot,
         value,
         line
     );
+    ptn_value_destroy(&stable_userdata);
     runtime->by_ref_argument_notice_line = previous_by_ref_argument_notice_line;
     runtime->by_ref_argument_notice_emitted = previous_by_ref_argument_notice_emitted;
     runtime->by_ref_argument_notice_pending = previous_by_ref_argument_notice_pending;

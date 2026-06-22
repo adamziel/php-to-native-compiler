@@ -59893,6 +59893,54 @@ var_dump($user_data->sum);
 }
 
 #[test]
+fn compile_array_walk_closure_use_by_ref_capture_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-closure-use-ref-capture");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-closure-use-ref-capture.php");
+    let output = root.join("array-walk-closure-use-ref-capture-bin");
+    fs::write(
+        &input,
+        "<?php
+$ar = [\"one\" => 1, \"two\" => 2, \"three\" => 3];
+$user_data = [\"sum\" => 42];
+$func = function($value, $key) use (&$user_data) {
+    var_dump($user_data);
+    $user_data[\"sum\"] += $value;
+};
+var_dump(array_walk($ar, $func, $user_data));
+echo \"end=\";
+var_dump($user_data[\"sum\"]);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"sum\"]=>\n",
+            "  int(42)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"sum\"]=>\n",
+            "  int(43)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"sum\"]=>\n",
+            "  int(45)\n",
+            "}\n",
+            "bool(true)\n",
+            "end=int(48)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_walk_keys_and_builtin_callbacks_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-keys-builtins");
     fs::create_dir_all(&root).unwrap();
