@@ -22086,8 +22086,9 @@ fn emit_try(
     let saved_trace_temp = values.next_temp();
     let saved_called_class_override_temp = values.next_temp();
     let end_label = values.next_label("ptn_try_end");
-    let control_dispatch_label =
-        (!finally_body.is_empty()).then(|| values.next_label("ptn_try_finally_dispatch"));
+    let needs_cleanup_context = finally_body.is_empty() && !catches.is_empty();
+    let control_dispatch_label = (!finally_body.is_empty() || needs_cleanup_context)
+        .then(|| values.next_label("ptn_try_finally_dispatch"));
     let control_target_temp = control_dispatch_label.as_ref().map(|_| values.next_temp());
     let try_or_catch_can_return = instructions_contain_return(body)
         || catches
@@ -22100,13 +22101,12 @@ fn emit_try(
             None
         };
     let body_return_target = return_label.as_deref().or(return_target);
-    let frame_active_temp = if !finally_body.is_empty() {
+    let frame_active_temp = if !finally_body.is_empty() || needs_cleanup_context {
         Some(values.next_temp())
     } else {
         None
     };
-    let catch_active_temp =
-        (!finally_body.is_empty() && !catches.is_empty()).then(|| values.next_temp());
+    let catch_active_temp = (!catches.is_empty()).then(|| values.next_temp());
     let body_labels = instruction_labels_excluding_nested_try(body);
     let body_gotos = instruction_gotos(body);
     let can_scope_body_labels = !body_labels.is_empty()
@@ -22224,12 +22224,23 @@ fn emit_try(
     if let (Some(dispatch_label), Some(target_temp)) =
         (&control_dispatch_label, &control_target_temp)
     {
-        finally_stack.push(FinallyContext::new_finally(
-            control_targets.len(),
-            dispatch_label.clone(),
-            target_temp.clone(),
-            try_context_labels(body, catches, finally_body),
-        ));
+        let context_labels = try_context_labels(body, catches, finally_body);
+        let context = if needs_cleanup_context {
+            FinallyContext::new_cleanup(
+                control_targets.len(),
+                dispatch_label.clone(),
+                target_temp.clone(),
+                context_labels,
+            )
+        } else {
+            FinallyContext::new_finally(
+                control_targets.len(),
+                dispatch_label.clone(),
+                target_temp.clone(),
+                context_labels,
+            )
+        };
+        finally_stack.push(context);
     }
     out.push_str("        if (setjmp(");
     out.push_str(&frame_temp);

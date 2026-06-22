@@ -53862,6 +53862,46 @@ foreach ([new A(1)] as $a) {
 }
 
 #[test]
+fn compile_foreach_by_ref_temporary_return_pops_catch_frame_before_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-ref-temp-return-catch-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-ref-temp-return-catch-cleanup.php");
+    let output = root.join("foreach-ref-temp-return-catch-cleanup-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Bar {
+    public $foo = 1;
+    public $bar = 1;
+    function __destruct() {
+        throw $this->foo;
+    }
+}
+
+foreach (new Bar as &$foo) {
+    try {
+        $foo = new Exception;
+        return;
+    } catch (Exception $e) {
+        echo "exception\n";
+    }
+}
+echo "end\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Uncaught Exception"));
+    assert!(!stderr.contains("exception\n"));
+}
+
+#[test]
 fn compile_goto_inside_plain_blocks_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-goto-jump14-blocks");
     fs::create_dir_all(&root).unwrap();
