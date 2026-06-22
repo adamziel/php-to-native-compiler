@@ -79175,6 +79175,11 @@ typedef struct {
 } PtnXmlNamespaceEntry;
 
 typedef struct {
+    char *prefix;
+    char *uri;
+} PtnDomNamespaceBinding;
+
+typedef struct {
     size_t *newlines;
     size_t count;
     size_t capacity;
@@ -79435,6 +79440,20 @@ static const char *ptn_dom_xmlns_namespace_uri(void) {
 static const char *ptn_dom_xml_namespace_uri(void) {
     return "http://www.w3.org/XML/1998/namespace";
 }
+
+static const char *ptn_dom_xhtml_namespace_uri(void) {
+    return "http://www.w3.org/1999/xhtml";
+}
+
+static const char *ptn_dom_svg_namespace_uri(void) {
+    return "http://www.w3.org/2000/svg";
+}
+
+static const char *ptn_dom_mathml_namespace_uri(void) {
+    return "http://www.w3.org/1998/Math/MathML";
+}
+
+static void ptn_dom_apply_html_parser_namespace(PtnXmlNode *element);
 
 static void ptn_xml_node_ensure_object(PtnRuntime *runtime, PtnXmlNode *node) {
     if (node == NULL || node->object != NULL) {
@@ -81351,10 +81370,47 @@ static int ptn_xml_name_has_prefix(const char *name) {
 }
 
 static int ptn_xml_node_matches_tag(PtnXmlNode *node, const char *tag_name) {
+    const char *requested = tag_name == NULL ? "*" : tag_name;
+    const char *node_name = node == NULL || node->name == NULL ? "" : node->name;
     return node != NULL &&
         node->type == PTN_XML_NODE_ELEMENT &&
-        (ptn_ascii_case_equal(tag_name, "*") ||
-            ptn_ascii_case_equal(ptn_xml_local_name(node->name), tag_name));
+        (ptn_ascii_case_equal(requested, "*") ||
+            ptn_ascii_case_equal(strchr(requested, ':') == NULL ? ptn_xml_local_name(node_name) : node_name, requested));
+}
+
+static const char *ptn_dom_html_parser_namespace_for_element(PtnXmlNode *element) {
+    if (element == NULL || element->type != PTN_XML_NODE_ELEMENT) {
+        return NULL;
+    }
+    PtnXmlNode *document = ptn_xml_document_for_node(element);
+    if (document == NULL || !document->html_document) {
+        return NULL;
+    }
+    const char *local = ptn_xml_local_name(element->name);
+    if (ptn_ascii_case_equal(local, "svg")) {
+        return ptn_dom_svg_namespace_uri();
+    }
+    if (ptn_ascii_case_equal(local, "math")) {
+        return ptn_dom_mathml_namespace_uri();
+    }
+    if (element->parent != NULL && element->parent->namespace_uri != NULL) {
+        if (strcmp(element->parent->namespace_uri, ptn_dom_svg_namespace_uri()) == 0) {
+            return ptn_dom_svg_namespace_uri();
+        }
+        if (strcmp(element->parent->namespace_uri, ptn_dom_mathml_namespace_uri()) == 0) {
+            return ptn_dom_mathml_namespace_uri();
+        }
+    }
+    return ptn_dom_xhtml_namespace_uri();
+}
+
+static void ptn_dom_apply_html_parser_namespace(PtnXmlNode *element) {
+    const char *uri = ptn_dom_html_parser_namespace_for_element(element);
+    if (uri == NULL) {
+        return;
+    }
+    free(element->namespace_uri);
+    element->namespace_uri = ptn_duplicate_string(uri);
 }
 
 static int ptn_xml_node_matches_namespace(PtnXmlNode *node, const char *namespace_uri, const char *local_name) {
@@ -83931,6 +83987,7 @@ static void ptn_dom_element_attach_attribute(PtnRuntime *runtime, PtnXmlNode *el
     if (element == NULL || attr == NULL) {
         return;
     }
+    int namespace_declaration = ptn_xml_attribute_is_namespace_declaration(attr);
     if (attr->parent != NULL && attr->parent != element) {
         ptn_xml_detach_attribute(attr);
     }
@@ -83947,13 +84004,17 @@ static void ptn_dom_element_attach_attribute(PtnRuntime *runtime, PtnXmlNode *el
                 replace->parent = NULL;
                 attr->parent = element;
                 attr->owner_document = ptn_xml_document_for_node(element);
-                ptn_xml_resolve_namespace_recursive(element);
+                if (!namespace_declaration) {
+                    ptn_xml_resolve_namespace_recursive(element);
+                }
                 return;
             }
         }
     }
     ptn_xml_element_add_attribute(element, attr);
-    ptn_xml_resolve_namespace_recursive(element);
+    if (!namespace_declaration) {
+        ptn_xml_resolve_namespace_recursive(element);
+    }
 }
 
 static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node) {
@@ -84328,6 +84389,8 @@ static void ptn_xml_document_wrap_implied_html_body(PtnXmlNode *document) {
     body->modern_dom = document->modern_dom;
     html->html_document = document->html_document;
     body->html_document = document->html_document;
+    ptn_dom_apply_html_parser_namespace(html);
+    ptn_dom_apply_html_parser_namespace(body);
 
     size_t index = 0;
     while (index < document->child_count) {
@@ -84543,6 +84606,9 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
         }
         ptn_xml_append_child(stack[stack_len - 1], element);
         ptn_xml_resolve_namespace_recursive(element);
+        if (html_mode) {
+            ptn_dom_apply_html_parser_namespace(element);
+        }
         if (!self_closing) {
             ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, element);
         }
@@ -85654,6 +85720,241 @@ static PtnValue ptn_dom_lookup_prefix_method(PtnRuntime *runtime, PtnValue recei
     return ptn_owned_string(prefix);
 }
 
+static PtnStringOperand ptn_dom_nullable_string_arg(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_value_deref(value).type == PTN_NULL
+        ? ptn_string_operand_borrowed("")
+        : ptn_internal_expect_string_arg(runtime, method_name, position, argument_name, value, line);
+}
+
+static const char *ptn_dom_namespace_declaration_prefix(PtnXmlNode *attr) {
+    if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
+        return NULL;
+    }
+    const char *name = attr->name == NULL ? "" : attr->name;
+    if (strcmp(name, "xmlns") == 0) {
+        return "";
+    }
+    if (strncmp(name, "xmlns:", 6) == 0 && name[6] != '\0') {
+        return name + 6;
+    }
+    return NULL;
+}
+
+static const char *ptn_dom_lookup_namespace_uri_for_prefix(PtnXmlNode *node, const char *prefix) {
+    const char *requested_prefix = prefix == NULL ? "" : prefix;
+    if (strcmp(requested_prefix, "xml") == 0) {
+        return ptn_dom_xml_namespace_uri();
+    }
+    if (strcmp(requested_prefix, "xmlns") == 0) {
+        return ptn_dom_xmlns_namespace_uri();
+    }
+    PtnXmlNode *context = ptn_dom_lookup_prefix_context(node);
+    for (PtnXmlNode *current = context; current != NULL; current = current->parent) {
+        if (current->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        char *node_prefix = ptn_xml_prefix_dup(current->name);
+        int node_prefix_matches = strcmp(node_prefix, requested_prefix) == 0;
+        free(node_prefix);
+        if (node_prefix_matches) {
+            const char *uri = current->namespace_uri == NULL ? "" : current->namespace_uri;
+            if (uri[0] != '\0') {
+                return uri;
+            }
+        }
+        for (size_t i = 0; i < current->attribute_count; i++) {
+            PtnXmlNode *attr = current->attributes[i];
+            const char *declared_prefix = ptn_dom_namespace_declaration_prefix(attr);
+            if (declared_prefix == NULL || strcmp(declared_prefix, requested_prefix) != 0) {
+                continue;
+            }
+            const char *uri = attr->value == NULL ? "" : attr->value;
+            return uri[0] == '\0' ? NULL : uri;
+        }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_dom_lookup_namespace_uri_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMNode::lookupNamespaceURI", "exactly 1 argument", argc);
+    }
+    PtnStringOperand prefix = ptn_dom_nullable_string_arg(runtime, "DOMNode::lookupNamespaceURI", 1, "prefix", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *prefix_copy = ptn_duplicate_string_len(prefix.data, prefix.len);
+    ptn_string_operand_free(prefix);
+    const char *uri = ptn_dom_lookup_namespace_uri_for_prefix(ptn_xml_node_data(receiver), prefix_copy);
+    free(prefix_copy);
+    return uri == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(uri));
+}
+
+static PtnValue ptn_dom_is_default_namespace_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMNode::isDefaultNamespace", "exactly 1 argument", argc);
+    }
+    PtnStringOperand namespace_uri = ptn_dom_nullable_string_arg(runtime, "DOMNode::isDefaultNamespace", 1, "namespace", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
+    }
+    char *namespace_copy = ptn_duplicate_string_len(namespace_uri.data, namespace_uri.len);
+    ptn_string_operand_free(namespace_uri);
+    const char *default_uri = ptn_dom_lookup_namespace_uri_for_prefix(ptn_xml_node_data(receiver), "");
+    int matches = default_uri == NULL
+        ? namespace_copy[0] == '\0'
+        : strcmp(default_uri, namespace_copy) == 0;
+    free(namespace_copy);
+    return ptn_bool(matches);
+}
+
+static void ptn_dom_namespace_bindings_free(PtnDomNamespaceBinding *bindings, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        free(bindings[i].prefix);
+        free(bindings[i].uri);
+    }
+    free(bindings);
+}
+
+static void ptn_dom_namespace_bindings_set(
+    PtnDomNamespaceBinding **bindings,
+    size_t *count,
+    size_t *capacity,
+    const char *prefix,
+    const char *uri
+) {
+    prefix = prefix == NULL ? "" : prefix;
+    uri = uri == NULL ? "" : uri;
+    for (size_t i = 0; i < *count; i++) {
+        if (strcmp((*bindings)[i].prefix, prefix) == 0) {
+            free((*bindings)[i].uri);
+            (*bindings)[i].uri = ptn_duplicate_string(uri);
+            return;
+        }
+    }
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 4 : *capacity * 2;
+        if (new_capacity < *capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnDomNamespaceBinding *next = realloc(*bindings, new_capacity * sizeof(PtnDomNamespaceBinding));
+        if (next == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *bindings = next;
+        *capacity = new_capacity;
+    }
+    (*bindings)[*count].prefix = ptn_duplicate_string(prefix);
+    (*bindings)[*count].uri = ptn_duplicate_string(uri);
+    (*count)++;
+}
+
+static void ptn_dom_collect_in_scope_namespace_bindings(
+    PtnXmlNode *node,
+    PtnDomNamespaceBinding **bindings,
+    size_t *count,
+    size_t *capacity
+) {
+    if (node == NULL) {
+        return;
+    }
+    ptn_dom_collect_in_scope_namespace_bindings(node->parent, bindings, count, capacity);
+    if (node->type != PTN_XML_NODE_ELEMENT) {
+        return;
+    }
+    for (size_t i = 0; i < node->attribute_count; i++) {
+        PtnXmlNode *attr = node->attributes[i];
+        const char *prefix = ptn_dom_namespace_declaration_prefix(attr);
+        if (prefix == NULL) {
+            continue;
+        }
+        ptn_dom_namespace_bindings_set(bindings, count, capacity, prefix, attr->value == NULL ? "" : attr->value);
+    }
+}
+
+static PtnValue ptn_dom_namespace_info_object(PtnRuntime *runtime, PtnXmlNode *element, const char *prefix, const char *uri) {
+    PtnValue object = ptn_object_new_shell(runtime, "Dom\\NamespaceInfo");
+    ptn_array_set_entry_publish_first(
+        object.as.object->properties,
+        ptn_array_string_key("prefix"),
+        prefix == NULL || prefix[0] == '\0' ? ptn_null() : ptn_owned_string(ptn_duplicate_string(prefix))
+    );
+    ptn_array_set_entry_publish_first(
+        object.as.object->properties,
+        ptn_array_string_key("namespaceURI"),
+        ptn_owned_string(ptn_duplicate_string(uri == NULL ? "" : uri))
+    );
+    ptn_array_set_entry_publish_first(
+        object.as.object->properties,
+        ptn_array_string_key("element"),
+        ptn_xml_node_value_for_runtime(runtime, element)
+    );
+    return object;
+}
+
+static void ptn_dom_namespace_list_append_in_scope(PtnRuntime *runtime, PtnValue result, PtnXmlNode *element, int64_t *index) {
+    PtnDomNamespaceBinding *bindings = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    ptn_dom_collect_in_scope_namespace_bindings(element, &bindings, &count, &capacity);
+    for (size_t i = 0; i < count; i++) {
+        if (bindings[i].uri == NULL || bindings[i].uri[0] == '\0') {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((*index)++),
+            ptn_dom_namespace_info_object(runtime, element, bindings[i].prefix, bindings[i].uri)
+        );
+    }
+    ptn_dom_namespace_bindings_free(bindings, count);
+}
+
+static void ptn_dom_namespace_list_append_descendants(PtnRuntime *runtime, PtnValue result, PtnXmlNode *node, int64_t *index) {
+    if (node == NULL) {
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT) {
+        ptn_dom_namespace_list_append_in_scope(runtime, result, node, index);
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_dom_namespace_list_append_descendants(runtime, result, node->children[i], index);
+    }
+}
+
+static PtnValue ptn_dom_get_in_scope_namespaces_method(PtnRuntime *runtime, PtnValue receiver, size_t argc) {
+    if (argc != 0) {
+        return ptn_dom_throw_count(runtime, "Dom\\Element::getInScopeNamespaces", "exactly 0 arguments", argc);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnXmlNode *element = ptn_xml_node_data(receiver);
+    int64_t index = 0;
+    if (element != NULL && element->type == PTN_XML_NODE_ELEMENT) {
+        ptn_dom_namespace_list_append_in_scope(runtime, result, element, &index);
+    }
+    return result;
+}
+
+static PtnValue ptn_dom_get_descendant_namespaces_method(PtnRuntime *runtime, PtnValue receiver, size_t argc) {
+    if (argc != 0) {
+        return ptn_dom_throw_count(runtime, "Dom\\Element::getDescendantNamespaces", "exactly 0 arguments", argc);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnXmlNode *element = ptn_xml_node_data(receiver);
+    int64_t index = 0;
+    if (element != NULL && element->type == PTN_XML_NODE_ELEMENT) {
+        ptn_dom_namespace_list_append_descendants(runtime, result, element, &index);
+    }
+    return result;
+}
+
 static PtnValue ptn_dom_insert_before_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMNode::insertBefore", "1 or 2 arguments", argc);
@@ -85714,7 +86015,9 @@ static PtnValue ptn_dom_create_element_method(PtnRuntime *runtime, PtnValue rece
         return ptn_dom_throw_count(runtime, method_name, ns ? "2 or 3 arguments" : "1 or 2 arguments", argc);
     }
     PtnXmlNode *document = ptn_xml_document_for_node(ptn_xml_node_data(receiver));
-    PtnStringOperand uri = ns ? ptn_internal_expect_string_arg(runtime, method_name, 1, "namespace", args[0], line) : ptn_string_operand_borrowed("");
+    PtnStringOperand uri = !ns || ptn_value_deref(args[0]).type == PTN_NULL
+        ? ptn_string_operand_borrowed("")
+        : ptn_internal_expect_string_arg(runtime, method_name, 1, "namespace", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -86523,7 +86826,9 @@ static void ptn_dom_html_document_ensure_body(PtnRuntime *runtime, PtnXmlNode *d
     }
     PtnXmlNode *body = ptn_xml_node_alloc(PTN_XML_NODE_ELEMENT, "body", "");
     body->modern_dom = document->modern_dom;
+    body->html_document = document->html_document;
     body->owner_document = document;
+    ptn_dom_apply_html_parser_namespace(body);
     size_t index = 0;
     while (index < document->child_count) {
         PtnXmlNode *child = document->children[index];
@@ -87412,6 +87717,18 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     }
     if (ptn_ascii_case_equal(name, "lookupPrefix")) {
         return ptn_dom_lookup_prefix_method(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "lookupNamespaceURI")) {
+        return ptn_dom_lookup_namespace_uri_method(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "isDefaultNamespace")) {
+        return ptn_dom_is_default_namespace_method(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "DOMElement") && ptn_ascii_case_equal(name, "getInScopeNamespaces")) {
+        return ptn_dom_get_in_scope_namespaces_method(runtime, receiver, argc);
+    }
+    if (ptn_ascii_case_equal(class_name, "DOMElement") && ptn_ascii_case_equal(name, "getDescendantNamespaces")) {
+        return ptn_dom_get_descendant_namespaces_method(runtime, receiver, argc);
     }
     if (ptn_ascii_case_equal(name, "getRootNode")) {
         if (argc != 0) {
@@ -88666,6 +88983,15 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
         !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return 1;
     }
+    if ((ptn_ascii_case_equal(method_name, "lookupNamespaceURI") ||
+            ptn_ascii_case_equal(method_name, "isDefaultNamespace")) &&
+        ptn_dom_effective_class_is_modeled(class_name) &&
+        !ptn_ascii_case_equal(class_name, "DOMImplementation") &&
+        !ptn_ascii_case_equal(class_name, "DOMNodeList") &&
+        !ptn_ascii_case_equal(class_name, "DOMNamedNodeMap") &&
+        !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
+        return 1;
+    }
     if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return ptn_ascii_case_equal(method_name, "__debugInfo")
             || ptn_ascii_case_equal(method_name, "item")
@@ -88757,6 +89083,8 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getAttributeNode")
             || ptn_ascii_case_equal(method_name, "getAttributeNodeNS")
             || ptn_ascii_case_equal(method_name, "toggleAttribute")
+            || ptn_ascii_case_equal(method_name, "getInScopeNamespaces")
+            || ptn_ascii_case_equal(method_name, "getDescendantNamespaces")
             || ptn_ascii_case_equal(method_name, "insertAdjacentElement")
             || ptn_ascii_case_equal(method_name, "insertAdjacentText")
             || ptn_ascii_case_equal(method_name, "appendChild")
