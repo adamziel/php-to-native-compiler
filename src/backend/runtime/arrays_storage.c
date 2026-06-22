@@ -84,6 +84,18 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
+
+static void ptn_exception_chain_previous_if_missing(PtnException *exception, PtnException *previous) {
+    if (exception == NULL || previous == NULL || exception == previous) {
+        return;
+    }
+    PtnValue existing = ptn_value_deref(exception->previous);
+    if (existing.type != PTN_NULL) {
+        return;
+    }
+    ptn_value_destroy(&exception->previous);
+    exception->previous = ptn_value_clone_deref(ptn_exception_borrow(previous));
+}
 static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime);
 
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -1195,8 +1207,15 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         if (setjmp(destructor_frame.jump) != 0) {
             ptn_try_frame_pop(root, &destructor_frame);
             if (saved_active_exception != NULL) {
-                ptn_exception_free(root->exceptions->active_exception);
-                root->exceptions->active_exception = saved_active_exception;
+                if (root->exceptions->active_exception != NULL) {
+                    ptn_exception_chain_previous_if_missing(
+                        root->exceptions->active_exception,
+                        saved_active_exception
+                    );
+                    ptn_exception_free(saved_active_exception);
+                } else {
+                    root->exceptions->active_exception = saved_active_exception;
+                }
             }
             root->suppress_user_call_frame_location =
                 previous_suppress_user_call_frame_location;
@@ -1218,6 +1237,10 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         if (root->exceptions->active_exception == NULL) {
             root->exceptions->active_exception = saved_active_exception;
         } else {
+            ptn_exception_chain_previous_if_missing(
+                root->exceptions->active_exception,
+                saved_active_exception
+            );
             ptn_exception_free(saved_active_exception);
         }
     }
