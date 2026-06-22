@@ -7788,13 +7788,15 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
                 free(storage_key);
                 return magic_value;
             }
-            ptn_emit_indirect_modification_overloaded_property_notice(
-                runtime,
-                magic_receiver,
-                property,
-                line
-            );
             PtnValue current = ptn_value_clone_deref(magic_value);
+            if (current.type != PTN_OBJECT && current.type != PTN_EXCEPTION) {
+                ptn_emit_indirect_modification_overloaded_property_notice(
+                    runtime,
+                    magic_receiver,
+                    property,
+                    line
+                );
+            }
             ptn_value_destroy(&magic_value);
             ptn_array_key_free(key);
             free(storage_key);
