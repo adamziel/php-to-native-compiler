@@ -29994,6 +29994,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let mut command = Command::new("cc");
     command.arg("-std=c11");
     add_pcre2_default_library_define(&mut command);
+    add_hash_ext_compile_args(&mut command);
     for arg in warning_args {
         command.arg(arg);
     }
@@ -30002,6 +30003,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     }
     let status = command
         .arg(&c_path)
+        .args(hash_ext_sources())
         .arg("-o")
         .arg(output)
         .args(if cfg!(target_os = "linux") {
@@ -30040,6 +30042,7 @@ fn compile_c_with_ada_url(
     let mut c_command = Command::new("cc");
     c_command.arg("-std=c11");
     add_pcre2_default_library_define(&mut c_command);
+    add_hash_ext_compile_args(&mut c_command);
     for arg in warning_args {
         c_command.arg(arg);
     }
@@ -30066,6 +30069,12 @@ fn compile_c_with_ada_url(
         ));
     }
 
+    let hash_objects =
+        compile_hash_ext_objects(output, optimization_args, warning_args).map_err(|error| {
+            let _ = fs::remove_file(&c_object);
+            error
+        })?;
+
     let mut ada_command = Command::new("c++");
     ada_command
         .arg("-std=c++20")
@@ -30085,6 +30094,7 @@ fn compile_c_with_ada_url(
     if !ada_status.success() {
         let _ = fs::remove_file(&c_object);
         let _ = fs::remove_file(&ada_object);
+        remove_files(&hash_objects);
         return Err(Diagnostic::new(
             format!(
                 "c++ failed compiling vendored Ada URL parser {}",
@@ -30098,6 +30108,7 @@ fn compile_c_with_ada_url(
     link_command
         .arg(&c_object)
         .arg(&ada_object)
+        .args(&hash_objects)
         .arg("-o")
         .arg(output);
     if cfg!(target_os = "linux") {
@@ -30109,6 +30120,7 @@ fn compile_c_with_ada_url(
         .map_err(|error| Diagnostic::new(format!("failed to launch c++ linker: {error}"), None))?;
     let _ = fs::remove_file(&c_object);
     let _ = fs::remove_file(&ada_object);
+    remove_files(&hash_objects);
     if link_status.success() {
         Ok(())
     } else {
@@ -30120,6 +30132,96 @@ fn compile_c_with_ada_url(
             ),
             None,
         ))
+    }
+}
+
+fn hash_ext_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/backend/runtime/hash_ext")
+}
+
+fn hash_ext_sources() -> Vec<PathBuf> {
+    let dir = hash_ext_dir();
+    [
+        "hash_adler32.c",
+        "hash_crc32.c",
+        "hash_fnv.c",
+        "hash_gost.c",
+        "hash_haval.c",
+        "hash_joaat.c",
+        "hash_md.c",
+        "hash_murmur.c",
+        "hash_ripemd.c",
+        "hash_sha.c",
+        "hash_sha_sse2.c",
+        "hash_sha3.c",
+        "hash_snefru.c",
+        "hash_tiger.c",
+        "hash_whirlpool.c",
+        "hash_xxhash.c",
+        "ptn_hash_ext.c",
+        "ptn_std_md5.c",
+        "ptn_std_sha1.c",
+    ]
+    .into_iter()
+    .map(|source| dir.join(source))
+    .collect()
+}
+
+fn add_hash_ext_compile_args(command: &mut Command) {
+    command.arg("-DHAVE_SLOW_HASH3=1");
+    command.arg("-I").arg(hash_ext_dir());
+}
+
+fn hash_ext_object_path(output: &Path, index: usize) -> PathBuf {
+    let file_name = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("ptn-output");
+    output.with_file_name(format!("{file_name}.ptn-hash-{index}.o"))
+}
+
+fn compile_hash_ext_objects(
+    output: &Path,
+    optimization_args: &[&str],
+    warning_args: &[&str],
+) -> Result<Vec<PathBuf>> {
+    let mut objects = Vec::new();
+    for (index, source) in hash_ext_sources().into_iter().enumerate() {
+        let object = hash_ext_object_path(output, index);
+        let mut command = Command::new("cc");
+        command.arg("-std=c11");
+        add_hash_ext_compile_args(&mut command);
+        for arg in warning_args {
+            command.arg(arg);
+        }
+        for arg in optimization_args {
+            command.arg(arg);
+        }
+        let status = command
+            .arg("-c")
+            .arg(&source)
+            .arg("-o")
+            .arg(&object)
+            .status()
+            .map_err(|error| Diagnostic::new(format!("failed to launch cc: {error}"), None))?;
+        if !status.success() {
+            remove_files(&objects);
+            return Err(Diagnostic::new(
+                format!(
+                    "cc failed compiling hash runtime source {}",
+                    display_os(source.as_os_str())
+                ),
+                None,
+            ));
+        }
+        objects.push(object);
+    }
+    Ok(objects)
+}
+
+fn remove_files(paths: &[PathBuf]) {
+    for path in paths {
+        let _ = fs::remove_file(path);
     }
 }
 
