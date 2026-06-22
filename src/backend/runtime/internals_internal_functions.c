@@ -24118,6 +24118,9 @@ static int ptn_uri_validate_host_component(const char *data, size_t len) {
         if (byte == '[' || byte == ']' || byte == ':' || byte == '@' || byte == '/' || byte == '?' || byte == '#') {
             return 0;
         }
+        if (!ptn_uri_is_unreserved(byte) && !ptn_uri_is_sub_delim(byte)) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -24381,6 +24384,8 @@ static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *comp
     ptn_throw_exception(runtime, "Uri\\WhatWg\\InvalidUrlException", message);
 }
 
+static const char *ptn_uri_whatwg_classify_parse_failure(PtnStringOperand input);
+
 #ifdef PTN_USE_ADA_URL
 static char *ptn_uri_ada_null_terminated_copy(const char *data, size_t len) {
     return ptn_uri_duplicate_len(data == NULL ? "" : data, len);
@@ -24610,9 +24615,14 @@ static int ptn_uri_ada_parse_whatwg(
     if (url == NULL || !ada_is_valid(url)) {
         if (url != NULL) {
             const char *parse_error = ada_get_parse_error(url);
+            const char *stable_reason = NULL;
             if (parse_error != NULL && parse_error[0] != '\0') {
-                *reason_out = parse_error;
+                stable_reason = ptn_uri_url_validation_error_type_case_name(parse_error);
             }
+            if (stable_reason == NULL) {
+                stable_reason = ptn_uri_whatwg_classify_parse_failure(input);
+            }
+            *reason_out = stable_reason;
             ada_free(url);
         }
         return 0;
@@ -25313,7 +25323,18 @@ static int ptn_uri_whatwg_normalize_host(
             byte = (unsigned char)((ptn_uri_hex_value(input[i + 1]) << 4) | ptn_uri_hex_value(input[i + 2]));
             i += 2;
         }
-        if (byte == 0 || byte == '[' || byte == ']' || byte == '/' || byte == '?' || byte == '#') {
+        if (byte <= 0x20 ||
+            byte == '"' ||
+            byte == '<' ||
+            byte == '>' ||
+            byte == '\\' ||
+            byte == '^' ||
+            byte == '|' ||
+            byte == '[' ||
+            byte == ']' ||
+            byte == '/' ||
+            byte == '?' ||
+            byte == '#') {
             *reason_out = special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
             free(decoded.data);
             return 0;
