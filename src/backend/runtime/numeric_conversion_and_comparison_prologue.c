@@ -2601,6 +2601,76 @@ static const char *ptn_exception_constructor_given_type(PtnValue value) {
     return "unknown";
 }
 
+static PTN_UNUSED int ptn_exception_validate_soap_fault_code(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (!ptn_exception_name_equal(declaring_class, "SoapFault") || argc == 0) {
+        return 1;
+    }
+    PtnValue code = ptn_value_deref(args[0]);
+    if (code.type == PTN_NULL) {
+        return 1;
+    }
+    if (code.type == PTN_STRING) {
+        if (code.as.string.len != 0) {
+            return 1;
+        }
+        ptn_throw_exception_at(
+            runtime,
+            "ValueError",
+            "SoapFault::__construct(): Argument #1 ($code) is not a valid fault code",
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        return 0;
+    }
+    if (code.type == PTN_ARRAY) {
+        if (code.as.array != NULL && code.as.array->len == 2) {
+            return 1;
+        }
+        ptn_throw_exception_at(
+            runtime,
+            "ValueError",
+            "SoapFault::__construct(): Argument #1 ($code) is not a valid fault code",
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
+        return 0;
+    }
+    const char *given = ptn_exception_constructor_given_type(code);
+    int needed = snprintf(
+        NULL,
+        0,
+        "SoapFault::__construct(): Argument #1 ($code) must be of type array|string|null, %s given",
+        given
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "SoapFault::__construct(): Argument #1 ($code) must be of type array|string|null, %s given",
+        given
+    );
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "TypeError",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    return 0;
+}
+
 static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -2737,6 +2807,10 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    if (!ptn_exception_validate_soap_fault_code(runtime, declaring_class, argc, args, line)) {
         return ptn_null();
     }
 
