@@ -1785,6 +1785,7 @@ static PTN_UNUSED void ptn_lazy_object_mark(
     object->lazy_is_proxy = is_proxy ? 1 : 0;
     object->lazy_options = options;
     object->lazy_initializing = 0;
+    object->destructor_called = 0;
     object->lazy_initializer = ptn_value_clone_deref(initializer);
     object->lazy_proxy_instance = ptn_null();
     if (object->property_metadata_len == 0) {

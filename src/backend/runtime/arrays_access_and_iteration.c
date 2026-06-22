@@ -7377,18 +7377,6 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         PTN_PROPERTY_ACCESS_WRITE,
         line
     );
-    if (blocked_metadata == NULL &&
-        ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
-        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
-        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
-            runtime,
-            receiver,
-            property,
-            line,
-            1
-        );
-        return;
-    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -7406,6 +7394,32 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
     const char *hook_declaring_class = ptn_property_hook_get_declaring_class(metadata);
+    if (metadata == NULL &&
+        entry == NULL &&
+        ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
+        if (!ptn_object_emit_dynamic_property_creation_deprecation(
+                runtime,
+                receiver.as.object,
+                property,
+                line,
+                0
+            )) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            return;
+        }
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+            runtime,
+            receiver,
+            property,
+            line,
+            1
+        );
+        return;
+    }
     if (metadata != NULL && metadata->is_readonly) {
         ptn_array_key_free(key);
         free(storage_key);
@@ -7768,13 +7782,6 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         }
     }
     if (metadata == NULL && entry == NULL) {
-        if (ptn_magic_property_get_exists(runtime, magic_receiver) &&
-            ptn_magic_property_is_active(runtime, magic_receiver, property, PTN_MAGIC_PROPERTY_GET)) {
-            ptn_emit_undefined_property_warning(runtime, magic_receiver.as.object, property, line);
-            ptn_array_key_free(key);
-            free(storage_key);
-            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
-        }
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, magic_receiver, property, line, &magic_value)) {
             if (ptn_runtime_has_active_exception(runtime)) {

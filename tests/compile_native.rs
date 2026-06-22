@@ -66069,6 +66069,90 @@ exercise_lazy_proxy_success_ref_source($okProxy);
 }
 
 #[test]
+fn compile_reset_lazy_object_reenables_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-reset-lazy-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reset-lazy-destructor.php");
+    let output = root.join("reset-lazy-destructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetDestructBox {
+    public readonly int $a;
+
+    public function __construct() {
+        $this->a = 1;
+    }
+
+    public function __destruct() {
+        var_dump(__METHOD__);
+    }
+}
+
+$reflector = new ReflectionClass(LazyResetDestructBox::class);
+
+echo \"# Ghost:\\n\";
+$obj = new LazyResetDestructBox();
+echo \"In makeLazy\\n\";
+$reflector->resetAsLazyGhost($obj, function ($obj) {
+    var_dump(\"initializer\");
+    $obj->__construct();
+});
+echo \"After makeLazy\\n\";
+var_dump($obj->a);
+$obj = null;
+
+echo \"# Proxy:\\n\";
+$obj = new LazyResetDestructBox();
+echo \"In makeLazy\\n\";
+$reflector->resetAsLazyProxy($obj, function ($obj) {
+    var_dump(\"initializer\");
+    return new LazyResetDestructBox();
+});
+echo \"After makeLazy\\n\";
+var_dump($obj->a);
+$obj = null;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "# Ghost:\n",
+            "In makeLazy\n",
+            "string(32) \"LazyResetDestructBox::__destruct\"\n",
+            "After makeLazy\n",
+            "string(11) \"initializer\"\n",
+            "int(1)\n",
+            "string(32) \"LazyResetDestructBox::__destruct\"\n",
+            "# Proxy:\n",
+            "In makeLazy\n",
+            "string(32) \"LazyResetDestructBox::__destruct\"\n",
+            "After makeLazy\n",
+            "string(11) \"initializer\"\n",
+            "int(1)\n",
+            "string(32) \"LazyResetDestructBox::__destruct\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("object->destructor_called = 0"));
+    assert!(c_source.contains("resetAsLazyGhost"));
+    assert!(c_source.contains("resetAsLazyProxy"));
+}
+
+#[test]
 fn compile_lazy_proxy_chain_foreach_initializes_real_instance_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-proxy-chain-foreach");
     fs::create_dir_all(&root).unwrap();
@@ -66266,7 +66350,7 @@ var_dump($a);
             concat!(
                 "Init\n",
                 "LazyMagicFoo::__get($x) on LazyMagicFoo\n",
-                "\nWarning: Undefined property: LazyMagicFoo::$x in {} on line 7\n",
+                "\nDeprecated: Creation of dynamic property LazyMagicBar::$x is deprecated in {} on line 7\n",
                 "NULL\n",
             ),
             input.display()
@@ -66277,6 +66361,72 @@ var_dump($a);
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_lazy_object_effective_initialized_proxy_receiver"));
     assert!(c_source.contains("ptn_object_reference_for_property"));
+}
+
+#[test]
+fn compile_overloaded_reference_assignment_deprecates_dynamic_target_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-reference-dynamic-target");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-reference-dynamic-target.php");
+    let output = root.join("overloaded-reference-dynamic-target-bin");
+    fs::write(
+        &input,
+        "<?php
+class OverloadedReferenceTarget {
+    public $_;
+
+    public function __get($name) {
+        global $obj;
+        $obj->f =& $this->b;
+    }
+}
+
+$obj = new OverloadedReferenceTarget();
+var_dump($obj->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(
+        stdout,
+        format!(
+            concat!(
+                "\nDeprecated: Creation of dynamic property OverloadedReferenceTarget::$b is deprecated in {} on line 7\n",
+                "\nDeprecated: Creation of dynamic property OverloadedReferenceTarget::$f is deprecated in {} on line 7\n",
+                "\nNotice: Indirect modification of overloaded property OverloadedReferenceTarget::$f has no effect in {} on line 7\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display(),
+        )
+    );
+    assert_eq!(
+        stderr,
+        format!(
+            concat!(
+                "\nFatal error: Uncaught Error: Cannot assign by reference to overloaded object in {}:7\n",
+                "Stack trace:\n",
+                "#0 {}(7): OverloadedReferenceTarget->__get('b')\n",
+                "#1 {}(12): OverloadedReferenceTarget->__get('prop')\n",
+                "#2 {{main}}\n",
+                "  thrown in {} on line 7\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display(),
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_bind_property_reference"));
+    assert!(c_source.contains("ptn_object_emit_dynamic_property_creation_deprecation"));
 }
 
 #[test]
