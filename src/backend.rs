@@ -32062,6 +32062,21 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        let notice_emitted_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&notice_emitted_temp);
+        out.push_str(" = ptn_object_emit_indirect_modification_overloaded_property_notice_for_value(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
         let value_temp = self.emit_materialized_value(out, value);
         let snapshot_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -32084,7 +32099,7 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
+        out.push_str(" = ptn_object_write_property_indirect_notice_state(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -32094,6 +32109,8 @@ impl ValueEmitter {
         out.push_str(&current_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(&notice_emitted_temp);
         out.push_str(");\n");
 
         let result_temp = self.next_temp();

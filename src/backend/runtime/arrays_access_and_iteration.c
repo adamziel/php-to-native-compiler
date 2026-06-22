@@ -4957,6 +4957,51 @@ static PTN_UNUSED int ptn_object_indirect_write_targets_overloaded_property(
     return entry == NULL;
 }
 
+static PTN_UNUSED int ptn_object_indirect_write_should_emit_overloaded_property_notice(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return value.type != PTN_REFERENCE &&
+        ptn_object_indirect_write_targets_overloaded_property(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        );
+}
+
+static PTN_UNUSED int ptn_object_emit_indirect_modification_overloaded_property_notice_for_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    if (!ptn_object_indirect_write_should_emit_overloaded_property_notice(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            value,
+            line
+        )) {
+        return 0;
+    }
+    ptn_emit_indirect_modification_overloaded_property_notice(
+        runtime,
+        receiver,
+        property,
+        line
+    );
+    return 1;
+}
+
 static PTN_UNUSED int ptn_object_missing_dynamic_property_for_creation(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -6404,7 +6449,7 @@ done:
     return result;
 }
 
-static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
+static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
@@ -6412,7 +6457,8 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
     const char *access_scope,
     PtnValue value,
     size_t line,
-    int indirect_write
+    int indirect_write,
+    int overloaded_notice_already_emitted
 ) {
     if (ptn_runtime_has_active_exception(runtime)) {
         return ptn_null();
@@ -6516,7 +6562,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
             line
         )
     ) {
-        if (ptn_value_deref(value).type != PTN_REFERENCE) {
+        if (!overloaded_notice_already_emitted && value.type != PTN_REFERENCE) {
             ptn_emit_indirect_modification_overloaded_property_notice(
                 runtime,
                 receiver,
@@ -6756,6 +6802,29 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    const char *access_scope,
+    PtnValue value,
+    size_t line,
+    int indirect_write
+) {
+    return ptn_object_write_property_with_mode_len_impl(
+        runtime,
+        receiver,
+        property,
+        property_len,
+        access_scope,
+        value,
+        line,
+        indirect_write,
+        0
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -6974,6 +7043,28 @@ static PTN_UNUSED PtnValue ptn_object_write_property_indirect(
         value,
         line,
         1
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_object_write_property_indirect_notice_state(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line,
+    int overloaded_notice_already_emitted
+) {
+    return ptn_object_write_property_with_mode_len_impl(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        access_scope,
+        value,
+        line,
+        1,
+        overloaded_notice_already_emitted
     );
 }
 

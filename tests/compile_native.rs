@@ -69457,6 +69457,57 @@ $t->dump();
 }
 
 #[test]
+fn compile_overloaded_property_array_dim_assignment_orders_notice_before_rhs_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-array-dim-assignment-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-array-dim-assignment-order.php");
+    let output = root.join("overloaded-property-array-dim-assignment-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    function __get($k) {
+        return null;
+    }
+    function __set($k, $v) {
+        $this->$k = $v;
+    }
+}
+
+$c = new Foo();
+
+$c->arr[0][\"k\"] = 1;
+$c->arr[0][\"k2\"] = $ref;
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "Notice: Indirect modification of overloaded property Foo::$arr has no effect in {} on line 13\n",
+                "\nNotice: Indirect modification of overloaded property Foo::$arr has no effect in {} on line 14\n",
+                "\nWarning: Undefined variable $ref in {} on line 14\n",
+                "done\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_write_property_indirect_notice_state"));
+}
+
+#[test]
 fn compile_overloaded_property_reference_assignment_by_value_source_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-property-reference-assignment-by-value-source");
     fs::create_dir_all(&root).unwrap();
