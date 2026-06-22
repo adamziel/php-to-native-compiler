@@ -2739,7 +2739,16 @@ impl<'a> LoweringContext<'a> {
                         .parameters
                         .iter()
                         .map(|parameter| {
-                            self.lower_parameter_for_class_scope(parameter, &trait_decl.name, None)
+                            let mut lowered = self.lower_parameter_for_class_scope(
+                                parameter,
+                                &trait_decl.name,
+                                None,
+                            );
+                            lowered.default_value = parameter
+                                .default_value
+                                .as_ref()
+                                .map(|value| self.lower_expr(value));
+                            lowered
                         })
                         .collect::<Vec<_>>();
                     let deprecated_metadata = self.function_deprecated_metadata(

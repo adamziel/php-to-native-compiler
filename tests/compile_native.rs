@@ -28413,6 +28413,87 @@ var_dump((new ReflectionClass('TwoAliases'))->isTrait());
 }
 
 #[test]
+fn compile_reflection_trait_method_default_self_class_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-trait-method-default-self-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-trait-method-default-self-class.php");
+    let output = root.join("reflection-trait-method-default-self-class-bin");
+    fs::write(
+        &input,
+        "<?php
+trait T {
+    private function bar($a = self::class) {}
+}
+class B {
+    use T;
+}
+echo new ReflectionMethod('T', 'bar'), \"\\n--\\n\";
+echo new ReflectionMethod('B', 'bar'), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("$a = self::class").count(), 2, "{}", stdout);
+    assert!(!stdout.contains("$a = 'T'"), "{}", stdout);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_generator_get_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-generator-get-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-generator-get-trace.php");
+    let output = root.join("reflection-generator-get-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo() {
+    yield 1;
+    yield 2;
+}
+function bar() {
+    yield from foo();
+}
+function baz() {
+    yield from bar();
+}
+$gen = baz();
+$gen->valid();
+$trace = (new ReflectionGenerator($gen))->getTrace();
+echo count($trace), \"\\n\";
+foreach ($trace as $frame) {
+    echo $frame['file'] ?? 'nofile';
+    echo '|', $frame['line'] ?? 0;
+    echo '|', $frame['function'];
+    echo '|', count($frame['args']), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 4, "{}", stdout);
+    assert_eq!(lines[0], "3");
+    let source_prefix = format!("{}|", input.display());
+    assert!(lines[1].starts_with(&source_prefix), "{}", stdout);
+    assert!(lines[1].ends_with("|foo|0"), "{}", stdout);
+    assert!(lines[2].starts_with(&source_prefix), "{}", stdout);
+    assert!(lines[2].ends_with("|bar|0"), "{}", stdout);
+    assert_eq!(lines[3], "nofile|0|baz|0");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_direct_get_class_helper_links_without_internal_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-direct-get-class-helper-link");
     fs::create_dir_all(&root).unwrap();

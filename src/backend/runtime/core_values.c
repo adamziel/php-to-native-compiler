@@ -918,6 +918,9 @@ struct PtnGenerator {
     PtnArray *send_call_lines;
     PtnStringBuffer pending_output;
     PtnValue closure_owner;
+    char *function_name;
+    char *source_file;
+    size_t source_line;
     size_t position;
     int64_t next_auto_key;
     int completed;
@@ -1925,6 +1928,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_backed_case(con
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_case(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_generator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class_constant(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_named_type(const char *class_name);
@@ -2056,6 +2060,12 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_function_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_generator_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -2295,6 +2305,14 @@ static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

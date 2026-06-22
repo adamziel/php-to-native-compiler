@@ -12657,6 +12657,7 @@ fn is_modeled_builtin_reflection_class_name(name: &str) -> bool {
             | "reflectionextension"
             | "reflectionfunction"
             | "reflectionfunctionabstract"
+            | "reflectiongenerator"
             | "reflectionmethod"
             | "reflectionobject"
             | "reflectionparameter"
