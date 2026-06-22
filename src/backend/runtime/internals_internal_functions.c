@@ -98402,10 +98402,26 @@ typedef struct {
     int loaded;
     char *target_namespace;
     char *location;
+    PtnValue options;
+    PtnValue headers;
+    char *last_request;
+    size_t last_request_len;
     PtnSoapType *types;
     size_t type_count;
     size_t type_capacity;
 } PtnSoapClientData;
+
+typedef struct {
+    char *namespace_uri;
+    char *name;
+    PtnValue data;
+} PtnSoapHeaderData;
+
+typedef struct {
+    char **uris;
+    size_t count;
+    size_t capacity;
+} PtnSoapNamespaceList;
 
 static PTN_UNUSED PtnValue ptn_call_declared_method(
     PtnRuntime *runtime,
@@ -98447,11 +98463,24 @@ static void ptn_soap_client_data_free(void *data_ptr) {
     free(data->wsdl);
     free(data->target_namespace);
     free(data->location);
+    ptn_value_destroy(&data->options);
+    ptn_value_destroy(&data->headers);
+    free(data->last_request);
     for (size_t i = 0; i < data->type_count; i++) {
         ptn_soap_type_free(&data->types[i]);
     }
     free(data->types);
     free(data);
+}
+
+static PtnSoapClientData *ptn_soap_client_data_new(PtnValue options) {
+    PtnSoapClientData *data = calloc(1, sizeof(PtnSoapClientData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->options = ptn_value_clone_deref(options);
+    data->headers = ptn_null();
+    return data;
 }
 
 static PtnSoapClientData *ptn_soap_client_data(PtnValue receiver) {
@@ -98460,6 +98489,43 @@ static PtnSoapClientData *ptn_soap_client_data(PtnValue receiver) {
         return NULL;
     }
     return (PtnSoapClientData *)receiver.as.object->native_data;
+}
+
+static PtnSoapClientData *ptn_soap_client_ensure_data(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        !ptn_object_is_internal_or_descendant(receiver, "SoapClient")) {
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        receiver.as.object->native_data = ptn_soap_client_data_new(ptn_null());
+        receiver.as.object->native_data_free = ptn_soap_client_data_free;
+    }
+    return (PtnSoapClientData *)receiver.as.object->native_data;
+}
+
+static void ptn_soap_header_data_free(void *data_ptr) {
+    PtnSoapHeaderData *data = (PtnSoapHeaderData *)data_ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->namespace_uri);
+    free(data->name);
+    ptn_value_destroy(&data->data);
+    free(data);
+}
+
+static PtnSoapHeaderData *ptn_soap_header_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object == NULL) {
+        return NULL;
+    }
+    if (!ptn_internal_class_name_is_soap_header(value.as.object->class_name) &&
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SoapHeader")) {
+        return NULL;
+    }
+    return (PtnSoapHeaderData *)value.as.object->native_data;
 }
 
 static const char *ptn_soap_tag_end(const char *start, const char *limit) {
