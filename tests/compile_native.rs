@@ -16084,6 +16084,111 @@ echo serialize($queue), "\n";
 }
 
 #[test]
+fn compile_spl_heap_corruption_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-heap-corruption-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-heap-corruption-guards.php");
+    let output = root.join("spl-heap-corruption-guards-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ThrowingHeap extends SplMaxHeap {
+    public function compare($a, $b): int {
+        if ($a === 'throw' || $b === 'throw') {
+            throw new Exception('Comparison failed');
+        }
+        return parent::compare($a, $b);
+    }
+}
+
+$heap = new ThrowingHeap();
+$heap->insert(1);
+$heap->insert(2);
+try {
+    $heap->insert('throw');
+} catch (Exception $e) {
+}
+echo "Heap is corrupted: ", $heap->isCorrupted() ? "YES" : "NO", "\n";
+try {
+    serialize($heap);
+    echo "FAIL: Serialization should have thrown\n";
+} catch (Exception $e) {
+    echo "Serialization failed: ", $e->getMessage(), "\n";
+}
+
+class ThrowingPQ extends SplPriorityQueue {
+    public function compare($priority1, $priority2): int {
+        if ($priority1 === 'throw' || $priority2 === 'throw') {
+            throw new Exception('Priority comparison failed');
+        }
+        return parent::compare($priority1, $priority2);
+    }
+}
+
+$pq = new ThrowingPQ();
+$pq->insert('data1', 1);
+$pq->insert('data2', 2);
+try {
+    $pq->insert('data3', 'throw');
+} catch (Exception $e) {
+}
+echo "PriorityQueue is corrupted: ", $pq->isCorrupted() ? "YES" : "NO", "\n";
+try {
+    serialize($pq);
+    echo "FAIL: PQ Serialization should have thrown\n";
+} catch (Exception $e) {
+    echo "PQ Serialization failed: ", $e->getMessage(), "\n";
+}
+
+class MyHeap extends SplMaxHeap {
+    public function compare($a, $b): int {
+        global $array;
+        static $counter = 0;
+        if ($counter++ === 0) {
+            $this->__unserialize($array);
+        }
+        return $a < $b ? -1 : ($a == $b ? 0 : 1);
+    }
+}
+
+$source = new SplMaxHeap();
+$source->insert(1);
+$array = $source->__serialize();
+
+$mutating = new MyHeap();
+$mutating->insert(0);
+try {
+    $mutating->insert(2);
+} catch (RuntimeException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Heap is corrupted: YES\n",
+            "Serialization failed: Heap is corrupted, heap properties are no longer ensured.\n",
+            "PriorityQueue is corrupted: YES\n",
+            "PQ Serialization failed: Heap is corrupted, heap properties are no longer ensured.\n",
+            "Heap cannot be changed when it is already being modified.\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();
