@@ -36767,6 +36767,74 @@ var_dump($sf->headerfault);
 }
 
 #[test]
+fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let root = temp_dir("ptn-native-phar-manifest-cow-cache-list-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("manifest-cow-cache-list.phar.php");
+    let output = root.join("manifest-cow-cache-list-bin");
+
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 1);
+    push_u16(&mut manifest, 0x0011);
+    push_u32(&mut manifest, 0x00010000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 9);
+    manifest.extend_from_slice(b"s:2:\"hi\";");
+    push_u32(&mut manifest, 8);
+    manifest.extend_from_slice(b"test.txt");
+    push_u32(&mut manifest, 3);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 3);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+
+    let mut source = Vec::new();
+    source.extend_from_slice(
+        b"<?php\n\
+$phar = new Phar(__FILE__);\n\
+var_dump($phar->getMetadata());\n\
+echo $phar[\"test.txt\"]->getContent();\n\
+$phar[\"test.txt\"] = \"changed\\n\";\n\
+echo $phar[\"test.txt\"]->getContent();\n\
+mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
+var_dump(is_dir(\"phar://\" . __FILE__ . \"/dir\"), isset($phar[\"dir\"]));\n\
+Phar::mount(\"mounted.txt\", \"phar://\" . __FILE__ . \"/test.txt\");\n\
+echo file_get_contents(\"phar://\" . __FILE__ . \"/mounted.txt\");\n\
+rmdir(\"phar://\" . __FILE__ . \"/dir\");\n\
+var_dump(file_exists(\"phar://\" . __FILE__ . \"/dir\"));\n\
+__HALT_COMPILER(); ?>\r\n",
+    );
+    push_u32(&mut source, manifest.len() as u32);
+    source.extend_from_slice(&manifest);
+    source.extend_from_slice(b"hi\n");
+    fs::write(&input, source).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(2) \"hi\"\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_manifest_read_u16"));
+    assert!(c_source.contains("ptn_phar_uri_read_entry"));
+    assert!(c_source.contains("ptn_internal_phar_mount"));
+}
+
+#[test]
 fn compile_soap_client_invalid_headers_fatal_to_native_binary() {
     let root = temp_dir("ptn-native-soap-client-invalid-headers-fatal");
     fs::create_dir_all(&root).unwrap();
