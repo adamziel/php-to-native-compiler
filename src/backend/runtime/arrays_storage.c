@@ -79,6 +79,7 @@ static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnV
 static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime);
 
@@ -1047,10 +1048,9 @@ static PTN_UNUSED void ptn_runtime_clear_temporary_roots(PtnRuntime *runtime) {
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
     while (root->temporary_roots_len > 0) {
-        PtnValue abandoned_temporary = root->temporary_roots[root->temporary_roots_len - 1];
-        ptn_value_destroy(&abandoned_temporary);
         ptn_runtime_pop_temporary_root(root);
     }
+    ptn_runtime_run_unreferenced_object_destructors_for_unwind(runtime);
 }
 
 static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
@@ -1369,7 +1369,11 @@ static int ptn_runtime_roots_reach_object(PtnRuntime *root, PtnObject *target) {
     return ptn_symbol_table_reaches_object(static_properties, target);
 }
 
-static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int only_unreferenced) {
+static void ptn_runtime_run_object_destructors_matching(
+    PtnRuntime *runtime,
+    int only_unreferenced,
+    int during_shutdown
+) {
     if (runtime == NULL) {
         return;
     }
@@ -1383,7 +1387,7 @@ static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int
             object->refcount != 0 &&
             !object->destructor_called &&
             only_unreferenced &&
-            (object->refcount > 1 || ptn_runtime_roots_reach_object(root, object))
+            (object->refcount > 1 || ptn_runtime_roots_reach_object(runtime, object))
         ) {
             continue;
         }
@@ -1392,13 +1396,17 @@ static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int
             continue;
         }
         ptn_object_retain(object);
-        ptn_object_run_destructor_ex(object, 1);
+        ptn_object_run_destructor_ex(object, during_shutdown);
         ptn_object_release(object);
     }
 }
 
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime) {
-    ptn_runtime_run_object_destructors_matching(runtime, 1);
+    ptn_runtime_run_object_destructors_matching(runtime, 1, 1);
+}
+
+static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime) {
+    ptn_runtime_run_object_destructors_matching(runtime, 1, 0);
 }
 
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime) {
@@ -1428,7 +1436,7 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(Pt
 }
 
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
-    ptn_runtime_run_object_destructors_matching(runtime, 0);
+    ptn_runtime_run_object_destructors_matching(runtime, 0, 1);
 }
 
 typedef struct {
