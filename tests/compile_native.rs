@@ -38619,7 +38619,7 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     fs::create_dir_all(&root).unwrap();
     let input = root.join("halt-compiler-offset.php");
     let output = root.join("halt-compiler-offset-bin");
-    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__, \\__COMPILER_HALT_OFFSET__); __HALT_COMPILER();\necho \"after\\n\";\n";
+    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__, \\__COMPILER_HALT_OFFSET__); __HALT_COMPILER(); ?>\r\n\x1d<?php echo \"after\\n\";\n";
     let expected_offset = source.find("__HALT_COMPILER();").unwrap() + "__HALT_COMPILER();".len();
     fs::write(&input, source).unwrap();
 

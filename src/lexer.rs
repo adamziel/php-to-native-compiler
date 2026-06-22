@@ -422,6 +422,9 @@ impl<'a> Lexer<'a> {
                     ))
                 }
             }
+            if self.ends_with_halt_compiler_statement() {
+                break;
+            }
         }
         self.tokens.push(Token {
             kind: TokenKind::Eof,
@@ -2040,6 +2043,32 @@ impl<'a> Lexer<'a> {
             span,
         });
         self.closed_php = true;
+    }
+
+    fn ends_with_halt_compiler_statement(&self) -> bool {
+        let len = self.tokens.len();
+        if len < 4 {
+            return false;
+        }
+        let start = len - 4;
+        if start > 0
+            && matches!(
+                self.tokens[start - 1].kind,
+                TokenKind::Backslash
+                    | TokenKind::DoubleColon
+                    | TokenKind::ObjectOperator
+                    | TokenKind::NullsafeObjectOperator
+            )
+        {
+            return false;
+        }
+        let [name, left, right, semicolon] = &self.tokens[start..] else {
+            return false;
+        };
+        matches!(&name.kind, TokenKind::Identifier(text) if text.eq_ignore_ascii_case("__halt_compiler"))
+            && matches!(left.kind, TokenKind::LeftParen)
+            && matches!(right.kind, TokenKind::RightParen)
+            && matches!(semicolon.kind, TokenKind::Semicolon)
     }
 
     fn current_span(&self, width: usize) -> SourceSpan {
