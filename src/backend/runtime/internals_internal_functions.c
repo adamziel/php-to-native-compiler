@@ -77891,6 +77891,13 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_XML_NODE_DOCUMENT_FRAGMENT 11
 #define PTN_XML_NODE_ENTITY 17
 
+#define PTN_DOM_DOCUMENT_POSITION_DISCONNECTED 1
+#define PTN_DOM_DOCUMENT_POSITION_PRECEDING 2
+#define PTN_DOM_DOCUMENT_POSITION_FOLLOWING 4
+#define PTN_DOM_DOCUMENT_POSITION_CONTAINS 8
+#define PTN_DOM_DOCUMENT_POSITION_CONTAINED_BY 16
+#define PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC 32
+
 #define PTN_XML_OPTION_CASE_FOLDING 1
 #define PTN_XML_OPTION_TARGET_ENCODING 2
 #define PTN_XML_OPTION_SKIP_TAGSTART 3
@@ -83337,6 +83344,78 @@ static int ptn_dom_expect_node_argument(
     return 0;
 }
 
+static int ptn_xml_attribute_index(PtnXmlNode *attr, size_t *index_out) {
+    if (attr == NULL || attr->parent == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE) {
+        return 0;
+    }
+    PtnXmlNode *element = attr->parent;
+    for (size_t i = 0; i < element->attribute_count; i++) {
+        if (element->attributes[i] == attr) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_dom_compare_document_position_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMNode::compareDocumentPosition", "exactly 1 argument", argc);
+    }
+    PtnXmlNode *node = ptn_xml_node_data(receiver);
+    PtnXmlNode *other = NULL;
+    if (!ptn_dom_expect_node_argument(runtime, "DOMNode::compareDocumentPosition", 1, "other", args[0], 0, &other)) {
+        return ptn_null();
+    }
+    if (node == NULL || other == NULL) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+    }
+    if (node == other) {
+        return ptn_int(0);
+    }
+    PtnXmlNode *node_root = ptn_xml_tree_root(node);
+    PtnXmlNode *other_root = ptn_xml_tree_root(other);
+    if (node_root == NULL || other_root == NULL || node_root != other_root) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+    }
+    if (node->type == PTN_XML_NODE_ATTRIBUTE && other->type == PTN_XML_NODE_ATTRIBUTE && node->parent == other->parent) {
+        size_t node_index = 0;
+        size_t other_index = 0;
+        if (ptn_xml_attribute_index(node, &node_index) && ptn_xml_attribute_index(other, &other_index)) {
+            int direction = node_index < other_index
+                ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
+                : PTN_DOM_DOCUMENT_POSITION_PRECEDING;
+            return ptn_int(direction | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+        }
+    }
+    if (ptn_xml_node_is_ancestor(node, other)) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_FOLLOWING | PTN_DOM_DOCUMENT_POSITION_CONTAINED_BY);
+    }
+    if (ptn_xml_node_is_ancestor(other, node)) {
+        return ptn_int(PTN_DOM_DOCUMENT_POSITION_PRECEDING | PTN_DOM_DOCUMENT_POSITION_CONTAINS);
+    }
+    if (node->parent != NULL && node->parent == other->parent) {
+        int node_found = 0;
+        int other_found = 0;
+        size_t node_index = ptn_xml_child_index(node->parent, node, &node_found);
+        size_t other_index = ptn_xml_child_index(other->parent, other, &other_found);
+        if (node_found && other_found) {
+            return ptn_int(node_index < other_index
+                ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
+                : PTN_DOM_DOCUMENT_POSITION_PRECEDING);
+        }
+    }
+    return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+}
+
 static PtnValue ptn_dom_insert_before_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMNode::insertBefore", "1 or 2 arguments", argc);
@@ -85044,6 +85123,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         }
         return ptn_xml_node_path_value(ptn_xml_node_data(receiver));
     }
+    if (ptn_ascii_case_equal(name, "compareDocumentPosition")) {
+        return ptn_dom_compare_document_position_method(runtime, receiver, argc, args, line);
+    }
     if (ptn_ascii_case_equal(name, "C14N")) {
         return ptn_dom_c14n_method(runtime, receiver, argc, args, line);
     }
@@ -86219,6 +86301,14 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
 
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
     class_name = ptn_dom_effective_class_name(class_name);
+    if (ptn_ascii_case_equal(method_name, "compareDocumentPosition") &&
+        ptn_dom_effective_class_is_modeled(class_name) &&
+        !ptn_ascii_case_equal(class_name, "DOMImplementation") &&
+        !ptn_ascii_case_equal(class_name, "DOMNodeList") &&
+        !ptn_ascii_case_equal(class_name, "DOMNamedNodeMap") &&
+        !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
+        return 1;
+    }
     if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return ptn_ascii_case_equal(method_name, "__debugInfo")
             || ptn_ascii_case_equal(method_name, "item")
@@ -108230,6 +108320,16 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("DEFAULTATTRS"), ptn_int(2));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("VALIDATE"), ptn_int(3));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("SUBST_ENTITIES"), ptn_int(4));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "DOMNode") ||
+        ptn_ascii_case_equal(class_name, "Dom\\Node")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_DISCONNECTED"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_PRECEDING"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_FOLLOWING"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_CONTAINS"), ptn_int(8));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_CONTAINED_BY"), ptn_int(16));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC"), ptn_int(32));
         return;
     }
     if (ptn_internal_class_name_is_phar(class_name)) {

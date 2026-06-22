@@ -3989,6 +3989,15 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "VALIDATE") == 0) { *out = ptn_int(3); return 1; }
         if (strcmp(constant, "SUBST_ENTITIES") == 0) { *out = ptn_int(4); return 1; }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DOMNode") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "Dom\\Node")) {
+        if (strcmp(constant, "DOCUMENT_POSITION_DISCONNECTED") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "DOCUMENT_POSITION_PRECEDING") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "DOCUMENT_POSITION_FOLLOWING") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "DOCUMENT_POSITION_CONTAINS") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "DOCUMENT_POSITION_CONTAINED_BY") == 0) { *out = ptn_int(16); return 1; }
+        if (strcmp(constant, "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC") == 0) { *out = ptn_int(32); return 1; }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "PDO") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Sqlite") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Mysql") ||
