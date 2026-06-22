@@ -79872,6 +79872,22 @@ static PtnXmlNode *ptn_xml_document_doctype(PtnXmlNode *document) {
     return NULL;
 }
 
+static PtnXmlNode *ptn_xml_document_entity_declaration(PtnXmlNode *document, const char *entity_name) {
+    PtnXmlNode *doctype = ptn_xml_document_doctype(document);
+    if (doctype == NULL || entity_name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < doctype->child_count; i++) {
+        PtnXmlNode *child = doctype->children[i];
+        if (child != NULL &&
+            child->type == PTN_XML_NODE_ENTITY &&
+            ptn_ascii_case_equal(child->name == NULL ? "" : child->name, entity_name)) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
 static int ptn_xml_subset_has_entity_name(const char *subset, const char *entity_name) {
     if (subset == NULL || entity_name == NULL) {
         return 0;
@@ -80029,10 +80045,12 @@ static char *ptn_xml_subset_entity_replacement_text(const char *subset, const ch
 }
 
 static void ptn_xml_entity_reference_append_declared_children(PtnRuntime *runtime, PtnXmlNode *ref) {
+    (void)runtime;
     if (ref == NULL || ref->child_count > 0) {
         return;
     }
-    PtnXmlNode *doctype = ptn_xml_document_doctype(ptn_xml_document_for_node(ref));
+    PtnXmlNode *document = ptn_xml_document_for_node(ref);
+    PtnXmlNode *doctype = ptn_xml_document_doctype(document);
     if (doctype == NULL || doctype->internal_subset == NULL) {
         return;
     }
@@ -80040,13 +80058,17 @@ static void ptn_xml_entity_reference_append_declared_children(PtnRuntime *runtim
     if (replacement == NULL) {
         return;
     }
-    PtnXmlNode *decl = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY_REFERENCE, ref->name == NULL ? "" : ref->name, "");
-    decl->owner_document = ptn_xml_document_for_node(ref);
-    ptn_xml_node_ensure_object(runtime, decl);
+    PtnXmlNode *decl = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY, ref->name == NULL ? "" : ref->name, "");
+    PtnXmlNode *doctype_decl = ptn_xml_document_entity_declaration(document, ref->name);
+    if (doctype_decl != NULL) {
+        decl->public_id = doctype_decl->public_id == NULL ? NULL : ptn_duplicate_string(doctype_decl->public_id);
+        decl->system_id = doctype_decl->system_id == NULL ? NULL : ptn_duplicate_string(doctype_decl->system_id);
+        decl->notation_name = doctype_decl->notation_name == NULL ? NULL : ptn_duplicate_string(doctype_decl->notation_name);
+    }
+    decl->owner_document = document;
 
     PtnXmlNode *text = ptn_xml_node_alloc(PTN_XML_NODE_TEXT, NULL, replacement);
-    text->owner_document = ptn_xml_document_for_node(ref);
-    ptn_xml_node_ensure_object(runtime, text);
+    text->owner_document = document;
     ptn_xml_append_child(decl, text);
 
     free(replacement);
