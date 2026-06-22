@@ -60418,6 +60418,13 @@ echo $class::VALUE, \"\\n\";
 echo $class::{$name}, \"\\n\";
 echo Dyn::{Dyn::NAME}, \"\\n\";
 echo $class::{\"class\"}, \"\\n\";
+foreach ([42, []] as $badName) {
+    try {
+        var_dump(Dyn::{$badName});
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
 ",
     )
     .unwrap();
@@ -60428,13 +60435,121 @@ echo $class::{\"class\"}, \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "value\nvalue\nvalue\nvalue\nDyn\n"
+        concat!(
+            "value\n",
+            "value\n",
+            "value\n",
+            "value\n",
+            "Dyn\n",
+            "Cannot use value of type int as class constant name\n",
+            "Cannot use value of type array as class constant name\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_fetch_dynamic_static_member_class_name(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
+    assert!(c_source.contains("ptn_runtime_dynamic_class_constant_name(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_class_constant_fetch_order_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-class-constant-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-order.php");
+    let output = root.join("dynamic-class-constant-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo { public const FOO = 'Foo'; }
+
+function foo() {
+    echo \"foo()\\n\";
+    return 'FOO';
+}
+
+function bar() {
+    echo \"bar()\\n\";
+    return 'BAR';
+}
+
+function test($callback) {
+    try {
+        echo $callback(), \"\\n\";
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+test(fn() => Foo::{foo()}::{bar()});
+test(fn() => Foo::{bar()}::{foo()});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "foo()\nbar()\nUndefined constant Foo::BAR\nbar()\nUndefined constant Foo::BAR\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_eval_dynamic_class_constant_returns_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-dynamic-class-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-dynamic-class-constant.php");
+    let output = root.join("eval-dynamic-class-constant-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo { public const BAR = 'bar'; }
+
+function test($code) {
+    try {
+        var_dump(eval($code));
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+test('return Foo::{"BAR"};');
+test('$foo = "Foo"; return $foo::{strtoupper("bar")};');
+test('$ba = "BA"; $r = "R"; return Foo::{$ba . $r};');
+test('$bar = "BAR"; $barRef = &$bar; return Foo::{$barRef};');
+test('return Foo::{strtolower("CLASS")};');
+test('return Foo::{42};');
+test('$bar = []; return Foo::{$bar};');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"bar\"\n",
+            "string(3) \"bar\"\n",
+            "string(3) \"bar\"\n",
+            "string(3) \"bar\"\n",
+            "string(3) \"Foo\"\n",
+            "Cannot use value of type int as class constant name\n",
+            "Cannot use value of type array as class constant name\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_eval_execute_return_statement"));
+    assert!(c_source.contains("ptn_eval_parse_dynamic_class_constant_fetch"));
 }
 
 #[test]

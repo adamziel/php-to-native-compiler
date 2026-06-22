@@ -122100,6 +122100,54 @@ static int ptn_eval_parse_variable_name(
     return 1;
 }
 
+static int ptn_eval_parse_expression(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+);
+
+static char *ptn_eval_source_path(PtnRuntime *runtime, size_t line) {
+    const char *source_path =
+        runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn";
+    int needed = snprintf(NULL, 0, "%s(%zu) : eval()'d code", source_path, line);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc((size_t)needed + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(path, (size_t)needed + 1, "%s(%zu) : eval()'d code", source_path, line);
+    return path;
+}
+
+static PtnValue ptn_eval_read_variable(PtnRuntime *runtime, const char *name, size_t line) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return ptn_runtime_globals_snapshot(runtime);
+    }
+    PtnValue value;
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    if (ptn_symbols_get(symbols, name, &value)) {
+        return ptn_value_deref(value);
+    }
+    char *path = ptn_eval_source_path(runtime, line);
+    if (strcmp(name, "this") == 0) {
+        ptn_throw_exception_at(runtime, "Error", "Using $this when not in object context", path, 1);
+        free(path);
+        return ptn_null();
+    }
+    if (ptn_runtime_is_auto_global_symbol_name(name)) {
+        ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, 1);
+    } else {
+        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, 1);
+    }
+    free(path);
+    return ptn_null();
+}
+
 static int ptn_eval_consume_char(const char *code, size_t len, size_t *pos, char expected) {
     size_t cursor = ptn_eval_skip_ws(code, len, *pos);
     if (cursor >= len || code[cursor] != expected) {
@@ -122163,12 +122211,7 @@ static int ptn_eval_parse_string_literal(
             size_t variable_pos = cursor;
             char *name = NULL;
             if (ptn_eval_parse_variable_name(code, len, &variable_pos, &name)) {
-                PtnValue value = ptn_runtime_read_variable(
-                    runtime,
-                    name,
-                    runtime != NULL ? runtime->source_path : NULL,
-                    line
-                );
+                PtnValue value = ptn_eval_read_variable(runtime, name, line);
                 char *text = ptn_value_to_string(value);
                 ptn_eval_buffer_append_bytes(&buffer, &buffer_len, &capacity, text, strlen(text));
                 free(text);
@@ -122258,7 +122301,220 @@ static int ptn_eval_parse_integer_literal(
     return 1;
 }
 
-static int ptn_eval_parse_expression(
+static int ptn_eval_parse_identifier_name(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    char **name_out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    size_t name_start = cursor;
+    while (cursor < len && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+        cursor++;
+    }
+    *name_out = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+    *pos = cursor;
+    return 1;
+}
+
+static int ptn_eval_consume_double_colon(const char *code, size_t len, size_t *pos) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor + 1 >= len || code[cursor] != ':' || code[cursor + 1] != ':') {
+        return 0;
+    }
+    *pos = cursor + 2;
+    return 1;
+}
+
+static int ptn_eval_parse_array_literal(
+    const char *code,
+    size_t len,
+    size_t *pos,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor >= len || code[cursor] != '[') {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+    if (cursor >= len || code[cursor] != ']') {
+        return 0;
+    }
+    *out = ptn_array_from_literal_entries(0, NULL);
+    *pos = cursor + 1;
+    return 1;
+}
+
+static int ptn_eval_parse_string_case_call(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    char *function_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &function_name)) {
+        return 0;
+    }
+    int uppercase = ptn_ascii_case_equal(function_name, "strtoupper");
+    int lowercase = ptn_ascii_case_equal(function_name, "strtolower");
+    if (!uppercase && !lowercase) {
+        free(function_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '(')) {
+        free(function_name);
+        return 0;
+    }
+
+    PtnValue argument = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &argument)) {
+        free(function_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
+        ptn_value_destroy(&argument);
+        free(function_name);
+        return 0;
+    }
+
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, argument, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        ptn_value_destroy(&argument);
+        free(function_name);
+        *out = ptn_null();
+        *pos = cursor;
+        return 1;
+    }
+    char *result = malloc(string.len + 1);
+    if (result == NULL) {
+        ptn_string_operand_free(string);
+        ptn_value_destroy(&argument);
+        free(function_name);
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < string.len; i++) {
+        unsigned char byte = (unsigned char)string.data[i];
+        result[i] = (char)(uppercase ? toupper(byte) : tolower(byte));
+    }
+    result[string.len] = '\0';
+    *out = ptn_owned_string_len((unsigned char *)result, string.len);
+    ptn_string_operand_free(string);
+    ptn_value_destroy(&argument);
+    free(function_name);
+    *pos = cursor;
+    return 1;
+}
+
+static int ptn_eval_parse_dynamic_class_constant_fetch(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    char *literal_class_name = NULL;
+    char *receiver_variable_name = NULL;
+    if (cursor < len && code[cursor] == '$') {
+        if (!ptn_eval_parse_variable_name(code, len, &cursor, &receiver_variable_name)) {
+            return 0;
+        }
+    } else if (!ptn_eval_parse_identifier_name(code, len, &cursor, &literal_class_name)) {
+        return 0;
+    }
+
+    if (!ptn_eval_consume_double_colon(code, len, &cursor)) {
+        free(literal_class_name);
+        free(receiver_variable_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '{')) {
+        free(literal_class_name);
+        free(receiver_variable_name);
+        return 0;
+    }
+
+    char *class_name = NULL;
+    if (literal_class_name != NULL) {
+        const char *resolved = ptn_runtime_resolve_class_alias(
+            runtime,
+            ptn_symbol_name_without_leading_slash(literal_class_name)
+        );
+        class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
+    } else {
+        PtnValue receiver = ptn_value_clone_deref(
+            ptn_eval_read_variable(runtime, receiver_variable_name, line)
+        );
+        PtnValue class_value =
+            ptn_runtime_fetch_dynamic_static_member_class_name(runtime, receiver, line);
+        ptn_value_destroy(&receiver);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&class_value);
+            free(receiver_variable_name);
+            *out = ptn_null();
+            *pos = cursor;
+            return 1;
+        }
+        char *raw_class_name = ptn_value_to_string(class_value);
+        ptn_value_destroy(&class_value);
+        const char *resolved = ptn_runtime_resolve_class_alias(
+            runtime,
+            ptn_symbol_name_without_leading_slash(raw_class_name)
+        );
+        class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
+        free(raw_class_name);
+    }
+    free(literal_class_name);
+    free(receiver_variable_name);
+
+    PtnValue constant_name_value = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &constant_name_value)) {
+        free(class_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '}')) {
+        ptn_value_destroy(&constant_name_value);
+        free(class_name);
+        return 0;
+    }
+
+    char *constant_name =
+        ptn_runtime_dynamic_class_constant_name(runtime, constant_name_value, line);
+    ptn_value_destroy(&constant_name_value);
+    if (constant_name == NULL || runtime->exceptions->active_exception != NULL) {
+        free(constant_name);
+        free(class_name);
+        *out = ptn_null();
+        *pos = cursor;
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(constant_name, "class")) {
+        *out = ptn_owned_string(ptn_duplicate_string(class_name));
+    } else {
+        *out = ptn_runtime_read_class_constant_with_scope(
+            runtime,
+            class_name,
+            constant_name,
+            runtime != NULL ? runtime->current_class_name : NULL,
+            line
+        );
+    }
+    free(constant_name);
+    free(class_name);
+    *pos = cursor;
+    return 1;
+}
+
+static int ptn_eval_parse_primary_expression(
     PtnRuntime *runtime,
     const char *code,
     size_t len,
@@ -122270,20 +122526,24 @@ static int ptn_eval_parse_expression(
     if (cursor >= len) {
         return 0;
     }
+    if (ptn_eval_parse_dynamic_class_constant_fetch(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
+    if (ptn_eval_parse_string_case_call(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
     if (code[cursor] == '\'' || code[cursor] == '"') {
         return ptn_eval_parse_string_literal(runtime, code, len, pos, line, out);
+    }
+    if (ptn_eval_parse_array_literal(code, len, pos, out)) {
+        return 1;
     }
     if (code[cursor] == '$') {
         char *name = NULL;
         if (!ptn_eval_parse_variable_name(code, len, &cursor, &name)) {
             return 0;
         }
-        PtnValue value = ptn_runtime_read_variable(
-            runtime,
-            name,
-            runtime != NULL ? runtime->source_path : NULL,
-            line
-        );
+        PtnValue value = ptn_eval_read_variable(runtime, name, line);
         *out = ptn_value_clone_deref(value);
         free(name);
         *pos = cursor;
@@ -122307,6 +122567,67 @@ static int ptn_eval_parse_expression(
     return ptn_eval_parse_integer_literal(code, len, pos, out);
 }
 
+static int ptn_eval_parse_expression(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    PtnValue left = ptn_null();
+    if (!ptn_eval_parse_primary_expression(runtime, code, len, pos, line, &left)) {
+        return 0;
+    }
+
+    while (1) {
+        size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+        if (cursor >= len || code[cursor] != '.') {
+            break;
+        }
+        cursor++;
+        PtnValue right = ptn_null();
+        if (!ptn_eval_parse_primary_expression(runtime, code, len, &cursor, line, &right)) {
+            ptn_value_destroy(&left);
+            return 0;
+        }
+        PtnStringOperand left_string =
+            ptn_value_to_string_operand_with_runtime(runtime, left, line);
+        PtnStringOperand right_string =
+            ptn_value_to_string_operand_with_runtime(runtime, right, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(left_string);
+            ptn_string_operand_free(right_string);
+            ptn_value_destroy(&left);
+            ptn_value_destroy(&right);
+            *out = ptn_null();
+            *pos = cursor;
+            return 1;
+        }
+        size_t total_len = left_string.len + right_string.len;
+        char *combined = malloc(total_len + 1);
+        if (combined == NULL) {
+            ptn_string_operand_free(left_string);
+            ptn_string_operand_free(right_string);
+            ptn_value_destroy(&left);
+            ptn_value_destroy(&right);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(combined, left_string.data, left_string.len);
+        memcpy(combined + left_string.len, right_string.data, right_string.len);
+        combined[total_len] = '\0';
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        ptn_value_destroy(&left);
+        ptn_value_destroy(&right);
+        left = ptn_owned_string_len((unsigned char *)combined, total_len);
+        *pos = cursor;
+    }
+
+    *out = left;
+    return 1;
+}
+
 static void ptn_eval_skip_statement(const char *code, size_t len, size_t *pos) {
     size_t cursor = *pos;
     while (cursor < len) {
@@ -122321,6 +122642,75 @@ static void ptn_eval_skip_statement(const char *code, size_t len, size_t *pos) {
         cursor++;
     }
     *pos = cursor;
+}
+
+static int ptn_eval_execute_return_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *return_out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (!ptn_eval_keyword_at(code, len, cursor, "return")) {
+        return 0;
+    }
+    cursor += strlen("return");
+    PtnValue result = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &result)) {
+        return 0;
+    }
+    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    *return_out = result;
+    *pos = cursor;
+    return 1;
+}
+
+static int ptn_eval_execute_assignment_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    char *target_name = NULL;
+    if (!ptn_eval_parse_variable_name(code, len, &cursor, &target_name)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '=')) {
+        free(target_name);
+        return 0;
+    }
+
+    size_t value_cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (value_cursor < len && code[value_cursor] == '&') {
+        value_cursor++;
+        char *source_name = NULL;
+        if (!ptn_eval_parse_variable_name(code, len, &value_cursor, &source_name)) {
+            free(target_name);
+            return 0;
+        }
+        PtnValue reference = ptn_runtime_reference_for_variable(runtime, source_name);
+        ptn_runtime_bind_variable_reference(runtime, target_name, reference);
+        ptn_value_destroy(&reference);
+        free(source_name);
+        cursor = value_cursor;
+    } else {
+        PtnValue value = ptn_null();
+        if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &value)) {
+            free(target_name);
+            return 0;
+        }
+        ptn_runtime_write_variable(runtime, target_name, value);
+        ptn_value_destroy(&value);
+    }
+
+    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    free(target_name);
+    *pos = cursor;
+    return 1;
 }
 
 static int ptn_eval_execute_unset_statement(
@@ -122480,16 +122870,26 @@ fail:
     return 0;
 }
 
-static void ptn_eval_execute_supported_statements(PtnRuntime *runtime, const char *code, size_t line) {
+static int ptn_eval_execute_supported_statements(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t line,
+    PtnValue *return_out
+) {
     size_t len = strlen(code);
     size_t pos = 0;
     while (1) {
         pos = ptn_eval_skip_ws(code, len, pos);
         if (pos >= len) {
-            return;
+            return 0;
         }
         size_t statement_pos = pos;
+        if (ptn_eval_execute_return_statement(runtime, code, len, &pos, line, return_out)) {
+            return 1;
+        }
+        pos = statement_pos;
         if (
+            ptn_eval_execute_assignment_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_unset_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_array_mutator_statement(runtime, code, len, &pos, line)
         ) {
@@ -122504,7 +122904,11 @@ static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnVal
     (void)argc;
     char *code = ptn_value_to_string(args[0]);
     ptn_eval_scan_class_declarations(runtime, code, line);
-    ptn_eval_execute_supported_statements(runtime, code, line);
+    PtnValue result = ptn_null();
+    if (ptn_eval_execute_supported_statements(runtime, code, line, &result)) {
+        free(code);
+        return result;
+    }
     free(code);
     return ptn_null();
 }

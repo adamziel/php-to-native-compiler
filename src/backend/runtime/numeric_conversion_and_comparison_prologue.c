@@ -5221,6 +5221,46 @@ static PTN_UNUSED const char *ptn_dynamic_class_name_fetch_type_name(PtnValue va
     return "unknown";
 }
 
+static PTN_UNUSED char *ptn_runtime_dynamic_class_constant_name(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING) {
+        return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+    }
+
+    const char *type_name = ptn_dynamic_class_name_fetch_type_name(value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "Cannot use value of type %s as class constant name",
+        type_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Cannot use value of type %s as class constant name",
+        type_name
+    );
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    return NULL;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
     PtnRuntime *runtime,
     PtnValue receiver,

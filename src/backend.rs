@@ -38510,13 +38510,20 @@ impl ValueEmitter {
         result_temp
     }
 
-    fn emit_dynamic_class_constant_name(&mut self, out: &mut String, name: &ValueExpr) -> String {
+    fn emit_dynamic_class_constant_name(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
         let value_temp = self.emit_materialized_value(out, name);
         let name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&name_temp);
-        out.push_str(" = ptn_value_to_string(");
+        out.push_str(" = ptn_runtime_dynamic_class_constant_name(&runtime, ");
         out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &value_temp);
         name_temp
@@ -38530,7 +38537,6 @@ impl ValueEmitter {
         name: &ValueExpr,
         line: usize,
     ) -> String {
-        let name_temp = self.emit_dynamic_class_constant_name(out, name);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -38550,16 +38556,20 @@ impl ValueEmitter {
                 out.push_str("    if (");
                 out.push_str(&result_temp);
                 out.push_str("_class_name != NULL) {\n");
+                let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
+                out.push_str("        if (");
+                out.push_str(&name_temp);
+                out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
                 out.push_str("        if (ptn_ascii_case_equal(");
                 out.push_str(&name_temp);
                 out.push_str(", \"class\")) {\n");
-                out.push_str("            ");
+                out.push_str("                ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
                 out.push_str(&result_temp);
                 out.push_str("_class_name));\n");
-                out.push_str("        } else {\n");
-                out.push_str("            ");
+                out.push_str("            } else {\n");
+                out.push_str("                ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
                 out.push_str(&result_temp);
@@ -38570,20 +38580,28 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("            }\n");
                 out.push_str("        }\n");
+                out.push_str("        free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
                 out.push_str("    }\n");
             } else {
                 let resolved_class_name = self.static_member_class_name(class_name);
-                out.push_str("    if (ptn_ascii_case_equal(");
+                let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
+                out.push_str("    if (");
+                out.push_str(&name_temp);
+                out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        if (ptn_ascii_case_equal(");
                 out.push_str(&name_temp);
                 out.push_str(", \"class\")) {\n");
-                out.push_str("        ");
+                out.push_str("            ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_string(\"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\");\n");
-                out.push_str("    } else {\n");
-                out.push_str("        ");
+                out.push_str("        } else {\n");
+                out.push_str("            ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
@@ -38594,21 +38612,30 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("        }\n");
                 out.push_str("    }\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
             }
         } else if let Some(receiver) = receiver {
             let (class_value_temp, class_name_temp) =
                 self.emit_dynamic_class_name_cstr(out, receiver, line);
-            out.push_str("    if (ptn_ascii_case_equal(");
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+            let name_temp = self.emit_dynamic_class_constant_name(out, name, line);
+            out.push_str("        if (");
+            out.push_str(&name_temp);
+            out.push_str(" != NULL && runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("            if (ptn_ascii_case_equal(");
             out.push_str(&name_temp);
             out.push_str(", \"class\")) {\n");
-            out.push_str("        ");
+            out.push_str("                ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
             out.push_str(&class_name_temp);
             out.push_str("));\n");
-            out.push_str("    } else {\n");
-            out.push_str("        ");
+            out.push_str("            } else {\n");
+            out.push_str("                ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
             out.push_str(&class_name_temp);
@@ -38619,16 +38646,17 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            out.push_str("            }\n");
+            out.push_str("    }\n");
+            out.push_str("        free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
             out.push_str("    }\n");
             out.push_str("    free(");
             out.push_str(&class_name_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &class_value_temp);
         }
-
-        out.push_str("    free(");
-        out.push_str(&name_temp);
-        out.push_str(");\n");
         result_temp
     }
 
