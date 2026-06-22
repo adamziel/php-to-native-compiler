@@ -1045,8 +1045,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMNodeList\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMNamedNodeMap\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMNamedNodeMap\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\NodeList\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\NamedNodeMap\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\TokenList\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
@@ -1061,11 +1065,16 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Stringable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocument\")) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocument\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Document\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\XMLDocument\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\HTMLDocument\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocumentFragment\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMElement\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMElement\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\DocumentFragment\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Element\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
     out.push_str("    }\n");
@@ -1074,7 +1083,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCDataSection\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMComment\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMEntityReference\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMProcessingInstruction\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMProcessingInstruction\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Text\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\CdataSection\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\CDataSection\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Comment\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\EntityReference\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\ProcessingInstruction\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
@@ -6121,9 +6136,25 @@ fn emit_class_metadata_helpers(
         "DOMComment",
         "DOMNodeList",
         "DOMNamedNodeMap",
-        "DOM\\XMLDocument",
-        "DOM\\Element",
-        "DOM\\TokenList",
+        "Dom\\Node",
+        "Dom\\Document",
+        "Dom\\XMLDocument",
+        "Dom\\HTMLDocument",
+        "Dom\\DocumentFragment",
+        "Dom\\DocumentType",
+        "Dom\\Implementation",
+        "Dom\\Element",
+        "Dom\\Attr",
+        "Dom\\Entity",
+        "Dom\\EntityReference",
+        "Dom\\ProcessingInstruction",
+        "Dom\\CharacterData",
+        "Dom\\Text",
+        "Dom\\CdataSection",
+        "Dom\\Comment",
+        "Dom\\NodeList",
+        "Dom\\NamedNodeMap",
+        "Dom\\TokenList",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -6639,9 +6670,25 @@ fn emit_class_metadata_helpers(
         "DOMComment",
         "DOMNodeList",
         "DOMNamedNodeMap",
-        "DOM\\XMLDocument",
-        "DOM\\Element",
-        "DOM\\TokenList",
+        "Dom\\Node",
+        "Dom\\Document",
+        "Dom\\XMLDocument",
+        "Dom\\HTMLDocument",
+        "Dom\\DocumentFragment",
+        "Dom\\DocumentType",
+        "Dom\\Implementation",
+        "Dom\\Element",
+        "Dom\\Attr",
+        "Dom\\Entity",
+        "Dom\\EntityReference",
+        "Dom\\ProcessingInstruction",
+        "Dom\\CharacterData",
+        "Dom\\Text",
+        "Dom\\CdataSection",
+        "Dom\\Comment",
+        "Dom\\NodeList",
+        "Dom\\NamedNodeMap",
+        "Dom\\TokenList",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -7184,8 +7231,20 @@ fn emit_class_metadata_helpers(
         ("DOMText", "DOMCharacterData"),
         ("DOMCdataSection", "DOMText"),
         ("DOMComment", "DOMCharacterData"),
-        ("DOM\\XMLDocument", "DOMDocument"),
-        ("DOM\\Element", "DOMElement"),
+        ("Dom\\Document", "Dom\\Node"),
+        ("Dom\\XMLDocument", "Dom\\Document"),
+        ("Dom\\HTMLDocument", "Dom\\Document"),
+        ("Dom\\DocumentFragment", "Dom\\Node"),
+        ("Dom\\DocumentType", "Dom\\Node"),
+        ("Dom\\Element", "Dom\\Node"),
+        ("Dom\\Attr", "Dom\\Node"),
+        ("Dom\\Entity", "Dom\\Node"),
+        ("Dom\\EntityReference", "Dom\\Node"),
+        ("Dom\\ProcessingInstruction", "Dom\\Node"),
+        ("Dom\\CharacterData", "Dom\\Node"),
+        ("Dom\\Text", "Dom\\CharacterData"),
+        ("Dom\\CdataSection", "Dom\\Text"),
+        ("Dom\\Comment", "Dom\\CharacterData"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -16634,12 +16693,10 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
     match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
         "domnode" => Some("DOMNode"),
         "domdocument" => Some("DOMDocument"),
-        "dom\\xmldocument" => Some("DOM\\XMLDocument"),
         "domdocumentfragment" => Some("DOMDocumentFragment"),
         "domdocumenttype" => Some("DOMDocumentType"),
         "domimplementation" => Some("DOMImplementation"),
         "domelement" => Some("DOMElement"),
-        "dom\\element" => Some("DOM\\Element"),
         "domattr" => Some("DOMAttr"),
         "domentityreference" => Some("DOMEntityReference"),
         "domprocessinginstruction" => Some("DOMProcessingInstruction"),
@@ -16649,7 +16706,25 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domcomment" => Some("DOMComment"),
         "domnodelist" => Some("DOMNodeList"),
         "domnamednodemap" => Some("DOMNamedNodeMap"),
-        "dom\\tokenlist" => Some("DOM\\TokenList"),
+        "dom\\node" => Some("Dom\\Node"),
+        "dom\\document" => Some("Dom\\Document"),
+        "dom\\xmldocument" => Some("Dom\\XMLDocument"),
+        "dom\\htmldocument" => Some("Dom\\HTMLDocument"),
+        "dom\\documentfragment" => Some("Dom\\DocumentFragment"),
+        "dom\\documenttype" => Some("Dom\\DocumentType"),
+        "dom\\implementation" => Some("Dom\\Implementation"),
+        "dom\\element" => Some("Dom\\Element"),
+        "dom\\attr" => Some("Dom\\Attr"),
+        "dom\\entity" => Some("Dom\\Entity"),
+        "dom\\entityreference" => Some("Dom\\EntityReference"),
+        "dom\\processinginstruction" => Some("Dom\\ProcessingInstruction"),
+        "dom\\characterdata" => Some("Dom\\CharacterData"),
+        "dom\\text" => Some("Dom\\Text"),
+        "dom\\cdatasection" => Some("Dom\\CdataSection"),
+        "dom\\comment" => Some("Dom\\Comment"),
+        "dom\\nodelist" => Some("Dom\\NodeList"),
+        "dom\\namednodemap" => Some("Dom\\NamedNodeMap"),
+        "dom\\tokenlist" => Some("Dom\\TokenList"),
         "libxmlerror" => Some("LibXMLError"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),
@@ -25370,6 +25445,26 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMComment")
                 || class_name.eq_ignore_ascii_case("DOMNodeList")
                 || class_name.eq_ignore_ascii_case("DOMNamedNodeMap")
+                || class_name.eq_ignore_ascii_case("Dom\\Node")
+                || class_name.eq_ignore_ascii_case("Dom\\Document")
+                || class_name.eq_ignore_ascii_case("Dom\\XMLDocument")
+                || class_name.eq_ignore_ascii_case("Dom\\HTMLDocument")
+                || class_name.eq_ignore_ascii_case("Dom\\DocumentFragment")
+                || class_name.eq_ignore_ascii_case("Dom\\DocumentType")
+                || class_name.eq_ignore_ascii_case("Dom\\Implementation")
+                || class_name.eq_ignore_ascii_case("Dom\\Element")
+                || class_name.eq_ignore_ascii_case("Dom\\Attr")
+                || class_name.eq_ignore_ascii_case("Dom\\Entity")
+                || class_name.eq_ignore_ascii_case("Dom\\EntityReference")
+                || class_name.eq_ignore_ascii_case("Dom\\ProcessingInstruction")
+                || class_name.eq_ignore_ascii_case("Dom\\CharacterData")
+                || class_name.eq_ignore_ascii_case("Dom\\Text")
+                || class_name.eq_ignore_ascii_case("Dom\\CdataSection")
+                || class_name.eq_ignore_ascii_case("Dom\\CDataSection")
+                || class_name.eq_ignore_ascii_case("Dom\\Comment")
+                || class_name.eq_ignore_ascii_case("Dom\\NodeList")
+                || class_name.eq_ignore_ascii_case("Dom\\NamedNodeMap")
+                || class_name.eq_ignore_ascii_case("Dom\\TokenList")
                 || class_name.eq_ignore_ascii_case("XMLReader")
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
