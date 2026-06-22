@@ -6220,6 +6220,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
                 );
                 return ptn_null();
             }
+            if (!ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata)) {
+                ptn_throw_uninitialized_typed_property_error(
+                    runtime,
+                    metadata->declaring_class,
+                    metadata->display_name,
+                    line
+                );
+                return ptn_null();
+            }
             if (
                 metadata->set_visibility != metadata->read_visibility &&
                 !ptn_property_visibility_allows(
@@ -6238,13 +6247,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
                 );
                 return ptn_null();
             }
-            ptn_throw_uninitialized_typed_property_error(
-                runtime,
-                metadata->declaring_class,
-                metadata->display_name,
-                line
-            );
-            return ptn_null();
+            return ptn_array_from_literal_entries(0, NULL);
         }
         PtnValue magic_value;
         if (

@@ -28807,6 +28807,7 @@ fn property_receiver_uses_quiet_unset(value: &ValueExpr) -> bool {
         value,
         ValueExpr::PropertyFetch { .. }
             | ValueExpr::DynamicPropertyFetch { .. }
+            | ValueExpr::StaticPropertyFetch { .. }
             | ValueExpr::ArrayAccess { .. }
     )
 }
