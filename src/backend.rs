@@ -19261,6 +19261,13 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str(
+        "    if (ptn_declared_class_is_same_or_descendant(class_name, \"SoapClient\")) {\n",
+    );
+    out.push_str(
+        "        return ptn_soap_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_reflection_enum(class_name)) {\n");
     out.push_str(
         "        return ptn_reflection_enum_call_method(runtime, resolved, method_name, argc, args, line);\n",
