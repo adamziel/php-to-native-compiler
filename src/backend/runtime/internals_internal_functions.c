@@ -11827,8 +11827,16 @@ static void ptn_spl_object_storage_throw_unserialize_error(
     PtnRuntime *runtime,
     size_t offset,
     size_t len,
-    size_t line
+    size_t line,
+    int emit_unexpected_end_warning
 ) {
+    if (emit_unexpected_end_warning) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "SplObjectStorage::unserialize(): Unexpected end of serialized data",
+            line
+        );
+    }
     char message[96];
     int written = snprintf(
         message,
@@ -11840,7 +11848,6 @@ static void ptn_spl_object_storage_throw_unserialize_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    (void)line;
     ptn_throw_exception(runtime, "UnexpectedValueException", message);
 }
 
@@ -12913,6 +12920,8 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
 fail:
     {
         size_t offset = state->error_pos;
+        int emit_unexpected_end_warning =
+            state->unexpected_end || (payload_len > 0 && offset < payload_len - 1);
         ptn_value_destroy(&count_value.value);
         ptn_value_destroy(&members.value);
         if (!data_owned_by_result && data != NULL) {
@@ -12933,7 +12942,13 @@ fail:
         state->insufficient_data = saved_insufficient_data;
         state->insufficient_required = saved_insufficient_required;
         state->insufficient_present = saved_insufficient_present;
-        ptn_spl_object_storage_throw_unserialize_error(runtime, offset, payload_len, line);
+        ptn_spl_object_storage_throw_unserialize_error(
+            runtime,
+            offset,
+            payload_len,
+            line,
+            emit_unexpected_end_warning
+        );
         return 0;
     }
 }
