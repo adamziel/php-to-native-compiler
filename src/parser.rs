@@ -6132,6 +6132,10 @@ impl Parser<'_> {
     fn parse_call_statement(&mut self) -> Result<Statement> {
         let start_index = self.index;
         let (name, span) = self.parse_resolved_function_name("expected function name")?;
+        if self.peek_is_first_class_callable_arguments() {
+            self.index = start_index;
+            return self.parse_expression_statement();
+        }
         let (arguments, argument_names, argument_unpacks, _) = self.parse_call_arguments()?;
         if !matches!(
             self.peek().kind,
@@ -8037,10 +8041,11 @@ impl Parser<'_> {
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
                         let resolved_name = self.resolve_function_name(&parsed_name);
-                        return Ok(Expr::FirstClassCallable {
+                        let callable = Expr::FirstClassCallable {
                             callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
                             span: combine_spans(parsed_name.span, right_span),
-                        });
+                        };
+                        return self.parse_postfix_expr_from(callable, true);
                     }
                     match (unqualified, lowercase.as_str()) {
                         (true, "array") => self.parse_long_array_literal(parsed_name.span),
@@ -8139,10 +8144,11 @@ impl Parser<'_> {
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
                         let resolved_name = self.resolve_function_name(&parsed_name);
-                        return Ok(Expr::FirstClassCallable {
+                        let callable = Expr::FirstClassCallable {
                             callable: Box::new(Expr::String(resolved_name, parsed_name.span)),
                             span: combine_spans(parsed_name.span, right_span),
-                        });
+                        };
+                        return self.parse_postfix_expr_from(callable, true);
                     }
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
@@ -9304,9 +9310,18 @@ impl Parser<'_> {
     }
 
     fn peek_is_first_class_callable_arguments(&self) -> bool {
-        matches!(self.peek().kind, TokenKind::LeftParen)
-            && matches!(self.peek_next().kind, TokenKind::Ellipsis)
-            && matches!(self.peek_n(2).kind, TokenKind::RightParen)
+        matches!(
+            (
+                self.tokens.get(self.index).map(|token| &token.kind),
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                self.tokens.get(self.index + 2).map(|token| &token.kind),
+            ),
+            (
+                Some(TokenKind::LeftParen),
+                Some(TokenKind::Ellipsis),
+                Some(TokenKind::RightParen)
+            )
+        )
     }
 
     fn parse_first_class_callable_arguments(&mut self) -> Result<SourceSpan> {

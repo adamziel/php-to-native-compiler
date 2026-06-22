@@ -90284,6 +90284,7 @@ static void ptn_xmlwriter_append_method_names(PtnValue result, int64_t *index) {
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_closure_get_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -90301,6 +90302,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
         if (ptn_ascii_case_equal(name, "fromCallable")) {
             return ptn_internal_closure_from_callable(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "getCurrent")) {
+            return ptn_internal_closure_get_current(runtime, argc, args, line);
         }
     }
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
@@ -92538,6 +92542,7 @@ static PtnValue ptn_internal_intl_calendar_get_keyword_values_for_locale(
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_closure_get_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, int reject_magic_static, size_t line);
 static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_intl_break_iterator_create_word_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -92940,6 +92945,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "closedir", 0, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
+        { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
         { "Collator::create", 1, 1, ptn_internal_collator_create },
         { "collator_create", 1, 1, ptn_internal_collator_create },
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
@@ -94559,6 +94565,30 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
     }
     PtnFunctionMetadata metadata = ptn_find_callable_metadata(runtime, callable);
     return ptn_closure_wrap_callable(runtime, callable, metadata);
+}
+
+static PtnValue ptn_internal_closure_get_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Closure::getCurrent() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (runtime != NULL && runtime->call_frame != NULL && runtime->call_frame->has_current_closure) {
+        return ptn_value_clone(runtime->call_frame->current_closure);
+    }
+    ptn_throw_exception(runtime, "Error", "Current function is not a closure");
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -96434,7 +96464,8 @@ static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
         || ptn_ascii_case_equal(method_name, "bind")
         || ptn_ascii_case_equal(method_name, "bindTo")
-        || ptn_ascii_case_equal(method_name, "fromCallable");
+        || ptn_ascii_case_equal(method_name, "fromCallable")
+        || ptn_ascii_case_equal(method_name, "getCurrent");
 }
 
 static int ptn_exception_method_exists(const char *method_name) {
@@ -97041,7 +97072,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name) {
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_ascii_case_equal(method_name, "bind")
-            || ptn_ascii_case_equal(method_name, "fromCallable");
+            || ptn_ascii_case_equal(method_name, "fromCallable")
+            || ptn_ascii_case_equal(method_name, "getCurrent");
     }
     if (ptn_internal_class_name_is_fiber(class_name)) {
         return ptn_ascii_case_equal(method_name, "getCurrent")

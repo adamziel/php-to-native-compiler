@@ -1104,6 +1104,8 @@ typedef struct {
     const char *const *arg_names;
     size_t parameter_count;
     const char *const *parameter_names;
+    int has_current_closure;
+    PtnValue current_closure;
 } PtnCallFrame;
 
 struct PtnTraceFrame {

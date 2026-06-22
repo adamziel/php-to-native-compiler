@@ -1918,6 +1918,12 @@ fn emit_user_functions(
             out.push_str(");\n");
         }
         if function.is_anonymous {
+            out.push_str("    if (receiver.type == PTN_CLOSURE) {\n");
+            out.push_str("        runtime.owned_call_frame.has_current_closure = 1;\n");
+            out.push_str("        runtime.owned_call_frame.current_closure = receiver;\n");
+            out.push_str("    }\n");
+        }
+        if function.is_anonymous {
             out.push_str("    if (receiver.type == PTN_CLOSURE && receiver.as.closure->scope_class_name != NULL) {\n");
             out.push_str("        const char *ptn_closure_trace_scope = receiver.as.closure->scope_class_name;\n");
             out.push_str("        PtnValue ptn_closure_bound_this;\n");

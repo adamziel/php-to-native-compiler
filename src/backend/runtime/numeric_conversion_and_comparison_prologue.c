@@ -61,6 +61,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.arg_names = NULL;
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
+    runtime->owned_call_frame.has_current_closure = 0;
+    runtime->owned_call_frame.current_closure = ptn_null();
     runtime->call_frame = NULL;
     runtime->next_call_arg_names = NULL;
     runtime->owned_trace_frame.runtime = NULL;
@@ -322,6 +324,8 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_call_frame.arg_names = arg_names;
     runtime->owned_call_frame.parameter_count = parameter_count;
     runtime->owned_call_frame.parameter_names = parameter_names;
+    runtime->owned_call_frame.has_current_closure = 0;
+    runtime->owned_call_frame.current_closure = ptn_null();
     runtime->call_frame = &runtime->owned_call_frame;
     runtime->owned_trace_frame.runtime = runtime;
     runtime->owned_trace_frame.function_name = runtime->current_function_name;

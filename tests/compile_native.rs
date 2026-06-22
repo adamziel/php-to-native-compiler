@@ -3175,6 +3175,40 @@ fn parser_accepts_dynamic_function_value_calls() {
 }
 
 #[test]
+fn lexer_tokenizes_immediate_first_class_callable_invocation() {
+    let tokens = lexer::lex("<?php foo(...)();").unwrap();
+    let kinds: Vec<_> = tokens.into_iter().map(|token| token.kind).collect();
+    assert!(matches!(
+        kinds.as_slice(),
+        [
+            TokenKind::OpenTag,
+            TokenKind::Identifier(_),
+            TokenKind::LeftParen,
+            TokenKind::Ellipsis,
+            TokenKind::RightParen,
+            TokenKind::LeftParen,
+            TokenKind::RightParen,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    ));
+}
+
+#[test]
+fn parser_accepts_immediate_first_class_callable_invocation() {
+    let program = parser::parse("<?php function foo() {} foo(...)();").unwrap();
+    assert_eq!(program.statements.len(), 1);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Expression {
+            expression: Expr::DynamicCall { callee, arguments, .. },
+            ..
+        } if arguments.is_empty()
+            && matches!(callee.as_ref(), Expr::FirstClassCallable { .. })
+    ));
+}
+
+#[test]
 fn parser_accepts_user_function_declarations_and_returns() {
     let program = parser::parse(
         "<?php function add($left, $right) { $sum = $left + $right; return $sum; } echo add(2, 3);",
@@ -58377,6 +58411,84 @@ var_dump(method_exists(\"Closure\", \"bind\"));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_closure_bind"));
     assert!(c_source.contains("ptn_internal_class_exists_name(ptn_static_magic_resolved_class)"));
+}
+
+#[test]
+fn compile_closure_get_current_tracks_active_closure_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-get-current");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-get-current.php");
+    let output = root.join("closure-get-current-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$i = 1;
+
+$c = function ($p) use (&$i) {
+    $self = Closure::getCurrent();
+    var_dump($p, $i);
+    $i++;
+    if ($p < 3) {
+        $self($p + 1);
+    }
+};
+
+$c(1);
+var_dump($i);
+var_dump(method_exists("Closure", "getCurrent"));
+
+function fail_current() {
+    Closure::getCurrent();
+}
+
+try {
+    fail_current();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+function foo_current() {
+    var_dump(Closure::getCurrent());
+}
+
+try {
+    foo_current(...)();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(3)\n",
+            "int(4)\n",
+            "bool(true)\n",
+            "Current function is not a closure\n",
+            "Current function is not a closure\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_closure_get_current"));
+    assert!(c_source.contains("has_current_closure"));
 }
 
 #[test]
