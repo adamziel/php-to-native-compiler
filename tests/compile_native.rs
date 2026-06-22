@@ -15961,6 +15961,41 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_unserialize_negative_count_offset_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-unserialize-negative-count");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-unserialize-negative-count.php");
+    let output = root.join("spl-object-storage-unserialize-negative-count-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = 'C:16:"SplObjectStorage":25:{x:i:-9223372036854775808;}';
+try {
+    var_dump(unserialize($payload));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error at offset 24 of 25 bytes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_get_hash_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-get-hash");
     fs::create_dir_all(&root).unwrap();

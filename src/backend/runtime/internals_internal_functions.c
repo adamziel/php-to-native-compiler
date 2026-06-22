@@ -13284,10 +13284,14 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
         if (state->failed ||
             resolved_count.type != PTN_INT ||
             resolved_count.as.integer < 0) {
+            if (!state->failed) {
+                ptn_unserialize_fail_at(state, state->pos == 0 ? 0 : state->pos - 1);
+            }
             goto fail;
         }
         count = (size_t)resolved_count.as.integer;
         if ((int64_t)count != resolved_count.as.integer) {
+            ptn_unserialize_fail_at(state, state->pos == 0 ? 0 : state->pos - 1);
             goto fail;
         }
         ptn_unserialize_retain_id_value(state, count_value.id, count_value.value);
@@ -13298,10 +13302,14 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
         if (!ptn_unserialize_parse_int64(state, &parsed_count) ||
             parsed_count < 0 ||
             !ptn_unserialize_consume(state, ';')) {
+            if (!state->failed) {
+                ptn_unserialize_fail_at(state, state->pos);
+            }
             goto fail;
         }
         count = (size_t)parsed_count;
         if ((int64_t)count != parsed_count) {
+            ptn_unserialize_fail_at(state, state->pos);
             goto fail;
         }
     }
