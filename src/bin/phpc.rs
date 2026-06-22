@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::{compile_file_with_preloads, CompileOptions, Diagnostic, DiagnosticKind};
+use ptn::{
+    compile_file_with_preloads_and_source_options, CompileOptions, CompileSourceOptions,
+    Diagnostic, DiagnosticKind,
+};
 
 fn main() {
     match run() {
@@ -235,6 +238,9 @@ struct RuntimeIni {
     mbstring_language: Option<String>,
     mbstring_detect_order: Option<String>,
     mbstring_substitute_character: Option<String>,
+    mbstring_encoding_translation: Option<String>,
+    zend_multibyte: Option<String>,
+    zend_script_encoding: Option<String>,
     zend_assertions: Option<String>,
     zend_enable_gc: Option<String>,
     memory_limit: Option<String>,
@@ -465,6 +471,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.mbstring_detect_order = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.substitute_character") {
         ini.mbstring_substitute_character = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.encoding_translation") {
+        ini.mbstring_encoding_translation = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend.multibyte") {
+        ini.zend_multibyte = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend.script_encoding") {
+        ini.zend_script_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.enable_gc") {
@@ -879,6 +891,17 @@ fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
     }
 }
 
+fn invalid_zend_script_encoding_warning(ini: &RuntimeIni) -> Option<String> {
+    let script_encoding = ini.zend_script_encoding.as_deref()?;
+    script_encoding
+        .eq_ignore_ascii_case("pass")
+        .then(|| {
+            format!(
+                "Warning: PHP Startup: INI setting contains invalid encoding \"{script_encoding}\" in Unknown on line 0"
+            )
+        })
+}
+
 fn compile_and_run(
     script: &Path,
     args: &[String],
@@ -928,6 +951,9 @@ fn compile_and_run(
         mbstring_language: ini.mbstring_language.clone(),
         mbstring_detect_order: ini.mbstring_detect_order.clone(),
         mbstring_substitute_character: ini.mbstring_substitute_character.clone(),
+        mbstring_encoding_translation: ini.mbstring_encoding_translation.clone(),
+        zend_multibyte: ini.zend_multibyte.clone(),
+        zend_script_encoding: ini.zend_script_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
         zend_enable_gc: ini.zend_enable_gc.clone(),
         memory_limit: ini.memory_limit.clone(),
@@ -955,13 +981,38 @@ fn compile_and_run(
         }
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
+    let zend_script_encoding_warning = invalid_zend_script_encoding_warning(&ini);
+    let source_options = CompileSourceOptions {
+        zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
+        script_encoding: ini
+            .zend_script_encoding
+            .as_ref()
+            .filter(|encoding| !encoding.eq_ignore_ascii_case("pass"))
+            .cloned(),
+        internal_encoding: ini
+            .internal_encoding
+            .as_ref()
+            .filter(|encoding| !encoding.is_empty())
+            .cloned()
+            .or_else(|| {
+                ini.mbstring_internal_encoding
+                    .as_ref()
+                    .filter(|encoding| !encoding.is_empty())
+                    .cloned()
+            }),
+        encoding_translation: ini
+            .mbstring_encoding_translation
+            .as_deref()
+            .is_some_and(ini_scalar_truthy),
+    };
     let native = TempPath::new("ptn-phpc-native", "bin");
     let preload_files = opcache_preload_files(&ini, script);
-    compile_file_with_preloads(
+    compile_file_with_preloads_and_source_options(
         script,
         native.path(),
         CompileOptions { emit_c: false },
         &preload_files,
+        source_options,
     )
     .map_err(|error| {
         if error.span.is_some() {
@@ -1174,6 +1225,7 @@ fn compile_and_run(
         command.env("PTN_REQUEST_MODE", "cli");
     }
     let startup_warning_emitted = memory_limit_warning.is_some()
+        || zend_script_encoding_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
@@ -1181,6 +1233,9 @@ fn compile_and_run(
     }
     if let Some(warning) = memory_limit_warning {
         print!("{warning}");
+    }
+    if let Some(warning) = zend_script_encoding_warning {
+        println!("{warning}");
     }
     if ini.allow_url_include_deprecated {
         println!("Deprecated: Directive 'allow_url_include' is deprecated in Unknown on line 0");

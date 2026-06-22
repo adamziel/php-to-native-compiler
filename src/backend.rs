@@ -47535,7 +47535,7 @@ fn php_string_byte_len(value: &str) -> usize {
 fn php_binary_sentinel_byte(ch: char) -> Option<u8> {
     let value = ch as u32;
     let offset = value.checked_sub(PHP_BINARY_BYTE_SENTINEL_BASE)?;
-    if (0x80..=0xff).contains(&offset) {
+    if (0x00..=0xff).contains(&offset) {
         Some(offset as u8)
     } else {
         None

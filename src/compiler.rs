@@ -1,5 +1,8 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::fs;
+use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
@@ -11,10 +14,22 @@ use crate::ast::{
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
-use crate::lexer::decode_php_source_bytes;
+use crate::lexer::{decode_php_source_bytes, decode_php_source_bytes_with_encoding};
 use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases_and_symbols};
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
+
+unsafe extern "C" {
+    fn iconv_open(tocode: *const c_char, fromcode: *const c_char) -> *mut c_void;
+    fn iconv(
+        cd: *mut c_void,
+        inbuf: *mut *mut c_char,
+        inbytesleft: *mut usize,
+        outbuf: *mut *mut c_char,
+        outbytesleft: *mut usize,
+    ) -> usize;
+    fn iconv_close(cd: *mut c_void) -> c_int;
+}
 
 type IncludePathEnv = HashMap<String, Vec<String>>;
 
@@ -27,6 +42,14 @@ enum IncludePathTemplatePart {
 #[derive(Debug, Clone)]
 pub struct CompileOptions {
     pub emit_c: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CompileSourceOptions {
+    pub zend_multibyte: bool,
+    pub script_encoding: Option<String>,
+    pub internal_encoding: Option<String>,
+    pub encoding_translation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,10 +77,36 @@ fn compile_file_inner(
     options: CompileOptions,
     preload_files: &[PathBuf],
 ) -> Result<CompileOutput> {
+    compile_file_inner_with_source_options(
+        input,
+        output,
+        options,
+        preload_files,
+        &CompileSourceOptions::default(),
+    )
+}
+
+pub fn compile_file_with_preloads_and_source_options(
+    input: &Path,
+    output: &Path,
+    options: CompileOptions,
+    preload_files: &[PathBuf],
+    source_options: CompileSourceOptions,
+) -> Result<CompileOutput> {
+    compile_file_inner_with_source_options(input, output, options, preload_files, &source_options)
+}
+
+fn compile_file_inner_with_source_options(
+    input: &Path,
+    output: &Path,
+    options: CompileOptions,
+    preload_files: &[PathBuf],
+    source_options: &CompileSourceOptions,
+) -> Result<CompileOutput> {
     let source_bytes = fs::read(input).map_err(|error| {
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
-    let source = decode_php_source_bytes(&source_bytes);
+    let source = decode_compiler_source_bytes(&source_bytes, source_options)?;
     let include_program = parse_for_include_collection(&source, &HashMap::new())?;
     let source_file = input.to_string_lossy().into_owned();
     let source_dir = input
@@ -67,6 +116,7 @@ fn compile_file_inner(
     let mut includes = IncludeCollector::new(
         include_program.classes.clone(),
         include_program.traits.clone(),
+        source_options.clone(),
     );
     let preload_include_indices = includes.collect_preload_files(preload_files, &source_dir)?;
     includes.collect_program(&include_program, &source_file, &source_dir)?;
@@ -101,6 +151,207 @@ fn compile_file_inner(
     })
 }
 
+fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) -> Result<String> {
+    if !options.zend_multibyte {
+        return Ok(decode_php_source_bytes(bytes));
+    }
+
+    let source_encoding = options
+        .script_encoding
+        .as_deref()
+        .filter(|encoding| is_usable_source_encoding(encoding))
+        .map(str::to_string)
+        .or_else(|| sniff_declared_source_encoding(bytes))
+        .or_else(|| {
+            options
+                .internal_encoding
+                .as_deref()
+                .filter(|encoding| is_usable_source_encoding(encoding))
+                .map(str::to_string)
+        });
+
+    let mut decoded_bytes = Cow::Borrowed(bytes);
+    let mut decode_encoding = source_encoding.as_deref();
+    if options.encoding_translation {
+        if let (Some(from), Some(to)) = (
+            source_encoding.as_deref(),
+            options
+                .internal_encoding
+                .as_deref()
+                .filter(|encoding| is_usable_source_encoding(encoding)),
+        ) {
+            if !encoding_names_equivalent(from, to) && !source_has_utf16_bom(bytes) {
+                decoded_bytes = Cow::Owned(iconv_convert_bytes(bytes, from, to)?);
+                decode_encoding = Some(to);
+            }
+        }
+    }
+
+    Ok(decode_php_source_bytes_with_encoding(
+        &decoded_bytes,
+        decode_encoding,
+    ))
+}
+
+fn is_usable_source_encoding(encoding: &str) -> bool {
+    let trimmed = encoding.trim();
+    !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("pass")
+}
+
+fn source_has_utf16_bom(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff])
+}
+
+fn encoding_names_equivalent(left: &str, right: &str) -> bool {
+    canonical_encoding_key(left) == canonical_encoding_key(right)
+}
+
+fn canonical_encoding_key(value: &str) -> Vec<u8> {
+    value
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect()
+}
+
+fn iconv_convert_bytes(bytes: &[u8], from: &str, to: &str) -> Result<Vec<u8>> {
+    let from = CString::new(from)
+        .map_err(|_| Diagnostic::new("source encoding name contains an interior NUL byte", None))?;
+    let to = CString::new(to)
+        .map_err(|_| Diagnostic::new("target encoding name contains an interior NUL byte", None))?;
+    let descriptor = unsafe { iconv_open(to.as_ptr(), from.as_ptr()) };
+    if descriptor == usize::MAX as *mut c_void {
+        return Err(Diagnostic::new(
+            "failed to initialize source encoding conversion",
+            None,
+        ));
+    }
+
+    let result = iconv_convert_bytes_with_descriptor(descriptor, bytes);
+    unsafe {
+        iconv_close(descriptor);
+    }
+    result
+}
+
+fn iconv_convert_bytes_with_descriptor(descriptor: *mut c_void, bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut input_ptr = bytes.as_ptr() as *mut c_char;
+    let mut input_left = bytes.len();
+    let mut output = vec![0u8; bytes.len().saturating_mul(4).max(64)];
+    let mut output_used = 0usize;
+
+    loop {
+        let mut output_ptr = unsafe { output.as_mut_ptr().add(output_used) as *mut c_char };
+        let mut output_left = output.len() - output_used;
+        let converted = unsafe {
+            iconv(
+                descriptor,
+                &mut input_ptr,
+                &mut input_left,
+                &mut output_ptr,
+                &mut output_left,
+            )
+        };
+        output_used = output.len() - output_left;
+        if converted != usize::MAX {
+            output.truncate(output_used);
+            return Ok(output);
+        }
+        if output_left == 0 {
+            output.resize(output.len().saturating_mul(2).max(64), 0);
+            continue;
+        }
+        return Err(Diagnostic::new(
+            "failed to convert PHP source encoding",
+            None,
+        ));
+    }
+}
+
+fn sniff_declared_source_encoding(bytes: &[u8]) -> Option<String> {
+    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+    if source_has_utf16_bom(bytes) {
+        return None;
+    }
+    let mut cursor = 0;
+    if bytes.starts_with(b"#!") {
+        cursor = bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|index| index + 1)
+            .unwrap_or(bytes.len());
+    }
+    skip_ascii_whitespace(bytes, &mut cursor);
+    if !ascii_word_at(bytes, cursor, b"<?php") {
+        return None;
+    }
+    cursor += 5;
+    skip_ascii_whitespace(bytes, &mut cursor);
+    if !ascii_word_at(bytes, cursor, b"declare") {
+        return None;
+    }
+    cursor += "declare".len();
+    skip_ascii_whitespace(bytes, &mut cursor);
+    if bytes.get(cursor).copied() != Some(b'(') {
+        return None;
+    }
+    cursor += 1;
+    skip_ascii_whitespace(bytes, &mut cursor);
+    if !ascii_word_at(bytes, cursor, b"encoding") {
+        return None;
+    }
+    cursor += "encoding".len();
+    skip_ascii_whitespace(bytes, &mut cursor);
+    if bytes.get(cursor).copied() != Some(b'=') {
+        return None;
+    }
+    cursor += 1;
+    skip_ascii_whitespace(bytes, &mut cursor);
+    let quote = bytes.get(cursor).copied()?;
+    if quote == b'\'' || quote == b'"' {
+        cursor += 1;
+        let start = cursor;
+        while let Some(byte) = bytes.get(cursor).copied() {
+            if byte == quote {
+                return std::str::from_utf8(&bytes[start..cursor])
+                    .ok()
+                    .map(str::to_string);
+            }
+            cursor += 1;
+        }
+        return None;
+    }
+    let start = cursor;
+    while bytes
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'))
+    {
+        cursor += 1;
+    }
+    (cursor > start)
+        .then(|| {
+            std::str::from_utf8(&bytes[start..cursor])
+                .ok()
+                .map(str::to_string)
+        })
+        .flatten()
+}
+
+fn ascii_word_at(bytes: &[u8], cursor: usize, word: &[u8]) -> bool {
+    bytes
+        .get(cursor..cursor + word.len())
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(word))
+}
+
+fn skip_ascii_whitespace(bytes: &[u8], cursor: &mut usize) {
+    while bytes
+        .get(*cursor)
+        .is_some_and(|byte| byte.is_ascii_whitespace())
+    {
+        *cursor += 1;
+    }
+}
+
 struct IncludeCollector {
     sources: Vec<IncludeSource>,
     by_path: HashMap<PathBuf, usize>,
@@ -110,10 +361,15 @@ struct IncludeCollector {
     runtime_class_aliases: HashMap<String, String>,
     root_classes: Vec<ClassDecl>,
     root_traits: Vec<TraitDecl>,
+    source_options: CompileSourceOptions,
 }
 
 impl IncludeCollector {
-    fn new(root_classes: Vec<ClassDecl>, root_traits: Vec<TraitDecl>) -> Self {
+    fn new(
+        root_classes: Vec<ClassDecl>,
+        root_traits: Vec<TraitDecl>,
+        source_options: CompileSourceOptions,
+    ) -> Self {
         Self {
             sources: Vec::new(),
             by_path: HashMap::new(),
@@ -123,6 +379,7 @@ impl IncludeCollector {
             runtime_class_aliases: HashMap::new(),
             root_classes,
             root_traits,
+            source_options,
         }
     }
 
@@ -1187,7 +1444,7 @@ impl IncludeCollector {
             Ok(bytes) => bytes,
             Err(_) => return Ok(None),
         };
-        let source = decode_php_source_bytes(&source_bytes);
+        let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
         let program = parse_for_include_collection(&source, &self.runtime_class_aliases)?;
 
         let index = self.sources.len();
@@ -1214,7 +1471,7 @@ impl IncludeCollector {
             let source_bytes = fs::read(&source_file).map_err(|error| {
                 Diagnostic::new(format!("failed to read {source_file}: {error}"), None)
             })?;
-            let source = decode_php_source_bytes(&source_bytes);
+            let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
             self.sources[index].source_bytes = source_bytes;
             self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(

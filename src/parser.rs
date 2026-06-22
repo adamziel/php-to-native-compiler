@@ -5302,8 +5302,8 @@ impl Parser<'_> {
                     return Err(syntax_error_unexpected(&name_token, Some("identifier")));
                 };
                 self.expect_equal()?;
-                let value = self.parse_declare_literal_value(&name, name_token.span)?;
                 if name.eq_ignore_ascii_case("strict_types") {
+                    let value = self.parse_declare_int_literal_value(&name, name_token.span)?;
                     if !self.strict_types_declare_allowed {
                         return Err(Diagnostic::new(
                             "strict_types declaration must be the very first statement in the script",
@@ -5312,6 +5312,8 @@ impl Parser<'_> {
                     }
                     has_strict_types = true;
                     self.strict_types = value != 0;
+                } else {
+                    self.parse_declare_literal_value(&name, name_token.span)?;
                 }
                 if matches!(self.peek().kind, TokenKind::Comma) {
                     self.advance();
@@ -5339,6 +5341,23 @@ impl Parser<'_> {
     }
 
     fn parse_declare_literal_value(
+        &mut self,
+        directive_name: &str,
+        directive_span: SourceSpan,
+    ) -> Result<()> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Int(_) | TokenKind::True | TokenKind::False => Ok(()),
+            TokenKind::String(_) if directive_name.eq_ignore_ascii_case("encoding") => Ok(()),
+            _ if directive_name.eq_ignore_ascii_case("ticks") => Err(Diagnostic::new(
+                "declare(ticks) value must be a literal",
+                Some(directive_span),
+            )),
+            _ => Err(syntax_error_unexpected(&token, Some("literal"))),
+        }
+    }
+
+    fn parse_declare_int_literal_value(
         &mut self,
         directive_name: &str,
         directive_span: SourceSpan,

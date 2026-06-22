@@ -3,11 +3,94 @@ use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 
 pub(crate) fn decode_php_source_bytes(bytes: &[u8]) -> String {
+    decode_php_source_bytes_with_encoding(bytes, None)
+}
+
+pub(crate) fn decode_php_source_bytes_with_encoding(
+    bytes: &[u8],
+    source_encoding: Option<&str>,
+) -> String {
+    if let Some(decoded) = decode_utf16_bom_source(bytes) {
+        return decoded;
+    }
+    let bytes = strip_utf8_bom(bytes);
+    if source_encoding.is_some_and(is_shift_jis_encoding_name) {
+        return decode_shift_jis_source_bytes(bytes);
+    }
     let mut source = String::with_capacity(bytes.len());
     for &byte in bytes {
         push_php_string_byte(&mut source, byte);
     }
     source
+}
+
+fn strip_utf8_bom(bytes: &[u8]) -> &[u8] {
+    bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes)
+}
+
+fn decode_utf16_bom_source(bytes: &[u8]) -> Option<String> {
+    let (bytes, little_endian) = if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        (bytes, true)
+    } else if let Some(bytes) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        (bytes, false)
+    } else {
+        return None;
+    };
+    let mut chunks = bytes.chunks_exact(2);
+    let words = chunks.by_ref().map(|chunk| {
+        if little_endian {
+            u16::from_le_bytes([chunk[0], chunk[1]])
+        } else {
+            u16::from_be_bytes([chunk[0], chunk[1]])
+        }
+    });
+    let mut source: String = std::char::decode_utf16(words)
+        .map(|item| item.unwrap_or('?'))
+        .collect();
+    if !chunks.remainder().is_empty() {
+        source.push('?');
+    }
+    Some(source)
+}
+
+fn decode_shift_jis_source_bytes(bytes: &[u8]) -> String {
+    let mut source = String::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if is_shift_jis_lead_byte(byte)
+            && index + 1 < bytes.len()
+            && is_shift_jis_trail_byte(bytes[index + 1])
+        {
+            push_php_binary_byte_sentinel(&mut source, byte);
+            push_php_binary_byte_sentinel(&mut source, bytes[index + 1]);
+            index += 2;
+            continue;
+        }
+        push_php_string_byte(&mut source, byte);
+        index += 1;
+    }
+    source
+}
+
+fn is_shift_jis_encoding_name(name: &str) -> bool {
+    let normalized = name
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    matches!(
+        normalized.as_slice(),
+        b"sjis" | b"shiftjis" | b"cp932" | b"ms932" | b"windows31j"
+    )
+}
+
+fn is_shift_jis_lead_byte(byte: u8) -> bool {
+    (0x81..=0x9f).contains(&byte) || (0xe0..=0xfc).contains(&byte)
+}
+
+fn is_shift_jis_trail_byte(byte: u8) -> bool {
+    (0x40..=0x7e).contains(&byte) || (0x80..=0xfc).contains(&byte)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2001,8 +2084,10 @@ fn is_php_identifier_high_byte(ch: char) -> bool {
     if !ch.is_ascii() && (ch as u32) < PHP_BINARY_BYTE_SENTINEL_BASE {
         return true;
     }
-    let offset = (ch as u32).saturating_sub(PHP_BINARY_BYTE_SENTINEL_BASE);
-    (0x80..=0xff).contains(&offset)
+    let Some(offset) = (ch as u32).checked_sub(PHP_BINARY_BYTE_SENTINEL_BASE) else {
+        return false;
+    };
+    (0x00..=0xff).contains(&offset)
 }
 
 fn validate_heredoc_label(label: &str, span: SourceSpan) -> Result<()> {
@@ -2184,11 +2269,15 @@ fn push_php_string_byte(value: &mut String, byte: u8) {
     if byte <= 0x7f {
         value.push(byte as char);
     } else {
-        value.push(
-            char::from_u32(PHP_BINARY_BYTE_SENTINEL_BASE + byte as u32)
-                .expect("PHP binary-byte sentinel must be a Unicode scalar"),
-        );
+        push_php_binary_byte_sentinel(value, byte);
     }
+}
+
+fn push_php_binary_byte_sentinel(value: &mut String, byte: u8) {
+    value.push(
+        char::from_u32(PHP_BINARY_BYTE_SENTINEL_BASE + byte as u32)
+            .expect("PHP binary-byte sentinel must be a Unicode scalar"),
+    );
 }
 
 fn push_php_codepoint_escape(value: &mut String, codepoint: u32) {

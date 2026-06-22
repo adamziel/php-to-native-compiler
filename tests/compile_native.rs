@@ -89,6 +89,12 @@ fn parser_records_strict_types_declare_directive() {
 }
 
 #[test]
+fn parser_accepts_declare_encoding_string_literal() {
+    let program = parser::parse("<?php declare(encoding='Shift_JIS'); echo \"ok\";").unwrap();
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
 fn parser_reports_non_literal_declare_ticks_as_fatal() {
     let error = parser::parse("<?php declare(ticks=UNKNOWN_CONST);").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
@@ -55082,6 +55088,134 @@ echo ini_get('arg_separator.input'), \"\\n\";",
             "string(0) \"\"\n",
             "string(0) \"\"\n",
             "&\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_multibyte_source_encoding_handles_boms_and_shift_jis() {
+    let root = temp_dir("ptn-phpc-zend-multibyte-source-encoding");
+    fs::create_dir_all(&root).unwrap();
+
+    let utf8_bom = root.join("utf8-bom.php");
+    let mut utf8_bom_source = vec![0xef, 0xbb, 0xbf];
+    utf8_bom_source.extend_from_slice(b"<?php echo \"Hello World\\n\";");
+    fs::write(&utf8_bom, utf8_bom_source).unwrap();
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("internal_encoding=iso-8859-1")
+        .arg("-f")
+        .arg(&utf8_bom)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Hello World\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let utf16_bom = root.join("utf16-bom.php");
+    let utf16_body = "<?php\nprint \"Hello World\\n\";\n?>\n===DONE===\n";
+    let mut utf16_source = vec![0xff, 0xfe];
+    for word in utf16_body.encode_utf16() {
+        utf16_source.extend_from_slice(&word.to_le_bytes());
+    }
+    utf16_source.push(0);
+    fs::write(&utf16_bom, utf16_source).unwrap();
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("internal_encoding=iso-8859-1")
+        .arg("-f")
+        .arg(&utf16_bom)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Hello World\n===DONE===\n?"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let shift_jis = root.join("shift-jis.php");
+    let mut shift_jis_source = b"<?php\ndeclare(encoding='Shift_JIS');\n$s = \"".to_vec();
+    shift_jis_source.extend_from_slice(&[0x95, 0x5c]);
+    shift_jis_source.extend_from_slice(b"\";\nprintf(\"%x:%x\", ord($s[0]), ord($s[1]));\n");
+    fs::write(&shift_jis, shift_jis_source).unwrap();
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("internal_encoding=SJIS")
+        .arg("-f")
+        .arg(&shift_jis)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "95:5c");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_multibyte_script_encoding_converts_to_internal_encoding() {
+    let root = temp_dir("ptn-phpc-zend-multibyte-script-encoding-convert");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("script-encoding-convert.php");
+    let sjis_doremifaso = [
+        0x83, 0x68, 0x83, 0x8c, 0x83, 0x7e, 0x83, 0x74, 0x83, 0x40, 0x83, 0x5c,
+    ];
+    let mut source = b"<?php\n$s = \"".to_vec();
+    source.extend_from_slice(&sjis_doremifaso);
+    source.extend_from_slice(b"\"; echo $s;\n");
+    fs::write(&input, source).unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("mbstring.encoding_translation=On")
+        .arg("-d")
+        .arg("zend.script_encoding=Shift_JIS")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ドレミファソ");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_zend_script_encoding_pass_emits_startup_warning() {
+    let root = temp_dir("ptn-phpc-zend-script-encoding-pass-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("script-encoding-pass.php");
+    fs::write(&input, "<?php print \"Done!\\n\";").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.multibyte=1")
+        .arg("-d")
+        .arg("zend.script_encoding=pass")
+        .arg("-d")
+        .arg("internal_encoding=UTF-8")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Warning: PHP Startup: INI setting contains invalid encoding \"pass\" in Unknown on line 0\n",
+            "Done!\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
