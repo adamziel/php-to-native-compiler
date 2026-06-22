@@ -1503,11 +1503,12 @@ static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const c
     );
 }
 
-static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
+static PTN_UNUSED void ptn_emit_warning_with_handler_frame_and_newline(
     PtnDiagnosticSink *diagnostics,
     const char *message,
     size_t line,
-    int suppress_user_call_frame_location
+    int suppress_user_call_frame_location,
+    int leading_newline
 ) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
@@ -1535,10 +1536,25 @@ static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
     }
     ptn_diagnostic_printf(
         diagnostics,
-        "\nWarning: %s in %s on line %zu\n",
+        leading_newline ? "\nWarning: %s in %s on line %zu\n" : "Warning: %s in %s on line %zu\n",
         message,
         ptn_diagnostic_builtin_path(line),
         line
+    );
+}
+
+static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
+    PtnDiagnosticSink *diagnostics,
+    const char *message,
+    size_t line,
+    int suppress_user_call_frame_location
+) {
+    ptn_emit_warning_with_handler_frame_and_newline(
+        diagnostics,
+        message,
+        line,
+        suppress_user_call_frame_location,
+        1
     );
 }
 
@@ -1605,7 +1621,8 @@ static PTN_UNUSED void ptn_emit_notice_with_handler_frame(
     PtnDiagnosticSink *diagnostics,
     const char *message,
     size_t line,
-    int suppress_user_call_frame_location
+    int suppress_user_call_frame_location,
+    int leading_newline
 ) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
@@ -1622,7 +1639,7 @@ static PTN_UNUSED void ptn_emit_notice_with_handler_frame(
     }
     ptn_diagnostic_printf(
         diagnostics,
-        "Notice: %s in %s on line %zu\n",
+        leading_newline ? "\nNotice: %s in %s on line %zu\n" : "Notice: %s in %s on line %zu\n",
         message,
         ptn_diagnostic_builtin_path(line),
         line

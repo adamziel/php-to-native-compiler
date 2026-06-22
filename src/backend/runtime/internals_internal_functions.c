@@ -78,7 +78,8 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line);
+static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime);
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags);
 
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
     if (data == NULL || len == 0) {
@@ -92,7 +93,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
         ptn_string_buffer_append_len(&buffer->buffer, data, len);
         if (buffer->chunk_size != 0 && buffer->buffer.len >= buffer->chunk_size) {
-            (void)ptn_output_buffer_flush_top_chunk(runtime, 0);
+            (void)ptn_output_buffer_flush_top_chunk(runtime, 0, PTN_PHP_OUTPUT_HANDLER_WRITE);
         }
         return;
     }
@@ -178,9 +179,10 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
 }
 
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line) {
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags) {
     (void)runtime;
     (void)line;
+    (void)operation_flags;
     return 0;
 }
 
@@ -4137,6 +4139,19 @@ static char *ptn_format_missing_method_callback_reason(const char *class_name, c
     return reason;
 }
 
+static char *ptn_format_non_static_method_callback_reason(const char *class_name, const char *method_name) {
+    int needed = snprintf(NULL, 0, "non-static method %s::%s() cannot be called statically", class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "non-static method %s::%s() cannot be called statically", class_name, method_name);
+    return reason;
+}
+
 static char *ptn_format_inactive_class_scope_callback_reason(const char *class_name) {
     int needed = snprintf(NULL, 0, "cannot access \"%s\" when no class scope is active", class_name);
     if (needed < 0) {
@@ -4342,7 +4357,19 @@ static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue res
                     }
                 }
                 if (!valid) {
-                    reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                    if (
+                        ptn_declared_class_method_is_callable(
+                            resolved_class_name,
+                            method_name,
+                            runtime == NULL ? NULL : runtime->current_class_name
+                        ) ||
+                        (ptn_internal_class_exists_name(resolved_class_name) &&
+                            ptn_internal_class_method_exists(resolved_class_name, method_name))
+                    ) {
+                        reason = ptn_format_non_static_method_callback_reason(resolved_class_name, method_name);
+                    } else {
+                        reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                    }
                 }
             }
             free(resolved_class_name);
@@ -4430,14 +4457,7 @@ static char *ptn_resolve_callback_class_scope(PtnRuntime *runtime, const char *c
     return ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
 }
 
-static char *ptn_invalid_callback_message(
-    PtnRuntime *runtime,
-    const char *function_name,
-    size_t position,
-    const char *parameter_name,
-    PtnValue callback,
-    int accepts_null
-) {
+static char *ptn_invalid_callback_reason(PtnRuntime *runtime, PtnValue callback) {
     PtnValue resolved = ptn_value_deref(callback);
     char *reason = NULL;
     if (resolved.type == PTN_STRING) {
@@ -4468,7 +4488,19 @@ static char *ptn_invalid_callback_message(
                     ) &&
                     !ptn_internal_class_static_method_exists(resolved_class_name, method_name)
                 ) {
-                    reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                    if (
+                        ptn_declared_class_method_is_callable(
+                            resolved_class_name,
+                            method_name,
+                            runtime == NULL ? NULL : runtime->current_class_name
+                        ) ||
+                        (ptn_internal_class_exists_name(resolved_class_name) &&
+                            ptn_internal_class_method_exists(resolved_class_name, method_name))
+                    ) {
+                        reason = ptn_format_non_static_method_callback_reason(resolved_class_name, method_name);
+                    } else {
+                        reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                    }
                 }
                 free(resolved_class_name);
             }
@@ -4527,6 +4559,18 @@ static char *ptn_invalid_callback_message(
         free(name);
     }
 
+    return reason;
+}
+
+static char *ptn_invalid_callback_message(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue callback,
+    int accepts_null
+) {
+    char *reason = ptn_invalid_callback_reason(runtime, callback);
     const char *callback_requirement = accepts_null
         ? "must be a valid callback or null"
         : "must be a valid callback";
@@ -5339,13 +5383,15 @@ static void ptn_output_buffer_destroy(PtnOutputBuffer *buffer) {
     buffer->has_callback = 0;
     buffer->callback = ptn_null();
     buffer->chunk_size = 0;
+    buffer->flags = 0;
 }
 
 static void ptn_output_buffer_push(
     PtnRuntime *runtime,
     int has_callback,
     PtnValue callback,
-    size_t chunk_size
+    size_t chunk_size,
+    int64_t flags
 ) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -5372,6 +5418,7 @@ static void ptn_output_buffer_push(
     buffer->has_callback = has_callback;
     buffer->callback = has_callback ? ptn_value_clone_deref(callback) : ptn_null();
     buffer->chunk_size = chunk_size;
+    buffer->flags = flags;
 }
 
 static int ptn_output_buffer_pop(PtnRuntime *runtime, PtnOutputBuffer *buffer_out) {
@@ -5392,7 +5439,12 @@ static void ptn_output_buffer_rethrow_active_exception(PtnRuntime *runtime) {
     exit(255);
 }
 
-static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputBuffer *buffer, size_t line) {
+static PtnValue ptn_output_buffer_apply_callback(
+    PtnRuntime *runtime,
+    PtnOutputBuffer *buffer,
+    size_t line,
+    int64_t operation_flags
+) {
     PtnValue original = ptn_output_buffer_contents_value(buffer);
     if (!buffer->has_callback) {
         return original;
@@ -5423,20 +5475,21 @@ static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputB
         ptn_output_buffer_rethrow_active_exception(runtime);
     }
 
-    PtnValue args[1] = { ptn_value_clone_deref(original) };
-    PtnValue callback_result = ptn_internal_call_callback(runtime, buffer->callback, 1, args, line);
+    PtnValue args[2] = { ptn_value_clone_deref(original), ptn_int(operation_flags) };
+    PtnValue callback_result = ptn_internal_call_callback(runtime, buffer->callback, 2, args, line);
     ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
 
     PtnValue resolved = ptn_value_deref(callback_result);
     PtnValue output = ptn_string("");
-    if (resolved.type == PTN_STRING) {
-        output = ptn_value_clone_deref(callback_result);
-        ptn_value_destroy(&callback_result);
-        ptn_value_destroy(&original);
-    } else if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+    if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
         output = original;
         ptn_value_destroy(&callback_result);
+    } else if (resolved.type == PTN_NULL) {
+        ptn_value_destroy(&callback_result);
+        ptn_value_destroy(&original);
     } else {
+        output = ptn_cast_string_with_runtime(runtime, callback_result, line);
         ptn_value_destroy(&callback_result);
         ptn_value_destroy(&original);
     }
@@ -5446,19 +5499,23 @@ static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputB
     return output;
 }
 
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line) {
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
         return 0;
     }
 
     PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_STARTED) == 0) {
+        operation_flags |= PTN_PHP_OUTPUT_HANDLER_START;
+    }
+    buffer->flags |= PTN_PHP_OUTPUT_HANDLER_STARTED | PTN_PHP_OUTPUT_HANDLER_PROCESSED;
     PtnStringBuffer chunk_buffer = buffer->buffer;
     ptn_string_buffer_init(&buffer->buffer);
 
     PtnOutputBuffer chunk = *buffer;
     chunk.buffer = chunk_buffer;
-    PtnValue output = ptn_output_buffer_apply_callback(runtime, &chunk, line);
+    PtnValue output = ptn_output_buffer_apply_callback(runtime, &chunk, line, operation_flags);
     free(chunk_buffer.data);
 
     PtnValue string_output = ptn_value_deref(output);
@@ -5475,20 +5532,102 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, siz
     return 1;
 }
 
+static char *ptn_output_buffer_name(PtnOutputBuffer *buffer) {
+    if (buffer->has_callback) {
+        return ptn_callable_output_name(buffer->callback);
+    }
+    return ptn_duplicate_string("default output handler");
+}
+
+static void ptn_output_buffer_emit_operation_notice(
+    PtnRuntime *runtime,
+    PtnOutputBuffer *buffer,
+    const char *function_name,
+    const char *operation,
+    size_t line
+) {
+    char *name = ptn_output_buffer_name(buffer);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Failed to %s buffer of %s (%zu)",
+        function_name,
+        operation,
+        name,
+        (size_t)ptn_runtime_root(runtime)->output_buffers_len - 1
+    );
+    if (needed < 0) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Failed to %s buffer of %s (%zu)",
+        function_name,
+        operation,
+        name,
+        (size_t)ptn_runtime_root(runtime)->output_buffers_len - 1
+    );
+    free(name);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int leading_newline = root != NULL && root->output_has_started;
+    PtnOutputBuffer *active = ptn_output_buffer_top(runtime);
+    if (active != NULL && active->buffer.len != 0) {
+        leading_newline = 1;
+    }
+    ptn_emit_notice_with_handler_frame(
+        &runtime->diagnostics,
+        message,
+        line,
+        1,
+        leading_newline
+    );
+    free(message);
+}
+
 static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
+    PtnOutputBuffer *active = ptn_output_buffer_top(runtime);
+    if (active != NULL) {
+        int64_t required_flags = PTN_PHP_OUTPUT_HANDLER_REMOVABLE |
+            (flush ? PTN_PHP_OUTPUT_HANDLER_FLUSHABLE : PTN_PHP_OUTPUT_HANDLER_CLEANABLE);
+        if ((active->flags & required_flags) != required_flags) {
+            ptn_output_buffer_emit_operation_notice(
+                runtime,
+                active,
+                flush ? "ob_end_flush" : "ob_end_clean",
+                flush ? "send" : "discard",
+                line
+            );
+            return 0;
+        }
+    }
+
     PtnOutputBuffer buffer;
     if (!ptn_output_buffer_pop(runtime, &buffer)) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
         ptn_emit_notice_with_handler_frame(
             &runtime->diagnostics,
             flush
                 ? "ob_end_flush(): Failed to delete and flush buffer. No buffer to delete or flush"
-                : "ob_end_clean(): Failed to delete and clean buffer. No buffer to delete or clean",
+                : "ob_end_clean(): Failed to delete buffer. No buffer to delete",
             line,
-            1
+            1,
+            root != NULL && root->output_has_started
         );
         return 0;
     }
-    PtnValue output = ptn_output_buffer_apply_callback(runtime, &buffer, line);
+    int64_t operation_flags = PTN_PHP_OUTPUT_HANDLER_FINAL |
+        (flush ? PTN_PHP_OUTPUT_HANDLER_FLUSH : PTN_PHP_OUTPUT_HANDLER_CLEAN);
+    if ((buffer.flags & PTN_PHP_OUTPUT_HANDLER_STARTED) == 0) {
+        operation_flags |= PTN_PHP_OUTPUT_HANDLER_START;
+    }
+    PtnValue output = ptn_output_buffer_apply_callback(runtime, &buffer, line, operation_flags);
     if (flush) {
         PtnValue string_output = ptn_value_deref(output);
         if (string_output.type == PTN_STRING) {
@@ -5514,6 +5653,10 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
         return;
     }
     while (root->output_buffers_len != 0) {
+        PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
+        buffer->flags |= PTN_PHP_OUTPUT_HANDLER_CLEANABLE |
+            PTN_PHP_OUTPUT_HANDLER_FLUSHABLE |
+            PTN_PHP_OUTPUT_HANDLER_REMOVABLE;
         (void)ptn_output_buffer_close(runtime, 1, 0);
     }
 }
@@ -69988,14 +70131,95 @@ static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     return &root->output_buffers[root->output_buffers_len - 1];
 }
 
+static int ptn_output_buffer_forbid_display_handler_operation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->output_buffer_callback_depth == 0) {
+        return 0;
+    }
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Cannot use output buffering in output buffering display handlers",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+    return 1;
+}
+
+static int ptn_internal_ob_start_callback_arg(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t line,
+    PtnValue *callback_out
+) {
+    PtnValue checked = ptn_value_clone_deref(callback);
+    if (ptn_callable_is_valid(runtime, checked, 0)) {
+        *callback_out = checked;
+        return 1;
+    }
+
+    char *reason = ptn_invalid_callback_reason(runtime, checked);
+    ptn_value_destroy(&checked);
+    int needed = snprintf(NULL, 0, "ob_start(): %s", reason);
+    if (needed < 0) {
+        free(reason);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(reason);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "ob_start(): %s", reason);
+    free(reason);
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int leading_newline = root != NULL && root->output_has_started;
+    PtnOutputBuffer *active = ptn_output_buffer_top(runtime);
+    if (active != NULL && active->buffer.len != 0) {
+        leading_newline = 1;
+    }
+    ptn_emit_warning_with_handler_frame_and_newline(
+        &runtime->diagnostics,
+        message,
+        line,
+        1,
+        leading_newline
+    );
+    free(message);
+    ptn_emit_notice_with_handler_frame(
+        &runtime->diagnostics,
+        "ob_start(): Failed to create buffer",
+        line,
+        1,
+        1
+    );
+    return 0;
+}
+
 static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (ptn_output_buffer_forbid_display_handler_operation(runtime, "ob_start", line)) {
+        return ptn_null();
+    }
+
     int has_callback = 0;
     PtnValue callback = ptn_null();
     size_t chunk_size = 0;
+    int64_t requested_flags = PTN_PHP_OUTPUT_HANDLER_STDFLAGS;
     if (argc >= 1) {
         PtnValue resolved = ptn_value_deref(args[0]);
         if (resolved.type != PTN_NULL) {
-            callback = ptn_internal_expect_callback_arg(runtime, "ob_start", 1, "callback", args[0]);
+            if (!ptn_internal_ob_start_callback_arg(runtime, args[0], line, &callback)) {
+                return ptn_bool(0);
+            }
             has_callback = 1;
         }
     }
@@ -70006,10 +70230,17 @@ static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const Pt
             chunk_size = (size_t)requested_chunk_size;
         }
     }
+    if (argc >= 3) {
+        requested_flags = ptn_internal_expect_integer_arg(runtime, "ob_start", 3, "flags", args[2], line);
+    }
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    ptn_output_buffer_push(runtime, has_callback, callback, chunk_size);
+    int64_t buffer_flags = requested_flags & PTN_PHP_OUTPUT_HANDLER_STDFLAGS;
+    if (has_callback) {
+        buffer_flags |= PTN_PHP_OUTPUT_HANDLER_TYPE_USER;
+    }
+    ptn_output_buffer_push(runtime, has_callback, callback, chunk_size, buffer_flags);
     if (has_callback) {
         ptn_value_destroy(&callback);
     }
@@ -70053,6 +70284,14 @@ static PtnValue ptn_internal_ob_get_level(PtnRuntime *runtime, size_t argc, cons
     return ptn_int((int64_t)level);
 }
 
+static PtnValue ptn_internal_ob_implicit_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_ob_list_handlers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -70075,14 +70314,75 @@ static PtnValue ptn_internal_ob_list_handlers(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static PtnValue ptn_output_buffer_status_value(PtnOutputBuffer *buffer, size_t level) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    char *name = ptn_output_buffer_name(buffer);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("name"), ptn_owned_string(name));
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("type"),
+        ptn_int(buffer->has_callback ? PTN_PHP_OUTPUT_HANDLER_TYPE_USER : PTN_PHP_OUTPUT_HANDLER_TYPE_INTERNAL)
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("flags"), ptn_int(buffer->flags));
+    if (level > (size_t)INT64_MAX || buffer->chunk_size > (size_t)INT64_MAX ||
+        buffer->buffer.len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("level"), ptn_int((int64_t)level));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("chunk_size"), ptn_int((int64_t)buffer->chunk_size));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("buffer_size"), ptn_int(16384));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("buffer_used"), ptn_int((int64_t)buffer->buffer.len));
+    return result;
+}
+
+static PtnValue ptn_internal_ob_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (root == NULL || root->output_buffers_len == 0) {
+        return result;
+    }
+    int full_status = argc >= 1 && ptn_is_truthy(args[0]);
+    if (!full_status) {
+        return ptn_output_buffer_status_value(
+            &root->output_buffers[root->output_buffers_len - 1],
+            root->output_buffers_len - 1
+        );
+    }
+    for (size_t i = 0; i < root->output_buffers_len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_output_buffer_status_value(&root->output_buffers[i], i)
+        );
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_ob_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    (void)line;
     PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
     if (buffer == NULL) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        ptn_emit_notice_with_handler_frame(
+            &runtime->diagnostics,
+            "ob_clean(): Failed to delete buffer. No buffer to delete",
+            line,
+            1,
+            root != NULL && root->output_has_started
+        );
         return ptn_bool(0);
     }
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_CLEANABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_clean", "delete", line);
+        return ptn_bool(0);
+    }
+    PtnValue output = ptn_output_buffer_apply_callback(runtime, buffer, line, PTN_PHP_OUTPUT_HANDLER_CLEAN);
+    ptn_value_destroy(&output);
     buffer->buffer.len = 0;
     if (buffer->buffer.data != NULL) {
         buffer->buffer.data[0] = '\0';
@@ -70102,6 +70402,29 @@ static PtnValue ptn_internal_ob_end_flush(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(ptn_output_buffer_close(runtime, 1, line));
 }
 
+static PtnValue ptn_internal_ob_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    if (ptn_output_buffer_top(runtime) == NULL) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        ptn_emit_notice_with_handler_frame(
+            &runtime->diagnostics,
+            "ob_flush(): Failed to flush buffer. No buffer to flush",
+            line,
+            1,
+            root != NULL && root->output_has_started
+        );
+        return ptn_bool(0);
+    }
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_FLUSHABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_flush", "flush", line);
+        return ptn_bool(0);
+    }
+    (void)ptn_output_buffer_flush_top_chunk(runtime, line, PTN_PHP_OUTPUT_HANDLER_FLUSH);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_ob_get_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -70110,6 +70433,18 @@ static PtnValue ptn_internal_ob_get_clean(PtnRuntime *runtime, size_t argc, cons
         return ptn_bool(0);
     }
     PtnValue contents = ptn_output_buffer_contents_value(buffer);
+    int failed = 0;
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_CLEANABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_get_clean", "discard", line);
+        failed = 1;
+    }
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_REMOVABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_get_clean", "delete", line);
+        failed = 1;
+    }
+    if (failed) {
+        return contents;
+    }
     (void)ptn_output_buffer_close(runtime, 0, line);
     return contents;
 }
@@ -70117,11 +70452,26 @@ static PtnValue ptn_internal_ob_get_clean(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_ob_get_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
+    if (ptn_output_buffer_forbid_display_handler_operation(runtime, "ob_get_flush", line)) {
+        return ptn_null();
+    }
     PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
     if (buffer == NULL) {
         return ptn_bool(0);
     }
     PtnValue contents = ptn_output_buffer_contents_value(buffer);
+    int failed = 0;
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_FLUSHABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_get_flush", "send", line);
+        failed = 1;
+    }
+    if ((buffer->flags & PTN_PHP_OUTPUT_HANDLER_REMOVABLE) == 0) {
+        ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_get_flush", "delete", line);
+        failed = 1;
+    }
+    if (failed) {
+        return contents;
+    }
     (void)ptn_output_buffer_close(runtime, 1, line);
     return contents;
 }
@@ -93357,11 +93707,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_clean", 0, 0, ptn_internal_ob_clean },
         { "ob_end_clean", 0, 0, ptn_internal_ob_end_clean },
         { "ob_end_flush", 0, 0, ptn_internal_ob_end_flush },
+        { "ob_flush", 0, 0, ptn_internal_ob_flush },
         { "ob_get_clean", 0, 0, ptn_internal_ob_get_clean },
         { "ob_get_contents", 0, 0, ptn_internal_ob_get_contents },
         { "ob_get_flush", 0, 0, ptn_internal_ob_get_flush },
         { "ob_get_length", 0, 0, ptn_internal_ob_get_length },
         { "ob_get_level", 0, 0, ptn_internal_ob_get_level },
+        { "ob_get_status", 0, 1, ptn_internal_ob_get_status },
+        { "ob_implicit_flush", 0, 1, ptn_internal_ob_implicit_flush },
         { "ob_list_handlers", 0, 0, ptn_internal_ob_list_handlers },
         { "ob_start", 0, 3, ptn_internal_ob_start },
         { "octdec", 1, 1, ptn_internal_octdec },

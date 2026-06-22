@@ -11401,6 +11401,8 @@ ob_start();\n\
 echo \"discard\";\n\
 ob_clean();\n\
 echo \"kept\";\n\
+ob_flush();\n\
+echo \" active\";\n\
 $contents = ob_get_clean();\n\
 var_dump($contents);\n",
     )
@@ -11412,7 +11414,12 @@ var_dump($contents);\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(false)\nstring(4) \"kept\"\n"
+        concat!(
+            "Notice: ob_clean(): Failed to delete buffer. No buffer to delete",
+            " in ptn on line 2\n",
+            "bool(false)\n",
+            "keptstring(7) \" active\"\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

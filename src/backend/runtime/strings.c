@@ -2046,6 +2046,34 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_GLOB_ERR);
         return 1;
     }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_CLEANABLE") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_CLEANABLE);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_FLUSHABLE") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_FLUSHABLE);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_REMOVABLE") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_REMOVABLE);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_STDFLAGS") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_STDFLAGS);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_STARTED") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_STARTED);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_DISABLED") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_DISABLED);
+        return 1;
+    }
+    if (strcmp(name, "PHP_OUTPUT_HANDLER_PROCESSED") == 0) {
+        *out = ptn_int(PTN_PHP_OUTPUT_HANDLER_PROCESSED);
+        return 1;
+    }
     if (strcmp(name, "STR_PAD_LEFT") == 0) {
         *out = ptn_int(PTN_STR_PAD_LEFT);
         return 1;
