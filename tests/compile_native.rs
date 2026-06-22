@@ -37641,6 +37641,51 @@ echo \"ok\\n\";\n",
 }
 
 #[test]
+fn compile_curl_copy_handle_getinfo_options_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-copy-handle-getinfo");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-copy-handle-getinfo.php");
+    let output = root.join("curl-copy-handle-getinfo-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$handle = curl_init();\n\
+curl_setopt($handle, CURLOPT_URL, 'http://www.example.com/');\n\
+curl_setopt($handle, CURLOPT_HEADER, 0);\n\
+$copy = curl_copy_handle($handle);\n\
+var_dump(curl_getinfo($handle) === curl_getinfo($copy));\n\
+var_dump(curl_getinfo($copy, CURLINFO_EFFECTIVE_URL));\n\
+$constants = get_defined_constants(true);\n\
+var_dump(isset($constants['curl']['CURLOPT_URL']));\n\
+var_dump(isset($constants['curl']['CURLOPT_HEADER']));\n\
+$extension = new ReflectionExtension('curl');\n\
+var_dump($extension->getConstants()['CURLOPT_URL']);\n\
+var_dump(isset($extension->getFunctions()['curl_copy_handle']));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(23) \"http://www.example.com/\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(10002)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_curl_copy_handle"));
+    assert!(c_source.contains("ptn_internal_curl_getinfo"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

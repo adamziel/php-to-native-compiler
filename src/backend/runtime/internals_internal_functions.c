@@ -53677,6 +53677,103 @@ static PtnResource *ptn_internal_expect_resource_of_type(
     return value.as.resource;
 }
 
+#define PTN_CURLOPT_URL 10002
+#define PTN_CURLOPT_HEADER 42
+#define PTN_CURLINFO_EFFECTIVE_URL 1048577
+
+static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
+    PtnValue options = ptn_value_deref(handle->curl_options);
+    if (options.type != PTN_ARRAY) {
+        return NULL;
+    }
+    size_t index = ptn_array_find_key(options.as.array, ptn_array_int_key(option));
+    if (index >= options.as.array->len) {
+        return NULL;
+    }
+    return &options.as.array->entries[index].value;
+}
+
+static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    PtnValue *url = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+    if (url == NULL) {
+        return ptn_string("");
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, *url, line);
+    PtnValue result = ptn_owned_string_len(
+        ptn_duplicate_string_len(string.data, string.len),
+        string.len
+    );
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PtnValue ptn_curl_options_copy(PtnValue options) {
+    PtnValue resolved = ptn_value_deref(options);
+    if (resolved.type == PTN_ARRAY) {
+        return ptn_array(ptn_array_clone(resolved.as.array));
+    }
+    return ptn_value_clone(options);
+}
+
+static void ptn_curl_getinfo_set_string(PtnValue table, const char *key, const char *value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(key), ptn_string(value));
+}
+
+static void ptn_curl_getinfo_set_int(PtnValue table, const char *key, int64_t value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(key), ptn_int(value));
+}
+
+static void ptn_curl_getinfo_set_float(PtnValue table, const char *key, double value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(key), ptn_float(value));
+}
+
+static PtnValue ptn_curl_getinfo_array(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("url"), ptn_curl_info_url(runtime, handle, line));
+    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&table);
+        return ptn_null();
+    }
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("content_type"), ptn_null());
+    ptn_curl_getinfo_set_int(table, "http_code", 0);
+    ptn_curl_getinfo_set_int(table, "header_size", 0);
+    ptn_curl_getinfo_set_int(table, "request_size", 0);
+    ptn_curl_getinfo_set_int(table, "filetime", -1);
+    ptn_curl_getinfo_set_int(table, "ssl_verify_result", 0);
+    ptn_curl_getinfo_set_int(table, "redirect_count", 0);
+    ptn_curl_getinfo_set_float(table, "total_time", 0.0);
+    ptn_curl_getinfo_set_float(table, "namelookup_time", 0.0);
+    ptn_curl_getinfo_set_float(table, "connect_time", 0.0);
+    ptn_curl_getinfo_set_float(table, "pretransfer_time", 0.0);
+    ptn_curl_getinfo_set_float(table, "size_upload", 0.0);
+    ptn_curl_getinfo_set_float(table, "size_download", 0.0);
+    ptn_curl_getinfo_set_float(table, "speed_download", 0.0);
+    ptn_curl_getinfo_set_float(table, "speed_upload", 0.0);
+    ptn_curl_getinfo_set_float(table, "download_content_length", -1.0);
+    ptn_curl_getinfo_set_float(table, "upload_content_length", -1.0);
+    ptn_curl_getinfo_set_float(table, "starttransfer_time", 0.0);
+    ptn_curl_getinfo_set_float(table, "redirect_time", 0.0);
+    ptn_curl_getinfo_set_string(table, "redirect_url", "");
+    ptn_curl_getinfo_set_string(table, "primary_ip", "");
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("certinfo"), ptn_array_from_literal_entries(0, NULL));
+    ptn_curl_getinfo_set_int(table, "primary_port", -1);
+    ptn_curl_getinfo_set_string(table, "local_ip", "");
+    ptn_curl_getinfo_set_int(table, "local_port", -1);
+    ptn_curl_getinfo_set_int(table, "http_version", 0);
+    ptn_curl_getinfo_set_int(table, "protocol", 0);
+    ptn_curl_getinfo_set_int(table, "ssl_verifyresult", 0);
+    ptn_curl_getinfo_set_string(table, "scheme", "");
+    ptn_curl_getinfo_set_int(table, "appconnect_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "connect_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "namelookup_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "pretransfer_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "redirect_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "starttransfer_time_us", 0);
+    ptn_curl_getinfo_set_int(table, "total_time_us", 0);
+    ptn_curl_getinfo_set_string(table, "effective_method", "GET");
+    return table;
+}
+
 static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)args;
     (void)line;
@@ -53684,6 +53781,62 @@ static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const P
         return ptn_dom_throw_count(runtime, "curl_init", "at most 1 argument", argc);
     }
     return ptn_resource(ptn_resource_new_named("curl"));
+}
+
+static PtnValue ptn_internal_curl_copy_handle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "curl_copy_handle", "exactly 1 argument", argc);
+    }
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_copy_handle",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnResource *copy = ptn_resource_new_named("curl");
+    copy->curl_options = ptn_curl_options_copy(handle->curl_options);
+    return ptn_resource(copy);
+}
+
+static PtnValue ptn_internal_curl_getinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        return ptn_dom_throw_count(runtime, "curl_getinfo", "between 1 and 2 arguments", argc);
+    }
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_getinfo",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    if (argc == 1) {
+        return ptn_curl_getinfo_array(runtime, handle, line);
+    }
+    int64_t option = ptn_internal_expect_integer_arg(
+        runtime,
+        "curl_getinfo",
+        2,
+        "option",
+        args[1],
+        line
+    );
+    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (option == PTN_CURLINFO_EFFECTIVE_URL) {
+        return ptn_curl_info_url(runtime, handle, line);
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -70547,7 +70700,10 @@ static PtnValue ptn_defined_constants_sockets_table(void) {
 }
 
 static void ptn_defined_constants_add_curl(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "CURLOPT_URL", PTN_CURLOPT_URL);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_HEADER", PTN_CURLOPT_HEADER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", 20079);
+    ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
 }
 
 static PtnValue ptn_defined_constants_curl_table(void) {
@@ -70984,7 +71140,10 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
 
 static int ptn_reflection_constant_is_curl(const char *name) {
     static const char *const names[] = {
+        "CURLOPT_URL",
+        "CURLOPT_HEADER",
         "CURLOPT_HEADERFUNCTION",
+        "CURLINFO_EFFECTIVE_URL",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -105315,6 +105474,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "count_chars", 1, 2, ptn_internal_count_chars },
         { "crypt", 2, 2, ptn_internal_crypt },
         { "crc32", 1, 1, ptn_internal_crc32 },
+        { "curl_copy_handle", 1, 1, ptn_internal_curl_copy_handle },
+        { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
         { "curl_multi_init", 0, 0, ptn_internal_curl_multi_init },
