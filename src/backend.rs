@@ -32996,11 +32996,12 @@ impl ValueEmitter {
                     compound_op,
                 );
 
-                out.push_str("    if (");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        if (");
                 out.push_str(&split_temp);
                 out.push_str(") {\n");
                 out.push_str(
-                    "        ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &",
+                    "            ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &",
                 );
                 out.push_str(&base_temp);
                 out.push_str(", ");
@@ -33014,8 +33015,8 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-                out.push_str("    } else {\n");
-                out.push_str("        ptn_runtime_array_path_set_from_assign_op(&runtime, ");
+                out.push_str("        } else {\n");
+                out.push_str("            ptn_runtime_array_path_set_from_assign_op(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
                 out.push_str(&path.name);
@@ -33026,6 +33027,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                out.push_str("        }\n");
                 out.push_str("    }\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);
@@ -33613,7 +33615,15 @@ impl ValueEmitter {
             let assigned_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_write_property_len(&runtime, ");
+            if assignment_compound_binary_op(op).is_some() {
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property_len(&runtime, ");
+            } else {
+                out.push_str(" = ptn_object_write_property_len(&runtime, ");
+            }
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
@@ -33626,6 +33636,9 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if assignment_compound_binary_op(op).is_some() {
+                out.push_str("    }\n");
+            }
             emit_value_cleanup(out, "    ", &assigned_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             out.push_str("    free(");
@@ -33847,7 +33860,8 @@ impl ValueEmitter {
         let result_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
 
-        out.push_str("    if (!");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        if (!");
         out.push_str(&root_is_arrayaccess_temp);
         out.push_str(" && (ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
         out.push_str(&c_string(array));
@@ -33864,7 +33878,7 @@ impl ValueEmitter {
         out.push_str("\", ");
         out.push_str(&root_temp);
         out.push_str(")) {\n");
-        out.push_str("        ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ");
+        out.push_str("            ptn_emit_invalidated_array_path_write_diagnostics(&runtime, ");
         out.push_str(&root_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -33873,10 +33887,10 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        out.push_str("    } else if (");
+        out.push_str("        } else if (");
         out.push_str(&split_temp);
         out.push_str(") {\n");
-        out.push_str("        ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &");
+        out.push_str("            ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &");
         out.push_str(&base_temp);
         out.push_str(", ");
         out.push_str(&container_temp);
@@ -33889,11 +33903,11 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        out.push_str("    } else {\n");
-        out.push_str("        if (");
+        out.push_str("        } else {\n");
+        out.push_str("            if (");
         out.push_str(&root_is_arrayaccess_temp);
         out.push_str(") {\n");
-        out.push_str("            ptn_value_array_path_set_from_assign_op(&runtime, &");
+        out.push_str("                ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&root_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -33904,8 +33918,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        out.push_str("        } else {\n");
-        out.push_str("            ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+        out.push_str("            } else {\n");
+        out.push_str("                ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -33916,6 +33930,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("            }\n");
         out.push_str("        }\n");
         out.push_str("    }\n");
 
@@ -34560,7 +34575,12 @@ impl ValueEmitter {
 
         let computed_temp =
             self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
-        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -34571,9 +34591,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-
-        let assigned_temp = self.next_temp();
-        out.push_str("    PtnValue ");
+        out.push_str("        ");
         out.push_str(&assigned_temp);
         out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, ");
         out.push_str(&class_name_temp);
@@ -34587,11 +34605,12 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        out.push_str("    ");
+        out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
         out.push_str(&computed_temp);
         out.push_str(";\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
@@ -34662,7 +34681,12 @@ impl ValueEmitter {
 
         let computed_temp =
             self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
-        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -34673,9 +34697,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-
-        let assigned_temp = self.next_temp();
-        out.push_str("    PtnValue ");
+        out.push_str("        ");
         out.push_str(&assigned_temp);
         out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
@@ -34689,11 +34711,12 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        out.push_str("    ");
+        out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
         out.push_str(&computed_temp);
         out.push_str(";\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
@@ -34747,7 +34770,12 @@ impl ValueEmitter {
 
         let result_temp =
             self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
-        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -34758,9 +34786,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-
-        let assigned_temp = self.next_temp();
-        out.push_str("    PtnValue ");
+        out.push_str("        ");
         out.push_str(&assigned_temp);
         out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
         out.push_str(&receiver_temp);
@@ -34773,6 +34799,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    }\n");
 
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_element_temp);
@@ -34889,6 +34916,10 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&assigned_temp);
         out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
@@ -34901,11 +34932,12 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        out.push_str("    ");
+        out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
         out.push_str(&assigned_temp);
         out.push_str(";\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
@@ -34957,6 +34989,10 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&assigned_temp);
         out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, ");
         out.push_str(&class_name_temp);
         out.push_str(", \"");
@@ -34969,11 +35005,12 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        out.push_str("    ");
+        out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
         out.push_str(&assigned_temp);
         out.push_str(";\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &computed_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
