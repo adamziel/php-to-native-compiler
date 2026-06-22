@@ -58176,6 +58176,90 @@ echo $x, \"\\n\";
 }
 
 #[test]
+fn compile_closure_object_clone_foreach_and_late_static_binding_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-object-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-object-semantics.php");
+    let output = root.join("closure-object-semantics-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = 1;
+$c = function($add) use (&$a) { return $a + $add; };
+$cc = clone $c;
+echo $c(10), \"\\n\";
+echo $cc(10), \"\\n\";
+$a++;
+echo $c(10), \"\\n\";
+echo $cc(10), \"\\n\";
+
+foreach (function(){ return 1; } as $value) {
+    echo \"bad\\n\";
+}
+echo \"foreach-ok\\n\";
+
+class ClosureScopeA {
+    private $x = 0;
+    function getClosure() {
+        return function () {
+            $this->x++;
+            self::printX();
+            self::print42();
+            static::print42();
+        };
+    }
+    function printX() { echo $this->x, \"\\n\"; }
+    function print42() { echo \"42\\n\"; }
+}
+
+class ClosureScopeB extends ClosureScopeA {
+    function print42() { echo \"forty two\\n\"; }
+}
+
+$closure = (new ClosureScopeB)->getClosure();
+$closure();
+
+class ClosureLateA {
+    static function name() { return 'A'; }
+    function foo() {
+        $fn = function() { return static::name(); };
+        echo static::name(), ' vs ', $fn(), \"\\n\";
+    }
+}
+class ClosureLateB extends ClosureLateA {
+    static function name() { return 'B'; }
+}
+(new ClosureLateB)->foo();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "11\n",
+            "11\n",
+            "12\n",
+            "12\n",
+            "foreach-ok\n",
+            "1\n",
+            "42\n",
+            "forty two\n",
+            "B vs B\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("return ptn_closure_clone(runtime, resolved);"));
+    assert!(c_source.contains("_class_name = runtime.current_called_class_name"));
+}
+
+#[test]
 fn compile_closure_bindto_preserves_use_captures_to_native_binary() {
     let root = temp_dir("ptn-native-closure-bindto-preserves-captures");
     fs::create_dir_all(&root).unwrap();

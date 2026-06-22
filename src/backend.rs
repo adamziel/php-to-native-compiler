@@ -30227,7 +30227,7 @@ impl ValueEmitter {
         Some(CalledClassOverride::Literal(target_class_name))
     }
 
-    fn relative_scoped_call_parts(&self, name: &str) -> Option<(String, String)> {
+    fn relative_scoped_call_parts(&self, name: &str) -> Option<(String, String, String)> {
         let (class_name, method_name) = self.split_static_call_name(name)?;
         if !(class_name.eq_ignore_ascii_case("parent")
             || class_name.eq_ignore_ascii_case("self")
@@ -30236,6 +30236,7 @@ impl ValueEmitter {
             return None;
         }
         Some((
+            class_name.to_string(),
             self.static_call_target_class_name(class_name),
             method_name.to_string(),
         ))
@@ -42635,6 +42636,9 @@ impl ValueEmitter {
 
         let result_temp = self.next_temp();
         let resolved_name = self.resolved_function_call_name(name);
+        let runtime_scoped_static_call = self
+            .split_static_call_name(name)
+            .is_some_and(|(class_name, _)| self.class_name_fetch_uses_runtime_scope(class_name));
         if !has_named_arguments
             && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("debug_zval_dump")
@@ -42647,7 +42651,7 @@ impl ValueEmitter {
                 line,
             );
         }
-        if !has_named_arguments && !has_unpacked_arguments {
+        if !runtime_scoped_static_call && !has_named_arguments && !has_unpacked_arguments {
             if let Some((target_class_name, method_name)) =
                 self.split_static_call_name(&resolved_name)
             {
@@ -42667,24 +42671,27 @@ impl ValueEmitter {
             }
         }
         let called_class_override = self.called_class_override_for_function_call(name);
-        let direct_user = self
-            .direct_user_function_by_resolved_name(&resolved_name)
-            .map(|(index, function)| DirectUserCall {
-                c_name: user_function_c_name(index),
-                parameters: function.parameters.clone(),
-                receiver_class_name: static_call_receiver_class_name(&resolved_name, function),
-                visibility_check: self.static_method_visibility_check(&resolved_name, function),
-                deprecated_message: function.deprecated_message.clone(),
-                deprecated_since: function.deprecated_since.clone(),
-                deprecated_message_runtime_reference: function
-                    .deprecated_message_runtime_reference
-                    .clone(),
-                no_discard_warning: no_discard_warning_message(function),
-                display_name: function.display_name.clone(),
-                class_name: function.class_name.clone(),
-                method_name: function.method_name.clone(),
-            });
-        if direct_user.is_none() {
+        let direct_user = if runtime_scoped_static_call {
+            None
+        } else {
+            self.direct_user_function_by_resolved_name(&resolved_name)
+                .map(|(index, function)| DirectUserCall {
+                    c_name: user_function_c_name(index),
+                    parameters: function.parameters.clone(),
+                    receiver_class_name: static_call_receiver_class_name(&resolved_name, function),
+                    visibility_check: self.static_method_visibility_check(&resolved_name, function),
+                    deprecated_message: function.deprecated_message.clone(),
+                    deprecated_since: function.deprecated_since.clone(),
+                    deprecated_message_runtime_reference: function
+                        .deprecated_message_runtime_reference
+                        .clone(),
+                    no_discard_warning: no_discard_warning_message(function),
+                    display_name: function.display_name.clone(),
+                    class_name: function.class_name.clone(),
+                    method_name: function.method_name.clone(),
+                })
+        };
+        if direct_user.is_none() && !runtime_scoped_static_call {
             if let Some((visibility, declaring_class, method_name)) =
                 self.static_method_visibility_error(&resolved_name)
             {
@@ -42857,19 +42864,31 @@ impl ValueEmitter {
                     called_class_override.as_ref(),
                     discarded,
                 );
-            } else if let Some((target_class_name, method_name)) =
+            } else if let Some((class_name, target_class_name, method_name)) =
                 self.relative_scoped_call_parts(name)
             {
-                self.emit_relative_scoped_method_call_or_function_fallback(
-                    out,
-                    &result_temp,
-                    &target_class_name,
-                    &method_name,
-                    &resolved_name,
-                    "0",
-                    "NULL",
-                    line,
-                );
+                if self.class_name_fetch_uses_runtime_scope(&class_name) {
+                    self.emit_runtime_relative_scoped_method_call_or_function_fallback(
+                        out,
+                        &result_temp,
+                        &class_name,
+                        &method_name,
+                        "0",
+                        "NULL",
+                        line,
+                    );
+                } else {
+                    self.emit_relative_scoped_method_call_or_function_fallback(
+                        out,
+                        &result_temp,
+                        &target_class_name,
+                        &method_name,
+                        &resolved_name,
+                        "0",
+                        "NULL",
+                        line,
+                    );
+                }
             } else {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -42983,18 +43002,31 @@ impl ValueEmitter {
                 called_class_override.as_ref(),
                 discarded,
             );
-        } else if let Some((target_class_name, method_name)) = self.relative_scoped_call_parts(name)
+        } else if let Some((class_name, target_class_name, method_name)) =
+            self.relative_scoped_call_parts(name)
         {
-            self.emit_relative_scoped_method_call_or_function_fallback(
-                out,
-                &result_temp,
-                &target_class_name,
-                &method_name,
-                &resolved_name,
-                &arguments.len().to_string(),
-                &args_temp,
-                line,
-            );
+            if self.class_name_fetch_uses_runtime_scope(&class_name) {
+                self.emit_runtime_relative_scoped_method_call_or_function_fallback(
+                    out,
+                    &result_temp,
+                    &class_name,
+                    &method_name,
+                    &arguments.len().to_string(),
+                    &args_temp,
+                    line,
+                );
+            } else {
+                self.emit_relative_scoped_method_call_or_function_fallback(
+                    out,
+                    &result_temp,
+                    &target_class_name,
+                    &method_name,
+                    &resolved_name,
+                    &arguments.len().to_string(),
+                    &args_temp,
+                    line,
+                );
+            }
         } else {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -43287,6 +43319,68 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+
+    fn emit_runtime_relative_scoped_method_call_or_function_fallback(
+        &self,
+        out: &mut String,
+        result_temp: &str,
+        class_name: &str,
+        method_name: &str,
+        argc: &str,
+        args: &str,
+        line: usize,
+    ) {
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_null();\n");
+        self.emit_runtime_scoped_class_name_cstr(out, result_temp, class_name, line);
+        out.push_str("    if (");
+        out.push_str(result_temp);
+        out.push_str("_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        if (ptn_call_declared_method_in_scope(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), ");
+        out.push_str(result_temp);
+        out.push_str("_class_name, \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\", runtime.current_called_class_name, ");
+        out.push_str(argc);
+        out.push_str(", ");
+        out.push_str(args);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(result_temp);
+        out.push_str(")) {\n");
+        out.push_str("        } else {\n");
+        out.push_str("            int ptn_runtime_static_needed = snprintf(NULL, 0, \"%s::%s\", ");
+        out.push_str(result_temp);
+        out.push_str("_class_name, \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\");\n");
+        out.push_str("            if (ptn_runtime_static_needed < 0) {\n");
+        out.push_str("                ptn_abort_out_of_memory();\n");
+        out.push_str("            }\n");
+        out.push_str("            char *ptn_runtime_static_name = malloc((size_t)ptn_runtime_static_needed + 1);\n");
+        out.push_str("            if (ptn_runtime_static_name == NULL) {\n");
+        out.push_str("                ptn_abort_out_of_memory();\n");
+        out.push_str("            }\n");
+        out.push_str("            snprintf(ptn_runtime_static_name, (size_t)ptn_runtime_static_needed + 1, \"%s::%s\", ");
+        out.push_str(result_temp);
+        out.push_str("_class_name, \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\");\n");
+        out.push_str("            ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_call_function(&runtime, ptn_runtime_static_name, ");
+        out.push_str(argc);
+        out.push_str(", ");
+        out.push_str(args);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("            free(ptn_runtime_static_name);\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
 

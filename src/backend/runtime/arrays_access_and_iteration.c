@@ -1385,6 +1385,9 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
 
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_CLOSURE) {
+        return ptn_closure_clone(runtime, resolved);
+    }
     if (resolved.type != PTN_OBJECT) {
         char message[192];
         int written = snprintf(
@@ -10661,6 +10664,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     value = ptn_value_deref(value);
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
+        if (value.type == PTN_CLOSURE) {
+            return iterator;
+        }
         if (value.type == PTN_OBJECT) {
             if (value.as.object->lazy_uninitialized && !value.as.object->lazy_initializing) {
                 if (!ptn_lazy_object_initialize(runtime, value, line)) {
@@ -10793,6 +10799,9 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
             return iterator;
         }
         return ptn_array_iterator_from_traversable_object(runtime, *value, access_scope, path, line, 0);
+    }
+    if (value->type == PTN_CLOSURE) {
+        return iterator;
     }
     if (value->type != PTN_ARRAY) {
         ptn_emit_foreach_non_array_warning(runtime, ptn_value_deref(*value), path, line);
