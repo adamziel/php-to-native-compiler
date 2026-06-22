@@ -8337,6 +8337,110 @@ static void ptn_serialize_append_object_property_key(
     free(encoded);
 }
 
+static const PtnObjectPropertyMetadata *ptn_serialize_property_metadata_for_array_key(
+    PtnObject *object,
+    PtnArrayKey key
+) {
+    if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
+        return NULL;
+    }
+
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata != NULL) {
+        return metadata;
+    }
+
+    static const char private_prefix[] = "__ptn_private:";
+    size_t private_prefix_len = sizeof(private_prefix) - 1;
+    if (key.string_len > private_prefix_len &&
+        memcmp(key.as.string, private_prefix, private_prefix_len) == 0) {
+        const char *declaring_class = key.as.string + private_prefix_len;
+        const char *separator = memchr(
+            declaring_class,
+            ':',
+            key.string_len - private_prefix_len
+        );
+        if (separator != NULL) {
+            size_t declaring_len = (size_t)(separator - declaring_class);
+            const char *display_name = separator + 1;
+            size_t display_len =
+                (size_t)((key.as.string + key.string_len) - display_name);
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                const PtnObjectPropertyMetadata *candidate = &object->property_metadata[i];
+                if (candidate->read_visibility == PTN_PROPERTY_PRIVATE &&
+                    strlen(candidate->declaring_class) == declaring_len &&
+                    memcmp(candidate->declaring_class, declaring_class, declaring_len) == 0 &&
+                    strlen(candidate->display_name) == display_len &&
+                    memcmp(candidate->display_name, display_name, display_len) == 0) {
+                    return candidate;
+                }
+            }
+        }
+    }
+
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *candidate = &object->property_metadata[i];
+        if (candidate->read_visibility != PTN_PROPERTY_PUBLIC &&
+            strlen(candidate->display_name) == key.string_len &&
+            memcmp(candidate->display_name, key.as.string, key.string_len) == 0) {
+            return candidate;
+        }
+    }
+
+    return NULL;
+}
+
+static PtnArrayKey ptn_serialize_object_property_array_key(PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT || object == NULL) {
+        return ptn_array_key_clone(key);
+    }
+
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_serialize_property_metadata_for_array_key(object, key);
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return ptn_array_key_clone(key);
+    }
+
+    size_t display_len = strlen(metadata->display_name);
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t encoded_len = display_len + 3;
+        char *encoded = malloc(encoded_len + 1);
+        if (encoded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        encoded[0] = '\0';
+        encoded[1] = '*';
+        encoded[2] = '\0';
+        memcpy(encoded + 3, metadata->display_name, display_len);
+        encoded[encoded_len] = '\0';
+        PtnArrayKey result = ptn_array_string_key_len(encoded, encoded_len);
+        free(encoded);
+        return result;
+    }
+
+    size_t declaring_len = strlen(metadata->declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t encoded_len = declaring_len + display_len + 2;
+    char *encoded = malloc(encoded_len + 1);
+    if (encoded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    encoded[0] = '\0';
+    memcpy(encoded + 1, metadata->declaring_class, declaring_len);
+    encoded[declaring_len + 1] = '\0';
+    memcpy(encoded + declaring_len + 2, metadata->display_name, display_len);
+    encoded[encoded_len] = '\0';
+    PtnArrayKey result = ptn_array_string_key_len(encoded, encoded_len);
+    free(encoded);
+    return result;
+}
+
 static void ptn_serialize_append_exception_property_key(
     PtnStringBuffer *buffer,
     const char *declaring_class,
@@ -8762,7 +8866,7 @@ static PtnValue ptn_serialize_spl_heap_members_value(PtnObject *object) {
         }
         ptn_array_set_entry(
             result.as.array,
-            ptn_array_key_clone(entry->key),
+            ptn_serialize_object_property_array_key(object, entry->key),
             ptn_value_clone(entry->value)
         );
     }
@@ -118310,7 +118414,7 @@ static void ptn_spl_heap_load_members(
         }
         ptn_array_set_entry(
             object->properties,
-            ptn_array_key_clone(entry->key),
+            ptn_unserialize_object_property_key(object, ptn_array_key_clone(entry->key)),
             ptn_value_clone(entry->value)
         );
     }
