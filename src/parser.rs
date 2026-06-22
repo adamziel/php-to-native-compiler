@@ -2412,17 +2412,12 @@ impl Parser<'_> {
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             self.validate_interface_property_modifiers(class_is_interface, &modifiers)?;
             if modifiers.is_static {
-                if member_is_readonly {
-                    return Err(Diagnostic::new(
-                        "readonly static properties are unsupported",
-                        modifiers.readonly_span.or(Some(self.peek().span)),
-                    ));
-                }
                 return Ok(ParsedClassMember::StaticProperties(
                     self.parse_static_property_declarations(
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        member_is_readonly,
                         modifiers.is_final,
                         attributes,
                         doc_comment,
@@ -2449,17 +2444,12 @@ impl Parser<'_> {
         if self.peek_starts_property_type_hint() {
             self.validate_interface_property_modifiers(class_is_interface, &modifiers)?;
             if modifiers.is_static {
-                if member_is_readonly {
-                    return Err(Diagnostic::new(
-                        "readonly static properties are unsupported",
-                        modifiers.readonly_span.or(Some(self.peek().span)),
-                    ));
-                }
                 return Ok(ParsedClassMember::StaticProperties(
                     self.parse_static_property_declarations(
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        member_is_readonly,
                         modifiers.is_final,
                         attributes,
                         doc_comment,
@@ -2724,6 +2714,7 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
+        is_readonly: bool,
         is_final: bool,
         attributes: ParsedAttributes,
         doc_comment: Option<String>,
@@ -2749,6 +2740,7 @@ impl Parser<'_> {
         let mut properties = vec![self.parse_static_property_declaration(
             visibility,
             set_visibility,
+            is_readonly,
             is_final,
             type_hint.clone(),
             attributes.clone(),
@@ -2769,6 +2761,7 @@ impl Parser<'_> {
             properties.push(self.parse_static_property_declaration(
                 visibility,
                 set_visibility,
+                is_readonly,
                 is_final,
                 type_hint.clone(),
                 attributes.clone(),
@@ -3280,6 +3273,7 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        is_readonly: bool,
         is_final: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
@@ -3307,6 +3301,12 @@ impl Parser<'_> {
             set_visibility,
             token.span,
         )?;
+        if is_readonly {
+            return Err(Diagnostic::new(
+                format!("Static property {class_name}::${name} cannot be readonly"),
+                Some(token.span),
+            ));
+        }
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;

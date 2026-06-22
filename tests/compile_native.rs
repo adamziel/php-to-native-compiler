@@ -9169,11 +9169,11 @@ fn parser_rejects_invalid_readonly_property_metadata() {
         ),
         (
             "<?php class Bad { public static readonly int $name; }",
-            "readonly static properties are unsupported",
+            "Static property Bad::$name cannot be readonly",
         ),
         (
             "<?php readonly class Bad { public static int $name; }",
-            "readonly static properties are unsupported",
+            "Static property Bad::$name cannot be readonly",
         ),
         (
             "<?php class Base {} readonly class Child extends Base {}",
@@ -71920,6 +71920,94 @@ clone $box;
             "2\n",
             "3\n",
             "Cannot indirectly modify readonly property ReadonlyBox::$items\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_readonly_object_incdec_preserves_previous_exception_identity_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-object-incdec-previous");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-object-incdec-previous.php");
+    let output = root.join("readonly-object-incdec-previous-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public readonly object $prop;
+
+    public function __construct(object $prop) {
+        $this->prop = $prop;
+    }
+}
+
+$test = new Test(new stdClass);
+$test->prop->foo = 1;
+$test->prop->foo += 1;
+$test->prop->foo++;
+try {
+    $test->prop += 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $test->prop++;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    --$test->prop;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($test->prop);
+
+$ref =& $test->prop;
+$ref = new stdClass;
+var_dump($test->prop);
+
+$test = new Test(new ArrayObject());
+$test->prop[] = [];
+$test->prop[0][] = 1;
+var_dump($test->prop);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Unsupported operand types: stdClass + int\n",
+            "Cannot modify readonly property Test::$prop\n",
+            "Cannot modify readonly property Test::$prop\n",
+            "object(stdClass)#2 (1) {\n",
+            "  [\"foo\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "object(stdClass)#2 (1) {\n",
+            "  [\"foo\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "object(ArrayObject)#7 (1) {\n",
+            "  [\"storage\":\"ArrayObject\":private]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    array(1) {\n",
+            "      [0]=>\n",
+            "      int(1)\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

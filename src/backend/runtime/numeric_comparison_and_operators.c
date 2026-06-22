@@ -1935,11 +1935,9 @@ static PTN_UNUSED PtnValue ptn_decrement_string(PtnRuntime *runtime, PtnString s
     );
 }
 
-static PTN_UNUSED void ptn_throw_invalid_increment_decrement(
-    PtnRuntime *runtime,
+static PTN_UNUSED char *ptn_invalid_increment_decrement_message(
     const char *operation,
-    PtnValue value,
-    size_t line
+    PtnValue value
 ) {
     const char *type_name = ptn_arithmetic_operand_type_name(value);
     int needed = snprintf(NULL, 0, "Cannot %s %s", operation, type_name);
@@ -1955,8 +1953,60 @@ static PTN_UNUSED void ptn_throw_invalid_increment_decrement(
         free(message);
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
-    free(message);
+    return message;
+}
+
+static PTN_UNUSED int ptn_invalid_increment_decrement_type(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            return 1;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_prepare_invalid_increment_decrement_previous(
+    PtnRuntime *runtime,
+    const char *operation,
+    PtnValue value,
+    size_t line
+) {
+    char *message = ptn_invalid_increment_decrement_message(operation, value);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "TypeError",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+}
+
+static PTN_UNUSED void ptn_throw_invalid_increment_decrement(
+    PtnRuntime *runtime,
+    const char *operation,
+    PtnValue value,
+    size_t line
+) {
+    char *message = ptn_invalid_increment_decrement_message(operation, value);
+    ptn_throw_exception_owned_message_at(runtime, "TypeError", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED void ptn_throw_property_increment_overflow_error(
@@ -2183,6 +2233,14 @@ static PTN_UNUSED PtnValue ptn_property_increment_value(
                     mutable_metadata != NULL &&
                     !mutable_metadata->readonly_clone_reinitialized;
                 if (!readonly_clone_reinit) {
+                    if (ptn_invalid_increment_decrement_type(resolved)) {
+                        ptn_prepare_invalid_increment_decrement_previous(
+                            runtime,
+                            increment ? "increment" : "decrement",
+                            resolved,
+                            line
+                        );
+                    }
                     ptn_throw_readonly_property_error(
                         runtime,
                         object.as.object->class_name,
