@@ -9673,6 +9673,30 @@ class Baz extends Bar {
 }
 
 #[test]
+fn parser_reports_inherited_abstract_constructor_signature_source() {
+    let error = parser::parse(
+        "<?php
+abstract class A {
+    abstract function __construct(X $x);
+}
+class B extends A {
+    function __construct(X $x) {}
+}
+class C extends B {
+    function __construct() {}
+}
+",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Declaration of C::__construct() must be compatible with A::__construct(X $x)"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn parser_rejects_static_magic_invoke_methods() {
     let error = parser::parse("<?php class Invokable { public static function __invoke() {} }")
         .unwrap_err();

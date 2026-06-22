@@ -14458,6 +14458,22 @@ fn validate_method_signature_compatibility(
                         classes,
                         runtime_class_aliases,
                     )?;
+                } else if let Some((signature_class, signature_method)) =
+                    inherited_abstract_constructor_signature_requirement(
+                        method,
+                        parent_class,
+                        parent_method,
+                        classes,
+                    )
+                {
+                    validate_method_signature_pair(
+                        class,
+                        method,
+                        signature_class,
+                        signature_method,
+                        classes,
+                        runtime_class_aliases,
+                    )?;
                 }
                 true
             } else {
@@ -14926,6 +14942,34 @@ fn inherited_abstract_constructor_visibility_requirement<'a>(
     required_method
         .is_abstract
         .then_some((required_class, required_method))
+}
+
+fn inherited_abstract_constructor_signature_requirement<'a>(
+    method: &MethodDecl,
+    parent_class: &'a ClassDecl,
+    parent_method: &'a MethodDecl,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    if !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract {
+        return None;
+    }
+    let mut parent_name = parent_class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case("__construct")
+                && candidate.is_abstract
+        }) {
+            return Some((parent, method));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
 }
 
 fn method_visibility_compatibility_deferred_to_runtime(method: &MethodDecl) -> bool {
