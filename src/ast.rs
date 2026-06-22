@@ -310,7 +310,7 @@ pub struct AnonymousFunction {
     pub span: SourceSpan,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AttributeMetadata {
     pub instances: Vec<AttributeInstance>,
     pub total_count: u16,
@@ -331,7 +331,7 @@ pub struct AttributeMetadata {
     pub no_discard_message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttributeInstance {
     pub name: String,
     pub arguments: Vec<AttributeArgument>,
@@ -340,13 +340,13 @@ pub struct AttributeInstance {
     pub strict_types: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttributeArgument {
     pub name: Option<String>,
     pub value: AttributeArgumentValue,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttributeArgumentValue {
     pub text: String,
     pub kind: AttributeArgumentKind,
@@ -354,14 +354,14 @@ pub struct AttributeArgumentValue {
     pub expression: Option<AttributeArgumentExpression>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AttributeArgumentArrayElement {
     pub key: Option<AttributeArgumentExpression>,
     pub value: AttributeArgumentExpression,
     pub line: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AttributeArgumentExpression {
     String(String),
     Int(String),
@@ -381,6 +381,13 @@ pub enum AttributeArgumentExpression {
     NewObject {
         class_name: String,
         arguments: Vec<AttributeArgumentExpression>,
+        line: usize,
+    },
+    Closure {
+        function: Option<Box<AnonymousFunction>>,
+        function_index: Option<usize>,
+        source_text: String,
+        reflection_text: String,
         line: usize,
     },
     Array(Vec<AttributeArgumentArrayElement>),
@@ -404,6 +411,7 @@ pub enum AttributeArgumentKind {
     Bool,
     Null,
     Array,
+    Closure,
     Constant,
     ClassConstant,
     NativeEnumCase {
