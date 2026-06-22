@@ -32158,6 +32158,7 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(len);
 }
 
+static int ptn_stream_mode_is_append(PtnResource *resource);
 static size_t ptn_stream_write_filtered(PtnResource *resource, const char *data, size_t len);
 
 static PtnValue ptn_internal_write_formatted_stream(
@@ -32204,6 +32205,10 @@ static PtnValue ptn_internal_write_formatted_stream(
     if (string_value.type != PTN_STRING) {
         return formatted;
     }
+    int64_t append_position = -1;
+    if (ptn_stream_mode_is_append(stream.as.resource)) {
+        append_position = ptn_stream_tell(stream.as.resource);
+    }
     size_t written = ptn_stream_write_filtered(
         stream.as.resource,
         (const char *)string_value.as.string.data,
@@ -32217,6 +32222,16 @@ static PtnValue ptn_internal_write_formatted_stream(
     if (string_value.as.string.len > (size_t)INT64_MAX) {
         ptn_value_drop(&formatted);
         ptn_abort_out_of_memory();
+    }
+    if (append_position >= 0) {
+        if (append_position > INT64_MAX - (int64_t)written) {
+            ptn_value_drop(&formatted);
+            ptn_abort_out_of_memory();
+        }
+        int64_t logical_position = append_position + (int64_t)written;
+        if (ptn_stream_tell(stream.as.resource) != logical_position) {
+            (void)ptn_stream_seek(stream.as.resource, logical_position, SEEK_SET);
+        }
     }
     int64_t len = (int64_t)string_value.as.string.len;
     ptn_value_drop(&formatted);
