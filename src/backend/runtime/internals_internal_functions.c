@@ -107,6 +107,9 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     if (data == NULL || len == 0) {
         return;
     }
+    if (ptn_generator_capture_output(runtime, data, len)) {
+        return;
+    }
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root != NULL && root->output_buffer_callback_depth != 0) {
         return;

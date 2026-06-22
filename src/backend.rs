@@ -2547,6 +2547,13 @@ fn emit_user_functions(
             out.push_str(
                 "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
             );
+            out.push_str(
+                "    PtnRuntime *ptn_generator_root_runtime = ptn_runtime_root(&runtime);\n",
+            );
+            out.push_str("    PtnGenerator *ptn_saved_root_generator = ptn_generator_root_runtime == NULL ? NULL : ptn_generator_root_runtime->current_generator;\n");
+            out.push_str("    if (ptn_generator_root_runtime != NULL) {\n");
+            out.push_str("        ptn_generator_root_runtime->current_generator = runtime.current_generator;\n");
+            out.push_str("    }\n");
         }
         if function.return_by_ref && !function.is_generator {
             if matches!(function.return_type.as_ref(), Some(TypeHint::Void)) {
@@ -3072,6 +3079,11 @@ fn emit_user_functions(
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
+        if function.is_generator {
+            out.push_str("    if (ptn_generator_root_runtime != NULL) {\n");
+            out.push_str("        ptn_generator_root_runtime->current_generator = ptn_saved_root_generator;\n");
+            out.push_str("    }\n");
+        }
         if function.is_anonymous {
             out.push_str("    free(ptn_closure_trace_name);\n");
         }
@@ -3083,11 +3095,22 @@ fn emit_user_functions(
         out.push_str(":\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
-            out.push_str("    ptn_generator_set_return_value(runtime.current_generator, ptn_return_value);\n");
-            out.push_str("    runtime.current_generator = NULL;\n");
+            out.push_str(
+                "    PtnGenerator *ptn_completed_generator = runtime.current_generator;\n",
+            );
+            out.push_str(
+                "    ptn_generator_set_return_value(ptn_completed_generator, ptn_return_value);\n",
+            );
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
             out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str(
+                "    ptn_generator_append_captured_output_to_final(ptn_completed_generator);\n",
+            );
+            out.push_str("    if (ptn_generator_root_runtime != NULL) {\n");
+            out.push_str("        ptn_generator_root_runtime->current_generator = ptn_saved_root_generator;\n");
+            out.push_str("    }\n");
+            out.push_str("    runtime.current_generator = NULL;\n");
             if function.is_anonymous {
                 out.push_str("    free(ptn_closure_trace_name);\n");
             }

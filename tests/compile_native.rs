@@ -724,6 +724,12 @@ class MyFixed extends SplFixedArray {
     public $x;
 }
 
+class CustomIteratorFixed extends SplFixedArray {
+    public function getIterator(): Traversable {
+        yield 0 => "declared";
+    }
+}
+
 class HasDestructor {
     public function __destruct() {
         global $values;
@@ -747,6 +753,12 @@ var_dump($cast[0], $cast[1], $cast["x"]);
 
 $copy = unserialize(serialize($fixed));
 var_dump($copy[0], $copy[1], $copy->x);
+
+$custom = new CustomIteratorFixed(1);
+$custom[0] = "internal";
+foreach ($custom as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
 
 $values = new SplFixedArray(1);
 $values[0] = new HasDestructor();
@@ -782,6 +794,7 @@ echo "after ", $values->getSize(), "\n";
             "string(12) \"dynamic-zero\"\n",
             "int(2)\n",
             "string(4) \"prop\"\n",
+            "0:declared\n",
             "dtor:bool(false)\n",
             "after 0\n",
         )
@@ -17396,6 +17409,71 @@ var_dump(method_exists($gen, "valid"));
     assert!(c_source.contains("ptn_generator_next"));
     assert!(c_source.contains("ptn_generator_rewind"));
     assert!(c_source.contains("ptn_generator_valid"));
+}
+
+#[test]
+fn compile_generator_output_replays_at_yield_observation_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-output-replay");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-output-replay.php");
+    let output = root.join("generator-output-replay-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function helper($label) {
+    echo "helper:", $label, "\n";
+}
+
+function source() {
+    echo "before-a\n";
+    yield "a" => 1;
+    helper("b");
+    yield "b" => 2;
+    echo "after\n";
+}
+
+$generator = source();
+echo "created\n";
+foreach ($generator as $key => $value) {
+    echo $key, "=>", $value, "\n";
+}
+
+$manual = source();
+echo "manual-created\n";
+$manual->rewind();
+echo "manual:", $manual->key(), "=>", $manual->current(), "\n";
+$manual->next();
+echo "manual:", $manual->key(), "=>", $manual->current(), "\n";
+$manual->next();
+echo "manual-valid:";
+var_dump($manual->valid());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "created\n",
+            "before-a\n",
+            "a=>1\n",
+            "helper:b\n",
+            "b=>2\n",
+            "after\n",
+            "manual-created\n",
+            "before-a\n",
+            "manual:a=>1\n",
+            "helper:b\n",
+            "manual:b=>2\n",
+            "after\n",
+            "manual-valid:bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

@@ -185,7 +185,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->forward_static_called_class_name = NULL;
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
-    runtime->current_generator = NULL;
+    runtime->current_generator = caller_runtime->current_generator;
     runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();

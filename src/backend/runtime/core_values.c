@@ -904,10 +904,17 @@ struct PtnGenerator {
     PtnValue return_value;
     PtnArray *reference_notice_lines;
     PtnArray *delegate_sources;
+    PtnArray *output_chunks;
+    PtnValue final_output;
     PtnValue closure_owner;
+    char *captured_output;
+    size_t captured_output_len;
+    size_t captured_output_capacity;
     size_t position;
     int64_t next_auto_key;
     int completed;
+    int final_output_emitted;
+    int replaying_output;
     int yields_by_ref;
 };
 
