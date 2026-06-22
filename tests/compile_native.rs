@@ -37340,6 +37340,75 @@ var_dump($entityRef->textContent);
 }
 
 #[test]
+fn compile_dom_current_red_node_metadata_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-current-red-node-metadata-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-current-red-node-metadata-pack.php");
+    let output = root.join("dom-current-red-node-metadata-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$attrsDoc = new DOMDocument();
+$root = $attrsDoc->createElement('container');
+$attrsDoc->appendChild($root);
+for ($i = 0; $i < 5; $i++) {
+    $root->setAttribute('attr-' . $i, 'value-' . $i);
+}
+var_dump($root->attributes->length);
+var_dump($root->attributes->count());
+var_dump(count($root->attributes));
+
+$html = Dom\HTMLDocument::createEmpty();
+$clone = $html->cloneNode();
+$clone->appendChild($clone->createElement("foo"));
+try {
+    $clone->prepend($clone->createElement("bar"));
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$xml = new DOMDocument();
+$xml->loadXML("<?xml version='1.0' encoding='utf-8'?><!DOCTYPE set [<!ENTITY my_entity '<p>hi</p>'>]><p>&my_entity;</p>");
+echo $xml->saveXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(concat!(
+            "int(5)\n",
+            "int(5)\n",
+            "int(5)\n",
+            "Cannot have more than one element child in a document\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<!DOCTYPE set [\n",
+            "<!ENTITY my_entity \"<p>hi</p>\">\n",
+        )),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("<p>&my_entity;</p>\n"),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_check_document_element_insertion_sequence"));
+    assert!(c_source.contains("ptn_dom_doctype_append_normalized_internal_entity_subset"));
+    assert!(c_source.contains("DOMNamedNodeMap"));
+}
+
+#[test]
 fn compile_dom_element_attribute_map_and_parent_mutators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-attribute-map-parent-mutators");
     fs::create_dir_all(&root).unwrap();
