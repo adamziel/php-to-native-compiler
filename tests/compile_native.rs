@@ -37085,10 +37085,82 @@ foreach (['firstChild', 'lastChild', 'textContent', 'childNodes'] as $prop) {
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
+    let delayed_input = root.join("dom-entity-reference-delayed-freeing.php");
+    let delayed_output = root.join("dom-entity-reference-delayed-freeing-bin");
+    fs::write(
+        &delayed_input,
+        r#"<?php
+$doc = new DOMDocument;
+$entityRef = $doc->appendChild($doc->createElementNS('some:ns', 'container'))
+    ->appendChild($doc->createEntityReference('nbsp'));
+echo $doc->saveXML(), "\n";
+$entityRef->parentNode->remove();
+echo $doc->saveXML(), "\n";
+var_dump($entityRef->parentNode);
+var_dump($entityRef->nodeName);
+var_dump($entityRef->textContent);
+
+$doc = new DOMDocument;
+$doc->loadXML(<<<'XML'
+<?xml version="1.0"?>
+<!DOCTYPE books [
+<!ENTITY test "entity is only for test purposes">
+]>
+<div/>
+XML);
+$entityRef = $doc->documentElement->appendChild($doc->createEntityReference('test'));
+echo $doc->saveXML(), "\n";
+$entityRef->parentNode->remove();
+unset($doc);
+var_dump($entityRef->nodeName);
+var_dump($entityRef->textContent);
+"#,
+    )
+    .unwrap();
+
+    let delayed_compiled = compile_file(
+        &delayed_input,
+        &delayed_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+
+    let delayed_execution = Command::new(&delayed_output).output().unwrap();
+    assert!(
+        delayed_execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        delayed_execution.status.code(),
+        String::from_utf8_lossy(&delayed_execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(delayed_execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns=\"some:ns\">&nbsp;</container>\n",
+            "\n",
+            "<?xml version=\"1.0\"?>\n",
+            "\n",
+            "NULL\n",
+            "string(4) \"nbsp\"\n",
+            "string(0) \"\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<!DOCTYPE books [\n",
+            "<!ENTITY test \"entity is only for test purposes\">\n",
+            "]>\n",
+            "<div>&test;</div>\n",
+            "\n",
+            "string(4) \"test\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(delayed_execution.stderr).unwrap(), "");
+
     let legacy_c_source = fs::read_to_string(legacy_compiled.c_source.unwrap()).unwrap();
     let modern_c_source = fs::read_to_string(modern_compiled.c_source.unwrap()).unwrap();
+    let delayed_c_source = fs::read_to_string(delayed_compiled.c_source.unwrap()).unwrap();
     assert!(legacy_c_source.contains("ptn_xml_child_nodes_object"));
     assert!(modern_c_source.contains("ptn_xml_child_nodes_object"));
+    assert!(delayed_c_source.contains("ptn_xml_mark_detached_entity_references"));
     assert!(modern_c_source.contains("PtnObject *parent_object"));
     assert!(!legacy_c_source.contains("PtnObject *child_nodes_object"));
     assert!(!modern_c_source.contains("PtnObject *child_nodes_object"));

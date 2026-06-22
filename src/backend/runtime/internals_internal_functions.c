@@ -79488,7 +79488,7 @@ static const char *ptn_xml_lookup_namespace_uri(PtnXmlNode *element, const char 
 static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node);
 static void ptn_dom_element_attach_attribute(PtnRuntime *runtime, PtnXmlNode *element, PtnXmlNode *attr, PtnXmlNode *replace, int preserve_replaced_name);
 static void ptn_xml_invalidate_entity_reference_declarations(PtnXmlNode *node);
-static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node);
+static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node, int preserve_root_declaration_children);
 static void ptn_xml_skip_ws(const char *data, size_t len, size_t *pos);
 static int ptn_xml_name_char(unsigned char byte);
 static int ptn_xml_name_is_valid_span(const char *data, size_t len);
@@ -79761,7 +79761,7 @@ static void ptn_xml_detach_child(PtnXmlNode *node) {
     size_t index = ptn_xml_child_index(parent, node, &found);
     if (!found) {
         node->parent = NULL;
-        ptn_xml_mark_detached_entity_references(node);
+        ptn_xml_mark_detached_entity_references(node, node->type == PTN_XML_NODE_ENTITY_REFERENCE);
         return;
     }
     for (size_t i = index + 1; i < parent->child_count; i++) {
@@ -79769,7 +79769,7 @@ static void ptn_xml_detach_child(PtnXmlNode *node) {
     }
     parent->child_count--;
     node->parent = NULL;
-    ptn_xml_mark_detached_entity_references(node);
+    ptn_xml_mark_detached_entity_references(node, node->type == PTN_XML_NODE_ENTITY_REFERENCE);
     if (removed_doctype) {
         ptn_xml_invalidate_entity_reference_declarations(document);
     }
@@ -80202,15 +80202,22 @@ static void ptn_xml_invalidate_entity_reference_declarations(PtnXmlNode *node) {
     }
 }
 
-static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node) {
+static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node, int preserve_root_declaration_children) {
     if (node == NULL) {
         return;
     }
     if (node->type == PTN_XML_NODE_ENTITY_REFERENCE) {
         node->parent = NULL;
+        if (!preserve_root_declaration_children && ptn_xml_predefined_entity_value(node->name) == NULL) {
+            for (size_t i = 0; i < node->child_count; i++) {
+                ptn_xml_mark_detached_entity_references(node->children[i], 0);
+            }
+            node->child_count = 0;
+            return;
+        }
     }
     for (size_t i = 0; i < node->child_count; i++) {
-        ptn_xml_mark_detached_entity_references(node->children[i]);
+        ptn_xml_mark_detached_entity_references(node->children[i], 0);
     }
 }
 
