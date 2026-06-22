@@ -6049,7 +6049,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
 ) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
-        ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
+        ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
@@ -13002,6 +13002,13 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
     size_t segment_count,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_value_array_path_read_for_overloaded_assign_op(
     PtnRuntime *runtime,
     PtnValue target,
@@ -15435,6 +15442,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
     const PtnArrayPathSegment *segments,
     size_t segment_count,
     size_t line,
+    const char *string_offset_write_message,
     int emit_key_conversion_diagnostics
 ) {
     if (segment_count == 0) {
@@ -15463,7 +15471,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
             );
             return ptn_null();
         }
-        ptn_throw_exception_at(runtime, "Error", "Cannot use assign-op operators with string offsets", runtime->source_path, line);
+        ptn_throw_exception_at(runtime, "Error", string_offset_write_message, runtime->source_path, line);
         return ptn_null();
     }
     if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -15499,6 +15507,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
                 segments + 1,
                 segment_count - 1,
                 line,
+                string_offset_write_message,
                 emit_key_conversion_diagnostics
             );
             ptn_value_destroy(&reference);
@@ -15516,6 +15525,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
             segments + 1,
             segment_count - 1,
             line,
+            string_offset_write_message,
             emit_key_conversion_diagnostics
         );
         ptn_value_destroy(&nested);
@@ -15589,6 +15599,25 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
         segments,
         segment_count,
         line,
+        "Cannot use assign-op operators with string offsets",
+        1
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    return ptn_value_array_path_read_for_assign_op_impl(
+        runtime,
+        target,
+        segments,
+        segment_count,
+        line,
+        "Cannot increment/decrement string offsets",
         1
     );
 }
@@ -15606,6 +15635,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_overloaded_assign_op(
         segments,
         segment_count,
         line,
+        "Cannot use assign-op operators with string offsets",
         1
     );
 }

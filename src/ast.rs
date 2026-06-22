@@ -827,6 +827,11 @@ pub enum UnsetTarget {
         dimensions: Vec<Expr>,
         span: SourceSpan,
     },
+    ValueArrayDim {
+        array: Box<Expr>,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
     PropertyArrayDim {
         receiver: Box<Expr>,
         name: String,

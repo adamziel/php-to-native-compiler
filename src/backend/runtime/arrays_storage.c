@@ -2918,7 +2918,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
     return ptn_array_string_key_len(key.as.string, key.string_len);
 }
 
-static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
+static PtnArray *ptn_array_clone_with_mode(PtnArray *source, int unwrap_entry_references) {
     PtnArray *array = malloc(sizeof(PtnArray));
     if (array == NULL) {
         ptn_abort_out_of_memory();
@@ -2953,7 +2953,9 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_array_index_init(array, source->len);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayKey key = ptn_array_key_clone(source->entries[i].key);
-        PtnValue value = ptn_value_clone(source->entries[i].value);
+        PtnValue value = unwrap_entry_references
+            ? ptn_value_clone_deref(source->entries[i].value)
+            : ptn_value_clone(source->entries[i].value);
         ptn_array_set_entry_with_by_ref_argument_eligibility(
             array,
             key,
@@ -2967,6 +2969,14 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
         ptn_gc_attach_value_runtime(array->lifecycle_runtime, array->entries[i].value, 0);
     }
     return array;
+}
+
+static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
+    return ptn_array_clone_with_mode(source, 0);
+}
+
+static PTN_UNUSED PtnArray *ptn_array_clone_unwrap_references(PtnArray *source) {
+    return ptn_array_clone_with_mode(source, 1);
 }
 
 static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
@@ -3227,6 +3237,19 @@ static PTN_UNUSED PtnValue ptn_value_snapshot_for_array_path_write(PtnValue valu
         return ptn_value_clone(value);
     }
     return value;
+}
+
+static PTN_UNUSED void ptn_value_separate_temporary_array_root_for_write(PtnValue *value) {
+    if (value == NULL || value->type == PTN_REFERENCE) {
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(*value);
+    if (resolved.type != PTN_ARRAY) {
+        return;
+    }
+    PtnValue separated = ptn_array(ptn_array_clone_unwrap_references(resolved.as.array));
+    ptn_value_destroy(value);
+    *value = separated;
 }
 
 static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value) {

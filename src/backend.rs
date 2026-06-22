@@ -11589,6 +11589,14 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
                     .iter()
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
+        Instruction::UnsetValueArrayDim {
+            array, dimensions, ..
+        } => {
+            value_mentions_variable(array, name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
         Instruction::UnsetPropertyArrayDim {
             receiver,
             dimensions,
@@ -20659,6 +20667,30 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
+        Instruction::UnsetValueArrayDim {
+            array,
+            dimensions,
+            line,
+        } => {
+            let array_temp = values.emit_reference_candidate_value(out, array);
+            out.push_str("    ptn_value_separate_temporary_array_root_for_write(&");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
+            let path = emit_array_unset_path_segments(out, values, dimensions);
+            out.push_str("    ptn_value_array_path_unset(&runtime, &");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &array_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         Instruction::UnsetPropertyArrayDim {
             receiver,
             name,
@@ -23869,6 +23901,14 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
             }
         }
+        Instruction::UnsetValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(array, deprecations);
+            for dimension in dimensions {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
         Instruction::UnsetPropertyArrayDim {
             receiver,
             dimensions,
@@ -24666,6 +24706,14 @@ fn collect_instruction_runtime_requirements(
             name, dimensions, ..
         } => {
             collect_value_runtime_requirements(name, functions, requirements);
+            for dimension in dimensions {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
+        }
+        Instruction::UnsetValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_runtime_requirements(array, functions, requirements);
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
@@ -27768,11 +27816,14 @@ fn emit_increment_statement(
             array, dimensions, ..
         } => {
             let array_temp = values.emit_reference_candidate_value(out, array);
+            out.push_str("    ptn_value_separate_temporary_array_root_for_write(&");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
             let path = emit_array_path_segments(out, values, dimensions);
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&current_temp);
-            out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+            out.push_str(" = ptn_value_array_path_read_for_inc_dec(&runtime, ");
             out.push_str(&array_temp);
             out.push_str(", ");
             out.push_str(&path.name);
@@ -28815,6 +28866,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::BindStatic { line, .. }
         | Instruction::UnsetArrayDim { line, .. }
         | Instruction::UnsetDynamicArrayDim { line, .. }
+        | Instruction::UnsetValueArrayDim { line, .. }
         | Instruction::UnsetPropertyArrayDim { line, .. }
         | Instruction::UnsetStaticPropertyArrayDim { line, .. }
         | Instruction::UnsetDynamicStaticPropertyArrayDim { line, .. }
@@ -29446,6 +29498,9 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         Instruction::UnsetDynamicArrayDim {
             name, dimensions, ..
         } => value_expr_uses_this(name) || dimensions.iter().any(value_expr_uses_this),
+        Instruction::UnsetValueArrayDim {
+            array, dimensions, ..
+        } => value_expr_uses_this(array) || dimensions.iter().any(value_expr_uses_this),
         Instruction::UnsetPropertyArrayDim {
             receiver,
             dimensions,
@@ -31368,11 +31423,66 @@ impl ValueEmitter {
             line,
         } = target
         {
-            if assignment_compound_binary_op(op).is_some() {
-                unreachable!("parser rejects compound assignment for value array offsets");
-            }
             let array_temp = self.emit_reference_candidate_value(out, array);
             let path = emit_array_path_segments(out, self, dimensions);
+            out.push_str("    ptn_value_separate_temporary_array_root_for_write(&");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let value_temp = self.emit_materialized_value(out, value);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_value_array_path_read_for_inc_dec(&runtime, ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.emit_compound_binary_value(
+                    out,
+                    &current_temp,
+                    &value_temp,
+                    *line,
+                    compound_op,
+                );
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &result_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+                emit_value_cleanup(out, "    ", &array_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return assigned_temp;
+            }
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -32782,7 +32892,7 @@ impl ValueEmitter {
         op: BinaryOp,
         value: &ValueExpr,
     ) -> String {
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let value_temp = self.emit_materialized_value(out, value);
 
@@ -32861,7 +32971,7 @@ impl ValueEmitter {
         op: BinaryOp,
         value: &ValueExpr,
     ) -> String {
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
@@ -33358,7 +33468,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -33390,7 +33500,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 let name_temp = self.emit_dynamic_property_name(out, name, *line);
                 out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
                 out.push_str(&receiver_temp);
@@ -35788,6 +35898,9 @@ impl ValueEmitter {
                 array, dimensions, ..
             } => {
                 let array_temp = self.emit_reference_candidate_value(out, array);
+                out.push_str("    ptn_value_separate_temporary_array_root_for_write(&");
+                out.push_str(&array_temp);
+                out.push_str(");\n");
                 let path = emit_array_path_segments(out, self, dimensions);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -36057,7 +36170,7 @@ impl ValueEmitter {
                 }
             }
             IncDecTarget::Property { receiver, name, .. } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -36135,7 +36248,7 @@ impl ValueEmitter {
                 }
             }
             IncDecTarget::DynamicProperty { receiver, name, .. } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 let (name_temp, name_len_temp) =
                     self.emit_dynamic_property_name_for_write(out, name, line);
                 out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");

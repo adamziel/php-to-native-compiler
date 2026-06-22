@@ -409,6 +409,11 @@ pub enum Instruction {
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
+    UnsetValueArrayDim {
+        array: ValueExpr,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
     UnsetPropertyArrayDim {
         receiver: ValueExpr,
         name: String,
@@ -4001,6 +4006,18 @@ impl<'a> LoweringContext<'a> {
                 span,
             } => Instruction::UnsetDynamicArrayDim {
                 name: self.lower_expr(name),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
+                line: span.line,
+            },
+            AstUnsetTarget::ValueArrayDim {
+                array,
+                dimensions,
+                span,
+            } => Instruction::UnsetValueArrayDim {
+                array: self.lower_expr(array),
                 dimensions: dimensions
                     .iter()
                     .map(|dimension| self.lower_expr(dimension))
