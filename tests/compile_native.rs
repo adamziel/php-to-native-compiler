@@ -41553,6 +41553,52 @@ var_dump(empty($string[\"foo\"]));",
 }
 
 #[test]
+fn compile_isset_evaluates_dynamic_property_names_and_globals_to_native_binary() {
+    let root = temp_dir("ptn-native-isset-dynamic-property-globals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("isset-dynamic-property-globals.php");
+    let output = root.join("isset-dynamic-property-globals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = 'foo';\n\
+$b =& $a;\n\
+var_dump(isset(${$a}->{$b->{$c[$d]}}));\n\
+var_dump(isset($GLOBALS));\n\
+var_dump(isset($GLOBALS[1]));\n\
+var_dump(isset($GLOBALS[1]->$GLOBALS));\n\
+var_dump(empty($GLOBALS));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}\
+{}\
+\nWarning: Trying to access array offset on null in {} on line 4\n\
+\nWarning: Attempt to read property \"\" on string in ptn on line 4\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n",
+            undefined_variable_warnings(&input, &[("c", 4), ("d", 4)]),
+            "",
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_variable_is_set(&runtime, \"GLOBALS\")"));
+}
+
+#[test]
 fn compile_null_coalescing_variables_and_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-null-coalescing");
     fs::create_dir_all(&root).unwrap();

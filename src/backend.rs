@@ -40067,6 +40067,7 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+        let eager_name_value_temp = (!nullsafe).then(|| self.emit_materialized_value(out, name));
         let lookup_temp = self.next_temp();
         out.push_str("        PtnLookupResult ");
         out.push_str(&lookup_temp);
@@ -40080,7 +40081,19 @@ impl ValueEmitter {
             out.push_str(".value).type != PTN_NULL");
         }
         out.push_str(") {\n");
-        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let name_temp = if let Some(value_temp) = eager_name_value_temp.as_ref() {
+            let name_temp = self.next_temp();
+            out.push_str("            char *");
+            out.push_str(&name_temp);
+            out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+            out.push_str(value_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            name_temp
+        } else {
+            self.emit_dynamic_property_name(out, name, line)
+        };
         out.push_str("            ");
         out.push_str(&lookup_temp);
         out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
@@ -40100,6 +40113,9 @@ impl ValueEmitter {
         out.push_str(&lookup_temp);
         out.push_str(" = ptn_lookup_missing();\n");
         out.push_str("        }\n");
+        if let Some(value_temp) = eager_name_value_temp {
+            emit_value_cleanup(out, "        ", &value_temp);
+        }
         emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
         lookup_temp
     }
@@ -40409,6 +40425,8 @@ impl ValueEmitter {
                 line,
             } => {
                 let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let eager_name_value_temp =
+                    (!*nullsafe).then(|| self.emit_materialized_value(out, name));
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
                 out.push_str(&result_temp);
@@ -40422,7 +40440,19 @@ impl ValueEmitter {
                     out.push_str(".value).type != PTN_NULL");
                 }
                 out.push_str(") {\n");
-                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let name_temp = if let Some(value_temp) = eager_name_value_temp.as_ref() {
+                    let name_temp = self.next_temp();
+                    out.push_str("            char *");
+                    out.push_str(&name_temp);
+                    out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+                    out.push_str(value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    name_temp
+                } else {
+                    self.emit_dynamic_property_name(out, name, *line)
+                };
                 out.push_str("            ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_object_property_is_set(&runtime, ");
@@ -40438,6 +40468,9 @@ impl ValueEmitter {
                 out.push_str(&name_temp);
                 out.push_str(");\n");
                 out.push_str("        }\n");
+                if let Some(value_temp) = eager_name_value_temp {
+                    emit_value_cleanup(out, "        ", &value_temp);
+                }
                 emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
                 result_temp
             }
@@ -40579,6 +40612,8 @@ impl ValueEmitter {
                 line,
             } => {
                 let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+                let eager_name_value_temp =
+                    (!*nullsafe).then(|| self.emit_materialized_value(out, name));
                 let result_temp = self.next_temp();
                 out.push_str("        int ");
                 out.push_str(&result_temp);
@@ -40592,7 +40627,19 @@ impl ValueEmitter {
                     out.push_str(".value).type != PTN_NULL");
                 }
                 out.push_str(") {\n");
-                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let name_temp = if let Some(value_temp) = eager_name_value_temp.as_ref() {
+                    let name_temp = self.next_temp();
+                    out.push_str("            char *");
+                    out.push_str(&name_temp);
+                    out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+                    out.push_str(value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    name_temp
+                } else {
+                    self.emit_dynamic_property_name(out, name, *line)
+                };
                 let lookup_temp = self.next_temp();
                 out.push_str("            PtnLookupResult ");
                 out.push_str(&lookup_temp);
@@ -40619,6 +40666,9 @@ impl ValueEmitter {
                 out.push_str(&name_temp);
                 out.push_str(");\n");
                 out.push_str("        }\n");
+                if let Some(value_temp) = eager_name_value_temp {
+                    emit_value_cleanup(out, "        ", &value_temp);
+                }
                 emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
                 result_temp
             }

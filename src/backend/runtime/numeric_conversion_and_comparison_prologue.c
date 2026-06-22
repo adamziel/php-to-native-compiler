@@ -1157,11 +1157,20 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
 }
 
 static PTN_UNUSED int ptn_runtime_variable_is_set(PtnRuntime *runtime, const char *name) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return 1;
+    }
     PtnValue value;
     return ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &value) && ptn_value_deref(value).type != PTN_NULL;
 }
 
 static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const char *name) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        PtnValue globals = ptn_runtime_globals_snapshot(runtime);
+        int result = !ptn_is_truthy(ptn_value_deref(globals));
+        ptn_value_destroy(&globals);
+        return result;
+    }
     PtnValue value;
     return !ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &value) || !ptn_is_truthy(ptn_value_deref(value));
 }
