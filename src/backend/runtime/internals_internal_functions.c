@@ -44756,20 +44756,22 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
 
 static PtnValue ptn_directory_object_from_resource(PtnRuntime *runtime, PtnValue handle, const char *path, size_t line) {
     PtnValue object = ptn_object_new_shell(runtime, "Directory");
-    PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path));
+    PtnValue path_value = path == NULL
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(path));
     PtnValue assigned = ptn_object_declare_property(
         runtime,
         object,
         "path",
         "Directory",
         PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
+        PTN_PROPERTY_PROTECTED,
         1,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        path != NULL,
         path_value,
         line
     );
@@ -44781,19 +44783,23 @@ static PtnValue ptn_directory_object_from_resource(PtnRuntime *runtime, PtnValue
         "handle",
         "Directory",
         PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
+        PTN_PROPERTY_PROTECTED,
         1,
+        PTN_PROPERTY_TYPE_MIXED,
+        NULL,
+        "mixed",
+        0,
+        handle.type != PTN_NULL,
         handle,
         line
     );
     ptn_value_destroy(&assigned);
     ptn_value_destroy(&handle);
     return object;
+}
+
+static PtnValue ptn_directory_new_uninitialized(PtnRuntime *runtime, size_t line) {
+    return ptn_directory_object_from_resource(runtime, ptn_null(), NULL, line);
 }
 
 static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -97094,7 +97100,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_directory(class_name)) {
-        static const char *const names[] = { "close", "read", "rewind" };
+        static const char *const names[] = { "close", "rewind", "read" };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -99082,6 +99088,7 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_recursive_array_iterator(class_name)
             || ptn_internal_class_name_is_array_object(class_name)
             || ptn_internal_class_name_is_callback_filter_iterator(class_name)
+            || ptn_internal_class_name_is_directory(class_name)
             || ptn_internal_class_name_is_directory_iterator(class_name)
             || ptn_internal_class_name_is_infinite_iterator(class_name)
             || ptn_internal_class_name_is_iterator_iterator(class_name)
@@ -103660,6 +103667,9 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_spl_file_object(class_name)) {
         return "SPL";
     }
+    if (ptn_internal_class_name_is_directory(class_name)) {
+        return "standard";
+    }
     if (ptn_internal_class_name_is_phar(class_name)) {
         return "Phar";
     }
@@ -104314,6 +104324,34 @@ static int ptn_internal_reflection_class_to_string(
     const char *class_name,
     PtnValue *result_out
 ) {
+    if (ptn_internal_class_name_is_directory(class_name)) {
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        ptn_string_buffer_append(&buffer, "Class [ <internal:standard> final class Directory ] {\n\n");
+        ptn_string_buffer_append(&buffer, "  - Constants [0] {\n  }\n\n");
+        ptn_string_buffer_append(&buffer, "  - Static properties [0] {\n  }\n\n");
+        ptn_string_buffer_append(&buffer, "  - Static methods [0] {\n  }\n\n");
+        ptn_string_buffer_append(&buffer, "  - Properties [2] {\n");
+        ptn_string_buffer_append(&buffer, "    Property [ public protected(set) readonly string $path ]\n");
+        ptn_string_buffer_append(&buffer, "    Property [ public protected(set) readonly mixed $handle ]\n");
+        ptn_string_buffer_append(&buffer, "  }\n\n");
+        ptn_string_buffer_append(&buffer, "  - Methods [3] {\n");
+        ptn_string_buffer_append(&buffer, "    Method [ <internal:standard> public method close ] {\n\n");
+        ptn_string_buffer_append(&buffer, "      - Parameters [0] {\n      }\n");
+        ptn_string_buffer_append(&buffer, "      - Return [ void ]\n");
+        ptn_string_buffer_append(&buffer, "    }\n\n");
+        ptn_string_buffer_append(&buffer, "    Method [ <internal:standard> public method rewind ] {\n\n");
+        ptn_string_buffer_append(&buffer, "      - Parameters [0] {\n      }\n");
+        ptn_string_buffer_append(&buffer, "      - Return [ void ]\n");
+        ptn_string_buffer_append(&buffer, "    }\n\n");
+        ptn_string_buffer_append(&buffer, "    Method [ <internal:standard> public method read ] {\n\n");
+        ptn_string_buffer_append(&buffer, "      - Parameters [0] {\n      }\n");
+        ptn_string_buffer_append(&buffer, "      - Return [ string|false ]\n");
+        ptn_string_buffer_append(&buffer, "    }\n");
+        ptn_string_buffer_append(&buffer, "  }\n}\n");
+        *result_out = ptn_owned_string_len(buffer.data, buffer.len);
+        return 1;
+    }
     if (!ptn_ascii_case_equal(class_name, "ReflectionClass")) {
         return 0;
     }
@@ -105338,6 +105376,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         }
         if (ptn_internal_class_name_is_array_object(class_name)) {
             return ptn_array_object_new_uninitialized(runtime);
+        }
+        if (ptn_internal_class_name_is_directory(class_name)) {
+            return ptn_directory_new_uninitialized(runtime, line);
         }
         if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
             return ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
@@ -109837,7 +109878,7 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
         PtnLookupResult handle =
             ptn_object_property_lookup_quiet(runtime, receiver, "handle", "Directory", line);
         if (!handle.exists) {
-            ptn_throw_exception(runtime, "Error", "Invalid Directory object");
+            ptn_throw_exception(runtime, "Error", "Internal directory stream has been altered");
             return ptn_null();
         }
         PtnValue value = ptn_value_deref(handle.value);
@@ -109854,6 +109895,11 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
             }
             ptn_value_destroy(&handle.value);
             ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        if (value.type != PTN_RESOURCE || value.as.resource->directory == NULL) {
+            ptn_value_destroy(&handle.value);
+            ptn_throw_exception(runtime, "Error", "Internal directory stream has been altered");
             return ptn_null();
         }
         PtnValue result = ptn_null();
