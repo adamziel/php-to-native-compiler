@@ -55931,11 +55931,15 @@ static PTN_UNUSED PtnValue ptn_php_token_call_method(
     return ptn_string("UNKNOWN");
 }
 
+#include "ptn_hash_ext.h"
+
 typedef struct {
+    const php_hash_ops *ops;
     char *algo;
     int hmac;
     unsigned char *key;
     size_t key_len;
+    void *context;
 } PtnHashContextData;
 
 static void ptn_hash_context_data_free(void *ptr) {
@@ -55945,6 +55949,7 @@ static void ptn_hash_context_data_free(void *ptr) {
     }
     free(data->algo);
     free(data->key);
+    ptn_hash_ext_free_context(data->context);
     free(data);
 }
 
@@ -55958,23 +55963,51 @@ static PtnHashContextData *ptn_hash_context_data(PtnValue value) {
     return (PtnHashContextData *)value.as.object->native_data;
 }
 
-static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, int hmac, const unsigned char *key, size_t key_len) {
-    PtnValue object = ptn_object_new_shell(runtime, "HashContext");
-    PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
-    if (data == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    data->algo = ptn_duplicate_string(algo);
-    data->hmac = hmac;
-    data->key = key_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)key, key_len);
-    data->key_len = key_len;
-    object.as.object->native_data = data;
-    object.as.object->native_data_free = ptn_hash_context_data_free;
+static void ptn_hash_context_set_algo_property(PtnValue object, const char *algo) {
     ptn_array_set_entry(
         object.as.object->properties,
         ptn_array_string_key("algo"),
         ptn_owned_string(ptn_duplicate_string(algo))
     );
+}
+
+static PtnHashContextData *ptn_hash_context_data_new(
+    const php_hash_ops *ops,
+    int hmac,
+    const unsigned char *key,
+    size_t key_len
+) {
+    PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->ops = ops;
+    data->algo = ptn_duplicate_string(ops->algo);
+    data->hmac = hmac;
+    data->key = key_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)key, key_len);
+    data->key_len = key_len;
+    data->context = ptn_hash_ext_alloc_context(ops);
+    if (data->context == NULL) {
+        ptn_hash_context_data_free(data);
+        ptn_abort_out_of_memory();
+    }
+    if (hmac) {
+        if (ptn_hash_ext_hmac_init(ops, data->context, key, key_len) != SUCCESS) {
+            ptn_hash_context_data_free(data);
+            ptn_abort_out_of_memory();
+        }
+    } else {
+        ptn_hash_ext_init_context(ops, data->context);
+    }
+    return data;
+}
+
+static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const php_hash_ops *ops, int hmac, const unsigned char *key, size_t key_len) {
+    PtnValue object = ptn_object_new_shell(runtime, "HashContext");
+    PtnHashContextData *data = ptn_hash_context_data_new(ops, hmac, key, key_len);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_hash_context_data_free;
+    ptn_hash_context_set_algo_property(object, data->algo);
     return object;
 }
 
@@ -55995,7 +56028,15 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         }
     }
     char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
-    PtnValue result = ptn_hash_context_object(runtime, algo_name, (flags & PTN_HASH_HMAC) != 0, (const unsigned char *)key.data, key.len);
+    const php_hash_ops *ops = ptn_hash_ext_fetch_ops(algo_name);
+    if (ops == NULL || (((flags & PTN_HASH_HMAC) != 0) && !ops->is_crypto)) {
+        ptn_throw_exception(runtime, "ValueError", "hash_init(): Argument #1 ($algo) must be a valid hashing algorithm");
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+    PtnValue result = ptn_hash_context_object(runtime, ops, (flags & PTN_HASH_HMAC) != 0, (const unsigned char *)key.data, key.len);
     free(algo_name);
     ptn_string_operand_free(algo);
     ptn_string_operand_free(key);
@@ -56010,44 +56051,26 @@ static PtnValue ptn_internal_hash_copy(PtnRuntime *runtime, size_t argc, const P
         ptn_throw_exception(runtime, "TypeError", "hash_copy(): Argument #1 ($context) must be of type HashContext");
         return ptn_null();
     }
-    return ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
-}
-
-static void ptn_hash_md5_hmac(
-    const unsigned char *key,
-    size_t key_len,
-    const unsigned char *message,
-    size_t message_len,
-    unsigned char digest[16]
-) {
-    unsigned char key_block[64];
-    memset(key_block, 0, sizeof(key_block));
-    if (key_len > sizeof(key_block)) {
-        ptn_md5_digest_bytes(key, key_len, key_block);
-    } else if (key_len != 0) {
-        memcpy(key_block, key, key_len);
-    }
-    unsigned char ipad[64];
-    unsigned char opad[64];
-    for (size_t i = 0; i < sizeof(key_block); i++) {
-        ipad[i] = (unsigned char)(key_block[i] ^ 0x36);
-        opad[i] = (unsigned char)(key_block[i] ^ 0x5c);
-    }
-    unsigned char *inner_data = malloc(sizeof(ipad) + message_len);
-    if (inner_data == NULL) {
+    PtnValue object = ptn_object_new_shell(runtime, "HashContext");
+    PtnHashContextData *copy = malloc(sizeof(PtnHashContextData));
+    if (copy == NULL) {
         ptn_abort_out_of_memory();
     }
-    memcpy(inner_data, ipad, sizeof(ipad));
-    if (message_len != 0) {
-        memcpy(inner_data + sizeof(ipad), message, message_len);
+    copy->ops = data->ops;
+    copy->algo = ptn_duplicate_string(data->algo);
+    copy->hmac = data->hmac;
+    copy->key = data->key_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)data->key, data->key_len);
+    copy->key_len = data->key_len;
+    copy->context = ptn_hash_ext_alloc_context(data->ops);
+    if (copy->context == NULL ||
+        ptn_hash_ext_copy_context(data->ops, data->context, copy->context) != SUCCESS) {
+        ptn_hash_context_data_free(copy);
+        ptn_abort_out_of_memory();
     }
-    unsigned char inner_digest[16];
-    ptn_md5_digest_bytes(inner_data, sizeof(ipad) + message_len, inner_digest);
-    free(inner_data);
-    unsigned char outer_data[64 + 16];
-    memcpy(outer_data, opad, sizeof(opad));
-    memcpy(outer_data + sizeof(opad), inner_digest, sizeof(inner_digest));
-    ptn_md5_digest_bytes(outer_data, sizeof(outer_data), digest);
+    object.as.object->native_data = copy;
+    object.as.object->native_data_free = ptn_hash_context_data_free;
+    ptn_hash_context_set_algo_property(object, copy->algo);
+    return object;
 }
 
 static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -56058,16 +56081,29 @@ static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const 
         return ptn_null();
     }
     int raw_output = argc >= 2 && ptn_is_truthy(args[1]);
-    if (ptn_ascii_case_equal(data->algo, "md5")) {
-        unsigned char digest[16];
-        if (data->hmac) {
-            ptn_hash_md5_hmac(data->key, data->key_len, (const unsigned char *)"", 0, digest);
-        } else {
-            ptn_md5_digest_bytes((const unsigned char *)"", 0, digest);
-        }
-        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    unsigned char *digest = malloc(data->ops->digest_size);
+    if (digest == NULL) {
+        ptn_abort_out_of_memory();
     }
-    return raw_output ? ptn_string("") : ptn_string("");
+    if (data->hmac) {
+        if (ptn_hash_ext_hmac_final(data->ops, data->context, data->key, data->key_len, digest) != SUCCESS) {
+            free(digest);
+            ptn_abort_out_of_memory();
+        }
+    } else {
+        void *context = ptn_hash_ext_alloc_context(data->ops);
+        if (context == NULL ||
+            ptn_hash_ext_copy_context(data->ops, data->context, context) != SUCCESS) {
+            ptn_hash_ext_free_context(context);
+            free(digest);
+            ptn_abort_out_of_memory();
+        }
+        ptn_hash_ext_final(data->ops, context, digest);
+        ptn_hash_ext_free_context(context);
+    }
+    PtnValue result = ptn_digest_value(digest, data->ops->digest_size, raw_output);
+    free(digest);
+    return result;
 }
 
 static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -56079,63 +56115,407 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
         return ptn_null();
     }
     int raw_output = argc >= 3 && ptn_is_truthy(args[2]);
-    if (ptn_text_operand_ascii_case_equal(algo, "md5")) {
-        unsigned char digest[16];
-        ptn_md5_digest_bytes((const unsigned char *)data.data, data.len, digest);
-        ptn_string_operand_free(algo);
-        ptn_string_operand_free(data);
-        return ptn_digest_value(digest, sizeof(digest), raw_output);
-    }
-    if (ptn_text_operand_ascii_case_equal(algo, "sha1")) {
-        unsigned char digest[20];
-        ptn_sha1_digest_bytes((const unsigned char *)data.data, data.len, digest);
-        ptn_string_operand_free(algo);
-        ptn_string_operand_free(data);
-        return ptn_digest_value(digest, sizeof(digest), raw_output);
-    }
-    if (ptn_text_operand_ascii_case_equal(algo, "crc32b")) {
-        uint32_t checksum = ptn_crc32_bytes((const unsigned char *)data.data, data.len);
-        unsigned char digest[4] = {
-            (unsigned char)((checksum >> 24) & 0xff),
-            (unsigned char)((checksum >> 16) & 0xff),
-            (unsigned char)((checksum >> 8) & 0xff),
-            (unsigned char)(checksum & 0xff)
-        };
-        ptn_string_operand_free(algo);
-        ptn_string_operand_free(data);
-        return ptn_digest_value(digest, sizeof(digest), raw_output);
-    }
-    if (ptn_text_operand_ascii_case_equal(algo, "adler32")) {
-        uint32_t a = 1;
-        uint32_t b = 0;
-        for (size_t i = 0; i < data.len; i++) {
-            a = (a + (unsigned char)data.data[i]) % 65521U;
-            b = (b + a) % 65521U;
-        }
-        uint32_t sum = (b << 16) | a;
-        char raw[4] = {
-            (char)((sum >> 24) & 0xff),
-            (char)((sum >> 16) & 0xff),
-            (char)((sum >> 8) & 0xff),
-            (char)(sum & 0xff)
-        };
-        if (raw_output) {
-            ptn_string_operand_free(algo);
-            ptn_string_operand_free(data);
-            return ptn_owned_string_len(ptn_duplicate_string_len(raw, sizeof(raw)), sizeof(raw));
-        }
-        char *hex = malloc(9);
-        if (hex == NULL) {
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    const php_hash_ops *ops = ptn_hash_ext_fetch_ops(algo_name);
+    free(algo_name);
+    if (ops != NULL) {
+        unsigned char *digest = malloc(ops->digest_size);
+        if (digest == NULL) {
             ptn_abort_out_of_memory();
         }
-        snprintf(hex, 9, "%08x", sum);
+        if (ptn_hash_ext_digest(ops, (const unsigned char *)data.data, data.len, digest) != SUCCESS) {
+            free(digest);
+            ptn_abort_out_of_memory();
+        }
+        PtnValue result = ptn_digest_value(digest, ops->digest_size, raw_output);
+        free(digest);
         ptn_string_operand_free(algo);
         ptn_string_operand_free(data);
-        return ptn_owned_string_len(hex, 8);
+        return result;
     }
     ptn_string_operand_free(algo);
     ptn_string_operand_free(data);
     ptn_throw_exception(runtime, "ValueError", "hash(): Argument #1 ($algo) must be a valid hashing algorithm");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_hash_algos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < ptn_hash_ext_algo_count(); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_string(ptn_hash_ext_algo_name(i)));
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_hash_update(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnHashContextData *data = ptn_hash_context_data(args[0]);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "TypeError", "hash_update(): Argument #1 ($context) must be of type HashContext");
+        return ptn_null();
+    }
+    PtnStringOperand value = ptn_internal_expect_string_arg(runtime, "hash_update", 2, "data", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(value);
+        return ptn_null();
+    }
+    ptn_hash_ext_update(data->ops, data->context, (const unsigned char *)value.data, value.len);
+    ptn_string_operand_free(value);
+    return ptn_bool(1);
+}
+
+static size_t ptn_hash_align_to(size_t pos, size_t alignment) {
+    size_t offset = pos & (alignment - 1);
+    return pos + (offset ? alignment - offset : 0);
+}
+
+static int ptn_hash_parse_serialize_spec(
+    const char **specp,
+    size_t *pos,
+    size_t *sz,
+    size_t *max_alignment,
+    size_t *count_out
+) {
+    size_t alignment = 1;
+    const char *spec = *specp;
+    if (*spec == 's' || *spec == 'S') {
+        *sz = 2;
+        alignment = __alignof__(uint16_t);
+    } else if (*spec == 'l' || *spec == 'L') {
+        *sz = 4;
+        alignment = __alignof__(uint32_t);
+    } else if (*spec == 'q' || *spec == 'Q') {
+        *sz = 8;
+        alignment = __alignof__(uint64_t);
+    } else if (*spec == 'i' || *spec == 'I') {
+        *sz = sizeof(int);
+        alignment = __alignof__(int);
+    } else if (*spec == 'b' || *spec == 'B') {
+        *sz = 1;
+        alignment = 1;
+    } else {
+        return 0;
+    }
+    *pos = ptn_hash_align_to(*pos, alignment);
+    if (*max_alignment < alignment) {
+        *max_alignment = alignment;
+    }
+    spec++;
+    size_t count = 1;
+    if (isdigit((unsigned char)*spec)) {
+        count = 0;
+        while (isdigit((unsigned char)*spec)) {
+            count = 10 * count + (size_t)(*spec - '0');
+            spec++;
+        }
+    }
+    *specp = spec;
+    *count_out = count;
+    return 1;
+}
+
+static uint64_t ptn_hash_one_from_buffer(size_t sz, const unsigned char *buf) {
+    if (sz == 2) {
+        uint16_t value = 0;
+        memcpy(&value, buf, sizeof(value));
+        return value;
+    }
+    if (sz == 4) {
+        uint32_t value = 0;
+        memcpy(&value, buf, sizeof(value));
+        return value;
+    }
+    if (sz == 8) {
+        uint64_t value = 0;
+        memcpy(&value, buf, sizeof(value));
+        return value;
+    }
+    return *buf;
+}
+
+static void ptn_hash_one_to_buffer(size_t sz, unsigned char *buf, uint64_t value) {
+    if (sz == 2) {
+        uint16_t narrowed = (uint16_t)value;
+        memcpy(buf, &narrowed, sizeof(narrowed));
+    } else if (sz == 4) {
+        uint32_t narrowed = (uint32_t)value;
+        memcpy(buf, &narrowed, sizeof(narrowed));
+    } else if (sz == 8) {
+        memcpy(buf, &value, sizeof(value));
+    } else {
+        *buf = (unsigned char)value;
+    }
+}
+
+static PtnValue ptn_hash_serialize_spec_value(PtnHashContextData *data, int *ok) {
+    *ok = 0;
+    if (data == NULL || data->context == NULL || data->ops->serialize_spec == NULL) {
+        return ptn_null();
+    }
+    const char *spec = data->ops->serialize_spec;
+    size_t pos = 0;
+    size_t max_alignment = 1;
+    int64_t next_index = 0;
+    unsigned char *buf = (unsigned char *)data->context;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    while (*spec != '\0' && *spec != '.') {
+        char spec_ch = *spec;
+        size_t sz = 0;
+        size_t count = 0;
+        if (!ptn_hash_parse_serialize_spec(&spec, &pos, &sz, &max_alignment, &count) ||
+            count > SIZE_MAX / sz ||
+            pos + count * sz > data->ops->context_size) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+        if (isupper((unsigned char)spec_ch)) {
+            pos += count * sz;
+        } else if (sz == 1 && count > 1) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(next_index++),
+                ptn_owned_string_len(ptn_duplicate_string_len((const char *)buf + pos, count), count)
+            );
+            pos += count;
+        } else {
+            while (count > 0) {
+                uint64_t value = ptn_hash_one_from_buffer(sz, buf + pos);
+                pos += sz;
+                ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_int((int32_t)value));
+                if (sz == 8) {
+                    ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_int((int32_t)(value >> 32)));
+                }
+                count--;
+            }
+        }
+    }
+    if (*spec == '.' && ptn_hash_align_to(pos, max_alignment) != data->ops->context_size) {
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
+    *ok = 1;
+    return result;
+}
+
+static int ptn_hash_array_index_value(PtnValue array_value, int64_t index, PtnValue *out) {
+    array_value = ptn_value_deref(array_value);
+    if (array_value.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_int_key(index);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array_value.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 0;
+    }
+    *out = ptn_value_deref(entry->value);
+    return 1;
+}
+
+static int ptn_hash_unserialize_spec_value(PtnHashContextData *data, PtnValue payload) {
+    payload = ptn_value_deref(payload);
+    if (payload.type != PTN_ARRAY || data == NULL || data->ops->serialize_spec == NULL || data->context == NULL) {
+        return HASH_SPEC_FAILURE;
+    }
+    const char *spec = data->ops->serialize_spec;
+    size_t pos = 0;
+    size_t max_alignment = 1;
+    int64_t next_index = 0;
+    unsigned char *buf = (unsigned char *)data->context;
+    while (*spec != '\0' && *spec != '.') {
+        char spec_ch = *spec;
+        size_t sz = 0;
+        size_t count = 0;
+        if (!ptn_hash_parse_serialize_spec(&spec, &pos, &sz, &max_alignment, &count)) {
+            return HASH_SPEC_FAILURE;
+        }
+        if (count > SIZE_MAX / sz || pos + count * sz > data->ops->context_size) {
+            return WRONG_CONTEXT_SIZE;
+        }
+        if (isupper((unsigned char)spec_ch)) {
+            pos += count * sz;
+        } else if (sz == 1 && count > 1) {
+            PtnValue element;
+            if (!ptn_hash_array_index_value(payload, next_index, &element) ||
+                element.type != PTN_STRING ||
+                element.as.string.len != count) {
+                return BYTE_OFFSET_POS_ERROR - (int)pos;
+            }
+            next_index++;
+            memcpy(buf + pos, element.as.string.data, count);
+            pos += count;
+        } else {
+            while (count > 0) {
+                PtnValue element;
+                if (!ptn_hash_array_index_value(payload, next_index, &element) || element.type != PTN_INT) {
+                    return BYTE_OFFSET_POS_ERROR - (int)pos;
+                }
+                next_index++;
+                uint64_t value = (uint32_t)element.as.integer;
+                if (sz == 8) {
+                    if (!ptn_hash_array_index_value(payload, next_index, &element) || element.type != PTN_INT) {
+                        return BYTE_OFFSET_POS_ERROR - (int)pos;
+                    }
+                    next_index++;
+                    value += ((uint64_t)element.as.integer) << 32;
+                }
+                ptn_hash_one_to_buffer(sz, buf + pos, value);
+                pos += sz;
+                count--;
+            }
+        }
+    }
+    if (*spec == '.' && ptn_hash_align_to(pos, max_alignment) != data->ops->context_size) {
+        return WRONG_CONTEXT_SIZE;
+    }
+    return ptn_hash_ext_validate_context(data->ops, data->context);
+}
+
+static void ptn_hash_throw_bad_serialization(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "Exception", "Incomplete or ill-formed serialization data");
+}
+
+static void ptn_hash_throw_bad_serialization_code(PtnRuntime *runtime, const char *algo, int code) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Incomplete or ill-formed serialization data (\"%s\" code %d)",
+        algo == NULL ? "" : algo,
+        code
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static PtnValue ptn_hash_context_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || !ptn_internal_class_name_is_hash_context(receiver.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Call to undefined method");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "HashContext::__serialize() expects exactly 0 arguments, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnHashContextData *data = ptn_hash_context_data(receiver);
+        if (data == NULL) {
+            ptn_hash_throw_bad_serialization(runtime);
+            return ptn_null();
+        }
+        if (data->hmac) {
+            ptn_throw_exception(runtime, "Exception", "HashContext with HASH_HMAC option cannot be serialized");
+            return ptn_null();
+        }
+        int ok = 0;
+        PtnValue spec = ptn_hash_serialize_spec_value(data, &ok);
+        if (!ok) {
+            ptn_hash_throw_bad_serialization(runtime);
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string(data->ops->algo));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(2), spec);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_int(PHP_HASH_SERIALIZE_MAGIC_SPEC));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_array_from_literal_entries(0, NULL));
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "HashContext::__unserialize() expects exactly 1 argument, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (receiver.as.object->native_data != NULL) {
+            ptn_throw_exception(runtime, "Exception", "HashContext::__unserialize called on initialized object");
+            return ptn_null();
+        }
+        PtnValue payload = ptn_value_deref(args[0]);
+        if (payload.type != PTN_ARRAY) {
+            ptn_hash_throw_bad_serialization(runtime);
+            return ptn_null();
+        }
+        PtnValue algo_value;
+        PtnValue flags_value;
+        PtnValue spec_value;
+        PtnValue magic_value;
+        PtnValue options_value;
+        if (!ptn_hash_array_index_value(payload, 0, &algo_value) ||
+            !ptn_hash_array_index_value(payload, 1, &flags_value) ||
+            !ptn_hash_array_index_value(payload, 2, &spec_value) ||
+            !ptn_hash_array_index_value(payload, 3, &magic_value) ||
+            !ptn_hash_array_index_value(payload, 4, &options_value) ||
+            algo_value.type != PTN_STRING ||
+            flags_value.type != PTN_INT ||
+            magic_value.type != PTN_INT ||
+            ptn_value_deref(options_value).type != PTN_ARRAY) {
+            ptn_hash_throw_bad_serialization(runtime);
+            return ptn_null();
+        }
+        char *algo_name = ptn_duplicate_string_len((const char *)algo_value.as.string.data, algo_value.as.string.len);
+        const php_hash_ops *ops = ptn_hash_ext_fetch_ops(algo_name);
+        if (ops == NULL) {
+            free(algo_name);
+            ptn_throw_exception(runtime, "Exception", "Unknown hash algorithm");
+            return ptn_null();
+        }
+        if ((flags_value.as.integer & PHP_HASH_HMAC) != 0) {
+            free(algo_name);
+            ptn_throw_exception(runtime, "Exception", "HashContext with HASH_HMAC option cannot be serialized");
+            return ptn_null();
+        }
+        if (flags_value.as.integer != 0) {
+            free(algo_name);
+            ptn_hash_throw_bad_serialization(runtime);
+            return ptn_null();
+        }
+        PtnHashContextData *data = ptn_hash_context_data_new(ops, 0, NULL, 0);
+        if (magic_value.as.integer != PHP_HASH_SERIALIZE_MAGIC_SPEC) {
+            ptn_hash_context_data_free(data);
+            ptn_hash_throw_bad_serialization_code(runtime, algo_name, HASH_SPEC_FAILURE);
+            free(algo_name);
+            return ptn_null();
+        }
+        int code = ptn_hash_unserialize_spec_value(data, spec_value);
+        if (code != HASH_SPEC_SUCCESS) {
+            ptn_hash_context_data_free(data);
+            ptn_hash_throw_bad_serialization_code(runtime, algo_name, code);
+            free(algo_name);
+            return ptn_null();
+        }
+        free(data->algo);
+        data->algo = ptn_duplicate_string(ops->algo);
+        ptn_unserialize_replace_native_data(receiver.as.object, data, ptn_hash_context_data_free);
+        ptn_hash_context_set_algo_property(receiver, data->algo);
+        free(algo_name);
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
 }
 
