@@ -12437,6 +12437,17 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
         if (!ptn_arrayaccess_exists(runtime, container, key_value, line)) {
             goto done;
         }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        PtnValue resolved_container = ptn_value_deref(container);
+        if (resolved_container.type == PTN_OBJECT &&
+            (ptn_ascii_case_equal(resolved_container.as.object->class_name, "DOMNodeList") ||
+             ptn_ascii_case_equal(resolved_container.as.object->class_name, "Dom\\NodeList") ||
+             ptn_ascii_case_equal(resolved_container.as.object->class_name, "DOMNamedNodeMap") ||
+             ptn_ascii_case_equal(resolved_container.as.object->class_name, "Dom\\NamedNodeMap"))) {
+            result = 0;
+            goto done;
+        }
+#endif
         if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
             PtnValue value = ptn_arrayaccess_read(runtime, container, key_value, line);
             result = !ptn_is_truthy(ptn_value_deref(value));
