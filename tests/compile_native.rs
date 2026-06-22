@@ -13865,6 +13865,73 @@ var_dump(unserialize("s:3:\"123;"));
 }
 
 #[test]
+fn compile_unserialize_legacy_uppercase_s_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-legacy-uppercase-s");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-legacy-uppercase-s.php");
+    let output = root.join("unserialize-legacy-uppercase-s-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize('S:1:"e";'));
+var_dump(unserialize('S:1:"\65";'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Deprecated: unserialize(): Unserializing the 'S' format is deprecated")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("string(1) \"e\"").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_saturated_custom_payload_length_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-saturated-custom-payload-length");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-saturated-custom-payload-length.php");
+    let output = root.join("unserialize-saturated-custom-payload-length-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize('C:3:"XYZ":18446744075857035259:{}'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Insufficient data for unserializing - "),
+        "{stdout}"
+    );
+    assert!(stdout.contains(" required, 1 present"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_spl_array_backed_rejects_integer_property_keys_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-spl-integer-property-key");
     fs::create_dir_all(&root).unwrap();

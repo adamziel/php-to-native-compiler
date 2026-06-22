@@ -9873,6 +9873,69 @@ static int ptn_unserialize_parse_unsigned_fail_at(
     return parsed;
 }
 
+static int ptn_unserialize_hex_nibble(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return (int)(byte - '0');
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return 10 + (int)(byte - 'a');
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return 10 + (int)(byte - 'A');
+    }
+    return -1;
+}
+
+static int ptn_unserialize_parse_legacy_escaped_string(
+    PtnUnserializeState *state,
+    size_t declared_len,
+    size_t fail_pos,
+    char **out
+) {
+    if (!ptn_unserialize_require_declared_payload(state, declared_len, fail_pos)) {
+        return 0;
+    }
+    if (declared_len == SIZE_MAX) {
+        ptn_unserialize_fail_at(state, fail_pos);
+        return 0;
+    }
+    char *decoded = malloc(declared_len + 1);
+    if (decoded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t written = 0;
+    while (written < declared_len) {
+        if (!ptn_unserialize_has(state, 1)) {
+            free(decoded);
+            ptn_unserialize_fail_at(state, fail_pos);
+            return 0;
+        }
+        unsigned char byte = (unsigned char)state->data[state->pos];
+        if (byte == '\\') {
+            if (!ptn_unserialize_has(state, 3)) {
+                free(decoded);
+                ptn_unserialize_fail(state);
+                return 0;
+            }
+            int high = ptn_unserialize_hex_nibble((unsigned char)state->data[state->pos + 1]);
+            int low = ptn_unserialize_hex_nibble((unsigned char)state->data[state->pos + 2]);
+            if (high < 0 || low < 0) {
+                free(decoded);
+                ptn_unserialize_fail(state);
+                return 0;
+            }
+            decoded[written++] = (char)((high << 4) | low);
+            state->pos += 3;
+            continue;
+        }
+        decoded[written++] = (char)byte;
+        state->pos++;
+    }
+    decoded[declared_len] = '\0';
+    *out = decoded;
+    return 1;
+}
+
 static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *value) {
     int negative = 0;
     if (ptn_unserialize_has(state, 1) && state->data[state->pos] == '-') {
@@ -12055,6 +12118,34 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             result.id = ptn_unserialize_add_slot(state, &result.value);
             return result;
         }
+        case 'S': {
+            size_t len = 0;
+            size_t len_start = state->pos;
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &len) ||
+                !ptn_unserialize_consume(state, ':') ||
+                !ptn_unserialize_consume(state, '"')) {
+                return result;
+            }
+            char *decoded = NULL;
+            if (!ptn_unserialize_parse_legacy_escaped_string(state, len, len_start, &decoded)) {
+                return result;
+            }
+            if (!ptn_unserialize_consume(state, '"') ||
+                !ptn_unserialize_consume(state, ';')) {
+                free(decoded);
+                return result;
+            }
+            if (runtime != NULL) {
+                ptn_emit_deprecation(
+                    &runtime->diagnostics,
+                    "unserialize(): Unserializing the 'S' format is deprecated",
+                    state->line
+                );
+            }
+            result.value = ptn_owned_string_len(decoded, len);
+            result.id = ptn_unserialize_add_slot(state, &result.value);
+            return result;
+        }
         case 'a': {
             size_t count = 0;
             if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &count) ||
@@ -12253,8 +12344,14 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &payload_len) ||
                 !ptn_unserialize_consume(state, ':') ||
-                !ptn_unserialize_consume(state, '{') ||
-                !ptn_unserialize_require_payload(state, payload_len)) {
+                !ptn_unserialize_consume(state, '{')) {
+                free(class_name);
+                return result;
+            }
+            if (payload_len == SIZE_MAX && !ptn_unserialize_has(state, payload_len)) {
+                state->unexpected_end = 1;
+            }
+            if (!ptn_unserialize_require_payload(state, payload_len)) {
                 free(class_name);
                 return result;
             }
