@@ -23248,11 +23248,19 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
-        AssignmentTarget::ValueArrayDim { dimensions, .. } => {
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
                     "Cannot use [] for reading",
                     Some(span),
+                ));
+            }
+            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
+                return Err(Diagnostic::new(
+                    "Cannot use result of built-in function in write context",
+                    Some(call_span),
                 ));
             }
             Ok(())
@@ -23269,6 +23277,19 @@ fn validate_coalesce_assignment_target(
     }
 }
 
+fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> {
+    match expr {
+        Expr::Call { name, span, .. }
+            if is_modeled_internal_function_name(name)
+                && !modeled_internal_has_by_ref_parameter(name) =>
+        {
+            Some(*span)
+        }
+        Expr::Grouped { expr, .. } => modeled_internal_write_context_error_span(expr),
+        _ => None,
+    }
+}
+
 fn validate_expression_assignment_target(
     op: AssignmentOp,
     target: &AssignmentTarget,
@@ -23276,6 +23297,17 @@ fn validate_expression_assignment_target(
 ) -> Result<()> {
     validate_coalesce_assignment_target(op, target, span)?;
     reject_this_assignment_target(target)?;
+
+    if matches!(op, AssignmentOp::Assign) {
+        if let AssignmentTarget::ValueArrayDim { array, .. } = target {
+            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
+                return Err(Diagnostic::new(
+                    "Cannot use result of built-in function in write context",
+                    Some(call_span),
+                ));
+            }
+        }
+    }
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
         return Ok(());
