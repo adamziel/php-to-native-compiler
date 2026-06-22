@@ -64446,6 +64446,120 @@ var_dump((bool) ($abstract->getModifiers() & ReflectionProperty::IS_ABSTRACT));
 }
 
 #[test]
+fn compile_reflection_property_current_red_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-current-red-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-current-red-metadata.php");
+    let output = root.join("reflection-property-current-red-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectSettableMeta {
+    public $plainUntyped;
+    public int $plainTyped;
+    public $virtualReadOnlyUntyped { get => 42; }
+    public int $virtualReadOnlyTyped { get => 42; }
+    public int $asymmetricVirtualTyped { get => 42; set(int|string $value) {} }
+    public $backedUntyped { get => $this->backedUntyped; set => $value; }
+    public int $backedTyped { get => $this->backedTyped; set => $value; }
+    public int $asymmetricBackedTyped { get => $this->backedTyped; set(int|string $value) => (int) $value; }
+    public int $backedTypedGetOnly { get => $this->backedTypedGetOnly; }
+}
+
+foreach ((new ReflectionClass(ReflectSettableMeta::class))->getProperties() as $property) {
+    $type = $property->getSettableType();
+    echo ($type ? (string) $type : 'NULL'), \"\\n\";
+}
+
+class ReflectWritableHooks {
+    public $a { get => $this->a; }
+    public $b { get => 42; }
+    public $c { set => $value; }
+}
+
+foreach ((new ReflectionClass(ReflectWritableHooks::class))->getProperties() as $property) {
+    echo $property->getName(), ': ';
+    var_dump($property->isWritable(null, null));
+}
+
+class ReflectFinalHooks {
+    public mixed $getOnly { final get => 42; }
+    public mixed $setOnly { final set => strtolower($value); }
+    public mixed $both { final get => $this->both; final set => strtolower($value); }
+}
+
+echo new ReflectionProperty(ReflectFinalHooks::class, 'getOnly');
+echo new ReflectionProperty(ReflectFinalHooks::class, 'setOnly');
+echo new ReflectionProperty(ReflectFinalHooks::class, 'both');
+
+class ReflectStaticInit {
+    public static ?string $ssv = null;
+    public static ?string $ss;
+    public static $s;
+}
+
+var_dump((new ReflectionProperty(ReflectStaticInit::class, 'ssv'))->isInitialized());
+var_dump((new ReflectionProperty(ReflectStaticInit::class, 'ss'))->isInitialized());
+var_dump((new ReflectionProperty(ReflectStaticInit::class, 's'))->isInitialized());
+
+#[AllowDynamicProperties]
+class ReflectLazyReadableDynamic {
+    public $_;
+    public function __construct() { $this->prop = 1; }
+    public function __isset($name) { return false; }
+    public function __get($name) { return null; }
+}
+
+$lazy = (new ReflectionClass(ReflectLazyReadableDynamic::class))
+    ->newLazyProxy(fn() => new ReflectLazyReadableDynamic());
+$dynamic = new ReflectionProperty(new ReflectLazyReadableDynamic(), 'prop');
+var_dump($dynamic->isReadable(null, $lazy));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "int\n",
+            "never\n",
+            "never\n",
+            "string|int\n",
+            "NULL\n",
+            "int\n",
+            "string|int\n",
+            "int\n",
+            "a: bool(true)\n",
+            "b: bool(false)\n",
+            "c: bool(true)\n",
+            "Property [ public virtual mixed $getOnly { final get; } ]\n",
+            "Property [ public mixed $setOnly { final set; } ]\n",
+            "Property [ public mixed $both { final get; final set; } ]\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_property_settable_type_metadata"));
+    assert!(c_source.contains("ptn_declared_class_reflection_property_has_set_hook"));
+}
+
+#[test]
 fn compile_nodiscard_property_hook_to_native_fatal() {
     let root = temp_dir("ptn-native-nodiscard-property-hook-fatal");
     fs::create_dir_all(&root).unwrap();
