@@ -116801,7 +116801,6 @@ static PtnValue ptn_spl_object_storage_default_hash(size_t object_id) {
 static int ptn_spl_object_storage_mutation_allowed(PtnRuntime *runtime, size_t line) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root != NULL && root->active_spl_object_storage_get_hash_depth != 0) {
-        root->active_spl_object_storage_get_hash_depth = 0;
         ptn_throw_exception_at(
             runtime,
             "Error",
@@ -116839,12 +116838,28 @@ static int ptn_spl_object_storage_hash_for_object(
         runtime->declared_method_exists(receiver_class_name, "getHash")
     ) {
         PtnRuntime *root = ptn_runtime_root(runtime);
+        size_t previous_get_hash_depth =
+            root == NULL ? 0 : root->active_spl_object_storage_get_hash_depth;
+        PtnTryFrame get_hash_try_frame;
+        ptn_try_frame_push(runtime, &get_hash_try_frame);
+        if (setjmp(get_hash_try_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &get_hash_try_frame);
+            if (root != NULL) {
+                root->active_spl_object_storage_get_hash_depth = previous_get_hash_depth;
+            }
+            ptn_rethrow_exception(runtime);
+            return 0;
+        }
         if (root != NULL) {
-            root->active_spl_object_storage_get_hash_depth++;
+            if (previous_get_hash_depth == SIZE_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            root->active_spl_object_storage_get_hash_depth = previous_get_hash_depth + 1;
         }
         PtnValue hash = runtime->method_dispatch(runtime, resolved_receiver, "getHash", 1, &object, line);
+        ptn_try_frame_pop(runtime, &get_hash_try_frame);
         if (root != NULL) {
-            root->active_spl_object_storage_get_hash_depth--;
+            root->active_spl_object_storage_get_hash_depth = previous_get_hash_depth;
         }
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&hash);
