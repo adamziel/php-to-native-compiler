@@ -87,7 +87,12 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
     return 1;
 }
 
-static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
+static PTN_UNUSED int ptn_reference_assign_publish_first_result(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue value,
+    PtnValue *result_out
+) {
     PtnValue stored_value = ptn_null();
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, 0, &stored_value)) {
         return 0;
@@ -97,11 +102,21 @@ static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, Pt
         stored_value,
         0
     );
+    PtnValue result = ptn_value_clone(stored_value);
     PtnValue old_value = reference->value;
     ptn_array_note_value_replacement(old_value, stored_value);
     reference->value = stored_value;
     ptn_value_destroy_with_runtime_scope(runtime, &old_value);
+    if (result_out != NULL) {
+        *result_out = result;
+    } else {
+        ptn_value_destroy(&result);
+    }
     return 1;
+}
+
+static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
+    return ptn_reference_assign_publish_first_result(runtime, reference, value, NULL);
 }
 
 static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference *reference, size_t depth) {

@@ -64042,8 +64042,8 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
-    assert!(c_source.contains("ptn_increment_value(&runtime"));
-    assert!(c_source.contains("ptn_decrement_value(&runtime"));
+    assert!(c_source.contains("ptn_property_increment_value(&runtime"));
+    assert!(c_source.contains("ptn_static_property_increment_value(&runtime"));
 }
 
 #[test]

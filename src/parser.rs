@@ -10498,9 +10498,10 @@ fn validate_property_default_value_type(
     }
     let declared_type = property_type_hint_display(type_hint);
     if default_type == "null" {
+        let nullable_type = nullable_property_type_suggestion(&declared_type);
         return Err(Diagnostic::new(
             format!(
-                "Cannot use null as default value for property {class_name}::${property_name} of type {declared_type}"
+                "Default value for property of type {declared_type} may not be null. Use the nullable type {nullable_type} to allow null default value"
             ),
             Some(value.span()),
         ));
@@ -10511,6 +10512,14 @@ fn validate_property_default_value_type(
         ),
         Some(value.span()),
     ))
+}
+
+fn nullable_property_type_suggestion(declared_type: &str) -> String {
+    if declared_type.contains('|') {
+        format!("{declared_type}|null")
+    } else {
+        format!("?{declared_type}")
+    }
 }
 
 fn property_default_value_type_name(value: &Expr) -> Option<&'static str> {

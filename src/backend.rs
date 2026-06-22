@@ -36459,10 +36459,17 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(inc_dec_runtime_function(op));
-                out.push_str("(&runtime, ");
+                out.push_str(" = ptn_static_property_increment_value(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(match op {
+                    IncDecOp::Increment => "1",
+                    IncDecOp::Decrement => "0",
+                });
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -36523,10 +36530,17 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(inc_dec_runtime_function(op));
-                out.push_str("(&runtime, ");
+                out.push_str(" = ptn_static_property_increment_value(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(match op {
+                    IncDecOp::Increment => "1",
+                    IncDecOp::Decrement => "0",
+                });
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
