@@ -3294,6 +3294,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     {
         return Some("offset");
     }
+    if (name.eq_ignore_ascii_case("intltz_get_canonical_id")
+        || name.eq_ignore_ascii_case("IntlTimeZone::getCanonicalID"))
+        && argument_index == 1
+    {
+        return Some("isSystemID");
+    }
     if name.eq_ignore_ascii_case("intltz_get_offset") && argument_index == 3 {
         return Some("rawOffset");
     }

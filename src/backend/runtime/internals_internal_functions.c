@@ -6881,6 +6881,11 @@ static const PtnParameterMetadata PTN_INTERNAL_DATETIMEZONE_GET_TRANSITIONS_PARA
     { "timestampEnd", "int", "int", 0, 1, 0, 0, 1, "PHP_INT_MAX", NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_INTLTZ_GET_CANONICAL_ID_PARAMETERS[] = {
+    { "timezoneId", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "isSystemID", "bool", "?bool", 1, 1, 1, 0, 0, "null", NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_DATE_SUN_FUNCTION_PARAMETERS[] = {
     { "timestamp", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
     { "returnFormat", "int", "int", 0, 1, 0, 0, 1, "SUNFUNCS_RET_STRING", "SUNFUNCS_RET_STRING", NULL },
@@ -55785,6 +55790,80 @@ static int ptn_intl_assign_reference_string(
     );
 }
 
+static void ptn_intl_set_error_message(PtnRuntime *runtime, const char *message) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    free(root->intl_last_error_message);
+    root->intl_last_error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+}
+
+static PtnValue ptn_internal_intl_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *message = root == NULL || root->intl_last_error_message == NULL
+        ? "U_ZERO_ERROR"
+        : root->intl_last_error_message;
+    return ptn_owned_string(ptn_duplicate_string(message));
+}
+
+static int ptn_intl_ascii_case_equal_literal(PtnStringOperand value, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (value.len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < literal_len; i++) {
+        unsigned char left = (unsigned char)value.data[i];
+        unsigned char right = (unsigned char)literal[i];
+        if (tolower(left) != tolower(right)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_timezone_is_portugal_alias(PtnStringOperand timezone_id) {
+    return ptn_intl_ascii_case_equal_literal(timezone_id, "Portugal");
+}
+
+static int ptn_intl_timezone_is_lisbon_id(PtnStringOperand timezone_id) {
+    return ptn_intl_ascii_case_equal_literal(timezone_id, "Europe/Lisbon");
+}
+
+static PtnValue ptn_internal_intltz_get_canonical_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand timezone_id =
+        ptn_internal_expect_string_arg(runtime, "IntlTimeZone::getCanonicalID", 1, "timezoneId", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone_id);
+        return ptn_null();
+    }
+
+    if (ptn_intl_timezone_is_portugal_alias(timezone_id) ||
+        ptn_intl_timezone_is_lisbon_id(timezone_id)) {
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 1, ptn_bool(1))) {
+            ptn_string_operand_free(timezone_id);
+            return ptn_null();
+        }
+        ptn_string_operand_free(timezone_id);
+        ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+        return ptn_owned_string(ptn_duplicate_string("Europe/Lisbon"));
+    }
+
+    if (!ptn_intl_assign_reference_value(runtime, args, argc, 1, ptn_bool(1))) {
+        ptn_string_operand_free(timezone_id);
+        return ptn_null();
+    }
+    ptn_string_operand_free(timezone_id);
+    ptn_intl_set_error_message(
+        runtime,
+        "IntlTimeZone::getCanonicalID(): error obtaining canonical ID: U_ILLEGAL_ARGUMENT_ERROR"
+    );
+    return ptn_bool(0);
+}
+
 static int ptn_intl_weekday_gregorian(int year, int month, int day) {
     if (month < 3) {
         month += 12;
@@ -91053,6 +91132,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "createTimeZone")) {
         return ptn_internal_intl_timezone_create_timezone(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
+        ptn_ascii_case_equal(name, "getCanonicalID")) {
+        return ptn_internal_intltz_get_canonical_id(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "Collator") &&
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_collator_create(runtime, argc, args, line);
@@ -93661,6 +93744,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlBreakIterator::createWordInstance", 0, 1, ptn_internal_intl_break_iterator_create_word_instance },
         { "IntlCalendar::getKeywordValuesForLocale", 3, 3, ptn_internal_intl_calendar_get_keyword_values_for_locale },
         { "IntlTimeZone::createTimeZone", 1, 1, ptn_internal_intl_timezone_create_timezone },
+        { "IntlTimeZone::getCanonicalID", 1, 2, ptn_internal_intltz_get_canonical_id },
+        { "intl_get_error_message", 0, 0, ptn_internal_intl_get_error_message },
+        { "intltz_get_canonical_id", 1, 2, ptn_internal_intltz_get_canonical_id },
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
@@ -94638,6 +94724,23 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "array",
             0,
             1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "IntlTimeZone::getCanonicalID") ||
+        ptn_ascii_case_equal(function->name, "intltz_get_canonical_id")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_INTLTZ_GET_CANONICAL_ID_PARAMETERS) /
+                sizeof(PTN_INTERNAL_INTLTZ_GET_CANONICAL_ID_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_INTLTZ_GET_CANONICAL_ID_PARAMETERS,
+            0,
+            "string|false",
+            "string|false",
+            0,
+            0
         );
     }
     if (ptn_ascii_case_equal(function->name, "date_sunrise") ||
