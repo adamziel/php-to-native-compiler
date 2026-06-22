@@ -2218,6 +2218,9 @@ impl<'a> LoweringContext<'a> {
                     }));
                 }
                 Statement::Expression { expression, .. } => {
+                    if expression_statement_is_noop(expression) {
+                        continue;
+                    }
                     instructions.push(Instruction::Expression(self.lower_expr(expression)));
                 }
                 Statement::InlineHtml { content, .. } => {
@@ -2950,6 +2953,14 @@ fn collect_constant_values_in(statements: &[Statement], constants: &mut HashMap<
             }
             _ => {}
         }
+    }
+}
+
+fn expression_statement_is_noop(expression: &Expr) -> bool {
+    match expression {
+        Expr::Variable(_, _) => true,
+        Expr::Grouped { expr, .. } => expression_statement_is_noop(expr),
+        _ => false,
     }
 }
 

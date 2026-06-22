@@ -7918,12 +7918,6 @@ impl Parser<'_> {
                             continue;
                         }
                     }
-                    if self.peek_is_first_class_callable_arguments() {
-                        return Err(Diagnostic::new(
-                            "dynamic first-class static method callables are unsupported",
-                            Some(member_span),
-                        ));
-                    }
                     let receiver_span = expr.span();
                     let class_name_fetch = Expr::DynamicClassNameFetch {
                         receiver: Box::new(expr),
@@ -7934,6 +7928,15 @@ impl Parser<'_> {
                         || dynamic_name.expect("dynamic static member expression"),
                         |name| Expr::String(name, member_span),
                     );
+                    if self.peek_is_first_class_callable_arguments() {
+                        expr = self.parse_dynamic_static_first_class_callable_expr(
+                            class_name_fetch,
+                            start_span,
+                            method_name,
+                            member_span,
+                        )?;
+                        continue;
+                    }
                     expr = self.parse_dynamic_static_method_call_expr(
                         class_name_fetch,
                         start_span,
@@ -8515,6 +8518,14 @@ impl Parser<'_> {
         if let TokenKind::Variable(member_name) = member.kind {
             if matches!(self.peek().kind, TokenKind::LeftParen) {
                 let name_expr = Expr::Variable(member_name, member.span);
+                if self.peek_is_first_class_callable_arguments() {
+                    return self.parse_dynamic_static_first_class_callable_expr(
+                        Expr::String(class_name, class_span),
+                        class_span,
+                        name_expr,
+                        member.span,
+                    );
+                }
                 return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
             }
             return Ok(Expr::StaticPropertyFetch {
@@ -8542,10 +8553,12 @@ impl Parser<'_> {
                 });
             }
             if self.peek_is_first_class_callable_arguments() {
-                return Err(Diagnostic::new(
-                    "dynamic first-class static method callables are unsupported",
-                    Some(member_span),
-                ));
+                return self.parse_dynamic_static_first_class_callable_expr(
+                    Expr::String(class_name, class_span),
+                    class_span,
+                    name_expr,
+                    member_span,
+                );
             }
             return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
         }
@@ -8562,10 +8575,12 @@ impl Parser<'_> {
                 });
             }
             if self.peek_is_first_class_callable_arguments() {
-                return Err(Diagnostic::new(
-                    "dynamic first-class static method callables are unsupported",
-                    Some(member_span),
-                ));
+                return self.parse_dynamic_static_first_class_callable_expr(
+                    Expr::String(class_name, class_span),
+                    class_span,
+                    name_expr,
+                    member_span,
+                );
             }
             return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
         }
@@ -8614,6 +8629,36 @@ impl Parser<'_> {
             class_span,
             method_name,
         )
+    }
+
+    fn parse_dynamic_static_first_class_callable_expr(
+        &mut self,
+        class_name: Expr,
+        class_span: SourceSpan,
+        method_name: Expr,
+        method_span: SourceSpan,
+    ) -> Result<Expr> {
+        let right_span = self.parse_first_class_callable_arguments()?;
+        let callable = Expr::Array {
+            elements: vec![
+                ArrayElement {
+                    key: None,
+                    value: ArrayElementValue::Value(class_name),
+                    line: class_span.line,
+                },
+                ArrayElement {
+                    key: None,
+                    value: ArrayElementValue::Value(method_name),
+                    line: method_span.line,
+                },
+            ],
+            short_syntax: true,
+            span: combine_spans(class_span, method_span),
+        };
+        Ok(Expr::FirstClassCallable {
+            callable: Box::new(callable),
+            span: combine_spans(class_span, right_span),
+        })
     }
 
     fn parse_dynamic_static_method_call_expr(

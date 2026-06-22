@@ -24930,6 +24930,9 @@ fn compile_is_callable_writes_callable_name_to_native_binary() {
     fs::write(
         &input,
         "<?php
+function callable_name_free() {
+}
+
 class CallableNameBase {
     public function inherited() {
     }
@@ -24940,6 +24943,9 @@ class CallableNameWorker extends CallableNameBase {
     }
 
     public function own() {
+    }
+
+    public function __invoke() {
     }
 }
 
@@ -24965,6 +24971,18 @@ foreach ($cases as $case) {
 $name = \"initial\";
 var_dump(is_callable(\"missing_function\", true, $name));
 var_dump($name);
+
+$name = \"initial\";
+var_dump(is_callable(callable_name_free(...), callable_name: $name));
+var_dump($name);
+
+$name = \"initial\";
+var_dump(is_callable((new CallableNameWorker())(...), callable_name: $name));
+var_dump($name);
+
+$name = \"initial\";
+var_dump(is_callable(CallableNameWorker::stat(...), callable_name: $name));
+var_dump($name);
 ",
     )
     .unwrap();
@@ -24973,7 +24991,7 @@ var_dump($name);
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    let closure_name = format!("{{closure:{}:16}}", input.to_string_lossy());
+    let closure_name = format!("{{closure:{}:22}}", input.to_string_lossy());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
@@ -25000,6 +25018,12 @@ var_dump($name);
                 "string(5) \"Array\"\n",
                 "bool(true)\n",
                 "string(16) \"missing_function\"\n",
+                "bool(true)\n",
+                "string(18) \"callable_name_free\"\n",
+                "bool(true)\n",
+                "string(28) \"CallableNameWorker::__invoke\"\n",
+                "bool(true)\n",
+                "string(24) \"CallableNameWorker::stat\"\n",
             )
         )
     );
@@ -55451,7 +55475,7 @@ fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     let output = root.join("expression-statements-bin");
     fs::write(
         &input,
-        "<?php $value = 1; $value + 2; $missing; strlen(\"abc\"); echo \"done\\n\";",
+        "<?php $value = 1; $value + 2; $missing; ($grouped_missing); strlen(\"abc\"); var_dump($still_missing); echo \"done\\n\";",
     )
     .unwrap();
 
@@ -55461,7 +55485,10 @@ fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        format!("{}done\n", undefined_variable_warning(&input, "missing", 1))
+        format!(
+            "{}NULL\ndone\n",
+            undefined_variable_warning(&input, "still_missing", 1)
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -59145,6 +59172,10 @@ $same = function ($value) { return $value - 1; };
 $sameResult = $same(...);
 $name = \"fcc_add\";
 $dynamic = $name(...);
+$className = \"FccWorker\";
+$methodName = \"twice\";
+$dynamicStatic = $className::$methodName(...);
+$directDynamicStatic = FccWorker::$methodName(...);
 
 var_dump($named(4));
 var_dump($internal(\"abcd\"));
@@ -59153,6 +59184,8 @@ var_dump($method(4));
 var_dump($sameResult === $same);
 var_dump($sameResult(4));
 var_dump($dynamic(6, 7));
+var_dump($dynamicStatic(8));
+var_dump($directDynamicStatic(9));
 
 $self = FccWorker::selfTwice();
 var_dump($self(5));
@@ -59187,6 +59220,8 @@ var_dump($staticReflection->getNumberOfParameters());
             "bool(true)\n",
             "int(3)\n",
             "int(13)\n",
+            "int(16)\n",
+            "int(18)\n",
             "int(10)\n",
             "int(3)\n",
             "int(18)\n",

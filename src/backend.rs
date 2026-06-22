@@ -25907,6 +25907,20 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static IS_CALLABLE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "value",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "syntax_only",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "callable_name",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static EXTRACT_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "array",
@@ -26797,6 +26811,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&ARRAY_SLICE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("assert") {
         Some(&ASSERT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("is_callable") {
+        Some(&IS_CALLABLE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
         Some(&GRAPHEME_EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
