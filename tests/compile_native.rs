@@ -53120,6 +53120,47 @@ var_dump(isset($t[$big]));",
 }
 
 #[test]
+fn compile_call_result_string_offset_write_reference_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-call-result-string-offset-write-reference-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-result-string-offset-write-reference-edges.php");
+    let output = root.join("call-result-string-offset-write-reference-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function runtimetest(&$a) {}\n\
+try { chr(0)[0][] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { unset(chr(0)[0][0]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { runtimetest(chr(0)[0]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { ++chr(0)[0]; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $ref =& chr(0)[0]; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot use string offset as an array\n",
+            "Cannot use string offset as an array\n",
+            "Cannot create references to/from string offsets\n",
+            "Cannot increment/decrement string offsets\n",
+            "Cannot create references to/from string offsets\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_set_result"));
+    assert!(c_source.contains("ptn_value_array_path_unset"));
+    assert!(c_source.contains("ptn_value_reference_for_array_path"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_inc_dec"));
+}
+
+#[test]
 fn compile_offset_key_conversion_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-offset-key-conversion-diagnostics");
     fs::create_dir_all(&root).unwrap();

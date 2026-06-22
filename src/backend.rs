@@ -35069,6 +35069,23 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &source_temp);
             return result_temp;
         }
+        if let Some((root, dimensions, path_line)) =
+            temporary_array_dim_by_ref_argument_path(source)
+        {
+            if let Some(source_temp) =
+                self.emit_temporary_array_dim_reference(out, root, &dimensions, path_line)
+            {
+                self.emit_bind_assignment_target_reference(out, target, &source_temp);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&source_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &source_temp);
+                return result_temp;
+            }
+        }
 
         let source_temp = self.emit_reference_candidate_value(out, source);
         let result_temp = self.next_temp();
@@ -35241,6 +35258,16 @@ impl ValueEmitter {
             let source_temp = self.emit_reference_target(out, &source_target);
             self.emit_bind_assignment_target_reference(out, target, &source_temp);
             return source_temp;
+        }
+        if let Some((root, dimensions, path_line)) =
+            temporary_array_dim_by_ref_argument_path(source)
+        {
+            if let Some(source_temp) =
+                self.emit_temporary_array_dim_reference(out, root, &dimensions, path_line)
+            {
+                self.emit_bind_assignment_target_reference(out, target, &source_temp);
+                return source_temp;
+            }
         }
 
         let source_temp = self.emit_reference_candidate_value(out, source);
@@ -35462,6 +35489,21 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &reference_temp);
             return;
         }
+        if let Some((root, dimensions, path_line)) =
+            temporary_array_dim_by_ref_argument_path(source)
+        {
+            if let Some(reference_temp) =
+                self.emit_temporary_array_dim_reference(out, root, &dimensions, path_line)
+            {
+                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&reference_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &reference_temp);
+                return;
+            }
+        }
 
         let source_temp = self.emit_reference_candidate_value(out, source);
         out.push_str("    if (");
@@ -35518,6 +35560,33 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
             return;
+        }
+        if let Some((root, dimensions, path_line)) =
+            temporary_array_dim_by_ref_argument_path(source)
+        {
+            if let Some(source_temp) =
+                self.emit_temporary_array_dim_reference(out, root, &dimensions, path_line)
+            {
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&source_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &source_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return;
+            }
         }
 
         let source_temp = self.emit_reference_candidate_value(out, source);
@@ -46856,6 +46925,48 @@ impl ValueEmitter {
         Some(result_temp)
     }
 
+    fn emit_temporary_array_dim_reference(
+        &mut self,
+        out: &mut String,
+        root: &ValueExpr,
+        dimensions: &[Option<ValueExpr>],
+        path_line: usize,
+    ) -> Option<String> {
+        let root_allowed = match root {
+            ValueExpr::InternalCall { name, .. } => !name.eq_ignore_ascii_case("func_get_args"),
+            ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
+            | ValueExpr::ParentPropertyHookCall { .. } => true,
+            _ => false,
+        };
+        if !root_allowed {
+            return None;
+        }
+
+        let root_temp = self.emit_raw_materialized_value(out, root);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&temp);
+        out.push_str(" = ptn_value_reference_for_array_path(&runtime, &");
+        out.push_str(&root_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&path_line.to_string());
+        out.push_str(");\n");
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        emit_value_cleanup(out, "    ", &root_temp);
+        Some(temp)
+    }
+
     fn emit_by_ref_call_argument(
         &mut self,
         out: &mut String,
@@ -46896,35 +47007,9 @@ impl ValueEmitter {
         if let Some((root, dimensions, path_line)) =
             temporary_array_dim_by_ref_argument_path(argument)
         {
-            let root_allowed = match root {
-                ValueExpr::InternalCall { name, .. } => !name.eq_ignore_ascii_case("func_get_args"),
-                ValueExpr::DynamicCall { .. }
-                | ValueExpr::MethodCall { .. }
-                | ValueExpr::DynamicMethodCall { .. }
-                | ValueExpr::ParentPropertyHookCall { .. } => true,
-                _ => false,
-            };
-            if root_allowed {
-                let root_temp = self.emit_raw_materialized_value(out, root);
-                let path = emit_array_path_segments(out, self, &dimensions);
-                let temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&temp);
-                out.push_str(" = ptn_value_reference_for_array_path(&runtime, &");
-                out.push_str(&root_temp);
-                out.push_str(", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", \"");
-                out.push_str(&c_string(&self.source_file));
-                out.push_str("\", ");
-                out.push_str(&path_line.to_string());
-                out.push_str(");\n");
-                for segment_temp in path.value_temps {
-                    emit_value_cleanup(out, "    ", &segment_temp);
-                }
-                emit_value_cleanup(out, "    ", &root_temp);
+            if let Some(temp) =
+                self.emit_temporary_array_dim_reference(out, root, &dimensions, path_line)
+            {
                 return temp;
             }
         }

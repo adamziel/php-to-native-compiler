@@ -20041,9 +20041,21 @@ fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) ->
                 reject_append_array_read(index)?;
             }
             match array.as_ref() {
-                Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
+                Expr::Variable(_, _)
+                | Expr::PropertyFetch { .. }
+                | Expr::Call { .. }
+                | Expr::DynamicCall { .. }
+                | Expr::MethodCall { .. }
+                | Expr::DynamicMethodCall { .. }
+                | Expr::ParentPropertyHookCall { .. } => Ok(()),
                 Expr::Grouped { expr, .. } => match expr.as_ref() {
-                    Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
+                    Expr::Variable(_, _)
+                    | Expr::PropertyFetch { .. }
+                    | Expr::Call { .. }
+                    | Expr::DynamicCall { .. }
+                    | Expr::MethodCall { .. }
+                    | Expr::DynamicMethodCall { .. }
+                    | Expr::ParentPropertyHookCall { .. } => Ok(()),
                     Expr::ArrayAccess { .. } => {
                         validate_array_reference_lvalue_expr(expr.as_ref(), temporary_message)
                     }
@@ -23812,17 +23824,6 @@ fn validate_expression_assignment_target(
 ) -> Result<()> {
     validate_coalesce_assignment_target(op, target, span)?;
     reject_this_assignment_target(target)?;
-
-    if matches!(op, AssignmentOp::Assign) {
-        if let AssignmentTarget::ValueArrayDim { array, .. } = target {
-            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
-                return Err(Diagnostic::new(
-                    "Cannot use result of built-in function in write context",
-                    Some(call_span),
-                ));
-            }
-        }
-    }
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
         return Ok(());
