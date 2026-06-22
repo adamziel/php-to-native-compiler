@@ -1402,6 +1402,98 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
     ptn_runtime_run_object_destructors_matching(runtime, 0);
 }
 
+typedef struct {
+    PtnArray **arrays;
+    size_t arrays_len;
+    size_t arrays_capacity;
+    PtnReference **references;
+    size_t references_len;
+    size_t references_capacity;
+} PtnShutdownDestructorScan;
+
+static void ptn_shutdown_destructor_scan_free(PtnShutdownDestructorScan *scan) {
+    if (scan == NULL) {
+        return;
+    }
+    free(scan->arrays);
+    scan->arrays = NULL;
+    scan->arrays_len = 0;
+    scan->arrays_capacity = 0;
+    free(scan->references);
+    scan->references = NULL;
+    scan->references_len = 0;
+    scan->references_capacity = 0;
+}
+
+static int ptn_shutdown_destructor_scan_note_array(
+    PtnShutdownDestructorScan *scan,
+    PtnArray *array
+) {
+    if (scan == NULL || array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->arrays_len; i++) {
+        if (scan->arrays[i] == array) {
+            return 0;
+        }
+    }
+    if (scan->arrays_len == scan->arrays_capacity) {
+        size_t new_capacity = scan->arrays_capacity == 0 ? 8 : scan->arrays_capacity * 2;
+        if (new_capacity < scan->arrays_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_arrays = realloc(scan->arrays, new_capacity * sizeof(PtnArray *));
+        if (new_arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->arrays = new_arrays;
+        scan->arrays_capacity = new_capacity;
+    }
+    scan->arrays[scan->arrays_len++] = array;
+    return 1;
+}
+
+static int ptn_shutdown_destructor_scan_note_reference(
+    PtnShutdownDestructorScan *scan,
+    PtnReference *reference
+) {
+    if (scan == NULL || reference == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < scan->references_len; i++) {
+        if (scan->references[i] == reference) {
+            return 0;
+        }
+    }
+    if (scan->references_len == scan->references_capacity) {
+        size_t new_capacity = scan->references_capacity == 0
+            ? 8
+            : scan->references_capacity * 2;
+        if (new_capacity < scan->references_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnReference *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnReference **new_references = realloc(
+            scan->references,
+            new_capacity * sizeof(PtnReference *)
+        );
+        if (new_references == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        scan->references = new_references;
+        scan->references_capacity = new_capacity;
+    }
+    scan->references[scan->references_len++] = reference;
+    return 1;
+}
+
+static size_t ptn_runtime_run_static_property_value_destructors_impl(
+    PtnValue value,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+);
+
 static PTN_UNUSED size_t ptn_runtime_run_symbol_value_destructors(PtnSymbolTable *symbols) {
     if (symbols == NULL || symbols->len == 0) {
         return 0;
@@ -1425,9 +1517,24 @@ static PTN_UNUSED size_t ptn_runtime_run_symbol_value_destructors(PtnSymbolTable
     return destructors_ran;
 }
 
-static PTN_UNUSED size_t ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {
+static size_t ptn_runtime_run_static_property_value_destructors_impl(
+    PtnValue value,
+    size_t depth,
+    PtnShutdownDestructorScan *scan
+) {
     if (depth > 1024) {
         return 0;
+    }
+    if (value.type == PTN_REFERENCE) {
+        if (value.as.reference == NULL ||
+            !ptn_shutdown_destructor_scan_note_reference(scan, value.as.reference)) {
+            return 0;
+        }
+        return ptn_runtime_run_static_property_value_destructors_impl(
+            value.as.reference->value,
+            depth + 1,
+            scan
+        );
     }
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT && value.as.object != NULL) {
@@ -1442,16 +1549,31 @@ static PTN_UNUSED size_t ptn_runtime_run_static_property_value_destructors(PtnVa
         return 0;
     }
     PtnArray *array = value.as.array;
+    if (!ptn_shutdown_destructor_scan_note_array(scan, array)) {
+        return 0;
+    }
     ptn_array_retain(array);
     size_t destructors_ran = 0;
     for (size_t i = 0; i < array->len; i++) {
-        destructors_ran += ptn_runtime_run_static_property_value_destructors(
+        destructors_ran += ptn_runtime_run_static_property_value_destructors_impl(
             array->entries[i].value,
-            depth + 1
+            depth + 1,
+            scan
         );
     }
     PtnValue retained_array = ptn_array(array);
     ptn_value_destroy(&retained_array);
+    return destructors_ran;
+}
+
+static PTN_UNUSED size_t ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {
+    PtnShutdownDestructorScan scan = {0};
+    size_t destructors_ran = ptn_runtime_run_static_property_value_destructors_impl(
+        value,
+        depth,
+        &scan
+    );
+    ptn_shutdown_destructor_scan_free(&scan);
     return destructors_ran;
 }
 

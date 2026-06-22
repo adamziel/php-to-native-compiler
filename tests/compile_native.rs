@@ -25525,6 +25525,52 @@ $a->insert(new Node);
 }
 
 #[test]
+fn compile_repeated_recursive_globals_serialization_shutdown_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-globals-serialize-shutdown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-globals-serialize-shutdown.php");
+    let output = root.join("recursive-globals-serialize-shutdown-bin");
+    fs::write(
+        &input,
+        "<?php
+$token = array();
+$conditions = array();
+for ($i = 0; $i <= 2; $i++) {
+    $tokens = $conditions;
+    $a[0] =& $a;
+    $a = unserialize(serialize($GLOBALS));
+    $a[0] =& $a;
+    $a = unserialize(serialize($GLOBALS));
+    foreach ($a as $v) {
+        if ($v == 1) {
+            arsort($a);
+        }
+    }
+}
+echo \"DONE\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("30s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "DONE\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_dump_preserves_prior_property_count_during_active_unset_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-active-property-unset-count");
     fs::create_dir_all(&root).unwrap();
