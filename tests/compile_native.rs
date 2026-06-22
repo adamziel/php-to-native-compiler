@@ -4213,6 +4213,16 @@ fn parser_stops_at_top_level_halt_compiler_statement() {
 }
 
 #[test]
+fn parser_stops_at_halt_compiler_before_binary_payload() {
+    let program = parser::parse(
+        "<?php echo \"before\\n\"; __HALT_COMPILER(); ?>\r\n\u{e006}\u{e01f}\"unterminated",
+    )
+    .unwrap();
+
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
 fn parser_rejects_halt_compiler_inside_block() {
     let error = parser::parse("<?php\nif (true) {\n    __HALT_COMPILER();\n}\n").unwrap_err();
 
@@ -37205,7 +37215,7 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     push_u32(&mut manifest, 0);
     push_u32(&mut manifest, 3);
     push_u32(&mut manifest, 0);
-    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0x000001b6);
     push_u32(&mut manifest, 0);
 
     let mut source = Vec::new();
@@ -37213,9 +37223,21 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
         b"<?php\n\
 $phar = new Phar(__FILE__);\n\
 var_dump($phar->getMetadata());\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+var_dump($phar->copy(\"test.txt\", \"copied.txt\"));\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+echo $phar[\"copied.txt\"]->getContent();\n\
+$phar->setMetadata(\"bye\");\n\
+var_dump($phar->getMetadata());\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 $phar[\"test.txt\"] = \"changed\\n\";\n\
 echo $phar[\"test.txt\"]->getContent();\n\
+var_dump($phar[\"test.txt\"]->getMetadata());\n\
+$phar[\"test.txt\"]->setMetadata(\"file\");\n\
+var_dump($phar[\"test.txt\"]->getMetadata());\n\
+printf(\"%o\\n\", fileperms(\"phar://\" . __FILE__ . \"/test.txt\"));\n\
+$phar[\"test.txt\"]->chmod(0444);\n\
+printf(\"%o\\n\", fileperms(\"phar://\" . __FILE__ . \"/test.txt\"));\n\
 mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
 var_dump(is_dir(\"phar://\" . __FILE__ . \"/dir\"), isset($phar[\"dir\"]));\n\
 Phar::mount(\"mounted.txt\", \"phar://\" . __FILE__ . \"/test.txt\");\n\
@@ -37235,7 +37257,24 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"hi\"\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
+        concat!(
+            "string(2) \"hi\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "hi\n",
+            "string(3) \"bye\"\n",
+            "hi\n",
+            "changed\n",
+            "NULL\n",
+            "string(4) \"file\"\n",
+            "100666\n",
+            "100444\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "changed\n",
+            "bool(false)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -38607,6 +38646,35 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!("before\nint({expected_offset})\nint({expected_offset})\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_halt_compiler_ignores_binary_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-halt-compiler-binary-payload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-compiler-binary-payload.php");
+    let output = root.join("halt-compiler-binary-payload-bin");
+    let prefix =
+        b"<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__); __HALT_COMPILER(); ?>\r\n";
+    let marker = b"__HALT_COMPILER();";
+    let expected_offset = prefix
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap()
+        + marker.len();
+    let mut source = prefix.to_vec();
+    source.extend_from_slice(b"\x06\x1f\"unterminated");
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("before\nint({expected_offset})\n")
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -414,7 +414,11 @@ impl<'a> Lexer<'a> {
                 '\'' | '"' => self.lex_string(ch)?,
                 '`' => self.lex_backtick_string()?,
                 c if c.is_ascii_digit() => self.lex_number()?,
-                c if is_ident_start(c) => self.lex_word()?,
+                c if is_ident_start(c) => {
+                    if self.lex_word()? {
+                        break;
+                    }
+                }
                 _ => {
                     return Err(Diagnostic::new(
                         format!("unsupported PHP token {:?}", ch),
@@ -1944,7 +1948,7 @@ impl<'a> Lexer<'a> {
         None
     }
 
-    fn lex_word(&mut self) -> Result<()> {
+    fn lex_word(&mut self) -> Result<bool> {
         let start = self.current_span(0);
         let mut text = String::new();
         while let Some(ch) = self.peek_char() {
@@ -2004,11 +2008,98 @@ impl<'a> Lexer<'a> {
             "boolean" => TokenKind::BooleanType,
             _ => TokenKind::Identifier(text),
         };
+        let is_halt_compiler_statement =
+            lowercase == "__halt_compiler" && self.can_start_halt_compiler_statement();
         self.tokens.push(Token {
             kind,
             span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
         });
-        Ok(())
+        if is_halt_compiler_statement && self.try_consume_halt_compiler_statement_suffix()? {
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn can_start_halt_compiler_statement(&self) -> bool {
+        matches!(
+            self.tokens.last().map(|token| &token.kind),
+            None | Some(
+                TokenKind::OpenTag
+                    | TokenKind::CloseTag
+                    | TokenKind::Semicolon
+                    | TokenKind::LeftBrace
+                    | TokenKind::RightBrace
+            )
+        )
+    }
+
+    fn try_consume_halt_compiler_statement_suffix(&mut self) -> Result<bool> {
+        let saved_cursor = self.cursor;
+        let saved_line = self.line;
+        let saved_column = self.column;
+        let saved_token_len = self.tokens.len();
+
+        self.skip_halt_compiler_trivia()?;
+        if !self.rest().starts_with('(') {
+            self.restore_halt_compiler_probe(
+                saved_cursor,
+                saved_line,
+                saved_column,
+                saved_token_len,
+            );
+            return Ok(false);
+        }
+        self.push_fixed(TokenKind::LeftParen, 1);
+
+        self.skip_halt_compiler_trivia()?;
+        if !self.rest().starts_with(')') {
+            self.restore_halt_compiler_probe(
+                saved_cursor,
+                saved_line,
+                saved_column,
+                saved_token_len,
+            );
+            return Ok(false);
+        }
+        self.push_fixed(TokenKind::RightParen, 1);
+
+        self.skip_halt_compiler_trivia()?;
+        if !self.rest().starts_with(';') {
+            self.restore_halt_compiler_probe(
+                saved_cursor,
+                saved_line,
+                saved_column,
+                saved_token_len,
+            );
+            return Ok(false);
+        }
+        self.push_fixed(TokenKind::Semicolon, 1);
+        Ok(true)
+    }
+
+    fn restore_halt_compiler_probe(
+        &mut self,
+        cursor: usize,
+        line: usize,
+        column: usize,
+        token_len: usize,
+    ) {
+        self.cursor = cursor;
+        self.line = line;
+        self.column = column;
+        self.tokens.truncate(token_len);
+    }
+
+    fn skip_halt_compiler_trivia(&mut self) -> Result<()> {
+        loop {
+            match self.peek_char() {
+                Some(ch) if ch.is_whitespace() => self.bump_char(),
+                Some('/') if self.rest().starts_with("//") => self.skip_line_comment(),
+                Some('/') if self.rest().starts_with("/*") => self.skip_block_comment()?,
+                Some('#') if !self.rest().starts_with("#[") => self.skip_line_comment(),
+                _ => return Ok(()),
+            }
+        }
     }
 
     fn push_fixed(&mut self, kind: TokenKind, len: usize) {
