@@ -119,6 +119,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->shutdown_function_index = 0;
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
+    runtime->shutdown_in_progress = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
@@ -526,6 +527,12 @@ static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
 #endif
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    if (runtime->lifecycle_root == runtime) {
+        if (runtime->shutdown_in_progress) {
+            return;
+        }
+        runtime->shutdown_in_progress = 1;
+    }
     free(runtime->dynamic_property_deprecation_suppress_property);
     runtime->dynamic_property_deprecation_suppress_property = NULL;
     runtime->dynamic_property_deprecation_suppress_object = NULL;
@@ -713,9 +720,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_references = NULL;
         runtime->live_references_len = 0;
         runtime->live_references_capacity = 0;
-        for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
-            ptn_value_destroy(&runtime->temporary_roots[i]);
-        }
+        ptn_runtime_clear_temporary_roots(runtime);
         free(runtime->temporary_roots);
         runtime->temporary_roots = NULL;
         runtime->temporary_roots_len = 0;
@@ -2364,6 +2369,7 @@ static PTN_UNUSED void ptn_throw_exception_at(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -2397,6 +2403,7 @@ static PTN_UNUSED void ptn_throw_exception_at_without_current_trace_frame(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -2427,6 +2434,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -2455,6 +2463,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -2484,6 +2493,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_defined_location(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -2520,6 +2530,7 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -3032,6 +3043,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             longjmp(runtime->exceptions->try_frame->jump, 1);
         }
         ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+        ptn_runtime_shutdown_before_exit(runtime);
         exit(255);
         return ptn_null();
     }
@@ -3063,6 +3075,7 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
     return ptn_null();
 }
@@ -6369,6 +6382,7 @@ static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 

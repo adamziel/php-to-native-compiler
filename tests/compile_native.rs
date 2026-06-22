@@ -25791,6 +25791,160 @@ try {
 }
 
 #[test]
+fn compile_exception_clears_binary_temporary_root_before_catch_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-clears-binary-temporary-root");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-clears-binary-temporary-root.php");
+    let output = root.join("exception-clears-binary-temporary-root-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    function __construct() { echo __METHOD__, \"\\n\"; }
+    function __destruct() { echo __METHOD__, \"\\n\"; }
+}
+class Bar {
+    function __construct() {
+        echo __METHOD__, \"\\n\";
+        throw new Exception;
+    }
+    function __destruct() { echo __METHOD__, \"\\n\"; }
+}
+try {
+    new Foo() + new Bar();
+} catch (Exception $exc) {
+    echo \"Caught exception!\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Foo::__construct\nBar::__construct\nFoo::__destruct\nCaught exception!\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_exception_runs_shutdown_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-uncaught-exception-shutdown-destructors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uncaught-exception-shutdown-destructors.php");
+    let output = root.join("uncaught-exception-shutdown-destructors-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    function __destruct() {
+        echo \"Ha!\\n\";
+    }
+}
+$x = new Foo();
+bar();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Ha!\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Uncaught Error: Call to undefined function bar()"));
+}
+
+#[test]
+fn compile_shutdown_destructs_global_variables_in_reverse_root_order_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-reverse-root-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-reverse-root-order.php");
+    let output = root.join("shutdown-reverse-root-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    private $bar;
+    function __construct($bar) { $this->bar = $bar; }
+    function __destruct() {
+        echo __METHOD__, \"\\n\";
+        unset($this->bar);
+    }
+}
+class Bar {
+    function __destruct() { echo __METHOD__, \"\\n\"; }
+}
+$y = new Bar();
+$x = new Foo($y);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Foo::__destruct\nBar::__destruct\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_destructor_catch_preserves_unwinding_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-catch-preserves-unwind-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-catch-preserves-unwind-exception.php");
+    let output = root.join("destructor-catch-preserves-unwind-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+class aaa {
+    public function __destruct() {
+        try {
+            throw new Exception(__CLASS__);
+        } catch (Exception $ex) {
+            echo \"1. $ex\\n\";
+        }
+    }
+}
+function bbb() {
+    $a = new aaa();
+    throw new Exception(__FUNCTION__);
+}
+try {
+    bbb();
+    echo \"skip\\n\";
+} catch (Exception $ex) {
+    echo \"2. $ex\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_path = input.to_string_lossy();
+    assert!(stdout.contains("1. Exception: aaa in "));
+    assert!(
+        stdout.contains(&format!("#0 {input_path}(16): aaa->__destruct()")),
+        "{stdout}"
+    );
+    assert!(stdout.contains("2. Exception: bbb in "));
+    assert!(!stdout.contains("skip"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_shutdown_destructs_global_roots_before_contained_children_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-root-before-children");
     fs::create_dir_all(&root).unwrap();

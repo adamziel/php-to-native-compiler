@@ -1367,6 +1367,7 @@ struct PtnRuntime {
     size_t shutdown_function_index;
     int shutdown_functions_running;
     int shutdown_functions_completed;
+    int shutdown_in_progress;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
@@ -1552,6 +1553,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_symbols_free_with_runtime_scope(PtnSymbolTable *symbols, PtnRuntime *runtime);
+static void ptn_runtime_free(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_exception_free(PtnException *exception);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
@@ -1739,6 +1742,13 @@ static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
         return NULL;
     }
     return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static PTN_UNUSED void ptn_runtime_shutdown_before_exit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        ptn_runtime_free(root);
+    }
 }
 
 static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const char *path) {

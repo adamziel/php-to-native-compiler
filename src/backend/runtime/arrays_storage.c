@@ -1041,6 +1041,18 @@ static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime) {
     ptn_value_destroy(&root->temporary_roots[root->temporary_roots_len]);
 }
 
+static PTN_UNUSED void ptn_runtime_clear_temporary_roots(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    while (root->temporary_roots_len > 0) {
+        PtnValue abandoned_temporary = root->temporary_roots[root->temporary_roots_len - 1];
+        ptn_value_destroy(&abandoned_temporary);
+        ptn_runtime_pop_temporary_root(root);
+    }
+}
+
 static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int during_shutdown) {
     if (object == NULL || !object->destructor_enabled || object->destructor_called) {
         return;
@@ -1091,6 +1103,12 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     if (during_shutdown) {
         root->suppress_user_call_frame_location = 1;
     }
+    PtnException *saved_active_exception = root->exceptions == NULL
+        ? NULL
+        : root->exceptions->active_exception;
+    if (saved_active_exception != NULL) {
+        root->exceptions->active_exception = NULL;
+    }
     PtnValue result = ptn_null();
     PtnTryFrame destructor_frame;
     int catch_gc_exception = root->gc_running;
@@ -1098,6 +1116,10 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         ptn_try_frame_push(root, &destructor_frame);
         if (setjmp(destructor_frame.jump) != 0) {
             ptn_try_frame_pop(root, &destructor_frame);
+            if (saved_active_exception != NULL) {
+                ptn_exception_free(root->exceptions->active_exception);
+                root->exceptions->active_exception = saved_active_exception;
+            }
             root->suppress_user_call_frame_location =
                 previous_suppress_user_call_frame_location;
             root->destructor_shutdown_phase = previous_shutdown_phase;
@@ -1114,6 +1136,13 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         previous_suppress_user_call_frame_location;
     root->destructor_shutdown_phase = previous_shutdown_phase;
     root->current_class_name = previous_scope;
+    if (saved_active_exception != NULL) {
+        if (root->exceptions->active_exception == NULL) {
+            root->exceptions->active_exception = saved_active_exception;
+        } else {
+            ptn_exception_free(saved_active_exception);
+        }
+    }
     ptn_value_destroy(&result);
 }
 
@@ -1509,9 +1538,10 @@ static PTN_UNUSED size_t ptn_runtime_run_symbol_value_destructors(PtnSymbolTable
     }
 
     size_t destructors_ran = 0;
-    for (size_t i = 0; i < len; i++) {
-        destructors_ran += ptn_runtime_run_static_property_value_destructors(values[i], 0);
-        ptn_value_destroy(&values[i]);
+    for (size_t i = len; i > 0; i--) {
+        size_t index = i - 1;
+        destructors_ran += ptn_runtime_run_static_property_value_destructors(values[index], 0);
+        ptn_value_destroy(&values[index]);
     }
     free(values);
     return destructors_ran;

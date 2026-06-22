@@ -5436,6 +5436,7 @@ static void ptn_output_buffer_rethrow_active_exception(PtnRuntime *runtime) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -14521,6 +14522,7 @@ static void ptn_json_throw_exception(PtnRuntime *runtime, int error, size_t line
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -71650,6 +71652,7 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
         if (ptn_runtime_assert_bail(runtime)) {
             ptn_value_destroy(&callback);
             ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+            ptn_runtime_shutdown_before_exit(runtime);
             exit(255);
         }
         ptn_value_destroy(&callback);
@@ -80782,6 +80785,7 @@ static void ptn_dom_throw_exception_code(PtnRuntime *runtime, const char *messag
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
     ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 

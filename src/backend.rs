@@ -2514,6 +2514,7 @@ fn emit_user_functions(
         out.push_str(";\n");
         out.push_str("    }\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
+        out.push_str("    ptn_runtime_clear_temporary_roots(&runtime);\n");
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -22300,6 +22301,7 @@ fn emit_try(
         control_dispatch_label.is_some(),
     );
     out.push_str("        } else {\n");
+    out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
     if let Some(catch_entry_label) = &catch_entry_label {
         out.push_str("            ");
         out.push_str(catch_entry_label);

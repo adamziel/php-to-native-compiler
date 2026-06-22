@@ -813,8 +813,13 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime,
         return;
     }
     const char *previous_scope = root->destructor_access_scope;
+    size_t previous_call_site_line = root->call_site_line;
     root->destructor_access_scope = runtime->current_class_name;
+    if (runtime != root && runtime->call_site_line != 0) {
+        root->call_site_line = runtime->call_site_line;
+    }
     ptn_value_destroy(value);
+    root->call_site_line = previous_call_site_line;
     root->destructor_access_scope = previous_scope;
 }
 

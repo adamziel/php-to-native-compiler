@@ -1379,6 +1379,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
     }
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -1405,6 +1406,7 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
     }
+    ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
 
@@ -1987,6 +1989,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->shutdown_function_index = 0;
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
+    runtime->shutdown_in_progress = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;
     runtime->declared_method_exists = NULL;
