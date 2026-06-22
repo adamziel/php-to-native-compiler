@@ -32641,7 +32641,7 @@ static PtnValue ptn_internal_explode(PtnRuntime *runtime, size_t argc, const Ptn
 
     int64_t limit = argc >= 3 ? ptn_value_to_integer(args[2]) : INT64_MAX;
     if (limit == 0) {
-        limit = -1;
+        limit = 1;
     }
 
     size_t piece_count = ptn_explode_piece_count(string, separator);
