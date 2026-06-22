@@ -128776,6 +128776,8 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     return value;
 }
 
+static char *ptn_eval_source_path(PtnRuntime *runtime, size_t line);
+
 static int ptn_eval_identifier_start(unsigned char ch) {
     return ch == '_' ||
         ch == '\\' ||
@@ -128997,6 +128999,120 @@ static void ptn_eval_scan_magic_visibility(
             );
         }
     }
+}
+
+static int ptn_eval_class_declaration_prefix_has_keyword(
+    const char *code,
+    size_t class_pos,
+    const char *keyword
+) {
+    size_t start = class_pos;
+    while (start > 0) {
+        char ch = code[start - 1];
+        if (ch == ';' || ch == '{' || ch == '}') {
+            break;
+        }
+        start--;
+    }
+    for (size_t pos = start; pos < class_pos; pos++) {
+        if (ptn_eval_keyword_at(code, class_pos, pos, keyword)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_eval_first_abstract_method_name(
+    const char *code,
+    size_t body_start,
+    size_t body_end
+) {
+    for (size_t pos = body_start; pos < body_end; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, body_end, pos);
+            continue;
+        }
+
+        size_t cursor = pos;
+        int saw_modifier = 0;
+        int saw_abstract = 0;
+        while (cursor < body_end) {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor);
+            if (ptn_eval_keyword_at(code, body_end, cursor, "abstract")) {
+                saw_modifier = 1;
+                saw_abstract = 1;
+                cursor += strlen("abstract");
+            } else if (ptn_eval_keyword_at(code, body_end, cursor, "public")) {
+                saw_modifier = 1;
+                cursor += strlen("public");
+            } else if (ptn_eval_keyword_at(code, body_end, cursor, "protected")) {
+                saw_modifier = 1;
+                cursor += strlen("protected");
+            } else if (ptn_eval_keyword_at(code, body_end, cursor, "private")) {
+                saw_modifier = 1;
+                cursor += strlen("private");
+            } else if (ptn_eval_keyword_at(code, body_end, cursor, "static")) {
+                saw_modifier = 1;
+                cursor += strlen("static");
+            } else if (ptn_eval_keyword_at(code, body_end, cursor, "final")) {
+                saw_modifier = 1;
+                cursor += strlen("final");
+            } else {
+                break;
+            }
+        }
+        if (!saw_modifier || !saw_abstract) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, cursor);
+        if (!ptn_eval_keyword_at(code, body_end, cursor, "function")) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, cursor + strlen("function"));
+        if (cursor < body_end && code[cursor] == '&') {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor + 1);
+        }
+        if (cursor >= body_end || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            continue;
+        }
+        size_t method_start = cursor;
+        while (cursor < body_end && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        return ptn_duplicate_string_len(code + method_start, cursor - method_start);
+    }
+    return NULL;
+}
+
+static void ptn_eval_emit_abstract_method_fatal(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t line
+) {
+    int message_len = snprintf(
+        NULL,
+        0,
+        "Class %s declares abstract method %s() and must therefore be declared abstract",
+        class_name,
+        method_name
+    );
+    if (message_len < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)message_len + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)message_len + 1,
+        "Class %s declares abstract method %s() and must therefore be declared abstract",
+        class_name,
+        method_name
+    );
+    char *path = ptn_eval_source_path(runtime, line);
+    ptn_emit_fatal_error_at(runtime, message, path, 1);
 }
 
 static int ptn_eval_parse_string_literal_value(
@@ -129277,6 +129393,21 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
         }
         if (body_open < len && code[body_open] == '{') {
             size_t body_close = ptn_eval_find_matching_brace(code, len, body_open);
+            if (!ptn_eval_class_declaration_prefix_has_keyword(code, pos, "abstract")) {
+                char *abstract_method_name = ptn_eval_first_abstract_method_name(
+                    code,
+                    body_open + 1,
+                    body_close
+                );
+                if (abstract_method_name != NULL) {
+                    ptn_eval_emit_abstract_method_fatal(
+                        runtime,
+                        class_name,
+                        abstract_method_name,
+                        line
+                    );
+                }
+            }
             ptn_eval_scan_magic_visibility(
                 runtime,
                 code,

@@ -14405,29 +14405,46 @@ fn validate_method_signature_compatibility(
                         Some(method.span),
                     ));
                 }
-                if method_requires_parent_visibility_compatibility(method, parent_method)
-                    && !method_visibility_compatibility_deferred_to_runtime(method)
-                    && visibility_rank(method.visibility)
-                        > visibility_rank(parent_method.visibility)
-                {
-                    let (required_class, required_method) =
-                        method_visibility_requirement_source(parent_class, parent_method, classes);
-                    let suffix = if required_method.visibility == PropertyVisibility::Public {
-                        ""
+                let inherited_visibility_requirement =
+                    if method_requires_parent_visibility_compatibility(method, parent_method) {
+                        Some((parent_class, parent_method))
                     } else {
-                        " or weaker"
+                        inherited_abstract_constructor_visibility_requirement(
+                            method,
+                            parent_class,
+                            parent_method,
+                            classes,
+                        )
                     };
-                    return Err(Diagnostic::new(
-                        format!(
-                            "Access level to {}::{}() must be {} (as in class {}){}",
-                            class.name,
-                            method.name,
-                            property_visibility_name(required_method.visibility),
-                            required_class.name,
-                            suffix
-                        ),
-                        Some(method.span),
-                    ));
+                if let Some((visibility_class, visibility_method)) =
+                    inherited_visibility_requirement
+                {
+                    let (required_class, required_method) = method_visibility_requirement_source(
+                        visibility_class,
+                        visibility_method,
+                        classes,
+                    );
+                    if !method_visibility_compatibility_deferred_to_runtime(method)
+                        && visibility_rank(method.visibility)
+                            > visibility_rank(required_method.visibility)
+                    {
+                        let suffix = if required_method.visibility == PropertyVisibility::Public {
+                            ""
+                        } else {
+                            " or weaker"
+                        };
+                        return Err(Diagnostic::new(
+                            format!(
+                                "Access level to {}::{}() must be {} (as in class {}){}",
+                                class.name,
+                                method.name,
+                                property_visibility_name(required_method.visibility),
+                                required_class.name,
+                                suffix
+                            ),
+                            Some(method.span),
+                        ));
+                    }
                 }
                 if method.visibility == PropertyVisibility::Private {
                     continue;
@@ -14893,6 +14910,22 @@ fn method_requires_parent_visibility_compatibility(
     parent_method: &MethodDecl,
 ) -> bool {
     !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+fn inherited_abstract_constructor_visibility_requirement<'a>(
+    method: &MethodDecl,
+    parent_class: &'a ClassDecl,
+    parent_method: &'a MethodDecl,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    if !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract {
+        return None;
+    }
+    let (required_class, required_method) =
+        method_visibility_requirement_source(parent_class, parent_method, classes);
+    required_method
+        .is_abstract
+        .then_some((required_class, required_method))
 }
 
 fn method_visibility_compatibility_deferred_to_runtime(method: &MethodDecl) -> bool {

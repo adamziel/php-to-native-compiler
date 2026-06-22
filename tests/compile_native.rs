@@ -16766,6 +16766,40 @@ var_dump(class_exists('defclass', false));
 }
 
 #[test]
+fn compile_eval_concrete_class_with_abstract_method_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-abstract-method-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-abstract-method-fatal.php");
+    let output = root.join("eval-abstract-method-fatal-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval('
+class EvalConcreteWithAbstract {
+    abstract static function func();
+}
+');
+echo "unreached\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Class EvalConcreteWithAbstract declares abstract method func() and must therefore be declared abstract in "
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("eval()'d code on line "), "{stderr}");
+}
+
+#[test]
 fn compile_eval_array_mutations_use_current_scope_to_native_binary() {
     let root = temp_dir("ptn-native-eval-array-mutations");
     fs::create_dir_all(&root).unwrap();
