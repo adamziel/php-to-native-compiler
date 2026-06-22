@@ -13739,6 +13739,138 @@ echo serialize($box), "\n";
 }
 
 #[test]
+fn compile_unserialize_reference_publish_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-reference-publish-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-reference-publish-slots.php");
+    let output = root.join("unserialize-reference-publish-slots-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class test
+{
+    var $ryat;
+
+    function __wakeup()
+    {
+        $this->ryat = 1;
+    }
+}
+
+class obj {
+    var $ryat;
+    function __wakeup() {
+        $this->ryat = 0x1122334455;
+    }
+}
+
+$data = unserialize('a:2:{i:0;O:4:"test":1:{s:4:"ryat";R:1;}i:1;i:2;}');
+var_dump($data);
+
+$poc = 'O:8:"stdClass":1:{i:0;O:3:"obj":1:{s:4:"ryat";R:1;}}';
+var_dump(unserialize($poc));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(73588229205)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_date_interval_unserialize_overwrites_internal_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-date-interval-unserialize-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-interval-unserialize-properties.php");
+    let output = root.join("date-interval-unserialize-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data = unserialize('a:2:{i:0;O:12:"DateInterval":1:{s:1:"y";R:1;}i:1;i:2;}');
+var_dump($data[0]->y, $data[1], $data[0]->days, $data[0]->from_string);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("int(-1)\n", "int(2)\n", "int(-1)\n", "bool(false)\n",)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_serialize_repeated_cow_array_object_graph_to_native_binary() {
+    let root = temp_dir("ptn-native-serialize-repeated-cow-array-object-graph");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serialize-repeated-cow-array-object-graph.php");
+    let output = root.join("serialize-repeated-cow-array-object-graph-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Item {
+    public $children = [];
+    public $parent = null;
+
+    public function __sleep() {
+        return ["children", "parent"];
+    }
+}
+
+$baseProduct = new Item();
+
+$child = new Item();
+$child->parent = $baseProduct;
+$baseProduct->children = [ $child ];
+
+$data = [clone $baseProduct, $baseProduct];
+
+echo serialize($data), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a:2:{i:0;O:4:\"Item\":2:{s:8:\"children\";a:1:{i:0;O:4:\"Item\":2:{s:8:\"children\";a:0:{}s:6:\"parent\";O:4:\"Item\":2:{s:8:\"children\";a:1:{i:0;r:4;}s:6:\"parent\";N;}}}s:6:\"parent\";N;}i:1;r:6;}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_payload_nested_serialize_reuses_outer_ids_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-payload-nested-ids");
     fs::create_dir_all(&root).unwrap();

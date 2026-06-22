@@ -8775,10 +8775,7 @@ static void ptn_serialize_append_array(
     PtnSerializeState *state,
     int allow_seen_array
 ) {
-    if (!allow_seen_array && ptn_dump_seen_arrays_contains(&state->seen, array)) {
-        ptn_string_buffer_append(buffer, "N;");
-        return;
-    }
+    (void)allow_seen_array;
 
     ptn_string_buffer_append_format(buffer, "a:%zu:{", array->len);
     ptn_dump_seen_arrays_push(&state->seen, array);
@@ -10799,14 +10796,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         entry->reference->refcount++;
         return ptn_reference_value(entry->reference);
     }
-    if (entry->slot != NULL) {
-        PtnValue value = ptn_value_deref(*entry->slot);
-        if (value.type == PTN_OBJECT && !entry->slot_is_container_entry) {
-            PtnReference *reference = ptn_unserialize_reference_new_owned(ptn_value_clone(value));
-            entry->reference = reference;
-            return ptn_reference_value(reference);
-        }
-    } else if (entry->retained_object != NULL) {
+    if (entry->slot == NULL && entry->retained_object != NULL) {
         PtnReference *reference = ptn_unserialize_reference_new_owned(
             ptn_value_clone(ptn_object(entry->retained_object))
         );
@@ -13275,18 +13265,20 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 result.value.type != PTN_OBJECT) {
                 return result;
             }
+            PtnObject *object_shell = result.value.as.object;
+            PtnValue object_value = ptn_object(object_shell);
             int plain_root_serializable_user_class =
-                ptn_unserialize_object_is_plain_root_serializable_user_class(runtime, result.value);
+                ptn_unserialize_object_is_plain_root_serializable_user_class(runtime, object_value);
             int use_magic_unserialize =
                 plain_root_serializable_user_class
                     ? 0
-                    : ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
+                    : ptn_unserialize_declared_magic_method_exists(runtime, object_value, "__unserialize");
             if (!use_magic_unserialize &&
                 !plain_root_serializable_user_class &&
-                ptn_unserialize_object_implements_interface(runtime, result.value, "Serializable")) {
+                ptn_unserialize_object_implements_interface(runtime, object_value, "Serializable")) {
                 ptn_unserialize_emit_erroneous_data_format_warning(
                     runtime,
-                    result.value.as.object->class_name,
+                    object_shell->class_name,
                     state->line
                 );
                 ptn_unserialize_update_slot(state, result.id, &result.value);
@@ -13319,7 +13311,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 }
                 ptn_unserialize_queue_magic_callback(
                     state,
-                    result.value,
+                    object_value,
                     "__unserialize",
                     1,
                     &payload,
@@ -13341,7 +13333,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                         !ptn_unserialize_store_object_property_entry(
                             runtime,
                             state,
-                            result.value.as.object,
+                            object_shell,
                             key,
                             parsed,
                             0
@@ -13355,13 +13347,13 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             if (!plain_root_serializable_user_class) {
-                ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
-                ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
-                ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
-                if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
+                ptn_unserialize_hydrate_spl_array_backed_object(runtime, object_value, state->line);
+                ptn_bcmath_number_hydrate_unserialized(runtime, object_value, state->line);
+                ptn_zip_archive_hydrate_unserialized(runtime, state, object_value);
+                if (ptn_unserialize_declared_magic_method_exists(runtime, object_value, "__wakeup")) {
                     ptn_unserialize_queue_magic_callback(
                         state,
-                        result.value,
+                        object_value,
                         "__wakeup",
                         0,
                         NULL,
@@ -74870,6 +74862,48 @@ static void ptn_date_interval_data_free(void *data) {
     free(interval);
 }
 
+static void ptn_date_interval_data_init_unserialized(PtnDateIntervalData *data) {
+    memset(data, 0, sizeof(*data));
+    data->years = -1;
+    data->months = -1;
+    data->days = -1;
+    data->hours = -1;
+    data->minutes = -1;
+    data->seconds = -1;
+    data->has_total_days = 1;
+    data->total_days = -1;
+}
+
+static int ptn_date_interval_unserialize_numeric_field(PtnValue value, int64_t *out) {
+    PtnValue resolved = ptn_value_deref(value);
+    switch (resolved.type) {
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+            *out = ptn_value_to_integer(resolved);
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_date_interval_unserialize_float_field(PtnValue value, double *out) {
+    PtnValue resolved = ptn_value_deref(value);
+    switch (resolved.type) {
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+            *out = ptn_value_to_double(resolved);
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static void ptn_internal_iterator_data_free(void *data) {
     PtnInternalIteratorData *iterator = (PtnInternalIteratorData *)data;
     if (iterator == NULL) {
@@ -76239,23 +76273,76 @@ static void ptn_date_interval_declare_int_property(
     int64_t value,
     size_t line
 ) {
-    PtnValue assigned = ptn_object_declare_property(
-        runtime,
-        object,
+    (void)runtime;
+    (void)line;
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT || object.as.object == NULL) {
+        return;
+    }
+    ptn_object_register_property_metadata(
+        object.as.object,
         name,
         "DateInterval",
         PTN_PROPERTY_PUBLIC,
         PTN_PROPERTY_PUBLIC,
         0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
         PTN_PROPERTY_TYPE_NONE,
         NULL,
         NULL,
-        0,
-        1,
-        ptn_int(value),
-        line
+        0
     );
-    ptn_value_destroy(&assigned);
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key(name),
+        ptn_int(value)
+    );
+}
+
+static void ptn_date_interval_declare_value_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    (void)runtime;
+    (void)line;
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT || object.as.object == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+    ptn_object_register_property_metadata(
+        object.as.object,
+        name,
+        "DateInterval",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0
+    );
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key(name),
+        value
+    );
 }
 
 static void ptn_date_interval_sync_properties(PtnRuntime *runtime, PtnValue object, size_t line) {
@@ -76264,40 +76351,20 @@ static void ptn_date_interval_sync_properties(PtnRuntime *runtime, PtnValue obje
     }
     PtnDateIntervalData *data = (PtnDateIntervalData *)object.as.object->native_data;
     if (data->from_string) {
-        PtnValue assigned = ptn_object_declare_property(
+        ptn_date_interval_declare_value_property(
             runtime,
             object,
             "from_string",
-            "DateInterval",
-            PTN_PROPERTY_PUBLIC,
-            PTN_PROPERTY_PUBLIC,
-            0,
-            PTN_PROPERTY_TYPE_NONE,
-            NULL,
-            NULL,
-            0,
-            1,
             ptn_bool(1),
             line
         );
-        ptn_value_destroy(&assigned);
-        assigned = ptn_object_declare_property(
+        ptn_date_interval_declare_value_property(
             runtime,
             object,
             "date_string",
-            "DateInterval",
-            PTN_PROPERTY_PUBLIC,
-            PTN_PROPERTY_PUBLIC,
-            0,
-            PTN_PROPERTY_TYPE_NONE,
-            NULL,
-            NULL,
-            0,
-            1,
             ptn_string(data->date_string == NULL ? "" : data->date_string),
             line
         );
-        ptn_value_destroy(&assigned);
         return;
     }
     ptn_date_interval_declare_int_property(runtime, object, "y", data->years, line);
@@ -76306,58 +76373,28 @@ static void ptn_date_interval_sync_properties(PtnRuntime *runtime, PtnValue obje
     ptn_date_interval_declare_int_property(runtime, object, "h", data->hours, line);
     ptn_date_interval_declare_int_property(runtime, object, "i", data->minutes, line);
     ptn_date_interval_declare_int_property(runtime, object, "s", data->seconds, line);
-    PtnValue assigned = ptn_object_declare_property(
+    ptn_date_interval_declare_value_property(
         runtime,
         object,
         "f",
-        "DateInterval",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
-        1,
         ptn_float(data->fraction),
         line
     );
-    ptn_value_destroy(&assigned);
     ptn_date_interval_declare_int_property(runtime, object, "invert", data->invert, line);
-    assigned = ptn_object_declare_property(
+    ptn_date_interval_declare_value_property(
         runtime,
         object,
         "days",
-        "DateInterval",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
-        1,
         data->has_total_days ? ptn_int(data->total_days) : ptn_bool(0),
         line
     );
-    ptn_value_destroy(&assigned);
-    assigned = ptn_object_declare_property(
+    ptn_date_interval_declare_value_property(
         runtime,
         object,
         "from_string",
-        "DateInterval",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
-        1,
         ptn_bool(data->from_string),
         line
     );
-    ptn_value_destroy(&assigned);
 }
 
 static int ptn_date_interval_parse_number(const char **cursor, int64_t *out) {
@@ -77718,12 +77755,12 @@ static PtnValue ptn_date_interval_unserialize_array(
         if (data == NULL) {
             ptn_abort_out_of_memory();
         }
-        memset(data, 0, sizeof(*data));
+        ptn_date_interval_data_init_unserialized(data);
         receiver.as.object->native_data = data;
         receiver.as.object->native_data_free = ptn_date_interval_data_free;
     } else {
         free(data->date_string);
-        memset(data, 0, sizeof(*data));
+        ptn_date_interval_data_init_unserialized(data);
     }
     const char *integer_names[] = { "y", "m", "d", "h", "i", "s" };
     int64_t *integer_slots[] = {
@@ -77739,20 +77776,23 @@ static PtnValue ptn_date_interval_unserialize_array(
         PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
         ptn_array_key_free(key);
         if (entry != NULL) {
-            *integer_slots[i] = ptn_value_to_integer(entry->value);
+            ptn_date_interval_unserialize_numeric_field(entry->value, integer_slots[i]);
         }
     }
     PtnArrayKey invert_key = ptn_array_string_key("invert");
     PtnArrayEntry *invert_entry = ptn_array_entry_for_key(array, invert_key);
     ptn_array_key_free(invert_key);
     if (invert_entry != NULL) {
-        data->invert = ptn_value_to_integer(invert_entry->value) != 0;
+        int64_t invert = 0;
+        if (ptn_date_interval_unserialize_numeric_field(invert_entry->value, &invert)) {
+            data->invert = invert != 0;
+        }
     }
     PtnArrayKey key = ptn_array_string_key("f");
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
     ptn_array_key_free(key);
     if (entry != NULL) {
-        data->fraction = ptn_value_to_double(entry->value);
+        ptn_date_interval_unserialize_float_field(entry->value, &data->fraction);
     }
     key = ptn_array_string_key("days");
     entry = ptn_array_entry_for_key(array, key);
@@ -77762,9 +77802,8 @@ static PtnValue ptn_date_interval_unserialize_array(
         if (days.type == PTN_BOOL && !days.as.boolean) {
             data->has_total_days = 0;
             data->total_days = 0;
-        } else {
+        } else if (ptn_date_interval_unserialize_numeric_field(days, &data->total_days)) {
             data->has_total_days = 1;
-            data->total_days = ptn_value_to_integer(days);
         }
     }
     key = ptn_array_string_key("from_string");
