@@ -118465,11 +118465,13 @@ static int ptn_spl_heap_payload_to_native_storage(
     PtnValue flags = flags_entry == NULL ? ptn_null() : ptn_value_deref(flags_entry->value);
     PtnValue elements =
         elements_entry == NULL ? ptn_null() : ptn_value_deref(elements_entry->value);
+    int64_t parsed_flags = flags.type == PTN_INT ? flags.as.integer : 0;
+    if (is_priority_queue) {
+        parsed_flags &= PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH;
+    }
     if (flags.type != PTN_INT ||
         elements.type != PTN_ARRAY ||
-        (is_priority_queue &&
-         (flags.as.integer <= 0 ||
-          (flags.as.integer & ~((int64_t)PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH)) != 0))) {
+        (is_priority_queue && parsed_flags == 0)) {
         ptn_spl_heap_throw_unserialize_data_error(runtime, class_name);
         return 0;
     }
@@ -118525,7 +118527,7 @@ static int ptn_spl_heap_payload_to_native_storage(
 
     *values_out = values;
     *priorities_out = priorities;
-    *flags_out = flags.as.integer;
+    *flags_out = parsed_flags;
     return 1;
 }
 
