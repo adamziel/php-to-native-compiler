@@ -14692,6 +14692,68 @@ var_dump(unserialize('O:3:"obj":1:{'));
 }
 
 #[test]
+fn compile_unserialize_failed_wakeup_suppresses_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-failed-wakeup-destructors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-failed-wakeup-destructors.php");
+    let output = root.join("unserialize-failed-wakeup-destructors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[AllowDynamicProperties]
+class Test1 {
+    public function __wakeup() { echo "Wakeup\n"; }
+    public function __destruct() { echo "Dtor\n"; }
+}
+
+#[AllowDynamicProperties]
+class Test2 {
+    public function __wakeup() { throw new Exception("Unserialization forbidden"); }
+    public function __destruct() { echo "Dtor\n"; }
+}
+
+var_dump(unserialize('O:5:"Test1":1:{s:10:"";}'));
+var_dump(unserialize('O:5:"Test1":2:{i:0;R:1;s:10:"";}'));
+
+try {
+    var_dump(unserialize('O:5:"Test2":0:{}'));
+} catch (Exception $e) {
+    echo "Caught\n";
+}
+
+try {
+    var_dump(unserialize('O:5:"Test2":1:{i:0;R:1;}'));
+} catch (Exception $e) {
+    echo "Caught\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 17 of 24 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 25 of 32 bytes"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 2, "{stdout}");
+    assert_eq!(stdout.matches("Caught").count(), 2, "{stdout}");
+    assert!(
+        !stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Dtor"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_declared_payload_length_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-declared-payload-offsets");
     fs::create_dir_all(&root).unwrap();

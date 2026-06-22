@@ -10513,6 +10513,44 @@ static void ptn_unserialize_preserve_failed_nested_ids(
     }
 }
 
+static void ptn_unserialize_disable_destructor_for_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        value.as.object->destructor_enabled = 0;
+    }
+}
+
+static void ptn_unserialize_disable_failed_object_destructors(
+    PtnUnserializeState *state,
+    size_t saved_id_len,
+    size_t saved_callback_len
+) {
+    if (state == NULL) {
+        return;
+    }
+    if (saved_id_len > state->id_len) {
+        saved_id_len = state->id_len;
+    }
+    for (size_t i = saved_id_len; i < state->id_len; i++) {
+        PtnUnserializeIdEntry *entry = &state->ids[i];
+        if (entry->retained_object != NULL) {
+            entry->retained_object->destructor_enabled = 0;
+        }
+        if (entry->slot != NULL) {
+            ptn_unserialize_disable_destructor_for_value(*entry->slot);
+        }
+        if (entry->has_retained_value) {
+            ptn_unserialize_disable_destructor_for_value(entry->retained_value);
+        }
+    }
+    if (saved_callback_len > state->pending_callback_len) {
+        saved_callback_len = state->pending_callback_len;
+    }
+    for (size_t i = saved_callback_len; i < state->pending_callback_len; i++) {
+        ptn_unserialize_disable_destructor_for_value(state->pending_callbacks[i].object);
+    }
+}
+
 static void ptn_unserialize_invalidate_slot(PtnUnserializeState *state, PtnValue *slot) {
     if (slot == NULL) {
         return;
@@ -10685,10 +10723,11 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
     }
     if (type == 's') {
         size_t len = 0;
-        if (!ptn_unserialize_parse_unsigned(state, &len) ||
+        size_t len_start = state->pos;
+        if (!ptn_unserialize_parse_unsigned_fail_at(state, key_start, &len) ||
             !ptn_unserialize_consume(state, ':') ||
             !ptn_unserialize_consume(state, '"') ||
-            !ptn_unserialize_require(state, len)) {
+            !ptn_unserialize_require_declared_payload(state, len, len_start)) {
             return 0;
         }
         const char *string = state->data + state->pos;
@@ -13338,8 +13377,18 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
             state->pos += class_len;
             if (!ptn_unserialize_consume(state, '"') ||
-                !ptn_unserialize_consume(state, ':') ||
-                !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &payload_len) ||
+                !ptn_unserialize_consume(state, ':')) {
+                free(class_name);
+                return result;
+            }
+            if (!ptn_unserialize_has(state, 1) ||
+                state->data[state->pos] < '0' ||
+                state->data[state->pos] > '9') {
+                ptn_unserialize_fail_at(state, state->pos);
+                free(class_name);
+                return result;
+            }
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &payload_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 free(class_name);
@@ -14228,6 +14277,11 @@ static int ptn_unserialize_value_from_operand(
         }
 
         if (caught_exception) {
+            ptn_unserialize_disable_failed_object_destructors(
+                active_state,
+                saved_id_len,
+                saved_callback_len
+            );
             ptn_value_destroy(&parsed.value);
             ptn_unserialize_truncate_pending_callbacks(active_state, saved_callback_len);
             ptn_unserialize_preserve_failed_nested_ids(active_state, saved_id_len);
@@ -14239,6 +14293,11 @@ static int ptn_unserialize_value_from_operand(
             if (unexpected_end_out != NULL) {
                 *unexpected_end_out = unexpected_end;
             }
+            ptn_unserialize_disable_failed_object_destructors(
+                active_state,
+                saved_id_len,
+                saved_callback_len
+            );
             if (emit_diagnostics) {
                 if (unexpected_end) {
                     ptn_unserialize_emit_unexpected_end_warning(runtime, line);
@@ -14323,6 +14382,7 @@ static int ptn_unserialize_value_from_operand(
     }
 
     if (caught_exception) {
+        ptn_unserialize_disable_failed_object_destructors(&state, 0, 0);
         ptn_value_destroy(&parsed.value);
         ptn_unserialize_state_free(&state);
         ptn_string_operand_free(input);
@@ -14333,6 +14393,7 @@ static int ptn_unserialize_value_from_operand(
         if (unexpected_end_out != NULL) {
             *unexpected_end_out = unexpected_end;
         }
+        ptn_unserialize_disable_failed_object_destructors(&state, 0, 0);
         if (emit_diagnostics) {
             if (unexpected_end) {
                 ptn_unserialize_emit_unexpected_end_warning(runtime, line);
