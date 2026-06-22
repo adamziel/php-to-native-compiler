@@ -99257,6 +99257,7 @@ static int ptn_reflection_constant_method_exists(const char *method_name) {
 
 static int ptn_reflection_attribute_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getArguments")
         || ptn_ascii_case_equal(method_name, "getTarget")
@@ -100556,6 +100557,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_reflection_attribute(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "__toString",
             "getName",
             "getArguments",
             "getTarget",
@@ -102024,6 +102026,7 @@ static PtnValue ptn_reflection_class_instantiate(
 typedef struct {
     char *name;
     PtnValue arguments;
+    PtnValue argument_representations;
     PtnValue constructor_arguments;
     char *arguments_error_class;
     char *arguments_error_message;
@@ -102041,6 +102044,7 @@ static void ptn_reflection_attribute_data_free(void *data) {
     }
     free(attribute_data->name);
     ptn_value_destroy(&attribute_data->arguments);
+    ptn_value_destroy(&attribute_data->argument_representations);
     ptn_value_destroy(&attribute_data->constructor_arguments);
     free(attribute_data->arguments_error_class);
     free(attribute_data->arguments_error_message);
@@ -102068,6 +102072,7 @@ static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
     PtnRuntime *runtime,
     const char *name,
     PtnValue arguments,
+    PtnValue argument_representations,
     PtnValue constructor_arguments,
     int target,
     int is_repeated,
@@ -102082,6 +102087,7 @@ static PtnValue ptn_reflection_attribute_object_from_name(
     PtnRuntime *runtime,
     const char *name,
     PtnValue arguments,
+    PtnValue argument_representations,
     PtnValue constructor_arguments,
     int target,
     int is_repeated,
@@ -102093,6 +102099,7 @@ static PtnValue ptn_reflection_attribute_object_from_name(
         runtime,
         name,
         arguments,
+        argument_representations,
         constructor_arguments,
         target,
         is_repeated,
@@ -102108,6 +102115,7 @@ static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
     PtnRuntime *runtime,
     const char *name,
     PtnValue arguments,
+    PtnValue argument_representations,
     PtnValue constructor_arguments,
     int target,
     int is_repeated,
@@ -102123,6 +102131,7 @@ static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
     }
     data->name = ptn_duplicate_string(name);
     data->arguments = ptn_value_clone_deref(arguments);
+    data->argument_representations = ptn_value_clone_deref(argument_representations);
     data->constructor_arguments = ptn_value_clone_deref(constructor_arguments);
     data->arguments_error_class = error_class == NULL ? NULL : ptn_duplicate_string(error_class);
     data->arguments_error_message = error_message == NULL ? NULL : ptn_duplicate_string(error_message);
@@ -102143,6 +102152,156 @@ static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
     return object;
 }
 
+static PtnValue ptn_reflection_attribute_clone_argument_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY && resolved.as.array != NULL) {
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < resolved.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved.as.array->entries[i];
+            PtnValue cloned = ptn_reflection_attribute_clone_argument_value(runtime, entry->value, line);
+            if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&cloned);
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+            ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), cloned);
+        }
+        return result;
+    }
+    if (resolved.type == PTN_OBJECT) {
+        return ptn_clone_value(runtime, resolved, line);
+    }
+    return ptn_value_clone_deref(resolved);
+}
+
+static PtnValue ptn_reflection_attribute_clone_arguments(
+    PtnRuntime *runtime,
+    PtnValue arguments,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(arguments);
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL) {
+        return ptn_reflection_attribute_clone_argument_value(runtime, resolved, line);
+    }
+    return ptn_reflection_attribute_clone_argument_value(runtime, resolved, line);
+}
+
+static void ptn_reflection_attribute_append_argument_value_repr(
+    PtnStringBuffer *buffer,
+    PtnValue value
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    switch (resolved.type) {
+        case PTN_STRING:
+            ptn_match_append_quoted_string(buffer, resolved.as.string, SIZE_MAX);
+            return;
+        case PTN_NULL:
+            ptn_string_buffer_append(buffer, "NULL");
+            return;
+        case PTN_BOOL:
+            ptn_string_buffer_append(buffer, resolved.as.boolean ? "true" : "false");
+            return;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)resolved.as.integer);
+            return;
+        case PTN_FLOAT:
+            ptn_string_buffer_append_format(buffer, "%.14G", resolved.as.floating);
+            return;
+        case PTN_ARRAY:
+            ptn_string_buffer_append(buffer, "Array");
+            return;
+        case PTN_OBJECT:
+            ptn_string_buffer_append_format(buffer, "new \\%s()", resolved.as.object->class_name);
+            return;
+        case PTN_CLOSURE:
+            ptn_string_buffer_append(buffer, "Closure");
+            return;
+        case PTN_EXCEPTION:
+            ptn_string_buffer_append_format(buffer, "new \\%s()", resolved.as.exception->class_name);
+            return;
+        case PTN_RESOURCE:
+            ptn_string_buffer_append(buffer, "Resource");
+            return;
+        case PTN_REFERENCE:
+            ptn_reflection_attribute_append_argument_value_repr(buffer, resolved);
+            return;
+    }
+}
+
+static void ptn_reflection_attribute_append_argument_repr(
+    PtnStringBuffer *buffer,
+    PtnReflectionAttributeData *data,
+    size_t index
+) {
+    PtnValue representations = ptn_value_deref(data->argument_representations);
+    if (representations.type == PTN_ARRAY && representations.as.array != NULL && index < representations.as.array->len) {
+        PtnValue representation = ptn_value_deref(representations.as.array->entries[index].value);
+        if (representation.type == PTN_STRING) {
+            ptn_string_buffer_append_len(
+                buffer,
+                (const char *)representation.as.string.data,
+                representation.as.string.len
+            );
+            return;
+        }
+    }
+    PtnValue arguments = ptn_value_deref(data->arguments);
+    if (arguments.type == PTN_ARRAY && arguments.as.array != NULL && index < arguments.as.array->len) {
+        ptn_reflection_attribute_append_argument_value_repr(buffer, arguments.as.array->entries[index].value);
+    }
+}
+
+static PtnValue ptn_reflection_attribute_to_string(
+    PtnRuntime *runtime,
+    PtnReflectionAttributeData *data,
+    size_t argc,
+    const PtnValue *args
+) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    PtnValue arguments = ptn_value_deref(data->arguments);
+    PtnValue representations = ptn_value_deref(data->argument_representations);
+    size_t argument_count = arguments.type == PTN_ARRAY && arguments.as.array != NULL
+        ? arguments.as.array->len
+        : 0;
+    size_t representation_count = representations.type == PTN_ARRAY && representations.as.array != NULL
+        ? representations.as.array->len
+        : 0;
+    if (representation_count > argument_count) {
+        argument_count = representation_count;
+    }
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append_format(&buffer, "Attribute [ %s ]", data->name);
+    if (argument_count == 0) {
+        ptn_string_buffer_append_char(&buffer, '\n');
+        return ptn_owned_string(buffer.data);
+    }
+    ptn_string_buffer_append_format(&buffer, " {\n  - Arguments [%zu] {\n", argument_count);
+    for (size_t i = 0; i < argument_count; i++) {
+        PtnArrayEntry *entry = NULL;
+        if (arguments.type == PTN_ARRAY && arguments.as.array != NULL && i < arguments.as.array->len) {
+            entry = &arguments.as.array->entries[i];
+        } else if (representations.type == PTN_ARRAY && representations.as.array != NULL && i < representations.as.array->len) {
+            entry = &representations.as.array->entries[i];
+        }
+        ptn_string_buffer_append_format(&buffer, "    Argument #%zu [ ", i);
+        if (entry != NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
+            ptn_string_buffer_append_len(&buffer, entry->key.as.string, entry->key.string_len);
+            ptn_string_buffer_append(&buffer, " = ");
+        }
+        ptn_reflection_attribute_append_argument_repr(&buffer, data, i);
+        ptn_string_buffer_append(&buffer, " ]\n");
+    }
+    ptn_string_buffer_append(&buffer, "  }\n}\n");
+    return ptn_owned_string(buffer.data);
+}
+
 static PtnValue ptn_reflection_class_attribute_metadata(PtnRuntime *runtime, const char *class_name) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (ptn_internal_class_name_is_attribute(class_name)) {
@@ -102155,6 +102314,7 @@ static PtnValue ptn_reflection_class_attribute_metadata(PtnRuntime *runtime, con
                 runtime,
                 "Attribute",
                 arguments,
+                ptn_null(),
                 arguments,
                 1,
                 0,
@@ -102309,6 +102469,12 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
         );
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_attribute_check_exact_arguments(runtime, "__toString", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_attribute_to_string(runtime, data, argc, args);
+    }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "getName", argc, 0);
         return runtime->exceptions->active_exception != NULL
@@ -102328,7 +102494,7 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             );
             return ptn_null();
         }
-        return ptn_value_clone_deref(data->arguments);
+        return ptn_reflection_attribute_clone_arguments(runtime, data->arguments, line);
     }
     if (ptn_ascii_case_equal(name, "getTarget")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "getTarget", argc, 0);
@@ -102463,7 +102629,13 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             );
             return ptn_null();
         }
-        PtnValue arguments = ptn_value_deref(data->constructor_arguments);
+        PtnValue constructor_arguments =
+            ptn_reflection_attribute_clone_arguments(runtime, data->constructor_arguments, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&constructor_arguments);
+            return ptn_null();
+        }
+        PtnValue arguments = ptn_value_deref(constructor_arguments);
         size_t ctor_argc = arguments.type == PTN_ARRAY ? arguments.as.array->len : 0;
         PtnValue *ctor_args = NULL;
         if (ctor_argc != 0) {
@@ -102507,6 +102679,7 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
         runtime->strict_types = saved_strict_types;
         runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
         ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
+        ptn_value_destroy(&constructor_arguments);
         for (size_t i = 0; i < ctor_argc; i++) {
             ptn_value_destroy(&ctor_args[i]);
         }
@@ -107679,6 +107852,7 @@ static PtnValue ptn_internal_constant_reflection_attributes(
         runtime,
         "Deprecated",
         arguments,
+        ptn_null(),
         constructor_arguments,
         64,
         0,
@@ -107759,6 +107933,7 @@ static PtnValue ptn_reflection_class_get_attributes(
         runtime,
         "Attribute",
         arguments,
+        ptn_null(),
         arguments,
         1,
         0,
