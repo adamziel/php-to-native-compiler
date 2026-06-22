@@ -99975,6 +99975,10 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
     const char *const *previous_arg_names = runtime->next_call_arg_names;
     int previous_suppress_user_call_frame_location =
         runtime->suppress_user_call_frame_location;
+    int previous_warn_by_ref_argument_mismatch =
+        runtime->warn_by_ref_argument_mismatch;
+    int previous_throw_argument_count_errors =
+        runtime->throw_argument_count_errors;
     PtnTraceFrame trace_frame;
     PtnTryFrame dispatch_frame;
     ptn_runtime_push_trace_frame(
@@ -99993,10 +99997,16 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
         runtime->current_class_name = previous_current_class;
         runtime->suppress_user_call_frame_location =
             previous_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            previous_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            previous_throw_argument_count_errors;
         ptn_runtime_pop_trace_frame(runtime, &trace_frame);
         ptn_rethrow_exception(runtime);
         return ptn_null();
     }
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
     PtnNormalizedCallArguments normalized;
     PtnFunctionMetadata method_metadata = ptn_reflection_method_function_metadata(data);
     int normalized_active = ptn_normalize_named_call_arguments(
@@ -100015,6 +100025,10 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
         runtime->current_class_name = previous_current_class;
         runtime->suppress_user_call_frame_location =
             previous_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            previous_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            previous_throw_argument_count_errors;
         ptn_runtime_pop_trace_frame(runtime, &trace_frame);
         return ptn_null();
     }
@@ -100047,6 +100061,10 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
     runtime->current_class_name = previous_current_class;
     runtime->suppress_user_call_frame_location =
         previous_suppress_user_call_frame_location;
+    runtime->warn_by_ref_argument_mismatch =
+        previous_warn_by_ref_argument_mismatch;
+    runtime->throw_argument_count_errors =
+        previous_throw_argument_count_errors;
     ptn_try_frame_pop(runtime, &dispatch_frame);
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     if (handled) {

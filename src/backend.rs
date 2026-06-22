@@ -2559,13 +2559,15 @@ fn emit_user_argument_count_check(
     out.push_str("    if (argc < ");
     out.push_str(&required_parameter_count.to_string());
     out.push_str(") {\n");
-    out.push_str("        ptn_throw_user_argument_count_error(caller_runtime, \"");
+    out.push_str("        ptn_throw_user_argument_count_error(&runtime, caller_runtime, \"");
     out.push_str(&c_string(&function.display_name));
     out.push_str("\", ");
     out.push_str(&required_parameter_count.to_string());
     out.push_str(", argc, ");
     out.push_str(if arity_error_is_exact { "1" } else { "0" });
-    out.push_str(", line);\n");
+    out.push_str(", line");
+    emit_user_function_declaration_location_args(out, function);
+    out.push_str(");\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
 }

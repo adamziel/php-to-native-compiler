@@ -29253,6 +29253,65 @@ var_dump(method_exists(\"ReflectionMethod\", \"invokeArgs\"));
 }
 
 #[test]
+fn compile_reflection_method_invoke_arity_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-invoke-arity-errors");
+    fs::create_dir_all(&root).unwrap();
+
+    let cases = [
+        (
+            "invoke",
+            "<?php
+class ReflectArityTarget {
+    public function needsTwo($a, $b) {}
+}
+
+echo \"invoke\\n\";
+$method = new ReflectionMethod(ReflectArityTarget::class, 'needsTwo');
+$method->invoke(new ReflectArityTarget());
+",
+            "ReflectionMethod->invoke(Object(ReflectArityTarget))",
+        ),
+        (
+            "invokeArgs",
+            "<?php
+class ReflectArityTarget {
+    public function needsTwo($a, $b) {}
+}
+
+echo \"invokeArgs\\n\";
+$method = new ReflectionMethod(ReflectArityTarget::class, 'needsTwo');
+$method->invokeArgs(new ReflectArityTarget(), []);
+",
+            "ReflectionMethod->invokeArgs(Object(ReflectArityTarget), Array)",
+        ),
+    ];
+
+    for (name, source, reflection_frame) in cases {
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(
+            String::from_utf8(execution.stdout).unwrap(),
+            format!("{name}\n")
+        );
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(
+            stderr.contains("Fatal error: Uncaught ArgumentCountError: Too few arguments to function ReflectArityTarget::needsTwo(), 0 passed and exactly 2 expected"),
+            "{stderr}"
+        );
+        assert!(
+            stderr.contains("[internal function]: ReflectArityTarget->needsTwo()"),
+            "{stderr}"
+        );
+        assert!(stderr.contains(reflection_frame), "{stderr}");
+    }
+}
+
+#[test]
 fn compile_reflection_method_invoke_exception_trace_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-method-invoke-exception-trace");
     fs::create_dir_all(&root).unwrap();

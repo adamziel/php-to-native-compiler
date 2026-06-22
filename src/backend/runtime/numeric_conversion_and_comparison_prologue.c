@@ -3000,25 +3000,32 @@ static PTN_UNUSED PtnValue ptn_throw_value(
 }
 
 static PTN_UNUSED void ptn_throw_user_argument_count_error(
-    PtnRuntime *runtime,
+    PtnRuntime *callee_runtime,
+    PtnRuntime *caller_runtime,
     const char *function_name,
     size_t expected,
     size_t passed,
     int exactly,
-    size_t line
+    size_t line,
+    const char *declaration_path,
+    size_t declaration_line
 ) {
+    PtnRuntime *message_runtime = caller_runtime != NULL ? caller_runtime : callee_runtime;
     if (
-        runtime != NULL &&
+        message_runtime != NULL &&
         (
-            runtime->suppress_user_call_frame_location ||
-            runtime->suppress_user_argument_count_location
+            message_runtime->suppress_user_call_frame_location ||
+            message_runtime->suppress_user_argument_count_location
         )
     ) {
         line = 0;
     }
     const char *mode = exactly ? "exactly" : "at least";
-    const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
-    if (runtime->suppress_user_call_frame_location) {
+    const char *path =
+        message_runtime != NULL && message_runtime->source_path != NULL
+            ? message_runtime->source_path
+            : "ptn";
+    if (message_runtime != NULL && message_runtime->suppress_user_call_frame_location) {
         line = 0;
     }
     int needed = line == 0
@@ -3072,7 +3079,13 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
             expected
         );
     }
-    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
+    ptn_throw_exception_owned_message_at(
+        callee_runtime,
+        "ArgumentCountError",
+        message,
+        declaration_path,
+        declaration_line
+    );
 }
 
 static PTN_UNUSED void ptn_throw_user_missing_argument_error(
