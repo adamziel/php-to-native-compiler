@@ -283,6 +283,40 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     const unsigned char *sensitive_parameters,
     size_t sensitive_variadic_position
 ) {
+    size_t limit = 0;
+    if (ptn_runtime_memory_limit_bytes(runtime, &limit) && limit != 0) {
+        const size_t estimated_frame_bytes = 8192;
+        size_t depth = 1;
+        for (PtnTraceFrame *frame = runtime->trace_frame;
+             frame != NULL;
+             frame = frame->previous) {
+            if (depth > SIZE_MAX / estimated_frame_bytes) {
+                depth = SIZE_MAX / estimated_frame_bytes;
+                break;
+            }
+            depth++;
+        }
+        size_t estimated_usage = depth * estimated_frame_bytes;
+        if (estimated_usage > limit) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+                limit,
+                estimated_frame_bytes
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_fatal_error_at(
+                runtime,
+                message,
+                runtime->source_path,
+                runtime->call_site_line
+            );
+        }
+    }
     runtime->owned_call_frame.argc = argc;
     runtime->owned_call_frame.args = args;
     runtime->owned_call_frame.arg_names = arg_names;

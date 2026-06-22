@@ -38529,6 +38529,42 @@ echo \"unreachable\\n\";\n",
 }
 
 #[test]
+fn compile_recursive_shutdown_destructor_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-shutdown-destructor-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-shutdown-destructor-memory-limit.php");
+    let output = root.join("recursive-shutdown-destructor-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class DestructableObject {\n\
+    public function __destruct() { DestructableObject::__destruct(); }\n\
+}\n\
+class DestructorCreator {\n\
+    public $test;\n\
+    public function __destruct() { $this->test = new DestructableObject; }\n\
+}\n\
+class Test { public static $mystatic; }\n\
+$x = new Test();\n\
+Test::$mystatic = new DestructorCreator();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "128K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 131072 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 8192 bytes"));
+    assert!(stderr.contains("recursive-shutdown-destructor-memory-limit.php on line "));
+}
+
+#[test]
 fn compile_array_offset_assignment_and_unset_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-assignment-unset");
     fs::create_dir_all(&root).unwrap();

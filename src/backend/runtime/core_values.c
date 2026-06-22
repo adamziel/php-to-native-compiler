@@ -1587,6 +1587,7 @@ static PTN_UNUSED int ptn_cow_debug_counter(const char *name, size_t *out);
 static PTN_UNUSED void ptn_cow_debug_assert_named_counter(const char *name, int64_t expected);
 static PTN_UNUSED void ptn_cow_debug_assert_balanced(void);
 static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
+static PTN_UNUSED int ptn_runtime_memory_limit_bytes(PtnRuntime *runtime, size_t *limit_out);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
