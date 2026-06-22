@@ -33662,6 +33662,59 @@ var_dump($r->getNamespaceName() . ($r->inNamespace() ? '\\\\' : '') . $r->getSho
 }
 
 #[test]
+fn compile_closure_invoke_reflection_parameters_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-invoke-reflection-parameters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-invoke-reflection-parameters.php");
+    let output = root.join("closure-invoke-reflection-parameters-bin");
+    fs::write(
+        &input,
+        "<?php
+$closure = function($a, $b = 0) {};
+$object = new ReflectionObject($closure);
+$method = $object->getMethod('__invoke');
+var_dump($method->getName());
+var_dump($method->getNumberOfParameters());
+var_dump($method->getNumberOfRequiredParameters());
+$methods = $object->getMethods();
+var_dump(count($methods));
+var_dump($methods[0]->getName());
+$methodParam = (new ReflectionMethod($closure, '__invoke'))->getParameters()[0];
+var_dump($methodParam->getDeclaringFunction()->getName());
+$callableParam = new ReflectionParameter([$closure, '__invoke'], 'b');
+var_dump($callableParam->getDeclaringFunction()->getName());
+$functionParam = (new ReflectionFunction($closure))->getParameters()[0];
+var_dump($functionParam->getDeclaringFunction()->getName());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let closure_display = format!("{{closure:{}:2}}", input.to_string_lossy());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "string(8) \"__invoke\"\n",
+                "int(2)\n",
+                "int(1)\n",
+                "int(1)\n",
+                "string(8) \"__invoke\"\n",
+                "string(8) \"__invoke\"\n",
+                "string(8) \"__invoke\"\n",
+                "string({}) \"{}\"\n",
+            ),
+            closure_display.len(),
+            closure_display
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_class_method_magic_constants_to_native_binary() {
     let root = temp_dir("ptn-native-class-method-magic-constants");
     fs::create_dir_all(&root).unwrap();
