@@ -929,40 +929,69 @@ static PTN_UNUSED size_t ptn_symbol_index_capacity_for_entries(size_t expected_e
     return capacity;
 }
 
-static PTN_UNUSED size_t ptn_symbols_linear_find(PtnSymbolTable *symbols, const char *name) {
+static PTN_UNUSED size_t ptn_symbols_linear_find_len(PtnSymbolTable *symbols, const char *name, size_t name_len) {
     for (size_t i = 0; i < symbols->len; i++) {
-        if (strcmp(symbols->items[i].name, name) == 0) {
+        if (
+            symbols->items[i].name_len == name_len &&
+            memcmp(symbols->items[i].name, name, name_len) == 0
+        ) {
             return i;
         }
     }
     return symbols->len;
 }
 
-static PTN_UNUSED size_t ptn_symbol_index_slot_for_name(PtnSymbolTable *symbols, const char *name, uint64_t hash) {
+static PTN_UNUSED size_t ptn_symbols_linear_find(PtnSymbolTable *symbols, const char *name) {
+    return ptn_symbols_linear_find_len(symbols, name, strlen(name));
+}
+
+static PTN_UNUSED size_t ptn_symbol_index_slot_for_name_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len,
+    uint64_t hash
+) {
     size_t mask = symbols->index_capacity - 1;
     size_t slot_index = (size_t)hash & mask;
     for (;;) {
         PtnSymbolIndexSlot *slot = &symbols->index_slots[slot_index];
         if (!slot->occupied ||
-            (slot->hash == hash && strcmp(symbols->items[slot->symbol_index].name, name) == 0)) {
+            (
+                slot->hash == hash &&
+                symbols->items[slot->symbol_index].name_len == name_len &&
+                memcmp(symbols->items[slot->symbol_index].name, name, name_len) == 0
+            )) {
             return slot_index;
         }
         slot_index = (slot_index + 1) & mask;
     }
 }
 
-static PTN_UNUSED void ptn_symbol_index_insert(PtnSymbolTable *symbols, const char *name, size_t symbol_index) {
+static PTN_UNUSED size_t ptn_symbol_index_slot_for_name(PtnSymbolTable *symbols, const char *name, uint64_t hash) {
+    return ptn_symbol_index_slot_for_name_len(symbols, name, strlen(name), hash);
+}
+
+static PTN_UNUSED void ptn_symbol_index_insert_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len,
+    size_t symbol_index
+) {
     if (symbols->index_capacity == 0) {
         return;
     }
-    uint64_t hash = ptn_symbol_name_hash(name);
-    size_t slot_index = ptn_symbol_index_slot_for_name(symbols, name, hash);
+    uint64_t hash = ptn_symbol_name_hash_len(name, name_len);
+    size_t slot_index = ptn_symbol_index_slot_for_name_len(symbols, name, name_len, hash);
     PtnSymbolIndexSlot *slot = &symbols->index_slots[slot_index];
     if (!slot->occupied) {
         slot->occupied = 1;
         slot->hash = hash;
         slot->symbol_index = symbol_index;
     }
+}
+
+static PTN_UNUSED void ptn_symbol_index_insert(PtnSymbolTable *symbols, const char *name, size_t symbol_index) {
+    ptn_symbol_index_insert_len(symbols, name, strlen(name), symbol_index);
 }
 
 static PTN_UNUSED void ptn_symbols_rebuild_index(PtnSymbolTable *symbols, size_t expected_entries) {
@@ -980,6 +1009,6 @@ static PTN_UNUSED void ptn_symbols_rebuild_index(PtnSymbolTable *symbols, size_t
     }
     symbols->index_capacity = capacity;
     for (size_t i = 0; i < symbols->len; i++) {
-        ptn_symbol_index_insert(symbols, symbols->items[i].name, i);
+        ptn_symbol_index_insert_len(symbols, symbols->items[i].name, symbols->items[i].name_len, i);
     }
 }

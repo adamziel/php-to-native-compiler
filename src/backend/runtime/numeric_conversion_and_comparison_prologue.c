@@ -7084,8 +7084,34 @@ static PTN_UNUSED PtnValue ptn_call_method(
     return ptn_null();
 }
 
+static PTN_UNUSED void ptn_runtime_define_constant_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnValue value
+) {
+    PtnStringOperand key = ptn_runtime_global_constant_key_len(name, name_len);
+    ptn_symbols_set_len(runtime->constants, key.data, key.len, value);
+    ptn_string_operand_free(key);
+}
+
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
-    ptn_symbols_set(runtime->constants, name, value);
+    ptn_runtime_define_constant_len(runtime, name, strlen(name), value);
+}
+
+static PTN_UNUSED void ptn_runtime_record_constant_source_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    const char *source_path
+) {
+    if (runtime == NULL || source_path == NULL || source_path[0] == '\0') {
+        return;
+    }
+    PtnValue source = ptn_string(source_path);
+    PtnStringOperand key = ptn_runtime_global_constant_key_len(name, name_len);
+    ptn_symbols_set_len(runtime->constant_sources, key.data, key.len, source);
+    ptn_string_operand_free(key);
 }
 
 static PTN_UNUSED void ptn_runtime_record_constant_source(
@@ -7093,11 +7119,18 @@ static PTN_UNUSED void ptn_runtime_record_constant_source(
     const char *name,
     const char *source_path
 ) {
-    if (runtime == NULL || source_path == NULL || source_path[0] == '\0') {
-        return;
-    }
-    PtnValue source = ptn_string(source_path);
-    ptn_symbols_set(runtime->constant_sources, name, source);
+    ptn_runtime_record_constant_source_len(runtime, name, strlen(name), source_path);
+}
+
+static PTN_UNUSED void ptn_runtime_define_constant_with_source_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnValue value,
+    const char *source_path
+) {
+    ptn_runtime_define_constant_len(runtime, name, name_len, value);
+    ptn_runtime_record_constant_source_len(runtime, name, name_len, source_path);
 }
 
 static PTN_UNUSED void ptn_runtime_define_constant_with_source(
@@ -7106,16 +7139,19 @@ static PTN_UNUSED void ptn_runtime_define_constant_with_source(
     PtnValue value,
     const char *source_path
 ) {
-    ptn_runtime_define_constant(runtime, name, value);
-    ptn_runtime_record_constant_source(runtime, name, source_path);
+    ptn_runtime_define_constant_with_source_len(runtime, name, strlen(name), value, source_path);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_constant_source_file(PtnRuntime *runtime, const char *name) {
     PtnValue source;
-    if (
+    PtnStringOperand key = ptn_runtime_global_constant_key_len(name, strlen(name));
+    int found =
         runtime != NULL &&
         runtime->constant_sources != NULL &&
-        ptn_symbols_get(runtime->constant_sources, name, &source)
+        ptn_symbols_get_len(runtime->constant_sources, key.data, key.len, &source);
+    ptn_string_operand_free(key);
+    if (
+        found
     ) {
         return ptn_value_clone_deref(source);
     }

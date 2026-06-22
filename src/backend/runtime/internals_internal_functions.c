@@ -5,14 +5,24 @@
         return 0;
     }
     free(ptn_constant_stack.items);
-    ptn_runtime_define_constant_with_source(
+    ptn_runtime_define_constant_with_source_len(
         runtime,
         name,
+        name_len,
         constant_value,
         runtime != NULL ? runtime->source_path : NULL
     );
     ptn_value_destroy(&constant_value);
     return 1;
+}
+
+static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_define_constant_if_absent_len(runtime, name, strlen(name), value, line);
 }
 
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name, const char *path, size_t line) {
@@ -124254,21 +124264,82 @@ static PtnValue ptn_internal_method_metadata_stub(
 }
 
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    char *name = ptn_value_to_string(args[0]);
+    PtnStringOperand name_arg = ptn_direct_internal_expect_string_arg(
+        runtime,
+        "define",
+        1,
+        "constant_name",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name_arg);
+        return ptn_null();
+    }
+    for (size_t i = 0; i + 1 < name_arg.len; i++) {
+        if (name_arg.data[i] == ':' && name_arg.data[i + 1] == ':') {
+            ptn_string_operand_free(name_arg);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "define(): Argument #1 ($constant_name) cannot be a class constant"
+            );
+            return ptn_null();
+        }
+    }
+    char *name = ptn_duplicate_string_len(name_arg.data, name_arg.len);
+    size_t name_len = name_arg.len;
+    ptn_string_operand_free(name_arg);
     if (argc >= 3 && ptn_is_truthy(args[2])) {
         ptn_emit_define_case_insensitive_ignored_warning(&runtime->diagnostics, line);
     }
-    int did_define = ptn_runtime_define_constant_if_absent(runtime, name, args[1], line);
+    int did_define = ptn_runtime_define_constant_if_absent_len(runtime, name, name_len, args[1], line);
     free(name);
     return ptn_bool(did_define);
 }
 
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    char *name = ptn_value_to_string(args[0]);
-    PtnValue value = ptn_read_constant(runtime, ptn_symbol_name_without_leading_slash(name), runtime->source_path, line);
+    PtnStringOperand name_arg = ptn_direct_internal_expect_string_arg(
+        runtime,
+        "constant",
+        1,
+        "constant_name",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name_arg);
+        return ptn_null();
+    }
+    size_t lookup_offset = name_arg.len != 0 && name_arg.data[0] == '\\' ? 1 : 0;
+    const char *lookup_name = name_arg.data + lookup_offset;
+    size_t lookup_len = name_arg.len - lookup_offset;
+    if (memchr(lookup_name, '\0', lookup_len) != NULL) {
+        PtnValue value;
+        if (ptn_runtime_constant_value_len(runtime, lookup_name, lookup_len, &value)) {
+            ptn_string_operand_free(name_arg);
+            return value;
+        }
+        char *name = ptn_duplicate_string_len(lookup_name, lookup_len);
+        int needed = snprintf(NULL, 0, "Undefined constant \"%s\"", name);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Undefined constant \"%s\"", name);
+        free(name);
+        ptn_string_operand_free(name_arg);
+        ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+        return ptn_null();
+    }
+    char *name = ptn_duplicate_string_len(lookup_name, lookup_len);
+    PtnValue value = ptn_read_constant(runtime, name, runtime->source_path, line);
     free(name);
+    ptn_string_operand_free(name_arg);
     return value;
 }
 
@@ -126153,10 +126224,17 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
         args[0],
         line
     );
-    char *name = ptn_duplicate_string_len(name_arg.data, name_arg.len);
-    int exists = ptn_runtime_constant_is_defined(runtime, ptn_symbol_name_without_leading_slash(name));
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name_arg);
+        return ptn_null();
+    }
+    size_t lookup_offset = name_arg.len != 0 && name_arg.data[0] == '\\' ? 1 : 0;
+    int exists = ptn_runtime_constant_is_defined_len(
+        runtime,
+        name_arg.data + lookup_offset,
+        name_arg.len - lookup_offset
+    );
     ptn_string_operand_free(name_arg);
-    free(name);
     return ptn_bool(exists);
 }
 

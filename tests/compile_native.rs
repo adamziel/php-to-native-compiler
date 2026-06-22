@@ -37158,10 +37158,21 @@ fn compile_runtime_define_and_constant_to_native_binary() {
         &input,
         "<?php\n\
 var_dump(function_exists(\"define\"), function_exists(\"CONSTANT\"));\n\
+try {\n\
+    var_dump(define(array(1), 2));\n\
+} catch (TypeError $e) {\n\
+    echo \"TypeError: \", $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    define(\"foo::bar\", 1);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
 define(\"USER_CONST\", \"value\");\n\
-define(1, 2);\n\
+define('Ns\\\\Part\\\\Thing', 'namespaced');\n\
+var_dump(define(\"TRUE\", 1));\n\
 define(\"\", 3);\n\
-var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constant(\"\"));\n",
+var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant('ns\\\\part\\\\Thing'), constant('NS\\\\PART\\\\Thing'), constant(\"\"));\n",
     )
     .unwrap();
 
@@ -37171,7 +37182,18 @@ var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constan
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nstring(5) \"value\"\nint(2)\nint(3)\n"
+        "bool(true)\n\
+bool(true)\n\
+TypeError: define(): Argument #1 ($constant_name) must be of type string, array given\n\
+define(): Argument #1 ($constant_name) cannot be a class constant\n\
+\n\
+Warning: Constant TRUE already defined, this will be an error in PHP 9 in ptn on line 15\n\
+bool(false)\n\
+bool(true)\n\
+string(5) \"value\"\n\
+string(10) \"namespaced\"\n\
+string(10) \"namespaced\"\n\
+int(3)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -37219,6 +37241,7 @@ var_dump(defined(\"__COMPILER_HALT_OFFSET__\"));\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(false)\n\
+\n\
 Warning: Constant __COMPILER_HALT_OFFSET__ already defined, this will be an error in PHP 9 in ptn on line 3\n\
 bool(false)\n\
 bool(false)\n"
@@ -37263,6 +37286,7 @@ dup-name\n\
 dup-value\n\
 dup-flag\n\
 Warning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 6\n\
+\n\
 Warning: Constant DUP_ARG already defined, this will be an error in PHP 9 in ptn on line 6\n\
 bool(false)\n\
 int(1)\n\

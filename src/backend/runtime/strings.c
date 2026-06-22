@@ -3142,6 +3142,27 @@ static PTN_UNUSED int ptn_ascii_case_equal_n(const char *left, const char *right
     return 1;
 }
 
+static PTN_UNUSED PtnStringOperand ptn_runtime_global_constant_key_len(const char *name, size_t name_len) {
+    char *key = ptn_duplicate_string_len(name, name_len);
+    size_t namespace_len = (size_t)-1;
+    for (size_t i = 0; i < name_len; i++) {
+        if (key[i] == '\\') {
+            namespace_len = i;
+        }
+    }
+    if (namespace_len != (size_t)-1) {
+        for (size_t i = 0; i < namespace_len; i++) {
+            key[i] = ptn_ascii_lower_char(key[i]);
+        }
+    }
+    return ptn_string_operand_owned_len(key, name_len);
+}
+
+static PTN_UNUSED char *ptn_runtime_global_constant_key(const char *name) {
+    PtnStringOperand key = ptn_runtime_global_constant_key_len(name, strlen(name));
+    return key.owned;
+}
+
 static PTN_UNUSED int ptn_runtime_class_constant_value(
     PtnRuntime *runtime,
     const char *name,
@@ -3263,8 +3284,31 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
     return 0;
 }
 
-static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
-    if (ptn_symbols_get(runtime->constants, name, out)) {
+static PTN_UNUSED int ptn_runtime_constant_value_len(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t name_len,
+    PtnValue *out
+) {
+    PtnStringOperand key = ptn_runtime_global_constant_key_len(name, name_len);
+    int found = ptn_symbols_get_len(runtime->constants, key.data, key.len, out);
+    ptn_string_operand_free(key);
+    if (found) {
+        return 1;
+    }
+    if (memchr(name, '\0', name_len) != NULL) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(name, "true")) {
+        *out = ptn_bool(1);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "false")) {
+        *out = ptn_bool(0);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "null")) {
+        *out = ptn_null();
         return 1;
     }
     if (ptn_builtin_constant_value(name, out)) {
@@ -3273,13 +3317,28 @@ static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char
     return ptn_runtime_class_constant_value(runtime, name, out);
 }
 
+static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
+    return ptn_runtime_constant_value_len(runtime, name, strlen(name), out);
+}
+
 static PTN_UNUSED int ptn_runtime_constant_is_defined(PtnRuntime *runtime, const char *name) {
     PtnValue value;
     return ptn_runtime_constant_value(runtime, name, &value);
 }
 
+static PTN_UNUSED int ptn_runtime_constant_is_defined_len(PtnRuntime *runtime, const char *name, size_t name_len) {
+    PtnValue value;
+    return ptn_runtime_constant_value_len(runtime, name, name_len, &value);
+}
+
+static PTN_UNUSED int ptn_reserved_constant_name_len(const char *name, size_t name_len) {
+    const char *reserved = "__COMPILER_HALT_OFFSET__";
+    size_t reserved_len = strlen(reserved);
+    return name_len == reserved_len && memcmp(name, reserved, reserved_len) == 0;
+}
+
 static PTN_UNUSED int ptn_reserved_constant_name(const char *name) {
-    return strcmp(name, "__COMPILER_HALT_OFFSET__") == 0;
+    return ptn_reserved_constant_name_len(name, strlen(name));
 }
 
 typedef struct {
@@ -3385,17 +3444,18 @@ static PTN_UNUSED int ptn_constant_clone_value(
     return 1;
 }
 
-static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
+static PTN_UNUSED int ptn_runtime_define_constant_if_absent_len(
     PtnRuntime *runtime,
     const char *name,
+    size_t name_len,
     PtnValue value,
     size_t line
 ) {
-    if (ptn_reserved_constant_name(name)) {
+    if (ptn_reserved_constant_name_len(name, name_len)) {
         ptn_emit_constant_already_defined_warning(&runtime->diagnostics, name, line);
         return 0;
     }
-    if (ptn_runtime_constant_is_defined(runtime, name)) {
+    if (ptn_runtime_constant_is_defined_len(runtime, name, name_len)) {
         ptn_emit_constant_already_defined_warning(&runtime->diagnostics, name, line);
         return 0;
     }

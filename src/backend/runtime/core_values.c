@@ -648,6 +648,7 @@ typedef PtnValue (*PtnFunctionStaticVariablesProvider)(PtnRuntime *runtime);
 
 typedef struct {
     char *name;
+    size_t name_len;
     PtnValue value;
 } PtnSymbol;
 
@@ -1568,6 +1569,9 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnGenerator *generator, P
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
+static PTN_UNUSED PtnStringOperand ptn_runtime_global_constant_key_len(const char *name, size_t name_len);
+static PTN_UNUSED char *ptn_runtime_global_constant_key(const char *name);
+static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);

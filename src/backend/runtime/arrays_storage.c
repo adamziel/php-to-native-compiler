@@ -273,13 +273,18 @@ static PTN_UNUSED uint64_t ptn_array_key_hash(PtnArrayKey key) {
     return ptn_hash_mix_uint64(hash);
 }
 
-static PTN_UNUSED uint64_t ptn_symbol_name_hash(const char *name) {
+static PTN_UNUSED uint64_t ptn_symbol_name_hash_len(const char *name, size_t name_len) {
     uint64_t hash = 1469598103934665603ULL ^ 0x7b2d6f8fe10b25c9ULL;
-    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
-        hash ^= (uint64_t)*cursor;
+    const unsigned char *bytes = (const unsigned char *)name;
+    for (size_t i = 0; i < name_len; i++) {
+        hash ^= (uint64_t)bytes[i];
         hash *= 1099511628211ULL;
     }
     return ptn_hash_mix_uint64(hash);
+}
+
+static PTN_UNUSED uint64_t ptn_symbol_name_hash(const char *name) {
+    return ptn_symbol_name_hash_len(name, strlen(name));
 }
 
 static PTN_UNUSED void ptn_array_index_init(PtnArray *array, size_t expected_entries) {

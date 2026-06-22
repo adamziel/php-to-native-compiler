@@ -41,20 +41,29 @@ static PTN_UNUSED void ptn_symbols_ensure_index(PtnSymbolTable *symbols, size_t 
     }
 }
 
-static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
+static size_t ptn_symbols_find_len(PtnSymbolTable *symbols, const char *name, size_t name_len) {
     if (symbols->index_capacity != 0) {
-        uint64_t hash = ptn_symbol_name_hash(name);
-        size_t slot_index = ptn_symbol_index_slot_for_name(symbols, name, hash);
+        uint64_t hash = ptn_symbol_name_hash_len(name, name_len);
+        size_t slot_index = ptn_symbol_index_slot_for_name_len(symbols, name, name_len, hash);
         PtnSymbolIndexSlot *slot = &symbols->index_slots[slot_index];
         return slot->occupied ? slot->symbol_index : symbols->len;
     }
-    return ptn_symbols_linear_find(symbols, name);
+    return ptn_symbols_linear_find_len(symbols, name, name_len);
 }
 
-static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
+static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
+    return ptn_symbols_find_len(symbols, name, strlen(name));
+}
+
+static PTN_UNUSED void ptn_symbols_set_len(
+    PtnSymbolTable *symbols,
+    const char *name,
+    size_t name_len,
+    PtnValue value
+) {
     PtnValue stored_value = ptn_value_clone(value);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
-    size_t index = ptn_symbols_find(symbols, name);
+    size_t index = ptn_symbols_find_len(symbols, name, name_len);
     if (index < symbols->len) {
         PtnValue old_value = symbols->items[index].value;
         ptn_array_note_value_replacement(old_value, stored_value);
@@ -73,11 +82,16 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
         symbols->capacity = new_capacity;
     }
     size_t symbol_index = symbols->len;
-    symbols->items[symbol_index].name = ptn_duplicate_string(name);
+    symbols->items[symbol_index].name = ptn_duplicate_string_len(name, name_len);
+    symbols->items[symbol_index].name_len = name_len;
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
     symbols->mutation_epoch++;
-    ptn_symbol_index_insert(symbols, name, symbol_index);
+    ptn_symbol_index_insert_len(symbols, name, name_len, symbol_index);
+}
+
+static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
+    ptn_symbols_set_len(symbols, name, strlen(name), value);
 }
 
 static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
@@ -109,19 +123,29 @@ static PTN_UNUSED void ptn_symbols_set_with_runtime_scope(
     }
     size_t symbol_index = symbols->len;
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
+    symbols->items[symbol_index].name_len = strlen(name);
     symbols->items[symbol_index].value = stored_value;
     symbols->len++;
     symbols->mutation_epoch++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
 }
 
-static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *out) {
-    size_t index = ptn_symbols_find(symbols, name);
+static int ptn_symbols_get_len(PtnSymbolTable *symbols, const char *name, size_t name_len, PtnValue *out) {
+    size_t index = ptn_symbols_find_len(symbols, name, name_len);
     if (index < symbols->len) {
         *out = ptn_value_borrow(symbols->items[index].value);
         return 1;
     }
     return 0;
+}
+
+static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *out) {
+    return ptn_symbols_get_len(symbols, name, strlen(name), out);
+}
+
+static PTN_UNUSED PtnValue *ptn_symbols_value_slot_len(PtnSymbolTable *symbols, const char *name, size_t name_len) {
+    size_t index = ptn_symbols_find_len(symbols, name, name_len);
+    return index < symbols->len ? &symbols->items[index].value : NULL;
 }
 
 static PTN_UNUSED PtnValue *ptn_symbols_value_slot(PtnSymbolTable *symbols, const char *name) {
@@ -150,6 +174,7 @@ static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols,
     }
     size_t symbol_index = symbols->len;
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
+    symbols->items[symbol_index].name_len = strlen(name);
     symbols->items[symbol_index].value = ptn_null();
     symbols->len++;
     symbols->mutation_epoch++;
@@ -1850,6 +1875,9 @@ static void ptn_emit_constant_already_defined_warning(
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
         free(message);
         return;
+    }
+    if (diagnostics->runtime != NULL && diagnostics->runtime->output_has_started) {
+        fputc('\n', stdout);
     }
     fputs("Warning: Constant ", stdout);
     fputs(name, stdout);
