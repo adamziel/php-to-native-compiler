@@ -6025,6 +6025,18 @@ typedef struct {
     int is_priority_queue;
     int is_corrupted;
 } PtnSplHeapData;
+static PtnValue ptn_spl_heap_serialized_properties_value(PtnObject *object);
+static PtnValue ptn_spl_heap_serialized_state_value(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    size_t line
+);
+static int ptn_spl_heap_unserialize_apply(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue payload,
+    size_t line
+);
 
 #define PTN_ARRAY_OBJECT_STD_PROP_LIST 1
 #define PTN_ARRAY_OBJECT_ARRAY_AS_PROPS 2
@@ -6197,6 +6209,16 @@ static int ptn_object_metadata_is_spl_object_storage_storage(const PtnObjectProp
         metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
         ptn_ascii_case_equal(metadata->declaring_class, "SplObjectStorage") &&
         strcmp(metadata->display_name, "storage") == 0;
+}
+
+static int ptn_object_metadata_is_spl_heap_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        (ptn_ascii_case_equal(metadata->declaring_class, "SplHeap") ||
+         ptn_ascii_case_equal(metadata->declaring_class, "SplPriorityQueue")) &&
+        (strcmp(metadata->display_name, "flags") == 0 ||
+         strcmp(metadata->display_name, "isCorrupted") == 0 ||
+         strcmp(metadata->display_name, "heap") == 0);
 }
 
 static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
@@ -8736,13 +8758,32 @@ static int ptn_serialize_object_is_spl_heap(PtnObject *object) {
          ptn_declared_class_is_same_or_descendant(object->class_name, "SplPriorityQueue"));
 }
 
-static void ptn_serialize_append_spl_heap_object(PtnStringBuffer *buffer, PtnObject *object) {
+static void ptn_serialize_append_spl_heap_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    PtnSplHeapData *data = object == NULL || object->native_data == NULL
+        ? NULL
+        : (PtnSplHeapData *)object->native_data;
     ptn_string_buffer_append_format(
         buffer,
-        "O:%zu:\"%s\":0:{}",
+        "O:%zu:\"%s\":2:{i:0;",
         strlen(object->class_name),
         object->class_name
     );
+    PtnValue properties = ptn_spl_heap_serialized_properties_value(object);
+    ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_value_destroy(&properties);
+    ptn_string_buffer_append(buffer, "i:1;");
+    PtnValue heap_state = ptn_spl_heap_serialized_state_value(
+        state == NULL ? NULL : state->runtime,
+        data,
+        state == NULL ? 0 : state->line
+    );
+    ptn_serialize_append_value_with_id(buffer, heap_state, state, 0);
+    ptn_value_destroy(&heap_state);
+    ptn_string_buffer_append_char(buffer, '}');
 }
 
 static void ptn_serialize_append_bcmath_number_object(
@@ -9192,7 +9233,7 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
         return 1;
     }
     if (ptn_serialize_object_is_spl_heap(object)) {
-        ptn_serialize_append_spl_heap_object(buffer, object);
+        ptn_serialize_append_spl_heap_object(buffer, object, state);
         return 1;
     }
     if (object != NULL && ptn_internal_class_name_is_bcmath_number(object->class_name)) {
@@ -11253,13 +11294,30 @@ static int ptn_unserialize_declared_magic_method_exists(
         ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
         return 0;
     }
-    return ptn_ascii_case_equal(method_name, "__unserialize") &&
-        ptn_runtime_declared_class_is_same_or_descendant(
+    if (!ptn_ascii_case_equal(method_name, "__unserialize")) {
+        return 0;
+    }
+    if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
             resolved.as.object->class_name,
             "SplObjectStorage"
-        ) &&
-        ptn_internal_class_method_exists("SplObjectStorage", "__unserialize");
+        )) {
+        return ptn_internal_class_method_exists("SplObjectStorage", "__unserialize");
+    }
+    if (ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            resolved.as.object->class_name,
+            "SplHeap"
+        ) ||
+        ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            resolved.as.object->class_name,
+            "SplPriorityQueue"
+        )) {
+        return ptn_internal_class_method_exists("SplHeap", "__unserialize") ||
+            ptn_internal_class_method_exists("SplPriorityQueue", "__unserialize");
+    }
+    return 0;
 }
 
 static PtnValue ptn_unserialize_dispatch_declared_method(
@@ -97011,6 +97069,8 @@ static int ptn_spl_object_storage_method_exists(const char *method_name) {
 static int ptn_spl_heap_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__debugInfo")
+        || ptn_ascii_case_equal(method_name, "__serialize")
+        || ptn_ascii_case_equal(method_name, "__unserialize")
         || ptn_ascii_case_equal(method_name, "compare")
         || ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
@@ -98605,6 +98665,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "recoverFromCorruption",
             "compare",
             "isCorrupted",
+            "__serialize",
+            "__unserialize",
             "__debugInfo",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -98628,6 +98690,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "recoverFromCorruption",
             "isCorrupted",
             "getExtractFlags",
+            "__serialize",
+            "__unserialize",
             "__debugInfo",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -118172,6 +118236,263 @@ static PtnValue ptn_spl_heap_debug_heap_array(PtnSplHeapData *data) {
     return result;
 }
 
+static PtnArrayKey ptn_spl_heap_serialized_property_key(PtnObject *object, PtnArrayKey key);
+static PtnArrayKey ptn_spl_heap_property_storage_key_from_serialized(PtnObject *object, PtnArrayKey key);
+
+static PtnValue ptn_spl_heap_serialized_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_heap_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_spl_heap_serialized_property_key(object, entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
+static PtnArrayKey ptn_spl_heap_serialized_property_key(PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT || object == NULL) {
+        return ptn_array_key_clone(key);
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return ptn_array_key_clone(key);
+    }
+
+    size_t display_len = strlen(metadata->display_name);
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t encoded_len = display_len + 3;
+        char *encoded = malloc(encoded_len);
+        if (encoded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        encoded[0] = '\0';
+        encoded[1] = '*';
+        encoded[2] = '\0';
+        memcpy(encoded + 3, metadata->display_name, display_len);
+        PtnArrayKey encoded_key = ptn_array_string_key_len(encoded, encoded_len);
+        free(encoded);
+        return encoded_key;
+    }
+
+    size_t declaring_len = strlen(metadata->declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t encoded_len = declaring_len + display_len + 2;
+    char *encoded = malloc(encoded_len);
+    if (encoded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    encoded[0] = '\0';
+    memcpy(encoded + 1, metadata->declaring_class, declaring_len);
+    encoded[declaring_len + 1] = '\0';
+    memcpy(encoded + declaring_len + 2, metadata->display_name, display_len);
+    PtnArrayKey encoded_key = ptn_array_string_key_len(encoded, encoded_len);
+    free(encoded);
+    return encoded_key;
+}
+
+static PtnArrayKey ptn_spl_heap_property_storage_key_from_serialized(PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT || object == NULL || key.string_len == 0 || key.as.string[0] != '\0') {
+        return ptn_array_key_clone(key);
+    }
+    if (key.string_len >= 3 && key.as.string[1] == '*' && key.as.string[2] == '\0') {
+        const char *display = key.as.string + 3;
+        size_t display_len = key.string_len - 3;
+        for (size_t i = 0; i < object->property_metadata_len; i++) {
+            PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+            if (metadata->read_visibility == PTN_PROPERTY_PROTECTED &&
+                strlen(metadata->display_name) == display_len &&
+                memcmp(metadata->display_name, display, display_len) == 0) {
+                return ptn_array_string_key(metadata->storage_name);
+            }
+        }
+        return ptn_array_key_clone(key);
+    }
+
+    const char *declaring = key.as.string + 1;
+    const char *separator = memchr(declaring, '\0', key.string_len - 1);
+    if (separator == NULL) {
+        return ptn_array_key_clone(key);
+    }
+    size_t declaring_len = (size_t)(separator - declaring);
+    const char *display = separator + 1;
+    size_t display_len = key.string_len - declaring_len - 2;
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+            strlen(metadata->declaring_class) == declaring_len &&
+            memcmp(metadata->declaring_class, declaring, declaring_len) == 0 &&
+            strlen(metadata->display_name) == display_len &&
+            memcmp(metadata->display_name, display, display_len) == 0) {
+            return ptn_array_string_key(metadata->storage_name);
+        }
+    }
+    return ptn_array_key_clone(key);
+}
+
+typedef struct {
+    PtnValue value;
+    PtnValue priority;
+} PtnSplHeapSnapshotEntry;
+
+static void ptn_spl_heap_snapshot_entries_free(PtnSplHeapSnapshotEntry *entries, size_t count) {
+    if (entries == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        ptn_value_destroy(&entries[i].value);
+        ptn_value_destroy(&entries[i].priority);
+    }
+    free(entries);
+}
+
+static int ptn_spl_heap_snapshot_priority_is_better(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    int compared = ptn_compare_order(runtime, left, right, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    return data != NULL && data->is_min
+        ? compared == PTN_COMPARE_LESS
+        : compared == PTN_COMPARE_GREATER;
+}
+
+static PtnSplHeapSnapshotEntry *ptn_spl_heap_ordered_snapshot(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    size_t line,
+    size_t *count_out
+) {
+    *count_out = 0;
+    if (data == NULL) {
+        return NULL;
+    }
+    PtnValue values_value = ptn_value_deref(data->values);
+    PtnValue priorities_value = ptn_value_deref(data->priorities);
+    if (values_value.type != PTN_ARRAY || priorities_value.type != PTN_ARRAY) {
+        return NULL;
+    }
+    size_t count = values_value.as.array->len < priorities_value.as.array->len
+        ? values_value.as.array->len
+        : priorities_value.as.array->len;
+    if (count == 0) {
+        return NULL;
+    }
+    PtnSplHeapSnapshotEntry *entries = calloc(count, sizeof(PtnSplHeapSnapshotEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t len = 0;
+    for (size_t i = 0; i < count; i++) {
+        entries[len].value = ptn_value_clone_deref(values_value.as.array->entries[i].value);
+        entries[len].priority = ptn_value_clone_deref(priorities_value.as.array->entries[i].value);
+        size_t current = len;
+        len++;
+        while (current > 0) {
+            size_t parent = (current - 1) / 2;
+            if (!ptn_spl_heap_snapshot_priority_is_better(
+                    runtime,
+                    data,
+                    entries[current].priority,
+                    entries[parent].priority,
+                    line
+                )) {
+                break;
+            }
+            PtnSplHeapSnapshotEntry tmp = entries[parent];
+            entries[parent] = entries[current];
+            entries[current] = tmp;
+            current = parent;
+        }
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_spl_heap_snapshot_entries_free(entries, len);
+            return NULL;
+        }
+    }
+    *count_out = len;
+    return entries;
+}
+
+static PtnValue ptn_spl_heap_serialized_heap_elements_value(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = 0;
+    PtnSplHeapSnapshotEntry *entries = ptn_spl_heap_ordered_snapshot(runtime, data, line, &count);
+    for (size_t i = 0; i < count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_spl_heap_snapshot_entries_free(entries, count);
+            ptn_value_destroy(&result);
+            ptn_abort_out_of_memory();
+        }
+        if (data != NULL && data->is_priority_queue) {
+            PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(
+                pair.as.array,
+                ptn_array_string_key("data"),
+                ptn_value_clone(entries[i].value)
+            );
+            ptn_array_set_entry(
+                pair.as.array,
+                ptn_array_string_key("priority"),
+                ptn_value_clone(entries[i].priority)
+            );
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), pair);
+        } else {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_value_clone(entries[i].value)
+            );
+        }
+    }
+    ptn_spl_heap_snapshot_entries_free(entries, count);
+    return result;
+}
+
+static PtnValue ptn_spl_heap_serialized_state_value(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("flags"),
+        ptn_int(data != NULL && data->is_priority_queue ? data->extract_flags : 0)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("heap_elements"),
+        ptn_spl_heap_serialized_heap_elements_value(runtime, data, line)
+    );
+    return result;
+}
+
 static void ptn_spl_heap_sync_properties(
     PtnRuntime *runtime,
     PtnValue object,
@@ -118188,6 +118509,165 @@ static void ptn_spl_heap_sync_properties(
     ptn_value_destroy(&flags);
     ptn_value_destroy(&is_corrupted);
     ptn_value_destroy(&heap);
+}
+
+static PtnArrayEntry *ptn_spl_heap_array_int_entry(PtnArray *array, int64_t index) {
+    if (array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_int_key(index);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static PtnArrayEntry *ptn_spl_heap_array_string_entry(PtnArray *array, const char *name) {
+    if (array == NULL || name == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static void ptn_spl_heap_throw_invalid_serialization(PtnRuntime *runtime, const char *class_name) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Invalid serialization data for %s object",
+        class_name == NULL ? "SplHeap" : class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+}
+
+static void ptn_spl_heap_load_serialized_properties(PtnObject *instance, PtnArray *properties) {
+    if (instance == NULL || instance->properties == NULL || properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        ptn_array_set_entry(
+            instance->properties,
+            ptn_spl_heap_property_storage_key_from_serialized(instance, entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+}
+
+static int ptn_spl_heap_unserialize_apply(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue payload,
+    size_t line
+) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type != PTN_OBJECT || resolved_receiver.as.object == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplHeap object");
+        return 0;
+    }
+    PtnObject *instance = resolved_receiver.as.object;
+    const char *class_name = instance->class_name;
+    PtnValue resolved_payload = ptn_value_deref(payload);
+    if (resolved_payload.type != PTN_ARRAY || resolved_payload.as.array->len != 2) {
+        ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+        return 0;
+    }
+    PtnArrayEntry *properties_entry = ptn_spl_heap_array_int_entry(resolved_payload.as.array, 0);
+    PtnArrayEntry *state_entry = ptn_spl_heap_array_int_entry(resolved_payload.as.array, 1);
+    PtnValue properties_value = properties_entry == NULL ? ptn_null() : ptn_value_deref(properties_entry->value);
+    PtnValue state_value = state_entry == NULL ? ptn_null() : ptn_value_deref(state_entry->value);
+    if (properties_value.type != PTN_ARRAY || state_value.type != PTN_ARRAY) {
+        ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+        return 0;
+    }
+
+    PtnArrayEntry *flags_entry = ptn_spl_heap_array_string_entry(state_value.as.array, "flags");
+    PtnArrayEntry *elements_entry = ptn_spl_heap_array_string_entry(state_value.as.array, "heap_elements");
+    PtnValue flags_value = flags_entry == NULL ? ptn_null() : ptn_value_deref(flags_entry->value);
+    PtnValue elements_value = elements_entry == NULL ? ptn_null() : ptn_value_deref(elements_entry->value);
+    if (flags_value.type != PTN_INT || elements_value.type != PTN_ARRAY) {
+        ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+        return 0;
+    }
+
+    int is_priority_queue = ptn_declared_class_is_same_or_descendant(class_name, "SplPriorityQueue");
+    int64_t extract_flags = flags_value.as.integer;
+    if (is_priority_queue) {
+        extract_flags &= PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH;
+        if (extract_flags == 0) {
+            ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+            return 0;
+        }
+    } else {
+        extract_flags = PTN_SPL_PRIORITY_QUEUE_EXTR_DATA;
+    }
+
+    PtnSplHeapData *data = malloc(sizeof(PtnSplHeapData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->values = ptn_array_from_literal_entries(0, NULL);
+    data->priorities = ptn_array_from_literal_entries(0, NULL);
+    data->extract_flags = extract_flags;
+    data->is_min = ptn_declared_class_is_same_or_descendant(class_name, "SplMinHeap");
+    data->is_priority_queue = is_priority_queue;
+    data->is_corrupted = 0;
+
+    PtnArray *elements = elements_value.as.array;
+    for (size_t i = 0; i < elements->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_spl_heap_data_free(data);
+            ptn_abort_out_of_memory();
+        }
+        PtnArrayEntry *element_entry = &elements->entries[i];
+        if (is_priority_queue) {
+            PtnValue element_value = ptn_value_deref(element_entry->value);
+            if (element_value.type != PTN_ARRAY) {
+                ptn_spl_heap_data_free(data);
+                ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+                return 0;
+            }
+            PtnArrayEntry *data_entry = ptn_spl_heap_array_string_entry(element_value.as.array, "data");
+            PtnArrayEntry *priority_entry = ptn_spl_heap_array_string_entry(element_value.as.array, "priority");
+            if (data_entry == NULL || priority_entry == NULL) {
+                ptn_spl_heap_data_free(data);
+                ptn_spl_heap_throw_invalid_serialization(runtime, class_name);
+                return 0;
+            }
+            ptn_array_set_entry(
+                data->values.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_value_clone_deref(data_entry->value)
+            );
+            ptn_array_set_entry(
+                data->priorities.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_value_clone_deref(priority_entry->value)
+            );
+        } else {
+            PtnValue value = ptn_value_clone_deref(element_entry->value);
+            ptn_array_set_entry(
+                data->values.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_value_clone(value)
+            );
+            ptn_array_set_entry(
+                data->priorities.as.array,
+                ptn_array_int_key((int64_t)i),
+                value
+            );
+        }
+    }
+
+    ptn_spl_heap_load_serialized_properties(instance, properties_value.as.array);
+    ptn_unserialize_replace_native_data(instance, data, ptn_spl_heap_data_free);
+    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+    return 1;
 }
 
 static PTN_UNUSED PtnValue ptn_spl_heap_new(
@@ -118289,6 +118769,43 @@ static PtnValue ptn_spl_heap_call_method(
             ptn_spl_heap_sync_properties(runtime, resolved_receiver, new_data, line);
         }
         ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(0),
+            ptn_spl_heap_serialized_properties_value(resolved_receiver.as.object)
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(1),
+            ptn_spl_heap_serialized_state_value(runtime, data, line)
+        );
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::__unserialize() expects exactly 1 argument, %zu given",
+                data->is_priority_queue ? "SplPriorityQueue" : "SplHeap",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        ptn_spl_heap_unserialize_apply(runtime, receiver, args[0], line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "insert")) {

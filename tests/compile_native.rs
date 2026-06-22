@@ -15864,7 +15864,7 @@ echo serialize($queue), "\n";
             "  [\"priority\"]=>\n",
             "  int(2)\n",
             "}\n",
-            "O:16:\"SplPriorityQueue\":0:{}\n",
+            "O:16:\"SplPriorityQueue\":2:{i:0;a:0:{}i:1;a:2:{s:5:\"flags\";i:3;s:13:\"heap_elements\";a:1:{i:0;a:2:{s:4:\"data\";s:1:\"b\";s:8:\"priority\";i:1;}}}}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
