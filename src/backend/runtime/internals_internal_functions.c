@@ -1834,6 +1834,11 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     if (count_out == NULL) {
         return NULL;
     }
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    *count_out = 0;
+    return NULL;
+#else
     if (ptn_object_is_dom_node_list_instance(object)) {
         *count_out = sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES[0]);
         return PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES;
@@ -1865,6 +1870,7 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     }
     *count_out = 0;
     return NULL;
+#endif
 }
 
 static size_t ptn_xml_reader_var_dump_virtual_property_count(PtnObject *object) {
@@ -81364,7 +81370,16 @@ static int ptn_xml_node_has_non_text_children(PtnXmlNode *node) {
 
 static void ptn_xml_append_serialized_internal_subset(PtnStringBuffer *buffer, const char *subset) {
     int line_start = 1;
+    int emitted = 0;
     for (size_t i = 0; subset != NULL && subset[i] != '\0'; i++) {
+        if (!emitted) {
+            while (subset[i] == ' ' || subset[i] == '\t' || subset[i] == '\n' || subset[i] == '\r') {
+                i++;
+            }
+            if (subset[i] == '\0') {
+                return;
+            }
+        }
         if (line_start) {
             while (subset[i] == ' ' || subset[i] == '\t') {
                 i++;
@@ -81374,6 +81389,7 @@ static void ptn_xml_append_serialized_internal_subset(PtnStringBuffer *buffer, c
             }
         }
         ptn_string_buffer_append_char(buffer, subset[i]);
+        emitted = 1;
         line_start = subset[i] == '\n' || subset[i] == '\r';
     }
 }
@@ -81444,8 +81460,14 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
                 ptn_string_buffer_append(buffer, "\"");
             }
             if (node->internal_subset != NULL && node->internal_subset[0] != '\0') {
-                ptn_string_buffer_append(buffer, " [");
+                ptn_string_buffer_append(buffer, " [\n");
+                size_t subset_start = buffer->len;
                 ptn_xml_append_serialized_internal_subset(buffer, node->internal_subset);
+                if (buffer->len > subset_start &&
+                    buffer->data[buffer->len - 1] != '\n' &&
+                    buffer->data[buffer->len - 1] != '\r') {
+                    ptn_string_buffer_append_char(buffer, '\n');
+                }
                 ptn_string_buffer_append(buffer, "]");
             }
             ptn_string_buffer_append_char(buffer, '>');
