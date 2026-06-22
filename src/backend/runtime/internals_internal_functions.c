@@ -5992,6 +5992,7 @@ typedef struct {
     PtnValue hashes;
     size_t index;
 } PtnSplObjectStorageData;
+static PtnSplObjectStorageData *ptn_spl_object_storage_data_new(void);
 static void ptn_spl_object_storage_data_free(void *data);
 static PtnSplObjectStorageData *ptn_spl_object_storage_data(PtnRuntime *runtime, PtnValue receiver);
 static void ptn_spl_object_storage_sync_properties(
@@ -6014,6 +6015,17 @@ static void ptn_spl_object_storage_attach_value(
     PtnValue object,
     PtnValue info,
     size_t line
+);
+static int ptn_spl_object_storage_attach_value_ex(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    const char *method_name,
+    PtnValue object,
+    PtnValue info,
+    size_t line,
+    int sync_properties,
+    size_t *index_out
 );
 static PtnValue ptn_spl_object_storage_flat_pairs_array(PtnSplObjectStorageData *data);
 
@@ -12095,6 +12107,9 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     size_t payload_len,
     size_t line,
     int register_count_slot,
+    PtnValue receiver_slot,
+    PtnSplObjectStorageData **data_out,
+    PtnValue *members_out,
     PtnUnserializeValue *result
 );
 static int ptn_unserialize_spl_dllist_legacy_payload(
@@ -12463,6 +12478,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                         payload_len,
                         state->line,
                         1,
+                        ptn_null(),
+                        NULL,
+                        NULL,
                         &result
                     )) {
                     free(class_name);
@@ -12681,9 +12699,18 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     size_t payload_len,
     size_t line,
     int register_count_slot,
+    PtnValue receiver_slot,
+    PtnSplObjectStorageData **data_out,
+    PtnValue *members_out,
     PtnUnserializeValue *result
 ) {
     (void)class_name;
+    if (data_out != NULL) {
+        *data_out = NULL;
+    }
+    if (members_out != NULL) {
+        *members_out = ptn_null();
+    }
     const char *saved_data = state->data;
     size_t saved_len = state->len;
     size_t saved_pos = state->pos;
@@ -12709,9 +12736,27 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     state->insufficient_required = 0;
     state->insufficient_present = 0;
 
-    result->value = ptn_object_new_shell(runtime, "SplObjectStorage");
+    PtnValue resolved_receiver_slot = ptn_value_deref(receiver_slot);
+    int use_receiver_slot =
+        resolved_receiver_slot.type == PTN_OBJECT &&
+        resolved_receiver_slot.as.object != NULL &&
+        ptn_declared_class_is_same_or_descendant(
+            resolved_receiver_slot.as.object->class_name,
+            "SplObjectStorage"
+        );
+    PtnSplObjectStorageData *data = ptn_spl_object_storage_data_new();
+    int data_owned_by_result = 0;
+    if (use_receiver_slot) {
+        result->value = ptn_value_clone_deref(receiver_slot);
+    } else {
+        result->value = ptn_object_new_shell(runtime, "SplObjectStorage");
+        if (result->value.type == PTN_OBJECT && result->value.as.object != NULL) {
+            result->value.as.object->native_data = data;
+            result->value.as.object->native_data_free = ptn_spl_object_storage_data_free;
+            data_owned_by_result = 1;
+        }
+    }
     result->id = ptn_unserialize_add_slot(state, &result->value);
-    PtnSplObjectStorageData *data = ptn_spl_object_storage_data(runtime, result->value);
 
     size_t count = 0;
     PtnUnserializeValue count_value;
@@ -12787,17 +12832,35 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
             ptn_value_destroy(&object.value);
             goto fail;
         }
-        ptn_unserialize_retain_id_value(state, object.id, object.value);
-        ptn_unserialize_retain_id_value(state, info.id, info.value);
-        ptn_spl_object_storage_attach_value(
+        size_t storage_index = 0;
+        int attached = ptn_spl_object_storage_attach_value_ex(
             runtime,
             result->value,
             data,
             "unserialize",
             object.value,
             info.value,
-            line
+            line,
+            0,
+            &storage_index
         );
+        if (attached) {
+            PtnArray *objects = ptn_value_deref(data->objects).as.array;
+            PtnArray *infos = ptn_value_deref(data->infos).as.array;
+            if (storage_index < objects->len && storage_index < infos->len) {
+                ptn_unserialize_update_entry_slot(
+                    state,
+                    object.id,
+                    &objects->entries[storage_index].value
+                );
+                ptn_unserialize_invalidate_slot(state, &infos->entries[storage_index].value);
+                ptn_unserialize_update_entry_slot(
+                    state,
+                    info.id,
+                    &infos->entries[storage_index].value
+                );
+            }
+        }
         ptn_value_destroy(&object.value);
         ptn_value_destroy(&info.value);
         if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
@@ -12814,16 +12877,25 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     if (state->failed || resolved_members.type != PTN_ARRAY) {
         goto fail;
     }
-    ptn_spl_object_storage_load_members(runtime, result->value, resolved_members, line);
     ptn_unserialize_retain_id_value(state, members.id, members.value);
-    ptn_value_destroy(&members.value);
-    members.value = ptn_null();
     if (state->pos != state->len) {
         ptn_unserialize_fail(state);
         goto fail;
     }
 
-    ptn_spl_object_storage_sync_properties(runtime, result->value, data, line);
+    if (data_out != NULL) {
+        *data_out = data;
+        data = NULL;
+    }
+    if (members_out != NULL) {
+        *members_out = members.value;
+        members.value = ptn_null();
+    } else {
+        ptn_spl_object_storage_load_members(runtime, result->value, resolved_members, line);
+        ptn_value_destroy(&members.value);
+        members.value = ptn_null();
+        ptn_spl_object_storage_sync_properties(runtime, result->value, data, line);
+    }
 
     state->data = saved_data;
     state->len = saved_len;
@@ -12843,6 +12915,9 @@ fail:
         size_t offset = state->error_pos;
         ptn_value_destroy(&count_value.value);
         ptn_value_destroy(&members.value);
+        if (!data_owned_by_result && data != NULL) {
+            ptn_spl_object_storage_data_free(data);
+        }
         ptn_value_destroy(&result->value);
         result->value = ptn_null();
         result->id = 0;
@@ -60738,11 +60813,25 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
     }
 }
 
+static int ptn_gc_object_has_opaque_native_data(PtnObject *object) {
+    if (object == NULL || object->native_data == NULL) {
+        return 0;
+    }
+    return object->native_data_free != ptn_spl_object_storage_data_free;
+}
+
 static size_t ptn_gc_count_unreachable_contained_values_in_value(
     PtnValue value,
     size_t root_epoch,
     size_t counted_epoch,
     size_t depth
+);
+static size_t ptn_gc_count_unreachable_contained_values_in_value_ex(
+    PtnValue value,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth,
+    size_t skip_array_count_depth
 );
 static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
     PtnObject *object,
@@ -60775,11 +60864,12 @@ static size_t ptn_gc_count_unreachable_contained_values_in_symbol_table(
     return count;
 }
 
-static size_t ptn_gc_count_unreachable_contained_values_in_value(
+static size_t ptn_gc_count_unreachable_contained_values_in_value_ex(
     PtnValue value,
     size_t root_epoch,
     size_t counted_epoch,
-    size_t depth
+    size_t depth,
+    size_t skip_array_count_depth
 ) {
     if (root_epoch == 0 || counted_epoch == 0 || depth > 1024) {
         return 0;
@@ -60798,11 +60888,12 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(
             reference->value.as.array != NULL &&
             ptn_array_count_reference(reference->value.as.array, reference, 0) > 0;
         reference->gc_mark_epoch = counted_epoch;
-        size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
+        size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
             reference->value,
             root_epoch,
             counted_epoch,
-            depth + 1
+            depth + 1,
+            skip_array_count_depth
         );
         if (consumes_pending_array_cycle && ptn_pending_array_cycle_collections > 0) {
             ptn_pending_array_cycle_collections--;
@@ -60820,13 +60911,16 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(
         }
         array->gc_mark_epoch = counted_epoch;
 
-        size_t count = 1;
+        size_t nested_skip_array_count_depth =
+            skip_array_count_depth == 0 ? 0 : skip_array_count_depth - 1;
+        size_t count = skip_array_count_depth == 0 ? 1 : 0;
         for (size_t i = 0; i < array->len; i++) {
-            size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
+            size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
                 array->entries[i].value,
                 root_epoch,
                 counted_epoch,
-                depth + 1
+                depth + 1,
+                nested_skip_array_count_depth
             );
             if (count > SIZE_MAX - nested) {
                 ptn_abort_out_of_memory();
@@ -60840,7 +60934,7 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(
         if (
             object == NULL ||
             object->refcount == 0 ||
-            object->native_data != NULL ||
+            ptn_gc_object_has_opaque_native_data(object) ||
             object->gc_mark_epoch == root_epoch ||
             object->gc_mark_epoch == counted_epoch
         ) {
@@ -60883,11 +60977,12 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(
     }
     count += captures;
     if (closure->has_wrapped_callable) {
-        size_t wrapped = ptn_gc_count_unreachable_contained_values_in_value(
+        size_t wrapped = ptn_gc_count_unreachable_contained_values_in_value_ex(
             closure->wrapped_callable,
             root_epoch,
             counted_epoch,
-            depth + 1
+            depth + 1,
+            skip_array_count_depth
         );
         if (count > SIZE_MAX - wrapped) {
             ptn_abort_out_of_memory();
@@ -60895,6 +60990,21 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value(
         count += wrapped;
     }
     return count;
+}
+
+static size_t ptn_gc_count_unreachable_contained_values_in_value(
+    PtnValue value,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth
+) {
+    return ptn_gc_count_unreachable_contained_values_in_value_ex(
+        value,
+        root_epoch,
+        counted_epoch,
+        depth,
+        0
+    );
 }
 
 static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
@@ -60907,11 +61017,18 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
     }
     size_t count = 0;
     for (size_t i = 0; i < object->properties->len; i++) {
-        size_t nested = ptn_gc_count_unreachable_contained_values_in_value(
-            object->properties->entries[i].value,
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        size_t skip_array_count_depth =
+            ptn_object_metadata_is_spl_object_storage_storage(metadata) ? 2 : 0;
+        size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+            entry->value,
             root_epoch,
             counted_epoch,
-            0
+            0,
+            skip_array_count_depth
         );
         if (count > SIZE_MAX - nested) {
             ptn_abort_out_of_memory();
@@ -61072,7 +61189,7 @@ static void ptn_gc_mark_unreachable_destructor_component_object(
     if (
         object == NULL ||
         depth > 1024 ||
-        object->native_data != NULL ||
+        ptn_gc_object_has_opaque_native_data(object) ||
         object->gc_mark_epoch == root_epoch
     ) {
         return;
@@ -61203,7 +61320,7 @@ static size_t ptn_gc_collect_destructor_components(
         if (
             object == NULL ||
             object->refcount == 0 ||
-            object->native_data != NULL ||
+            ptn_gc_object_has_opaque_native_data(object) ||
             object->gc_mark_epoch == root_epoch ||
             object->gc_mark_epoch == component_epoch ||
             !ptn_object_has_pending_declared_destructor(object)
@@ -61238,7 +61355,7 @@ static int ptn_gc_destructor_component_still_unreachable(
         if (
             object != NULL &&
             object->refcount > 0 &&
-            object->native_data == NULL &&
+            !ptn_gc_object_has_opaque_native_data(object) &&
             object->gc_mark_epoch != post_destructor_epoch &&
             !ptn_object_has_pending_declared_destructor(object)
         ) {
@@ -61265,7 +61382,7 @@ static void ptn_gc_mark_destructor_component_contained_values(
         if (
             object == NULL ||
             object->refcount == 0 ||
-            object->native_data != NULL ||
+            ptn_gc_object_has_opaque_native_data(object) ||
             object->gc_mark_epoch != counted_epoch
         ) {
             continue;
@@ -61300,7 +61417,7 @@ static size_t ptn_gc_count_destructor_components(
             if (
                 object != NULL &&
                 object->refcount > 0 &&
-                object->native_data == NULL &&
+                !ptn_gc_object_has_opaque_native_data(object) &&
                 object->gc_mark_epoch != post_destructor_epoch
             ) {
                 object->gc_mark_epoch = counted_epoch;
@@ -61443,7 +61560,7 @@ static size_t ptn_runtime_collect_unreachable_objects(
         if (
             object == NULL ||
             object->refcount == 0 ||
-            object->native_data != NULL ||
+            ptn_gc_object_has_opaque_native_data(object) ||
             object->gc_mark_epoch == epoch ||
             !ptn_object_has_pending_declared_destructor(object)
         ) {
@@ -61484,7 +61601,7 @@ static size_t ptn_runtime_collect_unreachable_objects(
         if (
             object != NULL &&
             object->refcount > 0 &&
-            object->native_data == NULL &&
+            !ptn_gc_object_has_opaque_native_data(object) &&
             object->gc_mark_epoch != epoch &&
             object->gc_mark_epoch != counted_object_epoch &&
             !ptn_object_has_pending_declared_destructor(object)
@@ -110265,6 +110382,18 @@ static void ptn_spl_fixed_array_data_free(void *data) {
     free(fixed_data);
 }
 
+static PtnSplObjectStorageData *ptn_spl_object_storage_data_new(void) {
+    PtnSplObjectStorageData *data = malloc(sizeof(PtnSplObjectStorageData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->objects = ptn_array_from_literal_entries(0, NULL);
+    data->infos = ptn_array_from_literal_entries(0, NULL);
+    data->hashes = ptn_array_from_literal_entries(0, NULL);
+    data->index = 0;
+    return data;
+}
+
 static void ptn_spl_object_storage_data_free(void *data) {
     PtnSplObjectStorageData *storage_data = (PtnSplObjectStorageData *)data;
     if (storage_data == NULL) {
@@ -110589,14 +110718,7 @@ static PtnSplObjectStorageData *ptn_spl_object_storage_data(PtnRuntime *runtime,
         return NULL;
     }
     if (receiver.as.object->native_data == NULL) {
-        PtnSplObjectStorageData *data = malloc(sizeof(PtnSplObjectStorageData));
-        if (data == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        data->objects = ptn_array_from_literal_entries(0, NULL);
-        data->infos = ptn_array_from_literal_entries(0, NULL);
-        data->hashes = ptn_array_from_literal_entries(0, NULL);
-        data->index = 0;
+        PtnSplObjectStorageData *data = ptn_spl_object_storage_data_new();
         receiver.as.object->native_data = data;
         receiver.as.object->native_data_free = ptn_spl_object_storage_data_free;
         ptn_spl_object_storage_sync_properties(runtime, receiver, data, 0);
@@ -117398,28 +117520,34 @@ static void ptn_spl_object_storage_copy_members_from_object(
     ptn_value_destroy(&members);
 }
 
-static void ptn_spl_object_storage_attach_value(
+static int ptn_spl_object_storage_attach_value_ex(
     PtnRuntime *runtime,
     PtnValue receiver,
     PtnSplObjectStorageData *data,
     const char *method_name,
     PtnValue object,
     PtnValue info,
-    size_t line
+    size_t line,
+    int sync_properties,
+    size_t *index_out
 ) {
+    if (index_out != NULL) {
+        *index_out = 0;
+    }
     if (!ptn_spl_object_storage_mutation_allowed(runtime, line)) {
-        return;
+        return 0;
     }
     PtnValue hash = ptn_null();
     if (!ptn_spl_object_storage_hash_for_object(runtime, receiver, method_name, object, line, &hash)) {
-        return;
+        return 0;
     }
     ssize_t existing = ptn_spl_object_storage_find_hash(data, hash);
     PtnArray *objects = ptn_value_deref(data->objects).as.array;
     PtnArray *infos = ptn_value_deref(data->infos).as.array;
     PtnArray *hashes = ptn_value_deref(data->hashes).as.array;
+    size_t index = 0;
     if (existing >= 0) {
-        size_t index = (size_t)existing;
+        index = (size_t)existing;
         ptn_value_destroy(&infos->entries[index].value);
         infos->entries[index].value = ptn_value_clone_deref(info);
     } else {
@@ -117445,9 +117573,38 @@ static void ptn_spl_object_storage_attach_value(
             ptn_array_int_key((int64_t)hashes->len),
             ptn_value_clone_deref(hash)
         );
+        index = objects->len - 1;
     }
     ptn_value_destroy(&hash);
-    ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+    if (sync_properties) {
+        ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+    }
+    if (index_out != NULL) {
+        *index_out = index;
+    }
+    return 1;
+}
+
+static void ptn_spl_object_storage_attach_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    const char *method_name,
+    PtnValue object,
+    PtnValue info,
+    size_t line
+) {
+    ptn_spl_object_storage_attach_value_ex(
+        runtime,
+        receiver,
+        data,
+        method_name,
+        object,
+        info,
+        line,
+        1,
+        NULL
+    );
 }
 
 static void ptn_spl_object_storage_remove_index(
@@ -117574,14 +117731,7 @@ static PTN_UNUSED PtnValue ptn_spl_object_storage_new(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    PtnSplObjectStorageData *data = malloc(sizeof(PtnSplObjectStorageData));
-    if (data == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    data->objects = ptn_array_from_literal_entries(0, NULL);
-    data->infos = ptn_array_from_literal_entries(0, NULL);
-    data->hashes = ptn_array_from_literal_entries(0, NULL);
-    data->index = 0;
+    PtnSplObjectStorageData *data = ptn_spl_object_storage_data_new();
     PtnValue object = ptn_object_new_shell(runtime, "SplObjectStorage");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_spl_object_storage_data_free;
@@ -117902,6 +118052,8 @@ static PtnValue ptn_spl_object_storage_call_method(
         PtnUnserializeValue parsed;
         parsed.value = ptn_null();
         parsed.id = 0;
+        PtnSplObjectStorageData *new_data = NULL;
+        PtnValue members = ptn_null();
         int ok = ptn_unserialize_spl_object_storage_legacy_payload(
             runtime,
             &state,
@@ -117910,32 +118062,27 @@ static PtnValue ptn_spl_object_storage_call_method(
             payload.len,
             line,
             0,
+            receiver,
+            &new_data,
+            &members,
             &parsed
         );
         if (ok && runtime != NULL && runtime->exceptions->active_exception == NULL) {
-            PtnValue parsed_value = ptn_value_deref(parsed.value);
             PtnValue resolved_receiver = ptn_value_deref(receiver);
-            if (parsed_value.type == PTN_OBJECT &&
-                parsed_value.as.object != NULL &&
-                parsed_value.as.object->native_data != NULL &&
-                resolved_receiver.type == PTN_OBJECT) {
-                PtnSplObjectStorageData *new_data =
-                    (PtnSplObjectStorageData *)parsed_value.as.object->native_data;
-                parsed_value.as.object->native_data = NULL;
-                parsed_value.as.object->native_data_free = NULL;
+            if (new_data != NULL && resolved_receiver.type == PTN_OBJECT) {
                 ptn_spl_object_storage_data_free(resolved_receiver.as.object->native_data);
                 resolved_receiver.as.object->native_data = new_data;
                 resolved_receiver.as.object->native_data_free = ptn_spl_object_storage_data_free;
-                ptn_spl_object_storage_copy_members_from_object(
-                    runtime,
-                    resolved_receiver,
-                    parsed_value.as.object,
-                    line
-                );
+                ptn_spl_object_storage_load_members(runtime, resolved_receiver, members, line);
                 ptn_spl_object_storage_sync_properties(runtime, resolved_receiver, new_data, line);
+                new_data = NULL;
             }
             ptn_unserialize_flush_pending_callbacks(runtime, &state, 0);
         }
+        if (new_data != NULL) {
+            ptn_spl_object_storage_data_free(new_data);
+        }
+        ptn_value_destroy(&members);
         ptn_value_destroy(&parsed.value);
         ptn_unserialize_state_free(&state);
         ptn_string_operand_free(payload);
