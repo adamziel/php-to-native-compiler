@@ -4269,6 +4269,7 @@ static int ptn_phar_uri_rename_entry(const char *source_uri, const char *dest_ur
 static int ptn_phar_uri_archive_and_entry(const char *uri, PtnPharArchiveState **archive_out, char **entry_out);
 static int ptn_phar_uri_unlink(PtnRuntime *runtime, const char *uri, size_t line);
 static int ptn_include_phar_plain_entry(PtnRuntime *runtime, const char *uri, PtnValue *result_out);
+static int ptn_phar_archive_copy_path(const char *source_path, const char *dest_path);
 static int ptn_phar_uri_mkdir(const char *uri);
 static int ptn_phar_uri_rmdir(const char *uri);
 static void ptn_phar_object_data_free(void *data);
@@ -6360,6 +6361,7 @@ static int ptn_phar_archive_find_entry_index(
     const char *name,
     size_t *index_out
 );
+static PtnPharArchiveState *ptn_phar_archive_find_path_len(const char *path, size_t path_len);
 static int ptn_phar_archive_entry_is_dir(PtnPharArchiveEntry *entry);
 static void ptn_phar_archive_set_entry(
     PtnPharArchiveState *archive,
@@ -49438,6 +49440,8 @@ static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnVal
     fclose(input);
     if (!ok) {
         ptn_emit_file_warning(runtime, "copy", dest, strerror(errno), line);
+    } else {
+        (void)ptn_phar_archive_copy_path(source, dest);
     }
     free(dest);
     free(source);
@@ -93777,6 +93781,234 @@ static void ptn_phar_archive_ensure_filesystem_placeholder(PtnPharArchiveState *
     }
 }
 
+static int ptn_phar_archive_alias_is_implicit(PtnPharArchiveState *archive) {
+    if (archive == NULL || archive->alias == NULL || archive->alias[0] == '\0') {
+        return 1;
+    }
+    return archive->path != NULL && strcmp(archive->alias, archive->path) == 0;
+}
+
+static PtnPharArchiveState *ptn_phar_archive_find_alias_owner(
+    const char *alias,
+    PtnPharArchiveState *excluded
+) {
+    if (alias == NULL || alias[0] == '\0') {
+        return NULL;
+    }
+    for (PtnPharArchiveState *archive = ptn_phar_archives; archive != NULL; archive = archive->next) {
+        if (archive == excluded || ptn_phar_archive_alias_is_implicit(archive)) {
+            continue;
+        }
+        if (archive->alias != NULL && strcmp(archive->alias, alias) == 0) {
+            return archive;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_phar_alias_is_valid(const char *alias) {
+    if (alias == NULL || alias[0] == '\0') {
+        return 0;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)alias; *cursor != '\0'; cursor++) {
+        if (*cursor == '/' || *cursor == '\\' || *cursor == ':' || *cursor == ';') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_phar_throw_invalid_alias(
+    PtnRuntime *runtime,
+    const char *alias,
+    PtnPharArchiveState *archive
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Invalid alias \"%s\" specified for phar \"%s\"",
+        alias == NULL ? "" : alias,
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Invalid alias \"%s\" specified for phar \"%s\"",
+        alias == NULL ? "" : alias,
+        archive == NULL || archive->path == NULL ? "" : archive->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static void ptn_phar_throw_alias_conflict_for_set_alias(
+    PtnRuntime *runtime,
+    const char *alias,
+    PtnPharArchiveState *owner
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "alias \"%s\" is already used for archive \"%s\" and cannot be used for other archives",
+        alias == NULL ? "" : alias,
+        owner == NULL || owner->path == NULL ? "" : owner->path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "alias \"%s\" is already used for archive \"%s\" and cannot be used for other archives",
+        alias == NULL ? "" : alias,
+        owner == NULL || owner->path == NULL ? "" : owner->path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static void ptn_phar_throw_alias_conflict_for_constructor(
+    PtnRuntime *runtime,
+    const char *alias,
+    PtnPharArchiveState *owner,
+    const char *target_path
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "alias \"%s\" is already used for archive \"%s\" cannot be overloaded with \"%s\"",
+        alias == NULL ? "" : alias,
+        owner == NULL || owner->path == NULL ? "" : owner->path,
+        target_path == NULL ? "" : target_path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "alias \"%s\" is already used for archive \"%s\" cannot be overloaded with \"%s\"",
+        alias == NULL ? "" : alias,
+        owner == NULL || owner->path == NULL ? "" : owner->path,
+        target_path == NULL ? "" : target_path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static void ptn_phar_throw_implicit_alias_conflict(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive
+) {
+    const char *path = archive == NULL || archive->path == NULL ? "" : archive->path;
+    const char *message_format = "Cannot open archive \"%s\", alias is already in use by existing archive";
+    if (strstr(path, ".phar.tar") != NULL || strstr(path, ".tar") != NULL) {
+        message_format = "phar error: Unable to add tar-based phar \"%s\", alias is already in use";
+    } else if (strstr(path, ".phar.zip") != NULL || strstr(path, ".zip") != NULL) {
+        message_format = "phar error: Unable to add zip-based phar \"%s\" with implicit alias, alias is already in use";
+    }
+    int needed = snprintf(NULL, 0, message_format, path);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, message_format, path);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static void ptn_phar_archive_clear_loaded_state(PtnPharArchiveState *archive) {
+    if (archive == NULL) {
+        return;
+    }
+    free(archive->alias);
+    free(archive->stub);
+    free(archive->metadata);
+    free(archive->signature_hash);
+    free(archive->signature_type);
+    archive->alias = NULL;
+    archive->stub = NULL;
+    archive->stub_len = 0;
+    archive->metadata = NULL;
+    archive->metadata_len = 0;
+    archive->signature_hash = NULL;
+    archive->signature_type = NULL;
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        ptn_phar_archive_entry_clear(&archive->entries[i]);
+    }
+    archive->entry_count = 0;
+}
+
+static void ptn_phar_archive_clone_loaded_state(
+    PtnPharArchiveState *dest,
+    PtnPharArchiveState *source
+) {
+    if (dest == NULL || source == NULL || dest == source) {
+        return;
+    }
+    ptn_phar_archive_clear_loaded_state(dest);
+    dest->alias = ptn_duplicate_string(source->alias == NULL ? "" : source->alias);
+    dest->stub = ptn_duplicate_string_len(source->stub == NULL ? "" : source->stub, source->stub_len);
+    dest->stub_len = source->stub_len;
+    if (source->metadata != NULL && source->metadata_len != 0) {
+        dest->metadata = ptn_phar_copy_bytes(source->metadata, source->metadata_len);
+        dest->metadata_len = source->metadata_len;
+    }
+    if (source->signature_hash != NULL) {
+        dest->signature_hash = ptn_duplicate_string(source->signature_hash);
+    }
+    if (source->signature_type != NULL) {
+        dest->signature_type = ptn_duplicate_string(source->signature_type);
+    }
+    ptn_phar_archive_reserve_entries(dest, source->entry_count);
+    for (size_t i = 0; i < source->entry_count; i++) {
+        PtnPharArchiveEntry *entry = &source->entries[i];
+        ptn_phar_archive_set_manifest_entry(
+            dest,
+            entry->name,
+            entry->content,
+            entry->content_len,
+            entry->metadata,
+            entry->metadata_len,
+            entry->flags
+        );
+    }
+}
+
 static PtnPharArchiveState *ptn_phar_archive_for_path(const char *path) {
     for (PtnPharArchiveState *archive = ptn_phar_archives; archive != NULL; archive = archive->next) {
         if (strcmp(archive->path, path) == 0) {
@@ -93794,6 +94026,21 @@ static PtnPharArchiveState *ptn_phar_archive_for_path(const char *path) {
     archive->next = ptn_phar_archives;
     ptn_phar_archives = archive;
     return archive;
+}
+
+static int ptn_phar_archive_copy_path(const char *source_path, const char *dest_path) {
+    if (source_path == NULL || dest_path == NULL) {
+        return 0;
+    }
+    PtnPharArchiveState *source =
+        ptn_phar_archive_find_path_len(source_path, strlen(source_path));
+    if (source == NULL) {
+        return 0;
+    }
+    PtnPharArchiveState *dest = ptn_phar_archive_for_path(dest_path);
+    ptn_phar_archive_clone_loaded_state(dest, source);
+    ptn_phar_archive_ensure_filesystem_placeholder(dest);
+    return 1;
 }
 
 static PtnPharObjectData *ptn_phar_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -94103,13 +94350,61 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
         ptn_throw_exception(runtime, "ValueError", "Phar::__construct(): Argument #1 ($filename) must not contain any null bytes");
         return ptn_null();
     }
+    char *requested_alias = NULL;
+    if (argc >= 3) {
+        PtnStringOperand alias =
+            ptn_internal_expect_string_arg(runtime, "Phar::__construct", 3, "alias", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(alias);
+            free(path);
+            return ptn_null();
+        }
+        requested_alias = ptn_duplicate_string_len(alias.data, alias.len);
+        ptn_string_operand_free(alias);
+    }
     PtnPharObjectData *data = malloc(sizeof(PtnPharObjectData));
     if (data == NULL) {
+        free(requested_alias);
         free(path);
         ptn_abort_out_of_memory();
     }
     data->archive = ptn_phar_archive_for_path(path);
+    if (requested_alias != NULL) {
+        if (!ptn_phar_alias_is_valid(requested_alias)) {
+            ptn_phar_throw_invalid_alias(runtime, requested_alias, data->archive);
+            free(requested_alias);
+            free(data);
+            free(path);
+            return ptn_null();
+        }
+        PtnPharArchiveState *owner = ptn_phar_archive_find_alias_owner(requested_alias, data->archive);
+        if (owner != NULL) {
+            ptn_phar_throw_alias_conflict_for_constructor(runtime, requested_alias, owner, path);
+            free(requested_alias);
+            free(data);
+            free(path);
+            return ptn_null();
+        }
+        if (!ptn_phar_archive_alias_is_implicit(data->archive) &&
+            strcmp(data->archive->alias, requested_alias) != 0) {
+            ptn_phar_throw_alias_conflict_for_constructor(runtime, requested_alias, data->archive, path);
+            free(requested_alias);
+            free(data);
+            free(path);
+            return ptn_null();
+        }
+        free(data->archive->alias);
+        data->archive->alias = requested_alias;
+        requested_alias = NULL;
+    } else if (!ptn_phar_archive_alias_is_implicit(data->archive) &&
+        ptn_phar_archive_find_alias_owner(data->archive->alias, data->archive) != NULL) {
+        ptn_phar_throw_implicit_alias_conflict(runtime, data->archive);
+        free(data);
+        free(path);
+        return ptn_null();
+    }
     data->position = 0;
+    free(requested_alias);
     free(path);
     PtnValue object = ptn_object_new_shell(runtime, "Phar");
     object.as.object->native_data = data;
@@ -94314,6 +94609,17 @@ static PtnValue ptn_phar_call_method(
         }
         char *new_alias = ptn_duplicate_string_len(alias.data, alias.len);
         ptn_string_operand_free(alias);
+        if (!ptn_phar_alias_is_valid(new_alias)) {
+            ptn_phar_throw_invalid_alias(runtime, new_alias, data->archive);
+            free(new_alias);
+            return ptn_null();
+        }
+        PtnPharArchiveState *owner = ptn_phar_archive_find_alias_owner(new_alias, data->archive);
+        if (owner != NULL) {
+            ptn_phar_throw_alias_conflict_for_set_alias(runtime, new_alias, owner);
+            free(new_alias);
+            return ptn_null();
+        }
         free(data->archive->alias);
         data->archive->alias = new_alias;
         return ptn_bool(1);
@@ -94462,6 +94768,46 @@ static PtnValue ptn_phar_call_method(
         }
         char *entry_name = ptn_phar_string_arg(runtime, "Phar::offsetSet", 1, "localName", args[0], line);
         if (entry_name == NULL) {
+            return ptn_null();
+        }
+        if (strcmp(entry_name, ".phar/stub.php") == 0 || strcmp(entry_name, ".phar/alias.txt") == 0) {
+            const char *kind = strcmp(entry_name, ".phar/stub.php") == 0 ? "stub" : "alias";
+            const char *method = strcmp(entry_name, ".phar/stub.php") == 0 ? "setStub" : "setAlias";
+            int needed = snprintf(
+                NULL,
+                0,
+                "Cannot set %s \"%s\" directly in phar \"%s\", use %s",
+                kind,
+                entry_name,
+                data->archive == NULL || data->archive->path == NULL ? "" : data->archive->path,
+                method
+            );
+            if (needed < 0) {
+                free(entry_name);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(entry_name);
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "Cannot set %s \"%s\" directly in phar \"%s\", use %s",
+                kind,
+                entry_name,
+                data->archive == NULL || data->archive->path == NULL ? "" : data->archive->path,
+                method
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                free(entry_name);
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "UnexpectedValueException", message);
+            free(message);
+            free(entry_name);
             return ptn_null();
         }
         PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
