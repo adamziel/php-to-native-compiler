@@ -52681,6 +52681,42 @@ static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const P
     return ptn_resource(ptn_resource_new_named("curl"));
 }
 
+static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_setopt",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    int64_t option = ptn_internal_expect_integer_arg(
+        runtime,
+        "curl_setopt",
+        2,
+        "option",
+        args[1],
+        line
+    );
+    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
+        ptn_value_destroy(&handle->curl_options);
+        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    }
+    ptn_array_set_entry(
+        handle->curl_options.as.array,
+        ptn_array_int_key(option),
+        ptn_value_clone(args[2])
+    );
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_curl_multi_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)args;
     (void)line;
@@ -69197,6 +69233,16 @@ static PtnValue ptn_defined_constants_sockets_table(void) {
     return table;
 }
 
+static void ptn_defined_constants_add_curl(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", 20079);
+}
+
+static PtnValue ptn_defined_constants_curl_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_curl(table);
+    return table;
+}
+
 static void ptn_defined_constants_add_soap(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SOAP_1_1", 1);
     ptn_get_defined_constants_add_int(table, "SOAP_1_2", 2);
@@ -69533,6 +69579,13 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
 
+static int ptn_reflection_constant_is_curl(const char *name) {
+    static const char *const names[] = {
+        "CURLOPT_HEADERFUNCTION",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
 static int ptn_reflection_constant_is_soap(const char *name) {
     static const char *const names[] = {
         "SOAP_1_1",
@@ -69581,6 +69634,9 @@ static const char *ptn_reflection_constant_extension_name(const char *name) {
     }
     if (ptn_reflection_constant_is_sockets(name)) {
         return "sockets";
+    }
+    if (ptn_reflection_constant_is_curl(name)) {
+        return "curl";
     }
     if (ptn_reflection_constant_is_soap(name)) {
         return "soap";
@@ -69638,6 +69694,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("pcre"), ptn_defined_constants_pcre_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("session"), ptn_defined_constants_session_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("sockets"), ptn_defined_constants_sockets_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("curl"), ptn_defined_constants_curl_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("soap"), ptn_defined_constants_soap_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("standard"), ptn_defined_constants_standard_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("user"), ptn_defined_constants_user_table(runtime));
@@ -69653,6 +69710,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     ptn_defined_constants_add_pcre(core);
     ptn_defined_constants_add_session(core);
     ptn_defined_constants_add_sockets(core);
+    ptn_defined_constants_add_curl(core);
     ptn_defined_constants_add_soap(core);
     ptn_defined_constants_add_standard(core);
     ptn_defined_constants_add_user(runtime, core);
@@ -94948,6 +95006,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
         { "curl_multi_init", 0, 0, ptn_internal_curl_multi_init },
+        { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
         { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
@@ -114109,6 +114168,9 @@ static PtnValue ptn_reflection_extension_constants(const char *extension_name) {
     }
     if (ptn_ascii_case_equal(extension_name, "sockets")) {
         return ptn_defined_constants_sockets_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "curl")) {
+        return ptn_defined_constants_curl_table();
     }
     if (ptn_ascii_case_equal(extension_name, "soap")) {
         return ptn_defined_constants_soap_table();

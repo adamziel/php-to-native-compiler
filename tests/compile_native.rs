@@ -36179,6 +36179,50 @@ echo $dest->saveXML();
 }
 
 #[test]
+fn compile_curl_setopt_callback_option_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-setopt-callback-option");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("curl-setopt-callback-option.php");
+    let output = root.join("curl-setopt-callback-option-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class CurlHeaderHandler {\n\
+    public static function handle($handle, $line) {\n\
+        return strlen($line);\n\
+    }\n\
+}\n\
+$callback = ['CurlHeaderHandler', 'handle'];\n\
+$handle = curl_init();\n\
+var_dump(function_exists('curl_setopt'));\n\
+var_dump(CURLOPT_HEADERFUNCTION);\n\
+var_dump(curl_setopt($handle, CURLOPT_HEADERFUNCTION, $callback));\n\
+$constants = get_defined_constants(true);\n\
+var_dump(isset($constants['curl']['CURLOPT_HEADERFUNCTION']));\n\
+$extension = new ReflectionExtension('curl');\n\
+var_dump($extension->getConstants()['CURLOPT_HEADERFUNCTION']);\n\
+var_dump(isset($extension->getFunctions()['curl_setopt']));\n\
+set_error_handler($callback);\n\
+set_error_handler(function () use ($handle) {});\n\
+echo \"ok\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(20079)\nbool(true)\nbool(true)\nint(20079)\nbool(true)\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_curl_setopt"));
+    assert!(c_source.contains("CURLOPT_HEADERFUNCTION"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

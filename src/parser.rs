@@ -20978,6 +20978,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "curl_init"
             | "curl_multi_add_handle"
             | "curl_multi_init"
+            | "curl_setopt"
             | "disk_free_space"
             | "disk_total_space"
             | "diskfreespace"

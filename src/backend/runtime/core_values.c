@@ -1081,6 +1081,7 @@ struct PtnResource {
     int persistent;
     int closed;
     PtnValue context_options;
+    PtnValue curl_options;
     PtnResource *registry_prev;
     PtnResource *registry_next;
     int manual_close_forbidden;
@@ -3643,6 +3644,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
 }
@@ -3677,6 +3679,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
 }
@@ -3708,6 +3711,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
 }
@@ -3734,6 +3738,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
 }
@@ -4117,6 +4122,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     free(resource->stream_uri);
     free(resource->stream_mode);
     ptn_value_destroy(&resource->context_options);
+    ptn_value_destroy(&resource->curl_options);
     free(resource);
 }
 
@@ -4146,6 +4152,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
+        { PTN_NULL, 0, 0, 0, 0, { 0 } },
         { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     static PtnResource stdout_resource = {
@@ -4162,6 +4169,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
+        { PTN_NULL, 0, 0, 0, 0, { 0 } },
         { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     static PtnResource stderr_resource = {
@@ -4178,6 +4186,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         1,
         0,
+        { PTN_NULL, 0, 0, 0, 0, { 0 } },
         { PTN_NULL, 0, 0, 0, 0, { 0 } }
     };
     PtnResource *resource = &stdin_resource;

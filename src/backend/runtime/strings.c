@@ -1227,6 +1227,7 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_OPEN_READONLY", 1)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_OPEN_READWRITE", 2)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_OPEN_CREATE", 4)
+    PTN_BUILTIN_INT_CONSTANT("CURLOPT_HEADERFUNCTION", 20079)
     if (strcmp(name, "INTL_ICU_VERSION") == 0) {
         *out = ptn_string(PTN_INTL_ICU_VERSION);
         return 1;
