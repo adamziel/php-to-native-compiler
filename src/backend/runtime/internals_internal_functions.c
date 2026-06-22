@@ -123901,20 +123901,12 @@ static int ptn_spl_fixed_array_index_from_arg(
         return 0;
     }
     PtnArrayKey key;
-    if (!ptn_spl_offset_key_from_value(runtime, "SplFixedArray", ptn_value_deref(offset), line, for_isset, for_unset, &key)) {
+    if (!ptn_spl_offset_key_from_value(runtime, "SplFixedArray", ptn_value_deref(offset), line, 0, for_unset, &key)) {
         return 0;
     }
     if (key.type != PTN_ARRAY_KEY_INT) {
         ptn_array_key_free(key);
-        if (for_isset) {
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "Cannot access offset of type string in isset or empty",
-                runtime->source_path,
-                line
-            );
-        } else if (for_unset) {
+        if (for_unset) {
             ptn_throw_exception_at(
                 runtime,
                 "TypeError",

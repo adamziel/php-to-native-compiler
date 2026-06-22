@@ -9818,6 +9818,17 @@ static PTN_UNUSED int ptn_arrayaccess_append_reference_temporary(
 ) {
     PtnValue value = ptn_value_deref(container);
     if (
+        value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        ptn_object_is_internal_or_descendant(value, "SplFixedArray")
+    ) {
+        ptn_throw_exception(runtime, "Error", "[] operator not supported for SplFixedArray");
+        if (reference_out != NULL) {
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+        return 1;
+    }
+    if (
         value.type != PTN_OBJECT ||
         value.as.object == NULL ||
         !ptn_object_is_internal_or_descendant(value, "ArrayObject")
@@ -12637,6 +12648,10 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
              ptn_ascii_case_equal(resolved_container.as.object->class_name, "Dom\\NodeList") ||
              ptn_ascii_case_equal(resolved_container.as.object->class_name, "DOMNamedNodeMap") ||
              ptn_ascii_case_equal(resolved_container.as.object->class_name, "Dom\\NamedNodeMap"))) {
+            result = 0;
+            goto done;
+        }
+        if (ptn_object_is_internal_or_descendant(resolved_container, "SplFixedArray")) {
             result = 0;
             goto done;
         }
