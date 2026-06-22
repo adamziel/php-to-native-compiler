@@ -7298,6 +7298,18 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         !ptn_lazy_object_initialize(runtime, receiver, line)) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return ptn_reference_value(ptn_reference_new_owned(internal_xml_value));
+    }
+#endif
     PtnValue magic_receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, magic_receiver.as.object, property, access_scope, 1);

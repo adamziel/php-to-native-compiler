@@ -34724,6 +34724,84 @@ var_dump($inserted === $x, $moveFragment->childNodes->length);
 }
 
 #[test]
+fn compile_dom_text_processing_instruction_and_subclass_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-text-processing-instruction-subclass");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-text-processing-instruction-subclass.php");
+    let output = root.join("dom-text-processing-instruction-subclass-bin");
+    fs::write(
+        &input,
+        "<?php
+class Books extends DOMDocument {
+    public function addBook(string $title): void {
+        $this->documentElement->appendChild($this->createElement('book', $title));
+    }
+}
+
+$books = new Books();
+$books->loadXML('<books/>');
+$books->addBook('x');
+echo $books->saveXML($books->documentElement), \"\\n\";
+
+$text = new DOMText('some text characters');
+echo $text->wholeText, \"\\n\";
+$tail = $text->splitText(9);
+var_dump($tail->wholeText, $tail->isElementContentWhitespace());
+$tail->splitText(1);
+var_dump($tail->isElementContentWhitespace());
+
+$pi = new DOMProcessingInstruction('test');
+var_dump($pi->target, $pi->data);
+$pi->data = 'my data <>';
+$doc = new DOMDocument();
+$doc->appendChild($doc->createElement('root'));
+$doc->documentElement->appendChild($doc->adoptNode($pi));
+echo $doc->saveXML();
+
+$class = new ReflectionClass('DOMProcessingInstruction');
+$instance = $class->newInstanceWithoutConstructor();
+try {
+    var_dump($instance->target);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $instance->data = 'hello';
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<books><book>x</book></books>\n",
+            "some text characters\n",
+            "string(11) \" characters\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(4) \"test\"\n",
+            "string(0) \"\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root><?test my data <>?></root>\n",
+            "Invalid State Error\n",
+            "Invalid State Error\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_text_split_text_method"));
+    assert!(c_source.contains("ptn_dom_construct_processing_instruction"));
+}
+
+#[test]
 fn compile_dom_document_load_save_html_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-dom-document-load-save-html-surfaces");
     fs::create_dir_all(&root).unwrap();

@@ -21287,6 +21287,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "defined"
             | "extension_loaded"
             | "libxml_clear_errors"
+            | "libxml_disable_entity_loader"
             | "libxml_get_errors"
             | "libxml_get_last_error"
             | "libxml_set_streams_context"
