@@ -6890,6 +6890,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
         "ReflectionFunction",
+        "ReflectionGenerator",
         "ReflectionMethod",
         "ReflectionObject",
         "ReflectionParameter",
@@ -7456,6 +7457,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
         "ReflectionFunction",
+        "ReflectionGenerator",
         "ReflectionMethod",
         "ReflectionObject",
         "ReflectionParameter",
@@ -12120,6 +12122,7 @@ fn attribute_class_constant_class_available(
         || class_name.eq_ignore_ascii_case("ReflectionEnumBackedCase")
         || class_name.eq_ignore_ascii_case("ReflectionEnumUnitCase")
         || class_name.eq_ignore_ascii_case("ReflectionFunction")
+        || class_name.eq_ignore_ascii_case("ReflectionGenerator")
         || class_name.eq_ignore_ascii_case("ReflectionMethod")
         || class_name.eq_ignore_ascii_case("ReflectionProperty")
         || BUILTIN_EXCEPTION_ROOT_NAMES
@@ -18289,6 +18292,7 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
         "reflectionextension" => Some("ReflectionExtension"),
         "reflectionfunction" => Some("ReflectionFunction"),
         "reflectionfunctionabstract" => Some("ReflectionFunctionAbstract"),
+        "reflectiongenerator" => Some("ReflectionGenerator"),
         "reflectionmethod" => Some("ReflectionMethod"),
         "reflectionobject" => Some("ReflectionObject"),
         "reflectionparameter" => Some("ReflectionParameter"),

@@ -107383,6 +107383,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char 
     return ptn_ascii_case_equal(class_name, "ReflectionFunction");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_generator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionGenerator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionMethod");
 }
@@ -108749,6 +108753,11 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
+static int ptn_reflection_generator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "getTrace");
+}
+
 static int ptn_reflection_function_abstract_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getClosureScopeClass")
@@ -109458,6 +109467,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_reflection_generator(class_name)) {
+        return ptn_reflection_generator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_reflection_extension(class_name)) {
         return ptn_reflection_extension_method_exists(method_name);
@@ -110238,6 +110250,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isDisabled",
             "isGenerator",
         };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_generator(class_name)) {
+        static const char *const names[] = { "__construct", "getTrace" };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -120337,6 +120354,10 @@ typedef struct {
     size_t closure_function_index;
 } PtnReflectionFunctionData;
 
+typedef struct {
+    PtnValue generator;
+} PtnReflectionGeneratorData;
+
 static const char *ptn_reflection_function_effective_name(PtnReflectionFunctionData *data) {
     if (data == NULL) {
         return "";
@@ -122652,6 +122673,15 @@ static void ptn_reflection_function_data_free(void *data) {
     free(data);
 }
 
+static void ptn_reflection_generator_data_free(void *data) {
+    PtnReflectionGeneratorData *generator_data = (PtnReflectionGeneratorData *)data;
+    if (generator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&generator_data->generator);
+    free(generator_data);
+}
+
 static void ptn_reflection_extension_data_free(void *data) {
     PtnReflectionExtensionData *extension_data = (PtnReflectionExtensionData *)data;
     if (extension_data == NULL) {
@@ -122902,6 +122932,19 @@ static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runti
         return NULL;
     }
     return (PtnReflectionFunctionData *)receiver.as.object->native_data;
+}
+
+static PtnReflectionGeneratorData *ptn_reflection_generator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_generator(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionGenerator object");
+        return NULL;
+    }
+    return (PtnReflectionGeneratorData *)receiver.as.object->native_data;
 }
 
 static PtnReflectionExtensionData *ptn_reflection_extension_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -125221,6 +125264,45 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
     ptn_reflection_function_attach_name_property(runtime, object, ptn_reflection_function_effective_name(data));
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_generator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    ptn_reflection_check_exact_arguments(runtime, "ReflectionGenerator", "__construct", argc, 1);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue generator_value = ptn_value_deref(args[0]);
+    if (ptn_generator_from_value(generator_value) == NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionGenerator::__construct(): Argument #1 ($generator) must be of type Generator, %s given",
+            ptn_count_operand_type_name(generator_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnReflectionGeneratorData *data = malloc(sizeof(PtnReflectionGeneratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->generator = ptn_value_clone_deref(args[0]);
+
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionGenerator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_generator_data_free;
     return object;
 }
 
@@ -135555,6 +135637,131 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     }
     if (ptn_ascii_case_equal(name, "isGenerator")) {
         return ptn_bool(metadata.is_generator);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_reflection_generator_trace_frame(
+    PtnGenerator *generator,
+    int include_file_line
+) {
+    PtnValue frame = ptn_array_from_literal_entries(0, NULL);
+    if (
+        include_file_line &&
+        generator != NULL &&
+        generator->source_file != NULL &&
+        generator->source_line != 0
+    ) {
+        if (generator->source_line > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("file"),
+            ptn_owned_string(ptn_duplicate_string(generator->source_file))
+        );
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("line"),
+            ptn_int((int64_t)generator->source_line)
+        );
+    }
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("function"),
+        ptn_owned_string(ptn_duplicate_string(
+            generator != NULL && generator->function_name != NULL
+                ? generator->function_name
+                : "{unknown}"
+        ))
+    );
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("args"),
+        ptn_array_from_literal_entries(0, NULL)
+    );
+    return frame;
+}
+
+static void ptn_reflection_generator_append_trace(
+    PtnRuntime *runtime,
+    PtnValue result,
+    PtnGenerator *generator,
+    int include_file_line,
+    int64_t *index
+) {
+    if (generator == NULL || index == NULL) {
+        return;
+    }
+    ptn_generator_skip_exhausted_delegates(generator);
+    PtnGenerator *delegate = ptn_generator_delegate_source(generator, generator->position);
+    if (delegate != NULL) {
+        ptn_reflection_generator_append_trace(runtime, result, delegate, 1, index);
+    }
+    if (*index == INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key((*index)++),
+        ptn_reflection_generator_trace_frame(generator, include_file_line)
+    );
+    (void)runtime;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_reflection_generator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (
+            resolved_receiver.type != PTN_OBJECT ||
+            replacement.type != PTN_OBJECT ||
+            replacement.as.object->native_data == NULL
+        ) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (resolved_receiver.as.object->native_data_free != NULL) {
+            resolved_receiver.as.object->native_data_free(resolved_receiver.as.object->native_data);
+        }
+        resolved_receiver.as.object->native_data = replacement.as.object->native_data;
+        resolved_receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+        replacement.as.object->native_data = NULL;
+        replacement.as.object->native_data_free = NULL;
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+
+    PtnReflectionGeneratorData *data = ptn_reflection_generator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getTrace")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        int64_t index = 0;
+        ptn_reflection_generator_append_trace(
+            runtime,
+            result,
+            ptn_generator_from_value(data->generator),
+            0,
+            &index
+        );
+        return result;
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

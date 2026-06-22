@@ -7106,6 +7106,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_generator(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_generator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_internal_class_name_is_reflection_extension(receiver.as.object->class_name)
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
