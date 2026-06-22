@@ -47842,6 +47842,74 @@ var_dump(function_exists(\"asort\"));",
 }
 
 #[test]
+fn compile_asort_stringable_object_comparison_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-asort-stringable-object-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asort-stringable-object-mutation.php");
+    let output = root.join("asort-stringable-object-mutation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function resize_arr() {\n\
+    global $arr;\n\
+    for ($i = 0; $i < 10; $i++) {\n\
+        $arr[$i] = $i;\n\
+    }\n\
+}\n\
+\n\
+class C {\n\
+    function __toString() {\n\
+        resize_arr();\n\
+        return '3';\n\
+    }\n\
+}\n\
+\n\
+$arr = ['a' => '1', '3' => new C, '2' => '2'];\n\
+asort($arr);\n\
+var_dump($arr);\n\
+var_dump(new C <=> '2', new C == '3');",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(11) {\n",
+            "  [\"a\"]=>\n",
+            "  string(1) \"1\"\n",
+            "  [3]=>\n",
+            "  int(3)\n",
+            "  [2]=>\n",
+            "  int(2)\n",
+            "  [0]=>\n",
+            "  int(0)\n",
+            "  [1]=>\n",
+            "  int(1)\n",
+            "  [4]=>\n",
+            "  int(4)\n",
+            "  [5]=>\n",
+            "  int(5)\n",
+            "  [6]=>\n",
+            "  int(6)\n",
+            "  [7]=>\n",
+            "  int(7)\n",
+            "  [8]=>\n",
+            "  int(8)\n",
+            "  [9]=>\n",
+            "  int(9)\n",
+            "}\n",
+            "int(1)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_arsort_mutates_direct_variable_preserves_keys_and_detaches_cow_to_native_binary() {
     let root = temp_dir("ptn-native-arsort-cow");
     fs::create_dir_all(&root).unwrap();

@@ -571,6 +571,50 @@ static PTN_UNUSED int ptn_compare_object_and_number(
     return 0;
 }
 
+static PTN_UNUSED int ptn_compare_object_and_string(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int *compared
+) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (runtime == NULL) {
+        return 0;
+    }
+
+    if (left.type == PTN_OBJECT && right.type == PTN_STRING) {
+        PtnStringOperand left_string;
+        if (!ptn_try_object_to_string_operand(runtime, left, line, &left_string)) {
+            return 0;
+        }
+        PtnString right_string = right.as.string;
+        *compared = ptn_compare_strings_loose(
+            (PtnString) { (unsigned char *)left_string.data, left_string.len, 0 },
+            right_string
+        );
+        ptn_string_operand_free(left_string);
+        return 1;
+    }
+
+    if (left.type == PTN_STRING && right.type == PTN_OBJECT) {
+        PtnStringOperand right_string;
+        if (!ptn_try_object_to_string_operand(runtime, right, line, &right_string)) {
+            return 0;
+        }
+        PtnString left_string = left.as.string;
+        *compared = ptn_compare_strings_loose(
+            left_string,
+            (PtnString) { (unsigned char *)right_string.data, right_string.len, 0 }
+        );
+        ptn_string_operand_free(right_string);
+        return 1;
+    }
+
+    return 0;
+}
+
 static int ptn_compare_equal_inner(
     PtnRuntime *runtime,
     PtnValue left,
@@ -654,6 +698,9 @@ static int ptn_compare_equal_inner(
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_string(runtime, left, right, line, &compared)) {
+        return compared == PTN_COMPARE_EQUAL;
+    }
     if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
         return compared == PTN_COMPARE_EQUAL;
     }
@@ -837,6 +884,9 @@ static int ptn_compare_order_inner(
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_string(runtime, left, right, line, &compared)) {
+        return compared;
+    }
     if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
         return compared;
     }

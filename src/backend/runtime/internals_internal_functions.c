@@ -19845,7 +19845,7 @@ static int ptn_array_multisort_compare_regular(
             return 1;
         }
     }
-    return ptn_array_value_compare_ascending(left, right);
+    return ptn_array_value_compare_ascending(left, right, runtime, line);
 }
 
 static int ptn_array_multisort_compare_operand(

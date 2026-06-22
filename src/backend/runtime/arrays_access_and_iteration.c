@@ -16653,8 +16653,13 @@ static PTN_UNUSED void ptn_array_krsort_entries(PtnArray *array) {
     ptn_array_rebuild_index(array);
 }
 
-static int ptn_array_value_compare_ascending(PtnValue left, PtnValue right) {
-    int compared = ptn_compare_order(NULL, left, right, 0);
+static int ptn_array_value_compare_ascending(
+    PtnValue left,
+    PtnValue right,
+    PtnRuntime *runtime,
+    size_t line
+) {
+    int compared = ptn_compare_order(runtime, left, right, line);
     if (compared == PTN_COMPARE_LESS) {
         return -1;
     }
@@ -16971,7 +16976,7 @@ static int ptn_array_value_compare_by_sort_flags(
                 : ptn_array_value_compare_natural(left, right, runtime, line);
         case PTN_SORT_REGULAR:
         default:
-            return ptn_array_value_compare_ascending(left, right);
+            return ptn_array_value_compare_ascending(left, right, runtime, line);
     }
 }
 
@@ -17044,6 +17049,59 @@ static void ptn_array_sort_item_swap(PtnArraySortItem *left, PtnArraySortItem *r
     PtnArraySortItem temporary = *left;
     *left = *right;
     *right = temporary;
+}
+
+static PtnArraySortItem ptn_array_sort_item_clone(PtnArrayEntry entry, size_t original_index) {
+    PtnArraySortItem item;
+    item.entry.key = ptn_array_key_clone(entry.key);
+    item.entry.value = ptn_value_clone(entry.value);
+    item.entry.by_ref_argument_eligible = entry.by_ref_argument_eligible;
+    item.original_index = original_index;
+    return item;
+}
+
+static void ptn_array_sort_item_destroy(PtnArraySortItem *item) {
+    ptn_array_key_free(item->entry.key);
+    ptn_value_destroy(&item->entry.value);
+}
+
+static int ptn_array_sort_items_contain_key(
+    const PtnArraySortItem *items,
+    size_t len,
+    PtnArrayKey key
+) {
+    for (size_t i = 0; i < len; i++) {
+        if (ptn_array_keys_equal(items[i].entry.key, key)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnArrayEntry ptn_array_sort_entry_clone_for_key(
+    PtnArray *array,
+    const PtnArraySortItem *item
+) {
+    PtnArrayEntry *live_entry = ptn_array_entry_for_key(array, item->entry.key);
+    PtnArrayEntry source = live_entry != NULL ? *live_entry : item->entry;
+    PtnArrayEntry cloned;
+    cloned.key = ptn_array_key_clone(item->entry.key);
+    cloned.value = ptn_value_clone(source.value);
+    cloned.by_ref_argument_eligible = source.by_ref_argument_eligible;
+    return cloned;
+}
+
+static const PtnArraySortItem *ptn_array_sort_item_for_original_index(
+    const PtnArraySortItem *items,
+    size_t len,
+    size_t original_index
+) {
+    for (size_t i = 0; i < len; i++) {
+        if (items[i].original_index == original_index) {
+            return &items[i];
+        }
+    }
+    return NULL;
 }
 
 static void ptn_array_zend_sort_2(
@@ -17273,23 +17331,80 @@ static void ptn_array_sort_entries_by_flags_with_context(
     int64_t flags,
     size_t line
 ) {
+    size_t original_len = array->len;
+    uint64_t original_mutation_epoch = array->mutation_epoch;
     if (array->len > 1) {
         PtnArraySortItem *items = malloc(sizeof(PtnArraySortItem) * array->len);
         if (items == NULL) {
             ptn_abort_out_of_memory();
         }
         for (size_t i = 0; i < array->len; i++) {
-            items[i].entry = array->entries[i];
-            items[i].original_index = i;
+            items[i] = ptn_array_sort_item_clone(array->entries[i], i);
         }
         PtnArraySortContext context = { compare_keys, descending, flags, runtime, line };
-        ptn_array_zend_sort_items(items, array->len, &context);
-        for (size_t i = 0; i < array->len; i++) {
-            array->entries[i] = items[i].entry;
+        ptn_array_zend_sort_items(items, original_len, &context);
+        int array_mutated_during_compare =
+            array->len != original_len || array->mutation_epoch != original_mutation_epoch;
+
+        if (array_mutated_during_compare) {
+            size_t new_capacity = original_len + array->len;
+            if (new_capacity < original_len) {
+                ptn_abort_out_of_memory();
+            }
+            PtnArrayEntry *new_entries = NULL;
+            if (new_capacity != 0) {
+                new_entries = malloc(sizeof(PtnArrayEntry) * new_capacity);
+                if (new_entries == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+            }
+            size_t new_len = 0;
+            for (size_t i = 0; i < original_len; i++) {
+                const PtnArraySortItem *item = ptn_array_sort_item_for_original_index(
+                    items,
+                    original_len,
+                    i
+                );
+                if (item != NULL) {
+                    new_entries[new_len++] = ptn_array_sort_entry_clone_for_key(array, item);
+                }
+            }
+            for (size_t i = 0; i < array->len; i++) {
+                if (ptn_array_sort_items_contain_key(items, original_len, array->entries[i].key)) {
+                    continue;
+                }
+                new_entries[new_len].key = ptn_array_key_clone(array->entries[i].key);
+                new_entries[new_len].value = ptn_value_clone(array->entries[i].value);
+                new_entries[new_len].by_ref_argument_eligible = array->entries[i].by_ref_argument_eligible;
+                new_len++;
+            }
+
+            for (size_t i = 0; i < array->len; i++) {
+                ptn_array_key_free(array->entries[i].key);
+                ptn_value_destroy(&array->entries[i].value);
+            }
+            free(array->entries);
+            array->entries = new_entries;
+            array->len = new_len;
+            array->capacity = new_capacity;
+            free(array->index_slots);
+            array->index_slots = NULL;
+            array->index_capacity = 0;
+        } else {
+            for (size_t i = 0; i < array->len; i++) {
+                ptn_array_key_free(array->entries[i].key);
+                ptn_value_destroy(&array->entries[i].value);
+                array->entries[i] = items[i].entry;
+            }
+        }
+        if (array_mutated_during_compare) {
+            for (size_t i = 0; i < original_len; i++) {
+                ptn_array_sort_item_destroy(&items[i]);
+            }
         }
         free(items);
     }
-    if (reindex) {
+    if (reindex && array->mutation_epoch == original_mutation_epoch) {
         ptn_array_reindex_after_sort(array);
     }
     array->current_index = 0;
