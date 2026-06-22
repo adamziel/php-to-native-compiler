@@ -10386,11 +10386,26 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_protocol_iterator(
     iterator.protocol_iterator = 1;
     iterator.line = line;
 
+    PtnTryFrame iterator_frame;
+    int iterator_frame_active = 0;
+    if (runtime != NULL && runtime->exceptions != NULL) {
+        ptn_try_frame_push(runtime, &iterator_frame);
+        iterator_frame_active = 1;
+        if (setjmp(iterator_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &iterator_frame);
+            ptn_array_iterator_destroy(&iterator);
+            ptn_rethrow_exception(runtime);
+            return ptn_array_iterator_empty();
+        }
+    }
     if (ptn_object_has_iterator_method(runtime, iterator.iterator_object.as.object, "rewind")) {
         PtnValue rewind = ptn_protocol_iterator_call(&iterator, "rewind");
         ptn_value_destroy(&rewind);
     }
     ptn_protocol_iterator_refresh_valid(&iterator);
+    if (iterator_frame_active) {
+        ptn_try_frame_pop(runtime, &iterator_frame);
+    }
     return iterator;
 }
 
@@ -10820,7 +10835,20 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         return ptn_generator_yield_delegate(runtime, resolved, line);
     }
 
-    PtnArrayIterator iterator = ptn_array_iterator_from_value(
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    PtnTryFrame yield_from_frame;
+    int yield_from_frame_active = 0;
+    if (runtime != NULL && runtime->exceptions != NULL) {
+        ptn_try_frame_push(runtime, &yield_from_frame);
+        yield_from_frame_active = 1;
+        if (setjmp(yield_from_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &yield_from_frame);
+            ptn_array_iterator_destroy(&iterator);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
+    }
+    iterator = ptn_array_iterator_from_value(
         runtime,
         resolved,
         NULL,
@@ -10845,6 +10873,9 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         ptn_array_iterator_advance(&iterator);
     }
     ptn_array_iterator_destroy(&iterator);
+    if (yield_from_frame_active) {
+        ptn_try_frame_pop(runtime, &yield_from_frame);
+    }
     if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
         return ptn_generator_get_return(runtime, resolved, line);
     }

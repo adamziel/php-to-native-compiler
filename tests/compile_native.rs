@@ -17033,6 +17033,59 @@ try {
 }
 
 #[test]
+fn compile_generator_yield_from_exception_releases_protocol_iterator_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-exception-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-exception-release.php");
+    let output = root.join("generator-yield-from-exception-release-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class FooBar implements Iterator {
+    function __construct()   { echo "Constructing new FooBar\n"; }
+    function __destruct()    { echo "Destructing FooBar\n"; }
+    function current(): mixed { throw new Exception; }
+    function key(): int { return 0; }
+    function next(): void {}
+    function rewind(): void {}
+    function valid(): bool { return true; }
+}
+
+function foo() {
+    try {
+        $f = new FooBar;
+        yield from $f;
+    } catch (Exception $e) {
+        echo "[foo()] Caught Exception\n";
+    }
+}
+
+function bar() {
+    echo "Starting bar()\n";
+    $x = foo();
+    var_dump($x->current());
+    echo "Unsetting \$x\n";
+    unset($x);
+    echo "Finishing bar()\n";
+}
+
+bar();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Starting bar()\nConstructing new FooBar\n[foo()] Caught Exception\nDestructing FooBar\nNULL\nUnsetting $x\nFinishing bar()\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_generator_foreach_to_native_binary() {
     let root = temp_dir("ptn-native-generator-by-ref-foreach");
     fs::create_dir_all(&root).unwrap();
