@@ -150,6 +150,7 @@ pub struct TraitAliasDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitMethodDecl {
     pub name: String,
+    pub function_index: usize,
     pub visibility: PropertyVisibility,
     pub attributes: AttributeMetadata,
     pub is_static: bool,
@@ -2628,18 +2629,84 @@ impl<'a> LoweringContext<'a> {
             methods: trait_decl
                 .methods
                 .iter()
-                .map(|method| TraitMethodDecl {
-                    name: method.name.clone(),
-                    visibility: lower_property_visibility(method.visibility),
-                    attributes: self.annotate_attribute_metadata(&method.attributes),
-                    is_static: method.is_static,
-                    is_abstract: method.is_abstract,
-                    parameters: method
+                .map(|method| {
+                    let function_index = self.functions.len();
+                    let method_attributes = self.lower_class_scoped_attribute_metadata(
+                        &method.attributes,
+                        &trait_decl.name,
+                        None,
+                    );
+                    let parameters = method
                         .parameters
                         .iter()
-                        .map(|parameter| self.lower_parameter(parameter))
-                        .collect(),
-                    line: method.span.line,
+                        .map(|parameter| {
+                            self.lower_parameter_for_class_scope(parameter, &trait_decl.name, None)
+                        })
+                        .collect::<Vec<_>>();
+                    let deprecated_metadata = self.function_deprecated_metadata(
+                        &method_attributes,
+                        Some(&trait_decl.name),
+                        None,
+                        Some(&trait_constant_values),
+                    );
+                    self.functions.push(FunctionDecl {
+                        name: format!("{}::{}", trait_decl.name, method.name),
+                        display_name: format!("{}::{}", trait_decl.name, method.name),
+                        source_file: self.source_file.clone(),
+                        strict_types: self.strict_types,
+                        doc_comment: method.doc_comment.clone(),
+                        class_name: Some(trait_decl.name.clone()),
+                        trait_name: Some(trait_decl.name.clone()),
+                        trait_method_name: Some(method.name.clone()),
+                        method_name: Some(method.name.clone()),
+                        deprecated_message: deprecated_metadata.message,
+                        deprecated_since: deprecated_metadata.since,
+                        deprecated_message_runtime_reference: deprecated_metadata
+                            .message_runtime_reference,
+                        no_discard_message: method_attributes.no_discard_message.clone(),
+                        attributes: method_attributes.clone(),
+                        is_static: method.is_static,
+                        line: method.span.line,
+                        end_line: method.span.end_line,
+                        parameters: parameters.clone(),
+                        return_type: method.return_type.clone().map(lower_type_hint),
+                        return_by_ref: method.return_by_ref,
+                        is_generator: statements_contain_yield(&method.body),
+                        is_anonymous: false,
+                        initially_declared: false,
+                        body: Vec::new(),
+                    });
+                    let method_display_name = format!("{}::{}", trait_decl.name, method.name);
+                    let previous_class_name = std::mem::replace(
+                        &mut self.current_class_name,
+                        Some(trait_decl.name.clone()),
+                    );
+                    let previous_class_parent_name =
+                        std::mem::replace(&mut self.current_class_parent_name, None);
+                    let previous_trait_name = std::mem::replace(
+                        &mut self.current_trait_name,
+                        Some(trait_decl.name.clone()),
+                    );
+                    let previous_function_display_name = std::mem::replace(
+                        &mut self.current_function_display_name,
+                        Some(method_display_name),
+                    );
+                    let body = self.lower_statements(&method.body);
+                    self.current_class_name = previous_class_name;
+                    self.current_class_parent_name = previous_class_parent_name;
+                    self.current_trait_name = previous_trait_name;
+                    self.current_function_display_name = previous_function_display_name;
+                    self.functions[function_index].body = body;
+                    TraitMethodDecl {
+                        name: method.name.clone(),
+                        function_index,
+                        visibility: lower_property_visibility(method.visibility),
+                        attributes: method_attributes,
+                        is_static: method.is_static,
+                        is_abstract: method.is_abstract,
+                        parameters,
+                        line: method.span.line,
+                    }
                 })
                 .collect(),
         }

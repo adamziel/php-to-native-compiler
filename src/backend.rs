@@ -156,6 +156,11 @@ pub fn emit_c(module: &Module) -> String {
             .static_properties
             .iter()
             .any(|property| property.value.is_some())
+    }) || module.traits.iter().any(|trait_decl| {
+        trait_decl
+            .static_properties
+            .iter()
+            .any(|property| property.value.is_some())
     });
     let needs_magic_property_dispatch = needs_magic_property_read
         || needs_magic_property_isset
@@ -227,6 +232,7 @@ pub fn emit_c(module: &Module) -> String {
         emit_static_property_initializer_helper(
             &mut out,
             &module.classes,
+            &module.traits,
             &module.functions,
             &module.includes,
             &module.source_file,
@@ -448,7 +454,7 @@ pub fn emit_c(module: &Module) -> String {
             || !magic_visibility_warnings.is_empty(),
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
-    emit_static_property_declarations(&mut out, &module.classes);
+    emit_static_property_declarations(&mut out, &module.classes, &module.traits);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
             &mut out,
@@ -3447,15 +3453,37 @@ fn emit_source_snapshot_array(out: &mut String, name: &str, bytes: &[u8]) {
     out.push_str(";\n");
 }
 
-fn emit_static_property_declarations(out: &mut String, classes: &[ClassDecl]) {
+fn emit_static_property_declarations(
+    out: &mut String,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+) {
     for (class_index, class) in classes.iter().enumerate() {
         for (property_index, property) in class.static_properties.iter().enumerate() {
             let value_temp = format!("ptn_static_property_default_{class_index}_{property_index}");
+            emit_static_property_declaration(out, &class.name, property, &value_temp);
+        }
+    }
+    for (trait_index, trait_decl) in traits.iter().enumerate() {
+        for (property_index, property) in trait_decl.static_properties.iter().enumerate() {
+            let value_temp =
+                format!("ptn_trait_static_property_default_{trait_index}_{property_index}");
+            emit_static_property_declaration(out, &trait_decl.name, property, &value_temp);
+        }
+    }
+}
+
+fn emit_static_property_declaration(
+    out: &mut String,
+    owner_name: &str,
+    property: &StaticPropertyDecl,
+    value_temp: &str,
+) {
             out.push_str("    PtnValue ");
-            out.push_str(&value_temp);
+    out.push_str(value_temp);
             out.push_str(" = ptn_null();\n");
             out.push_str("    ptn_runtime_define_static_property(&runtime, \"");
-            out.push_str(&c_string(&class.name));
+    out.push_str(&c_string(owner_name));
             out.push_str("\", \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\", ");
@@ -3471,7 +3499,7 @@ fn emit_static_property_declarations(out: &mut String, classes: &[ClassDecl]) {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(&value_temp);
+    out.push_str(value_temp);
             out.push_str(", ");
             out.push_str(
                 if property.value.is_none() && property.type_hint.is_none() {
@@ -3481,14 +3509,13 @@ fn emit_static_property_declarations(out: &mut String, classes: &[ClassDecl]) {
                 },
             );
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &value_temp);
-        }
-    }
+    emit_value_cleanup(out, "    ", value_temp);
 }
 
 fn emit_static_property_initializer_helper(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
     includes: &[IncludeFile],
     source_file: &str,
@@ -3549,6 +3576,73 @@ fn emit_static_property_initializer_helper(
             out.push_str(";\n");
             out.push_str("            ptn_runtime_define_static_property(&runtime, \"");
             out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(", ");
+            out.push_str(c_property_visibility(property.set_visibility));
+            out.push_str(", ");
+            out.push_str(c_property_type_kind(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_class_name(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&c_property_type_text(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(", 1);\n");
+            emit_value_cleanup(out, "            ", &value_temp);
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        values.current_class_name = previous_class_name;
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        if trait_decl
+            .static_properties
+            .iter()
+            .all(|property| property.value.is_none())
+        {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        let previous_class_name = values.current_class_name.replace(trait_decl.name.clone());
+        for property in &trait_decl.static_properties {
+            let Some(value) = property.value.as_ref() else {
+                continue;
+            };
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            let previous_scope_temp = values.next_temp();
+            let previous_called_scope_temp = values.next_temp();
+            out.push_str("            const char *");
+            out.push_str(&previous_scope_temp);
+            out.push_str(" = runtime.current_class_name;\n");
+            out.push_str("            const char *");
+            out.push_str(&previous_called_scope_temp);
+            out.push_str(" = runtime.current_called_class_name;\n");
+            out.push_str("            runtime.current_class_name = \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\";\n");
+            out.push_str("            runtime.current_called_class_name = \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\";\n");
+            let value_temp = values.emit_const_materialized_value(out, value);
+            out.push_str("            runtime.current_called_class_name = ");
+            out.push_str(&previous_called_scope_temp);
+            out.push_str(";\n");
+            out.push_str("            runtime.current_class_name = ");
+            out.push_str(&previous_scope_temp);
+            out.push_str(";\n");
+            out.push_str("            ptn_runtime_define_static_property(&runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\", \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\", ");
