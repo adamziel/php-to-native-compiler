@@ -28845,6 +28845,32 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static SOAP_SERVER_FAULT_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "code",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "actor",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "details",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "name",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "lang",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("fgetcsv") {
         Some(&SPL_FILE_OBJECT_FGETCSV_PARAMETERS)
@@ -28896,6 +28922,8 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         || name.eq_ignore_ascii_case("SoapClient::__soapCall")
     {
         Some(&SOAP_CLIENT_SOAP_CALL_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("fault") || name.eq_ignore_ascii_case("SoapServer::fault") {
+        Some(&SOAP_SERVER_FAULT_PARAMETERS)
     } else {
         None
     }
