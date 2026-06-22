@@ -60466,6 +60466,108 @@ var_dump($sameReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_closure_from_callable_called_class_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-from-callable-called-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-from-callable-called-class.php");
+    let output = root.join("closure-from-callable-called-class-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ClosureCalledA {
+    public static function __callStatic($name, $args) { echo static::class, "::", $name, "\n"; }
+    public function __call($name, $args) { echo static::class, "->", $name, "\n"; }
+    public static function b() { echo static::class, "::b\n"; }
+    public function c() { echo static::class, "->c\n"; }
+}
+
+class ClosureCalledB extends ClosureCalledA {}
+
+foreach ([
+    ['ClosureCalledB', 'b'],
+    [new ClosureCalledB(), 'c'],
+    ['ClosureCalledB', 'd'],
+    [new ClosureCalledB(), 'e'],
+    ['ClosureCalledA', 'b'],
+] as $callable) {
+    $closure = Closure::fromCallable($callable);
+    $class = (new ReflectionFunction($closure))->getClosureCalledClass();
+    var_dump($class?->getName());
+    $closure();
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(14) \"ClosureCalledB\"\n",
+            "ClosureCalledB::b\n",
+            "string(14) \"ClosureCalledB\"\n",
+            "ClosureCalledB->c\n",
+            "string(14) \"ClosureCalledB\"\n",
+            "ClosureCalledB::d\n",
+            "string(14) \"ClosureCalledB\"\n",
+            "ClosureCalledB->e\n",
+            "string(14) \"ClosureCalledA\"\n",
+            "ClosureCalledA::b\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_wrapped_callable_called_class_name"));
+    assert!(c_source.contains(
+        "ptn_call_declared_method_in_scope(runtime, receiver, ptn_object_callable_class"
+    ));
+}
+
+#[test]
+fn compile_bound_closure_reflection_parameters_declare_method_to_native_binary() {
+    let root = temp_dir("ptn-native-bound-closure-reflection-parameter-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bound-closure-reflection-parameter-method.php");
+    let output = root.join("bound-closure-reflection-parameter-method-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BoundClosureBase {}
+class BoundClosureChild extends BoundClosureBase {}
+
+$closure = function ($left, $right = 0): self {};
+$bound = $closure->bindTo(new BoundClosureChild(), BoundClosureChild::class);
+$reflection = new ReflectionFunction($bound);
+$parameter = $reflection->getParameters()[0];
+$declaring = $parameter->getDeclaringFunction();
+
+var_dump($declaring::class);
+var_dump($declaring instanceof ReflectionMethod);
+var_dump($declaring->getName() === $reflection->getName());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(16) \"ReflectionMethod\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_closure_from_callable_object_method_call_rebinds_to_native_binary() {
     let root = temp_dir("ptn-native-closure-from-callable-object-method-rebind");
     fs::create_dir_all(&root).unwrap();

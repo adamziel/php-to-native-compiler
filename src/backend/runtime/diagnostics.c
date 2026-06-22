@@ -339,6 +339,95 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
     return copy;
 }
 
+static const char *ptn_closure_symbol_name_without_leading_slash(const char *name) {
+    while (name != NULL && *name == '\\') {
+        name++;
+    }
+    return name == NULL ? "" : name;
+}
+
+static PtnArrayEntry *ptn_closure_array_entry_for_int_key(PtnArray *array, int64_t key) {
+    if (array == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (entry->key.type == PTN_ARRAY_KEY_INT && entry->key.as.integer == key) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED char *ptn_closure_wrapped_callable_called_class_name(
+    PtnRuntime *runtime,
+    PtnValue callable
+) {
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_CLOSURE) {
+        return resolved.as.closure->called_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(resolved.as.closure->called_class_name);
+    }
+    if (resolved.type == PTN_OBJECT) {
+        return ptn_duplicate_string(resolved.as.object->class_name);
+    }
+    if (resolved.type == PTN_EXCEPTION) {
+        return ptn_duplicate_string(resolved.as.exception->class_name);
+    }
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator == NULL || separator == name || separator[2] == '\0') {
+            free(name);
+            return NULL;
+        }
+        *separator = '\0';
+        const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(name);
+        const char *resolved_name = runtime == NULL
+            ? lookup_name
+            : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        char *class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved_name));
+        free(name);
+        return class_name;
+    }
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL) {
+        return NULL;
+    }
+    PtnArrayEntry *scope_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 0);
+    PtnArrayEntry *method_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 1);
+    if (scope_entry == NULL || method_entry == NULL) {
+        return NULL;
+    }
+    PtnValue scope = ptn_value_deref(scope_entry->value);
+    PtnValue method = ptn_value_deref(method_entry->value);
+    if (method.type != PTN_STRING) {
+        return NULL;
+    }
+    if (scope.type == PTN_OBJECT) {
+        return ptn_duplicate_string(scope.as.object->class_name);
+    }
+    if (scope.type == PTN_EXCEPTION) {
+        return ptn_duplicate_string(scope.as.exception->class_name);
+    }
+    if (scope.type == PTN_CLOSURE) {
+        return scope.as.closure->called_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(scope.as.closure->called_class_name);
+    }
+    if (scope.type != PTN_STRING) {
+        return NULL;
+    }
+    char *scope_name = ptn_value_to_string(scope);
+    const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(scope_name);
+    const char *resolved_name = runtime == NULL
+        ? lookup_name
+        : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    char *class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved_name));
+    free(scope_name);
+    return class_name;
+}
+
 static PTN_UNUSED void ptn_closure_set_bound_scope_name(PtnValue closure, const char *scope_name) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
     free(resolved->bound_scope_name);
@@ -383,6 +472,11 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     );
     if (runtime->has_current_receiver) {
         ptn_closure_set_capture(closure, "this", runtime->current_receiver);
+    }
+    char *called_class_name = ptn_closure_wrapped_callable_called_class_name(runtime, callable);
+    if (called_class_name != NULL) {
+        ptn_closure_replace_scope(&closure.as.closure->called_class_name, called_class_name);
+        free(called_class_name);
     }
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);

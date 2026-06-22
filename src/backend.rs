@@ -17943,11 +17943,19 @@ fn emit_scoped_instance_magic_call(
     out.push_str(indent);
     out.push_str("runtime->next_call_arg_names = NULL;\n");
     out.push_str(indent);
+    out.push_str(
+        "const char *ptn_magic_previous_called_class = runtime->called_class_name_override;\n",
+    );
+    out.push_str(indent);
+    out.push_str("runtime->called_class_name_override = effective_called_class;\n");
+    out.push_str(indent);
     out.push_str(result_lhs);
     out.push_str(&user_function_c_name(method.function_index));
     out.push_str("(runtime, ");
     out.push_str(receiver_expr);
     out.push_str(", 2, ptn_magic_args, line);\n");
+    out.push_str(indent);
+    out.push_str("runtime->called_class_name_override = ptn_magic_previous_called_class;\n");
     out.push_str(indent);
     out.push_str("runtime->next_call_arg_names = ptn_magic_previous_arg_names;\n");
     out.push_str(indent);
@@ -20114,6 +20122,13 @@ fn emit_callable_dispatch(
         out.push_str("                }\n");
         out.push_str("                PtnValue result;\n");
         out.push_str("                if (target_class_name != NULL && ptn_call_declared_method_in_scope(runtime, receiver, target_class_name, target_method_name, receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name, argc, args, line, &result)) {\n");
+        out.push_str("                    free(target_method_name);\n");
+        out.push_str("                    free(target_class_name);\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    return result;\n");
+        out.push_str("                }\n");
+        out.push_str("                const char *ptn_object_callable_class = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
+        out.push_str("                if (target_class_name == NULL && ptn_call_declared_method_in_scope(runtime, receiver, ptn_object_callable_class, method_name, ptn_object_callable_class, argc, args, line, &result)) {\n");
         out.push_str("                    free(target_method_name);\n");
         out.push_str("                    free(target_class_name);\n");
         out.push_str("                    free(method_name);\n");

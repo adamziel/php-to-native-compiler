@@ -104563,6 +104563,7 @@ static char *ptn_reflection_class_required_class_arg_name(
 typedef struct {
     char *class_name;
     char *name;
+    char *reflection_name;
     char *reflected_class_name;
     int has_closure_metadata;
     PtnFunctionMetadata closure_metadata;
@@ -104607,9 +104608,17 @@ static void ptn_reflection_method_data_free(void *data) {
     }
     free(method_data->class_name);
     free(method_data->name);
+    free(method_data->reflection_name);
     free(method_data->reflected_class_name);
     free(method_data->closure_scope_class_name);
     free(method_data);
+}
+
+static const char *ptn_reflection_method_effective_name(PtnReflectionMethodData *data) {
+    if (data == NULL) {
+        return "";
+    }
+    return data->reflection_name != NULL ? data->reflection_name : data->name;
 }
 
 static PtnReflectionMethodData *ptn_reflection_method_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -104632,6 +104641,14 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected
     const char *reflected_class_name
 );
 
+static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected_and_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *reflected_class_name,
+    const char *reflection_name
+);
+
 static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     PtnRuntime *runtime,
     const char *class_name,
@@ -104651,12 +104668,32 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected
     const char *method_name,
     const char *reflected_class_name
 ) {
+    return ptn_reflection_method_object_from_name_with_reflected_and_name(
+        runtime,
+        class_name,
+        method_name,
+        reflected_class_name,
+        method_name
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected_and_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *reflected_class_name,
+    const char *reflection_name
+) {
     PtnReflectionMethodData *data = malloc(sizeof(PtnReflectionMethodData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->class_name = ptn_duplicate_string(class_name);
     data->name = ptn_duplicate_string(method_name);
+    data->reflection_name =
+        reflection_name != NULL && strcmp(reflection_name, method_name) != 0
+            ? ptn_duplicate_string(reflection_name)
+            : NULL;
     data->reflected_class_name = ptn_duplicate_string(reflected_class_name);
     data->has_closure_metadata = 0;
     data->closure_metadata = ptn_function_metadata_not_found();
@@ -104667,7 +104704,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionMethod");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_method_data_free;
-    PtnValue method_name_value = ptn_owned_string(ptn_duplicate_string(method_name));
+    PtnValue method_name_value = ptn_owned_string(
+        ptn_duplicate_string(ptn_reflection_method_effective_name(data))
+    );
     ptn_declare_internal_readonly_property(
         runtime,
         object,
@@ -104696,13 +104735,61 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name_with_reflected
     return object;
 }
 
+static char *ptn_reflection_method_closure_display_name_from_metadata(PtnFunctionMetadata metadata) {
+    if (
+        metadata.name != NULL &&
+        ptn_ascii_case_equal(metadata.name, "{closure}") &&
+        metadata.source_file != NULL &&
+        metadata.source_file[0] != '\0' &&
+        metadata.start_line != 0
+    ) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "{closure:%s:%zu}",
+            metadata.source_file,
+            metadata.start_line
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *display_name = malloc((size_t)needed + 1);
+        if (display_name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            display_name,
+            (size_t)needed + 1,
+            "{closure:%s:%zu}",
+            metadata.source_file,
+            metadata.start_line
+        );
+        return display_name;
+    }
+    if (metadata.name != NULL) {
+        return ptn_duplicate_string(metadata.name);
+    }
+    return NULL;
+}
+
 static PtnValue ptn_reflection_method_object_from_closure_metadata(
     PtnRuntime *runtime,
     PtnFunctionMetadata metadata,
     size_t closure_function_index,
-    const char *closure_scope_class_name
+    const char *closure_scope_class_name,
+    int use_closure_display_name
 ) {
-    PtnValue method = ptn_reflection_method_object_from_name(runtime, "Closure", "__invoke");
+    char *reflection_name = use_closure_display_name
+        ? ptn_reflection_method_closure_display_name_from_metadata(metadata)
+        : NULL;
+    PtnValue method = ptn_reflection_method_object_from_name_with_reflected_and_name(
+        runtime,
+        "Closure",
+        "__invoke",
+        "Closure",
+        reflection_name == NULL ? "__invoke" : reflection_name
+    );
+    free(reflection_name);
     PtnReflectionMethodData *data = (PtnReflectionMethodData *)method.as.object->native_data;
     data->has_closure_metadata = 1;
     data->closure_metadata = metadata;
@@ -104726,7 +104813,8 @@ static PtnValue ptn_reflection_method_object_from_closure(
         runtime,
         ptn_find_callable_metadata(runtime, closure),
         closure.as.closure->function_index,
-        closure.as.closure->scope_class_name
+        closure.as.closure->scope_class_name,
+        0
     );
 }
 
@@ -105848,10 +105936,10 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
-        return ptn_owned_string(ptn_duplicate_string(data->name));
+        return ptn_owned_string(ptn_duplicate_string(ptn_reflection_method_effective_name(data)));
     }
     if (ptn_ascii_case_equal(name, "getShortName")) {
-        return ptn_owned_string(ptn_duplicate_string(data->name));
+        return ptn_owned_string(ptn_duplicate_string(ptn_reflection_method_effective_name(data)));
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         return ptn_reflection_function_doc_comment(ptn_reflection_method_function_metadata(data));
@@ -115366,7 +115454,8 @@ static PtnValue ptn_reflection_parameter_declaring_function(
                 runtime,
                 data->metadata,
                 data->closure_function_index,
-                data->closure_scope_class_name
+                data->closure_scope_class_name,
+                1
             );
         }
         return ptn_reflection_method_object_from_name(
@@ -126040,13 +126129,21 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
                 result.as.array,
                 ptn_array_int_key((int64_t)i),
                 data->has_closure_function_index
-                    ? ptn_reflection_parameter_object_from_closure_metadata(
-                        runtime,
-                        metadata,
-                        i,
-                        data->closure_function_index,
-                        data->closure_scope_class_name
-                    )
+                    ? (data->closure_scope_class_name == NULL
+                        ? ptn_reflection_parameter_object_from_closure_metadata(
+                            runtime,
+                            metadata,
+                            i,
+                            data->closure_function_index,
+                            data->closure_scope_class_name
+                        )
+                        : ptn_reflection_parameter_object_from_closure_method_metadata(
+                            runtime,
+                            metadata,
+                            i,
+                            data->closure_function_index,
+                            data->closure_scope_class_name
+                        ))
                     : ptn_reflection_parameter_object_from_metadata(runtime, metadata, i)
             );
         }
