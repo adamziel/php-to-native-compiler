@@ -1834,6 +1834,11 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     if (count_out == NULL) {
         return NULL;
     }
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    *count_out = 0;
+    return NULL;
+#else
     if (ptn_object_is_dom_node_list_instance(object)) {
         *count_out = sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES[0]);
         return PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES;
@@ -1865,6 +1870,7 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     }
     *count_out = 0;
     return NULL;
+#endif
 }
 
 static size_t ptn_xml_reader_var_dump_virtual_property_count(PtnObject *object) {

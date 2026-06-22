@@ -12344,6 +12344,23 @@ fn compile_var_dump_scalars_to_native_binary() {
 }
 
 #[test]
+fn compile_var_dump_non_dom_program_keeps_runtime_linkable_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-non-dom-runtime-link");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-non-dom-runtime-link.php");
+    let output = root.join("var-dump-non-dom-runtime-link-bin");
+    fs::write(&input, "<?php var_dump(1);").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    assert!(compiled.c_source.unwrap().exists());
+}
+
+#[test]
 fn compile_var_dump_null_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-null-phpt-shape");
     fs::create_dir_all(&root).unwrap();
