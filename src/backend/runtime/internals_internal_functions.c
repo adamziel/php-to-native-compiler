@@ -40510,11 +40510,6 @@ static PtnValue ptn_internal_str_pad(PtnRuntime *runtime, size_t argc, const Ptn
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        if (runtime->diagnostics.display_errors) {
-            FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
-            fflush(stdout);
-            fputc('\n', stream);
-        }
         ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
     }
 
