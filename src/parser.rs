@@ -15872,8 +15872,7 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         &[
             "ArrayAccess",
             "Countable",
-            "Iterator",
-            "SeekableIterator",
+            "IteratorAggregate",
             "Traversable",
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("SplObjectStorage") {

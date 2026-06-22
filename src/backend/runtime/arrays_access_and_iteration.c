@@ -10368,6 +10368,14 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         runtime->declared_method_exists(object->class_name, method_name);
 }
 
+static PTN_UNUSED int ptn_object_has_declared_getiterator(PtnRuntime *runtime, PtnObject *object) {
+    return runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        object != NULL &&
+        object->class_name != NULL &&
+        runtime->declared_method_exists(object->class_name, "getIterator");
+}
+
 static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
     PtnArrayIterator *iterator,
     const char *method_name
@@ -10547,6 +10555,58 @@ static PTN_UNUSED void ptn_iteratoraggregate_invalid_result_throw(
     ptn_throw_exception_at(runtime, "Exception", message, path, line);
 }
 
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_iteratoraggregate(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    const char *path,
+    size_t line,
+    size_t depth
+) {
+    if (depth > 16) {
+        ptn_throw_exception(runtime, "Exception", "IteratorAggregate recursion limit exceeded");
+        return ptn_array_iterator_empty();
+    }
+    PtnValue result = runtime->method_dispatch(runtime, value, "getIterator", 0, NULL, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(runtime);
+        return ptn_array_iterator_empty();
+    }
+    PtnValue resolved = ptn_value_deref(result);
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
+        iterator = ptn_array_iterator_from_generator(runtime, resolved.as.object, 0, path, line);
+    } else if (
+        resolved.type == PTN_OBJECT &&
+        (
+            ptn_object_implements_builtin_interface(resolved.as.object, "Iterator") ||
+            ptn_object_implements_builtin_interface(resolved.as.object, "IteratorAggregate")
+        )
+    ) {
+        iterator = ptn_array_iterator_from_traversable_object(
+            runtime,
+            resolved,
+            access_scope,
+            path,
+            line,
+            depth + 1
+        );
+    } else {
+        ptn_iteratoraggregate_invalid_result_throw(runtime, value.as.object, path, line);
+    }
+    if (
+        iterator.has_iterator_object &&
+        iterator.iterator_object.type == PTN_OBJECT &&
+        resolved.type == PTN_OBJECT &&
+        iterator.iterator_object.as.object == resolved.as.object
+    ) {
+        iterator.iterator_object.as.object->defer_object_id_release_once = 1;
+    }
+    ptn_value_destroy(&result);
+    return iterator;
+}
+
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -10652,6 +10712,20 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
     }
 
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
+        ptn_object_has_declared_getiterator(runtime, value.as.object)
+    ) {
+        return ptn_array_iterator_from_iteratoraggregate(
+            runtime,
+            value,
+            access_scope,
+            path,
+            line,
+            depth
+        );
+    }
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
         PtnArrayIterator iterator = ptn_array_iterator_empty();
@@ -10690,48 +10764,14 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
         ptn_object_has_iterator_method(runtime, value.as.object, "getIterator")
     ) {
-        if (depth > 16) {
-            ptn_throw_exception(runtime, "Exception", "IteratorAggregate recursion limit exceeded");
-            return ptn_array_iterator_empty();
-        }
-        PtnValue result = runtime->method_dispatch(runtime, value, "getIterator", 0, NULL, line);
-        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&result);
-            ptn_rethrow_exception(runtime);
-            return ptn_array_iterator_empty();
-        }
-        PtnValue resolved = ptn_value_deref(result);
-        PtnArrayIterator iterator = ptn_array_iterator_empty();
-        if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
-            iterator = ptn_array_iterator_from_generator(runtime, resolved.as.object, 0, path, line);
-        } else if (
-            resolved.type == PTN_OBJECT &&
-            (
-                ptn_object_implements_builtin_interface(resolved.as.object, "Iterator") ||
-                ptn_object_implements_builtin_interface(resolved.as.object, "IteratorAggregate")
-            )
-        ) {
-            iterator = ptn_array_iterator_from_traversable_object(
-                runtime,
-                resolved,
-                access_scope,
-                path,
-                line,
-                depth + 1
-            );
-        } else {
-            ptn_iteratoraggregate_invalid_result_throw(runtime, value.as.object, path, line);
-        }
-        if (
-            iterator.has_iterator_object &&
-            iterator.iterator_object.type == PTN_OBJECT &&
-            resolved.type == PTN_OBJECT &&
-            iterator.iterator_object.as.object == resolved.as.object
-        ) {
-            iterator.iterator_object.as.object->defer_object_id_release_once = 1;
-        }
-        ptn_value_destroy(&result);
-        return iterator;
+        return ptn_array_iterator_from_iteratoraggregate(
+            runtime,
+            value,
+            access_scope,
+            path,
+            line,
+            depth
+        );
     }
 
     if (
