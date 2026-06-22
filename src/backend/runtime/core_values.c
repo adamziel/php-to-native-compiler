@@ -1990,6 +1990,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_header(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_soap_var(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_soap_param(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
@@ -2832,6 +2834,18 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_soap_header_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_soap_var_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_soap_param_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,

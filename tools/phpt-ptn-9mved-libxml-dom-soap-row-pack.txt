@@ -1,0 +1,18 @@
+# Focused current-red libxml DOM/SOAP/SimpleXML rows from ptn-9mved.
+# Source dashboard:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260622T215348Z/resume-statuses.tsv
+ext/simplexml/tests/028.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_016p.phpt
+ext/soap/tests/interop/Round2/GroupB/r2_groupB_004s.phpt
+ext/dom/tests/modern/spec/default_namespace_move.phpt
+ext/dom/tests/modern/token_list/iteration_02.phpt
+ext/simplexml/tests/008.phpt
+ext/soap/tests/interop/Round2/GroupB/r2_groupB_002s.phpt
+ext/dom/tests/entity_reference_stale_03.phpt
+ext/soap/tests/interop/Round2/Base/r2_base_015p.phpt
+ext/dom/tests/DOMDocument_schemaValidateSource_error1.phpt
+ext/dom/tests/modern/spec/HTMLDocument_importNode_01.phpt
+ext/dom/tests/modern/html/parser/HTMLDocument_fromString_empty.phpt
+ext/dom/tests/modern/spec/Node_appendChild_attribute.phpt
+ext/dom/tests/bug79701/set_attribute_ns_html.phpt
+ext/soap/tests/bugs/setObject_twice.phpt

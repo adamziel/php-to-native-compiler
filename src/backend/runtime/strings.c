@@ -1907,6 +1907,81 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(15);
         return 1;
     }
+    static const struct {
+        const char *name;
+        int value;
+    } soap_constants[] = {
+        { "SOAP_1_1", 1 },
+        { "SOAP_1_2", 2 },
+        { "SOAP_PERSISTENCE_SESSION", 1 },
+        { "SOAP_PERSISTENCE_REQUEST", 2 },
+        { "SOAP_FUNCTIONS_ALL", 999 },
+        { "SOAP_ENCODED", 1 },
+        { "SOAP_LITERAL", 2 },
+        { "SOAP_RPC", 1 },
+        { "SOAP_DOCUMENT", 2 },
+        { "SOAP_ACTOR_NEXT", 1 },
+        { "SOAP_ACTOR_NONE", 2 },
+        { "SOAP_ACTOR_UNLIMATERECEIVER", 3 },
+        { "SOAP_COMPRESSION_ACCEPT", 32 },
+        { "SOAP_COMPRESSION_GZIP", 0 },
+        { "SOAP_COMPRESSION_DEFLATE", 16 },
+        { "SOAP_AUTHENTICATION_BASIC", 0 },
+        { "SOAP_AUTHENTICATION_DIGEST", 1 },
+        { "UNKNOWN_TYPE", 999998 },
+        { "SOAP_ENC_ARRAY", 300 },
+        { "SOAP_ENC_OBJECT", 301 },
+        { "XSD_STRING", 101 },
+        { "XSD_BOOLEAN", 102 },
+        { "XSD_DECIMAL", 103 },
+        { "XSD_FLOAT", 104 },
+        { "XSD_DOUBLE", 105 },
+        { "XSD_DURATION", 106 },
+        { "XSD_DATETIME", 107 },
+        { "XSD_TIME", 108 },
+        { "XSD_DATE", 109 },
+        { "XSD_GYEARMONTH", 110 },
+        { "XSD_GYEAR", 111 },
+        { "XSD_GMONTHDAY", 112 },
+        { "XSD_GDAY", 113 },
+        { "XSD_GMONTH", 114 },
+        { "XSD_HEXBINARY", 115 },
+        { "XSD_BASE64BINARY", 116 },
+        { "XSD_ANYURI", 117 },
+        { "XSD_QNAME", 118 },
+        { "XSD_NOTATION", 119 },
+        { "XSD_NORMALIZEDSTRING", 120 },
+        { "XSD_TOKEN", 121 },
+        { "XSD_LANGUAGE", 122 },
+        { "XSD_NMTOKEN", 123 },
+        { "XSD_NAME", 124 },
+        { "XSD_NCNAME", 125 },
+        { "XSD_ID", 126 },
+        { "XSD_IDREF", 127 },
+        { "XSD_IDREFS", 128 },
+        { "XSD_ENTITY", 129 },
+        { "XSD_ENTITIES", 130 },
+        { "XSD_INTEGER", 131 },
+        { "XSD_NONPOSITIVEINTEGER", 132 },
+        { "XSD_NEGATIVEINTEGER", 133 },
+        { "XSD_LONG", 134 },
+        { "XSD_INT", 135 },
+        { "XSD_SHORT", 136 },
+        { "XSD_BYTE", 137 },
+        { "XSD_NONNEGATIVEINTEGER", 138 },
+        { "XSD_UNSIGNEDLONG", 139 },
+        { "XSD_UNSIGNEDINT", 140 },
+        { "XSD_UNSIGNEDSHORT", 141 },
+        { "XSD_UNSIGNEDBYTE", 142 },
+        { "XSD_POSITIVEINTEGER", 143 },
+        { "XSD_NMTOKENS", 144 },
+    };
+    for (size_t i = 0; i < sizeof(soap_constants) / sizeof(soap_constants[0]); i++) {
+        if (strcmp(name, soap_constants[i].name) == 0) {
+            *out = ptn_int(soap_constants[i].value);
+            return 1;
+        }
+    }
     if (strcmp(name, "SOAP_1_1") == 0) {
         *out = ptn_int(1);
         return 1;

@@ -1205,6 +1205,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_soap_header(lookup_class_name)) {
         return ptn_soap_header_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_soap_var(lookup_class_name)) {
+        return ptn_soap_var_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_soap_param(lookup_class_name)) {
+        return ptn_soap_param_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_xml_writer(lookup_class_name)) {
         return ptn_xmlwriter_new(runtime, argc, args, line);
     }
@@ -4571,6 +4577,14 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_internal_xml_property_write_indirect(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -6910,7 +6924,19 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (!indirect_write) {
+    if (indirect_write) {
+        PtnValue internal_xml_value = ptn_null();
+        if (ptn_internal_xml_property_write_indirect(
+            runtime,
+            receiver,
+            property,
+            value,
+            line,
+            &internal_xml_value
+        )) {
+            return internal_xml_value;
+        }
+    } else {
         PtnValue internal_xml_value = ptn_null();
         if (ptn_internal_xml_property_write(
             runtime,
