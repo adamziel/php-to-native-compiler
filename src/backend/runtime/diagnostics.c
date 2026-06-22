@@ -1985,6 +1985,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->live_closures = NULL;
+    runtime->live_closures_len = 0;
+    runtime->live_closures_capacity = 0;
     runtime->live_arrays = NULL;
     runtime->live_arrays_len = 0;
     runtime->live_arrays_capacity = 0;

@@ -87,6 +87,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->live_closures = NULL;
+    runtime->live_closures_len = 0;
+    runtime->live_closures_capacity = 0;
     runtime->live_arrays = NULL;
     runtime->live_arrays_len = 0;
     runtime->live_arrays_capacity = 0;
@@ -712,6 +715,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
         runtime->live_objects_capacity = 0;
+        free(runtime->live_closures);
+        runtime->live_closures = NULL;
+        runtime->live_closures_len = 0;
+        runtime->live_closures_capacity = 0;
         free(runtime->live_arrays);
         runtime->live_arrays = NULL;
         runtime->live_arrays_len = 0;
@@ -1037,7 +1044,12 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         position,
         has_parameter_name ? parameter_name : ""
     );
-    ptn_emit_warning_with_handler_frame(&runtime->diagnostics, message, line, 1);
+    ptn_emit_warning_with_handler_frame(
+        &runtime->diagnostics,
+        message,
+        line,
+        runtime != NULL && runtime->suppress_user_call_frame_location
+    );
     free(message);
 }
 
@@ -4541,6 +4553,24 @@ static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
     return resolved_class_name;
 }
 
+static PTN_UNUSED int ptn_runtime_static_member_class_exists(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    return ptn_declared_runtime_class_exists(runtime, class_name) ||
+        ptn_declared_trait_exists(class_name)
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        || ptn_internal_class_exists_name(class_name)
+#endif
+    ;
+}
+
+static PTN_UNUSED void ptn_throw_class_not_found_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+);
+
 static PTN_UNUSED void ptn_runtime_define_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -5541,9 +5571,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     const char *access_scope,
     size_t line
 ) {
-    (void)line;
     class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
         return ptn_null();
     }
     const char *declaring_class = NULL;
@@ -5628,6 +5661,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property_for_indirect_write(
 ) {
     class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
         return ptn_null();
     }
     const char *declaring_class = NULL;
@@ -5731,9 +5768,12 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     const char *access_scope,
     size_t line
 ) {
-    (void)line;
     class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_lookup_missing();
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
         return ptn_lookup_missing();
     }
     const char *declaring_class = NULL;
@@ -5846,7 +5886,7 @@ static PTN_UNUSED void ptn_runtime_unset_static_property(
     if (runtime->exceptions->active_exception != NULL) {
         return;
     }
-    if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)) {
+    if (!ptn_runtime_static_member_class_exists(runtime, resolved_class_name)) {
         ptn_throw_class_not_found_error(runtime, resolved_class_name, line);
         return;
     }
@@ -5865,7 +5905,14 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
         runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    (void)line;
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
+        return ptn_null();
+    }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
         runtime,
@@ -5972,7 +6019,14 @@ static PTN_UNUSED int ptn_runtime_validate_static_property_write(
     size_t line,
     int indirect_write
 ) {
-    (void)line;
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
+        return 0;
+    }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
         runtime,
@@ -6048,7 +6102,14 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     int indirect_write,
     int reference_context
 ) {
-    (void)line;
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
+        return ptn_null();
+    }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
         runtime,
@@ -6266,9 +6327,16 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
     PtnValue reference,
     size_t line
 ) {
-    (void)line;
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
+    }
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+    if (!ptn_runtime_static_member_class_exists(runtime, class_name)) {
+        ptn_throw_class_not_found_error(runtime, class_name, line);
+        return;
     }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
