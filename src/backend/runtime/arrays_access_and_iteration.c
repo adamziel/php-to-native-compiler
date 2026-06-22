@@ -3876,7 +3876,13 @@ static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_referen
 ) {
     PtnValue magic_value = ptn_null();
     if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
-        if (emit_indirect_notice && magic_value.type != PTN_REFERENCE) {
+        PtnValue magic_resolved = ptn_value_deref(magic_value);
+        if (
+            emit_indirect_notice &&
+            magic_value.type != PTN_REFERENCE &&
+            magic_resolved.type != PTN_OBJECT &&
+            magic_resolved.type != PTN_EXCEPTION
+        ) {
             ptn_emit_indirect_modification_overloaded_property_notice(
                 runtime,
                 receiver,
@@ -7002,7 +7008,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             receiver,
             property,
             line,
-            0
+            1
         );
         return;
     }
@@ -7022,7 +7028,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             receiver,
             property,
             line,
-            0
+            1
         );
         return;
     }
