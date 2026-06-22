@@ -3648,6 +3648,8 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
     PtnRuntime *runtime,
     const char *class_name,
     const char *parent_name,
+    const char * const *interface_names,
+    size_t interface_count,
     int allows_dynamic_properties
 ) {
     if (class_name == NULL || *class_name == '\0') {
@@ -3661,19 +3663,32 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_ex(
     PtnValue parent_value = parent_name == NULL || *parent_name == '\0'
         ? ptn_null()
         : ptn_owned_string(ptn_duplicate_string(parent_name));
+    PtnValue interfaces_value = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < interface_count; i++) {
+        if (interface_names[i] == NULL || interface_names[i][0] == '\0') {
+            continue;
+        }
+        ptn_array_set_entry(
+            interfaces_value.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_owned_string(ptn_duplicate_string(interface_names[i]))
+        );
+    }
     PtnArrayLiteralEntry entries[] = {
         { 1, ptn_string("parent"), parent_value },
         { 1, ptn_string("allow_dynamic"), ptn_bool(allows_dynamic_properties) },
+        { 1, ptn_string("interfaces"), interfaces_value },
     };
-    PtnValue marker = ptn_array_from_literal_entries(2, entries);
+    PtnValue marker = ptn_array_from_literal_entries(3, entries);
     ptn_symbols_set(classes, key, marker);
     ptn_value_destroy(&marker);
+    ptn_value_destroy(&interfaces_value);
     ptn_value_destroy(&parent_value);
     free(key);
 }
 
 static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
-    ptn_runtime_register_dynamic_class_ex(runtime, class_name, NULL, 0);
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, NULL, NULL, 0, 0);
 }
 
 static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
@@ -3681,7 +3696,7 @@ static PTN_UNUSED void ptn_runtime_register_dynamic_class_with_parent(
     const char *class_name,
     const char *parent_name
 ) {
-    ptn_runtime_register_dynamic_class_ex(runtime, class_name, parent_name, 0);
+    ptn_runtime_register_dynamic_class_ex(runtime, class_name, parent_name, NULL, 0, 0);
 }
 
 static PTN_UNUSED const char *ptn_runtime_dynamic_class_parent_name(
@@ -5038,6 +5053,84 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     int enforce_visibility,
     size_t line,
     size_t deprecation_line
+);
+
+static int ptn_runtime_dynamic_class_interface_constant(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *access_scope,
+    int enforce_visibility,
+    size_t line,
+    size_t deprecation_line,
+    PtnValue *value_out
+) {
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL || class_name == NULL) {
+        return 0;
+    }
+
+    char *key = ptn_class_alias_key(class_name);
+    PtnValue marker;
+    int found = ptn_symbols_get(classes, key, &marker);
+    free(key);
+    if (!found) {
+        return 0;
+    }
+
+    PtnValue interfaces = ptn_runtime_dynamic_class_marker_field(marker, "interfaces");
+    interfaces = ptn_value_deref(interfaces);
+    if (interfaces.type != PTN_ARRAY || interfaces.as.array == NULL) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < interfaces.as.array->len; i++) {
+        PtnValue interface_value = ptn_value_deref(interfaces.as.array->entries[i].value);
+        if (interface_value.type != PTN_STRING) {
+            continue;
+        }
+        const char *interface_name = (const char *)interface_value.as.string.data;
+        const char *resolved_interface_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
+        if (resolved_interface_name == NULL) {
+            continue;
+        }
+        const char *canonical_interface_name =
+            ptn_declared_class_canonical_name(resolved_interface_name);
+        const char *metadata_declaring_class = canonical_interface_name;
+        int metadata_visibility_int = (int)PTN_PROPERTY_PUBLIC;
+        if (!ptn_declared_class_constant_metadata(
+            canonical_interface_name,
+            constant,
+            &metadata_declaring_class,
+            &metadata_visibility_int
+        )) {
+            continue;
+        }
+        *value_out = ptn_runtime_read_class_constant_impl(
+            runtime,
+            canonical_interface_name,
+            constant,
+            NULL,
+            access_scope,
+            enforce_visibility,
+            line,
+            deprecation_line
+        );
+        return 1;
+    }
+
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *message_class_name,
+    const char *access_scope,
+    int enforce_visibility,
+    size_t line,
+    size_t deprecation_line
 ) {
     const char *resolved_class_name =
         ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
@@ -5176,6 +5269,20 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 free(key);
                 return ptn_value_clone_deref(value);
             }
+        }
+        PtnValue interface_value;
+        if (ptn_runtime_dynamic_class_interface_constant(
+            runtime,
+            lookup_class_name,
+            constant,
+            access_scope,
+            enforce_visibility,
+            line,
+            deprecation_line,
+            &interface_value
+        )) {
+            free(key);
+            return interface_value;
         }
         free(key);
         lookup_class_name = ptn_runtime_declared_class_parent_name(runtime, lookup_class_name);

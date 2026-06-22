@@ -127610,11 +127610,14 @@ static int ptn_eval_parse_string_literal_value(
 }
 
 static int ptn_eval_parse_scalar_constant_value(
+    PtnRuntime *runtime,
     const char *code,
     size_t len,
     size_t *cursor,
+    size_t line,
     PtnValue *value_out
 ) {
+    (void)line;
     *cursor = ptn_eval_skip_ws(code, len, *cursor);
     if (*cursor >= len) {
         return 0;
@@ -127636,6 +127639,19 @@ static int ptn_eval_parse_scalar_constant_value(
         *cursor += strlen("null");
         *value_out = ptn_null();
         return 1;
+    }
+    if (ptn_eval_identifier_start((unsigned char)code[*cursor])) {
+        size_t name_start = *cursor;
+        while (*cursor < len && ptn_eval_identifier_part((unsigned char)code[*cursor])) {
+            (*cursor)++;
+        }
+        PtnValue value;
+        if (ptn_runtime_constant_value_len(runtime, code + name_start, *cursor - name_start, &value)) {
+            *value_out = ptn_value_clone_deref(value);
+            return 1;
+        }
+        *cursor = name_start;
+        return 0;
     }
     size_t value_start = *cursor;
     if (code[*cursor] == '-') {
@@ -127660,12 +127676,49 @@ static int ptn_eval_parse_scalar_constant_value(
     return 1;
 }
 
+static void ptn_eval_name_list_push(
+    char ***names,
+    size_t *count,
+    size_t *capacity,
+    char *name
+) {
+    if (*count >= *capacity) {
+        size_t next_capacity = *capacity == 0 ? 4 : *capacity * 2;
+        char **next_names = realloc(*names, next_capacity * sizeof(char *));
+        if (next_names == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *names = next_names;
+        *capacity = next_capacity;
+    }
+    (*names)[(*count)++] = name;
+}
+
+static int ptn_eval_parse_class_reference_name(
+    const char *code,
+    size_t len,
+    size_t *cursor,
+    char **name_out
+) {
+    *cursor = ptn_eval_skip_ws(code, len, *cursor);
+    if (*cursor >= len || !ptn_eval_identifier_start((unsigned char)code[*cursor])) {
+        return 0;
+    }
+    size_t name_start = *cursor;
+    while (*cursor < len && ptn_eval_identifier_part((unsigned char)code[*cursor])) {
+        (*cursor)++;
+    }
+    *name_out = ptn_duplicate_string_len(code + name_start, *cursor - name_start);
+    return 1;
+}
+
 static void ptn_eval_scan_class_constants(
     PtnRuntime *runtime,
     const char *code,
     size_t body_start,
     size_t body_end,
-    const char *class_name
+    const char *class_name,
+    size_t line
 ) {
     for (size_t pos = body_start; pos < body_end; pos++) {
         if (code[pos] == '\'' || code[pos] == '"') {
@@ -127691,7 +127744,7 @@ static void ptn_eval_scan_class_constants(
         }
         cursor++;
         PtnValue value = ptn_null();
-        if (ptn_eval_parse_scalar_constant_value(code, body_end, &cursor, &value)) {
+        if (ptn_eval_parse_scalar_constant_value(runtime, code, body_end, &cursor, line, &value)) {
             ptn_runtime_define_class_constant(runtime, class_name, constant_name, value);
             ptn_value_destroy(&value);
         }
@@ -127777,25 +127830,41 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
         int allows_dynamic_properties =
             ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(code, pos);
         char *parent_name = NULL;
+        char **interface_names = NULL;
+        size_t interface_count = 0;
+        size_t interface_capacity = 0;
         size_t metadata_cursor = ptn_eval_skip_ws(code, len, cursor);
         if (ptn_eval_keyword_at(code, len, metadata_cursor, "extends")) {
             metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + strlen("extends"));
-            if (metadata_cursor < len && ptn_eval_identifier_start((unsigned char)code[metadata_cursor])) {
-                size_t parent_start = metadata_cursor;
-                while (metadata_cursor < len &&
-                    ptn_eval_identifier_part((unsigned char)code[metadata_cursor])) {
-                    metadata_cursor++;
+            (void)ptn_eval_parse_class_reference_name(code, len, &metadata_cursor, &parent_name);
+        }
+        metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor);
+        if (ptn_eval_keyword_at(code, len, metadata_cursor, "implements")) {
+            metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor + strlen("implements"));
+            while (metadata_cursor < len) {
+                char *interface_name = NULL;
+                if (!ptn_eval_parse_class_reference_name(code, len, &metadata_cursor, &interface_name)) {
+                    break;
                 }
-                parent_name = ptn_duplicate_string_len(
-                    code + parent_start,
-                    metadata_cursor - parent_start
+                ptn_eval_name_list_push(
+                    &interface_names,
+                    &interface_count,
+                    &interface_capacity,
+                    interface_name
                 );
+                metadata_cursor = ptn_eval_skip_ws(code, len, metadata_cursor);
+                if (metadata_cursor >= len || code[metadata_cursor] != ',') {
+                    break;
+                }
+                metadata_cursor++;
             }
         }
         ptn_runtime_register_dynamic_class_ex(
             runtime,
             class_name,
             parent_name,
+            (const char * const *)interface_names,
+            interface_count,
             allows_dynamic_properties
         );
         if (ptn_eval_class_uses_deprecated_serializable(runtime, class_name)) {
@@ -127824,12 +127893,17 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
                 code,
                 body_open + 1,
                 body_close,
-                class_name
+                class_name,
+                line
             );
             pos = body_close;
         } else {
             pos = cursor;
         }
+        for (size_t i = 0; i < interface_count; i++) {
+            free(interface_names[i]);
+        }
+        free(interface_names);
         free(parent_name);
         free(class_name);
     }

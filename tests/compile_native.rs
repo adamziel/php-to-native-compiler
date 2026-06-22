@@ -16484,6 +16484,40 @@ var_dump(class_exists('defclass', false));
 }
 
 #[test]
+fn compile_eval_class_constants_and_interfaces_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-class-constants-interfaces");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-class-constants-interfaces.php");
+    let output = root.join("eval-class-constants-interfaces-bin");
+    fs::write(
+        &input,
+        r#"<?php
+define("A", "." . ord(2) . ".");
+eval("class A { const a = A; }");
+var_dump(A::a);
+
+interface I {
+    const X2 = 'X' . self::Y2;
+    const Y2 = 'Y';
+}
+eval('class B implements I{}');
+var_dump(B::X2);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \".50.\"\nstring(2) \"XY\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_eval_array_mutations_use_current_scope_to_native_binary() {
     let root = temp_dir("ptn-native-eval-array-mutations");
     fs::create_dir_all(&root).unwrap();
