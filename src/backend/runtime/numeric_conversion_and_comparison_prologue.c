@@ -3319,6 +3319,22 @@ static PTN_UNUSED const char *ptn_property_visibility_name(PtnPropertyVisibility
     return "public";
 }
 
+static PTN_UNUSED const char *ptn_static_property_visibility_error_class(
+    PtnPropertyVisibility visibility,
+    const char *lookup_class,
+    const char *declaring_class
+) {
+    if (
+        visibility == PTN_PROPERTY_PRIVATE &&
+        lookup_class != NULL &&
+        declaring_class != NULL &&
+        !ptn_property_class_names_equal(lookup_class, declaring_class)
+    ) {
+        return lookup_class;
+    }
+    return declaring_class;
+}
+
 static PTN_UNUSED void ptn_throw_property_visibility_error(
     PtnRuntime *runtime,
     PtnPropertyVisibility visibility,
@@ -5727,7 +5743,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
         }
         if (!ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
             free(key);
-            ptn_throw_property_visibility_error(runtime, visibility, declaring_class, property, line);
+            ptn_throw_property_visibility_error(
+                runtime,
+                visibility,
+                ptn_static_property_visibility_error_class(visibility, class_name, declaring_class),
+                property,
+                line
+            );
             return ptn_null();
         }
         free(key);
@@ -5786,7 +5808,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property_for_indirect_write(
     }
     if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
         free(key);
-        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
+        ptn_throw_property_visibility_error(
+            runtime,
+            read_visibility,
+            ptn_static_property_visibility_error_class(read_visibility, class_name, declaring_class),
+            property,
+            line
+        );
         return ptn_null();
     }
 
@@ -6034,7 +6062,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     }
     if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
         free(key);
-        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
+        ptn_throw_property_visibility_error(
+            runtime,
+            read_visibility,
+            ptn_static_property_visibility_error_class(read_visibility, class_name, declaring_class),
+            property,
+            line
+        );
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
@@ -6048,7 +6082,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
                 access_scope
             );
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
+            ptn_throw_property_visibility_error(
+                runtime,
+                set_visibility,
+                ptn_static_property_visibility_error_class(set_visibility, class_name, declaring_class),
+                property,
+                line
+            );
         }
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
@@ -6149,7 +6189,13 @@ static PTN_UNUSED int ptn_runtime_validate_static_property_write(
                 );
             }
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
+            ptn_throw_property_visibility_error(
+                runtime,
+                set_visibility,
+                ptn_static_property_visibility_error_class(set_visibility, class_name, declaring_class),
+                property,
+                line
+            );
         }
         return 0;
     }
@@ -6231,7 +6277,13 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
                 );
             }
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
+            ptn_throw_property_visibility_error(
+                runtime,
+                set_visibility,
+                ptn_static_property_visibility_error_class(set_visibility, class_name, declaring_class),
+                property,
+                line
+            );
         }
         return ptn_null();
     }
@@ -6426,7 +6478,13 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
     }
     if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
         free(key);
-        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
+        ptn_throw_property_visibility_error(
+            runtime,
+            read_visibility,
+            ptn_static_property_visibility_error_class(read_visibility, class_name, declaring_class),
+            property,
+            line
+        );
         return;
     }
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
@@ -6440,7 +6498,13 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
                 access_scope
             );
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
+            ptn_throw_property_visibility_error(
+                runtime,
+                set_visibility,
+                ptn_static_property_visibility_error_class(set_visibility, class_name, declaring_class),
+                property,
+                line
+            );
         }
         return;
     }

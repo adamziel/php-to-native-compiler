@@ -7773,13 +7773,6 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         for property in class_property_exists_chain(class, classes) {
-            if property.visibility == PropertyVisibility::Private
-                && !property
-                    .declaring_class
-                    .eq_ignore_ascii_case(class.name.as_str())
-            {
-                continue;
-            }
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(property.name));
             out.push_str("\") == 0) {\n");

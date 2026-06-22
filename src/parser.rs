@@ -13128,6 +13128,18 @@ fn import_trait_members_into_trait(
                 target.span,
                 global_constant_values,
             )?;
+        } else if target
+            .static_properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            validate_composed_property_kind_compatibility(
+                &target.name,
+                &source.name,
+                &target.name,
+                &property.name,
+                target.span,
+            )?;
         } else {
             target.properties.push(property.clone());
         }
@@ -13146,6 +13158,18 @@ fn import_trait_members_into_trait(
                 property,
                 target.span,
                 global_constant_values,
+            )?;
+        } else if target
+            .properties
+            .iter()
+            .any(|candidate| candidate.name == property.name)
+        {
+            validate_composed_property_kind_compatibility(
+                &target.name,
+                &source.name,
+                &target.name,
+                &property.name,
+                target.span,
             )?;
         } else {
             target.static_properties.push(property.clone());
@@ -13351,6 +13375,22 @@ fn import_trait_members_into_class(
                 class.span,
                 global_constant_values,
             )?;
+        } else if let Some(existing) = class
+            .static_properties
+            .iter()
+            .find(|candidate| candidate.name == property.name)
+        {
+            let existing_owner = static_property_origins
+                .get(&existing.name)
+                .map(String::as_str)
+                .unwrap_or(&class.name);
+            validate_composed_property_kind_compatibility(
+                existing_owner,
+                &trait_decl.name,
+                &class.name,
+                &property.name,
+                class.span,
+            )?;
         } else {
             class.properties.push(property.clone());
             property_origins.insert(property.name.clone(), trait_decl.name.clone());
@@ -13358,6 +13398,22 @@ fn import_trait_members_into_class(
     }
     for property in &trait_decl.static_properties {
         if let Some(existing) = class
+            .properties
+            .iter()
+            .find(|candidate| candidate.name == property.name)
+        {
+            let existing_owner = property_origins
+                .get(&existing.name)
+                .map(String::as_str)
+                .unwrap_or(&class.name);
+            validate_composed_property_kind_compatibility(
+                existing_owner,
+                &trait_decl.name,
+                &class.name,
+                &property.name,
+                class.span,
+            )?;
+        } else if let Some(existing) = class
             .static_properties
             .iter()
             .find(|candidate| candidate.name == property.name)
@@ -13619,6 +13675,21 @@ fn validate_composed_property_compatibility(
         format!(
             "{existing_owner} and {imported_owner} define the same property (${}) in the composition of {composer_name}. However, the definition differs and is considered incompatible. Class was composed",
             existing.name
+        ),
+        Some(span),
+    ))
+}
+
+fn validate_composed_property_kind_compatibility(
+    existing_owner: &str,
+    imported_owner: &str,
+    composer_name: &str,
+    property_name: &str,
+    span: SourceSpan,
+) -> Result<()> {
+    Err(Diagnostic::new(
+        format!(
+            "{existing_owner} and {imported_owner} define the same property (${property_name}) in the composition of {composer_name}. However, the definition differs and is considered incompatible. Class was composed",
         ),
         Some(span),
     ))
@@ -15196,12 +15267,8 @@ fn method_signature_compatibility_error_named(
     Diagnostic::new(
         format!(
             "Declaration of {} must be compatible with {}",
-            class_method_signature_display(&class.name, method, method_signature_display),
-            class_method_signature_display(
-                parent_class_name,
-                parent_method,
-                method_signature_display
-            )
+            class_method_signature_display_for_compatibility(&class.name, method),
+            class_method_signature_display_for_compatibility(parent_class_name, parent_method)
         ),
         Some(method.span),
     )
@@ -15251,16 +15318,19 @@ fn method_signature_display(method: &MethodDecl) -> String {
     method_signature_display_with(method, type_hint_display)
 }
 
+fn method_signature_display_for_class(method: &MethodDecl, class_name: &str) -> String {
+    method_signature_display_with_default_scope(method, type_hint_display, Some(class_name))
+}
+
 fn method_signature_display_canonical(method: &MethodDecl) -> String {
     method_signature_display_with(method, type_hint_display_canonical)
 }
 
-fn class_method_signature_display(
+fn class_method_signature_display_for_compatibility(
     class_name: &str,
     method: &MethodDecl,
-    display_method: fn(&MethodDecl) -> String,
 ) -> String {
-    let method_display = display_method(method);
+    let method_display = method_signature_display_for_class(method, class_name);
     if method.return_by_ref {
         format!(
             "&{}::{}",
@@ -15276,6 +15346,14 @@ fn method_signature_display_with(
     method: &MethodDecl,
     display_type: fn(&TypeHint) -> String,
 ) -> String {
+    method_signature_display_with_default_scope(method, display_type, None)
+}
+
+fn method_signature_display_with_default_scope(
+    method: &MethodDecl,
+    display_type: fn(&TypeHint) -> String,
+    default_scope: Option<&str>,
+) -> String {
     let mut signature = String::new();
     if method.return_by_ref {
         signature.push('&');
@@ -15286,7 +15364,11 @@ fn method_signature_display_with(
         if index > 0 {
             signature.push_str(", ");
         }
-        signature.push_str(&parameter_signature_display_with(parameter, display_type));
+        signature.push_str(&parameter_signature_display_with(
+            parameter,
+            display_type,
+            default_scope,
+        ));
     }
     signature.push(')');
     if let Some(return_type) = &method.return_type {
@@ -15299,6 +15381,7 @@ fn method_signature_display_with(
 fn parameter_signature_display_with(
     parameter: &FunctionParameter,
     display_type: fn(&TypeHint) -> String,
+    default_scope: Option<&str>,
 ) -> String {
     let mut display = String::new();
     if let Some(type_hint) = &parameter.type_hint {
@@ -15315,12 +15398,12 @@ fn parameter_signature_display_with(
     display.push_str(&parameter.name);
     if let Some(default_value) = &parameter.default_value {
         display.push_str(" = ");
-        display.push_str(&parameter_default_display(default_value));
+        display.push_str(&parameter_default_display(default_value, default_scope));
     }
     display
 }
 
-fn parameter_default_display(default_value: &Expr) -> String {
+fn parameter_default_display(default_value: &Expr, default_scope: Option<&str>) -> String {
     match default_value {
         Expr::Null(_) => "null".to_string(),
         Expr::Bool(value, _) => value.to_string(),
@@ -15328,6 +15411,13 @@ fn parameter_default_display(default_value: &Expr) -> String {
         Expr::Float(value, _) => value.to_string(),
         Expr::String(value, _) => format!("'{}'", value.replace('\'', "\\'")),
         Expr::Array { elements, .. } if elements.is_empty() => "[]".to_string(),
+        Expr::ClassConstantFetch {
+            class_name, name, ..
+        } if name.eq_ignore_ascii_case("class") && class_name.eq_ignore_ascii_case("self") => {
+            default_scope
+                .map(|scope| format!("'{}'", scope.replace('\'', "\\'")))
+                .unwrap_or_else(|| format!("{class_name}::{name}"))
+        }
         Expr::ClassConstantFetch {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
