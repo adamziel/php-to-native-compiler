@@ -4629,7 +4629,16 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
                 .iter()
                 .map(|type_hint| (type_hint, type_hint_union_member_label(type_hint)))
                 .collect::<Vec<_>>();
-            members.sort_by_key(|(type_hint, _)| type_hint_union_member_is_builtin_like(type_hint));
+            if members
+                .iter()
+                .all(|(_, display)| union_builtin_display_rank(display).is_some())
+            {
+                members.sort_by_key(|(_, display)| union_builtin_display_rank(display).unwrap());
+            } else {
+                members.sort_by_key(|(type_hint, _)| {
+                    type_hint_union_member_is_builtin_like(type_hint)
+                });
+            }
             members
                 .into_iter()
                 .map(|(_, label)| label)
@@ -4817,6 +4826,29 @@ fn reflection_property_named_type_metadata(
     })
 }
 
+fn reflection_property_never_type_metadata() -> ReflectionTypeMetadata {
+    ReflectionTypeMetadata {
+        name: Some("never".to_string()),
+        display_name: "never".to_string(),
+        allows_null: false,
+        is_builtin: true,
+    }
+}
+
+fn reflection_property_settable_type_metadata(
+    property: &ClassPropertyExistsEntry<'_>,
+) -> Option<ReflectionTypeMetadata> {
+    if let Some(type_hint) = property.hook_set_parameter_type {
+        return reflection_type_metadata(type_hint);
+    }
+    if property.is_virtual && !property.hook_has_set {
+        return Some(reflection_property_never_type_metadata());
+    }
+    property
+        .type_hint
+        .and_then(reflection_property_named_type_metadata)
+}
+
 fn reflection_named_type_name(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Null => "null".to_string(),
@@ -4886,6 +4918,21 @@ fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
 
 fn type_hint_union_member_is_builtin_like(type_hint: &TypeHint) -> bool {
     !matches!(type_hint, TypeHint::Class(_) | TypeHint::Intersection(_))
+}
+
+fn union_builtin_display_rank(display: &str) -> Option<u8> {
+    match display {
+        "static" => Some(0),
+        "callable" => Some(1),
+        "string" => Some(2),
+        "int" => Some(3),
+        "float" => Some(4),
+        "bool" => Some(5),
+        "false" => Some(6),
+        "true" => Some(7),
+        "null" => Some(8),
+        _ => None,
+    }
 }
 
 fn parameter_type_error_label(parameter: &FunctionParameter, type_hint: &TypeHint) -> String {
@@ -4977,7 +5024,16 @@ fn type_hint_runtime_static_label_format(type_hint: &TypeHint) -> String {
                     )
                 })
                 .collect::<Vec<_>>();
-            members.sort_by_key(|(type_hint, _)| type_hint_union_member_is_builtin_like(type_hint));
+            if members
+                .iter()
+                .all(|(_, display)| union_builtin_display_rank(display).is_some())
+            {
+                members.sort_by_key(|(_, display)| union_builtin_display_rank(display).unwrap());
+            } else {
+                members.sort_by_key(|(type_hint, _)| {
+                    type_hint_union_member_is_builtin_like(type_hint)
+                });
+            }
             members
                 .into_iter()
                 .map(|(_, label)| label)
@@ -13877,6 +13933,48 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_has_set_hook(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.hook_has_set { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.hook_has_set { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
@@ -14278,6 +14376,95 @@ fn emit_class_reflection_metadata_helpers(
                 .type_hint
                 .and_then(reflection_property_named_type_metadata)
             {
+                emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
+            } else {
+                out.push_str("            *type_name = NULL;\n");
+                out.push_str("            *type_display_name = NULL;\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 0;\n");
+            }
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_settable_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)type_name;\n");
+        out.push_str("    (void)type_display_name;\n");
+        out.push_str("    (void)allows_null;\n");
+        out.push_str("    (void)is_builtin;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
+            out.push_str("            *type_name = \"never\";\n");
+            out.push_str("            *type_display_name = \"never\";\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 1;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (strcmp(property_name, \"value\") == 0) {\n");
+                out.push_str("            *type_name = \"never\";\n");
+                out.push_str("            *type_display_name = \"never\";\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 1;\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            if let Some(type_metadata) = reflection_property_settable_type_metadata(&entry) {
+                emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
+            } else {
+                out.push_str("            *type_name = NULL;\n");
+                out.push_str("            *type_display_name = NULL;\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 0;\n");
+            }
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            if let Some(type_metadata) = reflection_property_settable_type_metadata(&entry) {
                 emit_reflection_type_metadata_assignments(out, "            ", &type_metadata);
             } else {
                 out.push_str("            *type_name = NULL;\n");
@@ -15134,7 +15321,9 @@ trait ReflectionPropertySummary {
     fn reflection_has_hooks(&self) -> bool;
     fn reflection_hook_has_get(&self) -> bool;
     fn reflection_hook_has_set(&self) -> bool;
+    fn reflection_hook_get_is_final(&self) -> bool;
     fn reflection_hook_get_is_abstract(&self) -> bool;
+    fn reflection_hook_set_is_final(&self) -> bool;
     fn reflection_hook_set_is_abstract(&self) -> bool;
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
     fn reflection_value(&self) -> Option<&ValueExpr>;
@@ -15186,8 +15375,16 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
         self.hook_has_set
     }
 
+    fn reflection_hook_get_is_final(&self) -> bool {
+        self.hook_get_is_final
+    }
+
     fn reflection_hook_get_is_abstract(&self) -> bool {
         self.hook_get_is_abstract
+    }
+
+    fn reflection_hook_set_is_final(&self) -> bool {
+        self.hook_set_is_final
     }
 
     fn reflection_hook_set_is_abstract(&self) -> bool {
@@ -15252,8 +15449,16 @@ impl ReflectionPropertySummary for crate::ir::PropertyDecl {
         self.hook_has_set
     }
 
+    fn reflection_hook_get_is_final(&self) -> bool {
+        self.hook_get_is_final
+    }
+
     fn reflection_hook_get_is_abstract(&self) -> bool {
         self.hook_get_is_abstract
+    }
+
+    fn reflection_hook_set_is_final(&self) -> bool {
+        self.hook_set_is_final
     }
 
     fn reflection_hook_set_is_abstract(&self) -> bool {
@@ -15318,7 +15523,15 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
         false
     }
 
+    fn reflection_hook_get_is_final(&self) -> bool {
+        false
+    }
+
     fn reflection_hook_get_is_abstract(&self) -> bool {
+        false
+    }
+
+    fn reflection_hook_set_is_final(&self) -> bool {
         false
     }
 
@@ -15375,9 +15588,15 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     if property.reflection_has_hooks() {
         out.push_str(" {");
         if property.reflection_hook_has_get() {
+            if property.reflection_hook_get_is_final() {
+                out.push_str(" final");
+            }
             out.push_str(" get;");
         }
         if property.reflection_hook_has_set() {
+            if property.reflection_hook_set_is_final() {
+                out.push_str(" final");
+            }
             out.push_str(" set;");
         }
         let _ = property.reflection_hook_get_is_abstract();
@@ -16612,8 +16831,11 @@ struct ClassPropertyExistsEntry<'a> {
     is_virtual: bool,
     hook_has_get: bool,
     hook_has_set: bool,
+    hook_get_is_final: bool,
     hook_get_is_abstract: bool,
+    hook_set_is_final: bool,
     hook_set_is_abstract: bool,
+    hook_set_parameter_type: Option<&'a TypeHint>,
     type_hint: Option<&'a PropertyTypeHint>,
     doc_comment: Option<&'a str>,
     value: Option<&'a ValueExpr>,
@@ -16651,8 +16873,11 @@ fn trait_property_exists_entries<'a>(
             is_virtual: property.is_virtual,
             hook_has_get: property.hook_has_get,
             hook_has_set: property.hook_has_set,
+            hook_get_is_final: property.hook_get_is_final,
             hook_get_is_abstract: property.hook_get_is_abstract,
+            hook_set_is_final: property.hook_set_is_final,
             hook_set_is_abstract: property.hook_set_is_abstract,
+            hook_set_parameter_type: property.hook_set_parameter_type.as_ref(),
             type_hint: property.type_hint.as_ref(),
             doc_comment: property.doc_comment.as_deref(),
             value: property.value.as_ref(),
@@ -16682,8 +16907,11 @@ fn trait_property_exists_entries<'a>(
                 is_virtual: false,
                 hook_has_get: false,
                 hook_has_set: false,
+                hook_get_is_final: false,
                 hook_get_is_abstract: false,
+                hook_set_is_final: false,
                 hook_set_is_abstract: false,
+                hook_set_parameter_type: None,
                 type_hint: property.type_hint.as_ref(),
                 doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
@@ -16818,22 +17046,6 @@ fn effective_property_hook<'a>(
     inherited_property_with_hook(class, &property.name, classes, hook_name)
 }
 
-fn effective_property_hook_has_get(
-    class: &ClassDecl,
-    property: &crate::ir::PropertyDecl,
-    classes: &[ClassDecl],
-) -> bool {
-    effective_property_hook(class, property, classes, "get").is_some()
-}
-
-fn effective_property_hook_has_set(
-    class: &ClassDecl,
-    property: &crate::ir::PropertyDecl,
-    classes: &[ClassDecl],
-) -> bool {
-    effective_property_hook(class, property, classes, "set").is_some()
-}
-
 fn property_runtime_declaring_class(
     class: &ClassDecl,
     property: &crate::ir::PropertyDecl,
@@ -16909,8 +17121,11 @@ fn class_property_exists_chain<'a>(
                     is_virtual: false,
                     hook_has_get: false,
                     hook_has_set: false,
+                    hook_get_is_final: false,
                     hook_get_is_abstract: false,
+                    hook_set_is_final: false,
                     hook_set_is_abstract: false,
+                    hook_set_parameter_type: None,
                     type_hint: None,
                     doc_comment: None,
                     value: None,
@@ -16931,8 +17146,11 @@ fn class_property_exists_chain<'a>(
                     is_virtual: false,
                     hook_has_get: false,
                     hook_has_set: false,
+                    hook_get_is_final: false,
                     hook_get_is_abstract: false,
+                    hook_set_is_final: false,
                     hook_set_is_abstract: false,
+                    hook_set_parameter_type: None,
                     type_hint: None,
                     doc_comment: None,
                     value: None,
@@ -16940,8 +17158,10 @@ fn class_property_exists_chain<'a>(
                 });
             }
         }
-        let instance_property_entry =
-            |property: &'a crate::ir::PropertyDecl| ClassPropertyExistsEntry {
+        let instance_property_entry = |property: &'a crate::ir::PropertyDecl| {
+            let effective_get_hook = effective_property_hook(class, property, classes, "get");
+            let effective_set_hook = effective_property_hook(class, property, classes, "set");
+            ClassPropertyExistsEntry {
                 declaring_class: class.name.as_str(),
                 name: property.name.as_str(),
                 visibility: property.visibility,
@@ -16952,16 +17172,25 @@ fn class_property_exists_chain<'a>(
                 is_readonly: property.is_readonly,
                 has_hooks: property.has_hooks,
                 is_virtual: property.is_virtual,
-                hook_has_get: effective_property_hook_has_get(class, property, classes),
-                hook_has_set: effective_property_hook_has_set(class, property, classes),
-                hook_get_is_abstract: property.hook_get_is_abstract,
-                hook_set_is_abstract: property.hook_set_is_abstract,
+                hook_has_get: effective_get_hook.is_some(),
+                hook_has_set: effective_set_hook.is_some(),
+                hook_get_is_final: effective_get_hook
+                    .is_some_and(|(_, hook_property)| hook_property.hook_get_is_final),
+                hook_get_is_abstract: effective_get_hook
+                    .is_some_and(|(_, hook_property)| hook_property.hook_get_is_abstract),
+                hook_set_is_final: effective_set_hook
+                    .is_some_and(|(_, hook_property)| hook_property.hook_set_is_final),
+                hook_set_is_abstract: effective_set_hook
+                    .is_some_and(|(_, hook_property)| hook_property.hook_set_is_abstract),
+                hook_set_parameter_type: effective_set_hook
+                    .and_then(|(_, hook_property)| hook_property.hook_set_parameter_type.as_ref()),
                 type_hint: property.type_hint.as_ref(),
                 doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some()
                     || (!property.has_hooks && property.type_hint.is_none()),
-            };
+            }
+        };
         let mut class_properties = Vec::new();
         class_properties.extend(
             class
@@ -16985,8 +17214,11 @@ fn class_property_exists_chain<'a>(
                     is_virtual: false,
                     hook_has_get: false,
                     hook_has_set: false,
+                    hook_get_is_final: false,
                     hook_get_is_abstract: false,
+                    hook_set_is_final: false,
                     hook_set_is_abstract: false,
+                    hook_set_parameter_type: None,
                     type_hint: property.type_hint.as_ref(),
                     doc_comment: property.doc_comment.as_deref(),
                     value: property.value.as_ref(),

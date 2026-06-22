@@ -95653,8 +95653,10 @@ static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *run
 static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line);
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
 static int ptn_declared_class_reflection_property_is_readable_hook(const char *class_name, const char *property_name);
+static int ptn_declared_class_reflection_property_has_set_hook(const char *class_name, const char *property_name);
 static const char *ptn_declared_class_reflection_property_doc_comment(const char *class_name, const char *property_name);
 static int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly);
+static int ptn_declared_class_reflection_property_settable_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_property_to_string(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects);
@@ -105640,6 +105642,43 @@ static int ptn_reflection_property_type_metadata(
     );
 }
 
+static int ptn_reflection_property_settable_type_metadata(
+    PtnReflectionPropertyData *data,
+    const char **type_name,
+    const char **type_display_name,
+    int *allows_null,
+    int *is_builtin
+) {
+    *type_name = NULL;
+    *type_display_name = NULL;
+    *allows_null = 0;
+    *is_builtin = 0;
+    if (data->is_dynamic) {
+        return 0;
+    }
+    if ((ptn_internal_class_name_is_xml_reader(data->class_name) ||
+         ptn_declared_class_is_same_or_descendant(data->class_name, "XMLReader")) &&
+        ptn_xml_reader_property_known(data->name)) {
+        int is_readonly = 0;
+        return ptn_reflection_property_type_metadata(
+            data,
+            type_name,
+            type_display_name,
+            allows_null,
+            is_builtin,
+            &is_readonly
+        );
+    }
+    return ptn_declared_class_reflection_property_settable_type_metadata(
+        data->class_name,
+        data->name,
+        type_name,
+        type_display_name,
+        allows_null,
+        is_builtin
+    );
+}
+
 static int ptn_reflection_property_visibility_allows(
     const char *scope_class,
     const char *declaring_class,
@@ -106092,12 +106131,12 @@ static int ptn_reflection_property_is_readable_result(
     PtnValue target,
     size_t line
 ) {
-    if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
-        return 0;
-    }
     if (data->is_dynamic) {
         return target.type == PTN_OBJECT &&
             ptn_reflection_property_object_storage_initialized(target, data->name, NULL);
+    }
+    if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
+        return 0;
     }
 
     int read_allowed =
@@ -106149,6 +106188,10 @@ static int ptn_reflection_property_is_writable_result(
     }
     int write_allowed =
         ptn_reflection_property_visibility_allows(scope_class, declaring_class, set_visibility);
+    if ((modifiers & 512) != 0 &&
+        !ptn_declared_class_reflection_property_has_set_hook(declaring_class, data->name)) {
+        return 0;
+    }
     if (is_static || target.type == PTN_NULL) {
         return write_allowed;
     }
@@ -106882,16 +106925,13 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         const char *type_display_name = NULL;
         int allows_null = 0;
         int is_builtin = 0;
-        int is_readonly = 0;
-        ptn_reflection_property_type_metadata(
+        ptn_reflection_property_settable_type_metadata(
             data,
             &type_name,
             &type_display_name,
             &allows_null,
-            &is_builtin,
-            &is_readonly
+            &is_builtin
         );
-        (void)is_readonly;
         if (type_display_name == NULL) {
             return ptn_null();
         }
@@ -106997,8 +107037,10 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             return ptn_null();
         }
         if (is_static) {
-            (void)has_default;
-            return ptn_bool(ptn_runtime_static_property_initialized(runtime, data->class_name, data->name));
+            return ptn_bool(
+                has_default ||
+                ptn_runtime_static_property_initialized(runtime, data->class_name, data->name)
+            );
         }
         if (argc != 1) {
             ptn_throw_exception(
