@@ -639,6 +639,25 @@ var_dump(array_reverse($items));",
             expected_stdout: "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  &string(1) \"c\"\n}\narray(3) {\n  [0]=>\n  &string(1) \"c\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"a\"\n}\n",
         },
         CowReducerCase {
+            name: "foreach_reference_replacement_keeps_current_iterator_slot",
+            oracle: "Zend/tests/gh19613.phpt",
+            source: "<?php\n\
+$a = [1];\n\
+$i = 0;\n\
+foreach ($a as &$v) {\n\
+    $a[0] = $a;\n\
+    foreach ($v as &$w) {\n\
+        $w = $a;\n\
+        if (++$i === 65) {\n\
+            echo \"done:$i\\n\";\n\
+            break 2;\n\
+        }\n\
+    }\n\
+}\n\
+echo \"count:$i\\n\";",
+            expected_stdout: "done:65\ncount:65\n",
+        },
+        CowReducerCase {
             name: "dynamic_property_reference_assignment",
             oracle: "Zend/tests/bugGH-8655.phpt",
             source: "<?php\n\
@@ -813,7 +832,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 46, "COW reducer pass count changed");
+    assert_eq!(passed, 47, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
