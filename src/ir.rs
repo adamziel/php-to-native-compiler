@@ -1354,7 +1354,12 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|parameter| self.lower_parameter(parameter))
             .collect();
+        let previous_function_display_name = std::mem::replace(
+            &mut self.current_function_display_name,
+            Some(function.name.clone()),
+        );
         let attributes = self.annotate_attribute_metadata(&function.attributes);
+        self.current_function_display_name = previous_function_display_name;
         let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
         self.functions.push(FunctionDecl {
             name: function.name.clone(),
@@ -1937,12 +1942,17 @@ impl<'a> LoweringContext<'a> {
             .methods
             .iter()
             .map(|method| {
-                let function_index = self.functions.len();
+                let method_display_name = format!("{}::{}", class.name, method.name);
+                let previous_function_display_name = std::mem::replace(
+                    &mut self.current_function_display_name,
+                    Some(method_display_name.clone()),
+                );
                 let method_attributes = self.lower_class_scoped_attribute_metadata(
                     &method.attributes,
                     &class.name,
                     parent_name,
                 );
+                self.current_function_display_name = previous_function_display_name;
                 let parameters = method
                     .parameters
                     .iter()
@@ -1967,6 +1977,7 @@ impl<'a> LoweringContext<'a> {
                     class.parent_name.as_deref(),
                     Some(&class_constant_values),
                 );
+                let function_index = self.functions.len();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
                     display_name: format!("{}::{}", class.name, method.name),
@@ -1994,7 +2005,6 @@ impl<'a> LoweringContext<'a> {
                     initially_declared: true,
                     body: Vec::new(),
                 });
-                let method_display_name = format!("{}::{}", class.name, method.name);
                 let previous_class_name =
                     std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
                 let previous_class_parent_name = std::mem::replace(
@@ -2457,23 +2467,101 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_class_scoped_attribute_metadata(
-        &self,
+        &mut self,
         metadata: &AttributeMetadata,
         current_class: &str,
         current_parent: Option<&str>,
     ) -> AttributeMetadata {
         let resolved =
             resolve_attribute_metadata_for_class_scope(metadata, current_class, current_parent);
-        self.annotate_attribute_metadata(&resolved)
+        let previous_class_name = std::mem::replace(
+            &mut self.current_class_name,
+            Some(current_class.to_string()),
+        );
+        let previous_class_parent_name = std::mem::replace(
+            &mut self.current_class_parent_name,
+            current_parent.map(ToString::to_string),
+        );
+        let annotated = self.annotate_attribute_metadata(&resolved);
+        self.current_class_name = previous_class_name;
+        self.current_class_parent_name = previous_class_parent_name;
+        annotated
     }
 
-    fn annotate_attribute_metadata(&self, metadata: &AttributeMetadata) -> AttributeMetadata {
+    fn annotate_attribute_metadata(&mut self, metadata: &AttributeMetadata) -> AttributeMetadata {
         let mut annotated = metadata.clone();
+        self.lower_attribute_metadata_closures(&mut annotated);
         for instance in &mut annotated.instances {
             instance.source_file = self.source_file.clone();
             instance.strict_types = self.strict_types;
         }
         annotated
+    }
+
+    fn lower_attribute_metadata_closures(&mut self, metadata: &mut AttributeMetadata) {
+        for instance in &mut metadata.instances {
+            for argument in &mut instance.arguments {
+                if let Some(expression) = &mut argument.value.expression {
+                    self.lower_attribute_argument_expression_closures(expression);
+                }
+            }
+        }
+    }
+
+    fn lower_attribute_argument_expression_closures(
+        &mut self,
+        expression: &mut AttributeArgumentExpression,
+    ) {
+        match expression {
+            AttributeArgumentExpression::Closure {
+                function,
+                function_index,
+                source_text,
+                reflection_text,
+                line,
+            } => {
+                if function_index.is_some() {
+                    return;
+                }
+                let Some(function) = function.take() else {
+                    return;
+                };
+                *source_text = assertion_anonymous_function_text(&function);
+                *line = function.span.line;
+                let lowered = self.lower_anonymous_function(&function);
+                let ValueExpr::Closure {
+                    function_index: lowered_index,
+                    ..
+                } = lowered
+                else {
+                    return;
+                };
+                *reflection_text =
+                    format!("Closure({})", self.functions[lowered_index].display_name);
+                *function_index = Some(lowered_index);
+            }
+            AttributeArgumentExpression::NewObject { arguments, .. } => {
+                for argument in arguments {
+                    self.lower_attribute_argument_expression_closures(argument);
+                }
+            }
+            AttributeArgumentExpression::Array(elements) => {
+                for element in elements {
+                    if let Some(key) = &mut element.key {
+                        self.lower_attribute_argument_expression_closures(key);
+                    }
+                    self.lower_attribute_argument_expression_closures(&mut element.value);
+                }
+            }
+            AttributeArgumentExpression::Unary { expr, .. } => {
+                self.lower_attribute_argument_expression_closures(expr);
+            }
+            AttributeArgumentExpression::Binary { left, right, .. } => {
+                self.lower_attribute_argument_expression_closures(left);
+                self.lower_attribute_argument_expression_closures(right);
+            }
+            _ => {}
+        }
     }
 
     fn lower_trait(&mut self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
@@ -2636,12 +2724,17 @@ impl<'a> LoweringContext<'a> {
                 .methods
                 .iter()
                 .map(|method| {
-                    let function_index = self.functions.len();
+                    let method_display_name = format!("{}::{}", trait_decl.name, method.name);
+                    let previous_function_display_name = std::mem::replace(
+                        &mut self.current_function_display_name,
+                        Some(method_display_name.clone()),
+                    );
                     let method_attributes = self.lower_class_scoped_attribute_metadata(
                         &method.attributes,
                         &trait_decl.name,
                         None,
                     );
+                    self.current_function_display_name = previous_function_display_name;
                     let parameters = method
                         .parameters
                         .iter()
@@ -2655,6 +2748,7 @@ impl<'a> LoweringContext<'a> {
                         None,
                         Some(&trait_constant_values),
                     );
+                    let function_index = self.functions.len();
                     self.functions.push(FunctionDecl {
                         name: format!("{}::{}", trait_decl.name, method.name),
                         display_name: format!("{}::{}", trait_decl.name, method.name),
@@ -5298,6 +5392,7 @@ fn assertion_string_text(value: &str) -> String {
 }
 
 fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String {
+    let attributes = assertion_attribute_prefix_text(&function.attributes);
     if function.is_arrow {
         let return_by_ref = if function.return_by_ref { "&" } else { "" };
         let parameters = function
@@ -5319,7 +5414,9 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
         };
 
         let static_prefix = if function.is_static { "static " } else { "" };
-        return format!("{static_prefix}fn{return_by_ref}({parameters}){return_type} => {body}");
+        return format!(
+            "{attributes}{static_prefix}fn{return_by_ref}({parameters}){return_type} => {body}"
+        );
     }
 
     let body = function
@@ -5327,11 +5424,135 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
         .iter()
         .filter_map(|statement| assertion_statement_text(statement, "    "))
         .collect::<Vec<_>>();
-    if body.is_empty() {
-        return "function()".to_string();
-    }
     let static_prefix = if function.is_static { "static " } else { "" };
-    format!("{static_prefix}function () {{\n{}\n}}", body.join("\n"))
+    let return_by_ref = if function.return_by_ref { "&" } else { "" };
+    let parameters = function
+        .parameters
+        .iter()
+        .map(assertion_function_parameter_text)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let return_type = function
+        .return_type
+        .as_ref()
+        .map(|hint| format!(": {}", assertion_type_hint_text(hint)))
+        .unwrap_or_default();
+    if body.is_empty() {
+        return format!(
+            "{attributes}{static_prefix}function {return_by_ref}({parameters}){return_type} {{\n}}"
+        );
+    }
+    format!(
+        "{attributes}{static_prefix}function {return_by_ref}({parameters}){return_type} {{\n{}\n}}",
+        body.join("\n")
+    )
+}
+
+fn assertion_attribute_prefix_text(attributes: &AttributeMetadata) -> String {
+    if attributes.instances.is_empty() {
+        return String::new();
+    }
+    let mut text = attributes
+        .instances
+        .iter()
+        .map(assertion_attribute_instance_text)
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push(' ');
+    text
+}
+
+fn assertion_attribute_instance_text(instance: &crate::ast::AttributeInstance) -> String {
+    let arguments = instance
+        .arguments
+        .iter()
+        .map(|argument| {
+            let value = assertion_attribute_argument_value_text(&argument.value);
+            match &argument.name {
+                Some(name) => format!("{name}: {value}"),
+                None => value,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if arguments.is_empty() {
+        format!("#[{}]", instance.name)
+    } else {
+        format!("#[{}({})]", instance.name, arguments)
+    }
+}
+
+fn assertion_attribute_argument_value_text(value: &crate::ast::AttributeArgumentValue) -> String {
+    value
+        .expression
+        .as_ref()
+        .map(assertion_attribute_argument_expression_text)
+        .unwrap_or_else(|| value.text.clone())
+}
+
+fn assertion_attribute_argument_expression_text(
+    expression: &AttributeArgumentExpression,
+) -> String {
+    match expression {
+        AttributeArgumentExpression::String(value) => assertion_string_text(value),
+        AttributeArgumentExpression::Int(value) | AttributeArgumentExpression::Float(value) => {
+            value.clone()
+        }
+        AttributeArgumentExpression::Bool(true) => "true".to_string(),
+        AttributeArgumentExpression::Bool(false) => "false".to_string(),
+        AttributeArgumentExpression::Null => "NULL".to_string(),
+        AttributeArgumentExpression::Constant(name) => name.clone(),
+        AttributeArgumentExpression::ClassName { class_name, .. } => class_name.clone(),
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } => format!("{class_name}::{name}"),
+        AttributeArgumentExpression::NewObject {
+            class_name,
+            arguments,
+            ..
+        } => {
+            let arguments = arguments
+                .iter()
+                .map(assertion_attribute_argument_expression_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "new \\{}({})",
+                class_name.trim_start_matches('\\'),
+                arguments
+            )
+        }
+        AttributeArgumentExpression::Closure {
+            function,
+            source_text,
+            ..
+        } => function
+            .as_ref()
+            .map(|function| assertion_anonymous_function_text(function))
+            .unwrap_or_else(|| source_text.clone()),
+        AttributeArgumentExpression::Array(_) => "array".to_string(),
+        AttributeArgumentExpression::Unary { op, expr } => {
+            let prefix = match op {
+                AstUnaryOp::Positive => "+",
+                AstUnaryOp::Negate => "-",
+                AstUnaryOp::Not => "!",
+                AstUnaryOp::BitwiseNot => "~",
+                AstUnaryOp::ErrorSuppress => "@",
+            };
+            format!(
+                "{prefix}{}",
+                assertion_attribute_argument_expression_text(expr)
+            )
+        }
+        AttributeArgumentExpression::Binary {
+            op, left, right, ..
+        } => format!(
+            "{} {} {}",
+            assertion_attribute_argument_expression_text(left),
+            assertion_binary_op_text(*op),
+            assertion_attribute_argument_expression_text(right)
+        ),
+    }
 }
 
 fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {
@@ -5339,6 +5560,14 @@ fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<Strin
         Statement::ClassDeclaration { source, span, .. } => Some(format!(
             "{}\n",
             assertion_source_block_text(source, span.column, indent)
+        )),
+        Statement::Echo { expressions, .. } => Some(format!(
+            "{indent}echo {};",
+            expressions
+                .iter()
+                .map(assertion_expr_text)
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
         Statement::Expression { expression, .. } => {
             Some(assertion_expression_statement_text(expression, indent))
@@ -5418,8 +5647,26 @@ fn assertion_anonymous_class_source_text(source: &str) -> String {
             line.to_string()
         }
     }));
-    let text = normalized.join("\n");
+    let text = assertion_normalized_anonymous_class_text(normalized.join("\n"));
     assertion_anonymous_class_constructor_text(&text).unwrap_or(text)
+}
+
+fn assertion_normalized_anonymous_class_text(source: String) -> String {
+    let mut text = source.replace("]\nclass", "] class");
+    let Some(class_open) = text.rfind('{') else {
+        return text;
+    };
+    let Some(class_close) = find_matching_ascii_delimiter(&text, class_open, b'{', b'}') else {
+        return text;
+    };
+    if !text[class_close + 1..].trim().is_empty()
+        || !text[class_open + 1..class_close].trim().is_empty()
+    {
+        return text;
+    }
+    text.truncate(class_open);
+    text.push_str("{\n}");
+    text
 }
 
 fn assertion_anonymous_class_constructor_text(source: &str) -> Option<String> {

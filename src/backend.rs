@@ -10994,6 +10994,9 @@ fn attribute_flag_argument_expression_value(
         AttributeArgumentExpression::Array(_) => {
             Err(AttributeFlagError::Type { type_name: "array" })
         }
+        AttributeArgumentExpression::Closure { .. } => Err(AttributeFlagError::Type {
+            type_name: "object",
+        }),
         AttributeArgumentExpression::NewObject { .. } => Err(AttributeFlagError::Type {
             type_name: "object",
         }),
@@ -11158,6 +11161,7 @@ fn attribute_argument_type_name(value: &AttributeArgumentValue) -> &'static str 
         AttributeArgumentKind::Bool => "bool",
         AttributeArgumentKind::Null => "null",
         AttributeArgumentKind::Array => "array",
+        AttributeArgumentKind::Closure => "object",
         AttributeArgumentKind::Constant
         | AttributeArgumentKind::ClassConstant
         | AttributeArgumentKind::NativeEnumCase { .. }
@@ -11685,6 +11689,7 @@ fn emit_declared_attribute_result_for_class_like(
                     "            ",
                     instance.line,
                     attribute_scope_class_var,
+                    functions,
                 );
                 out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
                 out.push_str(
@@ -11842,6 +11847,7 @@ fn attribute_argument_value_display_text(value: &AttributeArgumentValue) -> Stri
             AttributeArgumentKind::Bool => "true".to_string(),
             AttributeArgumentKind::Null => "NULL".to_string(),
             AttributeArgumentKind::Array => "Array".to_string(),
+            AttributeArgumentKind::Closure => value.text.clone(),
         })
 }
 
@@ -11876,6 +11882,9 @@ fn attribute_argument_expression_display_text(expression: &AttributeArgumentExpr
             display.push(')');
             display
         }
+        AttributeArgumentExpression::Closure {
+            reflection_text, ..
+        } => reflection_text.clone(),
         AttributeArgumentExpression::Array(_) => "Array".to_string(),
         AttributeArgumentExpression::Unary { op, expr } => {
             let prefix = match op {
@@ -12131,6 +12140,7 @@ fn emit_attribute_argument_value(
     indent: &str,
     line: usize,
     attribute_scope_class_var: Option<&str>,
+    functions: &[FunctionDecl],
 ) {
     if let Some(expression) = &value.expression {
         emit_attribute_argument_expression(
@@ -12140,6 +12150,7 @@ fn emit_attribute_argument_value(
             indent,
             line,
             attribute_scope_class_var,
+            functions,
         );
         return;
     }
@@ -12158,6 +12169,7 @@ fn emit_attribute_argument_expression(
     indent: &str,
     fallback_line: usize,
     attribute_scope_class_var: Option<&str>,
+    functions: &[FunctionDecl],
 ) {
     match expression {
         AttributeArgumentExpression::String(value) => {
@@ -12256,6 +12268,7 @@ fn emit_attribute_argument_expression(
                     indent,
                     *line,
                     attribute_scope_class_var,
+                    functions,
                 );
             }
             out.push_str(indent);
@@ -12301,6 +12314,9 @@ fn emit_attribute_argument_expression(
                 emit_value_cleanup(out, indent, &argument_temp);
             }
         }
+        AttributeArgumentExpression::Closure { function_index, .. } => {
+            emit_attribute_closure_argument(out, target, *function_index, functions, indent);
+        }
         AttributeArgumentExpression::Array(elements) => {
             out.push_str(indent);
             out.push_str("PtnValue ");
@@ -12317,6 +12333,7 @@ fn emit_attribute_argument_expression(
                         indent,
                         element.line,
                         attribute_scope_class_var,
+                        functions,
                     );
                     ("1", key_temp)
                 } else {
@@ -12329,6 +12346,7 @@ fn emit_attribute_argument_expression(
                     indent,
                     element.line,
                     attribute_scope_class_var,
+                    functions,
                 );
                 out.push_str(indent);
                 out.push_str("ptn_array_literal_append_entry(runtime, ");
@@ -12357,6 +12375,7 @@ fn emit_attribute_argument_expression(
                 indent,
                 fallback_line,
                 attribute_scope_class_var,
+                functions,
             );
             out.push_str(indent);
             out.push_str("PtnValue ");
@@ -12394,8 +12413,72 @@ fn emit_attribute_argument_expression(
             indent,
             *line,
             attribute_scope_class_var,
+            functions,
         ),
     }
+}
+
+fn emit_attribute_closure_argument(
+    out: &mut String,
+    target: &str,
+    function_index: Option<usize>,
+    functions: &[FunctionDecl],
+    indent: &str,
+) {
+    let Some(function_index) = function_index else {
+        emit_attribute_argument_simple(out, target, indent, "ptn_null()");
+        return;
+    };
+    let Some(function) = functions.get(function_index) else {
+        emit_attribute_argument_simple(out, target, indent, "ptn_null()");
+        return;
+    };
+    let required_parameter_count = function_required_parameter_count(function);
+    let is_variadic = function
+        .parameters
+        .iter()
+        .any(|parameter| parameter.is_variadic);
+    let uses_this = function_uses_this(function);
+    let parameters = emit_function_metadata_parameters(
+        out,
+        indent,
+        &format!("{target}_parameters"),
+        &function.parameters,
+    );
+    out.push_str(indent);
+    out.push_str("PtnValue ");
+    out.push_str(target);
+    out.push_str(" = ptn_closure(runtime, ");
+    out.push_str(&function_index.to_string());
+    out.push_str(", \"");
+    out.push_str(&c_string(&function.display_name));
+    out.push_str(
+        "\", ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"{closure}\", 0, ",
+    );
+    out.push_str(&function.parameters.len().to_string());
+    out.push_str(", ");
+    out.push_str(&required_parameter_count.to_string());
+    out.push_str(", ");
+    out.push_str(if is_variadic { "1" } else { "0" });
+    out.push_str(", ");
+    out.push_str(&parameters);
+    out.push_str(", ");
+    out.push_str(if function.return_by_ref { "1" } else { "0" });
+    emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+    emit_function_metadata_source_suffix(out, function, function_index);
+    out.push_str(", ");
+    out.push_str(if function.is_static { "1" } else { "0" });
+    out.push_str(", ");
+    out.push_str(if uses_this { "1" } else { "0" });
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_closure_set_scope(");
+    out.push_str(target);
+    out.push_str(", ");
+    out.push_str(&c_optional_string(function.class_name.as_deref()));
+    out.push_str(", ");
+    out.push_str(&c_optional_string(function.class_name.as_deref()));
+    out.push_str(");\n");
 }
 
 fn c_attribute_argument_class_name_expression(
@@ -12438,6 +12521,7 @@ fn emit_attribute_argument_binary(
     indent: &str,
     line: usize,
     attribute_scope_class_var: Option<&str>,
+    functions: &[FunctionDecl],
 ) {
     let left_temp = format!("{target}_left");
     let right_temp = format!("{target}_right");
@@ -12448,6 +12532,7 @@ fn emit_attribute_argument_binary(
         indent,
         line,
         attribute_scope_class_var,
+        functions,
     );
     emit_attribute_argument_expression(
         out,
@@ -12456,6 +12541,7 @@ fn emit_attribute_argument_binary(
         indent,
         line,
         attribute_scope_class_var,
+        functions,
     );
     out.push_str(indent);
     out.push_str("PtnValue ");
@@ -12648,6 +12734,7 @@ fn c_attribute_argument_value(value: &AttributeArgumentValue) -> String {
         }
         AttributeArgumentKind::Null => "ptn_null()".to_string(),
         AttributeArgumentKind::Array => "ptn_array_from_literal_entries(0, NULL)".to_string(),
+        AttributeArgumentKind::Closure => "ptn_null()".to_string(),
         AttributeArgumentKind::Constant => match &value.constant_reference {
             Some(AttributeConstantReference::Constant(name)) => format!(
                 "ptn_read_constant(runtime, \"{}\", runtime != NULL ? runtime->source_path : NULL, line)",

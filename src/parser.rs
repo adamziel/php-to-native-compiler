@@ -571,7 +571,13 @@ impl Parser<'_> {
                 self.parse_halt_compiler_statement(scope)?;
                 break;
             }
+            let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             let attributes = self.parse_attribute_groups()?;
+            let item_doc_comment = self
+                .doc_comment_before(self.peek().span.byte_start)
+                .or(leading_doc_comment);
+            let previous_doc_comment =
+                std::mem::replace(&mut self.current_statement_doc_comment, item_doc_comment);
             if token_is_identifier_named(self.peek(), "declare") {
                 let statement = self.parse_declare_statement()?;
                 if !matches!(statement, Statement::Empty { .. }) {
@@ -652,6 +658,7 @@ impl Parser<'_> {
                 self.note_runtime_class_alias_statement(&statement);
                 statements.push(statement);
             }
+            self.current_statement_doc_comment = previous_doc_comment;
         }
         Ok(())
     }
@@ -1667,7 +1674,9 @@ impl Parser<'_> {
         .flatten()
         .min_by_key(|span| span.byte_start)
         .unwrap_or(class_token.span);
-        let doc_comment = self.doc_comment_before(declaration_start_span.byte_start);
+        let doc_comment = self
+            .doc_comment_before(declaration_start_span.byte_start)
+            .or_else(|| self.current_statement_doc_comment.clone());
         let TokenKind::Identifier(keyword) = &class_token.kind else {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
         };
@@ -1819,7 +1828,9 @@ impl Parser<'_> {
 
     fn parse_enum_decl(&mut self, attributes: ParsedAttributes) -> Result<ClassDecl> {
         let enum_token = self.advance().clone();
-        let doc_comment = self.doc_comment_before(enum_token.span.byte_start);
+        let doc_comment = self
+            .doc_comment_before(enum_token.span.byte_start)
+            .or_else(|| self.current_statement_doc_comment.clone());
         let TokenKind::Identifier(keyword) = &enum_token.kind else {
             return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
         };
@@ -2004,7 +2015,9 @@ impl Parser<'_> {
 
     fn parse_trait_decl(&mut self, attributes: ParsedAttributes) -> Result<TraitDecl> {
         let trait_token = self.advance().clone();
-        let doc_comment = self.doc_comment_before(trait_token.span.byte_start);
+        let doc_comment = self
+            .doc_comment_before(trait_token.span.byte_start)
+            .or_else(|| self.current_statement_doc_comment.clone());
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
         }
@@ -2281,11 +2294,19 @@ impl Parser<'_> {
                 end = comment_start;
                 continue;
             }
+            if trimmed.ends_with(']') {
+                if let Some(attribute_start) = attribute_group_start_before(trimmed) {
+                    end = attribute_start;
+                    continue;
+                }
+            }
 
             let line_start = trimmed.rfind('\n').map(|index| index + 1).unwrap_or(0);
             let line = &trimmed[line_start..];
             let line_trimmed = line.trim_start_matches(char::is_whitespace);
-            if line_trimmed.starts_with("//") || line_trimmed.starts_with('#') {
+            if line_trimmed.starts_with("//")
+                || (line_trimmed.starts_with('#') && !line_trimmed.starts_with("#["))
+            {
                 end = line_start;
                 continue;
             }
@@ -2301,14 +2322,22 @@ impl Parser<'_> {
         class_is_trait: bool,
         class_name: &str,
     ) -> Result<ParsedClassMember> {
+        let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let attributes = self.parse_attribute_groups()?;
-        self.parse_class_member_with_attributes(
+        let member_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or(leading_doc_comment);
+        let previous_doc_comment =
+            std::mem::replace(&mut self.current_statement_doc_comment, member_doc_comment);
+        let member = self.parse_class_member_with_attributes(
             class_is_readonly,
             class_is_interface,
             class_is_trait,
             class_name,
             attributes,
-        )
+        );
+        self.current_statement_doc_comment = previous_doc_comment;
+        member
     }
 
     fn parse_class_member_with_attributes(
@@ -2322,7 +2351,10 @@ impl Parser<'_> {
         let member_start_span = self.peek().span;
         let mut modifiers = self.parse_class_modifiers()?;
         let declaration_start_span = modifiers.first_span().unwrap_or(member_start_span);
-        let doc_comment = self.doc_comment_before(declaration_start_span.byte_start);
+        let doc_comment = self
+            .current_statement_doc_comment
+            .clone()
+            .or_else(|| self.doc_comment_before(declaration_start_span.byte_start));
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
                 let trait_uses = self.parse_trait_use_declarations()?;
@@ -4037,8 +4069,11 @@ impl Parser<'_> {
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
+        let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let attributes = self.parse_attribute_groups()?;
-        let statement_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
+        let statement_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or(leading_doc_comment);
         let previous_doc_comment = std::mem::replace(
             &mut self.current_statement_doc_comment,
             statement_doc_comment,
@@ -4217,7 +4252,9 @@ impl Parser<'_> {
 
     fn parse_function_decl(&mut self, attributes: ParsedAttributes) -> Result<FunctionDecl> {
         let start_span = self.expect_function()?;
-        let doc_comment = self.doc_comment_before(start_span.byte_start);
+        let doc_comment = self
+            .doc_comment_before(start_span.byte_start)
+            .or_else(|| self.current_statement_doc_comment.clone());
         let mut return_by_ref_span = None;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             return_by_ref_span = Some(self.advance().span);
@@ -4270,10 +4307,11 @@ impl Parser<'_> {
         span: SourceSpan,
         is_static: bool,
         attributes: ParsedAttributes,
+        fallback_doc_comment: Option<String>,
     ) -> Result<Expr> {
         let doc_comment = self
             .doc_comment_before(span.byte_start)
-            .or_else(|| self.current_statement_doc_comment.clone());
+            .or(fallback_doc_comment);
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true
@@ -6476,12 +6514,17 @@ impl Parser<'_> {
     }
 
     fn parse_attribute_groups(&mut self) -> Result<ParsedAttributes> {
-        let mut attributes = ParsedAttributes::default();
-        while matches!(self.peek().kind, TokenKind::AttributeStart) {
-            let group = self.parse_attribute_group_expr()?;
-            merge_parsed_attributes(&mut attributes, group);
-        }
-        Ok(attributes)
+        let previous_doc_comment = self.current_statement_doc_comment.take();
+        let result = (|| {
+            let mut attributes = ParsedAttributes::default();
+            while matches!(self.peek().kind, TokenKind::AttributeStart) {
+                let group = self.parse_attribute_group_expr()?;
+                merge_parsed_attributes(&mut attributes, group);
+            }
+            Ok(attributes)
+        })();
+        self.current_statement_doc_comment = previous_doc_comment;
+        result
     }
 
     #[allow(dead_code)]
@@ -6984,6 +7027,13 @@ impl Parser<'_> {
                     line: span.line,
                 })
             }
+            Expr::AnonymousFunction(function) => Ok(AttributeArgumentExpression::Closure {
+                function: Some(Box::new(function.clone())),
+                function_index: None,
+                source_text: String::new(),
+                reflection_text: String::new(),
+                line: function.span.line,
+            }),
             Expr::Array { elements, .. } => {
                 let mut attribute_elements = Vec::with_capacity(elements.len());
                 for element in elements {
@@ -8072,7 +8122,11 @@ impl Parser<'_> {
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
+        let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let attributes = self.parse_attribute_groups()?;
+        let expression_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or(leading_doc_comment);
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
@@ -8094,9 +8148,12 @@ impl Parser<'_> {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Dollar => self.parse_dynamic_variable_expr(token.span),
-            TokenKind::Function => {
-                self.parse_anonymous_function_expr(token.span, false, attributes)
-            }
+            TokenKind::Function => self.parse_anonymous_function_expr(
+                token.span,
+                false,
+                attributes,
+                expression_doc_comment,
+            ),
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
@@ -8124,6 +8181,7 @@ impl Parser<'_> {
                         combine_spans(token.span, function_span),
                         true,
                         attributes,
+                        expression_doc_comment,
                     );
                 }
                 if name.eq_ignore_ascii_case("match") {
@@ -12034,6 +12092,7 @@ enum ParsedAttributeArgumentKind {
     Bool,
     Null,
     Array,
+    Closure,
     Constant,
     ClassConstant,
     NativeEnumCase {
@@ -12120,6 +12179,7 @@ fn parsed_attribute_argument_kind_to_ast(
         ParsedAttributeArgumentKind::Bool => AttributeArgumentKind::Bool,
         ParsedAttributeArgumentKind::Null => AttributeArgumentKind::Null,
         ParsedAttributeArgumentKind::Array => AttributeArgumentKind::Array,
+        ParsedAttributeArgumentKind::Closure => AttributeArgumentKind::Closure,
         ParsedAttributeArgumentKind::Constant => AttributeArgumentKind::Constant,
         ParsedAttributeArgumentKind::ClassConstant => AttributeArgumentKind::ClassConstant,
         ParsedAttributeArgumentKind::NativeEnumCase {
@@ -12218,6 +12278,11 @@ fn parsed_attribute_argument_expression_metadata(
         AttributeArgumentExpression::NewObject { class_name, .. } => (
             format!("new \\{}()", class_name.trim_start_matches('\\')),
             ParsedAttributeArgumentKind::Constant,
+            None,
+        ),
+        AttributeArgumentExpression::Closure { .. } => (
+            "Closure".to_string(),
+            ParsedAttributeArgumentKind::Closure,
             None,
         ),
         AttributeArgumentExpression::Array(_) => (
@@ -12327,6 +12392,7 @@ fn attribute_argument_type_error_given(
 ) -> Option<String> {
     match &value.kind {
         ParsedAttributeArgumentKind::Array => Some("array".to_string()),
+        ParsedAttributeArgumentKind::Closure => Some("object".to_string()),
         ParsedAttributeArgumentKind::NativeEnumCase { class_name, .. } => Some(class_name.clone()),
         ParsedAttributeArgumentKind::Int if strict_types => Some("int".to_string()),
         ParsedAttributeArgumentKind::Float if strict_types => Some("float".to_string()),
@@ -12338,6 +12404,7 @@ fn attribute_argument_type_error_given(
 fn attribute_argument_stack_display(value: &ParsedAttributeArgumentValue) -> String {
     match &value.kind {
         ParsedAttributeArgumentKind::Array => "Array".to_string(),
+        ParsedAttributeArgumentKind::Closure => "Closure".to_string(),
         ParsedAttributeArgumentKind::NativeEnumCase {
             class_name,
             case_name,
@@ -12464,6 +12531,24 @@ fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeM
     if group.no_discard_message.is_some() {
         attributes.no_discard_message = group.no_discard_message;
     }
+}
+
+fn attribute_group_start_before(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut bracket_depth = 0usize;
+    for index in (0..bytes.len()).rev() {
+        match bytes[index] {
+            b']' => bracket_depth = bracket_depth.saturating_add(1),
+            b'[' if bracket_depth > 0 => {
+                bracket_depth -= 1;
+                if bracket_depth == 0 && index > 0 && bytes[index - 1] == b'#' {
+                    return Some(index - 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_unsupported_class_like_declaration(name: &str) -> bool {
