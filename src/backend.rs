@@ -40049,6 +40049,11 @@ impl ValueEmitter {
     ) -> String {
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
+        let read_function = if self.in_const_declaration {
+            "ptn_constant_expression_read_property_len"
+        } else {
+            "ptn_object_read_property_len"
+        };
         if nullsafe || value_expr_is_nullsafe_chain(receiver) {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -40062,24 +40067,13 @@ impl ValueEmitter {
                 out.push_str(&receiver_temp);
                 out.push_str(")) {\n");
             }
-            if self.in_const_declaration {
-                out.push_str(
-                    "        if (ptn_constant_expression_property_receiver_allowed(&runtime, ",
-                );
-                out.push_str(&receiver_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(")) {\n");
-            }
             let (name_temp, name_len_temp) =
                 self.emit_dynamic_property_name_for_read(out, name, line);
-            out.push_str(if self.in_const_declaration {
-                "            "
-            } else {
-                "        "
-            });
+            out.push_str("        ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_object_read_property_len(&runtime, ");
+            out.push_str(" = ");
+            out.push_str(read_function);
+            out.push_str("(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
@@ -40090,29 +40084,15 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            out.push_str(if self.in_const_declaration {
-                "            free("
-            } else {
-                "        free("
-            });
+            out.push_str("        free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
-            if self.in_const_declaration {
-                out.push_str("        }\n");
-            }
             out.push_str("    }\n");
         } else {
             if self.in_const_declaration {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str(
-                    "    if (ptn_constant_expression_property_receiver_allowed(&runtime, ",
-                );
-                out.push_str(&receiver_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(")) {\n");
             }
             let (name_temp, name_len_temp) =
                 self.emit_dynamic_property_name_for_read(out, name, line);
@@ -40125,7 +40105,8 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
             }
-            out.push_str("ptn_object_read_property_len(&runtime, ");
+            out.push_str(read_function);
+            out.push_str("(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", ");
             out.push_str(&name_temp);
@@ -40143,9 +40124,6 @@ impl ValueEmitter {
             });
             out.push_str(&name_temp);
             out.push_str(");\n");
-            if self.in_const_declaration {
-                out.push_str("    }\n");
-            }
         }
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp

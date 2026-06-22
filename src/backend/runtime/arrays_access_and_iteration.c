@@ -5843,6 +5843,20 @@ static PTN_UNUSED PtnValue ptn_constant_expression_read_property(
     return ptn_object_read_property(runtime, receiver, property, access_scope, line);
 }
 
+static PTN_UNUSED PtnValue ptn_constant_expression_read_property_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    const char *access_scope,
+    size_t line
+) {
+    if (!ptn_constant_expression_property_receiver_allowed(runtime, receiver, line)) {
+        return ptn_null();
+    }
+    return ptn_object_read_property_len(runtime, receiver, property, property_len, access_scope, line);
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
     PtnRuntime *runtime,
     PtnValue receiver,

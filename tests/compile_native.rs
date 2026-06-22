@@ -7226,6 +7226,10 @@ class Plain {
 
 function reject_default($prop = (new Plain)->prop) {}
 
+class NameObject {}
+function reject_dynamic_default($prop = (new Plain)->{new NameObject}) {}
+function reject_dynamic_nullsafe_default($prop = (new Plain)?->{new NameObject}) {}
+
 var_dump(A_NAME, A_VALUE, F, G, C::NAME);
 defaults();
 try {
@@ -7235,6 +7239,16 @@ try {
 }
 try {
     reject_default();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    reject_dynamic_default();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    reject_dynamic_nullsafe_default();
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -7259,6 +7273,8 @@ try {
             "string(7) \"A::Case\"\n",
             "Fetching properties on non-enums in constant expressions is not allowed\n",
             "Fetching properties on non-enums in constant expressions is not allowed\n",
+            "Object of class NameObject could not be converted to string\n",
+            "Object of class NameObject could not be converted to string\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
