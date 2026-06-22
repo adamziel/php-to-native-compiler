@@ -4083,6 +4083,8 @@ static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
+static int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
+static int ptn_declared_runtime_plain_root_serializable_user_class(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static const char *ptn_declared_class_parent_name(const char *name);
@@ -9490,6 +9492,42 @@ static int ptn_serialize_append_sleep_object(
     return 1;
 }
 
+static void ptn_serialize_append_regular_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        object->properties->len
+    );
+    ptn_dump_seen_objects_push(&state->seen, object);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        ptn_serialize_append_object_property_key(buffer, object, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_dump_seen_objects_pop(&state->seen);
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
+static int ptn_serialize_object_is_plain_root_user_class(PtnSerializeState *state, PtnObject *object) {
+    if (state == NULL ||
+        state->runtime == NULL ||
+        object == NULL ||
+        object->class_name == NULL ||
+        object->native_data != NULL ||
+        object->enum_case_name != NULL ||
+        ptn_serialize_object_class_name_is_anonymous(object->class_name) ||
+        !ptn_declared_runtime_plain_root_serializable_user_class(state->runtime, object->class_name)) {
+        return 0;
+    }
+    return 1;
+}
+
 static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
     if (object != NULL &&
         object->lazy_uninitialized &&
@@ -9501,6 +9539,10 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
         }
     }
     if (ptn_serialize_append_incomplete_class_object(buffer, object, state)) {
+        return 1;
+    }
+    if (ptn_serialize_object_is_plain_root_user_class(state, object)) {
+        ptn_serialize_append_regular_object(buffer, object, state);
         return 1;
     }
     if (object != NULL && object->enum_case_name != NULL) {
@@ -9558,21 +9600,7 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     if (handled_sleep) {
         return sleep_referenceable;
     }
-    ptn_string_buffer_append_format(
-        buffer,
-        "O:%zu:\"%s\":%zu:{",
-        strlen(object->class_name),
-        object->class_name,
-        object->properties->len
-    );
-    ptn_dump_seen_objects_push(&state->seen, object);
-    for (size_t i = 0; i < object->properties->len; i++) {
-        PtnArrayEntry *entry = &object->properties->entries[i];
-        ptn_serialize_append_object_property_key(buffer, object, entry->key);
-        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
-    }
-    ptn_dump_seen_objects_pop(&state->seen);
-    ptn_string_buffer_append_char(buffer, '}');
+    ptn_serialize_append_regular_object(buffer, object, state);
     return 1;
 }
 
@@ -11504,6 +11532,26 @@ static PtnValue ptn_unserialize_new_resolved_object_shell(
     return object;
 }
 
+static int ptn_unserialize_object_is_plain_root_serializable_user_class(
+    PtnRuntime *runtime,
+    PtnValue object
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (runtime == NULL ||
+        resolved.type != PTN_OBJECT ||
+        resolved.as.object == NULL ||
+        resolved.as.object->class_name == NULL ||
+        resolved.as.object->native_data != NULL ||
+        resolved.as.object->enum_case_name != NULL ||
+        ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
+        return 0;
+    }
+    return ptn_declared_runtime_plain_root_serializable_user_class(
+        runtime,
+        resolved.as.object->class_name
+    );
+}
+
 static void ptn_unserialize_autoload_class_isolated(
     PtnRuntime *runtime,
     const char *class_name,
@@ -12779,9 +12827,14 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 result.value.type != PTN_OBJECT) {
                 return result;
             }
+            int plain_root_serializable_user_class =
+                ptn_unserialize_object_is_plain_root_serializable_user_class(runtime, result.value);
             int use_magic_unserialize =
-                ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
+                plain_root_serializable_user_class
+                    ? 0
+                    : ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
             if (!use_magic_unserialize &&
+                !plain_root_serializable_user_class &&
                 ptn_unserialize_object_implements_interface(runtime, result.value, "Serializable")) {
                 ptn_unserialize_emit_erroneous_data_format_warning(
                     runtime,
@@ -12853,18 +12906,20 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_consume(state, '}')) {
                 return result;
             }
-            ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
-            ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
-            ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
-            if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
-                ptn_unserialize_queue_magic_callback(
-                    state,
-                    result.value,
-                    "__wakeup",
-                    0,
-                    NULL,
-                    state->line
-                );
+            if (!plain_root_serializable_user_class) {
+                ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
+                ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
+                ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
+                if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
+                    ptn_unserialize_queue_magic_callback(
+                        state,
+                        result.value,
+                        "__wakeup",
+                        0,
+                        NULL,
+                        state->line
+                    );
+                }
             }
             return result;
         }
@@ -94106,6 +94161,10 @@ static void ptn_weak_map_data_free(void *data) {
     if (map == NULL) {
         return;
     }
+    PtnRuntime *root = ptn_runtime_root(map->runtime);
+    if (root != NULL && root->live_weak_maps_len > 0) {
+        root->live_weak_maps_len--;
+    }
     for (size_t i = 0; i < map->len; i++) {
         ptn_value_destroy(&map->values[i]);
     }
@@ -94180,7 +94239,7 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
 
 static PTN_UNUSED void ptn_runtime_prune_weak_maps_for_released_object(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root == NULL || root->live_objects_len == 0) {
+    if (root == NULL || root->live_objects_len == 0 || root->live_weak_maps_len == 0) {
         return;
     }
 
@@ -94268,6 +94327,9 @@ static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime) {
         ptn_abort_out_of_memory();
     }
     map->runtime = ptn_runtime_root(runtime);
+    if (map->runtime != NULL) {
+        map->runtime->live_weak_maps_len++;
+    }
     map->objects = NULL;
     map->object_ids = NULL;
     map->values = NULL;

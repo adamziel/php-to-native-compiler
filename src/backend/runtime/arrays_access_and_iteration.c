@@ -8297,14 +8297,9 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
 }
 
 static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArray *array) {
-    for (size_t i = 0; i < array->len; i++) {
-        if (array->entries[i].key.type == PTN_ARRAY_KEY_INT &&
-            array->entries[i].key.as.integer == INT64_MAX) {
-            goto unavailable;
-        }
+    if (ptn_array_find_key(array, ptn_array_int_key(INT64_MAX)) >= array->len) {
+        return 1;
     }
-    return 1;
-unavailable:
     ptn_throw_exception(
         runtime,
         "Error",

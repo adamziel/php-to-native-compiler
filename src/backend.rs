@@ -1660,6 +1660,23 @@ fn emit_declared_class_new_instance_without_constructor(
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
     out.push_str("        return ptn_object_new_shell(caller_runtime, \"stdClass\");\n");
     out.push_str("    }\n");
+    for declared_class in classes {
+        if declared_class.is_enum
+            || declared_class.is_interface
+            || declared_class.is_abstract
+            || !class_constant_lookup_chain(declared_class, classes).is_empty()
+            || !class_property_initialization_chain(declared_class, classes).is_empty()
+        {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&declared_class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_object_new_shell(caller_runtime, \"");
+        out.push_str(&c_string(&declared_class.name));
+        out.push_str("\");\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
     let mut emitted_branch = false;
@@ -6155,6 +6172,15 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (name == NULL) {\n");
     out.push_str("        return NULL;\n");
     out.push_str("    }\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
     for class_name in [
         "stdClass",
         "InternalIterator",
@@ -6314,6 +6340,16 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_exists(const char *name) {\n");
+    for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -6391,10 +6427,60 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_plain_root_serializable_user_class(PtnRuntime *runtime, const char *name) {\n");
+    let plain_root_serializable_classes: Vec<(usize, &ClassDecl)> = classes
+        .iter()
+        .enumerate()
+        .filter(|(_, class)| {
+            !class.is_interface
+                && !class.is_enum
+                && !class.is_abstract
+                && class.parent_name.is_none()
+                && !class_method_lookup_chain(class, classes)
+                    .iter()
+                    .any(|entry| {
+                        entry.method.name.eq_ignore_ascii_case("__serialize")
+                            || entry.method.name.eq_ignore_ascii_case("__sleep")
+                            || entry.method.name.eq_ignore_ascii_case("__unserialize")
+                            || entry.method.name.eq_ignore_ascii_case("__wakeup")
+                    })
+                && !class_transitive_interfaces(class, classes)
+                    .into_iter()
+                    .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
+        })
+        .collect();
+    if plain_root_serializable_classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+    }
+    for (index, class) in plain_root_serializable_classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name) {\n");
     out.push_str("    if (ptn_runtime_dynamic_class_exists(runtime, name)) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    for (index, class) in classes.iter().enumerate() {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -7289,6 +7375,19 @@ fn emit_class_metadata_helpers(
     );
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if let Some(parent_name) = &class.parent_name {
+            out.push_str("        return \"");
+            out.push_str(&c_string(parent_name));
+            out.push_str("\";\n");
+        } else {
+            out.push_str("        return NULL;\n");
+        }
+        out.push_str("    }\n");
     }
     for (class_name, parent_name) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -20652,6 +20751,9 @@ fn emit_instruction(
                     out.push_str(".exists ? ptn_value_clone_deref(");
                     out.push_str(&root_lookup_temp);
                     out.push_str(".value) : ptn_null();\n");
+                    out.push_str("    ptn_value_debug_hide_ref(");
+                    out.push_str(&root_temp);
+                    out.push_str(");\n");
                     out.push_str("    uint64_t ");
                     out.push_str(&root_epoch_temp);
                     out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
@@ -20687,6 +20789,9 @@ fn emit_instruction(
                     out.push_str(".exists ? ptn_value_clone_deref(");
                     out.push_str(&root_lookup_temp);
                     out.push_str(".value) : ptn_null();\n");
+                    out.push_str("    ptn_value_debug_hide_ref(");
+                    out.push_str(&root_temp);
+                    out.push_str(");\n");
                     out.push_str("    uint64_t ");
                     out.push_str(&root_epoch_temp);
                     out.push_str(" = ptn_runtime_symbol_table_epoch_for_name(&runtime, \"");
@@ -20744,9 +20849,15 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
                 if let Some((root_temp, _)) = pre_value_root {
+                    out.push_str("    ptn_value_debug_unhide_ref(");
+                    out.push_str(&root_temp);
+                    out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &root_temp);
                 }
                 if let Some((root_temp, _)) = post_value_root {
+                    out.push_str("    ptn_value_debug_unhide_ref(");
+                    out.push_str(&root_temp);
+                    out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &root_temp);
                 }
                 for segment_temp in path.value_temps {

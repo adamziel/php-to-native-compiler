@@ -754,6 +754,7 @@ struct PtnReference {
     size_t refcount;
     PtnValue value;
     PtnRuntime *lifecycle_runtime;
+    size_t live_index;
     size_t gc_mark_epoch;
     int gc_collecting;
     PtnPropertyTypeKind property_type_kind;
@@ -911,6 +912,7 @@ struct PtnArray {
     int destructing;
     size_t gc_mark_epoch;
     PtnRuntime *lifecycle_runtime;
+    size_t live_index;
     size_t debug_hidden_refcount;
     int debug_reference_wrapped;
     size_t iterator_refcount;
@@ -941,6 +943,7 @@ struct PtnObject {
     void *native_data;
     PtnObjectNativeDataFree native_data_free;
     PtnRuntime *lifecycle_runtime;
+    size_t live_index;
     int destructor_enabled;
     int destructor_called;
     int lazy_uninitialized;
@@ -1343,6 +1346,7 @@ struct PtnRuntime {
     PtnReference **live_references;
     size_t live_references_len;
     size_t live_references_capacity;
+    size_t live_weak_maps_len;
     PtnValue *temporary_roots;
     size_t temporary_roots_len;
     size_t temporary_roots_capacity;

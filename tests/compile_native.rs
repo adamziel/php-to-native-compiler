@@ -51424,6 +51424,40 @@ echo _ptn_cow_debug_counter(\"array.detach\"), \":\", _ptn_cow_debug_counter(\"a
 }
 
 #[test]
+fn compile_guarded_array_append_does_not_clone_root_snapshot_to_native_binary() {
+    let root = temp_dir("ptn-native-guarded-array-append-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("guarded-array-append-cow.php");
+    let output = root.join("guarded-array-append-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+_ptn_cow_debug_reset();\n\
+$items = [];\n\
+for ($i = 0; $i < 4; $i++) {\n\
+    $value = $i;\n\
+    $items[] = $value;\n\
+}\n\
+_ptn_cow_debug_assert_counter(\"array.clone\", 0);\n\
+_ptn_cow_debug_assert_counter(\"array.detach\", 0);\n\
+_ptn_cow_debug_assert_counter(\"array.detach_skip\", 4);\n\
+echo count($items), \":\", _ptn_cow_debug_counter(\"array.clone\"), \":\", _ptn_cow_debug_counter(\"array.detach_skip\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "4:0:4\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_debug_hide_ref"));
+    assert!(c_source.contains("ptn_array_debug_visible_refcount"));
+}
+
+#[test]
 fn compile_recursive_array_literal_cycles_are_collected_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-array-literal-cycle-cleanup");
     fs::create_dir_all(&root).unwrap();

@@ -27,6 +27,7 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     reference->refcount = 1;
     reference->value = value;
     reference->lifecycle_runtime = NULL;
+    reference->live_index = 0;
     reference->gc_mark_epoch = 0;
     reference->gc_collecting = 0;
     reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
