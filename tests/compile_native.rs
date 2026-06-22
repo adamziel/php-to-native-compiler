@@ -14831,6 +14831,15 @@ try {
 } catch (TypeError $e) {
     echo $e->getMessage(), "\n";
 }
+try {
+    $arrayObject[[]] += 1;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$nullKey = null;
+$arrayObject[$nullKey] += 20;
+var_dump($arrayObject);
 "#,
     )
     .unwrap();
@@ -14844,15 +14853,53 @@ try {
         execution.status.code(),
         String::from_utf8_lossy(&execution.stderr)
     );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_path = input.display().to_string();
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "Cannot access offset of type array on ArrayObject\n",
-            "Cannot access offset of type array on ArrayObject\n",
-            "Cannot access offset of type array on ArrayObject\n",
-            "Cannot access offset of type array in isset or empty\n",
-            "Cannot unset offset of type array on ArrayObject\n",
+        stdout,
+        format!(
+            concat!(
+                "Cannot access offset of type array on ArrayObject\n",
+                "Cannot access offset of type array on ArrayObject\n",
+                "Cannot access offset of type array on ArrayObject\n",
+                "Cannot access offset of type array in isset or empty\n",
+                "Cannot unset offset of type array on ArrayObject\n",
+                "Cannot access offset of type array on ArrayObject\n",
+                "\n",
+                "Deprecated: Using null as an array offset is deprecated, use an empty string instead in {} on line 35\n",
+                "\n",
+                "Warning: Undefined array key \"\" in {} on line 35\n",
+                "object(ArrayObject)#1 (1) {{\n",
+                "  [\"storage\":\"ArrayObject\":private]=>\n",
+                "  array(4) {{\n",
+                "    [0]=>\n",
+                "    int(1)\n",
+                "    [1]=>\n",
+                "    int(2)\n",
+                "    [2]=>\n",
+                "    int(3)\n",
+                "    [3]=>\n",
+                "    int(20)\n",
+                "  }}\n",
+                "}}\n",
+            ),
+            input_path,
+            input_path
         )
+    );
+    assert_eq!(
+        stdout
+            .matches("Using null as an array offset is deprecated")
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("Cannot access offset of type array on ArrayObject")
+            .count(),
+        4,
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

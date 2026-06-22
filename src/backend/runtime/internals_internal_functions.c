@@ -113968,11 +113968,13 @@ static PTN_UNUSED int ptn_internal_array_object_uses_builtin_offsets(
         !ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists");
 }
 
-static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
+static PTN_UNUSED int ptn_internal_array_object_offset_lookup_impl(
     PtnRuntime *runtime,
     PtnValue receiver,
     const PtnValue *offset_value,
     size_t line,
+    int for_isset,
+    int emit_missing_warning,
     PtnLookupResult *result_out
 ) {
     if (result_out == NULL) {
@@ -113996,7 +113998,7 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
             "ArrayObject",
             ptn_value_deref(*offset_value),
             line,
-            1,
+            for_isset,
             0,
             &key
         )) {
@@ -114004,12 +114006,52 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
     }
 
     PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
-    ptn_array_key_free(key);
     if (entry == NULL) {
+        if (emit_missing_warning) {
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
+        }
+        ptn_array_key_free(key);
         return 1;
     }
     *result_out = ptn_lookup_found(ptn_value_clone_deref(entry->value));
+    ptn_array_key_free(key);
     return 1;
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    PtnLookupResult *result_out
+) {
+    return ptn_internal_array_object_offset_lookup_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        1,
+        0,
+        result_out
+    );
+}
+
+static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    PtnLookupResult *result_out
+) {
+    return ptn_internal_array_object_offset_lookup_impl(
+        runtime,
+        receiver,
+        offset_value,
+        line,
+        0,
+        1,
+        result_out
+    );
 }
 
 static void ptn_spl_declare_storage_property(

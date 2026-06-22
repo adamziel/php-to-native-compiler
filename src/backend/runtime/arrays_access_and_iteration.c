@@ -4419,6 +4419,13 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
     size_t line,
     PtnLookupResult *result_out
 );
+static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    PtnLookupResult *result_out
+);
 static PTN_UNUSED int ptn_internal_array_object_uses_builtin_offsets(
     PtnRuntime *runtime,
     PtnValue receiver
@@ -14855,14 +14862,14 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         if (segment_count == 1) {
             PtnLookupResult lookup = ptn_lookup_missing();
-            if (ptn_internal_array_object_offset_lookup_quiet(
+            if (ptn_internal_array_object_offset_lookup_for_assign_op(
                     runtime,
                     slot_value,
                     offset_value,
                     line,
                     &lookup
-                ) && lookup.exists) {
-                return lookup.value;
+                )) {
+                return lookup.exists ? lookup.value : ptn_null();
             }
         }
         PtnValue reference = ptn_null();
@@ -15479,14 +15486,14 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         if (segment_count == 1) {
             PtnLookupResult lookup = ptn_lookup_missing();
-            if (ptn_internal_array_object_offset_lookup_quiet(
+            if (ptn_internal_array_object_offset_lookup_for_assign_op(
                     runtime,
                     slot_value,
                     offset_value,
                     line,
                     &lookup
-                ) && lookup.exists) {
-                return lookup.value;
+                )) {
+                return lookup.exists ? lookup.value : ptn_null();
             }
         }
         PtnValue reference = ptn_null();
