@@ -248,6 +248,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnV
 static PTN_UNUSED int ptn_compare_identical(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_compare_not_identical(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
@@ -16746,7 +16748,29 @@ static int ptn_array_value_compare_ascending_with_context(
     PtnValue right,
     size_t line
 ) {
+    PtnTryFrame compare_frame;
+    int guard_exceptions = runtime != NULL && runtime->exceptions != NULL;
+    if (guard_exceptions) {
+        ptn_try_frame_push(runtime, &compare_frame);
+        if (setjmp(compare_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &compare_frame);
+            PtnException *exception = runtime->exceptions->active_exception;
+            if (
+                exception != NULL &&
+                ptn_ascii_case_equal(exception->class_name, "Error") &&
+                strcmp(exception->message, "Nesting level too deep - recursive dependency?") == 0
+            ) {
+                ptn_clear_exception(runtime);
+                return 0;
+            }
+            ptn_rethrow_exception(runtime);
+            return 0;
+        }
+    }
     int compared = ptn_compare_order(runtime, left, right, line);
+    if (guard_exceptions) {
+        ptn_try_frame_pop(runtime, &compare_frame);
+    }
     if (compared == PTN_COMPARE_LESS) {
         return -1;
     }
