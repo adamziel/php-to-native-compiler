@@ -1116,6 +1116,9 @@ fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
 
 fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
+    out.push_str("    if (path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("#if defined(_WIN32)\n");
     out.push_str(
         "    return path.len > 0 && (path.data[0] == '/' || path.data[0] == '\\\\' || (path.len >= 3 && isalpha((unsigned char)path.data[0]) && path.data[1] == ':' && (path.data[2] == '/' || path.data[2] == '\\\\')));\n",
@@ -8096,6 +8099,7 @@ fn emit_class_metadata_helpers(
         ("ReflectionEnumBackedCase", "ReflectionEnumUnitCase"),
         ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
         ("ReflectionObject", "ReflectionClass"),
+        ("PharFileInfo", "SplFileInfo"),
         ("SplFileObject", "SplFileInfo"),
         ("SplMaxHeap", "SplHeap"),
         ("SplMinHeap", "SplHeap"),
@@ -37237,6 +37241,15 @@ impl ValueEmitter {
                 out.push_str(");\n");
             }
         }
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("    } else if (strncmp(");
+        out.push_str(&resolved_temp);
+        out.push_str(", \"phar://\", 7) == 0 && ptn_include_phar_plain_entry(&runtime, ");
+        out.push_str(&resolved_temp);
+        out.push_str(", &");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("#endif\n");
         out.push_str("    } else {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
