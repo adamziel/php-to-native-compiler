@@ -14162,6 +14162,81 @@ var_dump($_SESSION);
 }
 
 #[test]
+fn compile_unserialize_callback_dynamic_serializable_subclasses_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-callback-dynamic-serializable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-callback-dynamic-serializable.php");
+    let output = root.join("unserialize-callback-dynamic-serializable-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function unserializer($className) {
+    echo "callback($className)\n";
+    if ($className === 'DynLegacy') {
+        eval('class DynLegacy extends Legacy {}');
+    } elseif ($className === 'DynNew') {
+        eval('class DynNew extends NewStyle {}');
+    } elseif ($className === 'DynNew2') {
+        eval('class DynNew2 extends NewStyle {}');
+    }
+}
+
+ini_set('unserialize_callback_func', 'unserializer');
+
+class Legacy {
+    public function __wakeup(): void { echo "Legacy::__wakeup\n"; }
+}
+
+class NewStyle implements Serializable {
+    public function serialize(): string { return "payload"; }
+    public function unserialize($data): void { echo "NewStyle::unserialize($data)\n"; }
+}
+
+var_dump(unserialize('O:9:"DynLegacy":0:{}'));
+var_dump(unserialize('O:6:"DynNew":0:{}'));
+var_dump(unserialize('C:7:"DynNew2":3:{abc}'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("callback(DynLegacy)\nLegacy::__wakeup\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(DynLegacy)#"), "{stdout}");
+    assert!(
+        stdout.contains("Deprecated: DynNew implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Erroneous data format for unserializing 'DynNew'"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\ncallback(DynNew2)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Deprecated: DynNew2 implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("NewStyle::unserialize(abc)\n"), "{stdout}");
+    assert!(stdout.contains("object(DynNew2)#"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_nested_unserialize_failure_invalidates_outer_reference_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-nested-unserialize-failure");
     fs::create_dir_all(&root).unwrap();

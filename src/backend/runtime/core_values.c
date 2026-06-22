@@ -1630,6 +1630,11 @@ static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
     PtnRuntime *runtime,
     const char *class_name
 );
+static PTN_UNUSED int ptn_runtime_declared_class_is_same_or_descendant(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *ancestor_name
+);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 

@@ -3747,6 +3747,24 @@ static PTN_UNUSED const char *ptn_runtime_declared_class_parent_name(
     return dynamic_parent != NULL ? dynamic_parent : ptn_declared_class_parent_name(class_name);
 }
 
+static PTN_UNUSED int ptn_runtime_declared_class_is_same_or_descendant(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *ancestor_name
+) {
+    if (class_name == NULL || ancestor_name == NULL) {
+        return 0;
+    }
+    const char *current = class_name;
+    for (size_t depth = 0; current != NULL && depth < 64; depth++) {
+        if (ptn_declared_class_is_same_or_descendant(current, ancestor_name)) {
+            return 1;
+        }
+        current = ptn_runtime_dynamic_class_parent_name(runtime, current);
+    }
+    return 0;
+}
+
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name

@@ -9196,17 +9196,17 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     if (handled_magic_serialize) {
         return magic_serialize_referenceable;
     }
-    int handled_sleep = 0;
-    int sleep_referenceable =
-        ptn_serialize_append_sleep_object(buffer, object, state, &handled_sleep);
-    if (handled_sleep) {
-        return sleep_referenceable;
-    }
     int handled_serializable = 0;
     int serializable_referenceable =
         ptn_serialize_append_serializable_object(buffer, object, state, &handled_serializable);
     if (handled_serializable) {
         return serializable_referenceable;
+    }
+    int handled_sleep = 0;
+    int sleep_referenceable =
+        ptn_serialize_append_sleep_object(buffer, object, state, &handled_sleep);
+    if (handled_sleep) {
+        return sleep_referenceable;
     }
     ptn_string_buffer_append_format(
         buffer,
@@ -10839,6 +10839,24 @@ static void ptn_unserialize_emit_no_unserializer_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static void ptn_unserialize_emit_erroneous_data_format_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Erroneous data format for unserializing '%s'",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
 static void ptn_unserialize_emit_callback_missing_class_warning(
     PtnRuntime *runtime,
     const char *callback_name,
@@ -11086,7 +11104,7 @@ static PtnValue ptn_unserialize_new_object_shell(
     return ptn_unserialize_new_incomplete_object_shell(runtime, class_name);
 }
 
-static int ptn_unserialize_declared_magic_method_exists(
+static const char *ptn_unserialize_declared_method_owner(
     PtnRuntime *runtime,
     PtnValue object,
     const char *method_name
@@ -11096,14 +11114,100 @@ static int ptn_unserialize_declared_magic_method_exists(
         runtime->method_dispatch == NULL ||
         resolved.type != PTN_OBJECT ||
         ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
+        return NULL;
+    }
+    const char *class_name = resolved.as.object->class_name;
+    for (size_t depth = 0; class_name != NULL && depth < 64; depth++) {
+        if (ptn_declared_class_method_exists(class_name, method_name)) {
+            return class_name;
+        }
+        class_name = ptn_runtime_declared_class_parent_name(runtime, class_name);
+    }
+    return NULL;
+}
+
+static int ptn_unserialize_object_implements_interface(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *interface_name
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (resolved.type != PTN_OBJECT ||
+        ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
         return 0;
     }
-    if (ptn_declared_class_method_exists(resolved.as.object->class_name, method_name)) {
+    const char *class_name = resolved.as.object->class_name;
+    for (size_t depth = 0; class_name != NULL && depth < 64; depth++) {
+        if (ptn_declared_class_implements_interface(class_name, interface_name)) {
+            return 1;
+        }
+        class_name = ptn_runtime_declared_class_parent_name(runtime, class_name);
+    }
+    return 0;
+}
+
+static int ptn_unserialize_declared_magic_method_exists(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *method_name
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (ptn_unserialize_declared_method_owner(runtime, object, method_name) != NULL) {
         return 1;
     }
+    if (resolved.type != PTN_OBJECT ||
+        ptn_ascii_case_equal(resolved.as.object->class_name, "__PHP_Incomplete_Class")) {
+        return 0;
+    }
     return ptn_ascii_case_equal(method_name, "__unserialize") &&
-        ptn_declared_class_is_same_or_descendant(resolved.as.object->class_name, "SplObjectStorage") &&
+        ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            resolved.as.object->class_name,
+            "SplObjectStorage"
+        ) &&
         ptn_internal_class_method_exists("SplObjectStorage", "__unserialize");
+}
+
+static PtnValue ptn_unserialize_dispatch_declared_method(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *method_owner,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (runtime != NULL &&
+        runtime->reflected_method_dispatch != NULL &&
+        method_owner != NULL) {
+        PtnValue result = ptn_null();
+        PtnValue resolved = ptn_value_deref(object);
+        const char *called_class_name = resolved.type == PTN_OBJECT
+            ? resolved.as.object->class_name
+            : method_owner;
+        if (runtime->reflected_method_dispatch(
+                runtime,
+                object,
+                method_owner,
+                method_name,
+                called_class_name,
+                argc,
+                args,
+                line,
+                &result
+            )) {
+            return result;
+        }
+        ptn_value_destroy(&result);
+    }
+    return runtime->method_dispatch(
+        runtime,
+        object,
+        method_name,
+        argc,
+        args,
+        line
+    );
 }
 
 static void ptn_unserialize_call_magic_method(
@@ -11124,9 +11228,10 @@ static void ptn_unserialize_call_magic_method(
         caught_exception = 1;
     }
     if (!caught_exception) {
-        result = runtime->method_dispatch(
+        result = ptn_unserialize_dispatch_declared_method(
             runtime,
             object,
+            ptn_unserialize_declared_method_owner(runtime, object, method_name),
             method_name,
             argc,
             args,
@@ -12047,6 +12152,17 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             int use_magic_unserialize =
                 ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
+            if (!use_magic_unserialize &&
+                ptn_unserialize_object_implements_interface(runtime, result.value, "Serializable")) {
+                ptn_unserialize_emit_erroneous_data_format_warning(
+                    runtime,
+                    result.value.as.object->class_name,
+                    state->line
+                );
+                ptn_unserialize_update_slot(state, result.id, &result.value);
+                ptn_unserialize_fail_at(state, state->pos);
+                return result;
+            }
             if (use_magic_unserialize) {
                 PtnValue payload = ptn_array_from_literal_entries(0, NULL);
                 for (size_t i = 0; i < property_count; i++) {
@@ -12209,19 +12325,22 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 ptn_value_destroy(&payload_arg);
                 handled_custom_payload = 1;
             }
+            const char *declared_unserializer_owner =
+                ptn_unserialize_declared_method_owner(runtime, result.value, "unserialize");
             if (runtime != NULL &&
                 !handled_custom_payload &&
                 runtime->method_dispatch != NULL &&
                 result.value.type == PTN_OBJECT &&
                 !ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class") &&
-                ptn_declared_class_method_exists(result.value.as.object->class_name, "unserialize")) {
+                declared_unserializer_owner != NULL) {
                 PtnValue payload_arg = ptn_owned_string_len(
                     ptn_duplicate_string_len(payload, payload_len),
                     payload_len
                 );
-                PtnValue callback_result = runtime->method_dispatch(
+                PtnValue callback_result = ptn_unserialize_dispatch_declared_method(
                     runtime,
                     result.value,
+                    declared_unserializer_owner,
                     "unserialize",
                     1,
                     &payload_arg,
@@ -123389,6 +123508,41 @@ static int ptn_eval_class_attribute_prefix_has_allow_dynamic_properties(
     return 0;
 }
 
+static int ptn_eval_class_uses_deprecated_serializable(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    const char *current = class_name;
+    for (size_t depth = 0; current != NULL && depth < 64; depth++) {
+        if (ptn_declared_class_implements_interface(current, "Serializable")) {
+            return !(ptn_declared_class_method_exists(current, "__serialize") &&
+                ptn_declared_class_method_exists(current, "__unserialize"));
+        }
+        current = ptn_runtime_declared_class_parent_name(runtime, current);
+    }
+    return 0;
+}
+
+static void ptn_eval_emit_serializable_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    const char *suffix =
+        " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
+    int needed = snprintf(NULL, 0, "%s%s", class_name, suffix);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "%s%s", class_name, suffix);
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    free(message);
+}
+
 static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
     size_t len = strlen(code);
     for (size_t pos = 0; pos < len; pos++) {
@@ -123432,6 +123586,9 @@ static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *co
             parent_name,
             allows_dynamic_properties
         );
+        if (ptn_eval_class_uses_deprecated_serializable(runtime, class_name)) {
+            ptn_eval_emit_serializable_deprecation(runtime, class_name, line);
+        }
         size_t body_open = cursor;
         while (body_open < len && code[body_open] != '{' && code[body_open] != ';') {
             if (code[body_open] == '\'' || code[body_open] == '"') {
