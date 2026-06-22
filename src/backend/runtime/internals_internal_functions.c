@@ -3813,10 +3813,15 @@ static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *ru
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+static int ptn_phar_uri_entry_exists(const char *uri);
+static void ptn_phar_object_data_free(void *data);
+static void ptn_phar_file_info_data_free(void *data);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -5659,6 +5664,7 @@ typedef struct {
     char *current_name;
     int64_t key;
     int valid;
+    int skip_dots;
 } PtnDirectoryIteratorData;
 
 typedef struct {
@@ -5675,6 +5681,33 @@ typedef struct {
     int escape_configured;
     int64_t max_line_len;
 } PtnSplFileObjectData;
+
+typedef struct {
+    char *name;
+    unsigned char *content;
+    size_t content_len;
+} PtnPharArchiveEntry;
+
+typedef struct PtnPharArchiveState {
+    char *path;
+    char *alias;
+    char *stub;
+    size_t stub_len;
+    PtnPharArchiveEntry *entries;
+    size_t entry_count;
+    size_t entry_capacity;
+    struct PtnPharArchiveState *next;
+} PtnPharArchiveState;
+
+typedef struct {
+    PtnPharArchiveState *archive;
+    size_t position;
+} PtnPharObjectData;
+
+typedef struct {
+    unsigned char *content;
+    size_t content_len;
+} PtnPharFileInfoData;
 
 #define PTN_SPL_DLLIST_IT_MODE_DELETE 1
 #define PTN_SPL_DLLIST_IT_MODE_LIFO 2
@@ -47614,6 +47647,12 @@ static PtnValue ptn_path_predicate(
         return ptn_bool(0);
     }
 
+    if (strncmp(path, "phar://", 7) == 0) {
+        int exists = ptn_phar_uri_entry_exists(path);
+        free(path);
+        return ptn_bool(exists);
+    }
+
     int result = predicate(path);
     if (!result && ptn_current_source_snapshot_matches(runtime, path) &&
         ptn_current_source_path_missing(path)) {
@@ -86440,6 +86479,793 @@ enum {
     PTN_PHAR_COMPRESSION_BZ2 = 0x2000,
 };
 
+static PtnPharArchiveState *ptn_phar_archives = NULL;
+
+static uint32_t ptn_phar_read_u32_le(const unsigned char *data) {
+    return ((uint32_t)data[0]) |
+        ((uint32_t)data[1] << 8) |
+        ((uint32_t)data[2] << 16) |
+        ((uint32_t)data[3] << 24);
+}
+
+static unsigned char *ptn_phar_copy_bytes(const unsigned char *data, size_t len) {
+    unsigned char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (len != 0) {
+        memcpy(copy, data, len);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
+static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
+    if (entry == NULL) {
+        return;
+    }
+    free(entry->name);
+    free(entry->content);
+    entry->name = NULL;
+    entry->content = NULL;
+    entry->content_len = 0;
+}
+
+static void ptn_phar_archive_reserve_entries(PtnPharArchiveState *archive, size_t required) {
+    if (archive->entry_capacity >= required) {
+        return;
+    }
+    size_t new_capacity = archive->entry_capacity == 0 ? 4 : archive->entry_capacity;
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    PtnPharArchiveEntry *entries =
+        realloc(archive->entries, new_capacity * sizeof(PtnPharArchiveEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = archive->entry_capacity; i < new_capacity; i++) {
+        entries[i].name = NULL;
+        entries[i].content = NULL;
+        entries[i].content_len = 0;
+    }
+    archive->entries = entries;
+    archive->entry_capacity = new_capacity;
+}
+
+static int ptn_phar_archive_find_entry_index(
+    PtnPharArchiveState *archive,
+    const char *name,
+    size_t *index_out
+) {
+    if (archive == NULL || name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        if (archive->entries[i].name != NULL && strcmp(archive->entries[i].name, name) == 0) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_phar_archive_set_entry(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len
+) {
+    if (archive == NULL || name == NULL) {
+        return;
+    }
+    unsigned char *content_copy = ptn_phar_copy_bytes(content == NULL ? (const unsigned char *)"" : content, content_len);
+    size_t index = 0;
+    if (ptn_phar_archive_find_entry_index(archive, name, &index)) {
+        free(archive->entries[index].content);
+        archive->entries[index].content = content_copy;
+        archive->entries[index].content_len = content_len;
+        return;
+    }
+    ptn_phar_archive_reserve_entries(archive, archive->entry_count + 1);
+    PtnPharArchiveEntry *entry = &archive->entries[archive->entry_count++];
+    entry->name = ptn_duplicate_string(name);
+    entry->content = content_copy;
+    entry->content_len = content_len;
+}
+
+static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const char *name) {
+    size_t index = 0;
+    if (!ptn_phar_archive_find_entry_index(archive, name, &index)) {
+        return 0;
+    }
+    ptn_phar_archive_entry_clear(&archive->entries[index]);
+    for (size_t i = index + 1; i < archive->entry_count; i++) {
+        archive->entries[i - 1] = archive->entries[i];
+    }
+    archive->entry_count--;
+    archive->entries[archive->entry_count].name = NULL;
+    archive->entries[archive->entry_count].content = NULL;
+    archive->entries[archive->entry_count].content_len = 0;
+    return 1;
+}
+
+static int ptn_phar_find_halt_payload_offset(
+    const unsigned char *data,
+    size_t len,
+    size_t *stub_len_out,
+    size_t *payload_offset_out
+) {
+    static const unsigned char marker[] = "__HALT_COMPILER(); ?>";
+    size_t marker_len = sizeof(marker) - 1;
+    if (len < marker_len) {
+        return 0;
+    }
+    for (size_t i = 0; i + marker_len <= len; i++) {
+        if (memcmp(data + i, marker, marker_len) != 0) {
+            continue;
+        }
+        size_t end = i + marker_len;
+        if (end + 2 <= len && data[end] == '\r' && data[end + 1] == '\n') {
+            end += 2;
+        } else if (end < len && data[end] == '\n') {
+            end += 1;
+        }
+        *stub_len_out = end;
+        *payload_offset_out = end;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_phar_manifest_read_u32(size_t *cursor, size_t end, const unsigned char *data, uint32_t *out) {
+    if (*cursor > end || end - *cursor < 4) {
+        return 0;
+    }
+    *out = ptn_phar_read_u32_le(data + *cursor);
+    *cursor += 4;
+    return 1;
+}
+
+static int ptn_phar_manifest_skip(size_t *cursor, size_t end, size_t amount) {
+    if (*cursor > end || amount > end - *cursor) {
+        return 0;
+    }
+    *cursor += amount;
+    return 1;
+}
+
+typedef struct {
+    char *name;
+    size_t content_len;
+} PtnPharManifestEntryInfo;
+
+static void ptn_phar_parse_manifest(
+    PtnPharArchiveState *archive,
+    const unsigned char *data,
+    size_t len,
+    size_t payload_offset
+) {
+    if (payload_offset > len || len - payload_offset < 4) {
+        return;
+    }
+    uint32_t manifest_len_u32 = ptn_phar_read_u32_le(data + payload_offset);
+    size_t manifest_len = (size_t)manifest_len_u32;
+    size_t manifest_start = payload_offset + 4;
+    if (manifest_start > len || manifest_len > len - manifest_start) {
+        return;
+    }
+    size_t manifest_end = manifest_start + manifest_len;
+    size_t cursor = manifest_start;
+    uint32_t file_count_u32 = 0;
+    uint32_t ignored = 0;
+    uint32_t alias_len_u32 = 0;
+    if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &file_count_u32) ||
+        !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
+        !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
+        !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &alias_len_u32)) {
+        return;
+    }
+    size_t alias_len = (size_t)alias_len_u32;
+    if (alias_len != 0) {
+        if (cursor > manifest_end || alias_len > manifest_end - cursor) {
+            return;
+        }
+        char *alias = ptn_duplicate_string_len((const char *)data + cursor, alias_len);
+        free(archive->alias);
+        archive->alias = alias;
+    }
+    if (!ptn_phar_manifest_skip(&cursor, manifest_end, alias_len)) {
+        return;
+    }
+    if (file_count_u32 != 0 && cursor + 6 <= manifest_end) {
+        uint32_t possible_name_len = ptn_phar_read_u32_le(data + cursor);
+        uint32_t shifted_name_len = ptn_phar_read_u32_le(data + cursor + 2);
+        size_t remaining = manifest_end - cursor;
+        if ((size_t)possible_name_len > remaining &&
+            (size_t)shifted_name_len <= remaining - 6) {
+            cursor += 2;
+        }
+    }
+
+    size_t file_count = (size_t)file_count_u32;
+    if (file_count > SIZE_MAX / sizeof(PtnPharManifestEntryInfo)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnPharManifestEntryInfo *infos =
+        file_count == 0 ? NULL : calloc(file_count, sizeof(PtnPharManifestEntryInfo));
+    if (file_count != 0 && infos == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t parsed_count = 0;
+    for (size_t i = 0; i < file_count; i++) {
+        uint32_t name_len_u32 = 0;
+        uint32_t uncompressed_size = 0;
+        uint32_t compressed_size = 0;
+        uint32_t file_metadata_len = 0;
+        if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &name_len_u32)) {
+            break;
+        }
+        size_t name_len = (size_t)name_len_u32;
+        if (cursor > manifest_end || name_len > manifest_end - cursor) {
+            break;
+        }
+        char *name = ptn_duplicate_string_len((const char *)data + cursor, name_len);
+        cursor += name_len;
+        if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &uncompressed_size) ||
+            !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
+            !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &compressed_size) ||
+            !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
+            !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &ignored) ||
+            !ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &file_metadata_len) ||
+            !ptn_phar_manifest_skip(&cursor, manifest_end, (size_t)file_metadata_len)) {
+            free(name);
+            break;
+        }
+        infos[parsed_count].name = name;
+        infos[parsed_count].content_len = compressed_size != 0 ? (size_t)compressed_size : (size_t)uncompressed_size;
+        parsed_count++;
+    }
+
+    size_t content_cursor = manifest_end;
+    for (size_t i = 0; i < parsed_count; i++) {
+        if (infos[i].name == NULL) {
+            continue;
+        }
+        if (content_cursor <= len && infos[i].content_len <= len - content_cursor) {
+            ptn_phar_archive_set_entry(
+                archive,
+                infos[i].name,
+                data + content_cursor,
+                infos[i].content_len
+            );
+            content_cursor += infos[i].content_len;
+        }
+        free(infos[i].name);
+    }
+    free(infos);
+}
+
+static void ptn_phar_archive_load_file(PtnPharArchiveState *archive) {
+    unsigned char *data = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(archive->path, &data, &len);
+    if (read_result <= 0) {
+        archive->stub = ptn_duplicate_string("");
+        archive->stub_len = 0;
+        free(data);
+        return;
+    }
+    size_t stub_len = 0;
+    size_t payload_offset = 0;
+    if (ptn_phar_find_halt_payload_offset(data, len, &stub_len, &payload_offset)) {
+        archive->stub = (char *)ptn_phar_copy_bytes(data, stub_len);
+        archive->stub_len = stub_len;
+        ptn_phar_parse_manifest(archive, data, len, payload_offset);
+    } else {
+        archive->stub = ptn_duplicate_string("");
+        archive->stub_len = 0;
+    }
+    free(data);
+}
+
+static PtnPharArchiveState *ptn_phar_archive_for_path(const char *path) {
+    for (PtnPharArchiveState *archive = ptn_phar_archives; archive != NULL; archive = archive->next) {
+        if (strcmp(archive->path, path) == 0) {
+            return archive;
+        }
+    }
+    PtnPharArchiveState *archive = calloc(1, sizeof(PtnPharArchiveState));
+    if (archive == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    archive->path = ptn_duplicate_string(path);
+    archive->alias = ptn_duplicate_string(path);
+    ptn_phar_archive_load_file(archive);
+    archive->next = ptn_phar_archives;
+    ptn_phar_archives = archive;
+    return archive;
+}
+
+static PtnPharObjectData *ptn_phar_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_phar(receiver.as.object->class_name) ||
+        receiver.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid Phar object");
+        return NULL;
+    }
+    return (PtnPharObjectData *)receiver.as.object->native_data;
+}
+
+static char *ptn_phar_entry_uri(PtnPharArchiveState *archive, const char *entry_name) {
+    const char *path = archive == NULL || archive->path == NULL ? "" : archive->path;
+    size_t prefix_len = sizeof("phar://") - 1;
+    size_t path_len = strlen(path);
+    size_t name_len = strlen(entry_name == NULL ? "" : entry_name);
+    if (prefix_len > SIZE_MAX - path_len - 1 || prefix_len + path_len + 1 > SIZE_MAX - name_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *uri = malloc(prefix_len + path_len + 1 + name_len + 1);
+    if (uri == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(uri, "phar://", prefix_len);
+    memcpy(uri + prefix_len, path, path_len);
+    uri[prefix_len + path_len] = '/';
+    memcpy(uri + prefix_len + path_len + 1, entry_name == NULL ? "" : entry_name, name_len + 1);
+    return uri;
+}
+
+static char *ptn_phar_join_path(const char *dir, const char *name) {
+    size_t dir_len = strlen(dir == NULL ? "" : dir);
+    size_t name_len = strlen(name == NULL ? "" : name);
+    int needs_separator = dir_len != 0 && !ptn_path_is_separator(dir[dir_len - 1]);
+    if (dir_len > SIZE_MAX - (size_t)needs_separator - name_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc(dir_len + (size_t)needs_separator + name_len + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, dir == NULL ? "" : dir, dir_len);
+    size_t offset = dir_len;
+    if (needs_separator) {
+        path[offset++] = '/';
+    }
+    memcpy(path + offset, name == NULL ? "" : name, name_len + 1);
+    return path;
+}
+
+static char *ptn_phar_join_relative_path(const char *prefix, const char *name) {
+    if (prefix == NULL || prefix[0] == '\0') {
+        return ptn_duplicate_string(name == NULL ? "" : name);
+    }
+    return ptn_phar_join_path(prefix, name);
+}
+
+static void ptn_phar_add_directory_files(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    const char *directory,
+    const char *relative_prefix,
+    PtnValue result,
+    size_t line
+) {
+    (void)runtime;
+#if defined(_WIN32)
+    (void)archive;
+    (void)directory;
+    (void)relative_prefix;
+    (void)result;
+    (void)line;
+#else
+    DIR *handle = opendir(directory);
+    if (handle == NULL) {
+        return;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(handle)) != NULL) {
+        const char *name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        char *full_path = ptn_phar_join_path(directory, name);
+        char *relative_path = ptn_phar_join_relative_path(relative_prefix, name);
+        struct stat info;
+        if (stat(full_path, &info) == 0) {
+            if (S_ISDIR(info.st_mode)) {
+                ptn_phar_add_directory_files(runtime, archive, full_path, relative_path, result, line);
+            } else if (S_ISREG(info.st_mode)) {
+                unsigned char *data = NULL;
+                size_t data_len = 0;
+                int read_result = ptn_read_file_bytes(full_path, &data, &data_len);
+                if (read_result > 0) {
+                    ptn_phar_archive_set_entry(archive, relative_path, data, data_len);
+                    ptn_array_set_entry(
+                        result.as.array,
+                        ptn_array_string_key(relative_path),
+                        ptn_owned_string(ptn_duplicate_string(full_path))
+                    );
+                }
+                free(data);
+            }
+        }
+        free(relative_path);
+        free(full_path);
+    }
+    closedir(handle);
+#endif
+}
+
+static PtnValue ptn_phar_build_from_directory_result(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    const char *directory,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_phar_add_directory_files(runtime, archive, directory, "", result, line);
+    return result;
+}
+
+static PtnValue ptn_phar_file_info_new(
+    PtnRuntime *runtime,
+    const unsigned char *content,
+    size_t content_len
+) {
+    PtnPharFileInfoData *data = malloc(sizeof(PtnPharFileInfoData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->content = ptn_phar_copy_bytes(content == NULL ? (const unsigned char *)"" : content, content_len);
+    data->content_len = content_len;
+    PtnValue object = ptn_object_new_shell(runtime, "PharFileInfo");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_phar_file_info_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 3) {
+        char message[160];
+        const char *relation = argc < 1 ? "at least" : "at most";
+        size_t expected = argc < 1 ? 1 : 3;
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Phar::__construct() expects %s %zu argument%s, %zu given",
+            relation,
+            expected,
+            expected == 1 ? "" : "s",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand filename =
+        ptn_internal_expect_string_arg(runtime, "Phar::__construct", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(filename);
+        return ptn_null();
+    }
+    char *path = ptn_path_operand_to_c_string(filename);
+    ptn_string_operand_free(filename);
+    if (path == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "Phar::__construct(): Argument #1 ($filename) must not contain any null bytes");
+        return ptn_null();
+    }
+    PtnPharObjectData *data = malloc(sizeof(PtnPharObjectData));
+    if (data == NULL) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    data->archive = ptn_phar_archive_for_path(path);
+    data->position = 0;
+    free(path);
+    PtnValue object = ptn_object_new_shell(runtime, "Phar");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_phar_object_data_free;
+    return object;
+}
+
+static int ptn_phar_expect_no_arguments(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc
+) {
+    if (argc == 0) {
+        return 1;
+    }
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s::%s() expects exactly 0 arguments, %zu given",
+        class_name,
+        method_name,
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+    return 0;
+}
+
+static PtnValue ptn_phar_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_phar_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnPharObjectData *data = ptn_phar_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "buildFromDirectory")) {
+        if (argc < 1 || argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::buildFromDirectory() expects between 1 and 2 arguments");
+            return ptn_null();
+        }
+        PtnStringOperand directory =
+            ptn_internal_expect_string_arg(runtime, "Phar::buildFromDirectory", 1, "directory", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(directory);
+            return ptn_null();
+        }
+        char *path = ptn_path_operand_to_c_string(directory);
+        ptn_string_operand_free(directory);
+        if (path == NULL) {
+            ptn_throw_exception(runtime, "ValueError", "Phar::buildFromDirectory(): Argument #1 ($directory) must not contain any null bytes");
+            return ptn_null();
+        }
+        PtnValue result = ptn_phar_build_from_directory_result(runtime, data->archive, path, line);
+        free(path);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "buildFromIterator")) {
+        if (argc < 1 || argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::buildFromIterator() expects between 1 and 2 arguments");
+            return ptn_null();
+        }
+        if (argc < 2) {
+            return ptn_array_from_literal_entries(0, NULL);
+        }
+        PtnStringOperand base_directory =
+            ptn_internal_expect_string_arg(runtime, "Phar::buildFromIterator", 2, "baseDirectory", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(base_directory);
+            return ptn_null();
+        }
+        char *path = ptn_path_operand_to_c_string(base_directory);
+        ptn_string_operand_free(base_directory);
+        if (path == NULL) {
+            ptn_throw_exception(runtime, "ValueError", "Phar::buildFromIterator(): Argument #2 ($baseDirectory) must not contain any null bytes");
+            return ptn_null();
+        }
+        PtnValue result = ptn_phar_build_from_directory_result(runtime, data->archive, path, line);
+        free(path);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "delete")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::delete() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand entry =
+            ptn_internal_expect_string_arg(runtime, "Phar::delete", 1, "localName", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(entry);
+            return ptn_null();
+        }
+        char *entry_name = ptn_duplicate_string_len(entry.data, entry.len);
+        ptn_string_operand_free(entry);
+        int removed = ptn_phar_archive_delete_entry(data->archive, entry_name);
+        free(entry_name);
+        return ptn_bool(removed);
+    }
+    if (ptn_ascii_case_equal(name, "getAlias")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        return ptn_owned_string(ptn_duplicate_string(data->archive->alias == NULL ? "" : data->archive->alias));
+    }
+    if (ptn_ascii_case_equal(name, "setAlias")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setAlias() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand alias =
+            ptn_internal_expect_string_arg(runtime, "Phar::setAlias", 1, "alias", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(alias);
+            return ptn_null();
+        }
+        char *new_alias = ptn_duplicate_string_len(alias.data, alias.len);
+        ptn_string_operand_free(alias);
+        free(data->archive->alias);
+        data->archive->alias = new_alias;
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "getStub")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        return ptn_owned_string_len(
+            ptn_duplicate_string_len(data->archive->stub == NULL ? "" : data->archive->stub, data->archive->stub_len),
+            data->archive->stub_len
+        );
+    }
+    if (ptn_ascii_case_equal(name, "setStub")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setStub() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand stub =
+            ptn_internal_expect_string_arg(runtime, "Phar::setStub", 1, "stub", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(stub);
+            return ptn_null();
+        }
+        int has_close_tag = 0;
+        for (size_t i = 0; i + 2 <= stub.len; i++) {
+            if (stub.data[i] == '?' && stub.data[i + 1] == '>') {
+                has_close_tag = 1;
+                break;
+            }
+        }
+        size_t close_len = has_close_tag ? 0 : 3;
+        int needs_newline = stub.len == 0 || stub.data[stub.len - 1] != '\n';
+        size_t new_len = stub.len + close_len + (needs_newline ? 1 : 0);
+        char *new_stub = malloc(new_len + 1);
+        if (new_stub == NULL) {
+            ptn_string_operand_free(stub);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(new_stub, stub.data, stub.len);
+        size_t offset = stub.len;
+        if (!has_close_tag) {
+            memcpy(new_stub + offset, " ?>", 3);
+            offset += 3;
+        }
+        if (needs_newline) {
+            new_stub[offset++] = '\n';
+        }
+        new_stub[offset] = '\0';
+        ptn_string_operand_free(stub);
+        free(data->archive->stub);
+        data->archive->stub = new_stub;
+        data->archive->stub_len = new_len;
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        data->position = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        return ptn_bool(data->archive != NULL && data->position < data->archive->entry_count);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        if (data->archive == NULL || data->position >= data->archive->entry_count) {
+            return ptn_null();
+        }
+        return ptn_owned_string(ptn_phar_entry_uri(data->archive, data->archive->entries[data->position].name));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        if (data->archive == NULL || data->position >= data->archive->entry_count) {
+            return ptn_null();
+        }
+        PtnPharArchiveEntry *entry = &data->archive->entries[data->position];
+        return ptn_phar_file_info_new(runtime, entry->content, entry->content_len);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        if (data->archive != NULL && data->position < data->archive->entry_count) {
+            data->position++;
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_phar_file_info_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_phar_file_info(receiver.as.object->class_name) ||
+        receiver.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid PharFileInfo object");
+        return ptn_null();
+    }
+    PtnPharFileInfoData *data = (PtnPharFileInfoData *)receiver.as.object->native_data;
+    if (ptn_ascii_case_equal(name, "getContent")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "PharFileInfo", name, argc)) {
+            return ptn_null();
+        }
+        return ptn_owned_string_len(
+            ptn_duplicate_string_len((const char *)data->content, data->content_len),
+            data->content_len
+        );
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static int ptn_phar_uri_entry_exists(const char *uri) {
+    if (uri == NULL || strncmp(uri, "phar://", 7) != 0) {
+        return 0;
+    }
+    size_t uri_len = strlen(uri);
+    for (PtnPharArchiveState *archive = ptn_phar_archives; archive != NULL; archive = archive->next) {
+        if (archive->path == NULL) {
+            continue;
+        }
+        size_t path_len = strlen(archive->path);
+        size_t prefix_len = 7 + path_len;
+        if (uri_len <= prefix_len) {
+            continue;
+        }
+        if (strncmp(uri + 7, archive->path, path_len) != 0) {
+            continue;
+        }
+        if (uri[prefix_len] != '/' && uri[prefix_len] != '\\') {
+            continue;
+        }
+        return ptn_phar_archive_find_entry_index(archive, uri + prefix_len + 1, NULL);
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_phar_api_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)args;
     (void)line;
@@ -92932,7 +93758,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_directory_iterator(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "DirectoryIterator");
+    return ptn_ascii_case_equal(class_name, "DirectoryIterator")
+        || ptn_ascii_case_equal(class_name, "RecursiveDirectoryIterator");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_regex_iterator(const char *class_name) {
@@ -93052,6 +93879,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class
 
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Phar");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "PharFileInfo");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name) {
@@ -93265,6 +94096,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_sqlite3_result(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_phar(class_name)
+        || ptn_internal_class_name_is_phar_file_info(class_name)
         || ptn_internal_class_name_is_zip_archive(class_name)
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
@@ -95025,12 +95857,28 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "valid");
     }
     if (ptn_internal_class_name_is_phar(class_name)) {
-        return ptn_ascii_case_equal(method_name, "apiVersion")
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "buildFromDirectory")
+            || ptn_ascii_case_equal(method_name, "buildFromIterator")
+            || ptn_ascii_case_equal(method_name, "current")
+            || ptn_ascii_case_equal(method_name, "delete")
+            || ptn_ascii_case_equal(method_name, "getAlias")
+            || ptn_ascii_case_equal(method_name, "getStub")
+            || ptn_ascii_case_equal(method_name, "key")
+            || ptn_ascii_case_equal(method_name, "next")
+            || ptn_ascii_case_equal(method_name, "rewind")
+            || ptn_ascii_case_equal(method_name, "setAlias")
+            || ptn_ascii_case_equal(method_name, "setStub")
+            || ptn_ascii_case_equal(method_name, "valid")
+            || ptn_ascii_case_equal(method_name, "apiVersion")
             || ptn_ascii_case_equal(method_name, "canCompress")
             || ptn_ascii_case_equal(method_name, "canWrite")
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename");
+    }
+    if (ptn_internal_class_name_is_phar_file_info(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getContent");
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -96348,12 +97196,29 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_phar(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "apiVersion");
+        ptn_append_method_name(result, &index, "buildFromDirectory");
+        ptn_append_method_name(result, &index, "buildFromIterator");
         ptn_append_method_name(result, &index, "canCompress");
         ptn_append_method_name(result, &index, "canWrite");
+        ptn_append_method_name(result, &index, "current");
+        ptn_append_method_name(result, &index, "delete");
+        ptn_append_method_name(result, &index, "getAlias");
+        ptn_append_method_name(result, &index, "getStub");
         ptn_append_method_name(result, &index, "getSupportedCompression");
         ptn_append_method_name(result, &index, "getSupportedSignatures");
         ptn_append_method_name(result, &index, "isValidPharFilename");
+        ptn_append_method_name(result, &index, "key");
+        ptn_append_method_name(result, &index, "next");
+        ptn_append_method_name(result, &index, "rewind");
+        ptn_append_method_name(result, &index, "setAlias");
+        ptn_append_method_name(result, &index, "setStub");
+        ptn_append_method_name(result, &index, "valid");
+        return result;
+    }
+    if (ptn_internal_class_name_is_phar_file_info(class_name)) {
+        ptn_append_method_name(result, &index, "getContent");
         return result;
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
@@ -102894,6 +103759,10 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("BZ2"), ptn_int(PTN_PHAR_COMPRESSION_BZ2));
         return;
     }
+    if (ptn_internal_class_name_is_directory_iterator(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DOTS"), ptn_int(4096));
+        return;
+    }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE"), ptn_int(1));
         return;
@@ -107465,6 +108334,19 @@ static void ptn_spl_file_object_data_free(void *data) {
     free(file_data);
 }
 
+static void ptn_phar_object_data_free(void *data) {
+    free(data);
+}
+
+static void ptn_phar_file_info_data_free(void *data) {
+    PtnPharFileInfoData *file_data = (PtnPharFileInfoData *)data;
+    if (file_data == NULL) {
+        return;
+    }
+    free(file_data->content);
+    free(file_data);
+}
+
 static void ptn_iterator_iterator_data_free(void *data) {
     PtnIteratorIteratorData *iterator_data = (PtnIteratorIteratorData *)data;
     if (iterator_data == NULL) {
@@ -109974,6 +110856,7 @@ static PtnValue ptn_reflection_extension_classes(
     }
     if (ptn_ascii_case_equal(extension_name, "Phar")) {
         ptn_reflection_extension_add_class(runtime, result, &index, "Phar", objects);
+        ptn_reflection_extension_add_class(runtime, result, &index, "PharFileInfo", objects);
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "zip")) {
@@ -115957,7 +116840,14 @@ static void ptn_directory_iterator_read_current(
         return;
     }
     errno = 0;
-    struct dirent *entry = readdir(data->directory);
+    struct dirent *entry = NULL;
+    while ((entry = readdir(data->directory)) != NULL) {
+        if (data->skip_dots &&
+            (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)) {
+            continue;
+        }
+        break;
+    }
     if (entry == NULL) {
         data->valid = 0;
         free(data->current_name);
@@ -115968,18 +116858,22 @@ static void ptn_directory_iterator_read_current(
 #endif
 }
 
-static PTN_UNUSED PtnValue ptn_directory_iterator_new(
+static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
 ) {
-    if (argc != 1) {
+    int recursive = ptn_ascii_case_equal(class_name, "RecursiveDirectoryIterator");
+    if ((!recursive && argc != 1) || (recursive && (argc < 1 || argc > 2))) {
         char message[176];
         int written = snprintf(
             message,
             sizeof(message),
-            "DirectoryIterator::__construct() expects exactly 1 argument, %zu given",
+            recursive
+                ? "RecursiveDirectoryIterator::__construct() expects between 1 and 2 arguments, %zu given"
+                : "DirectoryIterator::__construct() expects exactly 1 argument, %zu given",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -115988,11 +116882,15 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    char *path = ptn_spl_file_path_arg(runtime, "DirectoryIterator::__construct", 1, args[0], line);
+    const char *ctor_name = recursive
+        ? "RecursiveDirectoryIterator::__construct"
+        : "DirectoryIterator::__construct";
+    char *path = ptn_spl_file_path_arg(runtime, ctor_name, 1, args[0], line);
     if (runtime->exceptions->active_exception != NULL || path == NULL) {
         free(path);
         return ptn_null();
     }
+    int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
 
     PtnDirectoryIteratorData *data = malloc(sizeof(PtnDirectoryIteratorData));
     if (data == NULL) {
@@ -116007,6 +116905,7 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new(
     data->current_name = NULL;
     data->key = 0;
     data->valid = 0;
+    data->skip_dots = (flags & 4096) != 0;
     ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
 
 #if defined(_WIN32)
@@ -116033,11 +116932,20 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new(
     }
 #endif
 
-    PtnValue object = ptn_object_new_shell(runtime, "DirectoryIterator");
+    PtnValue object = ptn_object_new_shell(runtime, recursive ? "RecursiveDirectoryIterator" : "DirectoryIterator");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_directory_iterator_data_free;
     ptn_directory_iterator_read_current(runtime, object, data, line);
     return object;
+}
+
+static PTN_UNUSED PtnValue ptn_directory_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_directory_iterator_new_for_class(runtime, "DirectoryIterator", argc, args, line);
 }
 
 static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
@@ -116053,12 +116961,15 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_directory_iterator_new(runtime, argc, args, line);
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        const char *receiver_class = resolved_receiver.type == PTN_OBJECT
+            ? resolved_receiver.as.object->class_name
+            : "DirectoryIterator";
+        PtnValue replacement = ptn_directory_iterator_new_for_class(runtime, receiver_class, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
             return ptn_null();
         }
-        PtnValue resolved_receiver = ptn_value_deref(receiver);
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {

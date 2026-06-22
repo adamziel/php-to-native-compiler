@@ -1880,6 +1880,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_sqlite3(const char *class_name)
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_stmt(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_result(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
@@ -2486,6 +2487,13 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -2670,6 +2678,12 @@ static PTN_UNUSED int ptn_bcmath_number_inc_dec(
 static PTN_UNUSED void ptn_bcmath_number_hydrate_unserialized(
     PtnRuntime *runtime,
     PtnValue value,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_phar_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_zip_archive_new(

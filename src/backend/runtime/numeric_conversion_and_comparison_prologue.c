@@ -3756,6 +3756,13 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DirectoryIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveDirectoryIterator")) {
+        if (strcmp(constant, "SKIP_DOTS") == 0) {
+            *out = ptn_int(4096);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "XMLReader")) {
         if (strcmp(constant, "NONE") == 0) { *out = ptn_int(0); return 1; }
         if (strcmp(constant, "ELEMENT") == 0) { *out = ptn_int(1); return 1; }

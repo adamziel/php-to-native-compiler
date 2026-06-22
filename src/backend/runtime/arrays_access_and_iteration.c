@@ -1121,7 +1121,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         return ptn_spl_file_object_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_directory_iterator(lookup_class_name)) {
-        return ptn_directory_iterator_new(runtime, argc, args, line);
+        return ptn_directory_iterator_new_for_class(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
@@ -1177,6 +1177,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_bcmath_number(lookup_class_name)) {
         return ptn_bcmath_number_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_phar(lookup_class_name)) {
+        return ptn_phar_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_phar_file_info(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
+        return ptn_null();
     }
     if (ptn_internal_class_name_is_zip_archive(lookup_class_name)) {
         return ptn_zip_archive_new(runtime, argc, args, line);
