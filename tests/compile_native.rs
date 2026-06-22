@@ -21866,6 +21866,78 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_zlib_wrapper_copy_and_socket_stream_copy_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-wrapper-socket-copy");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-wrapper-socket-copy.php");
+    let output = root.join("zlib-wrapper-socket-copy-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+$tmp = tmpfile();
+fwrite($sockets[0], "a");
+stream_socket_shutdown($sockets[0], STREAM_SHUT_WR);
+stream_copy_to_stream($sockets[1], $tmp);
+fseek($tmp, 0, SEEK_SET);
+var_dump(stream_get_contents($tmp));
+stream_copy_to_stream($sockets[1], $tmp);
+fseek($tmp, 0, SEEK_SET);
+var_dump(stream_get_contents($tmp));
+
+$source = __DIR__ . "/zlib-source.txt";
+$compressed = __DIR__ . "/zlib-copy.gz";
+$plain = __DIR__ . "/zlib-copy.txt";
+$round = __DIR__ . "/zlib-round.gz";
+$data = "hello zlib\nline two";
+file_put_contents($source, $data);
+copy($source, "compress.zlib://$compressed");
+$h = gzopen($compressed, "r");
+var_dump(gzread($h, 4096));
+gzclose($h);
+$h = fopen($compressed, "r");
+var_dump(bin2hex(fread($h, 2)));
+fclose($h);
+copy("compress.zlib://$compressed", $plain);
+var_dump(file_get_contents($plain));
+copy("compress.zlib://$compressed", "compress.zlib://$round");
+$h = gzopen($round, "r");
+var_dump(gzread($h, 4096));
+gzclose($h);
+@unlink($source);
+@unlink($compressed);
+@unlink($plain);
+@unlink($round);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\n\
+string(1) \"a\"\n\
+string(19) \"hello zlib\n\
+line two\"\n\
+string(4) \"1f8b\"\n\
+string(19) \"hello zlib\n\
+line two\"\n\
+string(19) \"hello zlib\n\
+line two\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_socket_pair"));
+    assert!(c_source.contains("ptn_internal_stream_socket_shutdown"));
+    assert!(c_source.contains("ptn_try_open_compress_zlib_stream"));
+    assert!(c_source.contains("ptn_zlib_write_path_bytes"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();

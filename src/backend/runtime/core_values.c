@@ -30,6 +30,7 @@
 #include <iconv.h>
 #include <langinfo.h>
 #include <netdb.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <regex.h>
 #include <sys/file.h>
@@ -260,6 +261,21 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#if defined(AF_UNIX)
+#define PTN_STREAM_PF_UNIX AF_UNIX
+#else
+#define PTN_STREAM_PF_UNIX 1
+#endif
+#if defined(SOCK_STREAM)
+#define PTN_STREAM_SOCK_STREAM SOCK_STREAM
+#else
+#define PTN_STREAM_SOCK_STREAM 1
+#endif
+#if defined(SHUT_WR)
+#define PTN_STREAM_SHUT_WR SHUT_WR
+#else
+#define PTN_STREAM_SHUT_WR 1
+#endif
 #define PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT 1
 #define PTN_DEBUG_BACKTRACE_IGNORE_ARGS 2
 #define PTN_LC_CTYPE 0

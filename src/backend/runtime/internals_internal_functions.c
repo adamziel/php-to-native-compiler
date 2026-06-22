@@ -46691,6 +46691,323 @@ static int ptn_phar_stream_mode_appends(const char *mode) {
     return mode != NULL && (mode[0] == 'a' || mode[0] == 'A');
 }
 
+static const char *ptn_zlib_wrapper_prefix(void) {
+    return "compress.zlib://";
+}
+
+static int ptn_zlib_uri_path(const char *uri, const char **path_out) {
+    const char *prefix = ptn_zlib_wrapper_prefix();
+    size_t prefix_len = strlen(prefix);
+    if (uri == NULL || strncmp(uri, prefix, prefix_len) != 0) {
+        return 0;
+    }
+    *path_out = uri + prefix_len;
+    return 1;
+}
+
+static void ptn_zlib_child_silence_stderr(void) {
+#if !defined(_WIN32)
+    int null_fd = open("/dev/null", O_WRONLY);
+    if (null_fd >= 0) {
+        (void)dup2(null_fd, STDERR_FILENO);
+        if (null_fd > STDERR_FILENO) {
+            close(null_fd);
+        }
+    }
+#endif
+}
+
+static int ptn_zlib_wait_success(pid_t child) {
+#if defined(_WIN32)
+    (void)child;
+    return 0;
+#else
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        return 0;
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
+static int ptn_zlib_read_from_fd(int fd, unsigned char **data_out, size_t *len_out) {
+    unsigned char *data = NULL;
+    size_t len = 0;
+    size_t capacity = 0;
+    unsigned char chunk[4096];
+    for (;;) {
+        ssize_t read_len = read(fd, chunk, sizeof(chunk));
+        if (read_len < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            free(data);
+            return -1;
+        }
+        if (read_len == 0) {
+            break;
+        }
+        size_t read_size = (size_t)read_len;
+        if (read_size > SIZE_MAX - len) {
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        size_t required = len + read_size;
+        if (required > capacity) {
+            size_t new_capacity = capacity == 0 ? 4096 : capacity;
+            while (new_capacity < required) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    free(data);
+                    ptn_abort_out_of_memory();
+                }
+                new_capacity *= 2;
+            }
+            unsigned char *new_data = realloc(data, new_capacity);
+            if (new_data == NULL) {
+                free(data);
+                ptn_abort_out_of_memory();
+            }
+            data = new_data;
+            capacity = new_capacity;
+        }
+        memcpy(data + len, chunk, read_size);
+        len = required;
+    }
+    *data_out = data;
+    *len_out = len;
+    return 1;
+}
+
+static int ptn_zlib_write_all_fd(int fd, const unsigned char *data, size_t len) {
+    size_t offset = 0;
+    while (offset < len) {
+        size_t remaining = len - offset;
+        size_t chunk_len = remaining > (size_t)SSIZE_MAX ? (size_t)SSIZE_MAX : remaining;
+        ssize_t written = write(fd, data + offset, chunk_len);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 0;
+        }
+        if (written == 0) {
+            errno = EIO;
+            return 0;
+        }
+        offset += (size_t)written;
+    }
+    return 1;
+}
+
+static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    *data_out = NULL;
+    *len_out = 0;
+#if defined(_WIN32)
+    return ptn_read_file_bytes(path, data_out, len_out);
+#else
+    int pipe_fds[2];
+    if (pipe(pipe_fds) != 0) {
+        return -1;
+    }
+    pid_t child = fork();
+    if (child < 0) {
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        return -1;
+    }
+    if (child == 0) {
+        close(pipe_fds[0]);
+        (void)dup2(pipe_fds[1], STDOUT_FILENO);
+        if (pipe_fds[1] > STDERR_FILENO) {
+            close(pipe_fds[1]);
+        }
+        ptn_zlib_child_silence_stderr();
+        execlp("gzip", "gzip", "-cd", "--", path, (char *)NULL);
+        _exit(127);
+    }
+    close(pipe_fds[1]);
+    unsigned char *data = NULL;
+    size_t len = 0;
+    int read_result = ptn_zlib_read_from_fd(pipe_fds[0], &data, &len);
+    int saved_errno = errno;
+    close(pipe_fds[0]);
+    int ok = ptn_zlib_wait_success(child);
+    if (read_result <= 0 || !ok) {
+        free(data);
+        errno = ok ? saved_errno : EIO;
+        return ptn_read_file_bytes(path, data_out, len_out);
+    }
+    *data_out = data;
+    *len_out = len;
+    return 1;
+#endif
+}
+
+static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len) {
+#if defined(_WIN32)
+    (void)path;
+    (void)data;
+    (void)len;
+    errno = ENOSYS;
+    return -1;
+#else
+    int input_fds[2];
+    if (pipe(input_fds) != 0) {
+        return -1;
+    }
+    int output_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (output_fd < 0) {
+        close(input_fds[0]);
+        close(input_fds[1]);
+        return 0;
+    }
+    pid_t child = fork();
+    if (child < 0) {
+        close(input_fds[0]);
+        close(input_fds[1]);
+        close(output_fd);
+        return -1;
+    }
+    if (child == 0) {
+        close(input_fds[1]);
+        (void)dup2(input_fds[0], STDIN_FILENO);
+        (void)dup2(output_fd, STDOUT_FILENO);
+        if (input_fds[0] > STDERR_FILENO) {
+            close(input_fds[0]);
+        }
+        if (output_fd > STDERR_FILENO) {
+            close(output_fd);
+        }
+        ptn_zlib_child_silence_stderr();
+        execlp("gzip", "gzip", "-c", (char *)NULL);
+        _exit(127);
+    }
+    close(input_fds[0]);
+    close(output_fd);
+    int write_ok = ptn_zlib_write_all_fd(input_fds[1], data, len);
+    int saved_errno = errno;
+    if (close(input_fds[1]) != 0 && write_ok) {
+        write_ok = 0;
+        saved_errno = errno;
+    }
+    int ok = ptn_zlib_wait_success(child);
+    if (!write_ok || !ok) {
+        if (write_ok && !ok) {
+            errno = EIO;
+        } else {
+            errno = saved_errno;
+        }
+        return -1;
+    }
+    return 1;
+#endif
+}
+
+typedef struct {
+    char *path;
+} PtnZlibStreamData;
+
+static void ptn_zlib_stream_data_free(void *data) {
+    PtnZlibStreamData *stream_data = (PtnZlibStreamData *)data;
+    if (stream_data == NULL) {
+        return;
+    }
+    free(stream_data->path);
+    free(stream_data);
+}
+
+static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
+    PtnZlibStreamData *stream_data = (PtnZlibStreamData *)data;
+    if (resource == NULL ||
+        resource->memory_stream == NULL ||
+        stream_data == NULL ||
+        stream_data->path == NULL ||
+        !resource->memory_stream->writable) {
+        return;
+    }
+    (void)ptn_zlib_write_path_bytes(
+        stream_data->path,
+        resource->memory_stream->data,
+        resource->memory_stream->len
+    );
+}
+
+static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, PtnValue *out) {
+    int can_read = ptn_phar_stream_mode_can_read(mode);
+    int can_write = ptn_phar_stream_mode_can_write(mode);
+    int truncate = ptn_phar_stream_mode_truncates(mode);
+    int append = ptn_phar_stream_mode_appends(mode);
+    if (!can_read && !can_write) {
+        errno = EINVAL;
+        return 0;
+    }
+
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        uri,
+        mode,
+        PTN_STREAM_BACKEND_MEMORY,
+        SIZE_MAX,
+        1,
+        append
+    );
+    if (can_read && !truncate) {
+        unsigned char *data = NULL;
+        size_t data_len = 0;
+        int read_result = ptn_zlib_read_path_bytes(path, &data, &data_len);
+        if (read_result <= 0) {
+            if (!can_write) {
+                ptn_resource_close(resource);
+                ptn_resource_release(resource);
+                free(data);
+                return read_result;
+            }
+        } else if (data_len != 0) {
+            size_t written = ptn_stream_write_bytes(resource, data, data_len);
+            free(data);
+            if (written != data_len) {
+                ptn_resource_close(resource);
+                ptn_resource_release(resource);
+                errno = EIO;
+                return -1;
+            }
+        } else {
+            free(data);
+        }
+    }
+    if (append) {
+        (void)ptn_stream_seek(resource, 0, SEEK_END);
+    } else {
+        (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    }
+    resource->memory_stream->writable = can_write;
+    resource->memory_stream->append = append;
+    if (can_write) {
+        PtnZlibStreamData *stream_data = malloc(sizeof(PtnZlibStreamData));
+        if (stream_data == NULL) {
+            ptn_resource_close(resource);
+            ptn_resource_release(resource);
+            ptn_abort_out_of_memory();
+        }
+        stream_data->path = ptn_duplicate_string(path);
+        resource->close_hook = ptn_zlib_stream_close_hook;
+        resource->close_hook_data = stream_data;
+        resource->close_hook_data_free = ptn_zlib_stream_data_free;
+    }
+    *out = ptn_resource(resource);
+    return 1;
+}
+
+static int ptn_try_open_compress_zlib_stream(const char *uri, const char *mode, PtnValue *out) {
+    const char *path = NULL;
+    if (!ptn_zlib_uri_path(uri, &path)) {
+        return 0;
+    }
+    return ptn_try_open_zlib_path_stream(uri, path, mode, out);
+}
+
 static void ptn_phar_stream_close_hook(PtnResource *resource, void *data) {
     PtnPharStreamData *stream_data = (PtnPharStreamData *)data;
     if (stream_data == NULL || stream_data->archive == NULL || stream_data->entry_name == NULL) {
@@ -46894,6 +47211,11 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return php_stream;
     }
     if (ptn_try_open_php_memory_stream(path, mode, &php_stream)) {
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (ptn_try_open_compress_zlib_stream(path, mode, &php_stream)) {
         free(mode);
         free(path);
         return php_stream;
@@ -49499,6 +49821,36 @@ static void ptn_emit_copy_directory_argument_warning(
     ptn_emit_runtime_warning(runtime, message, line);
 }
 
+static int ptn_copy_read_source_bytes(const char *source, unsigned char **data_out, size_t *len_out) {
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(source, &zlib_path)) {
+        return ptn_zlib_read_path_bytes(zlib_path, data_out, len_out);
+    }
+    return ptn_read_file_bytes(source, data_out, len_out);
+}
+
+static int ptn_copy_write_dest_bytes(const char *dest, const unsigned char *data, size_t len) {
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(dest, &zlib_path)) {
+        return ptn_zlib_write_path_bytes(zlib_path, data, len);
+    }
+    FILE *output = fopen(dest, "wb");
+    if (output == NULL) {
+        return 0;
+    }
+    size_t written = len == 0 ? 0 : fwrite(data, 1, len, output);
+    int close_failed = fclose(output) != 0;
+    if (written != len || close_failed) {
+        return -1;
+    }
+    return 1;
+}
+
+static int ptn_copy_path_uses_stream_wrapper(const char *path) {
+    const char *zlib_path = NULL;
+    return ptn_zlib_uri_path(path, &zlib_path);
+}
+
 static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *source = ptn_internal_path_arg_c_string_or_value_error(runtime, "copy", 1, "from", args[0], line);
@@ -49526,6 +49878,52 @@ static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnVal
         free(dest);
         free(source);
         return ptn_bool(0);
+    }
+
+    if (ptn_copy_path_uses_stream_wrapper(source) || ptn_copy_path_uses_stream_wrapper(dest)) {
+        unsigned char *data = NULL;
+        size_t data_len = 0;
+        int read_result = ptn_copy_read_source_bytes(source, &data, &data_len);
+        if (read_result <= 0) {
+            char detail[192];
+            int needed = snprintf(
+                detail,
+                sizeof(detail),
+                "%s: %s",
+                read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+                strerror(errno)
+            );
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "copy", source, detail, line);
+            free(data);
+            free(dest);
+            free(source);
+            return ptn_bool(0);
+        }
+        int write_result = ptn_copy_write_dest_bytes(dest, data, data_len);
+        free(data);
+        if (write_result <= 0) {
+            char detail[192];
+            int needed = snprintf(
+                detail,
+                sizeof(detail),
+                "%s: %s",
+                write_result == 0 ? "Failed to open stream" : "Failed to write stream",
+                strerror(errno)
+            );
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "copy", dest, detail, line);
+            free(dest);
+            free(source);
+            return ptn_bool(0);
+        }
+        free(dest);
+        free(source);
+        return ptn_bool(1);
     }
 
     FILE *input = fopen(source, "rb");
@@ -70646,6 +71044,9 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+    ptn_get_defined_constants_add_int(table, "STREAM_PF_UNIX", PTN_STREAM_PF_UNIX);
+    ptn_get_defined_constants_add_int(table, "STREAM_SOCK_STREAM", PTN_STREAM_SOCK_STREAM);
+    ptn_get_defined_constants_add_int(table, "STREAM_SHUT_WR", PTN_STREAM_SHUT_WR);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_UNKNOWN", PTN_IMAGE_FILETYPE_UNKNOWN);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_GIF", PTN_IMAGE_FILETYPE_GIF);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPEG", PTN_IMAGE_FILETYPE_JPEG);
@@ -71092,6 +71493,9 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_READ",
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
+        "STREAM_PF_UNIX",
+        "STREAM_SOCK_STREAM",
+        "STREAM_SHUT_WR",
         "IMAGETYPE_UNKNOWN",
         "IMAGETYPE_GIF",
         "IMAGETYPE_JPEG",
@@ -94721,6 +95125,143 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
     return ptn_string(message == NULL ? "" : message);
 }
 
+static PtnValue ptn_internal_stream_socket_pair(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t domain = ptn_internal_expect_integer_arg(runtime, "stream_socket_pair", 1, "domain", args[0], line);
+    int64_t type = ptn_internal_expect_integer_arg(runtime, "stream_socket_pair", 2, "type", args[1], line);
+    int64_t protocol = ptn_internal_expect_integer_arg(runtime, "stream_socket_pair", 3, "protocol", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)domain;
+    (void)type;
+    (void)protocol;
+    ptn_emit_warning(&runtime->diagnostics, "stream_socket_pair(): not supported on this platform", line);
+    return ptn_bool(0);
+#else
+    int descriptors[2] = { -1, -1 };
+    if (socketpair((int)domain, (int)type, (int)protocol, descriptors) != 0) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "unable to create socket pair: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        return ptn_bool(0);
+    }
+    FILE *left = fdopen(descriptors[0], "r+");
+    FILE *right = fdopen(descriptors[1], "r+");
+    if (left == NULL || right == NULL) {
+        if (left != NULL) {
+            fclose(left);
+        } else if (descriptors[0] >= 0) {
+            close(descriptors[0]);
+        }
+        if (right != NULL) {
+            fclose(right);
+        } else if (descriptors[1] >= 0) {
+            close(descriptors[1]);
+        }
+        ptn_emit_warning(&runtime->diagnostics, "stream_socket_pair(): unable to open socket streams", line);
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key(0),
+        ptn_resource(ptn_resource_new_stream(left, "php://fd/socketpair/0", "r+"))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key(1),
+        ptn_resource(ptn_resource_new_stream(right, "php://fd/socketpair/1", "r+"))
+    );
+    return result;
+#endif
+}
+
+static PtnValue ptn_internal_stream_socket_shutdown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_shutdown", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t how = ptn_internal_expect_integer_arg(runtime, "stream_socket_shutdown", 2, "mode", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    (void)resource;
+    (void)how;
+    return ptn_bool(0);
+#else
+    if (resource->stream == NULL) {
+        errno = EBADF;
+        return ptn_bool(0);
+    }
+    if (fflush(resource->stream) != 0) {
+        return ptn_bool(0);
+    }
+    int descriptor = fileno(resource->stream);
+    if (descriptor < 0) {
+        return ptn_bool(0);
+    }
+    return ptn_bool(shutdown(descriptor, (int)how) == 0);
+#endif
+}
+
+static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "gzopen", 1, "filename", args[0], line);
+    if (path == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand mode_operand = ptn_internal_expect_string_arg(runtime, "gzopen", 2, "mode", args[1], line);
+    char *mode = ptn_path_operand_to_c_string(mode_operand);
+    ptn_string_operand_free(mode_operand);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        free(mode);
+        return ptn_null();
+    }
+    if (mode == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "gzopen(): Argument #2 ($mode) must not contain any null bytes", line);
+        free(path);
+        return ptn_bool(0);
+    }
+    PtnValue stream;
+    int opened = ptn_try_open_zlib_path_stream(path, path, mode, &stream);
+    if (opened > 0) {
+        free(mode);
+        free(path);
+        return stream;
+    }
+    char detail[192];
+    int needed = snprintf(
+        detail,
+        sizeof(detail),
+        "%s: %s",
+        opened == 0 ? "Failed to open stream" : "Failed to read stream",
+        strerror(errno)
+    );
+    if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_file_warning(runtime, "gzopen", path, detail, line);
+    free(mode);
+    free(path);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_gzread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_fread(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_gzclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_fclose(runtime, argc, args, line);
+}
+
 enum {
     PTN_PHAR_FORMAT_PHAR = 1,
     PTN_PHAR_FORMAT_TAR = 2,
@@ -105780,6 +106321,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
+        { "gzclose", 1, 1, ptn_internal_gzclose },
+        { "gzopen", 2, 2, ptn_internal_gzopen },
+        { "gzread", 2, 2, ptn_internal_gzread },
         { "getservbyname", 2, 2, ptn_internal_getservbyname },
         { "getservbyport", 2, 2, ptn_internal_getservbyport },
         { "gettype", 1, 1, ptn_internal_gettype },
@@ -106185,6 +106729,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
+        { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
         { "strip_tags", 1, 2, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripos", 2, 3, ptn_internal_stripos },
