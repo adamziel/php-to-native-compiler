@@ -13543,6 +13543,63 @@ echo "done\n";
 }
 
 #[test]
+fn compile_serializable_deprecation_skips_abstract_bases_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-abstract-base-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-abstract-base-deprecation.php");
+    let output = root.join("serializable-abstract-base-deprecation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+interface I extends Serializable {}
+
+abstract class A implements Serializable {}
+
+class C extends A implements I {
+    public function serialize(): string { return ""; }
+    public function unserialize(string $data): void {}
+}
+
+class D extends A implements I {
+    public function serialize(): string { return ""; }
+    public function unserialize(string $data): void {}
+    public function __serialize(): array { return []; }
+    public function __unserialize(array $data): void {}
+}
+
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        !stdout.contains("Deprecated: A implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Deprecated: C implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Deprecated: D implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_magic_callbacks_after_extra_data_warning_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-magic-callback-order");
     fs::create_dir_all(&root).unwrap();

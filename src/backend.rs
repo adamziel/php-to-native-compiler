@@ -23380,6 +23380,7 @@ fn collect_module_serializable_deprecations(module: &Module) -> Vec<Serializable
                     .iter()
                     .any(|method| method.name.eq_ignore_ascii_case("__unserialize"));
             !class.is_interface
+                && !class.is_abstract
                 && !has_modern_serialization_hooks
                 && class_transitive_interfaces(class, &module.classes)
                     .into_iter()
