@@ -37160,6 +37160,87 @@ echo $dest->saveXML();
 }
 
 #[test]
+fn compile_dom_namespace_lookup_and_xmlns_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-namespace-lookup-xmlns-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-namespace-lookup-xmlns-serialization.php");
+    let output = root.join("dom-namespace-lookup-xmlns-serialization-bin");
+    fs::write(
+        &input,
+        "<?php
+$doc = new DOMDocument;
+$doc->loadXML('<?xml version=\"1.0\"?><container xmlns=\"http://php.net\"/>');
+$doc->documentElement->appendChild($doc->createElementNS('http://php.net', 'example'));
+echo $doc->saveXML(), \"\\n\";
+
+$dom = Dom\\XMLDocument::createFromString('<?xml version=\"1.0\"?><!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:x=\"test\"><body><svg:svg xmlns:svg=\"http://www.w3.org/2000/svg\" height=\"1\"/><p xmlns:y=\"test\"><x/></p></body></html>');
+$body = $dom->getElementsByTagName('body')[0];
+$body->setAttribute('xmlns:a', 'urn:a');
+var_dump($dom->doctype->lookupPrefix(''));
+var_dump($body->lookupPrefix('urn:a'));
+$svg = $dom->getElementsByTagNameNS('*', 'svg')[0];
+var_dump($svg->lookupPrefix('http://www.w3.org/2000/svg'));
+foreach (['x', 'p', 'html'] as $name) {
+    $node = $dom->getElementsByTagNameNS('*', $name)[0];
+    var_dump($node->lookupPrefix('test'));
+}
+
+$dom = Dom\\XMLDocument::createEmpty();
+$rootElement = $dom->appendChild($dom->createElementNS('http://www.w3.org/XML/1998/namespace', 'xml:test'));
+$rootElement->appendChild($dom->createElementNS('http://www.w3.org/XML/1998/namespace', 'xml:child'));
+echo $dom->saveXml(), \"\\n\";
+
+$dom = Dom\\XMLDocument::createFromString('<root/>');
+$dom->documentElement->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xml', 'http://www.w3.org/XML/1998/namespace');
+echo $dom->saveXml(), \"\\n\";
+
+$dom = Dom\\XMLDocument::createFromString('<root><x xmlns=\"\"/></root>');
+var_dump($dom->documentElement->innerHTML);
+
+$dom = Dom\\XMLDocument::createFromString('<root><x/></root>');
+$x = $dom->documentElement->firstChild;
+$x->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:a', '');
+try {
+    var_dump($dom->documentElement->innerHTML);
+} catch (DOMException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns=\"http://php.net\"><example/></container>\n",
+            "\n",
+            "NULL\n",
+            "NULL\n",
+            "string(3) \"svg\"\n",
+            "string(1) \"y\"\n",
+            "string(1) \"y\"\n",
+            "string(1) \"x\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<xml:test><xml:child/></xml:test>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<root/>\n",
+            "string(13) \"<x xmlns=\"\"/>\"\n",
+            "The resulting XML serialization is not well-formed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_lookup_prefix_method"));
+    assert!(c_source.contains("ptn_dom_element_inner_html_value"));
+}
+
+#[test]
 fn compile_curl_setopt_callback_option_surface_to_native_binary() {
     let root = temp_dir("ptn-native-curl-setopt-callback-option");
     fs::create_dir_all(&root).unwrap();
