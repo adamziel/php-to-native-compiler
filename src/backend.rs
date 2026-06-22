@@ -28855,6 +28855,16 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         name: "qualifiedName",
         default: None,
     }];
+    static DOM_REGISTER_NODE_CLASS_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "baseClass",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "extendedClass",
+            default: None,
+        },
+    ];
     static XMLREADER_FROM_STREAM_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "stream",
@@ -28961,6 +28971,8 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         || name.eq_ignore_ascii_case("getAttributeNode")
     {
         Some(&DOM_ATTRIBUTE_NAME_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("registerNodeClass") {
+        Some(&DOM_REGISTER_NODE_CLASS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fromStream")
         || name.eq_ignore_ascii_case("XMLReader::fromStream")
     {
