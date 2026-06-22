@@ -114162,6 +114162,13 @@ static PtnValue ptn_reflection_function_static_variables(
     PtnRuntime *runtime,
     PtnFunctionMetadata metadata
 ) {
+    if (metadata.has_user_function_index) {
+        return ptn_runtime_static_local_values(
+            runtime,
+            metadata.user_function_index,
+            metadata
+        );
+    }
     return metadata.static_variables_provider == NULL
         ? ptn_array_from_literal_entries(0, NULL)
         : metadata.static_variables_provider(runtime);

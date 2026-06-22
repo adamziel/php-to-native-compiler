@@ -5577,6 +5577,8 @@ fn emit_function_metadata_source_suffix(
     } else {
         out.push_str(&function_static_variables_provider_name(function_index));
     }
+    out.push_str("), ");
+    out.push_str(&function_index.to_string());
     out.push(')');
 }
 
@@ -5666,7 +5668,7 @@ fn emit_user_function_dispatch(
             &function.parameters,
         );
         out.push_str(
-            "        return ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
+            "        return ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
         );
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
@@ -5705,7 +5707,7 @@ fn emit_user_function_dispatch(
                 &function.parameters,
             );
             out.push_str(
-                "        return ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
+                "        return ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
             );
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -31314,6 +31316,17 @@ impl ValueEmitter {
         None
     }
 
+    fn class_constant_message_class_name<'a>(&self, class_name: &'a str) -> Option<&'a str> {
+        if class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static")
+            || class_name.eq_ignore_ascii_case("parent")
+        {
+            Some(class_name)
+        } else {
+            None
+        }
+    }
+
     fn class_name_fetch_uses_runtime_scope(&self, class_name: &str) -> bool {
         if class_name.eq_ignore_ascii_case("static") {
             return true;
@@ -37603,7 +37616,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str(
-            "\", ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"{closure}\", 0, ",
+            "\", ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"{closure}\", 0, ",
         );
         out.push_str(&function.parameters.len().to_string());
         out.push_str(", ");
@@ -39790,11 +39803,25 @@ impl ValueEmitter {
                 } else {
                     out.push_str("        ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
-                    out.push_str(&result_temp);
-                    out.push_str("_class_name, \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\", ");
+                    if let Some(message_class_name) =
+                        self.class_constant_message_class_name(class_name)
+                    {
+                        out.push_str(
+                            " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, ",
+                        );
+                        out.push_str(&result_temp);
+                        out.push_str("_class_name, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(message_class_name));
+                        out.push_str("\", ");
+                    } else {
+                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
+                        out.push_str(&result_temp);
+                        out.push_str("_class_name, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", ");
+                    }
                     self.emit_access_scope(out);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
@@ -39838,11 +39865,25 @@ impl ValueEmitter {
                     out.push_str(");\n");
                     out.push_str("    }\n");
                 } else {
-                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
-                    out.push_str(&c_string(&resolved_class_name));
-                    out.push_str("\", \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\", ");
+                    if let Some(message_class_name) =
+                        self.class_constant_message_class_name(class_name)
+                    {
+                        out.push_str(
+                            " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&resolved_class_name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(message_class_name));
+                        out.push_str("\", ");
+                    } else {
+                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                        out.push_str(&c_string(&resolved_class_name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", ");
+                    }
                     self.emit_access_scope(out);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
@@ -47126,6 +47167,24 @@ fn c_property_default_value_for_class(
     };
     if name.eq_ignore_ascii_case("class") {
         return format!("ptn_string(\"{}\")", c_string(lookup_class_name));
+    }
+    let message_class_name = if class_name.eq_ignore_ascii_case("self")
+        || class_name.eq_ignore_ascii_case("static")
+        || class_name.eq_ignore_ascii_case("parent")
+    {
+        Some(class_name.as_str())
+    } else {
+        None
+    };
+    if let Some(message_class_name) = message_class_name {
+        return format!(
+            "ptn_runtime_read_class_constant_with_scope_message_class(runtime, \"{}\", \"{}\", \"{}\", \"{}\", {})",
+            c_string(lookup_class_name),
+            c_string(name),
+            c_string(message_class_name),
+            c_string(&declaring_class.name),
+            line
+        );
     }
     format!(
         "ptn_runtime_read_class_constant_with_scope(runtime, \"{}\", \"{}\", \"{}\", {})",

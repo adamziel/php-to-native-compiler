@@ -701,6 +701,8 @@ typedef struct {
     size_t end_line;
     const char *doc_comment;
     PtnFunctionStaticVariablesProvider static_variables_provider;
+    int has_user_function_index;
+    size_t user_function_index;
 } PtnFunctionMetadata;
 
 struct PtnClosure {
@@ -1681,6 +1683,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.end_line = 0;
     metadata.doc_comment = NULL;
     metadata.static_variables_provider = NULL;
+    metadata.has_user_function_index = 0;
+    metadata.user_function_index = 0;
     return metadata;
 }
 
@@ -1717,6 +1721,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.end_line = 0;
     metadata.doc_comment = NULL;
     metadata.static_variables_provider = NULL;
+    metadata.has_user_function_index = 0;
+    metadata.user_function_index = 0;
     return metadata;
 }
 
@@ -1743,6 +1749,15 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_source(
     metadata.end_line = end_line;
     metadata.doc_comment = doc_comment;
     metadata.static_variables_provider = static_variables_provider;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_user_function_index(
+    PtnFunctionMetadata metadata,
+    size_t user_function_index
+) {
+    metadata.has_user_function_index = 1;
+    metadata.user_function_index = user_function_index;
     return metadata;
 }
 
