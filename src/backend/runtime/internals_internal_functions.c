@@ -107462,6 +107462,7 @@ static int ptn_generator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "send")
         || ptn_ascii_case_equal(method_name, "throw")
         || ptn_ascii_case_equal(method_name, "valid");
 }
@@ -108751,6 +108752,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "key",
             "next",
             "rewind",
+            "send",
+            "throw",
             "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));

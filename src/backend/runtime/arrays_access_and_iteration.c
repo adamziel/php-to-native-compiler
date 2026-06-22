@@ -8511,6 +8511,21 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->output_chunks != NULL) {
         ptn_array_free(generator->output_chunks);
     }
+    if (generator->send_call_positions != NULL) {
+        ptn_array_free(generator->send_call_positions);
+    }
+    if (generator->send_call_names != NULL) {
+        ptn_array_free(generator->send_call_names);
+    }
+    if (generator->send_call_arguments != NULL) {
+        ptn_array_free(generator->send_call_arguments);
+    }
+    if (generator->send_call_yield_indexes != NULL) {
+        ptn_array_free(generator->send_call_yield_indexes);
+    }
+    if (generator->send_call_lines != NULL) {
+        ptn_array_free(generator->send_call_lines);
+    }
     free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
     free(generator);
@@ -8540,12 +8555,22 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue reference_notice_lines = ptn_array_from_literal_entries(0, NULL);
     PtnValue delegate_sources = ptn_array_from_literal_entries(0, NULL);
     PtnValue output_chunks = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_positions = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_names = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_arguments = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_yield_indexes = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_lines = ptn_array_from_literal_entries(0, NULL);
     generator->values = values.as.array;
     generator->keys = keys.as.array;
     generator->return_value = ptn_null();
     generator->reference_notice_lines = reference_notice_lines.as.array;
     generator->delegate_sources = delegate_sources.as.array;
     generator->output_chunks = output_chunks.as.array;
+    generator->send_call_positions = send_call_positions.as.array;
+    generator->send_call_names = send_call_names.as.array;
+    generator->send_call_arguments = send_call_arguments.as.array;
+    generator->send_call_yield_indexes = send_call_yield_indexes.as.array;
+    generator->send_call_lines = send_call_lines.as.array;
     ptn_string_buffer_init(&generator->pending_output);
     generator->closure_owner = ptn_null();
     if (
@@ -9067,6 +9092,203 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         ptn_generator_skip_exhausted_delegates(generator);
     }
     return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_generator_array_entry_value(PtnArray *array, size_t index) {
+    if (array == NULL || index >= array->len) {
+        return ptn_null();
+    }
+    return array->entries[index].value;
+}
+
+static PTN_UNUSED int ptn_generator_entry_matches_position(PtnArray *positions, size_t index, size_t position) {
+    if (positions == NULL || index >= positions->len) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(positions->entries[index].value);
+    return value.type == PTN_INT && value.as.integer >= 0 && (size_t)value.as.integer == position;
+}
+
+static PTN_UNUSED void ptn_generator_register_send_call(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t yield_argc,
+    const size_t *yield_indexes,
+    size_t line
+) {
+    PtnGenerator *generator = runtime == NULL ? NULL : runtime->current_generator;
+    if (
+        generator == NULL ||
+        generator->values == NULL ||
+        generator->send_call_positions == NULL ||
+        generator->send_call_names == NULL ||
+        generator->send_call_arguments == NULL ||
+        generator->send_call_yield_indexes == NULL ||
+        generator->send_call_lines == NULL ||
+        generator->values->len == 0
+    ) {
+        return;
+    }
+    if (
+        !ptn_array_append_key_available(runtime, generator->send_call_positions) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_names) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_arguments) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_yield_indexes) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_lines)
+    ) {
+        return;
+    }
+
+    PtnValue arguments = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_array_set_entry(arguments.as.array, ptn_array_int_key((int64_t)i), ptn_value_clone(args[i]));
+    }
+    PtnValue indexes = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < yield_argc; i++) {
+        ptn_array_set_entry(indexes.as.array, ptn_array_int_key((int64_t)i), ptn_int((int64_t)yield_indexes[i]));
+    }
+
+    PtnArrayKey key = ptn_array_int_key(generator->send_call_positions->next_auto_key);
+    ptn_array_set_entry(
+        generator->send_call_positions,
+        key,
+        ptn_int((int64_t)(generator->values->len - 1))
+    );
+    ptn_array_set_entry(
+        generator->send_call_names,
+        ptn_array_int_key(generator->send_call_names->next_auto_key),
+        ptn_string(function_name)
+    );
+    ptn_array_set_entry(
+        generator->send_call_arguments,
+        ptn_array_int_key(generator->send_call_arguments->next_auto_key),
+        arguments
+    );
+    ptn_array_set_entry(
+        generator->send_call_yield_indexes,
+        ptn_array_int_key(generator->send_call_yield_indexes->next_auto_key),
+        indexes
+    );
+    ptn_array_set_entry(
+        generator->send_call_lines,
+        ptn_array_int_key(generator->send_call_lines->next_auto_key),
+        ptn_int((int64_t)line)
+    );
+}
+
+static PTN_UNUSED void ptn_generator_apply_sent_value_to_call_args(
+    PtnArray *arguments,
+    PtnArray *yield_indexes,
+    PtnValue sent_value
+) {
+    if (arguments == NULL || yield_indexes == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < yield_indexes->len; i++) {
+        PtnValue index_value = ptn_value_deref(yield_indexes->entries[i].value);
+        if (index_value.type != PTN_INT || index_value.as.integer < 0) {
+            continue;
+        }
+        size_t argument_index = (size_t)index_value.as.integer;
+        if (argument_index >= arguments->len) {
+            continue;
+        }
+        ptn_value_destroy(&arguments->entries[argument_index].value);
+        arguments->entries[argument_index].value = ptn_value_clone_deref(sent_value);
+    }
+}
+
+static PTN_UNUSED int ptn_generator_yield_indexes_contains(PtnArray *yield_indexes, size_t argument_index) {
+    if (yield_indexes == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < yield_indexes->len; i++) {
+        PtnValue index_value = ptn_value_deref(yield_indexes->entries[i].value);
+        if (
+            index_value.type == PTN_INT &&
+            index_value.as.integer >= 0 &&
+            (size_t)index_value.as.integer == argument_index
+        ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line) {
+    PtnGenerator *generator = ptn_generator_from_value(receiver);
+    if (!ptn_generator_position_valid(generator)) {
+        ptn_generator_flush_pending_output(runtime, generator);
+        return ptn_null();
+    }
+
+    PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
+    if (delegate_source != NULL) {
+        PtnValue source_receiver = ptn_value_clone_deref(*delegate_source);
+        PtnValue result = ptn_generator_send(runtime, source_receiver, sent_value, line);
+        PtnGenerator *source_generator = ptn_generator_from_value(source_receiver);
+        int source_still_valid = ptn_generator_position_valid(source_generator);
+        ptn_value_destroy(&source_receiver);
+        if (source_still_valid) {
+            return result;
+        }
+        ptn_value_destroy(&result);
+    }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (generator->send_call_positions != NULL) {
+        for (size_t i = 0; i < generator->send_call_positions->len; i++) {
+            if (!ptn_generator_entry_matches_position(generator->send_call_positions, i, generator->position)) {
+                continue;
+            }
+            PtnValue name_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_names, i));
+            PtnValue arguments_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_arguments, i));
+            PtnValue indexes_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_yield_indexes, i));
+            PtnValue line_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_lines, i));
+            if (name_value.type != PTN_STRING || arguments_value.type != PTN_ARRAY || indexes_value.type != PTN_ARRAY) {
+                continue;
+            }
+            size_t call_line = line;
+            if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
+                call_line = (size_t)line_value.as.integer;
+            }
+            PtnArray *arguments = arguments_value.as.array;
+            PtnArray *yield_indexes = indexes_value.as.array;
+            size_t argc = arguments == NULL ? 0 : arguments->len;
+            PtnValue *call_args = NULL;
+            if (argc > 0) {
+                call_args = malloc(sizeof(PtnValue) * argc);
+                if (call_args == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                for (size_t arg_index = 0; arg_index < argc; arg_index++) {
+                    call_args[arg_index] = ptn_generator_yield_indexes_contains(yield_indexes, arg_index)
+                        ? ptn_value_share(sent_value)
+                        : ptn_value_share(arguments->entries[arg_index].value);
+                }
+            }
+            char *function_name = ptn_value_to_string(name_value);
+            PtnValue call_result = ptn_call_function(runtime, function_name, argc, call_args, call_line);
+            free(function_name);
+            ptn_value_destroy(&call_result);
+            for (size_t arg_index = 0; arg_index < argc; arg_index++) {
+                ptn_value_drop(&call_args[arg_index]);
+            }
+            free(call_args);
+            if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+    }
+#else
+    (void)sent_value;
+#endif
+
+    PtnValue advanced = ptn_generator_next(runtime, receiver, line);
+    ptn_value_destroy(&advanced);
+    return ptn_generator_current(runtime, receiver, line);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line) {

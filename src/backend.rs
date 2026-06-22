@@ -19647,6 +19647,13 @@ fn emit_method_dispatch(
     out.push_str("            (void)args;\n");
     out.push_str("            return ptn_generator_rewind(runtime, resolved, line);\n");
     out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"send\")) {\n");
+    out.push_str("            if (argc != 1) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::send() expects exactly 1 argument\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_generator_send(runtime, resolved, args[0], line);\n");
+    out.push_str("        }\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"throw\")) {\n");
     out.push_str("            if (argc != 1) {\n");
     out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::throw() expects exactly 1 argument\");\n");
@@ -26250,6 +26257,9 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         );
     }
     for function in &module.functions {
+        if function.is_generator {
+            requirements.internal_function_dispatch = true;
+        }
         if function_has_sensitive_parameters(function) {
             requirements.internal_function_dispatch = true;
         }
@@ -30184,6 +30194,21 @@ struct DirectUserCall {
     display_name: String,
     class_name: Option<String>,
     method_name: Option<String>,
+}
+
+fn direct_yield_argument_indexes(arguments: &[ValueExpr]) -> Option<Vec<usize>> {
+    let indexes: Vec<usize> = arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| {
+            matches!(argument, ValueExpr::Yield { .. }).then_some(index)
+        })
+        .collect();
+    if indexes.len() == 1 {
+        Some(indexes)
+    } else {
+        None
+    }
 }
 
 fn function_is_trait_body(function: &FunctionDecl) -> bool {
@@ -44678,6 +44703,17 @@ impl ValueEmitter {
     ) -> String {
         let has_named_arguments = argument_names.iter().any(Option::is_some);
         let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
+        if discarded
+            && self.current_function_is_generator
+            && !has_named_arguments
+            && !has_unpacked_arguments
+        {
+            if let Some(result_temp) =
+                self.emit_generator_send_deferred_internal_call(out, name, arguments, line)
+            {
+                return result_temp;
+            }
+        }
         if !has_named_arguments
             && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("clone")
@@ -45289,6 +45325,73 @@ impl ValueEmitter {
             }
         }
         result_temp
+    }
+
+    fn emit_generator_send_deferred_internal_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> Option<String> {
+        let yield_indexes = direct_yield_argument_indexes(arguments)?;
+        let resolved_name = self.resolved_function_call_name(name);
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let yield_indexes_temp = self.next_temp();
+        out.push_str("    const size_t ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str("[] = { ");
+        for (index, yield_index) in yield_indexes.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&yield_index.to_string());
+        }
+        out.push_str(" };\n");
+
+        out.push_str("    ptn_generator_register_send_call(&runtime, \"");
+        out.push_str(&c_string(&resolved_name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&yield_indexes.len().to_string());
+        out.push_str(", ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        Some(result_temp)
     }
 
     fn emit_declared_enum_static_method_call(

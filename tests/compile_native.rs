@@ -17590,6 +17590,46 @@ var_dump($g->current());
 }
 
 #[test]
+fn compile_generator_send_into_yield_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-send-yield-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-send-yield-argument.php");
+    let output = root.join("generator-send-yield-argument-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_sent($value) {
+    var_dump($value);
+}
+
+function gen() {
+    dump_sent(yield);
+}
+
+$generator = gen();
+var_dump(method_exists($generator, "send"));
+var_dump($generator->send(1));
+var_dump($generator->valid());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(1)\nNULL\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_register_send_call"));
+    assert!(c_source.contains("ptn_generator_send"));
+}
+
+#[test]
 fn compile_generator_yield_from_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from");
     fs::create_dir_all(&root).unwrap();

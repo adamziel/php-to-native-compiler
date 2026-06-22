@@ -911,6 +911,11 @@ struct PtnGenerator {
     PtnArray *reference_notice_lines;
     PtnArray *delegate_sources;
     PtnArray *output_chunks;
+    PtnArray *send_call_positions;
+    PtnArray *send_call_names;
+    PtnArray *send_call_arguments;
+    PtnArray *send_call_yield_indexes;
+    PtnArray *send_call_lines;
     PtnStringBuffer pending_output;
     PtnValue closure_owner;
     size_t position;
@@ -1591,9 +1596,14 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
 static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
+#endif
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED PtnStringOperand ptn_runtime_global_constant_key_len(const char *name, size_t name_len);
 static PTN_UNUSED char *ptn_runtime_global_constant_key(const char *name);
