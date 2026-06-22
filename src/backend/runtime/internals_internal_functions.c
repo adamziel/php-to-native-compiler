@@ -2221,12 +2221,27 @@ static PTN_UNUSED int ptn_direct_var_dump_simplexml_object(
 #endif
 }
 
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_direct_var_dump_dom_token_list_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    (void)runtime;
+    (void)object;
+    (void)indent;
+    (void)seen;
+    return 0;
+}
+#else
 static PTN_UNUSED int ptn_direct_var_dump_dom_token_list_object(
     PtnRuntime *runtime,
     PtnObject *object,
     size_t indent,
     PtnDirectValueDumpSeen *seen
 );
+#endif
 
 static PTN_UNUSED size_t ptn_direct_object_initialized_property_dump_count(PtnObject *object) {
     if (object == NULL || object->properties == NULL) {
