@@ -110087,6 +110087,45 @@ static PtnValue ptn_reflection_class_extension(PtnRuntime *runtime, const char *
         : ptn_reflection_extension_object_from_name(runtime, extension_name);
 }
 
+static int ptn_reflection_class_declared_clone_is_public_concrete(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    const char *declaring_class = class_name;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    int is_abstract = 0;
+    PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
+        ? runtime
+        : runtime->lifecycle_root;
+    if (root != NULL &&
+        root->declared_method_visibility_metadata != NULL &&
+        root->declared_method_visibility_metadata(
+            class_name,
+            "__clone",
+            &declaring_class,
+            &visibility,
+            &is_abstract
+        )) {
+        return visibility == PTN_PROPERTY_PUBLIC && !is_abstract;
+    }
+    return 1;
+}
+
+static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *class_name) {
+    if (ptn_reflection_class_is_interface_name(class_name) ||
+        ptn_declared_trait_exists(class_name) ||
+        ptn_declared_class_is_abstract(class_name) ||
+        ptn_declared_class_is_enum(class_name) ||
+        ptn_internal_reflection_metadata_class_exists(class_name)) {
+        return 0;
+    }
+    if (ptn_internal_class_name_is_xml_writer(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
+        return 0;
+    }
+    return ptn_reflection_class_declared_clone_is_public_concrete(runtime, class_name);
+}
+
 static void ptn_reflection_class_append_builtin_constants(PtnValue result, const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("STD_PROP_LIST"), ptn_int(1));
@@ -111800,12 +111839,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
-            : ptn_bool(
-                !ptn_reflection_class_is_interface_name(class_name) &&
-                !ptn_declared_trait_exists(class_name) &&
-                !ptn_declared_class_is_abstract(class_name) &&
-                !ptn_internal_reflection_metadata_class_exists(class_name)
-            );
+            : ptn_bool(ptn_reflection_class_is_cloneable(runtime, class_name));
     }
     if (ptn_ascii_case_equal(name, "isIterable") || ptn_ascii_case_equal(name, "isIterateable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);

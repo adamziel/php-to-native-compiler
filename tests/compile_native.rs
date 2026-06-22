@@ -71548,6 +71548,52 @@ try {
 }
 
 #[test]
+fn compile_reflection_class_is_cloneable_respects_clone_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-is-cloneable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-is-cloneable.php");
+    let output = root.join("reflection-class-is-cloneable-bin");
+    fs::write(
+        &input,
+        "<?php
+class PlainCloneable {}
+class PrivateClone {
+    private function __clone() {}
+}
+class ProtectedClone {
+    protected function __clone() {}
+}
+
+foreach ([PlainCloneable::class, PrivateClone::class, ProtectedClone::class, XMLWriter::class] as $class) {
+    var_dump((new ReflectionClass($class))->isCloneable());
+}
+try {
+    clone new XMLWriter();
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "Error: Trying to clone an uncloneable object of class XMLWriter\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_clone_with_property_updates_to_native_binary() {
     let root = temp_dir("ptn-native-clone-with-property-updates");
     fs::create_dir_all(&root).unwrap();
