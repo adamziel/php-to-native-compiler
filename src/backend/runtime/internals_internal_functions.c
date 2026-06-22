@@ -6369,6 +6369,20 @@ static void ptn_phar_archive_set_entry(
 );
 static int ptn_phar_archive_retain_entry(PtnPharArchiveState *archive, const char *entry_name);
 static void ptn_phar_archive_release_entry(PtnPharArchiveState *archive, const char *entry_name);
+static int ptn_phar_archive_copy_entry(
+    PtnPharArchiveState *archive,
+    const char *source_name,
+    const char *dest_name
+);
+static void ptn_phar_archive_set_manifest_entry(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    const unsigned char *metadata,
+    size_t metadata_len,
+    uint32_t flags
+);
 static void ptn_spl_file_info_init_data(
     PtnSplFileInfoData *data,
     char *path,
@@ -93318,6 +93332,40 @@ static void ptn_phar_archive_set_entry_metadata(
 
 static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const char *name);
 
+static int ptn_phar_archive_copy_entry(
+    PtnPharArchiveState *archive,
+    const char *source_name,
+    const char *dest_name
+) {
+    size_t source_index = 0;
+    if (archive == NULL ||
+        source_name == NULL ||
+        dest_name == NULL ||
+        !ptn_phar_archive_find_entry_index(archive, source_name, &source_index) ||
+        ptn_phar_archive_find_entry_index(archive, dest_name, NULL)) {
+        return 0;
+    }
+    PtnPharArchiveEntry *source = &archive->entries[source_index];
+    if (ptn_phar_archive_entry_is_dir(source)) {
+        return 0;
+    }
+    const unsigned char *content = source->content;
+    size_t content_len = source->content_len;
+    const unsigned char *metadata = source->metadata;
+    size_t metadata_len = source->metadata_len;
+    uint32_t flags = source->flags;
+    ptn_phar_archive_set_manifest_entry(
+        archive,
+        dest_name,
+        content,
+        content_len,
+        metadata,
+        metadata_len,
+        flags
+    );
+    return 1;
+}
+
 static void ptn_phar_archive_set_manifest_entry(
     PtnPharArchiveState *archive,
     const char *name,
@@ -94282,6 +94330,25 @@ static PtnValue ptn_phar_call_method(
         int removed = ptn_phar_archive_delete_entry(data->archive, entry_name);
         free(entry_name);
         return ptn_bool(removed);
+    }
+    if (ptn_ascii_case_equal(name, "copy")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::copy() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        char *source_name = ptn_phar_string_arg(runtime, "Phar::copy", 1, "from", args[0], line);
+        if (source_name == NULL) {
+            return ptn_null();
+        }
+        char *dest_name = ptn_phar_string_arg(runtime, "Phar::copy", 2, "to", args[1], line);
+        if (dest_name == NULL) {
+            free(source_name);
+            return ptn_null();
+        }
+        int copied = ptn_phar_archive_copy_entry(data->archive, source_name, dest_name);
+        free(dest_name);
+        free(source_name);
+        return ptn_bool(copied);
     }
     if (ptn_ascii_case_equal(name, "getMetadata")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
@@ -106175,6 +106242,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "buildFromDirectory")
             || ptn_ascii_case_equal(method_name, "buildFromIterator")
             || ptn_ascii_case_equal(method_name, "compressFiles")
+            || ptn_ascii_case_equal(method_name, "copy")
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "delete")
             || ptn_ascii_case_equal(method_name, "decompressFiles")
@@ -107563,6 +107631,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "canCompress");
         ptn_append_method_name(result, &index, "canWrite");
         ptn_append_method_name(result, &index, "compressFiles");
+        ptn_append_method_name(result, &index, "copy");
         ptn_append_method_name(result, &index, "current");
         ptn_append_method_name(result, &index, "delete");
         ptn_append_method_name(result, &index, "decompressFiles");

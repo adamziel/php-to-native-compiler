@@ -37267,6 +37267,10 @@ fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
 $phar = new Phar(__FILE__);\n\
 var_dump($phar->getMetadata());\n\
 echo $phar[\"test.txt\"]->getContent();\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+var_dump($phar->copy(\"test.txt\", \"copied.txt\"));\n\
+var_dump(isset($phar[\"copied.txt\"]));\n\
+echo $phar[\"copied.txt\"]->getContent();\n\
 $phar[\"test.txt\"] = \"changed\\n\";\n\
 echo $phar[\"test.txt\"]->getContent();\n\
 mkdir(\"phar://\" . __FILE__ . \"/dir\");\n\
@@ -37288,11 +37292,12 @@ __HALT_COMPILER(); ?>\r\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(2) \"hi\"\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
+        "string(2) \"hi\"\nhi\nbool(false)\nbool(true)\nbool(true)\nhi\nchanged\nbool(true)\nbool(true)\nchanged\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_copy_entry"));
     assert!(c_source.contains("ptn_phar_manifest_read_u16"));
     assert!(c_source.contains("ptn_phar_uri_read_entry"));
     assert!(c_source.contains("ptn_internal_phar_mount"));
