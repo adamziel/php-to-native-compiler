@@ -9451,8 +9451,12 @@ static int ptn_serialize_declared_magic_method_exists(
 static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
     PtnObject *object,
     const char *name,
-    size_t name_len
+    size_t name_len,
+    const PtnObjectPropertyMetadata **metadata_out
 ) {
+    if (metadata_out != NULL) {
+        *metadata_out = NULL;
+    }
     if (object == NULL || object->properties == NULL || name == NULL) {
         return NULL;
     }
@@ -9483,6 +9487,9 @@ static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
     PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
     ptn_array_key_free(key);
     if (entry != NULL) {
+        if (metadata_out != NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
+            *metadata_out = ptn_object_property_metadata(object, entry->key.as.string);
+        }
         return entry;
     }
 
@@ -9505,10 +9512,10 @@ static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
              memcmp(metadata->declaring_class, declaring_class, declaring_len) != 0)) {
             continue;
         }
-        entry = ptn_object_property_entry_for_metadata(object, metadata);
-        if (entry != NULL) {
-            return entry;
+        if (metadata_out != NULL) {
+            *metadata_out = metadata;
         }
+        return ptn_object_property_entry_for_metadata(object, metadata);
     }
     return NULL;
 }
@@ -9681,9 +9688,19 @@ static int ptn_serialize_append_sleep_object(
                 continue;
             }
         }
+        const PtnObjectPropertyMetadata *property_metadata = NULL;
         PtnArrayEntry *property_entry =
-            ptn_serialize_object_property_entry_for_name(object, name_operand.data, name_operand.len);
+            ptn_serialize_object_property_entry_for_name(
+                object,
+                name_operand.data,
+                name_operand.len,
+                &property_metadata
+            );
         if (property_entry == NULL) {
+            if (ptn_object_property_metadata_dumps_uninitialized(object, property_metadata)) {
+                ptn_string_operand_free(name_operand);
+                continue;
+            }
             char *property_name = ptn_serialize_sleep_display_name(
                 object,
                 NULL,

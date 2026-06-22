@@ -14241,6 +14241,78 @@ try {
 }
 
 #[test]
+fn compile_serialize_sleep_skips_uninitialized_typed_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-sleep-uninitialized-typed-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sleep-uninitialized-typed-properties.php");
+    let output = root.join("sleep-uninitialized-typed-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public int $x;
+    protected int $y;
+    private int $z;
+
+    public function __sleep() {
+        return ['x', 'y', 'z'];
+    }
+
+    public function __set($name, $val) {
+        $this->$name = $val;
+    }
+}
+
+$t = new Test;
+var_dump(serialize($t));
+var_dump(unserialize(serialize($t)) == $t);
+
+$t->x = 1;
+var_dump(unserialize(serialize($t)) == $t);
+
+$t->y = 2;
+var_dump(unserialize(serialize($t)) == $t);
+
+$t->z = 3;
+var_dump(unserialize(serialize($t)) == $t);
+
+var_dump($t);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(15) \"O:4:\"Test\":0:{}\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "object(Test)#1 (3) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "  [\"y\":protected]=>\n",
+            "  int(2)\n",
+            "  [\"z\":\"Test\":private]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_null_payloads_do_not_leave_reference_ids_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-null-reference-ids");
     fs::create_dir_all(&root).unwrap();
