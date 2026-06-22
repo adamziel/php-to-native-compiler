@@ -14672,6 +14672,88 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_runtime_array_path_indirect_receiver_uses_arrayaccess_get(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count
+) {
+    if (segment_count == 0) {
+        return 0;
+    }
+
+    if (!ptn_runtime_is_globals_name(name)) {
+        PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+        PtnValue *slot = ptn_symbols_value_slot(symbols, name);
+        if (slot == NULL) {
+            return 0;
+        }
+        PtnValue slot_value = ptn_value_deref(*slot);
+        return ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet");
+    }
+
+    if (segment_count < 2) {
+        return 0;
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return 0;
+    }
+    PtnValue *slot = ptn_runtime_global_variable_slot(runtime, global_name);
+    free(global_name);
+    if (slot == NULL) {
+        return 0;
+    }
+
+    PtnValue slot_value = ptn_value_deref(*slot);
+    return ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet");
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_indirect_write_receiver(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (ptn_runtime_array_path_indirect_receiver_uses_arrayaccess_get(
+            runtime,
+            name,
+            segments,
+            segment_count
+        )) {
+        return ptn_runtime_array_path_read_for_assign_op(
+            runtime,
+            name,
+            segments,
+            segment_count,
+            line
+        );
+    }
+
+    PtnLookupResult lookup = ptn_runtime_array_path_lookup_quiet(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    if (lookup.exists) {
+        return lookup.value;
+    }
+
+    ptn_value_destroy(&lookup.value);
+    return ptn_runtime_array_path_set_result(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        ptn_null(),
+        line
+    );
+}
+
 static PTN_UNUSED int ptn_runtime_array_path_root_false_converted_for_assign_op(
     PtnRuntime *runtime,
     const char *name,

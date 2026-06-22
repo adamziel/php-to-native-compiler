@@ -63673,6 +63673,63 @@ var_dump($box[0]['name']);
 }
 
 #[test]
+fn compile_arrayaccess_by_ref_indirect_property_write_skips_offset_exists_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-by-ref-indirect-property-write");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-by-ref-indirect-property-write.php");
+    let output = root.join("arrayaccess-by-ref-indirect-property-write-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo implements ArrayAccess {
+    private $bar;
+
+    public function __construct() {
+        $this->bar = new Bar();
+    }
+
+    public function &__get($key) {
+        return $this->bar;
+    }
+
+    public function &offsetGet($offset): mixed {
+        return $this->bar;
+    }
+
+    public function offsetExists($offset): bool {
+        echo \"offsetExists\\n\";
+    }
+
+    public function offsetSet($offset, $value): void {
+    }
+
+    public function offsetUnset($offset): void {
+    }
+}
+
+class Bar {
+    public $items = [];
+}
+
+$foo = new Foo();
+$foo[\"bar\"]->items[] = \"x\";
+echo count($foo->bar->items), \":\", $foo->bar->items[0], \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1:x\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_read_for_indirect_write_receiver"));
+}
+
+#[test]
 fn compile_arrayaccess_compound_assignment_preserves_evaluated_root_to_native_binary() {
     let root = temp_dir("ptn-native-arrayaccess-compound-preserve-root");
     fs::create_dir_all(&root).unwrap();

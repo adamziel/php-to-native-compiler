@@ -30832,43 +30832,17 @@ impl ValueEmitter {
             out.push_str(&target.line.to_string());
             out.push_str(");\n");
         } else {
-            let lookup_temp = self.next_temp();
-            out.push_str("    PtnLookupResult ");
-            out.push_str(&lookup_temp);
-            out.push_str(" = ptn_runtime_array_path_lookup_quiet(&runtime, \"");
-            out.push_str(&c_string(&target.array));
-            out.push_str("\", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&target.line.to_string());
-            out.push_str(");\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(";\n");
-            out.push_str("    if (");
-            out.push_str(&lookup_temp);
-            out.push_str(".exists) {\n");
-            out.push_str("        ");
-            out.push_str(&result_temp);
-            out.push_str(" = ");
-            out.push_str(&lookup_temp);
-            out.push_str(".value;\n");
-            out.push_str("    } else {\n");
-            emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
-            out.push_str("        ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
+            out.push_str(" = ptn_runtime_array_path_read_for_indirect_write_receiver(&runtime, \"");
             out.push_str(&c_string(&target.array));
             out.push_str("\", ");
             out.push_str(&path.name);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
-            out.push_str(", ptn_null(), ");
+            out.push_str(", ");
             out.push_str(&target.line.to_string());
             out.push_str(");\n");
-            out.push_str("    }\n");
         }
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
