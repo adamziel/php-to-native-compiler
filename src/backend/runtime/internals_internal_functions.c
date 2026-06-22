@@ -8703,22 +8703,14 @@ static int ptn_serialize_append_exception(
 static void ptn_serialize_append_array(
     PtnStringBuffer *buffer,
     PtnArray *array,
-    PtnSerializeState *state,
-    int allow_seen_array
+    PtnSerializeState *state
 ) {
-    if (!allow_seen_array && ptn_dump_seen_arrays_contains(&state->seen, array)) {
-        ptn_string_buffer_append(buffer, "N;");
-        return;
-    }
-
     ptn_string_buffer_append_format(buffer, "a:%zu:{", array->len);
-    ptn_dump_seen_arrays_push(&state->seen, array);
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
         ptn_serialize_append_key(buffer, entry->key);
         ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
     }
-    ptn_dump_seen_arrays_pop(&state->seen);
     ptn_string_buffer_append_char(buffer, '}');
 }
 
@@ -9872,7 +9864,7 @@ static int ptn_serialize_append_value_with_id(
             ptn_string_buffer_append(buffer, "i:0;");
             break;
         case PTN_ARRAY:
-            ptn_serialize_append_array(buffer, value.as.array, state, existing_id != 0);
+            ptn_serialize_append_array(buffer, value.as.array, state);
             break;
         case PTN_OBJECT: {
             const char *class_name = value.as.object->class_name;
