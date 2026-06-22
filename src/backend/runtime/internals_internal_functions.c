@@ -106176,6 +106176,7 @@ static int ptn_spl_fixed_array_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getArrayCopy")
         || ptn_ascii_case_equal(method_name, "getIterator")
         || ptn_ascii_case_equal(method_name, "getSize")
+        || ptn_ascii_case_equal(method_name, "jsonSerialize")
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "offsetExists")
@@ -127165,6 +127166,12 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
             ? ptn_null()
             : ptn_spl_fixed_array_storage_to_array(data);
     }
+    if (ptn_ascii_case_equal(name, "jsonSerialize")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFixedArray", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_fixed_array_storage_to_array(data);
+    }
     if (ptn_ascii_case_equal(name, "getIterator")) {
         ptn_reflection_check_no_arguments(runtime, "SplFixedArray", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
@@ -137610,6 +137617,13 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         exists = target_is_object
             ? ptn_declared_class_method_exists(resolved_class_name, method_name)
             : ptn_declared_class_method_exists_from_class_name(resolved_class_name, method_name);
+        const char *parent = ptn_declared_class_parent_name(resolved_class_name);
+        while (!exists && parent != NULL) {
+            if (ptn_internal_class_exists_name(parent)) {
+                exists = ptn_internal_class_method_exists(parent, method_name);
+            }
+            parent = ptn_declared_class_parent_name(parent);
+        }
     }
     if (!exists) {
         exists = ptn_internal_class_method_exists(resolved_class_name, method_name);

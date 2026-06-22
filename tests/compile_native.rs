@@ -581,6 +581,57 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
 }
 
 #[test]
+fn compile_spl_fixed_array_jsonserializable_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-jsonserializable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-jsonserializable.php");
+    let output = root.join("spl-fixed-array-jsonserializable-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyFixed extends SplFixedArray {}
+
+$array = new MyFixed(3);
+$array[0] = 0;
+$array[2] = 2;
+var_dump($array instanceof JsonSerializable);
+var_dump(method_exists($array, "jsonSerialize"));
+var_dump($array->jsonSerialize());
+echo json_encode($array), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(0)\n",
+            "  [1]=>\n",
+            "  NULL\n",
+            "  [2]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "[0,null,2]\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_fixed_array_recursive_export_and_debug_dump_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-recursive-debug");
     fs::create_dir_all(&root).unwrap();
