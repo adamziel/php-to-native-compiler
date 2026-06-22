@@ -52,6 +52,10 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SQLite3",
     "SQLite3Stmt",
     "SQLite3Result",
+    "Random\\Randomizer",
+    "Random\\Engine\\Mt19937",
+    "Random\\Engine\\PcgOneseq128XslRr64",
+    "Random\\Engine\\Xoshiro256StarStar",
     "Uri\\Rfc3986\\Uri",
     "Uri\\WhatWg\\Url",
 ];
@@ -924,6 +928,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Mt19937\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\PcgOneseq128XslRr64\") ||\n");
+    out.push_str(
+        "        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Xoshiro256StarStar\")) {\n",
+    );
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Random\\\\Engine\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
@@ -7161,6 +7172,7 @@ fn emit_class_metadata_helpers(
         "Countable",
         "Stringable",
         "Throwable",
+        "Random\\Engine",
         "DateTimeInterface",
         "DOMParentNode",
         "DOM\\ParentNode",

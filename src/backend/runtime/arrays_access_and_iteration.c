@@ -1178,6 +1178,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_bcmath_number(lookup_class_name)) {
         return ptn_bcmath_number_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_random_engine_native(lookup_class_name)) {
+        return ptn_random_engine_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_random_randomizer(lookup_class_name)) {
+        return ptn_random_randomizer_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_phar(lookup_class_name)) {
         return ptn_phar_new(runtime, argc, args, line);
     }

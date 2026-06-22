@@ -1952,6 +1952,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class
 static PTN_UNUSED int ptn_internal_class_name_is_date_period(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_internal_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_mt19937(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_pcgoneseq128xslrr64(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_xoshiro256starstar(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_native(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo_statement(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo_exception(const char *class_name);
@@ -2724,6 +2729,32 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_engine_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_engine_new_shell(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_randomizer_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

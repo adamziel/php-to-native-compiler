@@ -75726,6 +75726,58 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_random_engine_serialization_and_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-random-engine-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-engine-serialization.php");
+    let output = root.join("random-engine-serialization-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Randomizer;
+
+echo serialize(new PcgOneseq128XslRr64(1234)), "\n";
+try {
+    unserialize('O:32:"Random\Engine\Xoshiro256StarStar":2:{i:0;a:0:{}i:1;a:4:{i:0;s:16:"0000000000000000";i:1;s:16:"0000000000000000";i:2;s:16:"0000000000000000";i:3;s:16:"0000000000000000";}}');
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+class ReferenceEngine implements \Random\Engine {
+    private string $data = 'abcdef';
+
+    public function &generate(): string {
+        return $this->data;
+    }
+}
+
+echo (new Randomizer(new ReferenceEngine()))->getBytes(14), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:33:\"Random\\Engine\\PcgOneseq128XslRr64\":2:{i:0;a:0:{}i:1;a:2:{i:0;s:16:\"c6d571c37c41a8d1\";i:1;s:16:\"345e7e82265d6e27\";}}\n",
+            "Invalid serialization data for Random\\Engine\\Xoshiro256StarStar object\n",
+            "abcdefabcdefab\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
