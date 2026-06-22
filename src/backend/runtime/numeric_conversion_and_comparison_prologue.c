@@ -4101,6 +4101,14 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "OPEN_CREATE") == 0) { *out = ptn_int(4); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Phar")) {
+        if (strcmp(constant, "MD5") == 0) {
+            *out = ptn_int(0x0001);
+            return 1;
+        }
+        if (strcmp(constant, "SHA1") == 0) {
+            *out = ptn_int(0x0002);
+            return 1;
+        }
         if (strcmp(constant, "GZ") == 0) {
             *out = ptn_int(0x1000);
             return 1;

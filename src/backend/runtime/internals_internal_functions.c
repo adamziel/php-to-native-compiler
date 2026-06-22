@@ -6317,6 +6317,8 @@ struct PtnPharArchiveState {
     size_t stub_len;
     unsigned char *metadata;
     size_t metadata_len;
+    char *signature_hash;
+    char *signature_type;
     PtnPharArchiveEntry *entries;
     size_t entry_count;
     size_t entry_capacity;
@@ -46455,12 +46457,13 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
         return 0;
     }
 
+    int initial_writable = writable || (read_result > 0 && data_len != 0);
     PtnResource *resource = ptn_resource_new_memory_stream(
         path,
         mode,
         PTN_STREAM_BACKEND_MEMORY,
         SIZE_MAX,
-        writable,
+        initial_writable,
         append
     );
     if (read_result > 0 && data_len != 0) {
@@ -46476,6 +46479,8 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
     if (!append) {
         (void)ptn_stream_seek(resource, 0, SEEK_SET);
     }
+    resource->memory_stream->writable = writable;
+    resource->memory_stream->append = append;
     free(data);
     free(entry_name);
     *out = ptn_resource(resource);
@@ -92901,6 +92906,8 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
 }
 
 enum {
+    PTN_PHAR_SIGNATURE_MD5 = 0x0001,
+    PTN_PHAR_SIGNATURE_SHA1 = 0x0002,
     PTN_PHAR_COMPRESSION_GZ = 0x1000,
     PTN_PHAR_COMPRESSION_BZ2 = 0x2000,
 };
@@ -92928,6 +92935,37 @@ static unsigned char *ptn_phar_copy_bytes(const unsigned char *data, size_t len)
     }
     copy[len] = '\0';
     return copy;
+}
+
+static char *ptn_phar_digest_hex_string_uppercase(const unsigned char *digest, size_t digest_len) {
+    static const char hex_digits[] = "0123456789ABCDEF";
+    if (digest_len > (SIZE_MAX - 1) / 2) {
+        ptn_abort_out_of_memory();
+    }
+    char *hex = malloc((digest_len * 2) + 1);
+    if (hex == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < digest_len; i++) {
+        hex[i * 2] = hex_digits[digest[i] >> 4];
+        hex[i * 2 + 1] = hex_digits[digest[i] & 0x0f];
+    }
+    hex[digest_len * 2] = '\0';
+    return hex;
+}
+
+static void ptn_phar_archive_set_signature(
+    PtnPharArchiveState *archive,
+    const char *hash,
+    const char *type
+) {
+    if (archive == NULL) {
+        return;
+    }
+    free(archive->signature_hash);
+    free(archive->signature_type);
+    archive->signature_hash = ptn_duplicate_string(hash == NULL ? "" : hash);
+    archive->signature_type = ptn_duplicate_string(type == NULL ? "" : type);
 }
 
 static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
@@ -93014,11 +93052,29 @@ static int ptn_phar_archive_entry_is_dir(PtnPharArchiveEntry *entry) {
     return len > 0 && (entry->name[len - 1] == '/' || entry->name[len - 1] == '\\');
 }
 
+static void ptn_phar_archive_set_entry_with_flags(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    uint32_t flags
+);
+
 static void ptn_phar_archive_set_entry(
     PtnPharArchiveState *archive,
     const char *name,
     const unsigned char *content,
     size_t content_len
+) {
+    ptn_phar_archive_set_entry_with_flags(archive, name, content, content_len, 0);
+}
+
+static void ptn_phar_archive_set_entry_with_flags(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    uint32_t flags
 ) {
     if (archive == NULL || name == NULL) {
         return;
@@ -93029,6 +93085,7 @@ static void ptn_phar_archive_set_entry(
         free(archive->entries[index].content);
         archive->entries[index].content = content_copy;
         archive->entries[index].content_len = content_len;
+        archive->entries[index].flags = flags;
         return;
     }
     ptn_phar_archive_reserve_entries(archive, archive->entry_count + 1);
@@ -93038,7 +93095,7 @@ static void ptn_phar_archive_set_entry(
     entry->content_len = content_len;
     entry->metadata = NULL;
     entry->metadata_len = 0;
-    entry->flags = 0;
+    entry->flags = flags;
 }
 
 static void ptn_phar_archive_set_entry_metadata(
@@ -93284,8 +93341,8 @@ static void ptn_phar_parse_manifest(
         uint32_t name_len_u32 = 0;
         uint32_t uncompressed_size = 0;
         uint32_t compressed_size = 0;
-        uint32_t file_metadata_len = 0;
         uint32_t flags = 0;
+        uint32_t file_metadata_len = 0;
         if (!ptn_phar_manifest_read_u32(&cursor, manifest_end, data, &name_len_u32)) {
             break;
         }
@@ -93339,6 +93396,23 @@ static void ptn_phar_parse_manifest(
         }
         free(infos[i].metadata);
         free(infos[i].name);
+    }
+    if (len >= 8 && memcmp(data + len - 4, "GBMB", 4) == 0) {
+        uint32_t signature_flags = ptn_phar_read_u32_le(data + len - 8);
+        size_t digest_len = 0;
+        const char *type = NULL;
+        if (signature_flags == PTN_PHAR_SIGNATURE_MD5) {
+            digest_len = 16;
+            type = "MD5";
+        } else if (signature_flags == PTN_PHAR_SIGNATURE_SHA1) {
+            digest_len = 20;
+            type = "SHA-1";
+        }
+        if (digest_len != 0 && len >= 8 + digest_len && len - 8 - digest_len >= content_cursor) {
+            char *hash = ptn_phar_digest_hex_string_uppercase(data + len - 8 - digest_len, digest_len);
+            ptn_phar_archive_set_signature(archive, hash, type);
+            free(hash);
+        }
     }
     free(infos);
 }
@@ -93439,6 +93513,82 @@ static char *ptn_phar_join_relative_path(const char *prefix, const char *name) {
         return ptn_duplicate_string(name == NULL ? "" : name);
     }
     return ptn_phar_join_path(prefix, name);
+}
+
+static char *ptn_phar_make_default_stub(size_t *len_out) {
+    static const char prefix[] =
+        "<?php\n"
+        "Phar::mapPhar();\n"
+        "__HALT_COMPILER(); ?>";
+    const size_t target_len = 6661;
+    size_t prefix_len = sizeof(prefix) - 1;
+    char *stub = malloc(target_len + 1);
+    if (stub == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(stub, prefix, prefix_len);
+    memset(stub + prefix_len, ' ', target_len - prefix_len);
+    stub[target_len] = '\0';
+    if (len_out != NULL) {
+        *len_out = target_len;
+    }
+    return stub;
+}
+
+static void ptn_phar_archive_recompute_signature(PtnPharArchiveState *archive, uint32_t algorithm) {
+    if (archive == NULL) {
+        return;
+    }
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (archive->stub != NULL && archive->stub_len != 0) {
+        ptn_string_buffer_append_len(&buffer, archive->stub, archive->stub_len);
+    }
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        PtnPharArchiveEntry *entry = &archive->entries[i];
+        if (entry->name != NULL) {
+            ptn_string_buffer_append_len(&buffer, entry->name, strlen(entry->name));
+        }
+        ptn_string_buffer_append_len(&buffer, (const char *)&entry->flags, sizeof(entry->flags));
+        if (entry->content != NULL && entry->content_len != 0) {
+            ptn_string_buffer_append_len(&buffer, (const char *)entry->content, entry->content_len);
+        }
+    }
+    const unsigned char *digest_input =
+        (const unsigned char *)(buffer.data == NULL ? "" : buffer.data);
+    if (algorithm == PTN_PHAR_SIGNATURE_MD5) {
+        unsigned char digest[16];
+        ptn_md5_digest_bytes(digest_input, buffer.len, digest);
+        char *hash = ptn_digest_hex_string(digest, sizeof(digest));
+        ptn_phar_archive_set_signature(archive, hash, "MD5");
+        free(hash);
+    } else {
+        unsigned char digest[20];
+        ptn_sha1_digest_bytes(digest_input, buffer.len, digest);
+        char *hash = ptn_digest_hex_string(digest, sizeof(digest));
+        ptn_phar_archive_set_signature(archive, hash, "SHA-1");
+        free(hash);
+    }
+    free(buffer.data);
+}
+
+static PtnValue ptn_phar_signature_array(PtnRuntime *runtime, PtnPharArchiveState *archive) {
+    (void)runtime;
+    if (archive == NULL || archive->signature_hash == NULL || archive->signature_type == NULL) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("hash"),
+        ptn_owned_string(ptn_duplicate_string(archive->signature_hash))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("hash_type"),
+        ptn_owned_string(ptn_duplicate_string(archive->signature_type))
+    );
+    return result;
 }
 
 static void ptn_phar_add_directory_files(
@@ -93648,6 +93798,43 @@ static char *ptn_phar_string_arg(
     return result;
 }
 
+static void ptn_phar_archive_replace_stub(
+    PtnPharArchiveState *archive,
+    const char *stub_data,
+    size_t stub_len
+) {
+    if (archive == NULL) {
+        return;
+    }
+    int has_close_tag = 0;
+    for (size_t i = 0; i + 2 <= stub_len; i++) {
+        if (stub_data[i] == '?' && stub_data[i + 1] == '>') {
+            has_close_tag = 1;
+            break;
+        }
+    }
+    size_t close_len = has_close_tag ? 0 : 3;
+    int needs_newline = stub_len == 0 || stub_data[stub_len - 1] != '\n';
+    size_t new_len = stub_len + close_len + (needs_newline ? 1 : 0);
+    char *new_stub = malloc(new_len + 1);
+    if (new_stub == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(new_stub, stub_data, stub_len);
+    size_t offset = stub_len;
+    if (!has_close_tag) {
+        memcpy(new_stub + offset, " ?>", 3);
+        offset += 3;
+    }
+    if (needs_newline) {
+        new_stub[offset++] = '\n';
+    }
+    new_stub[offset] = '\0';
+    free(archive->stub);
+    archive->stub = new_stub;
+    archive->stub_len = new_len;
+}
+
 static PtnValue ptn_phar_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -93739,6 +93926,12 @@ static PtnValue ptn_phar_call_method(
         }
         return ptn_phar_metadata_value(data->archive->metadata, data->archive->metadata_len);
     }
+    if (ptn_ascii_case_equal(name, "getSignature")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
+        }
+        return ptn_phar_signature_array(runtime, data->archive);
+    }
     if (ptn_ascii_case_equal(name, "getAlias")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
             return ptn_null();
@@ -93762,6 +93955,22 @@ static PtnValue ptn_phar_call_method(
         data->archive->alias = new_alias;
         return ptn_bool(1);
     }
+    if (ptn_ascii_case_equal(name, "setSignatureAlgorithm")) {
+        if (argc < 1 || argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setSignatureAlgorithm() expects between 1 and 2 arguments");
+            return ptn_null();
+        }
+        int64_t algorithm = ptn_internal_expect_integer_arg(runtime, "Phar::setSignatureAlgorithm", 1, "algo", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (algorithm != PTN_PHAR_SIGNATURE_MD5 && algorithm != PTN_PHAR_SIGNATURE_SHA1) {
+            ptn_throw_exception(runtime, "UnexpectedValueException", "Unknown signature algorithm specified");
+            return ptn_null();
+        }
+        ptn_phar_archive_recompute_signature(data->archive, (uint32_t)algorithm);
+        return ptn_bool(1);
+    }
     if (ptn_ascii_case_equal(name, "getStub")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
             return ptn_null();
@@ -93771,10 +93980,41 @@ static PtnValue ptn_phar_call_method(
             data->archive->stub_len
         );
     }
+    if (ptn_ascii_case_equal(name, "setDefaultStub")) {
+        if (argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setDefaultStub() expects at most 2 arguments");
+            return ptn_null();
+        }
+        size_t default_len = 0;
+        char *default_stub = ptn_phar_make_default_stub(&default_len);
+        free(data->archive->stub);
+        data->archive->stub = default_stub;
+        data->archive->stub_len = default_len;
+        return ptn_bool(1);
+    }
     if (ptn_ascii_case_equal(name, "setStub")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "Phar::setStub() expects exactly 1 argument");
             return ptn_null();
+        }
+        PtnValue stub_value = ptn_value_deref(args[0]);
+        if (stub_value.type == PTN_RESOURCE) {
+            if (!ptn_stream_resource_is_open(stub_value.as.resource)) {
+                ptn_throw_exception(runtime, "TypeError", "Phar::setStub(): supplied resource is not a valid stream resource");
+                return ptn_null();
+            }
+            ptn_emit_deprecation(&runtime->diagnostics, "Calling Phar::setStub(resource $stub, int $length) is deprecated", line);
+            PtnValue contents = ptn_stream_read_remaining(runtime, "Phar::setStub", stub_value.as.resource, -1, line);
+            PtnValue contents_value = ptn_value_deref(contents);
+            if (contents_value.type == PTN_STRING) {
+                ptn_phar_archive_replace_stub(
+                    data->archive,
+                    (const char *)contents_value.as.string.data,
+                    contents_value.as.string.len
+                );
+            }
+            ptn_value_drop(&contents);
+            return ptn_bool(1);
         }
         PtnStringOperand stub =
             ptn_internal_expect_string_arg(runtime, "Phar::setStub", 1, "stub", args[0], line);
@@ -93782,35 +94022,37 @@ static PtnValue ptn_phar_call_method(
             ptn_string_operand_free(stub);
             return ptn_null();
         }
-        int has_close_tag = 0;
-        for (size_t i = 0; i + 2 <= stub.len; i++) {
-            if (stub.data[i] == '?' && stub.data[i + 1] == '>') {
-                has_close_tag = 1;
-                break;
+        ptn_phar_archive_replace_stub(data->archive, stub.data, stub.len);
+        ptn_string_operand_free(stub);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "compressFiles")) {
+        if (argc < 1 || argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::compressFiles() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t compression = ptn_internal_expect_integer_arg(runtime, "Phar::compressFiles", 1, "compression", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        uint32_t compression_flag = compression == PTN_PHAR_COMPRESSION_BZ2
+            ? PTN_PHAR_COMPRESSION_BZ2
+            : PTN_PHAR_COMPRESSION_GZ;
+        for (size_t i = 0; i < data->archive->entry_count; i++) {
+            if (!ptn_phar_archive_entry_is_dir(&data->archive->entries[i])) {
+                data->archive->entries[i].flags &= ~(uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+                data->archive->entries[i].flags |= compression_flag;
             }
         }
-        size_t close_len = has_close_tag ? 0 : 3;
-        int needs_newline = stub.len == 0 || stub.data[stub.len - 1] != '\n';
-        size_t new_len = stub.len + close_len + (needs_newline ? 1 : 0);
-        char *new_stub = malloc(new_len + 1);
-        if (new_stub == NULL) {
-            ptn_string_operand_free(stub);
-            ptn_abort_out_of_memory();
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "decompressFiles")) {
+        if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
+            return ptn_null();
         }
-        memcpy(new_stub, stub.data, stub.len);
-        size_t offset = stub.len;
-        if (!has_close_tag) {
-            memcpy(new_stub + offset, " ?>", 3);
-            offset += 3;
+        for (size_t i = 0; i < data->archive->entry_count; i++) {
+            data->archive->entries[i].flags &= ~(uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
         }
-        if (needs_newline) {
-            new_stub[offset++] = '\n';
-        }
-        new_stub[offset] = '\0';
-        ptn_string_operand_free(stub);
-        free(data->archive->stub);
-        data->archive->stub = new_stub;
-        data->archive->stub_len = new_len;
         return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "offsetExists")) {
@@ -104938,10 +105180,13 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "buildFromDirectory")
             || ptn_ascii_case_equal(method_name, "buildFromIterator")
+            || ptn_ascii_case_equal(method_name, "compressFiles")
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "delete")
+            || ptn_ascii_case_equal(method_name, "decompressFiles")
             || ptn_ascii_case_equal(method_name, "getAlias")
             || ptn_ascii_case_equal(method_name, "getMetadata")
+            || ptn_ascii_case_equal(method_name, "getSignature")
             || ptn_ascii_case_equal(method_name, "getStub")
             || ptn_ascii_case_equal(method_name, "key")
             || ptn_ascii_case_equal(method_name, "next")
@@ -104951,6 +105196,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "offsetUnset")
             || ptn_ascii_case_equal(method_name, "rewind")
             || ptn_ascii_case_equal(method_name, "setAlias")
+            || ptn_ascii_case_equal(method_name, "setDefaultStub")
+            || ptn_ascii_case_equal(method_name, "setSignatureAlgorithm")
             || ptn_ascii_case_equal(method_name, "setStub")
             || ptn_ascii_case_equal(method_name, "valid")
             || ptn_ascii_case_equal(method_name, "apiVersion")
@@ -106319,10 +106566,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "buildFromIterator");
         ptn_append_method_name(result, &index, "canCompress");
         ptn_append_method_name(result, &index, "canWrite");
+        ptn_append_method_name(result, &index, "compressFiles");
         ptn_append_method_name(result, &index, "current");
         ptn_append_method_name(result, &index, "delete");
+        ptn_append_method_name(result, &index, "decompressFiles");
         ptn_append_method_name(result, &index, "getAlias");
         ptn_append_method_name(result, &index, "getMetadata");
+        ptn_append_method_name(result, &index, "getSignature");
         ptn_append_method_name(result, &index, "getStub");
         ptn_append_method_name(result, &index, "getSupportedCompression");
         ptn_append_method_name(result, &index, "getSupportedSignatures");
@@ -106336,6 +106586,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "offsetUnset");
         ptn_append_method_name(result, &index, "rewind");
         ptn_append_method_name(result, &index, "setAlias");
+        ptn_append_method_name(result, &index, "setDefaultStub");
+        ptn_append_method_name(result, &index, "setSignatureAlgorithm");
         ptn_append_method_name(result, &index, "setStub");
         ptn_append_method_name(result, &index, "valid");
         return result;
@@ -113319,6 +113571,8 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         return;
     }
     if (ptn_internal_class_name_is_phar(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("MD5"), ptn_int(PTN_PHAR_SIGNATURE_MD5));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SHA1"), ptn_int(PTN_PHAR_SIGNATURE_SHA1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("GZ"), ptn_int(PTN_PHAR_COMPRESSION_GZ));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("BZ2"), ptn_int(PTN_PHAR_COMPRESSION_BZ2));
         return;
