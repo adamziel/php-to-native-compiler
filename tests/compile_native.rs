@@ -13660,6 +13660,10 @@ fn compile_serialize_unserialize_reference_identity_to_native_binary() {
         r#"<?php
 class RefA { public $b; public $b1; public $c; public $c1; }
 class RefB {}
+class RefWake {
+    public $ryat;
+    public function __wakeup() { $this->ryat = 0x1122334455; }
+}
 class SleepBox {
     public $x;
     public function __sleep() {
@@ -13689,6 +13693,12 @@ var_dump($d);
 $payload = 'O:4:"RefA":4:{s:1:"b";O:4:"RefB":0:{}s:2:"b1";r:2;s:1:"c";O:4:"RefB":0:{}s:2:"c1";r:4;}';
 $obj = unserialize($payload);
 var_dump($obj->b === $obj->b1, $obj->c === $obj->c1, $obj === $obj->b1);
+
+$objectRef = unserialize('a:2:{i:0;O:8:"stdClass":0:{}i:1;R:2;}');
+$objectRef[1] = 42;
+var_dump($objectRef);
+
+var_dump(unserialize('O:8:"stdClass":1:{i:0;O:7:"RefWake":1:{s:4:"ryat";R:1;}}'));
 
 $shared = new RefB;
 var_dump(serialize([new ArrayIterator(), $shared, $shared]));
@@ -13730,6 +13740,13 @@ echo serialize($box), "\n";
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  &int(42)\n",
+            "  [1]=>\n",
+            "  &int(42)\n",
+            "}\n",
+            "int(73588229205)\n",
             "string(96) \"a:3:{i:0;O:13:\"ArrayIterator\":4:{i:0;i:0;i:1;a:0:{}i:2;a:0:{}i:3;N;}i:1;O:4:\"RefB\":0:{}i:2;r:7;}\"\n",
             "a:2:{i:0;O:4:\"RefB\":0:{}i:1;r:2;}\n",
             "O:8:\"SleepBox\":1:{s:1:\"x\";a:2:{i:0;O:4:\"RefB\":0:{}i:1;r:3;}}\n",

@@ -10753,14 +10753,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         entry->reference->refcount++;
         return ptn_reference_value(entry->reference);
     }
-    if (entry->slot != NULL) {
-        PtnValue value = ptn_value_deref(*entry->slot);
-        if (value.type == PTN_OBJECT && !entry->slot_is_container_entry) {
-            PtnReference *reference = ptn_unserialize_reference_new_owned(ptn_value_clone(value));
-            entry->reference = reference;
-            return ptn_reference_value(reference);
-        }
-    } else if (entry->retained_object != NULL) {
+    if (entry->slot == NULL && entry->retained_object != NULL) {
         PtnReference *reference = ptn_unserialize_reference_new_owned(
             ptn_value_clone(ptn_object(entry->retained_object))
         );
@@ -13229,18 +13222,20 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 result.value.type != PTN_OBJECT) {
                 return result;
             }
+            PtnObject *object = result.value.as.object;
+            PtnValue object_value = ptn_object(object);
             int plain_root_serializable_user_class =
-                ptn_unserialize_object_is_plain_root_serializable_user_class(runtime, result.value);
+                ptn_unserialize_object_is_plain_root_serializable_user_class(runtime, object_value);
             int use_magic_unserialize =
                 plain_root_serializable_user_class
                     ? 0
-                    : ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__unserialize");
+                    : ptn_unserialize_declared_magic_method_exists(runtime, object_value, "__unserialize");
             if (!use_magic_unserialize &&
                 !plain_root_serializable_user_class &&
-                ptn_unserialize_object_implements_interface(runtime, result.value, "Serializable")) {
+                ptn_unserialize_object_implements_interface(runtime, object_value, "Serializable")) {
                 ptn_unserialize_emit_erroneous_data_format_warning(
                     runtime,
-                    result.value.as.object->class_name,
+                    object->class_name,
                     state->line
                 );
                 ptn_unserialize_update_slot(state, result.id, &result.value);
@@ -13273,7 +13268,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 }
                 ptn_unserialize_queue_magic_callback(
                     state,
-                    result.value,
+                    object_value,
                     "__unserialize",
                     1,
                     &payload,
@@ -13295,7 +13290,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                         !ptn_unserialize_store_object_property_entry(
                             runtime,
                             state,
-                            result.value.as.object,
+                            object,
                             key,
                             parsed,
                             0
@@ -13309,13 +13304,13 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             if (!plain_root_serializable_user_class) {
-                ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
-                ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
-                ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
-                if (ptn_unserialize_declared_magic_method_exists(runtime, result.value, "__wakeup")) {
+                ptn_unserialize_hydrate_spl_array_backed_object(runtime, object_value, state->line);
+                ptn_bcmath_number_hydrate_unserialized(runtime, object_value, state->line);
+                ptn_zip_archive_hydrate_unserialized(runtime, state, object_value);
+                if (ptn_unserialize_declared_magic_method_exists(runtime, object_value, "__wakeup")) {
                     ptn_unserialize_queue_magic_callback(
                         state,
-                        result.value,
+                        object_value,
                         "__wakeup",
                         0,
                         NULL,
