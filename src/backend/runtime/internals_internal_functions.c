@@ -69329,6 +69329,30 @@ static PtnValue ptn_defined_constants_core_table(void) {
 #define PTN_LIBXML_ERR_ERROR 2
 #define PTN_LIBXML_ERR_FATAL 3
 
+#define PTN_IMAGE_FILETYPE_UNKNOWN 0
+#define PTN_IMAGE_FILETYPE_GIF 1
+#define PTN_IMAGE_FILETYPE_JPEG 2
+#define PTN_IMAGE_FILETYPE_PNG 3
+#define PTN_IMAGE_FILETYPE_SWF 4
+#define PTN_IMAGE_FILETYPE_PSD 5
+#define PTN_IMAGE_FILETYPE_BMP 6
+#define PTN_IMAGE_FILETYPE_TIFF_II 7
+#define PTN_IMAGE_FILETYPE_TIFF_MM 8
+#define PTN_IMAGE_FILETYPE_JPC 9
+#define PTN_IMAGE_FILETYPE_JP2 10
+#define PTN_IMAGE_FILETYPE_JPX 11
+#define PTN_IMAGE_FILETYPE_JB2 12
+#define PTN_IMAGE_FILETYPE_SWC 13
+#define PTN_IMAGE_FILETYPE_IFF 14
+#define PTN_IMAGE_FILETYPE_WBMP 15
+#define PTN_IMAGE_FILETYPE_XBM 16
+#define PTN_IMAGE_FILETYPE_ICO 17
+#define PTN_IMAGE_FILETYPE_WEBP 18
+#define PTN_IMAGE_FILETYPE_AVIF 19
+#define PTN_IMAGE_FILETYPE_HEIF 20
+#define PTN_IMAGE_FILETYPE_SVG 21
+#define PTN_IMAGE_FILETYPE_COUNT 22
+
 static void ptn_defined_constants_add_libxml(PtnValue table) {
     const PtnLibxmlVersionInfo *version = ptn_libxml_version_info_load();
     ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string(version->dotted));
@@ -69621,6 +69645,30 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_UNKNOWN", PTN_IMAGE_FILETYPE_UNKNOWN);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_GIF", PTN_IMAGE_FILETYPE_GIF);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPEG", PTN_IMAGE_FILETYPE_JPEG);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_PNG", PTN_IMAGE_FILETYPE_PNG);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_SWF", PTN_IMAGE_FILETYPE_SWF);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_PSD", PTN_IMAGE_FILETYPE_PSD);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_BMP", PTN_IMAGE_FILETYPE_BMP);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_TIFF_II", PTN_IMAGE_FILETYPE_TIFF_II);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_TIFF_MM", PTN_IMAGE_FILETYPE_TIFF_MM);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPC", PTN_IMAGE_FILETYPE_JPC);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JP2", PTN_IMAGE_FILETYPE_JP2);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPX", PTN_IMAGE_FILETYPE_JPX);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JB2", PTN_IMAGE_FILETYPE_JB2);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_SWC", PTN_IMAGE_FILETYPE_SWC);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_IFF", PTN_IMAGE_FILETYPE_IFF);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_WBMP", PTN_IMAGE_FILETYPE_WBMP);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPEG2000", PTN_IMAGE_FILETYPE_JPC);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_XBM", PTN_IMAGE_FILETYPE_XBM);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_ICO", PTN_IMAGE_FILETYPE_ICO);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_WEBP", PTN_IMAGE_FILETYPE_WEBP);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_AVIF", PTN_IMAGE_FILETYPE_AVIF);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_HEIF", PTN_IMAGE_FILETYPE_HEIF);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_SVG", PTN_IMAGE_FILETYPE_SVG);
+    ptn_get_defined_constants_add_int(table, "IMAGETYPE_COUNT", PTN_IMAGE_FILETYPE_COUNT);
 }
 
 static PtnValue ptn_defined_constants_standard_table(void) {
@@ -69974,6 +70022,30 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_READ",
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
+        "IMAGETYPE_UNKNOWN",
+        "IMAGETYPE_GIF",
+        "IMAGETYPE_JPEG",
+        "IMAGETYPE_PNG",
+        "IMAGETYPE_SWF",
+        "IMAGETYPE_PSD",
+        "IMAGETYPE_BMP",
+        "IMAGETYPE_TIFF_II",
+        "IMAGETYPE_TIFF_MM",
+        "IMAGETYPE_JPC",
+        "IMAGETYPE_JP2",
+        "IMAGETYPE_JPX",
+        "IMAGETYPE_JB2",
+        "IMAGETYPE_SWC",
+        "IMAGETYPE_IFF",
+        "IMAGETYPE_WBMP",
+        "IMAGETYPE_JPEG2000",
+        "IMAGETYPE_XBM",
+        "IMAGETYPE_ICO",
+        "IMAGETYPE_WEBP",
+        "IMAGETYPE_AVIF",
+        "IMAGETYPE_HEIF",
+        "IMAGETYPE_SVG",
+        "IMAGETYPE_COUNT",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -78367,6 +78439,16 @@ typedef struct {
     char *value;
 } PtnXmlDefaultAttribute;
 
+typedef struct {
+    char *name;
+    char *value;
+    char *public_id;
+    char *system_id;
+    char *notation_name;
+    int external;
+    int unparsed;
+} PtnXmlEntityDeclaration;
+
 typedef struct PtnXmlParserFrame {
     char *raw_name;
     char *callback_name;
@@ -78375,6 +78457,9 @@ typedef struct PtnXmlParserFrame {
     int level;
     int emitted_open;
     PtnStringBuffer text;
+    char **namespace_prefixes;
+    size_t namespace_prefix_count;
+    size_t namespace_prefix_capacity;
 } PtnXmlParserFrame;
 
 typedef struct {
@@ -78420,6 +78505,9 @@ typedef struct {
     PtnXmlDefaultAttribute *default_attributes;
     size_t default_attribute_count;
     size_t default_attribute_capacity;
+    PtnXmlEntityDeclaration *entity_declarations;
+    size_t entity_declaration_count;
+    size_t entity_declaration_capacity;
     PtnXmlParserFrame *stream_frames;
     size_t stream_frame_count;
     size_t stream_frame_capacity;
@@ -81556,6 +81644,10 @@ typedef void *PtnLibxml2ParserCtxtPtr;
 typedef void *PtnLibxml2ParserInputPtr;
 typedef void *PtnLibxml2TextReaderPtr;
 typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
+typedef void (*PtnLibxml2FreeFunc)(void *);
+typedef void *(*PtnLibxml2MallocFunc)(size_t);
+typedef void *(*PtnLibxml2ReallocFunc)(void *, size_t);
+typedef char *(*PtnLibxml2StrdupFunc)(const char *);
 
 typedef struct {
     int domain;
@@ -81628,7 +81720,9 @@ typedef struct {
     int (*xmlTextReaderSetParserProp)(PtnLibxml2TextReaderPtr, int, int);
     int (*xmlTextReaderSchemaValidate)(PtnLibxml2TextReaderPtr, const char *);
     int (*xmlTextReaderIsValid)(PtnLibxml2TextReaderPtr);
-    void (*xmlFree)(void *);
+    void (*xmlMemFree)(void *);
+    int (*xmlMemGet)(PtnLibxml2FreeFunc *, PtnLibxml2MallocFunc *, PtnLibxml2ReallocFunc *, PtnLibxml2StrdupFunc *);
+    PtnLibxml2FreeFunc xmlFreeFunc;
     void (*xmlSetGenericErrorFunc)(void *, void (*)(void *, const char *, ...));
     void (*xmlSetStructuredErrorFunc)(void *, void (*)(void *, const PtnLibxml2Error *));
 } PtnLibxml2Api;
@@ -82030,9 +82124,17 @@ static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
     PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderSetParserProp, "xmlTextReaderSetParserProp");
     PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderSchemaValidate, "xmlTextReaderSchemaValidate");
     PTN_LIBXML2_LOAD_REQUIRED(xmlTextReaderIsValid, "xmlTextReaderIsValid");
-    PTN_LIBXML2_LOAD_REQUIRED(xmlFree, "xmlFree");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlMemFree, "xmlMemFree");
+    PTN_LIBXML2_LOAD_REQUIRED(xmlMemGet, "xmlMemGet");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetStructuredErrorFunc, "xmlSetStructuredErrorFunc");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSetGenericErrorFunc, "xmlSetGenericErrorFunc");
+    PtnLibxml2MallocFunc malloc_func = NULL;
+    PtnLibxml2ReallocFunc realloc_func = NULL;
+    PtnLibxml2StrdupFunc strdup_func = NULL;
+    (void)api->xmlMemGet(&api->xmlFreeFunc, &malloc_func, &realloc_func, &strdup_func);
+    if (api->xmlFreeFunc == NULL) {
+        api->xmlFreeFunc = api->xmlMemFree;
+    }
     api->available = 1;
 #undef PTN_LIBXML2_LOAD_REQUIRED
 #undef PTN_LIBXML2_LOAD_OPTIONAL
@@ -82096,6 +82198,254 @@ static PtnLibxml2Api *ptn_libxml2_api_load(void) {
     }
     ptn_libxml2_load_function_symbols(&ptn_libxml2_api);
     return ptn_libxml2_api.available ? &ptn_libxml2_api : NULL;
+}
+
+static void ptn_libxml2_free_owned(PtnLibxml2Api *api, void *value) {
+    if (value != NULL) {
+        api->xmlFreeFunc(value);
+    }
+}
+
+typedef struct {
+    unsigned int width;
+    unsigned int height;
+    const char *width_unit;
+    const char *height_unit;
+} PtnSvgImageInfo;
+
+static const char *ptn_image_type_to_extension_string(int64_t image_type) {
+    switch (image_type) {
+        case PTN_IMAGE_FILETYPE_GIF:
+            return ".gif";
+        case PTN_IMAGE_FILETYPE_JPEG:
+            return ".jpeg";
+        case PTN_IMAGE_FILETYPE_PNG:
+            return ".png";
+        case PTN_IMAGE_FILETYPE_SWF:
+        case PTN_IMAGE_FILETYPE_SWC:
+            return ".swf";
+        case PTN_IMAGE_FILETYPE_PSD:
+            return ".psd";
+        case PTN_IMAGE_FILETYPE_BMP:
+        case PTN_IMAGE_FILETYPE_WBMP:
+            return ".bmp";
+        case PTN_IMAGE_FILETYPE_TIFF_II:
+        case PTN_IMAGE_FILETYPE_TIFF_MM:
+            return ".tiff";
+        case PTN_IMAGE_FILETYPE_IFF:
+            return ".iff";
+        case PTN_IMAGE_FILETYPE_JPC:
+            return ".jpc";
+        case PTN_IMAGE_FILETYPE_JP2:
+            return ".jp2";
+        case PTN_IMAGE_FILETYPE_JPX:
+            return ".jpx";
+        case PTN_IMAGE_FILETYPE_JB2:
+            return ".jb2";
+        case PTN_IMAGE_FILETYPE_XBM:
+            return ".xbm";
+        case PTN_IMAGE_FILETYPE_ICO:
+            return ".ico";
+        case PTN_IMAGE_FILETYPE_WEBP:
+            return ".webp";
+        case PTN_IMAGE_FILETYPE_AVIF:
+            return ".avif";
+        case PTN_IMAGE_FILETYPE_HEIF:
+            return ".heif";
+        case PTN_IMAGE_FILETYPE_SVG:
+            return ".svg";
+        default:
+            return NULL;
+    }
+}
+
+static const char *ptn_image_type_to_mime_type_string(int64_t image_type) {
+    switch (image_type) {
+        case PTN_IMAGE_FILETYPE_GIF:
+            return "image/gif";
+        case PTN_IMAGE_FILETYPE_JPEG:
+            return "image/jpeg";
+        case PTN_IMAGE_FILETYPE_PNG:
+            return "image/png";
+        case PTN_IMAGE_FILETYPE_SWF:
+        case PTN_IMAGE_FILETYPE_SWC:
+            return "application/x-shockwave-flash";
+        case PTN_IMAGE_FILETYPE_PSD:
+            return "image/psd";
+        case PTN_IMAGE_FILETYPE_BMP:
+            return "image/bmp";
+        case PTN_IMAGE_FILETYPE_TIFF_II:
+        case PTN_IMAGE_FILETYPE_TIFF_MM:
+            return "image/tiff";
+        case PTN_IMAGE_FILETYPE_IFF:
+            return "image/iff";
+        case PTN_IMAGE_FILETYPE_WBMP:
+            return "image/vnd.wap.wbmp";
+        case PTN_IMAGE_FILETYPE_JPC:
+            return "application/octet-stream";
+        case PTN_IMAGE_FILETYPE_JP2:
+            return "image/jp2";
+        case PTN_IMAGE_FILETYPE_XBM:
+            return "image/xbm";
+        case PTN_IMAGE_FILETYPE_ICO:
+            return "image/vnd.microsoft.icon";
+        case PTN_IMAGE_FILETYPE_WEBP:
+            return "image/webp";
+        case PTN_IMAGE_FILETYPE_AVIF:
+            return "image/avif";
+        case PTN_IMAGE_FILETYPE_HEIF:
+            return "image/heif";
+        case PTN_IMAGE_FILETYPE_SVG:
+            return "image/svg+xml";
+        case PTN_IMAGE_FILETYPE_UNKNOWN:
+        default:
+            return "application/octet-stream";
+    }
+}
+
+static int ptn_svg_parse_dimension(const unsigned char *input, unsigned int *value, const char **unit) {
+    if (input == NULL || !isdigit(input[0])) {
+        return 0;
+    }
+    unsigned long parsed = 0;
+    size_t pos = 0;
+    while (isdigit(input[pos])) {
+        unsigned int digit = (unsigned int)(input[pos] - '0');
+        if (parsed > (unsigned long)(UINT_MAX - digit) / 10UL) {
+            return 0;
+        }
+        parsed = parsed * 10UL + digit;
+        pos++;
+    }
+    size_t unit_start = pos;
+    while (input[pos] != '\0') {
+        if (!isalpha(input[pos])) {
+            return 0;
+        }
+        pos++;
+    }
+    *value = (unsigned int)parsed;
+    *unit = input[unit_start] == '\0' ? "px" : (const char *)(input + unit_start);
+    return 1;
+}
+
+static int ptn_libxml_svg_image_info_from_string(PtnStringOperand input, PtnSvgImageInfo *info) {
+    if (input.len == 0 || input.data[0] != '<' || input.len > (size_t)INT_MAX) {
+        return 0;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (api == NULL) {
+        return 0;
+    }
+    int options = PTN_LIBXML_NOWARNING | PTN_LIBXML_NOERROR | PTN_LIBXML_NONET;
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    PtnLibxml2TextReaderPtr reader = api->xmlReaderForMemory(input.data, (int)input.len, NULL, NULL, options);
+    if (reader == NULL) {
+        if (api->xmlSetGenericErrorFunc != NULL) {
+            api->xmlSetGenericErrorFunc(NULL, NULL);
+        }
+        return 0;
+    }
+
+    int found = 0;
+    while (api->xmlTextReaderRead(reader) == 1) {
+        if (api->xmlTextReaderNodeType(reader) != 1) {
+            continue;
+        }
+        const unsigned char *local_name = api->xmlTextReaderConstLocalName(reader);
+        if (local_name == NULL || !ptn_ascii_case_equal((const char *)local_name, "svg")) {
+            break;
+        }
+        unsigned char *width = api->xmlTextReaderGetAttribute(reader, (const unsigned char *)"width");
+        unsigned char *height = api->xmlTextReaderGetAttribute(reader, (const unsigned char *)"height");
+        unsigned int width_value = 0;
+        unsigned int height_value = 0;
+        const char *width_unit = NULL;
+        const char *height_unit = NULL;
+        if (ptn_svg_parse_dimension(width, &width_value, &width_unit) &&
+            ptn_svg_parse_dimension(height, &height_value, &height_unit)) {
+            info->width = width_value;
+            info->height = height_value;
+            info->width_unit = ptn_duplicate_string(width_unit);
+            info->height_unit = ptn_duplicate_string(height_unit);
+            found = 1;
+        }
+        if (width != NULL) {
+            ptn_libxml2_free_owned(api, width);
+        }
+        if (height != NULL) {
+            ptn_libxml2_free_owned(api, height);
+        }
+        break;
+    }
+
+    api->xmlFreeTextReader(reader);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    return found;
+}
+
+static PtnValue ptn_getimagesize_svg_result(PtnSvgImageInfo *info) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int(info->width));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_int(info->height));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_int(PTN_IMAGE_FILETYPE_SVG));
+    if (strcmp(info->width_unit, "px") == 0 && strcmp(info->height_unit, "px") == 0) {
+        char dimensions[128];
+        int written = snprintf(
+            dimensions,
+            sizeof(dimensions),
+            "width=\"%u\" height=\"%u\"",
+            info->width,
+            info->height
+        );
+        if (written < 0 || (size_t)written >= sizeof(dimensions)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_owned_string(ptn_duplicate_string(dimensions)));
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mime"), ptn_string("image/svg+xml"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("width_unit"), ptn_owned_string((char *)info->width_unit));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("height_unit"), ptn_owned_string((char *)info->height_unit));
+    return result;
+}
+
+static PtnValue ptn_internal_getimagesizefromstring(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "getimagesizefromstring", 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnSvgImageInfo info;
+    memset(&info, 0, sizeof(info));
+    int ok = ptn_libxml_svg_image_info_from_string(input, &info);
+    ptn_string_operand_free(input);
+    return ok ? ptn_getimagesize_svg_result(&info) : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_image_type_to_extension(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t image_type = ptn_internal_expect_integer_arg(runtime, "image_type_to_extension", 1, "image_type", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    const char *extension = ptn_image_type_to_extension_string(image_type);
+    if (extension == NULL) {
+        return ptn_bool(0);
+    }
+    int include_dot = argc < 2 || ptn_is_truthy(args[1]);
+    return ptn_string(include_dot ? extension : extension + 1);
+}
+
+static PtnValue ptn_internal_image_type_to_mime_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t image_type = ptn_internal_expect_integer_arg(runtime, "image_type_to_mime_type", 1, "image_type", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_string(ptn_image_type_to_mime_type_string(image_type));
 }
 
 static void ptn_libxml2_bridge_state_append_input(PtnLibxml2LoaderBridgeState *state, char *input) {
@@ -87471,7 +87821,7 @@ static PtnValue ptn_xml_reader_native_owned_string_value(PtnLibxml2Api *api, uns
         return ptn_null();
     }
     PtnValue result = ptn_owned_string(ptn_duplicate_string((const char *)value));
-    api->xmlFree(value);
+    ptn_libxml2_free_owned(api, value);
     return result;
 }
 
@@ -88656,6 +89006,14 @@ static void ptn_xml_parser_data_free(void *raw) {
         free(data->default_attributes[i].value);
     }
     free(data->default_attributes);
+    for (size_t i = 0; i < data->entity_declaration_count; i++) {
+        free(data->entity_declarations[i].name);
+        free(data->entity_declarations[i].value);
+        free(data->entity_declarations[i].public_id);
+        free(data->entity_declarations[i].system_id);
+        free(data->entity_declarations[i].notation_name);
+    }
+    free(data->entity_declarations);
     for (size_t i = 0; i < data->stream_frame_count; i++) {
         ptn_xml_parser_frame_free(&data->stream_frames[i]);
     }
@@ -89383,13 +89741,6 @@ static PtnValue ptn_internal_xml_parser_get_option(PtnRuntime *runtime, size_t a
 }
 
 static void ptn_xml_parser_add_namespace(PtnXmlParserData *data, const char *prefix, const char *uri) {
-    for (size_t i = 0; i < data->namespace_count; i++) {
-        if (strcmp(data->namespaces[i].prefix, prefix) == 0) {
-            free(data->namespaces[i].uri);
-            data->namespaces[i].uri = ptn_duplicate_string(uri);
-            return;
-        }
-    }
     if (data->namespace_count == data->namespace_capacity) {
         size_t new_capacity = data->namespace_capacity == 0 ? 4 : data->namespace_capacity * 2;
         PtnXmlNamespaceEntry *new_entries = realloc(data->namespaces, new_capacity * sizeof(PtnXmlNamespaceEntry));
@@ -89405,12 +89756,27 @@ static void ptn_xml_parser_add_namespace(PtnXmlParserData *data, const char *pre
 }
 
 static const char *ptn_xml_parser_namespace_uri(PtnXmlParserData *data, const char *prefix) {
-    for (size_t i = 0; i < data->namespace_count; i++) {
-        if (strcmp(data->namespaces[i].prefix, prefix) == 0) {
-            return data->namespaces[i].uri;
+    for (size_t i = data->namespace_count; i > 0; i--) {
+        if (strcmp(data->namespaces[i - 1].prefix, prefix) == 0) {
+            return data->namespaces[i - 1].uri;
         }
     }
     return NULL;
+}
+
+static void ptn_xml_parser_pop_namespace(PtnXmlParserData *data, const char *prefix) {
+    for (size_t i = data->namespace_count; i > 0; i--) {
+        if (strcmp(data->namespaces[i - 1].prefix, prefix) != 0) {
+            continue;
+        }
+        free(data->namespaces[i - 1].prefix);
+        free(data->namespaces[i - 1].uri);
+        for (size_t j = i; j < data->namespace_count; j++) {
+            data->namespaces[j - 1] = data->namespaces[j];
+        }
+        data->namespace_count--;
+        return;
+    }
 }
 
 static char *ptn_xml_parser_callback_name(PtnXmlParserData *data, const char *name) {
@@ -89557,6 +89923,71 @@ static void ptn_xml_parser_apply_default_attributes(PtnXmlParserData *parser, co
     }
 }
 
+static void ptn_xml_parser_entity_declaration_set(
+    PtnXmlParserData *parser,
+    const char *name,
+    const char *value,
+    const char *public_id,
+    const char *system_id,
+    const char *notation_name,
+    int external,
+    int unparsed
+) {
+    if (parser == NULL || name == NULL || name[0] == '\0') {
+        return;
+    }
+    for (size_t i = 0; i < parser->entity_declaration_count; i++) {
+        PtnXmlEntityDeclaration *existing = &parser->entity_declarations[i];
+        if (strcmp(existing->name, name) != 0) {
+            continue;
+        }
+        free(existing->value);
+        free(existing->public_id);
+        free(existing->system_id);
+        free(existing->notation_name);
+        existing->value = ptn_duplicate_string(value == NULL ? "" : value);
+        existing->public_id = ptn_duplicate_string(public_id == NULL ? "" : public_id);
+        existing->system_id = ptn_duplicate_string(system_id == NULL ? "" : system_id);
+        existing->notation_name = ptn_duplicate_string(notation_name == NULL ? "" : notation_name);
+        existing->external = external;
+        existing->unparsed = unparsed;
+        return;
+    }
+    if (parser->entity_declaration_count == parser->entity_declaration_capacity) {
+        size_t new_capacity = parser->entity_declaration_capacity == 0 ? 4 : parser->entity_declaration_capacity * 2;
+        if (new_capacity < parser->entity_declaration_capacity || new_capacity > SIZE_MAX / sizeof(PtnXmlEntityDeclaration)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnXmlEntityDeclaration *new_items = realloc(parser->entity_declarations, new_capacity * sizeof(PtnXmlEntityDeclaration));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        parser->entity_declarations = new_items;
+        parser->entity_declaration_capacity = new_capacity;
+    }
+    PtnXmlEntityDeclaration *declaration = &parser->entity_declarations[parser->entity_declaration_count++];
+    declaration->name = ptn_duplicate_string(name);
+    declaration->value = ptn_duplicate_string(value == NULL ? "" : value);
+    declaration->public_id = ptn_duplicate_string(public_id == NULL ? "" : public_id);
+    declaration->system_id = ptn_duplicate_string(system_id == NULL ? "" : system_id);
+    declaration->notation_name = ptn_duplicate_string(notation_name == NULL ? "" : notation_name);
+    declaration->external = external;
+    declaration->unparsed = unparsed;
+}
+
+static const PtnXmlEntityDeclaration *ptn_xml_parser_entity_declaration(PtnXmlParserData *parser, const char *name, size_t name_len) {
+    if (parser == NULL || name == NULL) {
+        return NULL;
+    }
+    for (size_t i = parser->entity_declaration_count; i > 0; i--) {
+        PtnXmlEntityDeclaration *candidate = &parser->entity_declarations[i - 1];
+        if (strlen(candidate->name) == name_len && strncmp(candidate->name, name, name_len) == 0) {
+            return candidate;
+        }
+    }
+    return NULL;
+}
+
 static void ptn_xml_parser_append_utf8(PtnStringBuffer *buffer, unsigned long codepoint) {
     if (codepoint <= 0x7f) {
         ptn_string_buffer_append_char(buffer, (char)codepoint);
@@ -89575,7 +90006,7 @@ static void ptn_xml_parser_append_utf8(PtnStringBuffer *buffer, unsigned long co
     }
 }
 
-static void ptn_xml_parser_append_decoded_entities(PtnStringBuffer *buffer, const char *data, size_t len) {
+static void ptn_xml_parser_append_decoded_entities(PtnXmlParserData *parser, PtnStringBuffer *buffer, const char *data, size_t len, int depth) {
     size_t pos = 0;
     while (pos < len) {
         if (data[pos] != '&') {
@@ -89618,6 +90049,13 @@ static void ptn_xml_parser_append_decoded_entities(PtnStringBuffer *buffer, cons
                 ptn_string_buffer_append_len(buffer, data + pos, semi - pos + 1);
             }
             free(digits);
+        } else if (depth < 16) {
+            const PtnXmlEntityDeclaration *declaration = ptn_xml_parser_entity_declaration(parser, entity, entity_len);
+            if (declaration != NULL && !declaration->external && declaration->value != NULL) {
+                ptn_xml_parser_append_decoded_entities(parser, buffer, declaration->value, strlen(declaration->value), depth + 1);
+            } else {
+                ptn_string_buffer_append_len(buffer, data + pos, semi - pos + 1);
+            }
         } else {
             ptn_string_buffer_append_len(buffer, data + pos, semi - pos + 1);
         }
@@ -89625,10 +90063,10 @@ static void ptn_xml_parser_append_decoded_entities(PtnStringBuffer *buffer, cons
     }
 }
 
-static char *ptn_xml_parser_decode_entities(const char *data, size_t len, size_t *decoded_len) {
+static char *ptn_xml_parser_decode_entities(PtnXmlParserData *parser, const char *data, size_t len, size_t *decoded_len) {
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    ptn_xml_parser_append_decoded_entities(&buffer, data, len);
+    ptn_xml_parser_append_decoded_entities(parser, &buffer, data, len, 0);
     *decoded_len = buffer.len;
     return buffer.data;
 }
@@ -89713,6 +90151,20 @@ static int ptn_xml_parser_call_handler(PtnRuntime *runtime, PtnXmlParserData *pa
     ptn_value_destroy(&result);
     ptn_value_destroy(&callback);
     return runtime->exceptions->active_exception == NULL;
+}
+
+static int ptn_xml_parser_call_handler_truthy(PtnRuntime *runtime, PtnXmlParserData *parser, PtnValue handler, size_t argc, PtnValue *args, size_t line, int *truthy_out) {
+    PtnValue callback = ptn_xml_parser_resolved_callback(runtime, parser, handler);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return 0;
+    }
+    PtnValue result = ptn_internal_call_callback(runtime, callback, argc, args, line);
+    int ok = runtime->exceptions->active_exception == NULL;
+    *truthy_out = ok ? ptn_is_truthy(result) : 0;
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&callback);
+    return ok;
 }
 
 static int ptn_xml_parser_emit_start(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *name, PtnValue attributes, size_t line) {
@@ -89805,6 +90257,141 @@ static int ptn_xml_parser_emit_start_namespace(PtnRuntime *runtime, PtnValue par
     return ok;
 }
 
+static int ptn_xml_parser_emit_end_namespace(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *prefix, size_t line) {
+    if (!parser->has_end_namespace_decl_handler) {
+        return 1;
+    }
+    PtnValue callback_args[2] = {
+        ptn_value_clone(parser_value),
+        prefix == NULL || prefix[0] == '\0' ? ptn_null() : ptn_string(prefix)
+    };
+    int ok = ptn_xml_parser_call_handler(runtime, parser, parser->end_namespace_decl_handler, 2, callback_args, line);
+    ptn_value_destroy(&callback_args[0]);
+    ptn_value_destroy(&callback_args[1]);
+    return ok;
+}
+
+static int ptn_xml_parser_emit_notation_decl(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *name,
+    const char *system_id,
+    const char *public_id,
+    size_t line
+) {
+    if (!parser->has_notation_decl_handler) {
+        return 1;
+    }
+    PtnValue callback_args[5] = {
+        ptn_value_clone(parser_value),
+        ptn_string(name == NULL ? "" : name),
+        ptn_string(""),
+        ptn_string(system_id == NULL ? "" : system_id),
+        ptn_string(public_id == NULL ? "" : public_id)
+    };
+    int ok = ptn_xml_parser_call_handler(runtime, parser, parser->notation_decl_handler, 5, callback_args, line);
+    for (size_t i = 0; i < 5; i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+    return ok;
+}
+
+static int ptn_xml_parser_emit_unparsed_entity_decl(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *name,
+    const char *system_id,
+    const char *public_id,
+    const char *notation_name,
+    size_t line
+) {
+    if (!parser->has_unparsed_entity_decl_handler) {
+        return 1;
+    }
+    PtnValue callback_args[6] = {
+        ptn_value_clone(parser_value),
+        ptn_string(name == NULL ? "" : name),
+        ptn_string(""),
+        ptn_string(system_id == NULL ? "" : system_id),
+        ptn_string(public_id == NULL ? "" : public_id),
+        ptn_string(notation_name == NULL ? "" : notation_name)
+    };
+    int ok = ptn_xml_parser_call_handler(runtime, parser, parser->unparsed_entity_decl_handler, 6, callback_args, line);
+    for (size_t i = 0; i < 6; i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+    return ok;
+}
+
+static int ptn_xml_parser_emit_external_entity_ref(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const PtnXmlEntityDeclaration *declaration,
+    size_t line,
+    int *handled_truthy
+) {
+    *handled_truthy = 1;
+    if (!parser->has_external_entity_ref_handler || declaration == NULL) {
+        return 1;
+    }
+    PtnValue callback_args[5] = {
+        ptn_value_clone(parser_value),
+        ptn_string(declaration->name == NULL ? "" : declaration->name),
+        ptn_string(""),
+        ptn_string(declaration->system_id == NULL ? "" : declaration->system_id),
+        ptn_string(declaration->public_id == NULL ? "" : declaration->public_id)
+    };
+    int ok = ptn_xml_parser_call_handler_truthy(runtime, parser, parser->external_entity_ref_handler, 5, callback_args, line, handled_truthy);
+    for (size_t i = 0; i < 5; i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+    return ok;
+}
+
+static int ptn_xml_parser_check_external_entity_refs(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *data,
+    size_t len,
+    size_t line
+) {
+    size_t pos = 0;
+    while (pos < len) {
+        if (data[pos] != '&') {
+            pos++;
+            continue;
+        }
+        size_t semi = pos + 1;
+        while (semi < len && data[semi] != ';') {
+            semi++;
+        }
+        if (semi >= len) {
+            break;
+        }
+        size_t name_start = pos + 1;
+        size_t name_len = semi - name_start;
+        if (ptn_xml_name_is_valid_span(data + name_start, name_len)) {
+            const PtnXmlEntityDeclaration *declaration = ptn_xml_parser_entity_declaration(parser, data + name_start, name_len);
+            if (declaration != NULL && declaration->external) {
+                int handled_truthy = 1;
+                if (!ptn_xml_parser_emit_external_entity_ref(runtime, parser_value, parser, declaration, line, &handled_truthy)) {
+                    return 0;
+                }
+                if (!handled_truthy) {
+                    parser->error_code = PTN_XML_ERROR_EXTERNAL_ENTITY_HANDLING;
+                    return 0;
+                }
+            }
+        }
+        pos = semi + 1;
+    }
+    return 1;
+}
+
 static void ptn_xml_parser_index_append(PtnValue index, const char *tag, int64_t row_index) {
     PtnArrayKey key = ptn_array_string_key(tag);
     PtnArrayEntry *entry = ptn_array_entry_for_key(index.as.array, key);
@@ -89881,7 +90468,44 @@ static void ptn_xml_parser_frame_free(PtnXmlParserFrame *frame) {
     if (frame->has_attributes) {
         ptn_value_destroy(&frame->attributes);
     }
+    for (size_t i = 0; i < frame->namespace_prefix_count; i++) {
+        free(frame->namespace_prefixes[i]);
+    }
+    free(frame->namespace_prefixes);
     free(frame->text.data);
+}
+
+static void ptn_xml_parser_frame_add_namespace_prefix(PtnXmlParserFrame *frame, const char *prefix) {
+    if (frame == NULL) {
+        return;
+    }
+    if (frame->namespace_prefix_count == frame->namespace_prefix_capacity) {
+        size_t new_capacity = frame->namespace_prefix_capacity == 0 ? 2 : frame->namespace_prefix_capacity * 2;
+        if (new_capacity < frame->namespace_prefix_capacity || new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_prefixes = realloc(frame->namespace_prefixes, new_capacity * sizeof(char *));
+        if (new_prefixes == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        frame->namespace_prefixes = new_prefixes;
+        frame->namespace_prefix_capacity = new_capacity;
+    }
+    frame->namespace_prefixes[frame->namespace_prefix_count++] = ptn_duplicate_string(prefix == NULL ? "" : prefix);
+}
+
+static int ptn_xml_parser_emit_frame_namespace_ends(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, PtnXmlParserFrame *frame, size_t line) {
+    if (frame == NULL) {
+        return 1;
+    }
+    for (size_t i = frame->namespace_prefix_count; i > 0; i--) {
+        const char *prefix = frame->namespace_prefixes[i - 1];
+        if (!ptn_xml_parser_emit_end_namespace(runtime, parser_value, parser, prefix, line)) {
+            return 0;
+        }
+        ptn_xml_parser_pop_namespace(parser, prefix);
+    }
+    return 1;
 }
 
 static void ptn_xml_parser_frame_push(PtnXmlParserFrame **frames, size_t *frame_count, size_t *frame_capacity, PtnXmlParserFrame frame) {
@@ -89988,6 +90612,7 @@ static int ptn_xml_parser_parse_attribute(
     size_t len,
     size_t *pos,
     PtnXmlParserAttributeList *attributes,
+    PtnXmlParserFrame *namespace_scope,
     size_t line
 ) {
     char *name = ptn_xml_read_name(data, len, pos);
@@ -89998,13 +90623,14 @@ static int ptn_xml_parser_parse_attribute(
         free(value);
         char *raw_value = ptn_xml_read_quoted(data, len, pos);
         size_t decoded_len = 0;
-        value = ptn_xml_parser_decode_entities(raw_value, strlen(raw_value), &decoded_len);
+        value = ptn_xml_parser_decode_entities(parser, raw_value, strlen(raw_value), &decoded_len);
         (void)decoded_len;
         free(raw_value);
     }
     if (parser->namespace_processing && (strcmp(name, "xmlns") == 0 || strncmp(name, "xmlns:", 6) == 0)) {
         const char *prefix = strcmp(name, "xmlns") == 0 ? "" : name + 6;
         ptn_xml_parser_add_namespace(parser, prefix, value);
+        ptn_xml_parser_frame_add_namespace_prefix(namespace_scope, prefix);
         if (!ptn_xml_parser_emit_start_namespace(runtime, parser_value, parser, prefix, value, line)) {
             free(name);
             free(value);
@@ -90151,7 +90777,7 @@ static char *ptn_xml_dtd_read_quoted_default(const char *data, size_t len, size_
         (*pos)++;
     }
     size_t decoded_len = 0;
-    char *decoded = ptn_xml_parser_decode_entities(data + start, raw_len, &decoded_len);
+    char *decoded = ptn_xml_parser_decode_entities(NULL, data + start, raw_len, &decoded_len);
     (void)decoded_len;
     return decoded;
 }
@@ -90204,6 +90830,166 @@ static void ptn_xml_parser_collect_attlist_defaults(PtnXmlParserData *parser, co
     }
 }
 
+static void ptn_xml_dtd_skip_declaration_remainder(const char *data, size_t len, size_t *pos) {
+    char quote = '\0';
+    while (*pos < len) {
+        char c = data[*pos];
+        if (quote != '\0') {
+            (*pos)++;
+            if (c == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            (*pos)++;
+            continue;
+        }
+        (*pos)++;
+        if (c == '>') {
+            return;
+        }
+    }
+}
+
+static char *ptn_xml_dtd_read_quoted_raw(const char *data, size_t len, size_t *pos) {
+    ptn_xml_dtd_skip_ws(data, len, pos);
+    if (*pos >= len || (data[*pos] != '\'' && data[*pos] != '"')) {
+        return ptn_duplicate_string("");
+    }
+    return ptn_xml_read_quoted(data, len, pos);
+}
+
+static int ptn_xml_dtd_read_external_ids(const char *data, size_t len, size_t *pos, char **public_id, char **system_id) {
+    *public_id = ptn_duplicate_string("");
+    *system_id = ptn_duplicate_string("");
+    ptn_xml_dtd_skip_ws(data, len, pos);
+    if (*pos + 6 <= len && ptn_ascii_case_equal_n(data + *pos, "SYSTEM", 6)) {
+        *pos += 6;
+        free(*system_id);
+        *system_id = ptn_xml_dtd_read_quoted_raw(data, len, pos);
+        return 1;
+    }
+    if (*pos + 6 <= len && ptn_ascii_case_equal_n(data + *pos, "PUBLIC", 6)) {
+        *pos += 6;
+        free(*public_id);
+        *public_id = ptn_xml_dtd_read_quoted_raw(data, len, pos);
+        ptn_xml_dtd_skip_ws(data, len, pos);
+        if (*pos < len && (data[*pos] == '\'' || data[*pos] == '"')) {
+            free(*system_id);
+            *system_id = ptn_xml_dtd_read_quoted_raw(data, len, pos);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_xml_parser_collect_notation_decl(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *data,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    *pos += 10;
+    ptn_xml_dtd_skip_ws(data, len, pos);
+    char *name = ptn_xml_read_name(data, len, pos);
+    char *public_id = NULL;
+    char *system_id = NULL;
+    (void)ptn_xml_dtd_read_external_ids(data, len, pos, &public_id, &system_id);
+    int ok = ptn_xml_parser_emit_notation_decl(runtime, parser_value, parser, name, system_id, public_id, line);
+    free(name);
+    free(public_id);
+    free(system_id);
+    ptn_xml_dtd_skip_declaration_remainder(data, len, pos);
+    return ok;
+}
+
+static int ptn_xml_parser_collect_entity_decl(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *data,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    *pos += 8;
+    ptn_xml_dtd_skip_ws(data, len, pos);
+    if (*pos < len && data[*pos] == '%') {
+        ptn_xml_dtd_skip_declaration_remainder(data, len, pos);
+        return 1;
+    }
+    char *name = ptn_xml_read_name(data, len, pos);
+    ptn_xml_dtd_skip_ws(data, len, pos);
+    char *value = ptn_duplicate_string("");
+    char *public_id = ptn_duplicate_string("");
+    char *system_id = ptn_duplicate_string("");
+    char *notation_name = ptn_duplicate_string("");
+    int external = 0;
+    int unparsed = 0;
+    if (*pos < len && (data[*pos] == '\'' || data[*pos] == '"')) {
+        char *raw_value = ptn_xml_dtd_read_quoted_raw(data, len, pos);
+        size_t decoded_len = 0;
+        free(value);
+        value = ptn_xml_parser_decode_entities(parser, raw_value, strlen(raw_value), &decoded_len);
+        (void)decoded_len;
+        free(raw_value);
+    } else if (ptn_xml_dtd_read_external_ids(data, len, pos, &public_id, &system_id)) {
+        external = 1;
+        ptn_xml_dtd_skip_ws(data, len, pos);
+        if (*pos + 5 <= len && ptn_ascii_case_equal_n(data + *pos, "NDATA", 5)) {
+            *pos += 5;
+            ptn_xml_dtd_skip_ws(data, len, pos);
+            free(notation_name);
+            notation_name = ptn_xml_read_name(data, len, pos);
+            unparsed = notation_name[0] != '\0';
+        }
+    }
+    ptn_xml_parser_entity_declaration_set(parser, name, value, public_id, system_id, notation_name, external, unparsed);
+    int ok = 1;
+    if (unparsed) {
+        ok = ptn_xml_parser_emit_unparsed_entity_decl(runtime, parser_value, parser, name, system_id, public_id, notation_name, line);
+    }
+    free(name);
+    free(value);
+    free(public_id);
+    free(system_id);
+    free(notation_name);
+    ptn_xml_dtd_skip_declaration_remainder(data, len, pos);
+    return ok;
+}
+
+static int ptn_xml_parser_collect_dtd_declarations(
+    PtnRuntime *runtime,
+    PtnValue parser_value,
+    PtnXmlParserData *parser,
+    const char *data,
+    size_t len,
+    size_t line
+) {
+    size_t pos = 0;
+    while (pos + 8 <= len) {
+        if (pos + 10 <= len && memcmp(data + pos, "<!NOTATION", 10) == 0) {
+            if (!ptn_xml_parser_collect_notation_decl(runtime, parser_value, parser, data, len, &pos, line)) {
+                return 0;
+            }
+            continue;
+        }
+        if (memcmp(data + pos, "<!ENTITY", 8) == 0) {
+            if (!ptn_xml_parser_collect_entity_decl(runtime, parser_value, parser, data, len, &pos, line)) {
+                return 0;
+            }
+            continue;
+        }
+        pos++;
+    }
+    return 1;
+}
+
 static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *data, size_t len, size_t line, int into_struct, int is_final, PtnValue *values_out, PtnValue *index_out) {
     (void)ptn_libxml_boundary_is_local_bounded(parser == NULL ? NULL : parser->boundary);
     parser->error_code = PTN_XML_ERROR_NONE;
@@ -90232,8 +91018,11 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
             while (pos < len && data[pos] != '<') {
                 pos++;
             }
+            if (!ptn_xml_parser_check_external_entity_refs(runtime, parser_value, parser, data + start, pos - start, line)) {
+                goto fail;
+            }
             size_t decoded_len = 0;
-            char *decoded = ptn_xml_parser_decode_entities(data + start, pos - start, &decoded_len);
+            char *decoded = ptn_xml_parser_decode_entities(parser, data + start, pos - start, &decoded_len);
             if (!ptn_xml_parser_emit_character(runtime, parser_value, parser, decoded, decoded_len, line)) {
                 free(decoded);
                 goto fail;
@@ -90335,6 +91124,9 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                     goto fail;
                 }
                 ptn_xml_parser_collect_attlist_defaults(parser, data + start, pos - start);
+                if (!ptn_xml_parser_collect_dtd_declarations(runtime, parser_value, parser, data + start, pos - start, line)) {
+                    goto fail;
+                }
             } else if (!ptn_xml_parser_skip_until(data, len, &pos, ">")) {
                 parser->error_code = PTN_XML_ERROR_TAG_NOT_FINISHED;
                 goto fail;
@@ -90389,6 +91181,12 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                 free(callback_name);
                 goto fail;
             }
+            if (!ptn_xml_parser_emit_frame_namespace_ends(runtime, parser_value, parser, &frame, line)) {
+                ptn_xml_parser_frame_free(&frame);
+                free(raw_name);
+                free(callback_name);
+                goto fail;
+            }
             ptn_xml_parser_frame_free(&frame);
             free(raw_name);
             free(callback_name);
@@ -90405,6 +91203,8 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
         }
         PtnXmlParserAttributeList attributes;
         ptn_xml_parser_attributes_init(&attributes);
+        PtnXmlParserFrame namespace_scope;
+        memset(&namespace_scope, 0, sizeof(namespace_scope));
         int self_closing = 0;
         size_t self_closing_solidus_pos = 0;
         while (pos < len) {
@@ -90426,7 +91226,8 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                 pos++;
                 break;
             }
-            if (!ptn_xml_parser_parse_attribute(runtime, parser_value, parser, data, len, &pos, &attributes, line)) {
+            if (!ptn_xml_parser_parse_attribute(runtime, parser_value, parser, data, len, &pos, &attributes, &namespace_scope, line)) {
+                ptn_xml_parser_frame_free(&namespace_scope);
                 ptn_xml_parser_attributes_free(&attributes);
                 free(raw_name);
                 goto fail;
@@ -90439,6 +91240,7 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
             ptn_xml_parser_flush_open_frame_text(parser, values, index, &row_count, &frames[frame_count - 1]);
         }
         if (!ptn_xml_parser_emit_start(runtime, parser_value, parser, callback_name, attr_array, line)) {
+            ptn_xml_parser_frame_free(&namespace_scope);
             ptn_value_destroy(&attr_array);
             ptn_xml_parser_attributes_free(&attributes);
             free(raw_name);
@@ -90454,6 +91256,7 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                 int ok = ptn_xml_parser_emit_default(runtime, parser_value, parser, open_markup.data, open_markup.len, line);
                 free(open_markup.data);
                 if (!ok) {
+                    ptn_xml_parser_frame_free(&namespace_scope);
                     ptn_value_destroy(&attr_array);
                     ptn_xml_parser_attributes_free(&attributes);
                     free(raw_name);
@@ -90461,6 +91264,7 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                     goto fail;
                 }
             } else if (!ptn_xml_parser_emit_default(runtime, parser_value, parser, data + markup_start, pos - markup_start, line)) {
+                ptn_xml_parser_frame_free(&namespace_scope);
                 ptn_value_destroy(&attr_array);
                 ptn_xml_parser_attributes_free(&attributes);
                 free(raw_name);
@@ -90477,11 +91281,15 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                 frame.has_attributes = 1;
                 frame.level = (int)frame_count + 1;
                 frame.emitted_open = 0;
+                frame.namespace_prefixes = NULL;
+                frame.namespace_prefix_count = 0;
+                frame.namespace_prefix_capacity = 0;
                 ptn_string_buffer_init(&frame.text);
                 ptn_xml_parser_emit_complete_frame(parser, values, index, &row_count, &frame);
                 ptn_xml_parser_frame_free(&frame);
             }
             if (!ptn_xml_parser_emit_end(runtime, parser_value, parser, callback_name, line)) {
+                ptn_xml_parser_frame_free(&namespace_scope);
                 ptn_value_destroy(&attr_array);
                 ptn_xml_parser_attributes_free(&attributes);
                 free(raw_name);
@@ -90497,6 +91305,7 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                 int ok = ptn_xml_parser_emit_default(runtime, parser_value, parser, close_markup.data, close_markup.len, line);
                 free(close_markup.data);
                 if (!ok) {
+                    ptn_xml_parser_frame_free(&namespace_scope);
                     ptn_value_destroy(&attr_array);
                     ptn_xml_parser_attributes_free(&attributes);
                     free(raw_name);
@@ -90504,6 +91313,15 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
                     goto fail;
                 }
             }
+            if (!ptn_xml_parser_emit_frame_namespace_ends(runtime, parser_value, parser, &namespace_scope, line)) {
+                ptn_xml_parser_frame_free(&namespace_scope);
+                ptn_value_destroy(&attr_array);
+                ptn_xml_parser_attributes_free(&attributes);
+                free(raw_name);
+                free(callback_name);
+                goto fail;
+            }
+            ptn_xml_parser_frame_free(&namespace_scope);
             ptn_value_destroy(&attr_array);
             ptn_xml_parser_attributes_free(&attributes);
             free(raw_name);
@@ -90517,6 +91335,12 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
         frame.has_attributes = 1;
         frame.level = (int)frame_count + 1;
         frame.emitted_open = 0;
+        frame.namespace_prefixes = namespace_scope.namespace_prefixes;
+        frame.namespace_prefix_count = namespace_scope.namespace_prefix_count;
+        frame.namespace_prefix_capacity = namespace_scope.namespace_prefix_capacity;
+        namespace_scope.namespace_prefixes = NULL;
+        namespace_scope.namespace_prefix_count = 0;
+        namespace_scope.namespace_prefix_capacity = 0;
         ptn_string_buffer_init(&frame.text);
         ptn_xml_parser_frame_push(&frames, &frame_count, &frame_capacity, frame);
         ptn_xml_parser_attributes_free(&attributes);
@@ -90605,8 +91429,8 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
         return ptn_bool(0);
     }
     if (parser->parsing) {
-        ptn_throw_exception(runtime, "Error", "Parser must not be called recursively");
-        return ptn_null();
+        ptn_emit_warning(&runtime->diagnostics, "xml_parse_into_struct(): Parser must not be called recursively", line);
+        return ptn_bool(0);
     }
     if (parser->finished) {
         if (args[2].type == PTN_REFERENCE) {
@@ -90792,7 +91616,7 @@ static PtnValue ptn_internal_libxml_set_streams_context(PtnRuntime *runtime, siz
         ptn_throw_exception(
             runtime,
             "TypeError",
-            "libxml_set_streams_context(): supplied resource is not a valid stream context resource"
+            "libxml_set_streams_context(): supplied resource is not a valid Stream-Context resource"
         );
         return ptn_null();
     }
@@ -97071,6 +97895,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_defined_functions", 0, 1, ptn_internal_get_defined_functions },
         { "get_extension_funcs", 1, 1, ptn_internal_get_extension_funcs },
+        { "getimagesizefromstring", 1, 1, ptn_internal_getimagesizefromstring },
         { "getopt", 1, 3, ptn_internal_getopt },
         { "get_error_handler", 0, 0, ptn_internal_get_error_handler },
         { "get_exception_handler", 0, 0, ptn_internal_get_exception_handler },
@@ -97130,6 +97955,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "iconv_strrpos", 2, 3, ptn_internal_iconv_strrpos },
         { "iconv_substr", 2, 4, ptn_internal_iconv_substr },
         { "idate", 1, 2, ptn_internal_idate },
+        { "image_type_to_extension", 1, 2, ptn_internal_image_type_to_extension },
+        { "image_type_to_mime_type", 1, 1, ptn_internal_image_type_to_mime_type },
         { "implode", 1, 2, ptn_internal_implode },
         { "in_array", 2, 3, ptn_internal_in_array },
         { "ini_get", 1, 1, ptn_internal_ini_get },
