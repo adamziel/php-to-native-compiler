@@ -70006,6 +70006,87 @@ var_dump(new Foo());
 }
 
 #[test]
+fn compile_enum_var_dump_magic_debug_info_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-var-dump-magic-debug-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-var-dump-magic-debug-info.php");
+    let output = root.join("enum-var-dump-magic-debug-info-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo: string {
+    case Bar = 'Baz';
+
+    public function __debugInfo() {
+        return [__CLASS__ . '::' . $this->name . ' = ' . $this->value];
+    }
+}
+var_dump(Foo::Bar);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "enum(Foo::Bar) (1) {\n",
+            "  [0]=>\n",
+            "  string(14) \"Foo::Bar = Baz\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+    assert!(c_source.contains("enum(%s::%s) (%zu)"));
+}
+
+#[test]
+fn compile_enum_var_dump_non_public_magic_debug_info_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-non-public-magic-debug-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-non-public-magic-debug-info.php");
+    let output = root.join("enum-non-public-magic-debug-info-bin");
+    fs::write(
+        &input,
+        "<?php
+enum HiddenDebug {
+    case Bar;
+
+    private function __debugInfo(): array {
+        return ['ignored' => true];
+    }
+}
+var_dump(HiddenDebug::Bar);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The magic method HiddenDebug::__debugInfo() must have public visibility in {} on line 5\n\
+enum(HiddenDebug::Bar) (0) {{\n\
+}}\n",
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_has_non_public_debug_info"));
+}
+
+#[test]
 fn compile_declared_non_public_property_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-non-public-property-metadata");
     fs::create_dir_all(&root).unwrap();

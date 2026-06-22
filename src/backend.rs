@@ -6200,6 +6200,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_enum_cases(const char *name);\n");
+    out.push_str("static int ptn_declared_class_has_non_public_debug_info(const char *name);\n");
     out.push_str(
         "static const char *ptn_declared_class_enum_backing_type_name(const char *name);\n",
     );
@@ -6664,6 +6665,22 @@ fn emit_class_metadata_helpers(
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_has_enum_cases(const char *name) {\n");
     for class in classes.iter().filter(|class| {
         class.is_enum && class.constants.iter().any(|constant| constant.is_enum_case)
+    }) {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_has_non_public_debug_info(const char *name) {\n");
+    for class in classes.iter().filter(|class| {
+        class.methods.iter().any(|method| {
+            method.name.eq_ignore_ascii_case("__debugInfo")
+                && method.visibility != PropertyVisibility::Public
+        })
     }) {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));

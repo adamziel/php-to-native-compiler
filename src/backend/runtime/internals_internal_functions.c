@@ -1366,6 +1366,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_metadata_key(
 }
 
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
+static int ptn_declared_class_has_non_public_debug_info(const char *name);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_xml_reader_has_current(PtnObject *object);
 static PTN_UNUSED int ptn_internal_xml_property_read(
@@ -2530,7 +2531,13 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
             if (object->enum_case_name != NULL) {
-                ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                if (ptn_declared_class_has_non_public_debug_info(object->class_name)) {
+                    ptn_direct_dump_printf(runtime, "enum(%s::%s) (0) {\n", object->class_name, object->enum_case_name);
+                    ptn_direct_value_var_dump_indent(runtime, indent);
+                    ptn_direct_dump_write_cstr(runtime, "}\n");
+                } else {
+                    ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                }
                 break;
             }
             if (ptn_direct_value_var_dump_spl_fixed_array_object(runtime, object, indent, seen)) {
@@ -2631,15 +2638,25 @@ static PTN_UNUSED int ptn_direct_value_var_dump_magic_debug_info(
         property_count = properties->len;
     }
     PtnObject *object = resolved.as.object;
-    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
-    ptn_direct_dump_printf(
-        runtime,
-        "object(%.*s)#%zu (%zu) {\n",
-        (int)class_len,
-        object->class_name,
-        object->object_id,
-        property_count
-    );
+    if (object->enum_case_name != NULL) {
+        ptn_direct_dump_printf(
+            runtime,
+            "enum(%s::%s) (%zu) {\n",
+            object->class_name,
+            object->enum_case_name,
+            property_count
+        );
+    } else {
+        size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+        ptn_direct_dump_printf(
+            runtime,
+            "object(%.*s)#%zu (%zu) {\n",
+            (int)class_len,
+            object->class_name,
+            object->object_id,
+            property_count
+        );
+    }
     ptn_direct_value_dump_seen_object_push(seen, object);
     for (size_t i = 0; properties != NULL && i < properties->len; i++) {
         ptn_direct_value_var_dump_indent(runtime, 1);
@@ -3576,7 +3593,13 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
     PtnDirectDumpSeen *seen
 ) {
     if (object->enum_case_name != NULL) {
-        ptn_direct_var_dump_writef(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+        if (ptn_declared_class_has_non_public_debug_info(object->class_name)) {
+            ptn_direct_var_dump_writef(runtime, "enum(%s::%s) (0) {\n", object->class_name, object->enum_case_name);
+            ptn_direct_var_dump_indent(runtime, indent);
+            ptn_output_write_cstr(runtime, "}\n");
+        } else {
+            ptn_direct_var_dump_writef(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+        }
         return;
     }
     if (ptn_direct_var_dump_spl_fixed_array_object(runtime, object, indent, seen)) {
@@ -7389,7 +7412,13 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
             if (object->enum_case_name != NULL) {
-                printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                if (ptn_declared_class_has_non_public_debug_info(object->class_name)) {
+                    printf("enum(%s::%s) (0) {\n", object->class_name, object->enum_case_name);
+                    ptn_var_dump_indent(indent);
+                    fputs("}\n", stdout);
+                } else {
+                    printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                }
                 break;
             }
             if (ptn_var_dump_spl_fixed_array_object(object, indent, seen, 0)) {
@@ -7487,7 +7516,16 @@ static int ptn_var_dump_magic_debug_info(
         property_count = properties->len;
     }
     PtnObject *object = resolved.as.object;
-    ptn_var_dump_object_header(object, property_count, 0);
+    if (object->enum_case_name != NULL) {
+        printf(
+            "enum(%s::%s) (%zu) {\n",
+            object->class_name,
+            object->enum_case_name,
+            property_count
+        );
+    } else {
+        ptn_var_dump_object_header(object, property_count, 0);
+    }
     ptn_dump_seen_objects_push(seen, object);
     for (size_t i = 0; properties != NULL && i < properties->len; i++) {
         ptn_var_dump_indent(1);
@@ -97359,6 +97397,7 @@ static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_has_enum_cases(const char *name);
+static int ptn_declared_class_has_non_public_debug_info(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static const char *ptn_declared_class_enum_backing_type_name(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
