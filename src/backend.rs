@@ -36554,6 +36554,7 @@ impl ValueEmitter {
                     argument_unpacks,
                     line,
                     true,
+                    Some("ArrayObject::__construct"),
                 );
                 return result_temp;
             }
@@ -36619,6 +36620,9 @@ impl ValueEmitter {
                 );
             }
             out.push_str("    } else {\n");
+            let known_constructor_name = compile_time_class_name
+                .as_deref()
+                .map(|name| format!("{name}::__construct"));
             self.emit_runtime_new_object(
                 out,
                 &result_temp,
@@ -36627,6 +36631,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 false,
+                known_constructor_name.as_deref(),
             );
             out.push_str("    }\n");
         }
@@ -36717,6 +36722,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 false,
+                None,
             );
             out.push_str("        }\n");
         } else {
@@ -36728,6 +36734,7 @@ impl ValueEmitter {
                 argument_unpacks,
                 line,
                 false,
+                None,
             );
         }
         out.push_str("    }\n");
@@ -37548,6 +37555,7 @@ impl ValueEmitter {
         argument_unpacks: &[bool],
         line: usize,
         declare_result: bool,
+        known_constructor_name: Option<&str>,
     ) {
         if declare_result && class_name.eq_ignore_ascii_case("ArrayObject") {
             out.push_str("    PtnValue ");
@@ -37650,8 +37658,31 @@ impl ValueEmitter {
         }
 
         let mut argument_temps = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            argument_temps.push(self.emit_materialized_value(out, argument));
+        let mut unwrap_array_dim_reference_temps = Vec::new();
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if let Some((function_name, parameter_name)) = known_constructor_name.and_then(|name| {
+                internal_by_ref_parameter_name(name, argument_index)
+                    .map(|parameter_name| (name, parameter_name))
+            }) {
+                let allow_temporary =
+                    internal_by_ref_temporary_argument_allowed(function_name, argument_index);
+                let temp = self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    function_name,
+                    argument_index,
+                    parameter_name,
+                    line,
+                    allow_temporary,
+                    true,
+                );
+                if value_is_array_dim_reference_target(argument) {
+                    unwrap_array_dim_reference_temps.push(temp.clone());
+                }
+                argument_temps.push(temp);
+            } else {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
         }
         if argument_temps.is_empty() {
             self.emit_runtime_new_object_assignment(
@@ -37679,6 +37710,9 @@ impl ValueEmitter {
                 line,
                 declare_result,
             );
+        }
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for argument_temp in argument_temps {
             emit_value_cleanup(out, "    ", &argument_temp);
