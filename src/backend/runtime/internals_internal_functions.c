@@ -125786,6 +125786,48 @@ static PtnValue ptn_spl_object_storage_hash_at(PtnSplObjectStorageData *data, si
     return ptn_value_clone_deref(array->entries[index].value);
 }
 
+static void ptn_spl_object_storage_enforce_memory_limit_for_insert(
+    PtnRuntime *runtime,
+    PtnSplObjectStorageData *data,
+    size_t line
+) {
+    size_t limit = 0;
+    if (!ptn_runtime_memory_limit_bytes(runtime, &limit) || limit == 0) {
+        return;
+    }
+    size_t count = ptn_spl_object_storage_count(data);
+    if (count == SIZE_MAX) {
+        ptn_emit_memory_allocation_overflow_error(runtime, count, 1, 1, line);
+    }
+    count++;
+
+    const size_t per_entry =
+        (sizeof(PtnArrayEntry) * 3) +
+        (sizeof(PtnValue) * 2) +
+        sizeof(PtnObject *) +
+        64;
+    if (count > SIZE_MAX / per_entry) {
+        ptn_emit_memory_allocation_overflow_error(runtime, count, per_entry, 0, line);
+    }
+    size_t estimated_storage = count * per_entry;
+    if (estimated_storage <= limit) {
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+        limit,
+        per_entry
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+}
+
 static PtnValue ptn_spl_object_storage_pairs_array(PtnSplObjectStorageData *data, int named_keys) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t count = ptn_spl_object_storage_count(data);
@@ -125855,6 +125897,72 @@ static void ptn_spl_object_storage_sync_properties(
     PtnValue storage = ptn_spl_object_storage_pairs_array(data, 1);
     ptn_spl_declare_private_value_property(runtime, object, "storage", "SplObjectStorage", storage, line);
     ptn_value_destroy(&storage);
+}
+
+static PtnArrayEntry *ptn_spl_object_storage_property_entry(PtnValue object) {
+    PtnValue resolved_object = ptn_value_deref(object);
+    if (resolved_object.type != PTN_OBJECT ||
+        resolved_object.as.object == NULL ||
+        resolved_object.as.object->properties == NULL) {
+        return NULL;
+    }
+    PtnObject *resolved = resolved_object.as.object;
+    for (size_t i = 0; i < resolved->properties->len; i++) {
+        PtnArrayEntry *entry = &resolved->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(resolved, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static PtnArray *ptn_spl_object_storage_property_array(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplObjectStorageData *data,
+    size_t line
+) {
+    PtnArrayEntry *entry = ptn_spl_object_storage_property_entry(object);
+    PtnValue storage = entry == NULL ? ptn_null() : ptn_value_deref(entry->value);
+    if (storage.type == PTN_ARRAY) {
+        return storage.as.array;
+    }
+    ptn_spl_object_storage_sync_properties(runtime, object, data, line);
+    entry = ptn_spl_object_storage_property_entry(object);
+    storage = entry == NULL ? ptn_null() : ptn_value_deref(entry->value);
+    return storage.type == PTN_ARRAY ? storage.as.array : NULL;
+}
+
+static void ptn_spl_object_storage_sync_property_index(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplObjectStorageData *data,
+    size_t index,
+    size_t line
+) {
+    if (index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    PtnArray *storage = ptn_spl_object_storage_property_array(runtime, object, data, line);
+    if (storage == NULL) {
+        return;
+    }
+
+    PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        pair.as.array,
+        ptn_array_string_key("obj"),
+        ptn_spl_object_storage_object_at(data, index)
+    );
+    ptn_array_set_entry(
+        pair.as.array,
+        ptn_array_string_key("inf"),
+        ptn_spl_object_storage_info_at(data, index)
+    );
+    ptn_array_set_entry(storage, ptn_array_int_key((int64_t)index), pair);
 }
 
 static void ptn_spl_object_storage_load_members(
@@ -125948,6 +126056,9 @@ static int ptn_spl_object_storage_attach_value_ex(
         index = (size_t)existing;
         ptn_value_destroy(&infos->entries[index].value);
         infos->entries[index].value = ptn_value_clone_deref(info);
+        if (sync_properties) {
+            ptn_spl_object_storage_sync_property_index(runtime, receiver, data, index, line);
+        }
     } else {
         if (
             objects->len > (size_t)INT64_MAX ||
@@ -125956,6 +126067,7 @@ static int ptn_spl_object_storage_attach_value_ex(
         ) {
             ptn_abort_out_of_memory();
         }
+        ptn_spl_object_storage_enforce_memory_limit_for_insert(runtime, data, line);
         ptn_array_set_entry(
             objects,
             ptn_array_int_key((int64_t)objects->len),
@@ -125972,11 +126084,11 @@ static int ptn_spl_object_storage_attach_value_ex(
             ptn_value_clone_deref(hash)
         );
         index = objects->len - 1;
+        if (sync_properties) {
+            ptn_spl_object_storage_sync_property_index(runtime, receiver, data, index, line);
+        }
     }
     ptn_value_destroy(&hash);
-    if (sync_properties) {
-        ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
-    }
     if (index_out != NULL) {
         *index_out = index;
     }
