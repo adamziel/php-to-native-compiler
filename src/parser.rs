@@ -19208,6 +19208,12 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
             validate_control_transfers_in_expr(name)?;
             validate_control_transfers_in_exprs(dimensions)?;
         }
+        UnsetTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(array)?;
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
         UnsetTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -20224,6 +20230,9 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
         UnsetTarget::DynamicArrayDim {
             name, dimensions, ..
         } => expr_contains_yield(name) || dimensions.iter().any(expr_contains_yield),
+        UnsetTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => expr_contains_yield(array) || dimensions.iter().any(expr_contains_yield),
         UnsetTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -22578,6 +22587,18 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
                     span: combine_spans(property_span, span),
                 });
             }
+            Expr::Call { .. }
+            | Expr::DynamicCall { .. }
+            | Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. } => {
+                let value_span = current.span();
+                dimensions.reverse();
+                return Ok(UnsetTarget::ValueArrayDim {
+                    array: Box::new(current),
+                    dimensions,
+                    span: combine_spans(value_span, span),
+                });
+            }
             Expr::Grouped { expr, .. } => {
                 current = *expr;
             }
@@ -23227,19 +23248,11 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
-        AssignmentTarget::ValueArrayDim {
-            array, dimensions, ..
-        } => {
+        AssignmentTarget::ValueArrayDim { dimensions, .. } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
                     "Cannot use [] for reading",
                     Some(span),
-                ));
-            }
-            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
-                return Err(Diagnostic::new(
-                    "Cannot use result of built-in function in write context",
-                    Some(call_span),
                 ));
             }
             Ok(())
@@ -23256,19 +23269,6 @@ fn validate_coalesce_assignment_target(
     }
 }
 
-fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> {
-    match expr {
-        Expr::Call { name, span, .. }
-            if is_modeled_internal_function_name(name)
-                && !modeled_internal_has_by_ref_parameter(name) =>
-        {
-            Some(*span)
-        }
-        Expr::Grouped { expr, .. } => modeled_internal_write_context_error_span(expr),
-        _ => None,
-    }
-}
-
 fn validate_expression_assignment_target(
     op: AssignmentOp,
     target: &AssignmentTarget,
@@ -23276,17 +23276,6 @@ fn validate_expression_assignment_target(
 ) -> Result<()> {
     validate_coalesce_assignment_target(op, target, span)?;
     reject_this_assignment_target(target)?;
-
-    if matches!(op, AssignmentOp::Assign) {
-        if let AssignmentTarget::ValueArrayDim { array, .. } = target {
-            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
-                return Err(Diagnostic::new(
-                    "Cannot use result of built-in function in write context",
-                    Some(call_span),
-                ));
-            }
-        }
-    }
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
         return Ok(());
@@ -23299,10 +23288,7 @@ fn validate_expression_assignment_target(
         | AssignmentTarget::PropertyArrayDim { .. }
         | AssignmentTarget::StaticPropertyArrayDim { .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => Ok(()),
-        AssignmentTarget::ValueArrayDim { .. } => Err(Diagnostic::new(
-            "compound assignment expressions currently support variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::ValueArrayDim { .. } => Ok(()),
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
@@ -25398,6 +25384,14 @@ fn unset_target_uses_this_property(target: &UnsetTarget, property_name: &str) ->
             name, dimensions, ..
         } => {
             expr_uses_this_property(name, property_name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        UnsetTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            expr_uses_this_property(array, property_name)
                 || dimensions
                     .iter()
                     .any(|dimension| expr_uses_this_property(dimension, property_name))

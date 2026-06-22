@@ -5173,12 +5173,17 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
     );
     assert_eq!(enum_case_property_write.kind, DiagnosticKind::Fatal);
 
-    let builtin_offset_write = parser::parse("<?php strlen('foo')[0] = 1;").unwrap_err();
-    assert_eq!(
-        builtin_offset_write.message,
-        "Cannot use result of built-in function in write context"
-    );
-    assert_eq!(builtin_offset_write.kind, DiagnosticKind::Fatal);
+    let builtin_offset_write = parser::parse("<?php strlen('foo')[0] = 1;").unwrap();
+    let Statement::Expression { expression, .. } = &builtin_offset_write.statements[0] else {
+        panic!("expected builtin-result offset assignment expression");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Assign {
+            target: AssignmentTarget::ValueArrayDim { .. },
+            ..
+        }
+    ));
 
     let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
     assert_eq!(unset_append.message, "Cannot use [] for unsetting");
@@ -51009,6 +51014,42 @@ var_dump($str);",
         expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_temporary_string_offset_write_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-temporary-string-offset-write-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("temporary-string-offset-write-diagnostics.php");
+    let output = root.join("temporary-string-offset-write-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { chr(0)[0][] = 1; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { unset(chr(0)[0][0]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { ++chr(0)[0]; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { md5(0)[]--; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot use string offset as an array\n",
+            "Cannot use string offset as an array\n",
+            "Cannot increment/decrement string offsets\n",
+            "[] operator not supported for strings\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_read_for_inc_dec"));
+    assert!(c_source.contains("ptn_value_array_path_unset"));
 }
 
 #[test]

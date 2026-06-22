@@ -288,6 +288,14 @@ impl IncludeCollector {
                             }
                             self.path_env.clear();
                         }
+                        UnsetTarget::ValueArrayDim {
+                            array, dimensions, ..
+                        } => {
+                            self.collect_expr(array, source_file, source_dir)?;
+                            for dimension in dimensions {
+                                self.collect_expr(dimension, source_file, source_dir)?;
+                            }
+                        }
                         UnsetTarget::PropertyArrayDim {
                             receiver,
                             dimensions,
