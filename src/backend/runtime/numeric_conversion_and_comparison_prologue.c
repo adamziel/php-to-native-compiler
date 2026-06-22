@@ -1233,20 +1233,79 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
     ptn_symbols_unset_with_runtime_scope(&runtime->symbols, name, runtime);
 }
 
-static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t depth) {
+typedef struct {
+    PtnArray **arrays;
+    size_t len;
+    size_t capacity;
+} PtnTraceSnapshotSeen;
+
+static PTN_UNUSED void ptn_trace_snapshot_seen_init(PtnTraceSnapshotSeen *seen) {
+    seen->arrays = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static PTN_UNUSED void ptn_trace_snapshot_seen_free(PtnTraceSnapshotSeen *seen) {
+    free(seen->arrays);
+    seen->arrays = NULL;
+    seen->len = 0;
+    seen->capacity = 0;
+}
+
+static PTN_UNUSED int ptn_trace_snapshot_seen_contains(PtnTraceSnapshotSeen *seen, PtnArray *array) {
+    for (size_t i = 0; i < seen->len; i++) {
+        if (seen->arrays[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_trace_snapshot_seen_push(PtnTraceSnapshotSeen *seen, PtnArray *array) {
+    if (seen->len == seen->capacity) {
+        size_t new_capacity = seen->capacity == 0 ? 8 : seen->capacity * 2;
+        if (new_capacity < seen->capacity || new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_arrays = realloc(seen->arrays, new_capacity * sizeof(PtnArray *));
+        if (new_arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->arrays = new_arrays;
+        seen->capacity = new_capacity;
+    }
+    seen->arrays[seen->len++] = array;
+}
+
+static PTN_UNUSED void ptn_trace_snapshot_seen_pop(PtnTraceSnapshotSeen *seen) {
+    if (seen->len > 0) {
+        seen->len--;
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(
+    PtnValue value,
+    size_t depth,
+    PtnTraceSnapshotSeen *seen
+) {
     value = ptn_value_deref(value);
     if (value.type != PTN_ARRAY || depth > 64) {
         return ptn_value_deep_clone(value);
     }
+    if (ptn_trace_snapshot_seen_contains(seen, value.as.array)) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
 
     PtnValue snapshot = ptn_array_from_literal_entries(0, NULL);
+    ptn_trace_snapshot_seen_push(seen, value.as.array);
     for (size_t i = 0; i < value.as.array->len; i++) {
         ptn_array_set_entry(
             snapshot.as.array,
             ptn_array_key_clone(value.as.array->entries[i].key),
-            ptn_trace_value_snapshot_depth(value.as.array->entries[i].value, depth + 1)
+            ptn_trace_value_snapshot_depth(value.as.array->entries[i].value, depth + 1, seen)
         );
     }
+    ptn_trace_snapshot_seen_pop(seen);
     snapshot.as.array->next_auto_key = value.as.array->next_auto_key;
     snapshot.as.array->current_index = value.as.array->current_index <= snapshot.as.array->len
         ? value.as.array->current_index
@@ -1260,7 +1319,11 @@ static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t
 }
 
 static PTN_UNUSED PtnValue ptn_trace_value_snapshot(PtnValue value) {
-    return ptn_trace_value_snapshot_depth(value, 0);
+    PtnTraceSnapshotSeen seen;
+    ptn_trace_snapshot_seen_init(&seen);
+    PtnValue snapshot = ptn_trace_value_snapshot_depth(value, 0, &seen);
+    ptn_trace_snapshot_seen_free(&seen);
+    return snapshot;
 }
 
 static PTN_UNUSED int ptn_trace_frame_arg_is_sensitive(PtnTraceFrame *frame, size_t position) {

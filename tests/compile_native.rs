@@ -59259,6 +59259,60 @@ var_dump(count(compact('this')));
 }
 
 #[test]
+fn compile_compact_detects_recursive_reference_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-compact-recursive-reference-arrays");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-recursive-reference-arrays.php");
+    let output = root.join("compact-recursive-reference-arrays-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = 1;
+$b = 2;
+$c = 3;
+$string = \"c\";
+$arr1 = array(\"a\", &$arr1);
+$arr2 = array(\"a\", array(array(array(\"b\"))));
+$arr2[1][0][0][] = &$arr2;
+$arr2[1][0][0][] = &$arr2[1];
+$arr3 = array(&$string);
+
+try {
+    var_dump(compact($arr1));
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump(compact($arr2));
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump(compact($arr3));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Recursion detected\n",
+            "Recursion detected\n",
+            "array(1) {\n",
+            "  [\"c\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_arrow_functions_to_native_binary() {
     let root = temp_dir("ptn-native-arrow-functions");
     fs::create_dir_all(&root).unwrap();
