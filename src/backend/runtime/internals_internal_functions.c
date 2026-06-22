@@ -60585,8 +60585,7 @@ static size_t ptn_gc_destructed_object_count(PtnObject *object) {
         object == NULL ||
         (
             object->destructor_called &&
-            (object->properties == NULL || object->properties->len == 0) &&
-            !ptn_gc_array_reference_auto_flushed()
+            (object->properties == NULL || object->properties->len == 0)
         )
     ) {
         return 0;
@@ -60865,6 +60864,9 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         return ptn_int(0);
     }
     root->gc_running = 1;
+    if (ptn_gc_array_reference_auto_flushed()) {
+        ptn_gc_drain_pending_destructor_array_cycles(runtime);
+    }
     size_t destructor_component_epoch = 0;
     size_t counted_object_epoch = 0;
     size_t object_cycles = ptn_runtime_collect_unreachable_objects(

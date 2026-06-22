@@ -358,8 +358,14 @@ static int ptn_pending_destructor_array_cycle_references_draining = 0;
 static PtnReference *ptn_replaced_reference_cycle_suppressed_reference = NULL;
 static size_t ptn_replaced_reference_cycle_suppression_depth = 0;
 
-/* PTN records possible array-cycle roots and collects them on explicit GC. */
+/* Approximate Zend's root-buffer auto collection for many short-lived array cycles. */
 #define PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD 10000
+
+static PTN_UNUSED void ptn_gc_auto_flush_pending_array_reference_cycles(size_t total) {
+    ptn_pending_array_cycle_collections =
+        total - PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD;
+    ptn_pending_array_cycle_auto_flushed = 1;
+}
 
 static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
     if (count == 0) {
@@ -368,7 +374,31 @@ static PTN_UNUSED void ptn_gc_note_array_reference_cycles(size_t count) {
     if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
         ptn_abort_out_of_memory();
     }
-    ptn_pending_array_cycle_collections += count;
+    size_t total = ptn_pending_array_cycle_collections + count;
+    if (
+        !ptn_pending_array_cycle_auto_flushed &&
+        total > PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD
+    ) {
+        ptn_gc_auto_flush_pending_array_reference_cycles(total);
+        return;
+    }
+    ptn_pending_array_cycle_collections = total;
+}
+
+static PTN_UNUSED void ptn_gc_note_destructor_array_reference_cycle(size_t count) {
+    if (count == 0) {
+        return;
+    }
+    if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
+        ptn_abort_out_of_memory();
+    }
+    size_t total = ptn_pending_array_cycle_collections + count;
+    if (
+        !ptn_pending_array_cycle_auto_flushed &&
+        total >= PTN_GC_PENDING_ARRAY_AUTO_COLLECT_THRESHOLD
+    ) {
+        ptn_gc_auto_flush_pending_array_reference_cycles(total);
+    }
 }
 
 static PTN_UNUSED int ptn_gc_array_reference_auto_flushed(void) {
@@ -596,10 +626,15 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
             int contains_pending_destructor =
                 ptn_array_contains_pending_destructor(reference->value.as.array, 0);
             if (!contains_pending_destructor) {
-                ptn_gc_note_array_reference_cycles(internal_refs);
+                if (!ptn_pending_destructor_array_cycle_references_draining) {
+                    ptn_gc_note_array_reference_cycles(internal_refs);
+                }
                 ptn_array_break_reference_cycle(reference->value.as.array, reference, 0);
-            } else if (ptn_gc_array_reference_auto_flushed()) {
-                enqueue_pending_destructor_cycle = 1;
+            } else {
+                ptn_gc_note_destructor_array_reference_cycle(internal_refs);
+                if (ptn_gc_array_reference_auto_flushed()) {
+                    enqueue_pending_destructor_cycle = 1;
+                }
             }
         }
     }

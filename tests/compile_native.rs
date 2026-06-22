@@ -12421,6 +12421,101 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_root_buffer_auto_collection_remainder_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-root-buffer-auto-collection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-root-buffer-auto-collection.php");
+    let output = root.join("gc-root-buffer-auto-collection-bin");
+    fs::write(
+        &input,
+        "<?php
+$a=array();
+for ($i=0; $i < 9999; $i++) {
+    $a[$i] = array(array());
+    $a[$i][0] = & $a[$i];
+}
+var_dump(gc_collect_cycles());
+unset($a);
+var_dump(gc_collect_cycles());
+$a=array();
+for ($i=0; $i < 10001; $i++) {
+    $a[$i] = array(array());
+    $a[$i][0] = & $a[$i];
+}
+var_dump(gc_collect_cycles());
+unset($a);
+var_dump(gc_collect_cycles());
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(9999)\nint(0)\nint(1)\nok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_gc_destructor_array_root_flush_preserves_object_count_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-root-buffer-flush");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-root-buffer-flush.php");
+    let output = root.join("gc-destructor-root-buffer-flush-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public $b;
+}
+
+class B {
+    public $a;
+}
+
+class C {
+    public function __destruct() {
+        if (isset($GLOBALS[\"a\"])) {
+            unset($GLOBALS[\"a\"]);
+        }
+    }
+}
+
+$a = new A;
+$a->b = new B;
+$a->b->a = $a;
+
+$i = 0;
+
+while ($i++ < 9999) {
+    $t = [];
+    $t[] = &$t;
+    unset($t);
+}
+$t = [new C];
+$t[] = &$t;
+unset($t);
+
+unset($a);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_reentrant_destructor_collection_defers_pending_cycles_to_native_binary() {
     let root = temp_dir("ptn-native-gc-reentrant-destructor-collection");
     fs::create_dir_all(&root).unwrap();
