@@ -4492,6 +4492,7 @@ static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
     const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
     const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
     if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)
+        && !ptn_declared_trait_exists(resolved_class_name)
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         && !ptn_internal_class_exists_name(resolved_class_name)
 #endif
@@ -5428,6 +5429,76 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_runtime_emit_static_trait_property_deprecation(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    if (runtime == NULL || declaring_class == NULL || !ptn_declared_trait_exists(declaring_class)) {
+        return 1;
+    }
+    int needed = snprintf(
+        NULL,
+        0,
+        "Accessing static trait property %s::$%s is deprecated, it should only be accessed on a class using the trait",
+        declaring_class,
+        property
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Accessing static trait property %s::$%s is deprecated, it should only be accessed on a class using the trait",
+        declaring_class,
+        property
+    );
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    free(message);
+    return runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_emit_static_trait_method_deprecation(
+    PtnRuntime *runtime,
+    const char *trait_name,
+    const char *method_name,
+    size_t line
+) {
+    if (runtime == NULL) {
+        return 1;
+    }
+    int needed = snprintf(
+        NULL,
+        0,
+        "Calling static trait method %s::%s is deprecated, it should only be called on a class using the trait",
+        trait_name,
+        method_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Calling static trait method %s::%s is deprecated, it should only be called on a class using the trait",
+        trait_name,
+        method_name
+    );
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    free(message);
+    return runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -5449,6 +5520,15 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     );
     if (key != NULL) {
         if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+            free(key);
+            return ptn_null();
+        }
+        if (!ptn_runtime_emit_static_trait_property_deprecation(
+                runtime,
+                declaring_class,
+                property,
+                line
+            )) {
             free(key);
             return ptn_null();
         }
@@ -5526,6 +5606,15 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property_for_indirect_write(
         return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
     }
     if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+        free(key);
+        return ptn_null();
+    }
+    if (!ptn_runtime_emit_static_trait_property_deprecation(
+            runtime,
+            declaring_class,
+            property,
+            line
+        )) {
         free(key);
         return ptn_null();
     }
@@ -5756,6 +5845,15 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
         free(key);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
+    if (!ptn_runtime_emit_static_trait_property_deprecation(
+            runtime,
+            declaring_class,
+            property,
+            line
+        )) {
+        free(key);
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
 
     PtnValue read_visibility_value;
     PtnValue set_visibility_value;
@@ -5924,6 +6022,15 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     );
     if (key == NULL) {
         return ptn_runtime_undeclared_static_property(runtime, class_name, property, line);
+    }
+    if (!ptn_runtime_emit_static_trait_property_deprecation(
+            runtime,
+            declaring_class,
+            property,
+            line
+        )) {
+        free(key);
+        return ptn_null();
     }
     PtnValue read_visibility_value;
     PtnValue set_visibility_value;

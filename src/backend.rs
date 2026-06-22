@@ -5737,7 +5737,9 @@ fn emit_user_function_dispatch(
         "\nstatic PtnValue ptn_call_user_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line, int *found) {\n",
     );
     if functions.iter().all(|function| {
-        function.is_anonymous || (function.class_name.is_some() && !function.is_static)
+        function.is_anonymous
+            || function_is_trait_body(function)
+            || (function.class_name.is_some() && !function.is_static)
     }) {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)name;\n");
@@ -5746,7 +5748,10 @@ fn emit_user_function_dispatch(
         out.push_str("    (void)line;\n");
     }
     for (index, function) in functions.iter().enumerate() {
-        if function.is_anonymous || (function.class_name.is_some() && !function.is_static) {
+        if function.is_anonymous
+            || function_is_trait_body(function)
+            || (function.class_name.is_some() && !function.is_static)
+        {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -5907,7 +5912,7 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
-    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_declared_trait_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
@@ -5918,6 +5923,14 @@ fn emit_user_function_dispatch(
     out.push_str("            *found = 1;\n");
     out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_class_not_found_message, runtime->source_path, line);\n");
     out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_declared_trait_exists(ptn_static_magic_resolved_class)) {\n");
+    out.push_str("            PtnValue ptn_static_trait_result;\n");
+    out.push_str("            if (ptn_declared_trait_static_method_call(runtime, ptn_static_magic_resolved_class, ptn_static_magic_method, argc, args, line, &ptn_static_trait_result)) {\n");
+    out.push_str("                free(ptn_static_magic_name);\n");
+    out.push_str("                *found = 1;\n");
+    out.push_str("                return ptn_static_trait_result;\n");
+    out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        if (ptn_ascii_case_equal(ptn_static_magic_method, \"__construct\")) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
@@ -5964,7 +5977,7 @@ fn emit_user_function_dispatch(
     );
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
-    out.push_str("        if (!ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) && !ptn_internal_class_exists_name(ptn_static_call_resolved_class)) {\n");
+    out.push_str("        if (!ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) && !ptn_declared_trait_exists(ptn_static_call_resolved_class) && !ptn_internal_class_exists_name(ptn_static_call_resolved_class)) {\n");
     out.push_str(
         "            ptn_runtime_autoload_class(runtime, ptn_static_call_resolved_class, line);\n",
     );
@@ -6088,6 +6101,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
     );
     out.push_str("static PTN_UNUSED int ptn_declared_class_static_call_magic_applicable(const char *class_name, const char *method_name, const char *access_scope);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_magic_static_call(PtnRuntime *runtime, const char *class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_trait_static_method_call(PtnRuntime *runtime, const char *trait_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n");
 }
 
 fn emit_class_metadata_helpers(
@@ -9041,6 +9055,138 @@ fn emit_class_metadata_helpers(
         out.push_str("        ptn_value_destroy(&ptn_magic_args[0]);\n");
         out.push_str("        ptn_value_destroy(&ptn_magic_args[1]);\n");
         out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_trait_static_method_call(PtnRuntime *runtime, const char *trait_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)trait_name;\n");
+    out.push_str("    (void)method_name;\n");
+    out.push_str("    (void)argc;\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)result_out;\n");
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(trait_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for method in &trait_decl.methods {
+            if !method.is_static {
+                continue;
+            }
+            let function = &functions[method.function_index];
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            if (!ptn_runtime_emit_static_trait_method_deprecation(runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\", method_name, line)) {\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("            if (!ptn_declared_method_visibility_allows(runtime->current_class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(")) {\n");
+            out.push_str("                *result_out = ptn_throw_method_visibility_error(runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(method.visibility));
+            out.push_str(", line);\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            if method.is_abstract {
+                out.push_str("            char ptn_trait_abstract_method_message[512];\n");
+                out.push_str("            int ptn_trait_abstract_method_written = snprintf(ptn_trait_abstract_method_message, sizeof(ptn_trait_abstract_method_message), \"Cannot call abstract method %s::%s()\", \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\");\n");
+                out.push_str("            if (ptn_trait_abstract_method_written < 0 || (size_t)ptn_trait_abstract_method_written >= sizeof(ptn_trait_abstract_method_message)) {\n");
+                out.push_str("                ptn_abort_out_of_memory();\n");
+                out.push_str("            }\n");
+                out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_trait_abstract_method_message, runtime->source_path, line);\n");
+                out.push_str("            *result_out = ptn_null();\n");
+            } else {
+                emit_deprecated_function_warning(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    function,
+                    "line",
+                );
+                out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+                out.push_str("            runtime->called_class_name_override = \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("\";\n");
+                out.push_str("            *result_out = ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, ptn_string(\"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("\"), argc, args, line);\n");
+                out.push_str("            runtime->called_class_name_override = ptn_previous_called_class;\n");
+            }
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        if let Some(method) = trait_magic_call_static_method(trait_decl) {
+            let function = &functions[method.function_index];
+            out.push_str("        if (!ptn_runtime_emit_static_trait_method_deprecation(runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\", method_name, line)) {\n");
+            out.push_str("            *result_out = ptn_null();\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            out.push_str("        PtnValue ptn_trait_magic_args[2];\n");
+            out.push_str(
+                "        ptn_trait_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));\n",
+            );
+            out.push_str("        ptn_trait_magic_args[1] = ptn_array_from_literal_entries(0, NULL);\n");
+            out.push_str("        for (size_t ptn_trait_magic_arg_i = 0; ptn_trait_magic_arg_i < argc; ptn_trait_magic_arg_i++) {\n");
+            out.push_str("            if (ptn_trait_magic_arg_i > (size_t)INT64_MAX) {\n");
+            out.push_str("                ptn_abort_out_of_memory();\n");
+            out.push_str("            }\n");
+            out.push_str("            const char *ptn_trait_magic_arg_name = runtime->next_call_arg_names != NULL ? runtime->next_call_arg_names[ptn_trait_magic_arg_i] : NULL;\n");
+            out.push_str("            PtnArrayKey ptn_trait_magic_arg_key = ptn_trait_magic_arg_name != NULL ? ptn_array_string_key(ptn_trait_magic_arg_name) : ptn_array_int_key((int64_t)ptn_trait_magic_arg_i);\n");
+            out.push_str("            PtnValue ptn_trait_magic_arg_value = (runtime->warn_by_ref_argument_mismatch && ptn_value_is_by_ref_argument_source(args[ptn_trait_magic_arg_i])) ? ptn_value_clone(args[ptn_trait_magic_arg_i]) : ptn_value_deep_clone(ptn_value_deref(args[ptn_trait_magic_arg_i]));\n");
+            out.push_str("            ptn_array_set_entry(ptn_trait_magic_args[1].as.array, ptn_trait_magic_arg_key, ptn_trait_magic_arg_value);\n");
+            out.push_str("        }\n");
+            emit_dynamic_method_deprecated_warning(
+                out,
+                "        ",
+                "&runtime->diagnostics",
+                &trait_decl.name,
+                "method_name",
+                function,
+                "line",
+            );
+            out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+            out.push_str("        runtime->called_class_name_override = \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\";\n");
+            out.push_str("        const char *const *ptn_magic_previous_arg_names = runtime->next_call_arg_names;\n");
+            out.push_str("        runtime->next_call_arg_names = NULL;\n");
+            out.push_str("        *result_out = ");
+            out.push_str(&user_function_c_name(method.function_index));
+            out.push_str("(runtime, ptn_string(\"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\"), 2, ptn_trait_magic_args, line);\n");
+            out.push_str("        runtime->next_call_arg_names = ptn_magic_previous_arg_names;\n");
+            out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
+            out.push_str("        ptn_value_destroy(&ptn_trait_magic_args[0]);\n");
+            out.push_str("        ptn_value_destroy(&ptn_trait_magic_args[1]);\n");
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -17025,6 +17171,14 @@ fn class_magic_call_static_method<'a>(
                 && method.name.eq_ignore_ascii_case("__callStatic")
         })
         .map(|method| method.method)
+}
+
+fn trait_magic_call_static_method(trait_decl: &TraitDecl) -> Option<&TraitMethodDecl> {
+    trait_decl.methods.iter().find(|method| {
+        method.visibility == PropertyVisibility::Public
+            && method.is_static
+            && method.name.eq_ignore_ascii_case("__callStatic")
+    })
 }
 
 fn emit_scoped_instance_magic_call(
@@ -28576,6 +28730,15 @@ struct DirectUserCall {
     method_name: Option<String>,
 }
 
+fn function_is_trait_body(function: &FunctionDecl) -> bool {
+    function
+        .class_name
+        .as_deref()
+        .zip(function.trait_name.as_deref())
+        .is_some_and(|(class_name, trait_name)| class_name.eq_ignore_ascii_case(trait_name))
+        && function.trait_method_name.is_some()
+}
+
 struct ConcatOperand<'a> {
     value: &'a ValueExpr,
     line: usize,
@@ -30529,6 +30692,7 @@ impl ValueEmitter {
             .enumerate()
             .find(|(_, function)| {
                 !function.is_anonymous
+                    && !function_is_trait_body(function)
                     && (function.class_name.is_none() || function.is_static)
                     && function.name.eq_ignore_ascii_case(name)
                     && function
@@ -38466,6 +38630,29 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
+        if self.class_name_fetch_uses_runtime_scope(class_name) {
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            out.push_str("    if (");
+            out.push_str(&result_temp);
+            out.push_str("_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+            out.push_str(&result_temp);
+            out.push_str("_class_name, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            self.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            return result_temp;
+        }
         let resolved_class_name = self.static_property_class_name(class_name);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -38758,6 +38945,29 @@ impl ValueEmitter {
         name: &str,
         line: usize,
     ) -> String {
+        if self.class_name_fetch_uses_runtime_scope(class_name) {
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            out.push_str("    if (");
+            out.push_str(&result_temp);
+            out.push_str("_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_reference_for_static_property(&runtime, ");
+            out.push_str(&result_temp);
+            out.push_str("_class_name, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            self.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            return result_temp;
+        }
         let resolved_class_name = self.static_property_class_name(class_name);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
