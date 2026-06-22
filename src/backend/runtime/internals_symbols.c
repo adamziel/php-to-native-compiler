@@ -125,6 +125,46 @@ static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference
     return count;
 }
 
+static PTN_UNUSED int ptn_reference_is_protected_by_live_array_iterator(
+    PtnRuntime *runtime,
+    PtnReference *reference
+) {
+    if (reference == NULL) {
+        return 0;
+    }
+    if (
+        reference->value.type == PTN_ARRAY &&
+        reference->value.as.array != NULL &&
+        reference->value.as.array->iterator_refcount != 0
+    ) {
+        return 1;
+    }
+
+    PtnRuntime *owner = runtime != NULL ? runtime : reference->lifecycle_runtime;
+    if (
+        owner == NULL &&
+        reference->value.type == PTN_ARRAY &&
+        reference->value.as.array != NULL
+    ) {
+        owner = reference->value.as.array->lifecycle_runtime;
+    }
+    PtnRuntime *root = ptn_runtime_root(owner);
+    if (root == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < root->live_arrays_len; i++) {
+        PtnArray *array = root->live_arrays[i];
+        if (
+            array != NULL &&
+            array->iterator_refcount != 0 &&
+            ptn_array_count_reference(array, reference, 0) != 0
+        ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_object_has_pending_declared_destructor(PtnObject *object) {
     if (
         object == NULL ||
@@ -616,7 +656,8 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     int enqueue_pending_destructor_cycle = 0;
     if (reference->value.type == PTN_ARRAY &&
         reference->value.as.array != NULL &&
-        reference->value.as.array->refcount == 1) {
+        reference->value.as.array->refcount == 1 &&
+        !ptn_reference_is_protected_by_live_array_iterator(NULL, reference)) {
         size_t internal_refs = ptn_array_count_reference(reference->value.as.array, reference, 0);
         if (
             internal_refs > 0 &&
@@ -702,12 +743,12 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
         array->refcount--;
         return;
     }
-    ptn_runtime_unregister_array(array->lifecycle_runtime, array);
     array->destructing = 1;
     if (array->iterator_refcount != 0) {
         array->refcount = 0;
         return;
     }
+    ptn_runtime_unregister_array(array->lifecycle_runtime, array);
     ptn_array_destroy_storage(array);
 }
 

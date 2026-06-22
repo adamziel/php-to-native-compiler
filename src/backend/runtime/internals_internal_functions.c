@@ -60538,6 +60538,12 @@ static size_t ptn_runtime_mark_gc_roots(PtnRuntime *runtime, PtnRuntime *root) {
     for (size_t i = 0; i < root->temporary_roots_len; i++) {
         ptn_gc_mark_stack_push(&stack, root->temporary_roots[i]);
     }
+    for (size_t i = 0; i < root->live_arrays_len; i++) {
+        PtnArray *array = root->live_arrays[i];
+        if (array != NULL && array->iterator_refcount != 0) {
+            ptn_gc_mark_stack_push(&stack, ptn_gc_borrowed_array_value(array));
+        }
+    }
 
     ptn_gc_mark_reachable_values(&stack, epoch);
     free(stack.items);
@@ -60762,6 +60768,7 @@ static size_t ptn_runtime_collect_unreachable_references_and_arrays(
             reference == NULL ||
             reference->refcount == 0 ||
             reference->gc_collecting ||
+            ptn_reference_is_protected_by_live_array_iterator(root, reference) ||
             reference->gc_mark_epoch == epoch
         ) {
             continue;

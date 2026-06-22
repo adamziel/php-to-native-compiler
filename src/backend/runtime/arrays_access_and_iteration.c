@@ -10987,6 +10987,7 @@ static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array) {
     }
     array->iterator_refcount--;
     if (array->iterator_refcount == 0 && array->refcount == 0) {
+        ptn_runtime_unregister_array(array->lifecycle_runtime, array);
         ptn_array_destroy_storage(array);
     }
 }

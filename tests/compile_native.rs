@@ -12421,6 +12421,43 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_defers_foreach_by_ref_array_cycles_until_iterator_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-foreach-by-ref-array-cycle-deferral");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-foreach-by-ref-array-cycle-deferral.php");
+    let output = root.join("gc-foreach-by-ref-array-cycle-deferral-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = [0, 1];
+foreach ($a as &$v) {
+    $a[0] =& $a;
+    $a[1] = array();
+    $a[1][0] =& $a[1];
+    $b = 1;
+    $a =& $b;
+    var_dump(gc_collect_cycles());
+    break;
+}
+var_dump(gc_collect_cycles());
+unset($v);
+var_dump(gc_collect_cycles());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(2)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_root_buffer_auto_collection_remainder_to_native_binary() {
     let root = temp_dir("ptn-native-gc-root-buffer-auto-collection");
     fs::create_dir_all(&root).unwrap();
