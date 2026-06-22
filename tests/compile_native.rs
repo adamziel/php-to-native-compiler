@@ -575,6 +575,219 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
 }
 
 #[test]
+fn compile_spl_fixed_array_size_changes_during_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-resize-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-resize-foreach.php");
+    let output = root.join("spl-fixed-array-resize-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$splFixedArray = SplFixedArray::fromArray(["a", "b", "c"]);
+foreach ($splFixedArray as $k => $v) {
+    echo "$k => $v\n";
+    if ($k == 0) {
+        $splFixedArray->setSize(2);
+    }
+}
+echo "---\n";
+
+$splFixedArray = SplFixedArray::fromArray(["a", "b", "c"]);
+foreach ($splFixedArray as $k => $v) {
+    echo "$k => $v\n";
+    if ($k == 1) {
+        $splFixedArray->setSize(2);
+    }
+}
+echo "---\n";
+
+$splFixedArray = SplFixedArray::fromArray(["a", "b", "c"]);
+foreach ($splFixedArray as $k => $v) {
+    echo "$k => $v\n";
+    if ($k == 2) {
+        $splFixedArray->setSize(2);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0 => a\n1 => b\n---\n0 => a\n1 => b\n---\n0 => a\n1 => b\n2 => c\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_spl_fixed_array_iterator_from_object"));
+}
+
+#[test]
+fn compile_spl_fixed_array_serialize_round_trip_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-serialize-round-trip");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-serialize-round-trip.php");
+    let output = root.join("spl-fixed-array-serialize-round-trip-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+
+$array = new SplFixedArray(3);
+$obj = new stdClass;
+$obj->prop = "v";
+
+$array[0] = "foo";
+$array[2] = $obj;
+$array->foo = "bar";
+
+$encoded = serialize($array);
+echo $encoded, "\n";
+$decoded = unserialize($encoded);
+
+var_dump(count($decoded), $decoded->getSize(), $decoded[0], $decoded[1]);
+var_dump($decoded[2]->prop, $decoded->foo);
+$decoded[1] = "quux";
+var_dump($decoded[1]);
+
+$nonempty = new SplFixedArray(1);
+$nonempty->__unserialize([
+    [1],
+    ["foo" => "bar"],
+]);
+var_dump($nonempty->getSize(), $nonempty[0], isset($nonempty->foo));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:13:\"SplFixedArray\":4:{i:0;s:3:\"foo\";i:1;N;i:2;O:8:\"stdClass\":1:{s:4:\"prop\";s:1:\"v\";}s:3:\"foo\";s:3:\"bar\";}\n",
+            "int(3)\n",
+            "int(3)\n",
+            "string(3) \"foo\"\n",
+            "NULL\n",
+            "string(1) \"v\"\n",
+            "string(3) \"bar\"\n",
+            "string(4) \"quux\"\n",
+            "int(1)\n",
+            "NULL\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_serialize_append_spl_fixed_array_object"));
+}
+
+#[test]
+fn compile_spl_fixed_array_object_surfaces_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-object-surfaces");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-object-surfaces.php");
+    let output = root.join("spl-fixed-array-object-surfaces-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ALL);
+
+#[AllowDynamicProperties]
+class MyFixed extends SplFixedArray {
+    public $x;
+}
+
+class HasDestructor {
+    public function __destruct() {
+        global $values;
+        echo "dtor:";
+        var_dump($values[0]);
+        $values->setSize(0);
+    }
+}
+
+$fixed = new MyFixed(2);
+$fixed[0] = new stdClass();
+$fixed[1] = 2;
+$fixed->x = "prop";
+$fixed->{0} = "dynamic-zero";
+
+echo json_encode($fixed), "\n";
+var_dump(array_keys(get_mangled_object_vars($fixed)));
+
+$cast = (array) $fixed;
+var_dump($cast[0], $cast[1], $cast["x"]);
+
+$copy = unserialize(serialize($fixed));
+var_dump($copy[0], $copy[1], $copy->x);
+
+$values = new SplFixedArray(1);
+$values[0] = new HasDestructor();
+$values[0] = false;
+echo "after ", $values->getSize(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "[{},2]\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "string(12) \"dynamic-zero\"\n",
+            "int(2)\n",
+            "string(4) \"prop\"\n",
+            "string(12) \"dynamic-zero\"\n",
+            "int(2)\n",
+            "string(4) \"prop\"\n",
+            "dtor:bool(false)\n",
+            "after 0\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_spl_fixed_array_debug_properties"));
+    assert!(c_source.contains("ptn_array_set_entry_publish_first"));
+}
+
+#[test]
 fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     let root = temp_dir("ptn-native-spl-file-list-surfaces");
     fs::create_dir_all(&root).unwrap();

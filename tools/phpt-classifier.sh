@@ -1393,6 +1393,12 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_spl_fixed_array_surface_row() {
             return ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_overloaded_SplFixedArray[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/gh15918[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplFixedArray_change_size_during_iteration[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplFixedArray_get_properties_for[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplFixedArray_immediate_gc[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplFixedArray_serialize[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplFixedArray_setSize_destruct[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/splfixedarray_json_encode[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/SplArray_fromArray[.]phpt$/
         }
         function ptn_supported_spl_fixed_array_surface_line(line) {

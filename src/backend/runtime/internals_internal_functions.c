@@ -2104,6 +2104,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+static PtnValue ptn_spl_fixed_array_debug_properties(PtnObject *object);
 #endif
 
 static PTN_UNUSED int ptn_direct_value_var_dump_spl_fixed_array_object(
@@ -2119,15 +2120,10 @@ static PTN_UNUSED int ptn_direct_value_var_dump_spl_fixed_array_object(
     (void)seen;
     return 0;
 #else
-    if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
+    if (object == NULL || !ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
         return 0;
     }
-    PtnValue object_value = ptn_object(object);
-    object_value.owned = 0;
-    PtnValue array = ptn_null();
-    if (!ptn_internal_cast_array_object(object_value, &array)) {
-        return 0;
-    }
+    PtnValue array = ptn_spl_fixed_array_debug_properties(object);
     PtnValue resolved_array = ptn_value_deref(array);
     PtnArray *entries = resolved_array.type == PTN_ARRAY ? resolved_array.as.array : NULL;
     ptn_direct_value_var_dump_object_header(runtime, object, entries == NULL ? 0 : entries->len);
@@ -3514,15 +3510,10 @@ static PTN_UNUSED int ptn_direct_var_dump_spl_fixed_array_object(
     (void)seen;
     return 0;
 #else
-    if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
+    if (object == NULL || !ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
         return 0;
     }
-    PtnValue object_value = ptn_object(object);
-    object_value.owned = 0;
-    PtnValue array = ptn_null();
-    if (!ptn_internal_cast_array_object(object_value, &array)) {
-        return 0;
-    }
+    PtnValue array = ptn_spl_fixed_array_debug_properties(object);
     PtnValue resolved_array = ptn_value_deref(array);
     PtnArray *entries = resolved_array.type == PTN_ARRAY ? resolved_array.as.array : NULL;
     size_t class_name_len = ptn_direct_var_dump_class_name_len(object->class_name);
@@ -5985,6 +5976,8 @@ typedef struct {
     size_t index;
 } PtnSplFixedArrayData;
 static PtnValue ptn_spl_fixed_array_storage_to_array(PtnSplFixedArrayData *data);
+static PtnValue ptn_spl_fixed_array_cast_to_array(PtnObject *object);
+static void ptn_spl_fixed_array_remove_out_of_range_entries(PtnSplFixedArrayData *data);
 static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
     PtnRuntime *runtime,
     PtnValue value,
@@ -6208,6 +6201,13 @@ static int ptn_object_metadata_is_spl_array_backed_storage(const PtnObjectProper
         metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
         (ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") ||
          ptn_ascii_case_equal(metadata->declaring_class, "ArrayIterator")) &&
+        strcmp(metadata->display_name, "storage") == 0;
+}
+
+static int ptn_object_metadata_is_spl_fixed_array_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        ptn_ascii_case_equal(metadata->declaring_class, "SplFixedArray") &&
         strcmp(metadata->display_name, "storage") == 0;
 }
 
@@ -6652,13 +6652,10 @@ static int ptn_var_dump_spl_fixed_array_object(
     (void)debug;
     return 0;
 #else
-    if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
+    if (object == NULL || !ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
         return 0;
     }
-    PtnSplFixedArrayData *data = object->native_data == NULL
-        ? NULL
-        : (PtnSplFixedArrayData *)object->native_data;
-    PtnValue array = ptn_spl_fixed_array_storage_to_array(data);
+    PtnValue array = ptn_spl_fixed_array_debug_properties(object);
     PtnValue resolved_array = ptn_value_deref(array);
     PtnArray *entries = resolved_array.type == PTN_ARRAY ? resolved_array.as.array : NULL;
     ptn_var_dump_object_header(object, entries == NULL ? 0 : entries->len, debug);
@@ -7836,11 +7833,8 @@ static void ptn_print_r_object(
         return;
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (object != NULL && ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
-        PtnSplFixedArrayData *data = object->native_data == NULL
-            ? NULL
-            : (PtnSplFixedArrayData *)object->native_data;
-        PtnValue array = ptn_spl_fixed_array_storage_to_array(data);
+    if (object != NULL && ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        PtnValue array = ptn_spl_fixed_array_debug_properties(object);
         ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
         ptn_string_buffer_append_indent(buffer, indent);
         ptn_string_buffer_append(buffer, "(\n");
@@ -8806,6 +8800,93 @@ static PtnValue ptn_spl_array_backed_serialize_array(
     return result;
 }
 
+static int ptn_serialize_object_is_spl_fixed_array(PtnObject *object) {
+    return object != NULL &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray");
+}
+
+static PtnValue ptn_spl_fixed_array_serialized_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_spl_fixed_array_serialized_payload(PtnObject *object) {
+    PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+    PtnSplFixedArrayData *data = object == NULL || object->native_data == NULL
+        ? NULL
+        : (PtnSplFixedArrayData *)object->native_data;
+    PtnValue storage = ptn_spl_fixed_array_storage_to_array(data);
+    PtnValue properties = ptn_spl_fixed_array_serialized_properties_value(object);
+    PtnValue resolved_storage = ptn_value_deref(storage);
+    if (resolved_storage.type == PTN_ARRAY) {
+        for (size_t i = 0; i < resolved_storage.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved_storage.as.array->entries[i];
+            ptn_array_set_entry(
+                payload.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(entry->value)
+            );
+        }
+    }
+    PtnValue resolved_properties = ptn_value_deref(properties);
+    if (resolved_properties.type == PTN_ARRAY) {
+        for (size_t i = 0; i < resolved_properties.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved_properties.as.array->entries[i];
+            ptn_array_set_entry(
+                payload.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(entry->value)
+            );
+        }
+    }
+    ptn_value_destroy(&properties);
+    ptn_value_destroy(&storage);
+    return payload;
+}
+
+static void ptn_serialize_append_spl_fixed_array_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    PtnValue payload = ptn_spl_fixed_array_serialized_payload(object);
+    PtnValue resolved_payload = ptn_value_deref(payload);
+    size_t count = resolved_payload.type == PTN_ARRAY ? resolved_payload.as.array->len : 0;
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        count
+    );
+    if (resolved_payload.type == PTN_ARRAY) {
+        for (size_t i = 0; i < resolved_payload.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved_payload.as.array->entries[i];
+            ptn_serialize_append_key(buffer, entry->key);
+            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+        }
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+    ptn_value_destroy(&payload);
+}
+
 static int ptn_serialize_object_is_spl_dllist(PtnObject *object) {
     return object != NULL && ptn_class_name_is_spl_dllist_family(object->class_name);
 }
@@ -9391,6 +9472,10 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
+        return 1;
+    }
+    if (ptn_serialize_object_is_spl_fixed_array(object)) {
+        ptn_serialize_append_spl_fixed_array_object(buffer, object, state);
         return 1;
     }
     if (ptn_serialize_object_is_spl_dllist(object)) {
@@ -11585,6 +11670,13 @@ static int ptn_unserialize_declared_magic_method_exists(
             "SplStack"
         )) {
         return ptn_internal_class_method_exists("SplDoublyLinkedList", "__unserialize");
+    }
+    if (ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            resolved.as.object->class_name,
+            "SplFixedArray"
+        )) {
+        return ptn_internal_class_method_exists("SplFixedArray", "__unserialize");
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
@@ -14645,6 +14737,14 @@ static int ptn_json_encode_append_object(
     if (ptn_uri_object_uses_virtual_debug_properties(object)) {
         ptn_string_buffer_append(buffer, "{}");
         return 1;
+    }
+    if (object != NULL && ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        PtnValue array = ptn_spl_fixed_array_storage_to_array((PtnSplFixedArrayData *)object->native_data);
+        ptn_dump_seen_objects_push(seen, object);
+        int ok = ptn_json_encode_append_value(buffer, array, seen, depth - 1, flags, error);
+        ptn_dump_seen_objects_pop(seen);
+        ptn_value_destroy(&array);
+        return ok;
     }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
@@ -98153,10 +98253,13 @@ static int ptn_array_object_method_exists(const char *method_name) {
 
 static int ptn_spl_fixed_array_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__serialize")
+        || ptn_ascii_case_equal(method_name, "__unserialize")
         || ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
         || ptn_ascii_case_equal(method_name, "fromArray")
         || ptn_ascii_case_equal(method_name, "getArrayCopy")
+        || ptn_ascii_case_equal(method_name, "getIterator")
         || ptn_ascii_case_equal(method_name, "getSize")
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next")
@@ -99731,10 +99834,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_spl_fixed_array(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "__serialize",
+            "__unserialize",
             "count",
             "current",
             "fromArray",
             "getArrayCopy",
+            "getIterator",
             "getSize",
             "key",
             "next",
@@ -115383,8 +115489,8 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
         return 1;
     }
     if (value.type == PTN_OBJECT &&
-        ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
-        *array_out = ptn_spl_fixed_array_storage_to_array((PtnSplFixedArrayData *)value.as.object->native_data);
+        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFixedArray")) {
+        *array_out = ptn_spl_fixed_array_cast_to_array(value.as.object);
         return 1;
     }
     PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(value);
@@ -118084,6 +118190,97 @@ static PtnValue ptn_spl_fixed_array_storage_to_array(PtnSplFixedArrayData *data)
     return result;
 }
 
+static PtnValue ptn_spl_fixed_array_debug_properties(PtnObject *object) {
+    PtnSplFixedArrayData *data = object == NULL || object->native_data == NULL
+        ? NULL
+        : (PtnSplFixedArrayData *)object->native_data;
+    PtnValue result = ptn_spl_fixed_array_storage_to_array(data);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_spl_fixed_array_cast_to_array(PtnObject *object) {
+    PtnSplFixedArrayData *data = object == NULL || object->native_data == NULL
+        ? NULL
+        : (PtnSplFixedArrayData *)object->native_data;
+    PtnValue result = ptn_spl_fixed_array_storage_to_array(data);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_spl_array_key_from_object_property_key(object, entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+    return result;
+}
+
+static void ptn_spl_fixed_array_ensure_dense_storage(PtnSplFixedArrayData *data) {
+    if (data == NULL) {
+        return;
+    }
+    PtnValue storage = ptn_value_deref(data->storage);
+    if (storage.type != PTN_ARRAY) {
+        return;
+    }
+    PtnArray *array = storage.as.array;
+    for (size_t i = 0; i < data->size; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArrayKey key = ptn_array_int_key((int64_t)i);
+        if (ptn_array_find_key(array, key) >= array->len) {
+            ptn_array_set_entry(array, ptn_array_key_clone(key), ptn_null());
+        }
+        ptn_array_key_free(key);
+    }
+}
+
+static void ptn_spl_fixed_array_set_size(PtnSplFixedArrayData *data, size_t size) {
+    if (data == NULL) {
+        return;
+    }
+    PtnValue storage = ptn_value_deref(data->storage);
+    PtnArray *array = storage.type == PTN_ARRAY ? storage.as.array : NULL;
+    if (array != NULL && data->size != size) {
+        ptn_array_note_mutation(array);
+    }
+    data->size = size;
+    if (data->index > data->size) {
+        data->index = data->size;
+    }
+    ptn_spl_fixed_array_remove_out_of_range_entries(data);
+    ptn_spl_fixed_array_ensure_dense_storage(data);
+    if (array != NULL) {
+        ptn_array_recompute_next_auto_key(array);
+    }
+}
+
 static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
     PtnRuntime *runtime,
     PtnValue value,
@@ -118105,9 +118302,22 @@ static PTN_UNUSED int ptn_spl_fixed_array_iterator_from_object(
     }
 
     PtnSplFixedArrayData *data = (PtnSplFixedArrayData *)value.as.object->native_data;
-    PtnValue storage = ptn_spl_fixed_array_storage_to_array(data);
-    PtnArrayIterator iterator = ptn_array_iterator_from_array_snapshot(storage.as.array);
-    ptn_value_destroy(&storage);
+    ptn_spl_fixed_array_ensure_dense_storage(data);
+    PtnValue storage = ptn_value_deref(data->storage);
+    if (storage.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArrayIterator iterator = ptn_array_iterator_empty();
+    iterator.array = storage.as.array;
+    iterator.object = value.as.object;
+    iterator.runtime = runtime;
+    iterator.access_scope = access_scope;
+    iterator.line = line;
+    iterator.valid = iterator.array->len != 0;
+    iterator.live = 1;
+    ptn_object_retain(value.as.object);
+    ptn_array_iterator_retain(iterator.array);
+    ptn_array_iterator_remember_current_key(&iterator);
     *out = iterator;
     return 1;
 }
@@ -118185,8 +118395,9 @@ static PtnValue ptn_spl_fixed_array_new_from_storage(
         ptn_abort_out_of_memory();
     }
     data->storage = ptn_value_clone_deref(storage);
-    data->size = size;
+    data->size = 0;
     data->index = 0;
+    ptn_spl_fixed_array_set_size(data, size);
     PtnValue object = ptn_object_new_shell(runtime, "SplFixedArray");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_spl_fixed_array_data_free;
@@ -118409,19 +118620,114 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
             ptn_throw_exception(runtime, "ValueError", "SplFixedArray::setSize(): Argument #1 ($size) must be greater than or equal to 0");
             return ptn_null();
         }
-        data->size = (size_t)new_size;
-        if (data->index > data->size) {
-            data->index = data->size;
-        }
-        ptn_spl_fixed_array_remove_out_of_range_entries(data);
+        ptn_spl_fixed_array_set_size(data, (size_t)new_size);
         ptn_spl_fixed_array_sync_properties(runtime, receiver, data, line);
         return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFixedArray", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        return resolved_receiver.type == PTN_OBJECT
+            ? ptn_spl_fixed_array_serialized_payload(resolved_receiver.as.object)
+            : ptn_array_from_literal_entries(0, NULL);
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplFixedArray::__unserialize() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnValue payload = ptn_value_deref(args[0]);
+        if (payload.type != PTN_ARRAY) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplFixedArray::__unserialize(): Argument #1 ($data) must be of type array, %s given",
+                ptn_count_operand_type_name(payload)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (resolved_receiver.type != PTN_OBJECT) {
+            return ptn_null();
+        }
+        if (data->size != 0) {
+            return ptn_null();
+        }
+        size_t new_size = 0;
+        for (size_t i = 0; i < payload.as.array->len; i++) {
+            PtnArrayEntry *entry = &payload.as.array->entries[i];
+            if (entry->key.type == PTN_ARRAY_KEY_INT && entry->key.as.integer >= 0) {
+                uint64_t key = (uint64_t)entry->key.as.integer;
+                if (key >= (uint64_t)SIZE_MAX) {
+                    ptn_abort_out_of_memory();
+                }
+                if ((size_t)key + 1 > new_size) {
+                    new_size = (size_t)key + 1;
+                }
+            }
+        }
+        PtnValue storage = ptn_array_from_literal_entries(0, NULL);
+        ptn_value_destroy(&data->storage);
+        data->storage = storage;
+        ptn_spl_fixed_array_set_size(data, new_size);
+        PtnArray *array = ptn_value_deref(data->storage).as.array;
+        for (size_t i = 0; i < payload.as.array->len; i++) {
+            PtnArrayEntry *entry = &payload.as.array->entries[i];
+            if (entry->key.type == PTN_ARRAY_KEY_INT && entry->key.as.integer >= 0) {
+                PtnArrayKey key = ptn_array_int_key(entry->key.as.integer);
+                ptn_array_set_entry(array, key, ptn_value_clone(entry->value));
+                continue;
+            }
+            if (entry->key.type == PTN_ARRAY_KEY_STRING) {
+                ptn_emit_dynamic_property_deprecation(
+                    runtime,
+                    resolved_receiver.as.object,
+                    entry->key.as.string,
+                    line
+                );
+            }
+            ptn_array_set_entry(
+                resolved_receiver.as.object->properties,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone(entry->value)
+            );
+        }
+        ptn_spl_fixed_array_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getArrayCopy") || ptn_ascii_case_equal(name, "toArray")) {
         ptn_reflection_check_no_arguments(runtime, "SplFixedArray", name, argc);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_spl_fixed_array_storage_to_array(data);
+    }
+    if (ptn_ascii_case_equal(name, "getIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFixedArray", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue values = ptn_spl_fixed_array_storage_to_array(data);
+        PtnValue iterator = ptn_internal_iterator_from_values(runtime, values, line);
+        ptn_value_destroy(&values);
+        return iterator;
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         if (argc != 1) {
@@ -118451,7 +118757,7 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
         if (!ptn_spl_fixed_array_index_from_arg(runtime, data, offset, line, 0, 0, &index)) {
             return ptn_null();
         }
-        ptn_array_set_entry(
+        ptn_array_set_entry_publish_first(
             ptn_value_deref(data->storage).as.array,
             ptn_array_int_key((int64_t)index),
             ptn_value_clone_deref(args[1])
@@ -128079,6 +128385,9 @@ static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
         if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            continue;
+        }
+        if (ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
             continue;
         }
         PtnArrayKey key = metadata == NULL

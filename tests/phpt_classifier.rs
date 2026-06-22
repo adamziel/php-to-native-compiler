@@ -2296,6 +2296,62 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_spl_fixed_array_rows_runnable() {
+    let cases = [
+        (
+            "ext/spl/tests/SplFixedArray_change_size_during_iteration.phpt",
+            "--TEST--\nresize\n--FILE--\n<?php\n$fixed = SplFixedArray::fromArray([1, 2, 3]);\nforeach ($fixed as $value) { $fixed->setSize(2); }\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFixedArray_serialize.phpt",
+            "--TEST--\nserialize\n--FILE--\n<?php\n$fixed = new SplFixedArray(1);\necho serialize($fixed);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/splfixedarray_json_encode.phpt",
+            "--TEST--\njson\n--FILE--\n<?php\n$fixed = new SplFixedArray(1);\necho json_encode($fixed);\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFixedArray_immediate_gc.phpt",
+            "--TEST--\nimmediate gc\n--FILE--\n<?php\n$fixed = SplFixedArray::fromArray([new stdClass()]);\n$fixed[0] = new stdClass();\nvar_dump(get_mangled_object_vars($fixed));\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFixedArray_get_properties_for.phpt",
+            "--TEST--\nget properties\n--FILE--\n<?php\nclass A extends SplFixedArray { public $x; }\n$fixed = new A(1);\nvar_dump(get_mangled_object_vars($fixed));\n--EXPECT--\n",
+        ),
+        (
+            "ext/spl/tests/SplFixedArray_setSize_destruct.phpt",
+            "--TEST--\nsetSize destructor\n--FILE--\n<?php\n$fixed = new SplFixedArray(1);\n$fixed->offsetSet(0, false);\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path).trim_end(),
+            "runnable\tselected for PTN semantic measurement",
+            "{path}"
+        );
+    }
+
+    let unsupported = classify_at_relative_path(
+        "--TEST--\nother fixed array row\n--FILE--\n<?php\nnew SplFixedArray(1);\n--EXPECT--\n",
+        "ext/spl/tests/SplFixedArray_other.phpt",
+    );
+    assert!(
+        unsupported.starts_with("unsupported-spl-surface\t"),
+        "{unsupported:?}"
+    );
+
+    let generator_backed = classify_at_relative_path(
+        "--TEST--\nfixed array generator override\n--FILE--\n<?php\nclass A extends SplFixedArray { public function getIterator(): Iterator { yield from []; } }\nforeach (new A(1) as $value) {}\n--EXPECT--\n",
+        "ext/spl/tests/SplFixedArray_override_getIterator.phpt",
+    );
+    assert!(
+        generator_backed.starts_with("unsupported-spl-surface\t"),
+        "{generator_backed:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_unsupported_date_format_parser_rows() {
     let classification = classify(
         "--TEST--\ndate parser\n--FILE--\n<?php\nvar_dump(date_parse_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777'));\n--EXPECT--\n",

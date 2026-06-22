@@ -18619,7 +18619,7 @@ fn emit_method_dispatch(
     out.push_str("        while (ptn_modeled_parent != NULL) {\n");
     out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
     out.push_str(
-        "                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\")) {\n",
+        "                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\")) {\n",
     );
     out.push_str("                    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("                }\n");

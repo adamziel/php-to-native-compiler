@@ -10164,6 +10164,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_method_exists("ArrayIterator", method_name)) {
         return 1;
     }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray") &&
+        ptn_internal_class_method_exists("SplFixedArray", method_name)) {
+        return 1;
+    }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "CachingIterator") &&
         ptn_internal_class_method_exists("CachingIterator", method_name)) {
         return 1;
@@ -10459,7 +10463,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-    if (ptn_object_is_internal_or_descendant(value, "SplFixedArray")) {
+    if (ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
         PtnArrayIterator iterator = ptn_array_iterator_empty();
         if (ptn_spl_fixed_array_iterator_from_object(
             runtime,
