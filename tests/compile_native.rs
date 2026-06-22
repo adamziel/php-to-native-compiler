@@ -13130,6 +13130,60 @@ echo serialize($box), "\n";
 }
 
 #[test]
+fn compile_serializable_payload_nested_serialize_reuses_outer_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-payload-nested-ids");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-payload-nested-ids.php");
+    let output = root.join("serializable-payload-nested-ids-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LegacySelf implements Serializable {
+    public $x;
+    public function serialize(): string {
+        return serialize(get_object_vars($this));
+    }
+    public function unserialize($data): void {
+        foreach (unserialize($data) as $name => $value) {
+            $this->$name = $value;
+        }
+    }
+}
+
+$value = new LegacySelf;
+$value->x = $value;
+$encoded = serialize($value);
+echo $encoded, "\n";
+$decoded = unserialize($encoded);
+var_dump($decoded === $decoded->x);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: LegacySelf implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("C:10:\"LegacySelf\":18:{a:1:{s:1:\"x\";r:1;}}"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_previous_chain_serializes_to_native_binary() {
     let root = temp_dir("ptn-native-exception-previous-serialize");
     fs::create_dir_all(&root).unwrap();

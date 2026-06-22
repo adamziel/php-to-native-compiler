@@ -8051,6 +8051,7 @@ typedef struct {
     size_t exception_len;
     size_t exception_capacity;
     size_t next_id;
+    int serializable_payload_depth;
 } PtnSerializeState;
 
 static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runtime, size_t line) {
@@ -8067,6 +8068,7 @@ static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runti
     state->exception_len = 0;
     state->exception_capacity = 0;
     state->next_id = 1;
+    state->serializable_payload_depth = 0;
 }
 
 static void ptn_serialize_state_free(PtnSerializeState *state) {
@@ -8784,6 +8786,7 @@ static int ptn_serialize_append_serializable_object(
     }
     *handled = 1;
     PtnValue receiver = ptn_object(object);
+    state->serializable_payload_depth++;
     PtnValue payload_value = state->runtime->method_dispatch(
         state->runtime,
         receiver,
@@ -8792,6 +8795,7 @@ static int ptn_serialize_append_serializable_object(
         NULL,
         state->line
     );
+    state->serializable_payload_depth--;
     if (state->runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&payload_value);
         ptn_string_buffer_append(buffer, "N;");
@@ -9354,6 +9358,28 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
     (void)argc;
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+
+    PtnSerializeState *active_state = runtime == NULL
+        ? NULL
+        : (PtnSerializeState *)runtime->active_serialize_state;
+    if (active_state != NULL && active_state->serializable_payload_depth > 0) {
+        int caught_exception = 0;
+        PtnTryFrame serialize_frame;
+        ptn_try_frame_push(runtime, &serialize_frame);
+        if (setjmp(serialize_frame.jump) != 0) {
+            caught_exception = 1;
+        }
+        if (!caught_exception) {
+            ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
+        }
+        ptn_try_frame_pop(runtime, &serialize_frame);
+        if (caught_exception) {
+            free(buffer.data);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
+        return ptn_owned_string_len(buffer.data, buffer.len);
+    }
 
     PtnSerializeState state;
     ptn_serialize_state_init(&state, runtime, line);
