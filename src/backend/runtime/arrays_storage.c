@@ -2404,6 +2404,40 @@ static PTN_UNUSED PtnValue ptn_lazy_object_effective_initialized_proxy_receiver(
     return ptn_value_borrow(ptn_object(object));
 }
 
+static PTN_UNUSED PtnValue ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+        return receiver;
+    }
+    PtnObject *object = receiver.as.object;
+    for (size_t depth = 0; depth < 64; depth++) {
+        if (!object->lazy_is_proxy || object->lazy_uninitialized) {
+            return ptn_value_borrow(ptn_object(object));
+        }
+        PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
+        if (real.type != PTN_OBJECT ||
+            real.as.object == NULL ||
+            real.as.object == object) {
+            return ptn_value_borrow(ptn_object(object));
+        }
+        if (real.as.object->lazy_uninitialized && !real.as.object->lazy_initializing) {
+            if (!ptn_lazy_object_initialize(runtime, real, line)) {
+                return ptn_value_borrow(ptn_object(real.as.object));
+            }
+            real = ptn_value_deref(real);
+            if (real.type != PTN_OBJECT || real.as.object == NULL) {
+                return ptn_value_borrow(ptn_object(object));
+            }
+        }
+        object = real.as.object;
+    }
+    return ptn_value_borrow(ptn_object(object));
+}
+
 typedef struct {
     PtnArray *properties;
     PtnObjectPropertyMetadata *metadata;

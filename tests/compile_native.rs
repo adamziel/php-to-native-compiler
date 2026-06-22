@@ -66983,6 +66983,97 @@ echo substr_count($dump, \"[\\\"instance\\\"]=>\") === 1 ? \"proxy-instance-once
 }
 
 #[test]
+fn compile_lazy_reset_and_debug_info_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reset-debug-info-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reset-debug-info-edges.php");
+    let output = root.join("lazy-reset-debug-info-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+class DebugInfoLazyBox {
+    public int $a;
+
+    public function __construct() {
+        echo \"ctor\\n\";
+        $this->a = 1;
+    }
+
+    public function __debugInfo() {
+        return [$this->a];
+    }
+}
+
+$debugRc = new ReflectionClass(DebugInfoLazyBox::class);
+$debugProxy = $debugRc->newLazyProxy(function () {
+    echo \"initializer\\n\";
+    return new DebugInfoLazyBox();
+});
+ob_start();
+var_dump($debugProxy);
+$dump = ob_get_clean();
+echo strpos($dump, \"lazy proxy object(DebugInfoLazyBox)#\") !== false
+    ? \"lazy-proxy-header\\n\"
+    : \"missing-lazy-proxy-header\\n\";
+
+class LazyResetBase {
+    public $a;
+}
+class LazyResetChild extends LazyResetBase {}
+class LazyResetOther {}
+
+$baseRc = new ReflectionClass(LazyResetBase::class);
+$baseRc->resetAsLazyGhost(new LazyResetChild(), function () {});
+try {
+    $baseRc->resetAsLazyGhost(new LazyResetOther(), function () {});
+} catch (TypeError $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+
+class LazyResetRealInstance {
+    public function __construct(public string $name) {}
+}
+
+$realRc = new ReflectionClass(LazyResetRealInstance::class);
+$outer = new LazyResetRealInstance('obj1');
+$realRc->resetAsLazyProxy($outer, function () use (&$inner) {
+    $inner = new LazyResetRealInstance('obj2');
+    return $inner;
+});
+$realRc->initializeLazyObject($outer);
+$realRc->resetAsLazyProxy($inner, function () {
+    return new LazyResetRealInstance('obj3');
+});
+var_dump($outer->name);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "lazy-proxy-header\n",
+            "TypeError: ReflectionClass::resetAsLazyGhost(): Argument #1 ($object) must be of type LazyResetBase, LazyResetOther given\n",
+            "string(4) \"obj3\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_effective_initialized_proxy_receiver_for_access"));
+    assert!(c_source.contains("lazy proxy object"));
+}
+
+#[test]
 fn compile_lazy_proxy_magic_get_reference_fetch_uses_effective_instance_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-proxy-magic-get-reference-fetch");
     fs::create_dir_all(&root).unwrap();

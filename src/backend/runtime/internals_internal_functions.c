@@ -2773,15 +2773,7 @@ static PTN_UNUSED int ptn_direct_value_var_dump_magic_debug_info(
             property_count
         );
     } else {
-        size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
-        ptn_direct_dump_printf(
-            runtime,
-            "object(%.*s)#%zu (%zu) {\n",
-            (int)class_len,
-            object->class_name,
-            object->object_id,
-            property_count
-        );
+        ptn_direct_value_var_dump_object_header(runtime, object, property_count);
     }
     ptn_direct_value_dump_seen_object_push(seen, object);
     for (size_t i = 0; properties != NULL && i < properties->len; i++) {
@@ -115012,14 +115004,15 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
         int written = snprintf(
             message,
             sizeof(message),
-            "Object of class %s is not an instance of class %s",
-            object.as.object->class_name,
-            class_name
+            "ReflectionClass::%s(): Argument #1 ($object) must be of type %s, %s given",
+            ptn_reflection_class_canonical_method_name(method_name),
+            class_name,
+            object.as.object->class_name
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "ReflectionException", message);
+        ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
     if (!ptn_reflection_class_validate_lazy_class(runtime, class_name)) {

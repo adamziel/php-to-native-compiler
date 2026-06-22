@@ -5472,6 +5472,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
         return ptn_null();
     }
+    if (receiver.as.object->lazy_is_proxy && !receiver.as.object->lazy_uninitialized) {
+        receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+            runtime,
+            receiver,
+            line
+        );
+        if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+            return ptn_null();
+        }
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
