@@ -29369,6 +29369,67 @@ $method->invoke(new Target());
 }
 
 #[test]
+fn compile_reflection_method_invoke_argument_count_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-invoke-argument-count-trace");
+    fs::create_dir_all(&root).unwrap();
+
+    for &(name, call, reflection_frame) in &[
+        (
+            "invoke",
+            "$method->invoke(new Target());",
+            ": ReflectionMethod->invoke(Object(Target))",
+        ),
+        (
+            "invokeArgs",
+            "$method->invokeArgs(new Target(), array());",
+            ": ReflectionMethod->invokeArgs(Object(Target), Array)",
+        ),
+    ] {
+        let input = root.join(format!("reflection-method-{name}-argument-count-trace.php"));
+        let output = root.join(format!("reflection-method-{name}-argument-count-trace-bin"));
+        fs::write(
+            &input,
+            format!(
+                "<?php
+class Target {{
+    public function run($a, $b) {{}}
+}}
+
+$method = new ReflectionMethod(Target::class, 'run');
+{call}
+"
+            ),
+        )
+        .unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(
+            stderr.contains(
+                "Fatal error: Uncaught ArgumentCountError: Too few arguments to function Target::run(), 0 passed and exactly 2 expected in "
+            ),
+            "{stderr}"
+        );
+        assert!(
+            stderr.contains(&format!(
+                "reflection-method-{name}-argument-count-trace.php:3"
+            )),
+            "{stderr}"
+        );
+        assert!(
+            stderr.contains("[internal function]: Target->run()"),
+            "{stderr}"
+        );
+        assert!(stderr.contains(reflection_frame), "{stderr}");
+        assert!(stderr.contains("thrown in "), "{stderr}");
+    }
+}
+
+#[test]
 fn compile_reflection_class_constants_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-class-constants");
     fs::create_dir_all(&root).unwrap();
@@ -45149,17 +45210,18 @@ echo \"done\\n\";
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let input_path = input.display();
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
+        format!(concat!(
             "map: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
             "filter: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
             "reduce: Too few arguments to function expects_three(), 2 passed and exactly 3 expected\n",
             "udiff: Too few arguments to function compare_three(), 2 passed and exactly 3 expected\n",
             "pow: pow() expects exactly 2 arguments, 1 given\n",
-            "call: Too few arguments to function expects_two(), 1 passed and exactly 2 expected\n",
+            "call: Too few arguments to function expects_two(), 1 passed in {input_path} on line 18 and exactly 2 expected\n",
             "done\n",
-        )
+        ), input_path = input_path)
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

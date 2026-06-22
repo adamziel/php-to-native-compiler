@@ -100356,6 +100356,8 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
     }
     runtime->current_class_name = data->class_name;
     runtime->suppress_user_call_frame_location = 1;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
     runtime->next_call_arg_names = call_method_arg_names;
     int handled = runtime->reflected_method_dispatch(
         runtime,
