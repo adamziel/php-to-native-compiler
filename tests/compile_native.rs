@@ -4213,6 +4213,26 @@ fn parser_stops_at_top_level_halt_compiler_statement() {
 }
 
 #[test]
+fn lexer_stops_at_halt_compiler_before_binary_payload() {
+    let source =
+        "<?php echo \"before\\n\"; __HALT_COMPILER(); ?>\r\n\u{1}\u{2}<?php echo \"hidden\";";
+    let tokens = lexer::lex(source).unwrap();
+
+    assert!(tokens
+        .iter()
+        .any(|token| matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("__halt_compiler"))));
+    assert!(!tokens
+        .iter()
+        .any(|token| matches!(token.kind, TokenKind::InlineHtml(_))));
+    assert!(matches!(
+        tokens.last().map(|token| &token.kind),
+        Some(TokenKind::Eof)
+    ));
+    let program = parser::parse(source).unwrap();
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
 fn parser_rejects_halt_compiler_inside_block() {
     let error = parser::parse("<?php\nif (true) {\n    __HALT_COMPILER();\n}\n").unwrap_err();
 

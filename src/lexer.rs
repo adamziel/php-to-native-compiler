@@ -414,6 +414,10 @@ impl<'a> Lexer<'a> {
                 '\'' | '"' => self.lex_string(ch)?,
                 '`' => self.lex_backtick_string()?,
                 c if c.is_ascii_digit() => self.lex_number()?,
+                c if is_ident_start(c) && self.starts_halt_compiler_statement() => {
+                    self.lex_halt_compiler_statement()?;
+                    break;
+                }
                 c if is_ident_start(c) => self.lex_word()?,
                 _ => {
                     return Err(Diagnostic::new(
@@ -2008,6 +2012,79 @@ impl<'a> Lexer<'a> {
             kind,
             span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
         });
+        Ok(())
+    }
+
+    fn starts_halt_compiler_statement(&self) -> bool {
+        let mut cursor = self.cursor;
+        let marker = "__halt_compiler";
+        let Some(candidate) = self.source.get(cursor..cursor.saturating_add(marker.len())) else {
+            return false;
+        };
+        if !candidate.eq_ignore_ascii_case(marker) {
+            return false;
+        }
+        cursor += marker.len();
+        if self
+            .source
+            .get(cursor..)
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(is_ident_continue)
+        {
+            return false;
+        }
+        cursor = self.skip_ascii_whitespace_at(cursor);
+        if !self
+            .source
+            .get(cursor..)
+            .is_some_and(|rest| rest.starts_with('('))
+        {
+            return false;
+        }
+        cursor += 1;
+        cursor = self.skip_ascii_whitespace_at(cursor);
+        if !self
+            .source
+            .get(cursor..)
+            .is_some_and(|rest| rest.starts_with(')'))
+        {
+            return false;
+        }
+        cursor += 1;
+        cursor = self.skip_ascii_whitespace_at(cursor);
+        self.source
+            .get(cursor..)
+            .is_some_and(|rest| rest.starts_with(';'))
+    }
+
+    fn skip_ascii_whitespace_at(&self, mut cursor: usize) -> usize {
+        while let Some(ch) = self
+            .source
+            .get(cursor..)
+            .and_then(|rest| rest.chars().next())
+        {
+            if !ch.is_ascii_whitespace() {
+                break;
+            }
+            cursor += ch.len_utf8();
+        }
+        cursor
+    }
+
+    fn skip_whitespace(&mut self) {
+        while self.peek_char().is_some_and(|ch| ch.is_ascii_whitespace()) {
+            self.bump_char();
+        }
+    }
+
+    fn lex_halt_compiler_statement(&mut self) -> Result<()> {
+        self.lex_word()?;
+        self.skip_whitespace();
+        self.push_fixed(TokenKind::LeftParen, 1);
+        self.skip_whitespace();
+        self.push_fixed(TokenKind::RightParen, 1);
+        self.skip_whitespace();
+        self.push_fixed(TokenKind::Semicolon, 1);
         Ok(())
     }
 
