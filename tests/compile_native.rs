@@ -14027,6 +14027,66 @@ foreach ([
 }
 
 #[test]
+fn compile_unserialize_mangled_dynamic_property_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-mangled-dynamic-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-mangled-dynamic-properties.php");
+    let output = root.join("unserialize-mangled-dynamic-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$serialized = 'O:8:"Missing_":1:{s:33:"__PHP_Incomplete_Class_Name' . "\0" . 'other";i:123;}';
+ob_start();
+$object = unserialize($serialized);
+var_dump($object);
+$reserialized = serialize($object);
+$incompleteDump = str_replace("\0", "\\0", ob_get_clean());
+var_dump(str_contains($incompleteDump, '["__PHP_Incomplete_Class_Name\0other"]=>'));
+var_dump($reserialized === $serialized);
+
+class Test {
+    public $foo;
+}
+
+$payload = 'O:4:"Test":2:{s:4:"' . "\0" . '*' . "\0" . 'x";N;s:4:"' . "\0" . '*' . "\0" . 'x";N;}';
+ob_start();
+var_dump(unserialize($payload));
+$protectedDump = ob_get_clean();
+var_dump(str_contains($protectedDump, 'Creation of dynamic property Test::$x is deprecated'));
+var_dump(str_contains($protectedDump, '["x":protected]=>'));
+
+try {
+    unserialize('O:23:"RecursiveFilterIterator":0:{}');
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Cannot instantiate abstract class RecursiveFilterIterator\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_readonly_class_rejects_dynamic_properties_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-readonly-dynamic-property");
     fs::create_dir_all(&root).unwrap();

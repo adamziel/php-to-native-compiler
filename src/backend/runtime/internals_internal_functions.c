@@ -1325,12 +1325,17 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_key(
     }
     const PtnObjectPropertyMetadata *metadata =
         object == NULL ? NULL : ptn_object_property_metadata(object, key.as.string);
-    const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", display_name);
+        const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
+        size_t display_len = metadata == NULL ? key.string_len : strlen(display_name);
+        ptn_direct_dump_write_cstr(runtime, "[\"");
+        ptn_direct_dump_write(runtime, display_name, display_len);
+        ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
     } else if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        const char *display_name = metadata->display_name;
         ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", display_name);
     } else {
+        const char *display_name = metadata->display_name;
         ptn_direct_dump_printf(
             runtime,
             "[\"%s\":\"%s\":private]=>\n",
@@ -4091,6 +4096,7 @@ static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_has_enum_cases(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
+static int ptn_declared_class_is_abstract(const char *name);
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
@@ -6199,11 +6205,15 @@ static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key)
     }
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(object, key.as.string);
-    const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        printf("[\"%s\"]=>\n", display_name);
+        const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
+        size_t display_len = metadata == NULL ? key.string_len : strlen(display_name);
+        fputs("[\"", stdout);
+        fwrite(display_name, 1, display_len, stdout);
+        fputs("\"]=>\n", stdout);
         return;
     }
+    const char *display_name = metadata->display_name;
     if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
         printf("[\"%s\":protected]=>\n", display_name);
         return;
@@ -11502,11 +11512,37 @@ static int ptn_unserialize_resolved_class_exists(
         ptn_internal_class_exists_name(resolved_name);
 }
 
+static int ptn_unserialize_class_name_is_abstract(const char *class_name) {
+    return ptn_declared_class_is_abstract(class_name) ||
+        ptn_ascii_case_equal(class_name, "FilterIterator") ||
+        ptn_ascii_case_equal(class_name, "RecursiveFilterIterator");
+}
+
 static PtnValue ptn_unserialize_new_resolved_object_shell(
     PtnRuntime *runtime,
     const char *resolved_name,
     size_t line
 ) {
+    if (ptn_unserialize_class_name_is_abstract(resolved_name)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot instantiate abstract class %s",
+            resolved_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            message,
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
     if (runtime != NULL &&
         runtime->new_instance_without_constructor != NULL &&
         ptn_declared_user_class_or_interface_exists(resolved_name)) {
@@ -12001,7 +12037,69 @@ static const PtnObjectPropertyMetadata *ptn_unserialize_find_metadata_by_display
     return fallback;
 }
 
-static PtnArrayKey ptn_unserialize_object_property_key(PtnObject *object, PtnArrayKey key) {
+static const PtnObjectPropertyMetadata *ptn_unserialize_register_dynamic_mangled_property(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *declaring_class,
+    size_t declaring_len,
+    const char *property,
+    size_t property_len,
+    PtnPropertyVisibility visibility,
+    size_t line
+) {
+    if (object == NULL || property == NULL || object->class_name == NULL) {
+        return NULL;
+    }
+
+    char *property_name = ptn_duplicate_string_len(property, property_len);
+    const char *metadata_declaring_class = object->class_name;
+    char *owned_declaring_class = NULL;
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        owned_declaring_class = ptn_duplicate_string_len(declaring_class, declaring_len);
+        metadata_declaring_class = owned_declaring_class;
+    }
+
+    ptn_emit_dynamic_property_deprecation(runtime, object, property_name, line);
+    ptn_object_register_property_metadata(
+        object,
+        property_name,
+        metadata_declaring_class,
+        visibility,
+        visibility,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0
+    );
+
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_unserialize_find_metadata_by_declared_name(
+            object,
+            visibility == PTN_PROPERTY_PRIVATE ? metadata_declaring_class : NULL,
+            visibility == PTN_PROPERTY_PRIVATE ? strlen(metadata_declaring_class) : 0,
+            property_name,
+            strlen(property_name),
+            visibility
+        );
+    free(owned_declaring_class);
+    free(property_name);
+    return metadata;
+}
+
+static PtnArrayKey ptn_unserialize_object_property_key(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnArrayKey key,
+    size_t line
+) {
     if (key.type == PTN_ARRAY_KEY_STRING) {
         const char *data = key.as.string;
         size_t len = key.string_len;
@@ -12021,6 +12119,18 @@ static PtnArrayKey ptn_unserialize_object_property_key(PtnObject *object, PtnArr
                         object,
                         data + 3,
                         len - 3
+                    );
+                }
+                if (metadata == NULL) {
+                    metadata = ptn_unserialize_register_dynamic_mangled_property(
+                        runtime,
+                        object,
+                        NULL,
+                        0,
+                        data + 3,
+                        len - 3,
+                        PTN_PROPERTY_PROTECTED,
+                        line
                     );
                 }
             } else {
@@ -12043,6 +12153,18 @@ static PtnArrayKey ptn_unserialize_object_property_key(PtnObject *object, PtnArr
                             object,
                             property,
                             property_len
+                        );
+                    }
+                    if (metadata == NULL) {
+                        metadata = ptn_unserialize_register_dynamic_mangled_property(
+                            runtime,
+                            object,
+                            declaring_class,
+                            declaring_len,
+                            property,
+                            property_len,
+                            PTN_PROPERTY_PRIVATE,
+                            line
                         );
                     }
                 }
@@ -12485,7 +12607,8 @@ static int ptn_unserialize_store_object_property_entry(
         return 0;
     }
 
-    PtnArrayKey property_key = ptn_unserialize_object_property_key(object, key);
+    PtnArrayKey property_key =
+        ptn_unserialize_object_property_key(runtime, object, key, state->line);
     const PtnObjectPropertyMetadata *metadata =
         property_key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, property_key.as.string)
@@ -98354,6 +98477,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_filter_iterator(const char *cla
     return ptn_ascii_case_equal(class_name, "FilterIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_filter_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RecursiveFilterIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "InfiniteIterator");
 }
@@ -98735,6 +98862,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_callback_filter_iterator(class_name)
         || ptn_internal_class_name_is_recursive_callback_filter_iterator(class_name)
         || ptn_internal_class_name_is_filter_iterator(class_name)
+        || ptn_internal_class_name_is_recursive_filter_iterator(class_name)
         || ptn_internal_class_name_is_infinite_iterator(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
         || ptn_internal_class_name_is_no_rewind_iterator(class_name)
