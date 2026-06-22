@@ -1050,6 +1050,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOM\\\\TokenList\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SimpleXMLElement\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
@@ -6117,6 +6121,9 @@ fn emit_class_metadata_helpers(
         "DOMComment",
         "DOMNodeList",
         "DOMNamedNodeMap",
+        "DOM\\XMLDocument",
+        "DOM\\Element",
+        "DOM\\TokenList",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -6632,6 +6639,9 @@ fn emit_class_metadata_helpers(
         "DOMComment",
         "DOMNodeList",
         "DOMNamedNodeMap",
+        "DOM\\XMLDocument",
+        "DOM\\Element",
+        "DOM\\TokenList",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -7174,6 +7184,8 @@ fn emit_class_metadata_helpers(
         ("DOMText", "DOMCharacterData"),
         ("DOMCdataSection", "DOMText"),
         ("DOMComment", "DOMCharacterData"),
+        ("DOM\\XMLDocument", "DOMDocument"),
+        ("DOM\\Element", "DOMElement"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -16614,10 +16626,12 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
     match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
         "domnode" => Some("DOMNode"),
         "domdocument" => Some("DOMDocument"),
+        "dom\\xmldocument" => Some("DOM\\XMLDocument"),
         "domdocumentfragment" => Some("DOMDocumentFragment"),
         "domdocumenttype" => Some("DOMDocumentType"),
         "domimplementation" => Some("DOMImplementation"),
         "domelement" => Some("DOMElement"),
+        "dom\\element" => Some("DOM\\Element"),
         "domattr" => Some("DOMAttr"),
         "domentityreference" => Some("DOMEntityReference"),
         "domprocessinginstruction" => Some("DOMProcessingInstruction"),
@@ -16627,6 +16641,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domcomment" => Some("DOMComment"),
         "domnodelist" => Some("DOMNodeList"),
         "domnamednodemap" => Some("DOMNamedNodeMap"),
+        "dom\\tokenlist" => Some("DOM\\TokenList"),
         "libxmlerror" => Some("LibXMLError"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),

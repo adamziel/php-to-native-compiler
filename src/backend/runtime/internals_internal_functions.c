@@ -1415,6 +1415,18 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
     if (class_name == NULL) {
         return "";
     }
+    if (ptn_ascii_case_equal(class_name, "DOM\\XMLDocument") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOM\\XMLDocument")) {
+        return "DOMDocument";
+    }
+    if (ptn_ascii_case_equal(class_name, "DOM\\Element") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOM\\Element")) {
+        return "DOMElement";
+    }
+    if (ptn_ascii_case_equal(class_name, "DOM\\TokenList") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOM\\TokenList")) {
+        return "DOMTokenList";
+    }
     if (ptn_ascii_case_equal(class_name, "DOMCDataSection") ||
         ptn_ascii_case_equal(class_name, "DOMCdataSection") ||
         ptn_declared_class_is_same_or_descendant(class_name, "DOMCDataSection") ||
@@ -1497,7 +1509,8 @@ static int ptn_dom_effective_class_is_modeled(const char *class_name) {
         ptn_ascii_case_equal(effective, "DOMCDataSection") ||
         ptn_ascii_case_equal(effective, "DOMComment") ||
         ptn_ascii_case_equal(effective, "DOMNodeList") ||
-        ptn_ascii_case_equal(effective, "DOMNamedNodeMap");
+        ptn_ascii_case_equal(effective, "DOMNamedNodeMap") ||
+        ptn_ascii_case_equal(effective, "DOMTokenList");
 }
 
 static int ptn_object_is_xml_reader_instance(PtnObject *object) {
@@ -76117,6 +76130,10 @@ typedef struct {
 } PtnXmlNodeListData;
 
 typedef struct {
+    PtnXmlNode *element;
+} PtnDomTokenListData;
+
+typedef struct {
     const PtnLibxmlBoundary *boundary;
     PtnXmlNode **items;
     size_t item_count;
@@ -76320,7 +76337,8 @@ static PtnXmlNode *ptn_xml_node_data(PtnValue value) {
         return NULL;
     }
     if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
-        ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
+        ptn_ascii_case_equal(class_name, "DOMNamedNodeMap") ||
+        ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return NULL;
     }
     return (PtnXmlNode *)value.as.object->native_data;
@@ -77256,6 +77274,66 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
     return object;
+}
+
+static void ptn_dom_token_list_data_free(void *data) {
+    free(data);
+}
+
+static PtnDomTokenListData *ptn_dom_token_list_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_ascii_case_equal(ptn_dom_effective_class_name(value.as.object->class_name), "DOMTokenList")) {
+        return NULL;
+    }
+    return (PtnDomTokenListData *)value.as.object->native_data;
+}
+
+static PtnValue ptn_dom_token_list_object(PtnRuntime *runtime, PtnXmlNode *element) {
+    PtnDomTokenListData *data = malloc(sizeof(PtnDomTokenListData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->element = element;
+    PtnValue object = ptn_object_new_shell(runtime, "DOM\\TokenList");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_dom_token_list_data_free;
+    return object;
+}
+
+static int ptn_dom_token_list_ascii_space(unsigned char byte) {
+    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\f';
+}
+
+static PtnValue ptn_dom_token_list_tokens_value(PtnDomTokenListData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *value = data == NULL || data->element == NULL
+        ? NULL
+        : ptn_xml_element_attribute_value(data->element, "class");
+    if (value == NULL) {
+        return result;
+    }
+    size_t len = strlen(value);
+    size_t cursor = 0;
+    int64_t index = 0;
+    while (cursor < len) {
+        while (cursor < len && ptn_dom_token_list_ascii_space((unsigned char)value[cursor])) {
+            cursor++;
+        }
+        size_t start = cursor;
+        while (cursor < len && !ptn_dom_token_list_ascii_space((unsigned char)value[cursor])) {
+            cursor++;
+        }
+        if (cursor > start) {
+            size_t token_len = cursor - start;
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(index++),
+                ptn_owned_string_len(ptn_duplicate_string_len(value + start, token_len), token_len)
+            );
+        }
+    }
+    return result;
 }
 
 static const char *ptn_xml_local_name(const char *name) {
@@ -80811,6 +80889,30 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     return ptn_bool(ok);
 }
 
+static PtnValue ptn_dom_xml_document_create_from_string(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        const char *method = ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")
+            ? "DOM\\XMLDocument::createFromString"
+            : "DOMDocument::createFromString";
+        return ptn_dom_throw_count(runtime, method, "1 or 2 arguments", argc);
+    }
+    PtnValue document = ptn_xml_document_new(runtime, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || document.type != PTN_OBJECT) {
+        return document;
+    }
+    if (ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")) {
+        free(document.as.object->class_name);
+        document.as.object->class_name = ptn_duplicate_string("DOM\\XMLDocument");
+    }
+    PtnValue loaded = ptn_dom_load_xml_method(runtime, document, argc, args, line);
+    ptn_value_destroy(&loaded);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&document);
+        return ptn_null();
+    }
+    return document;
+}
+
 static PtnValue ptn_dom_load_html_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMDocument::loadHTML", "1 or 2 arguments", argc);
@@ -81879,6 +81981,21 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_null();
         }
     }
+    if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
+        PtnDomTokenListData *list = ptn_dom_token_list_data(receiver);
+        if (list == NULL) {
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "getIterator")) {
+            if (argc != 0) {
+                return ptn_dom_throw_count(runtime, "DOM\\TokenList::getIterator", "exactly 0 arguments", argc);
+            }
+            PtnValue tokens = ptn_dom_token_list_tokens_value(list);
+            PtnValue iterator = ptn_internal_iterator_from_values(runtime, tokens, line);
+            ptn_value_destroy(&tokens);
+            return iterator;
+        }
+    }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
 }
@@ -81936,6 +82053,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "prefix") ||
         ptn_ascii_case_equal(property, "namespaceURI") ||
         ptn_ascii_case_equal(property, "className") ||
+        ptn_ascii_case_equal(property, "classList") ||
         ptn_ascii_case_equal(property, "id") ||
         ptn_ascii_case_equal(property, "value") ||
         ptn_ascii_case_equal(property, "ownerElement");
@@ -82268,6 +82386,12 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             ? ptn_xml_element_attribute_value(node, "class")
             : NULL;
         *value_out = ptn_owned_string(ptn_duplicate_string(value == NULL ? "" : value));
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "classList")) {
+        *value_out = node->type == PTN_XML_NODE_ELEMENT
+            ? ptn_dom_token_list_object(runtime, node)
+            : ptn_null();
         return 1;
     }
     if (ptn_ascii_case_equal(property, "id")) {
@@ -82643,6 +82767,9 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
 
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
     class_name = ptn_dom_effective_class_name(class_name);
+    if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
+        return ptn_ascii_case_equal(method_name, "getIterator");
+    }
     if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
         ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
         return ptn_ascii_case_equal(method_name, "item")
@@ -90015,6 +90142,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_declared_class_is_same_or_descendant(class_name, "XMLReader")) {
         return ptn_xml_reader_static_call_method(runtime, class_name, name, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "DOM\\XMLDocument") &&
+        ptn_ascii_case_equal(name, "createFromString")) {
+        return ptn_dom_xml_document_create_from_string(runtime, class_name, argc, args, line);
+    }
     if (ptn_internal_class_name_is_fiber(class_name)) {
         if (ptn_ascii_case_equal(name, "getCurrent")) {
             if (argc != 0) {
@@ -94411,10 +94542,12 @@ static PTN_UNUSED int ptn_internal_class_name_is_libxml_error(const char *class_
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "DOMNode")
         || ptn_ascii_case_equal(class_name, "DOMDocument")
+        || ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")
         || ptn_ascii_case_equal(class_name, "DOMDocumentFragment")
         || ptn_ascii_case_equal(class_name, "DOMDocumentType")
         || ptn_ascii_case_equal(class_name, "DOMImplementation")
         || ptn_ascii_case_equal(class_name, "DOMElement")
+        || ptn_ascii_case_equal(class_name, "DOM\\Element")
         || ptn_ascii_case_equal(class_name, "DOMAttr")
         || ptn_ascii_case_equal(class_name, "DOMEntityReference")
         || ptn_ascii_case_equal(class_name, "DOMProcessingInstruction")
@@ -94424,7 +94557,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DOMCDataSection")
         || ptn_ascii_case_equal(class_name, "DOMComment")
         || ptn_ascii_case_equal(class_name, "DOMNodeList")
-        || ptn_ascii_case_equal(class_name, "DOMNamedNodeMap");
+        || ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")
+        || ptn_ascii_case_equal(class_name, "DOM\\TokenList");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name) {
@@ -96526,6 +96660,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "fromString")
             || ptn_ascii_case_equal(method_name, "fromUri")
             || ptn_ascii_case_equal(method_name, "fromStream");
+    }
+    if (ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")) {
+        return ptn_ascii_case_equal(method_name, "createFromString");
     }
     if (ptn_internal_class_name_is_rounding_mode(class_name)) {
         return ptn_ascii_case_equal(method_name, "cases");
@@ -104124,8 +104261,10 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     }
     if (ptn_ascii_case_equal(class_name, "DOMNode") ||
         ptn_ascii_case_equal(class_name, "DOMDocument") ||
+        ptn_ascii_case_equal(class_name, "DOM\\XMLDocument") ||
         ptn_ascii_case_equal(class_name, "DOMDocumentFragment") ||
         ptn_ascii_case_equal(class_name, "DOMElement") ||
+        ptn_ascii_case_equal(class_name, "DOM\\Element") ||
         ptn_ascii_case_equal(class_name, "DOMAttr") ||
         ptn_ascii_case_equal(class_name, "DOMEntityReference") ||
         ptn_ascii_case_equal(class_name, "DOMProcessingInstruction") ||
@@ -104135,7 +104274,8 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_ascii_case_equal(class_name, "DOMCDataSection") ||
         ptn_ascii_case_equal(class_name, "DOMComment") ||
         ptn_ascii_case_equal(class_name, "DOMNodeList") ||
-        ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
+        ptn_ascii_case_equal(class_name, "DOMNamedNodeMap") ||
+        ptn_ascii_case_equal(class_name, "DOM\\TokenList")) {
         return "dom";
     }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
