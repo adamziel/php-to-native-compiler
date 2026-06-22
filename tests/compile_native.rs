@@ -13815,7 +13815,9 @@ class C {
     }
 }
 
-$a = unserialize(serialize(new A()));
+$encoded = serialize(new A());
+echo $encoded . "\n";
+$a = unserialize($encoded);
 print $a->a[0]->b->c . "\n";
 print $a->a[1]->b->c . "\n";
 echo "Done\n";
@@ -13836,6 +13838,14 @@ echo "Done\n";
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(
         stdout.contains("Deprecated: B implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("i:0;C:1:\"B\":24:{O:1:\"C\":1:{s:1:\"c\";i:1;}}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("i:1;C:1:\"B\":24:{O:1:\"C\":1:{s:1:\"c\";i:2;}}"),
         "{stdout}"
     );
     assert!(stdout.ends_with("1\n2\nDone\n"), "{stdout}");

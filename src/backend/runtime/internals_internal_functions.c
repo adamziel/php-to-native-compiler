@@ -9762,6 +9762,9 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
         ? NULL
         : (PtnSerializeState *)runtime->active_serialize_state;
     if (active_state != NULL && active_state->serializable_payload_depth > 0) {
+        size_t saved_reference_len = active_state->reference_len;
+        size_t saved_object_len = active_state->object_len;
+        size_t saved_exception_len = active_state->exception_len;
         int caught_exception = 0;
         PtnTryFrame serialize_frame;
         ptn_try_frame_push(runtime, &serialize_frame);
@@ -9772,6 +9775,12 @@ static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const P
             ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
         }
         ptn_try_frame_pop(runtime, &serialize_frame);
+        ptn_serialize_truncate_nested_ids(
+            active_state,
+            saved_reference_len,
+            saved_object_len,
+            saved_exception_len
+        );
         if (caught_exception) {
             free(buffer.data);
             ptn_rethrow_exception(runtime);
