@@ -111838,11 +111838,16 @@ static PtnValue ptn_reflection_internal_method_to_string(
     } else if (ptn_internal_reflection_metadata_class_exists(data->class_name)) {
         extension_name = "Reflection";
     }
-    ptn_string_buffer_append_format(
-        &buffer,
-        "Method [ <internal:%s",
-        extension_name == NULL ? "Core" : extension_name
-    );
+    if (ptn_ascii_case_equal(data->class_name, "Closure") &&
+            ptn_ascii_case_equal(data->name, "__invoke")) {
+        ptn_string_buffer_append(&buffer, "Method [ <internal");
+    } else {
+        ptn_string_buffer_append_format(
+            &buffer,
+            "Method [ <internal:%s",
+            extension_name == NULL ? "Core" : extension_name
+        );
+    }
     if (ptn_ascii_case_equal(data->name, "__construct")) {
         ptn_string_buffer_append(&buffer, ", ctor");
     }

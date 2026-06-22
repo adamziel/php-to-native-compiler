@@ -6056,12 +6056,20 @@ fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[Cla
     }
 }
 
-fn emit_function_static_variable_providers(out: &mut String, functions: &[FunctionDecl]) {
+fn emit_function_static_variable_providers(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+) {
     for (function_index, function) in functions.iter().enumerate() {
         let bindings = function_static_local_bindings(function);
         if bindings.is_empty() {
             continue;
         }
+        let declaring_class = function
+            .class_name
+            .as_deref()
+            .and_then(|class_name| class_by_name(classes, class_name));
         out.push_str("\nstatic PtnValue ");
         out.push_str(&function_static_variables_provider_name(function_index));
         out.push_str("(PtnRuntime *runtime) {\n");
@@ -6071,7 +6079,7 @@ fn emit_function_static_variable_providers(out: &mut String, functions: &[Functi
             out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
             out.push_str(&c_string(name));
             out.push_str("\"), ");
-            out.push_str(&c_property_default_value(value));
+            out.push_str(&c_property_default_value_for_class(value, declaring_class));
             out.push_str(");\n");
         }
         out.push_str("    return result;\n");
@@ -6169,7 +6177,7 @@ fn emit_user_function_dispatch(
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
-    emit_function_static_variable_providers(out, functions);
+    emit_function_static_variable_providers(out, functions, classes);
 
     out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
     if functions
@@ -48072,15 +48080,19 @@ fn c_property_default_value_for_class(
     value: Option<&ValueExpr>,
     declaring_class: Option<&ClassDecl>,
 ) -> String {
-    let (
-        Some(ValueExpr::ClassConstantFetch {
-            class_name,
-            name,
-            line,
-        }),
-        Some(declaring_class),
-    ) = (value, declaring_class)
+    let Some(declaring_class) = declaring_class else {
+        return c_property_default_value(value);
+    };
+    let Some(ValueExpr::ClassConstantFetch {
+        class_name,
+        name,
+        line,
+    }) = value
     else {
+        if let Some(ValueExpr::Array(elements)) = value {
+            return c_property_default_array_value_for_class(elements, Some(declaring_class))
+                .unwrap_or_else(|| "ptn_null()".to_string());
+        }
         return c_property_default_value(value);
     };
     let lookup_class_name =
@@ -48229,6 +48241,13 @@ fn enum_case_backing_literal(constant: &ClassConstantDecl) -> Option<EnumBacking
 }
 
 fn c_property_default_array_value(elements: &[IrArrayElement]) -> Option<String> {
+    c_property_default_array_value_for_class(elements, None)
+}
+
+fn c_property_default_array_value_for_class(
+    elements: &[IrArrayElement],
+    declaring_class: Option<&ClassDecl>,
+) -> Option<String> {
     if elements.is_empty() {
         return Some("ptn_array_from_literal_entries(0, NULL)".to_string());
     }
@@ -48237,6 +48256,10 @@ fn c_property_default_array_value(elements: &[IrArrayElement]) -> Option<String>
         let (has_key, key) = match &element.key {
             Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
             Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
+            Some(ValueExpr::ClassConstantFetch { .. }) if declaring_class.is_some() => (
+                "1",
+                c_property_default_value_for_class(element.key.as_ref(), declaring_class),
+            ),
             Some(_) => return None,
             None => ("0", "ptn_null()".to_string()),
         };
@@ -48247,7 +48270,7 @@ fn c_property_default_array_value(elements: &[IrArrayElement]) -> Option<String>
             "{{ {}, {}, {} }}",
             has_key,
             key,
-            c_property_default_value(Some(value))
+            c_property_default_value_for_class(Some(value), declaring_class)
         ));
     }
     Some(format!(

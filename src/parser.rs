@@ -14733,6 +14733,35 @@ fn validate_method_signature_compatibility(
                 )?;
             }
         }
+
+        let mut inherited_trait_methods = Vec::new();
+        collect_class_trait_abstract_method_entries(class, traits, &mut inherited_trait_methods);
+        for (trait_decl, method) in inherited_trait_methods {
+            if class.methods.iter().any(|candidate| {
+                !candidate.is_abstract && candidate.name.eq_ignore_ascii_case(&method.name)
+            }) {
+                continue;
+            }
+            let Some((parent_class, parent_method)) =
+                find_visible_parent_method(class, &method.name, classes)
+            else {
+                continue;
+            };
+            if parent_method.is_abstract {
+                continue;
+            }
+            let trait_name = &trait_decl.name;
+            let normalized_trait_method =
+                trait_abstract_method_for_class(&class.name, trait_name, method);
+            validate_method_signature_pair_named(
+                parent_class,
+                parent_method,
+                trait_name,
+                &normalized_trait_method,
+                classes,
+                runtime_class_aliases,
+            )?;
+        }
     }
     Ok(())
 }
@@ -14778,7 +14807,9 @@ fn trait_abstract_method_for_class(
 
 fn substitute_trait_self_type_hint(type_hint: &mut TypeHint, trait_name: &str, class_name: &str) {
     match type_hint {
-        TypeHint::Class(name) if name.eq_ignore_ascii_case(trait_name) => {
+        TypeHint::Class(name)
+            if name.eq_ignore_ascii_case(trait_name) || name.eq_ignore_ascii_case("self") =>
+        {
             *name = class_name.to_string();
         }
         TypeHint::Nullable(inner) => substitute_trait_self_type_hint(inner, trait_name, class_name),
@@ -14876,6 +14907,40 @@ fn collect_class_trait_abstract_methods<'a>(
     }
 }
 
+fn collect_class_trait_abstract_method_entries<'a>(
+    class: &'a ClassDecl,
+    traits: &'a [TraitDecl],
+    methods: &mut Vec<(&'a TraitDecl, &'a MethodDecl)>,
+) {
+    let mut seen_traits = HashSet::new();
+    for trait_use in &class.trait_uses {
+        collect_trait_abstract_method_entries(&trait_use.name, traits, &mut seen_traits, methods);
+    }
+}
+
+fn collect_trait_abstract_method_entries<'a>(
+    trait_name: &str,
+    traits: &'a [TraitDecl],
+    seen_traits: &mut HashSet<String>,
+    methods: &mut Vec<(&'a TraitDecl, &'a MethodDecl)>,
+) {
+    let lookup_name = trait_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen_traits.insert(lookup_name) {
+        return;
+    }
+    let Some(trait_decl) = find_trait(traits, trait_name) else {
+        return;
+    };
+    for method in &trait_decl.methods {
+        if method.is_abstract {
+            methods.push((trait_decl, method));
+        }
+    }
+    for nested_use in &trait_decl.trait_uses {
+        collect_trait_abstract_method_entries(&nested_use.name, traits, seen_traits, methods);
+    }
+}
+
 fn collect_trait_abstract_methods<'a>(
     trait_name: &str,
     method_name: &str,
@@ -14894,6 +14959,9 @@ fn collect_trait_abstract_methods<'a>(
         if method.is_abstract && method.name.eq_ignore_ascii_case(method_name) {
             methods.push((trait_decl, method));
         }
+    }
+    for nested_use in &trait_decl.trait_uses {
+        collect_trait_abstract_methods(&nested_use.name, method_name, traits, seen_traits, methods);
     }
 }
 

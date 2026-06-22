@@ -1,0 +1,17 @@
+# ptn-jgw1g: current-red Zend object/class/reflection semantic rows.
+# Source truth: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260622T202543Z/resume-statuses.tsv
+ext/reflection/tests/ReflectionFiber_basic.phpt
+ext/reflection/tests/ReflectionGenerator_in_Generator.phpt
+ext/reflection/tests/ReflectionFunction_getClosureCalledClass.phpt
+Zend/tests/traits/abstract_method_8.phpt
+Zend/tests/enum/debugInfo/visibility_validation.phpt
+Zend/tests/constants/gh10709_3.phpt
+Zend/tests/traits/bug60369.phpt
+ext/reflection/tests/ReflectionFiber_notrace_2.phpt
+ext/reflection/tests/bug74949.phpt
+ext/reflection/tests/gh20895.phpt
+Zend/tests/constants/class_constant_inheritance_mutable_data.phpt
+Zend/tests/closures/closure_const_expr/attributes_ast_printing.phpt
+Zend/tests/closures/closure_const_expr/attributes_ast_printing_runtime.phpt
+ext/reflection/tests/bug63614.phpt
+Zend/tests/traits/gh14009_002.phpt
