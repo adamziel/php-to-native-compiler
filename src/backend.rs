@@ -54,6 +54,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SQLite3Result",
     "Uri\\Rfc3986\\Uri",
     "Uri\\WhatWg\\Url",
+    "Uri\\WhatWg\\UrlValidationError",
 ];
 const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
     " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
@@ -90,6 +91,7 @@ const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "Uri\\UriComparisonMode",
     "Uri\\Rfc3986\\UriHostType",
     "Uri\\WhatWg\\UrlHostType",
+    "Uri\\WhatWg\\UrlValidationErrorType",
 ];
 
 pub fn emit_c(module: &Module) -> String {
@@ -6124,10 +6126,12 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\Uri",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
+        "Uri\\WhatWg\\UrlValidationError",
         "Uri\\UriComparisonMode",
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -6639,10 +6643,12 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\Uri",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
+        "Uri\\WhatWg\\UrlValidationError",
         "Uri\\UriComparisonMode",
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(&c_string(builtin));
@@ -7032,6 +7038,8 @@ fn emit_class_metadata_helpers(
         "WeakMap",
         "WeakReference",
         "XMLParser",
+        "Uri\\Rfc3986\\Uri",
+        "Uri\\WhatWg\\Url",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -16671,9 +16679,13 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
+                "uri\\whatwg\\urlvalidationerror" => Some("Uri\\WhatWg\\UrlValidationError"),
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
                 "uri\\rfc3986\\urihosttype" => Some("Uri\\Rfc3986\\UriHostType"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
+                "uri\\whatwg\\urlvalidationerrortype" => {
+                    Some("Uri\\WhatWg\\UrlValidationErrorType")
+                }
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -18158,6 +18170,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(class_name)) {\n");
+    out.push_str(
+        "        return ptn_uri_url_validation_error_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_soap_client(class_name) || ptn_internal_class_name_is_soap_server(class_name) || ptn_internal_class_name_is_soap_header(class_name)) {\n");
@@ -25315,6 +25332,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationErrorType")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationError")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;

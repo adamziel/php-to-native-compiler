@@ -1204,6 +1204,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
         return ptn_uri_new(runtime, lookup_class_name, argc, args, line);
     }
+    if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(lookup_class_name)) {
+        return ptn_uri_url_validation_error_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
         return ptn_uri_whatwg_url_new(runtime, argc, args, line);
     }

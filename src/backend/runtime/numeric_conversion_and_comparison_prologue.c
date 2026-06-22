@@ -3834,6 +3834,40 @@ static PTN_UNUSED const char *ptn_uri_url_host_type_case_name(const char *case_n
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_uri_url_validation_error_type_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "DomainInvalidCodePoint",
+        "DomainToAscii",
+        "DomainToUnicode",
+        "HostInvalidCodePoint",
+        "HostMissing",
+        "Ipv4EmptyPart",
+        "Ipv4NonNumericPart",
+        "Ipv4NonDecimalPart",
+        "Ipv4OutOfRangePart",
+        "Ipv4TooFewParts",
+        "Ipv4TooManyParts",
+        "Ipv6CompressedPieceInIpv4",
+        "Ipv6InvalidCompression",
+        "Ipv6InvalidCodePoint",
+        "Ipv6MultipleCompression",
+        "Ipv6TooFewPieces",
+        "Ipv6TooManyPieces",
+        "InvalidCredentials",
+        "InvalidReverseSolidus",
+        "InvalidUrlUnit",
+        "MissingSchemeNonRelativeUrl",
+        "PortInvalid",
+        "PortOutOfRange",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED const char *ptn_uri_type_case_name(const char *case_name) {
     static const char *const names[] = {
         "AbsolutePathReference",
@@ -5155,6 +5189,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (url_host_type_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlHostType", url_host_type_case);
+    }
+    const char *url_validation_error_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlValidationErrorType")
+        ? ptn_uri_url_validation_error_type_case_name(constant)
+        : NULL;
+    if (url_validation_error_type_case != NULL) {
+        return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlValidationErrorType", url_validation_error_type_case);
     }
     const char *uri_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\Rfc3986\\UriType")
         ? ptn_uri_type_case_name(constant)
@@ -6885,6 +6925,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_uri_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_uri_whatwg_url_validation_error(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_uri_url_validation_error_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
