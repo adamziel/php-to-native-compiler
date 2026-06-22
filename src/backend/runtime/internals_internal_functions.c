@@ -270,6 +270,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         return NULL;
     }
     if (index == 0) {
+        if (ptn_ascii_case_equal(name, "clone")) {
+            return "object";
+        }
         if (ptn_ascii_case_equal(name, "array_multisort") ||
             ptn_internal_function_first_parameter_is_array_reference(name)) {
             return "array";
@@ -340,6 +343,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         }
     }
     if (index == 1) {
+        if (ptn_ascii_case_equal(name, "clone")) {
+            return "withProperties";
+        }
         if (ptn_ascii_case_equal(name, "array_multisort")) {
             return "rest";
         }
@@ -7148,6 +7154,11 @@ static const PtnParameterMetadata PTN_INTERNAL_HEADERS_SENT_PARAMETERS[] = {
 static const PtnParameterMetadata PTN_INTERNAL_ASSERT_PARAMETERS[] = {
     { "assertion", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
     { "description", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_CLONE_PARAMETERS[] = {
+    { "object", "object", "object", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+    { "withProperties", "array", "?array", 1, 1, 0, 0, 1, "null", NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_CALL_USER_FUNC_PARAMETERS[] = {
@@ -101778,6 +101789,7 @@ static PtnValue ptn_internal_class_implements(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_class_parents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_uses(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_checkdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_clone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_compact(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -101947,6 +101959,12 @@ static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, co
         : ptn_int(count);
 }
 
+static PtnValue ptn_internal_clone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return argc >= 2
+        ? ptn_clone_value_with_properties(runtime, args[0], args[1], line)
+        : ptn_clone_value(runtime, args[0], line);
+}
+
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "_ptn_cow_debug_assert_balanced", 0, 0, ptn_internal__ptn_cow_debug_assert_balanced },
@@ -102069,6 +102087,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_uses", 1, 2, ptn_internal_class_uses },
         { "clamp", 3, 3, ptn_internal_clamp },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
+        { "clone", 1, 2, ptn_internal_clone },
         { "closedir", 0, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
@@ -103197,6 +103216,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "bool",
             0,
             1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "clone")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_CLONE_PARAMETERS) / sizeof(PTN_INTERNAL_CLONE_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_CLONE_PARAMETERS,
+            0,
+            "object",
+            "object",
+            0,
+            0
         );
     }
     if (ptn_ascii_case_equal(function->name, "call_user_func") ||
@@ -114510,6 +114544,7 @@ static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *cl
         return 0;
     }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
+        ptn_internal_class_name_is_directory(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return 0;
     }

@@ -1493,6 +1493,20 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_internal_class_name_is_simplexml(source->class_name)) {
         return ptn_simplexml_clone(runtime, resolved, line);
     }
+    if (ptn_internal_class_name_is_directory(source->class_name)) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Trying to clone an uncloneable object of class %s",
+            source->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
 #endif
     if (source->enum_case_name != NULL || source->native_data != NULL) {
         char message[192];

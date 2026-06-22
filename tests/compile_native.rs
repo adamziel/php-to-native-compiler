@@ -5076,20 +5076,23 @@ fn parser_accepts_clone_with_property_updates() {
     let Statement::Assign { value, .. } = &program.statements[0] else {
         panic!("expected assignment statement");
     };
-    let Expr::Clone {
-        expr,
-        with_properties,
+    let Expr::Call {
+        name,
+        arguments,
+        argument_names,
+        argument_unpacks,
         ..
     } = value
     else {
-        panic!("expected clone expression");
+        panic!("expected clone call");
     };
-    assert!(matches!(expr.as_ref(), Expr::Variable(name, _) if name == "source"));
-    let Some(with_properties) = with_properties else {
-        panic!("expected clone-with property array");
-    };
+    assert_eq!(name, "clone");
+    assert_eq!(arguments.len(), 2);
+    assert!(argument_names.iter().all(Option::is_none));
+    assert!(argument_unpacks.iter().all(|unpack| !*unpack));
+    assert!(matches!(&arguments[0], Expr::Variable(name, _) if name == "source"));
     assert!(matches!(
-        with_properties.as_ref(),
+        &arguments[1],
         Expr::Array { elements, .. }
             if elements.len() == 1
                 && matches!(&elements[0].value, ArrayElementValue::Value(value) if matches!(value, Expr::Variable(name, _) if name == "bar"))
@@ -71918,9 +71921,8 @@ foreach ($boxes as $box) {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_clone_value(&runtime"));
-    assert!(
-        c_source.contains("dispatch_runtime->method_dispatch(dispatch_runtime, clone, \"__clone\"")
-    );
+    assert!(c_source.contains("dispatch_runtime->method_dispatch("));
+    assert!(c_source.contains("clone,\n            \"__clone\""));
 }
 
 #[test]

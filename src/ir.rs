@@ -4924,11 +4924,17 @@ fn assertion_operand_text(expr: &Expr, parent_precedence: u8) -> String {
             return assertion_expr_text(grouped);
         }
     }
-    assertion_expr_text(expr)
+    let text = assertion_expr_text(expr);
+    if assertion_expr_precedence(expr) < parent_precedence {
+        format!("({text})")
+    } else {
+        text
+    }
 }
 
 fn assertion_first_class_callable_text(callable: &Expr) -> String {
     match callable {
+        Expr::String(name, _) if name.eq_ignore_ascii_case("clone") => "\\clone".to_string(),
         Expr::String(name, _) if assertion_bare_callable_name(name) => name.clone(),
         _ => assertion_expr_text(callable),
     }
@@ -4979,11 +4985,30 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_expr_text(source)
         ),
         Expr::Call {
-            name, arguments, ..
+            name,
+            arguments,
+            argument_names: _,
+            argument_unpacks: _,
+            ..
         } if assertion_is_exit_construct_name(name) => assertion_exit_construct_text(arguments),
         Expr::Call {
-            name, arguments, ..
-        } => format!("{}({})", name, assertion_argument_list_text(arguments)),
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } => {
+            let display_name = if name.eq_ignore_ascii_case("clone") {
+                "\\clone"
+            } else {
+                name
+            };
+            format!(
+                "{}({})",
+                display_name,
+                assertion_call_argument_list_text(arguments, argument_names, argument_unpacks)
+            )
+        }
         Expr::FirstClassCallable { callable, .. } => {
             format!("{}(...)", assertion_first_class_callable_text(callable))
         }
@@ -5052,7 +5077,18 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_expr_text(class_name),
             assertion_argument_list_text(arguments)
         ),
-        Expr::Clone { expr, .. } => format!("clone {}", assertion_expr_text(expr)),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => match with_properties.as_deref() {
+            Some(with_properties) => format!(
+                "\\clone({}, {})",
+                assertion_expr_text(expr),
+                assertion_expr_text(with_properties)
+            ),
+            None => format!("\\clone({})", assertion_expr_text(expr)),
+        },
         Expr::PropertyFetch { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
@@ -5494,6 +5530,30 @@ fn assertion_argument_list_text(arguments: &[Expr]) -> String {
     arguments
         .iter()
         .map(assertion_expr_text)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn assertion_call_argument_list_text(
+    arguments: &[Expr],
+    argument_names: &[Option<String>],
+    argument_unpacks: &[bool],
+) -> String {
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            let mut text = String::new();
+            if argument_unpacks.get(index).copied().unwrap_or(false) {
+                text.push_str("...");
+            }
+            if let Some(Some(name)) = argument_names.get(index) {
+                text.push_str(name);
+                text.push_str(": ");
+            }
+            text.push_str(&assertion_expr_text(argument));
+            text
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }

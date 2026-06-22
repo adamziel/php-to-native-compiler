@@ -27487,6 +27487,16 @@ struct InternalParameterSpec {
 }
 
 fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParameterSpec]> {
+    static CLONE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "object",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "withProperties",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static ARRAY_FILTER_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "array",
@@ -28451,7 +28461,9 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
-    if name.eq_ignore_ascii_case("array_filter") {
+    if name.eq_ignore_ascii_case("clone") {
+        Some(&CLONE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_slice") {
         Some(&ARRAY_SLICE_PARAMETERS)
@@ -44606,6 +44618,40 @@ impl ValueEmitter {
     ) -> String {
         let has_named_arguments = argument_names.iter().any(Option::is_some);
         let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("clone")
+            && (arguments.len() == 1 || arguments.len() == 2)
+        {
+            let expr_temp = self.emit_materialized_value(out, &arguments[0]);
+            let properties_temp = if arguments.len() == 2 {
+                Some(self.emit_materialized_value(out, &arguments[1]))
+            } else {
+                None
+            };
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            if let Some(properties_temp) = &properties_temp {
+                out.push_str(" = ptn_clone_value_with_properties(&runtime, ");
+                out.push_str(&expr_temp);
+                out.push_str(", ");
+                out.push_str(properties_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", properties_temp);
+            } else {
+                out.push_str(" = ptn_clone_value(&runtime, ");
+                out.push_str(&expr_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            emit_value_cleanup(out, "    ", &expr_temp);
+            return result_temp;
+        }
+
         if !has_named_arguments
             && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("count")

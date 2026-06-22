@@ -7423,22 +7423,24 @@ impl Parser<'_> {
 
     fn parse_clone_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
-        if self.peek_clone_with_property_update_arguments() {
-            self.advance();
-            let expr = self.parse_assignment_expr()?;
-            let with_properties = if matches!(self.peek().kind, TokenKind::Comma) {
-                self.advance();
-                let properties = self.parse_assignment_expr()?;
-                Some(Box::new(properties))
-            } else {
-                None
-            };
-            let right_span = self.expect_right_paren()?;
-            let span = combine_spans(token.span, right_span);
-            return Ok(Expr::Clone {
-                expr: Box::new(expr),
-                with_properties,
-                span,
+        if matches!(self.peek().kind, TokenKind::LeftParen)
+            && token.span.byte_end == self.peek().span.byte_start
+        {
+            if self.peek_is_first_class_callable_arguments() {
+                let right_span = self.parse_first_class_callable_arguments()?;
+                return Ok(Expr::FirstClassCallable {
+                    callable: Box::new(Expr::String("clone".to_string(), token.span)),
+                    span: combine_spans(token.span, right_span),
+                });
+            }
+            let (arguments, argument_names, argument_unpacks, right_span) =
+                self.parse_clone_call_arguments()?;
+            return Ok(Expr::Call {
+                name: "clone".to_string(),
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span: combine_spans(token.span, right_span),
             });
         }
         let expr = self.parse_assignment_expr()?;
@@ -7450,37 +7452,37 @@ impl Parser<'_> {
         })
     }
 
-    fn peek_clone_with_property_update_arguments(&self) -> bool {
-        if !matches!(self.peek().kind, TokenKind::LeftParen) {
-            return false;
-        }
-
-        let mut paren_depth = 0usize;
-        let mut bracket_depth = 0usize;
-        let mut brace_depth = 0usize;
-        let mut index = self.index;
-        while let Some(token) = self.tokens.get(index) {
-            match token.kind {
-                TokenKind::LeftParen => paren_depth += 1,
-                TokenKind::RightParen => {
-                    if paren_depth <= 1 {
-                        return false;
-                    }
-                    paren_depth -= 1;
-                }
-                TokenKind::LeftBracket => bracket_depth += 1,
-                TokenKind::RightBracket => bracket_depth = bracket_depth.saturating_sub(1),
-                TokenKind::LeftBrace => brace_depth += 1,
-                TokenKind::RightBrace => brace_depth = brace_depth.saturating_sub(1),
-                TokenKind::Comma if paren_depth == 1 && bracket_depth == 0 && brace_depth == 0 => {
-                    return true;
-                }
-                TokenKind::Eof => return false,
-                _ => {}
+    fn parse_clone_call_arguments(
+        &mut self,
+    ) -> Result<(Vec<Expr>, Vec<Option<String>>, Vec<bool>, SourceSpan)> {
+        self.expect_left_paren()?;
+        let mut arguments = Vec::new();
+        let mut argument_names = Vec::new();
+        let mut argument_unpacks = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                return Err(syntax_error_unexpected(self.peek(), None));
             }
-            index += 1;
+            let (name, unpack, argument, _) = self.parse_call_argument()?;
+            arguments.push(argument);
+            argument_names.push(name);
+            argument_unpacks.push(unpack);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    return Err(syntax_error_unexpected(self.peek(), Some("\")\"")));
+                }
+                let (name, unpack, argument, _) = self.parse_call_argument()?;
+                arguments.push(argument);
+                argument_names.push(name);
+                argument_unpacks.push(unpack);
+            }
         }
-        false
+        let right_span = self.expect_right_paren()?;
+        Ok((arguments, argument_names, argument_unpacks, right_span))
     }
 
     fn parse_throw_expr(&mut self) -> Result<Expr> {
@@ -8149,6 +8151,35 @@ impl Parser<'_> {
             }
             TokenKind::Backslash => {
                 let first_token = self.advance().clone();
+                if matches!(first_token.kind, TokenKind::Clone) {
+                    if matches!(self.peek().kind, TokenKind::LeftParen)
+                        && first_token.span.byte_end == self.peek().span.byte_start
+                    {
+                        if self.peek_is_first_class_callable_arguments() {
+                            let right_span = self.parse_first_class_callable_arguments()?;
+                            return Ok(Expr::FirstClassCallable {
+                                callable: Box::new(Expr::String(
+                                    "clone".to_string(),
+                                    combine_spans(token.span, first_token.span),
+                                )),
+                                span: combine_spans(token.span, right_span),
+                            });
+                        }
+                        let (arguments, argument_names, argument_unpacks, right_span) =
+                            self.parse_clone_call_arguments()?;
+                        return Ok(Expr::Call {
+                            name: "clone".to_string(),
+                            arguments,
+                            argument_names,
+                            argument_unpacks,
+                            span: combine_spans(token.span, right_span),
+                        });
+                    }
+                    return Err(Diagnostic::new(
+                        "expected clone call",
+                        Some(combine_spans(token.span, first_token.span)),
+                    ));
+                }
                 let Some(first_segment) = name_segment_from_token(&first_token.kind) else {
                     return Err(Diagnostic::new(
                         "expected fully qualified name",
