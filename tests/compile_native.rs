@@ -10178,7 +10178,7 @@ Foo::attempt();
 
 #[test]
 fn parser_enforces_trait_imported_abstract_methods_in_concrete_class() {
-    let error = parser::parse(
+    let program = parser::parse(
         "<?php
 trait TraitWithAbstract {
     abstract public function fromTrait();
@@ -10187,10 +10187,27 @@ class TraitWorks {
     use TraitWithAbstract;
 }",
     )
+    .unwrap();
+    assert!(program.classes[0]
+        .methods
+        .iter()
+        .any(|method| method.name == "fromTrait" && method.trait_name.is_some()));
+
+    let error = parser::parse(
+        "<?php
+trait TraitWithAbstract {
+    abstract public function fromTrait();
+}
+class TraitWorks {
+    use TraitWithAbstract {
+        TraitWithAbstract::fromTrait as renamedRequirement;
+    }
+}",
+    )
     .unwrap_err();
     assert_eq!(
         error.message,
-        "Class TraitWorks contains 1 abstract method and must therefore be declared abstract or implement the remaining method (TraitWorks::fromTrait)"
+        "Class TraitWorks contains 1 abstract method and must therefore be declared abstract or implement the remaining method (TraitWorks::renamedRequirement)"
     );
 
     let program = parser::parse(
@@ -10224,6 +10241,59 @@ class NotAbstract {
         error.message,
         "Class NotAbstract declares abstract method directAbstract() and must therefore be declared abstract"
     );
+}
+
+#[test]
+fn parser_tracks_constructor_final_and_abstract_prototype_contracts() {
+    let error = parser::parse(
+        "<?php
+abstract class A {
+    abstract function __construct(X $x);
+}
+class B extends A {
+    function __construct(X $x) {}
+}
+class C extends B {
+    function __construct() {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of C::__construct() must be compatible with A::__construct(X $x)"
+    );
+
+    let error = parser::parse(
+        "<?php
+class Base {
+    private final function __construct() {}
+}
+class Extended extends Base {
+    public function __construct() {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot override final method Base::__construct()"
+    );
+
+    let program = parser::parse(
+        "<?php
+class A {
+    final private function hidden() {}
+}
+class B extends A {
+    final private function hidden() {}
+}",
+    )
+    .unwrap();
+    assert_eq!(program.compile_warnings.len(), 2);
+    assert!(program.compile_warnings.iter().all(|warning| {
+        warning.kind == CompileWarningKind::Warning
+            && warning.message
+                == "Private methods cannot be final as they are never overridden by other classes"
+    }));
 }
 
 #[test]

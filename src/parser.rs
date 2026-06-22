@@ -476,6 +476,7 @@ impl Parser<'_> {
             validate_interface_method_conflicts(&validation_classes)?;
             validate_override_attributes(&validation_classes, &validation_traits)?;
             validate_traversable_implementations(&validation_classes)?;
+            collect_final_private_method_warnings(&validation_classes, &mut self.compile_warnings);
             validate_method_signature_compatibility(
                 &validation_classes,
                 &validation_traits,
@@ -14372,8 +14373,23 @@ fn validate_method_signature_compatibility(
 ) -> Result<()> {
     for class in classes {
         for method in &class.methods {
+            if method.name.eq_ignore_ascii_case("__construct") {
+                if let Some((parent_class, parent_method)) =
+                    find_final_private_parent_constructor(class, classes)
+                {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot override final method {}::{}()",
+                            parent_class.name, parent_method.name
+                        ),
+                        Some(method.span),
+                    ));
+                }
+            }
+
+            let visible_parent_method = find_visible_parent_method(class, &method.name, classes);
             let has_visible_parent_method = if let Some((parent_class, parent_method)) =
-                find_visible_parent_method(class, &method.name, classes)
+                visible_parent_method
             {
                 if parent_method.is_final {
                     return Err(Diagnostic::new(
@@ -14480,6 +14496,30 @@ fn validate_method_signature_compatibility(
                 false
             };
 
+            if method.name.eq_ignore_ascii_case("__construct") {
+                if let Some((prototype_class, prototype_method)) =
+                    find_abstract_parent_constructor(class, classes)
+                {
+                    let already_checked =
+                        visible_parent_method.is_some_and(|(parent_class, parent_method)| {
+                            parent_class
+                                .name
+                                .eq_ignore_ascii_case(&prototype_class.name)
+                                && parent_method.span == prototype_method.span
+                        });
+                    if !already_checked {
+                        validate_method_signature_pair(
+                            class,
+                            method,
+                            prototype_class,
+                            prototype_method,
+                            classes,
+                            runtime_class_aliases,
+                        )?;
+                    }
+                }
+            }
+
             let mut trait_methods = Vec::new();
             collect_class_trait_abstract_methods(class, &method.name, traits, &mut trait_methods);
             for (trait_decl, trait_method) in trait_methods {
@@ -14576,6 +14616,28 @@ fn validate_method_signature_compatibility(
         }
     }
     Ok(())
+}
+
+fn collect_final_private_method_warnings(
+    classes: &[ClassDecl],
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    for class in classes {
+        for method in &class.methods {
+            if method.is_final
+                && method.visibility == PropertyVisibility::Private
+                && !method.name.eq_ignore_ascii_case("__construct")
+            {
+                compile_warnings.push(CompileWarning {
+                    message:
+                        "Private methods cannot be final as they are never overridden by other classes"
+                            .to_string(),
+                    span: method.span,
+                    kind: CompileWarningKind::Warning,
+                });
+            }
+        }
+    }
 }
 
 fn trait_abstract_method_for_class(
@@ -15044,6 +15106,52 @@ fn find_visible_parent_method<'a>(
         if let Some(method) = parent.methods.iter().find(|candidate| {
             candidate.visibility != PropertyVisibility::Private
                 && candidate.name.eq_ignore_ascii_case(method_name)
+        }) {
+            return Some((parent, method));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn find_final_private_parent_constructor<'a>(
+    class: &ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.name.eq_ignore_ascii_case("__construct")
+                && candidate.visibility == PropertyVisibility::Private
+                && candidate.is_final
+        }) {
+            return Some((parent, method));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn find_abstract_parent_constructor<'a>(
+    class: &ClassDecl,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a MethodDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let parent = find_class(classes, name)?;
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case("__construct")
+                && candidate.is_abstract
         }) {
             return Some((parent, method));
         }
@@ -16991,6 +17099,14 @@ fn unsatisfied_trait_abstract_methods(
     let mut seen = HashSet::new();
     for method in &class.methods {
         if !method.is_abstract || method.trait_name.is_none() {
+            continue;
+        }
+        if method.visibility != PropertyVisibility::Private
+            && method
+                .trait_method_name
+                .as_deref()
+                .is_some_and(|trait_method| method.name.eq_ignore_ascii_case(trait_method))
+        {
             continue;
         }
         if trait_abstract_method_has_concrete_implementation(class, method, classes) {
