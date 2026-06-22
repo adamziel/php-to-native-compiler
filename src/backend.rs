@@ -6380,6 +6380,8 @@ fn emit_class_metadata_helpers(
         "DOMImplementation",
         "DOMElement",
         "DOMAttr",
+        "DOMEntity",
+        "DOMNotation",
         "DOMEntityReference",
         "DOMProcessingInstruction",
         "DOMCharacterData",
@@ -6398,6 +6400,7 @@ fn emit_class_metadata_helpers(
         "Dom\\Element",
         "Dom\\Attr",
         "Dom\\Entity",
+        "Dom\\Notation",
         "Dom\\EntityReference",
         "Dom\\ProcessingInstruction",
         "Dom\\CharacterData",
@@ -6994,6 +6997,8 @@ fn emit_class_metadata_helpers(
         "DOMImplementation",
         "DOMElement",
         "DOMAttr",
+        "DOMEntity",
+        "DOMNotation",
         "DOMEntityReference",
         "DOMProcessingInstruction",
         "DOMCharacterData",
@@ -7012,6 +7017,7 @@ fn emit_class_metadata_helpers(
         "Dom\\Element",
         "Dom\\Attr",
         "Dom\\Entity",
+        "Dom\\Notation",
         "Dom\\EntityReference",
         "Dom\\ProcessingInstruction",
         "Dom\\CharacterData",
@@ -7574,6 +7580,8 @@ fn emit_class_metadata_helpers(
         ("DOMDocumentType", "DOMNode"),
         ("DOMElement", "DOMNode"),
         ("DOMAttr", "DOMNode"),
+        ("DOMEntity", "DOMNode"),
+        ("DOMNotation", "DOMNode"),
         ("DOMEntityReference", "DOMNode"),
         ("DOMProcessingInstruction", "DOMNode"),
         ("DOMCharacterData", "DOMNode"),
@@ -7588,6 +7596,7 @@ fn emit_class_metadata_helpers(
         ("Dom\\Element", "Dom\\Node"),
         ("Dom\\Attr", "Dom\\Node"),
         ("Dom\\Entity", "Dom\\Node"),
+        ("Dom\\Notation", "Dom\\Node"),
         ("Dom\\EntityReference", "Dom\\Node"),
         ("Dom\\ProcessingInstruction", "Dom\\Node"),
         ("Dom\\CharacterData", "Dom\\Node"),
@@ -17685,6 +17694,8 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domimplementation" => Some("DOMImplementation"),
         "domelement" => Some("DOMElement"),
         "domattr" => Some("DOMAttr"),
+        "domentity" => Some("DOMEntity"),
+        "domnotation" => Some("DOMNotation"),
         "domentityreference" => Some("DOMEntityReference"),
         "domprocessinginstruction" => Some("DOMProcessingInstruction"),
         "domcharacterdata" => Some("DOMCharacterData"),
@@ -17703,6 +17714,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "dom\\element" => Some("Dom\\Element"),
         "dom\\attr" => Some("Dom\\Attr"),
         "dom\\entity" => Some("Dom\\Entity"),
+        "dom\\notation" => Some("Dom\\Notation"),
         "dom\\entityreference" => Some("Dom\\EntityReference"),
         "dom\\processinginstruction" => Some("Dom\\ProcessingInstruction"),
         "dom\\characterdata" => Some("Dom\\CharacterData"),
@@ -26504,6 +26516,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMImplementation")
                 || class_name.eq_ignore_ascii_case("DOMElement")
                 || class_name.eq_ignore_ascii_case("DOMAttr")
+                || class_name.eq_ignore_ascii_case("DOMEntity")
+                || class_name.eq_ignore_ascii_case("DOMNotation")
                 || class_name.eq_ignore_ascii_case("DOMEntityReference")
                 || class_name.eq_ignore_ascii_case("DOMProcessingInstruction")
                 || class_name.eq_ignore_ascii_case("DOMCharacterData")
@@ -26523,6 +26537,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Dom\\Element")
                 || class_name.eq_ignore_ascii_case("Dom\\Attr")
                 || class_name.eq_ignore_ascii_case("Dom\\Entity")
+                || class_name.eq_ignore_ascii_case("Dom\\Notation")
                 || class_name.eq_ignore_ascii_case("Dom\\EntityReference")
                 || class_name.eq_ignore_ascii_case("Dom\\ProcessingInstruction")
                 || class_name.eq_ignore_ascii_case("Dom\\CharacterData")
