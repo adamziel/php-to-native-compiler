@@ -98282,6 +98282,828 @@ static int ptn_soap_validate_non_wsdl_options(
     return 0;
 }
 
+typedef struct {
+    PtnValue wsdl;
+    PtnValue options;
+    PtnValue functions;
+    char *class_name;
+} PtnSoapServerData;
+
+typedef struct {
+    char *local_name;
+    char *namespace_uri;
+} PtnSoapXmlType;
+
+static void ptn_soap_server_data_free(void *raw) {
+    PtnSoapServerData *data = (PtnSoapServerData *)raw;
+    if (data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&data->wsdl);
+    ptn_value_destroy(&data->options);
+    ptn_value_destroy(&data->functions);
+    free(data->class_name);
+    free(data);
+}
+
+static PtnSoapServerData *ptn_soap_server_data_new(PtnValue wsdl, PtnValue options) {
+    PtnSoapServerData *data = calloc(1, sizeof(PtnSoapServerData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->wsdl = ptn_value_clone_deref(wsdl);
+    data->options = ptn_value_clone_deref(options);
+    data->functions = ptn_array_from_literal_entries(0, NULL);
+    data->class_name = NULL;
+    return data;
+}
+
+static PtnSoapServerData *ptn_soap_server_ensure_data(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_object_is_internal_or_descendant(receiver, "SoapServer")) {
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        receiver.as.object->native_data =
+            ptn_soap_server_data_new(ptn_null(), ptn_null());
+        receiver.as.object->native_data_free = ptn_soap_server_data_free;
+    }
+    return (PtnSoapServerData *)receiver.as.object->native_data;
+}
+
+static char *ptn_soap_value_string_dup(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnStringOperand operand = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    char *copy = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
+    return copy;
+}
+
+static char *ptn_soap_options_string_dup(
+    PtnRuntime *runtime,
+    PtnValue options,
+    const char *name,
+    size_t line
+) {
+    PtnValue value;
+    if (!ptn_soap_options_entry(options, name, &value)) {
+        return NULL;
+    }
+    return ptn_soap_value_string_dup(runtime, value, line);
+}
+
+static void ptn_soap_array_append_string(PtnValue array, const char *value) {
+    array = ptn_value_deref(array);
+    if (array.type != PTN_ARRAY || array.as.array == NULL || value == NULL) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_int_key(array.as.array->next_auto_key);
+    ptn_array_set_entry(array.as.array, key, ptn_owned_string(ptn_duplicate_string(value)));
+}
+
+static int ptn_soap_string_value_case_equal(PtnRuntime *runtime, PtnValue value, const char *name, size_t line) {
+    char *candidate = ptn_soap_value_string_dup(runtime, value, line);
+    if (candidate == NULL) {
+        return 0;
+    }
+    int equal = ptn_ascii_case_equal(candidate, name);
+    free(candidate);
+    return equal;
+}
+
+static int ptn_soap_server_function_registered(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    const char *name,
+    size_t line
+) {
+    if (data == NULL || name == NULL) {
+        return 0;
+    }
+    PtnValue functions = ptn_value_deref(data->functions);
+    if (functions.type != PTN_ARRAY || functions.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < functions.as.array->len; i++) {
+        if (ptn_soap_string_value_case_equal(runtime, functions.as.array->entries[i].value, name, line)) {
+            return 1;
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_soap_server_add_function(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapServer::addFunction() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSoapServerData *data = ptn_soap_server_ensure_data(receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnValue functions = ptn_value_deref(args[0]);
+    if (functions.type == PTN_ARRAY && functions.as.array != NULL) {
+        for (size_t i = 0; i < functions.as.array->len; i++) {
+            char *name = ptn_soap_value_string_dup(runtime, functions.as.array->entries[i].value, line);
+            if (name == NULL) {
+                return ptn_null();
+            }
+            ptn_soap_array_append_string(data->functions, name);
+            free(name);
+        }
+        return ptn_null();
+    }
+    char *name = ptn_soap_value_string_dup(runtime, args[0], line);
+    if (name == NULL) {
+        return ptn_null();
+    }
+    ptn_soap_array_append_string(data->functions, name);
+    free(name);
+    return ptn_null();
+}
+
+static PtnValue ptn_soap_server_set_class(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "SoapServer::setClass() expects at least 1 argument, 0 given");
+        return ptn_null();
+    }
+    PtnSoapServerData *data = ptn_soap_server_ensure_data(receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    char *class_name = ptn_soap_value_string_dup(runtime, args[0], line);
+    if (class_name == NULL) {
+        return ptn_null();
+    }
+    const char *resolved = ptn_runtime_resolve_class_alias(runtime, class_name);
+    free(data->class_name);
+    data->class_name = ptn_duplicate_string(resolved == NULL ? class_name : resolved);
+    free(class_name);
+    return ptn_null();
+}
+
+static void ptn_soap_xml_type_free(PtnSoapXmlType *type) {
+    if (type == NULL) {
+        return;
+    }
+    free(type->local_name);
+    free(type->namespace_uri);
+    type->local_name = NULL;
+    type->namespace_uri = NULL;
+}
+
+static void ptn_soap_xml_type_from_node(PtnXmlNode *node, PtnSoapXmlType *type) {
+    memset(type, 0, sizeof(*type));
+    if (node == NULL) {
+        return;
+    }
+    type->local_name = ptn_duplicate_string(ptn_xml_local_name(node->name));
+    type->namespace_uri = node->namespace_uri == NULL ? ptn_duplicate_string("") : ptn_duplicate_string(node->namespace_uri);
+    for (size_t i = 0; i < node->attribute_count; i++) {
+        PtnXmlNode *attr = node->attributes[i];
+        const char *attr_name = attr == NULL || attr->name == NULL ? "" : attr->name;
+        const char *attr_local = ptn_xml_local_name(attr_name);
+        const char *attr_uri = attr == NULL || attr->namespace_uri == NULL ? "" : attr->namespace_uri;
+        if (!ptn_ascii_case_equal(attr_local, "type") ||
+            (attr_uri[0] != '\0' && strcmp(attr_uri, "http://www.w3.org/2001/XMLSchema-instance") != 0)) {
+            continue;
+        }
+        const char *value = attr->value == NULL ? "" : attr->value;
+        const char *colon = strchr(value, ':');
+        free(type->local_name);
+        free(type->namespace_uri);
+        if (colon == NULL) {
+            type->local_name = ptn_duplicate_string(value);
+            type->namespace_uri = ptn_duplicate_string("");
+        } else {
+            type->local_name = ptn_duplicate_string(colon + 1);
+            char *prefix = ptn_duplicate_string_len(value, (size_t)(colon - value));
+            const char *uri = ptn_xml_lookup_namespace_uri(node, prefix);
+            type->namespace_uri = uri == NULL ? ptn_duplicate_string("") : ptn_duplicate_string(uri);
+            free(prefix);
+        }
+        return;
+    }
+}
+
+static PtnValue ptn_soap_node_outer_xml_with_namespaces(
+    PtnRuntime *runtime,
+    PtnXmlNode *node,
+    size_t line
+) {
+    PtnXmlNode *clone = ptn_xml_clone_node_recursive(runtime, node, 1);
+    for (PtnXmlNode *ancestor = node; ancestor != NULL; ancestor = ancestor->parent) {
+        if (ancestor->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        for (size_t i = 0; i < ancestor->attribute_count; i++) {
+            PtnXmlNode *attr = ancestor->attributes[i];
+            if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
+                continue;
+            }
+            ptn_xml_element_set_attribute_string(
+                runtime,
+                clone,
+                attr->name == NULL ? "" : attr->name,
+                attr->value == NULL ? "" : attr->value
+            );
+        }
+    }
+    ptn_xml_resolve_namespace_recursive(clone);
+    return ptn_xml_serialized_value(runtime, clone, 0, line);
+}
+
+static int ptn_soap_decode_typemap_arg(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *node,
+    const PtnSoapXmlType *type,
+    size_t line,
+    PtnValue *value_out
+) {
+    PtnValue typemap;
+    if (data == NULL || type == NULL || type->local_name == NULL ||
+        !ptn_soap_options_entry(data->options, "typemap", &typemap)) {
+        return 0;
+    }
+    typemap = ptn_value_deref(typemap);
+    if (typemap.type != PTN_ARRAY || typemap.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < typemap.as.array->len; i++) {
+        PtnValue entry = ptn_value_deref(typemap.as.array->entries[i].value);
+        if (entry.type != PTN_ARRAY || entry.as.array == NULL) {
+            continue;
+        }
+        PtnValue type_name_value;
+        if (!ptn_soap_options_entry(entry, "type_name", &type_name_value)) {
+            continue;
+        }
+        char *type_name = ptn_soap_value_string_dup(runtime, type_name_value, line);
+        if (type_name == NULL) {
+            return 0;
+        }
+        int name_matches = strcmp(type_name, type->local_name) == 0;
+        free(type_name);
+        if (!name_matches) {
+            continue;
+        }
+        PtnValue type_ns_value;
+        if (ptn_soap_options_entry(entry, "type_ns", &type_ns_value)) {
+            char *type_ns = ptn_soap_value_string_dup(runtime, type_ns_value, line);
+            if (type_ns == NULL) {
+                return 0;
+            }
+            const char *actual_ns = type->namespace_uri == NULL ? "" : type->namespace_uri;
+            int ns_matches = strcmp(type_ns, actual_ns) == 0;
+            free(type_ns);
+            if (!ns_matches) {
+                continue;
+            }
+        }
+        PtnValue callback;
+        if (!ptn_soap_options_entry(entry, "from_xml", &callback)) {
+            continue;
+        }
+        PtnValue xml = ptn_soap_node_outer_xml_with_namespaces(runtime, node, line);
+        PtnValue callback_value = ptn_value_clone_deref(callback);
+        PtnValue callback_args[1] = { xml };
+        PtnValue result = ptn_call_callable(runtime, callback_value, 1, callback_args, line, 0);
+        ptn_value_destroy(&callback_value);
+        ptn_value_destroy(&xml);
+        *value_out = result;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_soap_decode_classmap_arg(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *node,
+    const PtnSoapXmlType *type,
+    size_t line,
+    PtnValue *value_out
+) {
+    PtnValue classmap;
+    if (data == NULL || type == NULL || type->local_name == NULL ||
+        !ptn_soap_options_entry(data->options, "classmap", &classmap)) {
+        return 0;
+    }
+    classmap = ptn_value_deref(classmap);
+    if (classmap.type != PTN_ARRAY || classmap.as.array == NULL) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(type->local_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(classmap.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 0;
+    }
+    char *class_name = ptn_soap_value_string_dup(runtime, entry->value, line);
+    if (class_name == NULL) {
+        return 0;
+    }
+    const char *resolved = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *object_class = resolved == NULL ? class_name : resolved;
+    PtnValue object = ptn_null();
+    if (ptn_declared_runtime_class_exists(runtime, object_class) &&
+        runtime->new_instance_without_constructor != NULL) {
+        object = runtime->new_instance_without_constructor(runtime, object_class, line);
+    } else {
+        object = ptn_object_new_shell(runtime, object_class);
+    }
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        free(class_name);
+        *value_out = object;
+        return 1;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (child == NULL || child->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        const char *property = ptn_xml_local_name(child->name);
+        PtnValue text = ptn_xml_text_content_value(child);
+        PtnValue written = ptn_object_write_property(
+            runtime,
+            object,
+            property,
+            object_class,
+            text,
+            line
+        );
+        ptn_value_destroy(&written);
+        ptn_value_destroy(&text);
+        if (runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    free(class_name);
+    *value_out = object;
+    return 1;
+}
+
+static PtnValue ptn_soap_decode_default_arg(PtnXmlNode *node) {
+    return ptn_xml_text_content_value(node);
+}
+
+static PtnValue *ptn_soap_decode_args(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *operation,
+    size_t line,
+    size_t *argc_out
+) {
+    size_t argc = 0;
+    for (size_t i = 0; operation != NULL && i < operation->child_count; i++) {
+        if (operation->children[i] != NULL && operation->children[i]->type == PTN_XML_NODE_ELEMENT) {
+            argc++;
+        }
+    }
+    *argc_out = argc;
+    if (argc == 0) {
+        return NULL;
+    }
+    PtnValue *args = calloc(argc, sizeof(PtnValue));
+    if (args == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t index = 0;
+    for (size_t i = 0; i < operation->child_count; i++) {
+        PtnXmlNode *child = operation->children[i];
+        if (child == NULL || child->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        PtnSoapXmlType type;
+        ptn_soap_xml_type_from_node(child, &type);
+        PtnValue decoded = ptn_null();
+        if (!ptn_soap_decode_typemap_arg(runtime, data, child, &type, line, &decoded) &&
+            !ptn_soap_decode_classmap_arg(runtime, data, child, &type, line, &decoded)) {
+            decoded = ptn_soap_decode_default_arg(child);
+        }
+        ptn_soap_xml_type_free(&type);
+        args[index++] = decoded;
+        if (runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    return args;
+}
+
+static PtnXmlNode *ptn_soap_find_body(PtnXmlNode *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), "Body")) {
+        const char *uri = node->namespace_uri == NULL ? "" : node->namespace_uri;
+        if (uri[0] == '\0' || strcmp(uri, "http://schemas.xmlsoap.org/soap/envelope/") == 0) {
+            return node;
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *found = ptn_soap_find_body(node->children[i]);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_soap_wsdl_find_output_message(PtnXmlNode *node, const char *operation_name) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), "operation")) {
+        const char *name = ptn_xml_element_attribute_value(node, "name");
+        if (name != NULL && strcmp(name, operation_name) == 0) {
+            for (size_t i = 0; i < node->child_count; i++) {
+                PtnXmlNode *child = node->children[i];
+                if (child == NULL || child->type != PTN_XML_NODE_ELEMENT ||
+                    !ptn_ascii_case_equal(ptn_xml_local_name(child->name), "output")) {
+                    continue;
+                }
+                const char *message = ptn_xml_element_attribute_value(child, "message");
+                if (message != NULL && message[0] != '\0') {
+                    return ptn_duplicate_string(ptn_xml_local_name(message));
+                }
+            }
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        char *found = ptn_soap_wsdl_find_output_message(node->children[i], operation_name);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_soap_wsdl_find_message_part(PtnXmlNode *node, const char *message_name) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), "message")) {
+        const char *name = ptn_xml_element_attribute_value(node, "name");
+        if (name != NULL && strcmp(name, message_name) == 0) {
+            for (size_t i = 0; i < node->child_count; i++) {
+                PtnXmlNode *child = node->children[i];
+                if (child == NULL || child->type != PTN_XML_NODE_ELEMENT ||
+                    !ptn_ascii_case_equal(ptn_xml_local_name(child->name), "part")) {
+                    continue;
+                }
+                const char *part = ptn_xml_element_attribute_value(child, "name");
+                if (part != NULL && part[0] != '\0') {
+                    return ptn_duplicate_string(part);
+                }
+            }
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        char *found = ptn_soap_wsdl_find_message_part(node->children[i], message_name);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_soap_wsdl_find_operation_body_namespace(PtnXmlNode *node, const char *operation_name) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), "operation")) {
+        const char *name = ptn_xml_element_attribute_value(node, "name");
+        if (name != NULL && strcmp(name, operation_name) == 0) {
+            for (size_t i = 0; i < node->child_count; i++) {
+                PtnXmlNode *io = node->children[i];
+                if (io == NULL || io->type != PTN_XML_NODE_ELEMENT ||
+                    (!ptn_ascii_case_equal(ptn_xml_local_name(io->name), "input") &&
+                     !ptn_ascii_case_equal(ptn_xml_local_name(io->name), "output"))) {
+                    continue;
+                }
+                for (size_t j = 0; j < io->child_count; j++) {
+                    PtnXmlNode *body = io->children[j];
+                    if (body == NULL || body->type != PTN_XML_NODE_ELEMENT ||
+                        !ptn_ascii_case_equal(ptn_xml_local_name(body->name), "body")) {
+                        continue;
+                    }
+                    const char *namespace_uri = ptn_xml_element_attribute_value(body, "namespace");
+                    if (namespace_uri != NULL && namespace_uri[0] != '\0') {
+                        return ptn_duplicate_string(namespace_uri);
+                    }
+                }
+            }
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        char *found = ptn_soap_wsdl_find_operation_body_namespace(node->children[i], operation_name);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_soap_wsdl_find_target_namespace(PtnXmlNode *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_ascii_case_equal(ptn_xml_local_name(node->name), "definitions")) {
+        const char *target = ptn_xml_element_attribute_value(node, "targetNamespace");
+        if (target != NULL && target[0] != '\0') {
+            return ptn_duplicate_string(target);
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        char *found = ptn_soap_wsdl_find_target_namespace(node->children[i]);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+static PtnXmlNode *ptn_soap_wsdl_document(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    size_t line
+) {
+    if (data == NULL || ptn_value_deref(data->wsdl).type == PTN_NULL) {
+        return NULL;
+    }
+    char *path = ptn_soap_value_string_dup(runtime, data->wsdl, line);
+    if (path == NULL) {
+        return NULL;
+    }
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    free(path);
+    if (read_result <= 0 || bytes == NULL) {
+        free(bytes);
+        return NULL;
+    }
+    if (!ptn_dom_libxml_accepts_document_source(
+        runtime,
+        "SoapServer::__construct",
+        (const char *)bytes,
+        len,
+        NULL,
+        0,
+        line
+    )) {
+        free(bytes);
+        return NULL;
+    }
+    PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    if (!ptn_xml_parse_document_into(runtime, document, (const char *)bytes, len)) {
+        free(bytes);
+        return NULL;
+    }
+    free(bytes);
+    return document;
+}
+
+static char *ptn_soap_wsdl_response_part_name(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    const char *operation_name,
+    size_t line
+) {
+    if (operation_name == NULL) {
+        return NULL;
+    }
+    PtnXmlNode *document = ptn_soap_wsdl_document(runtime, data, line);
+    if (document == NULL) {
+        return NULL;
+    }
+    char *message = ptn_soap_wsdl_find_output_message(document, operation_name);
+    if (message == NULL) {
+        return NULL;
+    }
+    char *part = ptn_soap_wsdl_find_message_part(document, message);
+    free(message);
+    return part;
+}
+
+static char *ptn_soap_wsdl_namespace_uri(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    const char *operation_name,
+    size_t line
+) {
+    if (operation_name == NULL) {
+        return NULL;
+    }
+    PtnXmlNode *document = ptn_soap_wsdl_document(runtime, data, line);
+    if (document == NULL) {
+        return NULL;
+    }
+    char *namespace_uri = ptn_soap_wsdl_find_operation_body_namespace(document, operation_name);
+    if (namespace_uri != NULL) {
+        return namespace_uri;
+    }
+    return ptn_soap_wsdl_find_target_namespace(document);
+}
+
+static char *ptn_soap_response_namespace_uri(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *operation,
+    size_t line
+) {
+    if (operation != NULL && operation->namespace_uri != NULL && operation->namespace_uri[0] != '\0') {
+        return ptn_duplicate_string(operation->namespace_uri);
+    }
+    char *wsdl_uri = ptn_soap_wsdl_namespace_uri(
+        runtime,
+        data,
+        operation == NULL ? NULL : ptn_xml_local_name(operation->name),
+        line
+    );
+    if (wsdl_uri != NULL) {
+        return wsdl_uri;
+    }
+    char *uri = ptn_soap_options_string_dup(runtime, data == NULL ? ptn_null() : data->options, "uri", line);
+    if (uri != NULL) {
+        return uri;
+    }
+    return ptn_duplicate_string("");
+}
+
+static void ptn_soap_emit_response(
+    PtnRuntime *runtime,
+    const char *method_name,
+    const char *namespace_uri,
+    const char *return_name,
+    PtnValue result,
+    size_t line
+) {
+    PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, result, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(payload);
+        return;
+    }
+    char *payload_c = ptn_duplicate_string_len(payload.data, payload.len);
+    ptn_string_operand_free(payload);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_string_buffer_append(&buffer, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    ptn_string_buffer_append(&buffer, "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"");
+    ptn_xml_append_escaped_ex(&buffer, namespace_uri == NULL ? "" : namespace_uri, 1, 0);
+    ptn_string_buffer_append(&buffer, "\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:");
+    ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
+    ptn_string_buffer_append(&buffer, "Response><");
+    ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
+    ptn_string_buffer_append(&buffer, " xsi:type=\"xsd:string\">");
+    ptn_xml_append_escaped_ex(&buffer, payload_c, 0, 0);
+    ptn_string_buffer_append(&buffer, "</");
+    ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
+    ptn_string_buffer_append(&buffer, "></ns1:");
+    ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
+    ptn_string_buffer_append(&buffer, "Response></SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
+    free(payload_c);
+    ptn_output_write(runtime, buffer.data, buffer.len);
+    free(buffer.data);
+}
+
+static PtnValue ptn_soap_server_handle(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapServer::handle() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (argc == 0) {
+        return ptn_null();
+    }
+    PtnSoapServerData *data = ptn_soap_server_ensure_data(receiver);
+    PtnStringOperand request =
+        ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(request);
+        return ptn_null();
+    }
+    if (!ptn_dom_libxml_accepts_document_source(
+        runtime,
+        "SoapServer::handle",
+        request.data,
+        request.len,
+        NULL,
+        0,
+        line
+    )) {
+        ptn_string_operand_free(request);
+        return ptn_null();
+    }
+    PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    if (!ptn_xml_parse_document_into(runtime, document, request.data, request.len)) {
+        ptn_string_operand_free(request);
+        return ptn_null();
+    }
+    ptn_string_operand_free(request);
+    PtnXmlNode *body = ptn_soap_find_body(ptn_xml_document_element(document));
+    PtnXmlNode *operation = ptn_xml_first_element_child(body);
+    if (operation == NULL) {
+        return ptn_null();
+    }
+    const char *method_name = ptn_xml_local_name(operation->name);
+    size_t call_argc = 0;
+    PtnValue *call_args = ptn_soap_decode_args(runtime, data, operation, line, &call_argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        for (size_t i = 0; i < call_argc; i++) {
+            ptn_value_destroy(&call_args[i]);
+        }
+        free(call_args);
+        return ptn_null();
+    }
+    PtnValue result = ptn_null();
+    if (data != NULL && data->class_name != NULL) {
+        PtnValue service = ptn_declared_class_new_instance(runtime, data->class_name, 0, NULL, line);
+        if (runtime->exceptions->active_exception == NULL && ptn_value_deref(service).type == PTN_OBJECT) {
+            PtnValue callable = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(callable.as.array, ptn_array_int_key(0), ptn_value_clone(service));
+            ptn_array_set_entry(
+                callable.as.array,
+                ptn_array_int_key(1),
+                ptn_owned_string(ptn_duplicate_string(method_name))
+            );
+            result = ptn_call_callable(runtime, callable, call_argc, call_args, line, 0);
+            ptn_value_destroy(&callable);
+        }
+        ptn_value_destroy(&service);
+    } else if (ptn_soap_server_function_registered(runtime, data, method_name, line)) {
+        result = ptn_call_function(runtime, method_name, call_argc, call_args, line);
+    }
+    for (size_t i = 0; i < call_argc; i++) {
+        ptn_value_destroy(&call_args[i]);
+    }
+    free(call_args);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
+    char *namespace_uri = ptn_soap_response_namespace_uri(runtime, data, operation, line);
+    char *return_name = ptn_soap_wsdl_response_part_name(runtime, data, method_name, line);
+    if (return_name == NULL) {
+        return_name = ptn_duplicate_string("return");
+    }
+    ptn_soap_emit_response(runtime, method_name, namespace_uri, return_name, result, line);
+    free(namespace_uri);
+    free(return_name);
+    ptn_value_destroy(&result);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_soap_client_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -98325,7 +99147,10 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
     }
 
     PtnValue object = ptn_object_new_shell(runtime, class_name);
-    if (wsdl.type != PTN_NULL) {
+    if (ptn_ascii_case_equal(class_name, "SoapServer")) {
+        object.as.object->native_data = ptn_soap_server_data_new(wsdl, options);
+        object.as.object->native_data_free = ptn_soap_server_data_free;
+    } else if (wsdl.type != PTN_NULL) {
         PtnStringOperand wsdl_path = ptn_value_to_string_operand_with_runtime(runtime, wsdl, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(wsdl_path);
@@ -98588,6 +99413,15 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
                 args,
                 line
             );
+            if (receiver.type == PTN_OBJECT && replacement.type == PTN_OBJECT) {
+                if (receiver.as.object->native_data_free != NULL) {
+                    receiver.as.object->native_data_free(receiver.as.object->native_data);
+                }
+                receiver.as.object->native_data = replacement.as.object->native_data;
+                receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+                replacement.as.object->native_data = NULL;
+                replacement.as.object->native_data_free = NULL;
+            }
             ptn_value_destroy(&replacement);
             return ptn_null();
         }
@@ -98622,6 +99456,15 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
             return wsdl_result;
         }
         ptn_value_destroy(&wsdl_result);
+    }
+    if (is_server && ptn_ascii_case_equal(name, "addFunction")) {
+        return ptn_soap_server_add_function(runtime, receiver, argc, args, line);
+    }
+    if (is_server && ptn_ascii_case_equal(name, "setClass")) {
+        return ptn_soap_server_set_class(runtime, receiver, argc, args, line);
+    }
+    if (is_server && ptn_ascii_case_equal(name, "handle")) {
+        return ptn_soap_server_handle(runtime, receiver, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -103232,8 +104075,13 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "__setSoapHeaders")
             || ptn_ascii_case_equal(method_name, "__soapCall");
     }
-    if (ptn_internal_class_name_is_soap_server(class_name) ||
-        ptn_internal_class_name_is_soap_header(class_name)) {
+    if (ptn_internal_class_name_is_soap_server(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "addFunction")
+            || ptn_ascii_case_equal(method_name, "setClass")
+            || ptn_ascii_case_equal(method_name, "handle");
+    }
+    if (ptn_internal_class_name_is_soap_header(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
     }
     if (ptn_internal_class_name_is_dom(class_name)) {
@@ -104600,8 +105448,14 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "__soapCall");
         return result;
     }
-    if (ptn_internal_class_name_is_soap_server(class_name) ||
-        ptn_internal_class_name_is_soap_header(class_name)) {
+    if (ptn_internal_class_name_is_soap_server(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "addFunction");
+        ptn_append_method_name(result, &index, "setClass");
+        ptn_append_method_name(result, &index, "handle");
+        return result;
+    }
+    if (ptn_internal_class_name_is_soap_header(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         return result;
     }
