@@ -963,6 +963,9 @@ struct PtnObject {
     PtnValue lazy_proxy_instance;
 };
 
+typedef void (*PtnResourceCloseHook)(PtnResource *resource, void *data);
+typedef void (*PtnResourceHookDataFree)(void *data);
+
 typedef struct {
     int has_key;
     PtnValue key;
@@ -1085,6 +1088,9 @@ struct PtnResource {
     PtnMemoryStream *memory_stream;
     PtnStreamFilter *read_filters;
     PtnStreamFilter *write_filters;
+    PtnResourceCloseHook close_hook;
+    void *close_hook_data;
+    PtnResourceHookDataFree close_hook_data_free;
     int persistent;
     int closed;
     PtnValue context_options;
@@ -3685,6 +3691,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->close_hook = NULL;
+    resource->close_hook_data = NULL;
+    resource->close_hook_data_free = NULL;
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
@@ -3720,6 +3729,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->memory_stream = ptn_memory_stream_new(max_memory, writable, append);
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->close_hook = NULL;
+    resource->close_hook_data = NULL;
+    resource->close_hook_data_free = NULL;
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
@@ -3752,6 +3764,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->close_hook = NULL;
+    resource->close_hook_data = NULL;
+    resource->close_hook_data_free = NULL;
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
@@ -3779,6 +3794,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->close_hook = NULL;
+    resource->close_hook_data = NULL;
+    resource->close_hook_data_free = NULL;
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
@@ -4118,6 +4136,12 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     if (resource == NULL) {
         return;
     }
+    if (resource->closed &&
+        resource->stream == NULL &&
+        resource->memory_stream == NULL &&
+        resource->directory == NULL) {
+        return;
+    }
     resource->closed = 1;
     if (resource->persistent) {
         resource->stream = NULL;
@@ -4126,6 +4150,18 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
         resource->directory = NULL;
 #endif
         return;
+    }
+    if (resource->close_hook != NULL) {
+        PtnResourceCloseHook close_hook = resource->close_hook;
+        void *close_hook_data = resource->close_hook_data;
+        PtnResourceHookDataFree close_hook_data_free = resource->close_hook_data_free;
+        resource->close_hook = NULL;
+        resource->close_hook_data = NULL;
+        resource->close_hook_data_free = NULL;
+        close_hook(resource, close_hook_data);
+        if (close_hook_data_free != NULL) {
+            close_hook_data_free(close_hook_data);
+        }
     }
     if (resource->stream != NULL) {
         if (resource->stream_backend != PTN_STREAM_BACKEND_OUTPUT) {
@@ -4194,6 +4230,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        NULL,
         1,
         0,
         { PTN_NULL, 0, 0, 0, 0, { 0 } },
@@ -4211,6 +4250,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
+        NULL,
+        NULL,
+        NULL,
         1,
         0,
         { PTN_NULL, 0, 0, 0, 0, { 0 } },
@@ -4225,6 +4267,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         PTN_STREAM_BACKEND_FILE,
+        NULL,
+        NULL,
+        NULL,
         NULL,
         NULL,
         NULL,
