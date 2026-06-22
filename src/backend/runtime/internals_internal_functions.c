@@ -17502,6 +17502,167 @@ static PtnValue ptn_array_walk_property_key_value(PtnObject *object, PtnArrayKey
     return ptn_owned_string_len(storage, key_len);
 }
 
+static void ptn_array_walk_unwrap_guarded_reference_slots(
+    PtnValue *slot,
+    PtnReference *reference,
+    size_t depth
+) {
+    if (slot == NULL || reference == NULL || depth > 1024) {
+        return;
+    }
+    if (slot->type == PTN_REFERENCE && slot->as.reference == reference) {
+        PtnValue old = *slot;
+        *slot = ptn_value_clone_deref(old);
+        if (reference->refcount > 1) {
+            ptn_value_destroy(&old);
+        }
+        return;
+    }
+
+    PtnValue value = ptn_value_deref(*slot);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            ptn_array_walk_unwrap_guarded_reference_slots(
+                &value.as.array->entries[i].value,
+                reference,
+                depth + 1
+            );
+        }
+    } else if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->properties != NULL) {
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            ptn_array_walk_unwrap_guarded_reference_slots(
+                &value.as.object->properties->entries[i].value,
+                reference,
+                depth + 1
+            );
+        }
+    }
+}
+
+static void ptn_array_walk_retain_reference_slots(
+    PtnValue *slot,
+    PtnReference *reference,
+    size_t depth
+) {
+    if (slot == NULL || reference == NULL || depth > 1024) {
+        return;
+    }
+    if (slot->type == PTN_REFERENCE && slot->as.reference == reference) {
+        ptn_reference_retain(reference);
+        return;
+    }
+
+    PtnValue value = ptn_value_deref(*slot);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            ptn_array_walk_retain_reference_slots(
+                &value.as.array->entries[i].value,
+                reference,
+                depth + 1
+            );
+        }
+    } else if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->properties != NULL) {
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            ptn_array_walk_retain_reference_slots(
+                &value.as.object->properties->entries[i].value,
+                reference,
+                depth + 1
+            );
+        }
+    }
+}
+
+static int ptn_array_walk_value_has_external_reference_alias(
+    PtnValue value,
+    PtnArray *walk_array,
+    PtnReference *reference,
+    size_t depth
+) {
+    if (reference == NULL || depth > 1024) {
+        return 0;
+    }
+    if (value.type == PTN_REFERENCE && value.as.reference == reference) {
+        return 1;
+    }
+
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY && value.as.array != NULL) {
+        if (value.as.array == walk_array) {
+            return 0;
+        }
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            if (ptn_array_walk_value_has_external_reference_alias(
+                    value.as.array->entries[i].value,
+                    walk_array,
+                    reference,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
+    } else if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->properties != NULL) {
+        if (value.as.object->properties == walk_array) {
+            return 0;
+        }
+        for (size_t i = 0; i < value.as.object->properties->len; i++) {
+            if (ptn_array_walk_value_has_external_reference_alias(
+                    value.as.object->properties->entries[i].value,
+                    walk_array,
+                    reference,
+                    depth + 1
+                )) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int ptn_array_walk_symbols_have_external_reference_alias(
+    PtnSymbolTable *symbols,
+    PtnArray *walk_array,
+    PtnReference *reference
+) {
+    if (symbols == NULL || reference == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < symbols->len; i++) {
+        if (ptn_array_walk_value_has_external_reference_alias(
+                symbols->items[i].value,
+                walk_array,
+                reference,
+                0
+            )) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_array_walk_has_external_reference_alias(
+    PtnRuntime *runtime,
+    PtnArray *walk_array,
+    PtnReference *reference
+) {
+    if (runtime == NULL || reference == NULL) {
+        return 0;
+    }
+    if (ptn_array_walk_symbols_have_external_reference_alias(
+            &runtime->symbols,
+            walk_array,
+            reference
+        )) {
+        return 1;
+    }
+    return runtime->global_symbols != NULL &&
+        runtime->global_symbols != &runtime->symbols &&
+        ptn_array_walk_symbols_have_external_reference_alias(
+            runtime->global_symbols,
+            walk_array,
+            reference
+        );
+}
+
 static void ptn_array_walk_call_function(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -17527,6 +17688,9 @@ static void ptn_array_walk_call_function(
         ptn_reference_adopt_property_type(walk_reference, metadata);
     }
     PtnReference *created_walk_reference = created_reference ? walk_reference : NULL;
+    if (created_walk_reference != NULL) {
+        ptn_reference_retain(created_walk_reference);
+    }
 
     PtnValue value_reference = ptn_value_clone(entry->value);
     PtnValue key = ptn_array_walk_property_key_value(object, entry->key);
@@ -17550,14 +17714,30 @@ static void ptn_array_walk_call_function(
         if (has_userdata) {
             ptn_value_destroy(&callback_args[2]);
         }
-        if (
-            created_reference &&
-            created_walk_reference != NULL &&
-            created_walk_reference->refcount <= 2
-        ) {
+        if (created_walk_reference != NULL) {
+            int has_external_alias = ptn_array_walk_has_external_reference_alias(
+                runtime,
+                array,
+                created_walk_reference
+            );
             for (size_t i = 0; i < array->len; i++) {
-                ptn_value_unwrap_reference_slots(&array->entries[i].value, created_walk_reference, 0);
+                if (has_external_alias) {
+                    ptn_array_walk_retain_reference_slots(
+                        &array->entries[i].value,
+                        created_walk_reference,
+                        0
+                    );
+                } else {
+                    ptn_array_walk_unwrap_guarded_reference_slots(
+                        &array->entries[i].value,
+                        created_walk_reference,
+                        0
+                    );
+                }
             }
+        }
+        if (created_walk_reference != NULL) {
+            ptn_reference_release(created_walk_reference);
         }
         ptn_rethrow_exception(runtime);
     }
@@ -17579,13 +17759,19 @@ static void ptn_array_walk_call_function(
     }
     ptn_value_destroy(&callback_result);
     if (
-        created_reference &&
         created_walk_reference != NULL &&
-        created_walk_reference->refcount == 1
+        created_walk_reference->refcount <= 2
     ) {
         for (size_t i = 0; i < array->len; i++) {
-            ptn_value_unwrap_reference_slots(&array->entries[i].value, created_walk_reference, 0);
+            ptn_array_walk_unwrap_guarded_reference_slots(
+                &array->entries[i].value,
+                created_walk_reference,
+                0
+            );
         }
+    }
+    if (created_walk_reference != NULL) {
+        ptn_reference_release(created_walk_reference);
     }
     if (object != NULL) {
         ptn_lazy_object_sync_proxy_instance_properties(object);
