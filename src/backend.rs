@@ -1078,14 +1078,17 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Document\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\XMLDocument\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\HTMLDocument\")) {\n");
-    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\");\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOM\\\\ParentNode\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocumentFragment\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMElement\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\DocumentFragment\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Element\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOM\\\\ParentNode\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOMChildNode\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOM\\\\ChildNode\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMText\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCdataSection\") ||\n");
@@ -1099,7 +1102,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\Comment\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\EntityReference\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"Dom\\\\ProcessingInstruction\")) {\n");
-    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOM\\\\ChildNode\");\n");
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -6624,7 +6628,9 @@ fn emit_class_metadata_helpers(
         "Countable",
         "Serializable",
         "DOMParentNode",
+        "DOM\\ParentNode",
         "DOMChildNode",
+        "DOM\\ChildNode",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(builtin));
@@ -6667,7 +6673,9 @@ fn emit_class_metadata_helpers(
         "Countable",
         "Serializable",
         "DOMParentNode",
+        "DOM\\ParentNode",
         "DOMChildNode",
+        "DOM\\ChildNode",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(builtin));
@@ -6953,7 +6961,9 @@ fn emit_class_metadata_helpers(
         "Countable",
         "Serializable",
         "DOMParentNode",
+        "DOM\\ParentNode",
         "DOMChildNode",
+        "DOM\\ChildNode",
     ] {
         out.push_str(
             "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
@@ -7023,15 +7033,17 @@ fn emit_class_metadata_helpers(
         "Throwable",
         "DateTimeInterface",
         "DOMParentNode",
+        "DOM\\ParentNode",
         "DOMChildNode",
+        "DOM\\ChildNode",
         "UnitEnum",
         "BackedEnum",
     ] {
         out.push_str("    if (ptn_builtin_class_implements_interface(class_name, \"");
-        out.push_str(interface);
+        out.push_str(&c_string(interface));
         out.push_str("\")) {\n");
         out.push_str("        ptn_class_metadata_add_assoc_name(result, \"");
-        out.push_str(interface);
+        out.push_str(&c_string(interface));
         out.push_str("\");\n");
         out.push_str("    }\n");
     }

@@ -35261,6 +35261,60 @@ var_dump($copy->item[2]);
 }
 
 #[test]
+fn compile_simplexml_add_attribute_and_modern_dom_interface_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-add-attribute-modern-dom-interface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-add-attribute-modern-dom-interface.php");
+    let output = root.join("simplexml-add-attribute-modern-dom-interface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function accepts_parent(DOM\ParentNode $node) {
+    echo "accepted\n";
+}
+
+$doc = DOM\XMLDocument::createFromString('<root/>');
+accepts_parent($doc);
+var_dump(interface_exists('DOM\\ParentNode'));
+var_dump($doc instanceof DOM\ParentNode);
+
+$xml = new SimpleXMLElement('<php>testfest</php>');
+try {
+    $xml->addAttribute('', '');
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+$xml->addAttribute('lang', 'en');
+var_dump((string) $xml['lang']);
+echo $xml->asXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "accepted\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "SimpleXMLElement::addAttribute(): Argument #1 ($qualifiedName) must not be empty\n",
+            "string(2) \"en\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<php lang=\"en\">testfest</php>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("DOM\\\\ParentNode"));
+    assert!(c_source.contains("ptn_simplexml_add_attribute_method"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();

@@ -98179,7 +98179,9 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "BackedEnum")
         || ptn_ascii_case_equal(name, "DateTimeInterface")
         || ptn_ascii_case_equal(name, "DOMParentNode")
+        || ptn_ascii_case_equal(name, "DOM\\ParentNode")
         || ptn_ascii_case_equal(name, "DOMChildNode")
+        || ptn_ascii_case_equal(name, "DOM\\ChildNode")
         || ptn_ascii_case_equal(name, "Countable")
         || ptn_ascii_case_equal(name, "JsonSerializable")
         || ptn_ascii_case_equal(name, "Serializable");
@@ -117389,6 +117391,7 @@ static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue sou
 static int ptn_simplexml_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "addAttribute")
         || ptn_ascii_case_equal(method_name, "asXML")
         || ptn_ascii_case_equal(method_name, "saveXML")
         || ptn_ascii_case_equal(method_name, "attributes")
@@ -117402,6 +117405,91 @@ static int ptn_simplexml_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "current")
         || ptn_ascii_case_equal(method_name, "key")
         || ptn_ascii_case_equal(method_name, "next");
+}
+
+static PtnValue ptn_simplexml_add_attribute_method(
+    PtnRuntime *runtime,
+    PtnSimpleXmlData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2) {
+        return ptn_dom_throw_count(runtime, "SimpleXMLElement::addAttribute", "at least 2 arguments", argc);
+    }
+    if (argc > 3) {
+        return ptn_dom_throw_count(runtime, "SimpleXMLElement::addAttribute", "at most 3 arguments", argc);
+    }
+
+    PtnStringOperand qualified_name = ptn_internal_expect_string_arg(
+        runtime,
+        "SimpleXMLElement::addAttribute",
+        1,
+        "qualifiedName",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (qualified_name.len == 0) {
+        ptn_string_operand_free(qualified_name);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "SimpleXMLElement::addAttribute(): Argument #1 ($qualifiedName) must not be empty"
+        );
+        return ptn_null();
+    }
+    PtnStringOperand value = ptn_internal_expect_string_arg(
+        runtime,
+        "SimpleXMLElement::addAttribute",
+        2,
+        "value",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(qualified_name);
+        return ptn_null();
+    }
+    PtnStringOperand namespace_uri = (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL)
+        ? ptn_internal_expect_string_arg(
+            runtime,
+            "SimpleXMLElement::addAttribute",
+            3,
+            "namespace",
+            args[2],
+            line
+        )
+        : ptn_string_operand_borrowed("");
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(qualified_name);
+        ptn_string_operand_free(value);
+        return ptn_null();
+    }
+
+    for (size_t i = 0; data != NULL && i < data->item_count; i++) {
+        PtnXmlNode *node = data->items[i];
+        if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+            continue;
+        }
+        PtnXmlNode *attr = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "", "");
+        free(attr->name);
+        attr->name = ptn_duplicate_string_len(qualified_name.data, qualified_name.len);
+        free(attr->value);
+        attr->value = ptn_duplicate_string_len(value.data, value.len);
+        if (namespace_uri.len > 0) {
+            attr->namespace_uri = ptn_duplicate_string_len(namespace_uri.data, namespace_uri.len);
+        }
+        attr->owner_document = ptn_xml_document_for_node(node);
+        ptn_xml_element_add_attribute(node, attr);
+    }
+
+    ptn_string_operand_free(qualified_name);
+    ptn_string_operand_free(value);
+    ptn_string_operand_free(namespace_uri);
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_simplexml_call_method(
@@ -117435,6 +117523,9 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
             return ptn_string("");
         }
         return ptn_owned_string(ptn_duplicate_string(data->items[0]->name == NULL ? "" : data->items[0]->name));
+    }
+    if (ptn_ascii_case_equal(name, "addAttribute")) {
+        return ptn_simplexml_add_attribute_method(runtime, data, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "attributes")) {
         if (data->item_count == 0 || data->attributes) {
@@ -117472,7 +117563,12 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
         if (data->item_count == 0) {
             return ptn_bool(0);
         }
-        return ptn_xml_serialized_value(runtime, data->items[0], 0, line);
+        PtnXmlNode *target = data->items[0];
+        PtnXmlNode *document = ptn_xml_document_for_node(target);
+        if (!data->attributes && document != NULL && ptn_xml_document_element(document) == target) {
+            return ptn_xml_serialized_value(runtime, document, 1, line);
+        }
+        return ptn_xml_serialized_value(runtime, target, 0, line);
     }
     if (ptn_ascii_case_equal(name, "offsetExists")) {
         if (argc != 1) {
