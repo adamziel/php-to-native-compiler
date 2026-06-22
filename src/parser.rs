@@ -12424,6 +12424,7 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "unitenum"
             | "backedenum"
             | "datetimeinterface"
+            | "random\\engine"
             | "countable"
             | "serializable"
     )

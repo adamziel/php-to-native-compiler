@@ -75764,6 +75764,54 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_random_randomizer_user_engine_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-random-randomizer-user-reference-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-randomizer-user-reference-return.php");
+    let output = root.join("random-randomizer-user-reference-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Engine;
+use Random\Randomizer;
+
+final class ReferenceEngine implements Engine
+{
+    private $field = 'abcdef';
+
+    public function &generate(): string
+    {
+        return $this->field;
+    }
+}
+
+$randomizer = new Randomizer(new ReferenceEngine());
+var_dump($randomizer->getBytes(64));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(64) \"abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_randomizer_call_method"));
+    assert!(c_source.contains("ptn_declared_class_implements_interface"));
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

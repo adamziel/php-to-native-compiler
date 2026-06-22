@@ -17764,6 +17764,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "fiber" => Some("Fiber"),
+                "random\\randomizer" => Some("Random\\Randomizer"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),
@@ -19351,6 +19352,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_phar_file_info(class_name)) {\n");
     out.push_str(
         "        return ptn_phar_file_info_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_random_randomizer(class_name)) {\n");
+    out.push_str(
+        "        return ptn_random_randomizer_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str(

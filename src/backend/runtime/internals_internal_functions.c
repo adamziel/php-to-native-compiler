@@ -65392,6 +65392,251 @@ static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, cons
     return ptn_owned_string_len(bytes, len);
 }
 
+typedef struct {
+    PtnValue engine;
+} PtnRandomRandomizerData;
+
+static void ptn_random_randomizer_data_free(void *data) {
+    PtnRandomRandomizerData *randomizer = (PtnRandomRandomizerData *)data;
+    if (randomizer == NULL) {
+        return;
+    }
+    ptn_value_destroy(&randomizer->engine);
+    free(randomizer);
+}
+
+static PtnRandomRandomizerData *ptn_random_randomizer_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_random_randomizer(receiver.as.object->class_name) ||
+        receiver.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Randomizer object");
+        return NULL;
+    }
+    return (PtnRandomRandomizerData *)receiver.as.object->native_data;
+}
+
+static int ptn_random_engine_value_is_valid(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_declared_class_implements_interface(value.as.object->class_name, "Random\\Engine");
+}
+
+static int ptn_random_randomizer_set_engine(
+    PtnRuntime *runtime,
+    PtnValue object,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc > 1) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::__construct() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return 0;
+    }
+
+    PtnValue engine = argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
+    if (argc == 1 && !ptn_random_engine_value_is_valid(engine)) {
+        ptn_value_destroy(&engine);
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "Random\\Randomizer::__construct(): Argument #1 ($engine) must be of type ?Random\\Engine"
+        );
+        return 0;
+    }
+
+    PtnRandomRandomizerData *data = malloc(sizeof(PtnRandomRandomizerData));
+    if (data == NULL) {
+        ptn_value_destroy(&engine);
+        ptn_abort_out_of_memory();
+    }
+    data->engine = engine;
+
+    PtnObject *native = object.as.object;
+    if (native->native_data_free != NULL) {
+        native->native_data_free(native->native_data);
+    }
+    native->native_data = data;
+    native->native_data_free = ptn_random_randomizer_data_free;
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_random_randomizer_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "Random\\Randomizer");
+    if (!ptn_random_randomizer_set_engine(runtime, object, argc, args, line)) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    return object;
+}
+
+static PtnValue ptn_random_randomizer_get_bytes(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::getBytes() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    int64_t length = ptn_internal_expect_integer_arg(
+        runtime,
+        "Random\\Randomizer::getBytes",
+        1,
+        "length",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length <= 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Random\\Randomizer::getBytes(): Argument #1 ($length) must be greater than 0"
+        );
+        return ptn_null();
+    }
+
+    size_t requested = (size_t)length;
+    char *bytes = malloc(requested + 1);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnValue engine = ptn_value_deref(data->engine);
+    if (engine.type == PTN_NULL) {
+        if (!ptn_random_bytes_fill((unsigned char *)bytes, requested)) {
+            free(bytes);
+            ptn_throw_exception(
+                runtime,
+                "Random\\RandomException",
+                "Random\\Randomizer::getBytes(): Failed to retrieve random bytes"
+            );
+            return ptn_null();
+        }
+        bytes[requested] = '\0';
+        return ptn_owned_string_len(bytes, requested);
+    }
+
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
+        free(bytes);
+        ptn_throw_exception(runtime, "Error", "Random\\Randomizer cannot dispatch engine method");
+        return ptn_null();
+    }
+
+    size_t offset = 0;
+    while (offset < requested) {
+        PtnValue engine_receiver = ptn_value_clone_deref(data->engine);
+        PtnValue generated = runtime->method_dispatch(
+            runtime,
+            engine_receiver,
+            "generate",
+            0,
+            NULL,
+            line
+        );
+        ptn_value_destroy(&engine_receiver);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&generated);
+            free(bytes);
+            return ptn_null();
+        }
+
+        PtnValue generated_value = ptn_value_deref(generated);
+        if (generated_value.type != PTN_STRING) {
+            ptn_value_destroy(&generated);
+            free(bytes);
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "Random\\Engine::generate() must return a string"
+            );
+            return ptn_null();
+        }
+        if (generated_value.as.string.len == 0) {
+            ptn_value_destroy(&generated);
+            free(bytes);
+            ptn_throw_exception(
+                runtime,
+                "Random\\BrokenRandomEngineError",
+                "Random\\Engine::generate() must return a non-empty string"
+            );
+            return ptn_null();
+        }
+
+        size_t remaining = requested - offset;
+        size_t chunk_len = generated_value.as.string.len < remaining
+            ? generated_value.as.string.len
+            : remaining;
+        memcpy(bytes + offset, generated_value.as.string.data, chunk_len);
+        offset += chunk_len;
+        ptn_value_destroy(&generated);
+    }
+    bytes[requested] = '\0';
+    return ptn_owned_string_len(bytes, requested);
+}
+
+static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_random_randomizer(resolved.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Randomizer object");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_random_randomizer_set_engine(runtime, resolved, argc, args, line);
+        return ptn_null();
+    }
+
+    PtnRandomRandomizerData *data = ptn_random_randomizer_data(runtime, resolved);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getBytes")) {
+        return ptn_random_randomizer_get_bytes(runtime, data, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method Random\\Randomizer");
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -102061,6 +102306,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *clas
     return ptn_ascii_case_equal(class_name, "PharFileInfo");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Randomizer");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ZipArchive");
 }
@@ -102235,6 +102484,7 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "UnitEnum")
         || ptn_ascii_case_equal(name, "BackedEnum")
         || ptn_ascii_case_equal(name, "DateTimeInterface")
+        || ptn_ascii_case_equal(name, "Random\\Engine")
         || ptn_ascii_case_equal(name, "DOMParentNode")
         || ptn_ascii_case_equal(name, "DOM\\ParentNode")
         || ptn_ascii_case_equal(name, "DOMChildNode")
@@ -102302,6 +102552,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_phar(class_name)
         || ptn_internal_class_name_is_phar_file_info(class_name)
+        || ptn_internal_class_name_is_random_randomizer(class_name)
         || ptn_internal_class_name_is_zip_archive(class_name)
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
@@ -104106,6 +104357,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
         return ptn_ascii_case_equal(method_name, "getContent");
+    }
+    if (ptn_internal_class_name_is_random_randomizer(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "getBytes");
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
