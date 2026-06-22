@@ -1755,6 +1755,19 @@ static PTN_UNUSED void ptn_runtime_shutdown_before_exit(PtnRuntime *runtime) {
     }
 }
 
+static PTN_UNUSED int ptn_runtime_has_included_file(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || path == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < root->included_files_len; i++) {
+        if (strcmp(root->included_files[i], path) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const char *path) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || path == NULL) {

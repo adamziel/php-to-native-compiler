@@ -56002,6 +56002,41 @@ var_dump($d);\n",
 }
 
 #[test]
+fn compile_dynamic_require_once_of_already_included_source_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-require-once-self");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("dynamic-require-once-self-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class IncludeSelfPath {\n\
+    public static $captured;\n\
+    public function __toString() {\n\
+        self::$captured = $this;\n\
+        return __FILE__;\n\
+    }\n\
+}\n\
+$object = new IncludeSelfPath;\n\
+$result = require_once $object;\n\
+var_dump($result, IncludeSelfPath::$captured === $object);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_has_included_file(&runtime, "));
+}
+
+#[test]
 fn compile_include_path_folds_dirname_file_and_directory_separator_to_native_binary() {
     let root = temp_dir("ptn-native-dirname-directory-separator-include");
     let nested = root.join("nested");

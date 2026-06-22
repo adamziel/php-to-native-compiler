@@ -35747,6 +35747,14 @@ impl ValueEmitter {
             "0"
         });
         out.push_str(");\n");
+        if include_kind_is_once(kind) {
+            out.push_str("    } else if (ptn_runtime_has_included_file(&runtime, ");
+            out.push_str(&resolved_temp);
+            out.push_str(")) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_bool(1);\n");
+        }
         for candidate in candidates {
             out.push_str("    } else if (");
             self.emit_include_candidate_condition(out, &resolved_temp, *candidate);
