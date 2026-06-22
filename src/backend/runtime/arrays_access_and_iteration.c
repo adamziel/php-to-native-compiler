@@ -1227,6 +1227,20 @@ static PTN_UNUSED PtnValue ptn_new_object(
     return ptn_null();
 }
 
+static PTN_UNUSED PtnValue ptn_object_clone_property_value(PtnValue value) {
+    if (value.type == PTN_REFERENCE &&
+        value.as.reference != NULL &&
+        value.as.reference->refcount > 1) {
+        return ptn_value_clone(value);
+    }
+    return ptn_value_clone_deref(value);
+}
+
+static PTN_UNUSED void ptn_reference_adopt_property_type_clone_source(
+    PtnReference *reference,
+    const PtnObjectPropertyMetadata *metadata
+);
+
 static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnObject *source) {
     ptn_array_free(cloned->properties);
     PtnValue cloned_properties = ptn_array_from_literal_entries(0, NULL);
@@ -1236,7 +1250,7 @@ static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnO
         ptn_array_set_entry(
             cloned->properties,
             ptn_array_key_clone(entry->key),
-            ptn_value_clone_deref(entry->value)
+            ptn_object_clone_property_value(entry->value)
         );
     }
     cloned->properties->current_index =
@@ -1278,6 +1292,15 @@ static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnO
             if (metadata->last_type_name != NULL) {
                 cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
             }
+            PtnArrayKey cloned_key = ptn_array_string_key(cloned_metadata->storage_name);
+            PtnArrayEntry *cloned_entry = ptn_array_entry_for_key(cloned->properties, cloned_key);
+            if (cloned_entry != NULL && cloned_entry->value.type == PTN_REFERENCE) {
+                ptn_reference_adopt_property_type_clone_source(
+                    cloned_entry->value.as.reference,
+                    cloned_metadata
+                );
+            }
+            ptn_array_key_free(cloned_key);
         }
     }
 }
@@ -1495,6 +1518,22 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         dispatch_runtime->method_dispatch != NULL &&
         dispatch_runtime->declared_method_exists != NULL &&
         dispatch_runtime->declared_method_exists(cloned->class_name, "__clone")) {
+        PtnTryFrame clone_frame;
+        int clone_frame_active = 0;
+        const char *previous_clone_scope = dispatch_runtime->current_class_name;
+        int previous_clone_initializing = cloned->readonly_clone_initializing;
+        if (dispatch_runtime->exceptions != NULL) {
+            ptn_try_frame_push(dispatch_runtime, &clone_frame);
+            clone_frame_active = 1;
+            if (setjmp(clone_frame.jump) != 0) {
+                ptn_try_frame_pop(dispatch_runtime, &clone_frame);
+                dispatch_runtime->current_class_name = previous_clone_scope;
+                cloned->readonly_clone_initializing = previous_clone_initializing;
+                ptn_value_destroy(&clone);
+                ptn_rethrow_exception(dispatch_runtime);
+                return ptn_null();
+            }
+        }
         const char *declaring_class = cloned->class_name;
         int visibility = PTN_PROPERTY_PUBLIC;
         int is_abstract = 0;
@@ -1545,7 +1584,6 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
                 return clone;
             }
             if (dispatch_runtime->reflected_method_dispatch != NULL) {
-                const char *previous_scope = dispatch_runtime->current_class_name;
                 dispatch_runtime->current_class_name = declaring_class;
                 cloned->readonly_clone_initializing = 1;
                 PtnValue result = ptn_null();
@@ -1560,10 +1598,22 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
                     line,
                     &result
                 );
-                cloned->readonly_clone_initializing = 0;
-                dispatch_runtime->current_class_name = previous_scope;
+                cloned->readonly_clone_initializing = previous_clone_initializing;
+                dispatch_runtime->current_class_name = previous_clone_scope;
+                if (ptn_runtime_has_active_exception(dispatch_runtime)) {
+                    ptn_value_destroy(&result);
+                    if (clone_frame_active) {
+                        ptn_try_frame_pop(dispatch_runtime, &clone_frame);
+                    }
+                    ptn_value_destroy(&clone);
+                    ptn_rethrow_exception(dispatch_runtime);
+                    return ptn_null();
+                }
                 if (handled) {
                     ptn_value_destroy(&result);
+                    if (clone_frame_active) {
+                        ptn_try_frame_pop(dispatch_runtime, &clone_frame);
+                    }
                     return clone;
                 }
                 ptn_value_destroy(&result);
@@ -1578,8 +1628,19 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
             NULL,
             line
         );
-        cloned->readonly_clone_initializing = 0;
+        cloned->readonly_clone_initializing = previous_clone_initializing;
         ptn_value_destroy(&result);
+        if (ptn_runtime_has_active_exception(dispatch_runtime)) {
+            if (clone_frame_active) {
+                ptn_try_frame_pop(dispatch_runtime, &clone_frame);
+            }
+            ptn_value_destroy(&clone);
+            ptn_rethrow_exception(dispatch_runtime);
+            return ptn_null();
+        }
+        if (clone_frame_active) {
+            ptn_try_frame_pop(dispatch_runtime, &clone_frame);
+        }
     }
     return clone;
 }
@@ -3539,6 +3600,37 @@ static PTN_UNUSED void ptn_reference_adopt_property_type(
     reference->property_type_allows_null = metadata->type_allows_null;
     reference->property_declaring_class = ptn_duplicate_string(metadata->declaring_class);
     reference->property_name = ptn_duplicate_string(metadata->display_name);
+}
+
+static PTN_UNUSED void ptn_reference_adopt_property_type_clone_source(
+    PtnReference *reference,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (reference == NULL ||
+        metadata == NULL ||
+        !ptn_property_type_is_declared(metadata->type_kind)) {
+        return;
+    }
+    if (reference->property_type_kind == PTN_PROPERTY_TYPE_NONE) {
+        ptn_reference_adopt_property_type(reference, metadata);
+        return;
+    }
+    if (reference->property_type_source_len == reference->property_type_source_cap) {
+        size_t new_cap = reference->property_type_source_cap == 0
+            ? 2
+            : reference->property_type_source_cap * 2;
+        PtnReferencePropertyTypeSource *new_sources = realloc(
+            reference->property_type_sources,
+            new_cap * sizeof(PtnReferencePropertyTypeSource)
+        );
+        if (new_sources == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        reference->property_type_sources = new_sources;
+        reference->property_type_source_cap = new_cap;
+    }
+    reference->property_type_sources[reference->property_type_source_len++] =
+        ptn_reference_property_source_from_metadata(metadata);
 }
 
 static PTN_UNUSED void ptn_throw_reference_property_bind_incompatibility(
@@ -7891,15 +7983,20 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         return;
     }
     if (mutable_metadata != NULL && mutable_metadata->is_readonly && entry != NULL) {
-        ptn_array_key_free(key);
-        free(storage_key);
-        ptn_throw_readonly_property_unset_error(
-            runtime,
-            mutable_metadata->declaring_class,
-            mutable_metadata->display_name,
-            line
-        );
-        return;
+        int readonly_clone_unset =
+            receiver.as.object->readonly_clone_initializing &&
+            !mutable_metadata->readonly_clone_reinitialized;
+        if (!readonly_clone_unset) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_readonly_property_unset_error(
+                runtime,
+                mutable_metadata->declaring_class,
+                mutable_metadata->display_name,
+                line
+            );
+            return;
+        }
     }
     if (entry != NULL && entry->value.type == PTN_REFERENCE && mutable_metadata != NULL) {
         ptn_reference_forget_property_type(entry->value.as.reference, mutable_metadata);

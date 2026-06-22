@@ -70261,6 +70261,183 @@ echo $copy->x, \"\\n\";
 }
 
 #[test]
+fn compile_clone_preserves_live_property_references_to_native_binary() {
+    let root = temp_dir("ptn-native-clone-live-property-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("clone-live-property-references.php");
+    let output = root.join("clone-live-property-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Plain {
+    public $p;
+}
+
+$first = new Plain();
+$first->p = "init";
+$ref =& $first->p;
+$clone = clone $first;
+$clone->p = "foo";
+var_dump($first->p);
+
+$second = new Plain();
+$second->p = "init";
+$ref2 =& $second->p;
+unset($ref2);
+$clone2 = clone $second;
+$clone2->p = "bar";
+var_dump($second->p);
+
+class Typed {
+    public int $x = 42;
+}
+
+$typed = new Typed();
+$x =& $typed->x;
+$typed2 = clone $typed;
+unset($typed);
+try {
+    $x = "foo";
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($typed2->x);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"foo\"\n",
+            "string(4) \"init\"\n",
+            "Cannot assign string to reference held by property Typed::$x of type int\n",
+            "int(42)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_readonly_clone_unset_reinitializes_property_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-clone-unset-reinitialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-clone-unset-reinitialize.php");
+    let output = root.join("readonly-clone-unset-reinitialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        unset($this->bar);
+        $this->bar = 3;
+        try {
+            $this->bar = 4;
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+$foo = new Foo(1);
+$copy = clone $foo;
+echo $foo->bar, ":", $copy->bar, "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("Cannot modify readonly property Foo::$bar\n", "1:3\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_readonly_failed_clone_releases_partial_object_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-failed-clone-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-failed-clone-release.php");
+    let output = root.join("readonly-failed-clone-release-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone()
+    {
+        $this->bar += 2;
+        var_dump($this);
+        $this->bar += 3;
+    }
+}
+
+$foo = new Foo(1);
+
+try {
+    clone $foo;
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    clone $foo;
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Foo)#2 (1) {\n",
+            "  [\"bar\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "Cannot modify readonly property Foo::$bar\n",
+            "object(Foo)#2 (1) {\n",
+            "  [\"bar\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "Cannot modify readonly property Foo::$bar\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_readonly_uninitialized_array_append_rejects_indirect_initialization_to_native_binary() {
     let root = temp_dir("ptn-native-readonly-uninitialized-array-append");
     fs::create_dir_all(&root).unwrap();
