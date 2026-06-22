@@ -47883,6 +47883,76 @@ var_dump(function_exists(\"asort\"));",
 }
 
 #[test]
+fn compile_asort_preserves_array_mutated_by_object_string_comparison_to_native_binary() {
+    let root = temp_dir("ptn-native-asort-object-string-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asort-object-string-mutation.php");
+    let output = root.join("asort-object-string-mutation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function resize_arr() {\n\
+    global $arr;\n\
+    for ($i = 0; $i < 10; $i++) {\n\
+        $arr[$i] = $i;\n\
+    }\n\
+}\n\
+class MutatingSortBox {\n\
+    public function __toString() {\n\
+        resize_arr();\n\
+        return \"3\";\n\
+    }\n\
+}\n\
+class PlainSortBox {\n\
+    public function __toString() {\n\
+        return \"3\";\n\
+    }\n\
+}\n\
+function dump_keyed_values($values) {\n\
+    foreach ($values as $key => $value) {\n\
+        echo is_int($key) ? \"i\" : \"s\", \":\", $key, \":\", gettype($value), \":\";\n\
+        echo is_object($value) ? get_class($value) : $value;\n\
+        echo \"\\n\";\n\
+    }\n\
+}\n\
+$arr = [\"a\" => \"1\", \"3\" => new MutatingSortBox, \"2\" => \"2\"];\n\
+var_dump(asort($arr));\n\
+dump_keyed_values($arr);\n\
+$plain = [\"a\" => \"1\", \"3\" => new PlainSortBox, \"2\" => \"2\"];\n\
+var_dump(asort($plain));\n\
+dump_keyed_values($plain);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "s:a:string:1\n",
+            "i:3:integer:3\n",
+            "i:2:integer:2\n",
+            "i:0:integer:0\n",
+            "i:1:integer:1\n",
+            "i:4:integer:4\n",
+            "i:5:integer:5\n",
+            "i:6:integer:6\n",
+            "i:7:integer:7\n",
+            "i:8:integer:8\n",
+            "i:9:integer:9\n",
+            "bool(true)\n",
+            "s:a:string:1\n",
+            "i:2:string:2\n",
+            "i:3:object:PlainSortBox\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_arsort_mutates_direct_variable_preserves_keys_and_detaches_cow_to_native_binary() {
     let root = temp_dir("ptn-native-arsort-cow");
     fs::create_dir_all(&root).unwrap();

@@ -5,6 +5,13 @@ static PTN_UNUSED PtnValue ptn_array_reindexing_internal_value(PtnValue value) {
     return value;
 }
 
+static PTN_UNUSED int ptn_try_object_to_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+);
+
 static PTN_UNUSED PtnValue ptn_array_union(PtnArray *left, PtnArray *right) {
     PtnValue union_value = ptn_array_from_literal_entries(0, NULL);
     PtnArray *union_array = union_value.as.array;
@@ -513,6 +520,53 @@ static PTN_UNUSED const char *ptn_comparison_object_class_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
+static PtnString ptn_comparison_string_from_operand(PtnStringOperand operand) {
+    PtnString string;
+    string.data = (const unsigned char *)operand.data;
+    string.len = operand.len;
+    string.payload = NULL;
+    return string;
+}
+
+static PTN_UNUSED int ptn_compare_object_and_string(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int *compared
+) {
+    if (runtime == NULL) {
+        return 0;
+    }
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_OBJECT && right.type == PTN_STRING) {
+        PtnStringOperand left_string;
+        if (!ptn_try_object_to_string_operand(runtime, left, line, &left_string)) {
+            return 0;
+        }
+        *compared = ptn_compare_strings_loose(
+            ptn_comparison_string_from_operand(left_string),
+            right.as.string
+        );
+        ptn_string_operand_free(left_string);
+        return 1;
+    }
+    if (left.type == PTN_STRING && right.type == PTN_OBJECT) {
+        PtnStringOperand right_string;
+        if (!ptn_try_object_to_string_operand(runtime, right, line, &right_string)) {
+            return 0;
+        }
+        *compared = ptn_compare_strings_loose(
+            left.as.string,
+            ptn_comparison_string_from_operand(right_string)
+        );
+        ptn_string_operand_free(right_string);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED int ptn_value_is_enum_case_object(PtnValue value) {
     value = ptn_value_deref(value);
     return value.type == PTN_OBJECT && value.as.object->enum_case_name != NULL;
@@ -654,6 +708,9 @@ static int ptn_compare_equal_inner(
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_string(runtime, left, right, line, &compared)) {
+        return compared == PTN_COMPARE_EQUAL;
+    }
     if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
         return compared == PTN_COMPARE_EQUAL;
     }
@@ -837,6 +894,9 @@ static int ptn_compare_order_inner(
     }
 
     int compared = 0;
+    if (ptn_compare_object_and_string(runtime, left, right, line, &compared)) {
+        return compared;
+    }
     if (ptn_compare_object_and_number(runtime, left, right, line, &compared)) {
         return compared;
     }
