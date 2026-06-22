@@ -22292,6 +22292,45 @@ static PtnValue ptn_internal_array_map(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_optimized_array_map_foreach(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    PtnValue array_value,
+    const char *source_path,
+    size_t line
+) {
+    PtnArray *array = ptn_internal_expect_array_arg_at(
+        runtime,
+        "array_map",
+        2,
+        "array",
+        array_value,
+        source_path,
+        line
+    );
+    if (array == NULL) {
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue callback_arg = ptn_value_clone_deref(array->entries[i].value);
+        PtnValue callback_result =
+            ptn_internal_call_callback(runtime, callback, 1, &callback_arg, line);
+        ptn_value_destroy(&callback_arg);
+
+        PtnValue mapped = ptn_value_clone_deref(callback_result);
+        ptn_value_destroy(&callback_result);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(array->entries[i].key),
+            mapped
+        );
+    }
+
+    return result;
+}
+
 static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "in_array", 2, "haystack", args[1]);
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
