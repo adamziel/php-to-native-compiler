@@ -12638,6 +12638,43 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_destructor_exceptions_chain_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-destructor-exception-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-destructor-exception-chain.php");
+    let output = root.join("gc-destructor-exception-chain-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $bar;
+    public function __destruct() {
+        throw new Exception(\"foobar\");
+    }
+}
+$a = new Foo;
+$b = new Foo;
+$a->bar = $b;
+$b->bar = $a;
+unset($a, $b);
+gc_collect_cycles();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Uncaught Exception: foobar"));
+    assert!(stderr.contains("Next Exception: foobar"));
+    assert!(stderr.contains("Foo->__destruct()"));
+    assert!(stderr.contains("gc_collect_cycles()"));
+}
+
+#[test]
 fn compile_gc_destructor_component_unset_graph_counts_once_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-component-unset-count");
     fs::create_dir_all(&root).unwrap();

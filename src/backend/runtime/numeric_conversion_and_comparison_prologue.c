@@ -2131,12 +2131,18 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
 }
 
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
+    PtnRuntime *runtime,
     PtnException *exception,
     int *first,
     const char *first_label
 ) {
     if (exception->previous.type == PTN_EXCEPTION) {
-        ptn_emit_uncaught_exception_chain_entry(exception->previous.as.exception, first, first_label);
+        ptn_emit_uncaught_exception_chain_entry(
+            runtime,
+            exception->previous.as.exception,
+            first,
+            first_label
+        );
     }
     const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
     size_t display_line = exception->line;
@@ -2168,7 +2174,11 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
             fprintf(stderr, " in %s:%zu\n", display_path, display_line);
         }
     }
-    fputs("Stack trace:\n#0 {main}\n", stderr);
+    fputs("Stack trace:\n", stderr);
+    PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
+    fwrite(trace.data, 1, trace.len, stderr);
+    free(trace.owned);
+    fputc('\n', stderr);
 }
 
 static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
@@ -2193,7 +2203,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     }
     if (exception->previous.type == PTN_EXCEPTION) {
         int first = 1;
-        ptn_emit_uncaught_exception_chain_entry(exception, &first, label);
+        ptn_emit_uncaught_exception_chain_entry(runtime, exception, &first, label);
         const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
         fprintf(stderr, "  thrown in %s on line %zu\n", display_path, exception->line);
         return;

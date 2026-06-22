@@ -1091,7 +1091,25 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     if (during_shutdown) {
         root->suppress_user_call_frame_location = 1;
     }
-    PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
+    PtnValue result = ptn_null();
+    PtnTryFrame destructor_frame;
+    int catch_gc_exception = root->gc_running;
+    if (catch_gc_exception) {
+        ptn_try_frame_push(root, &destructor_frame);
+        if (setjmp(destructor_frame.jump) != 0) {
+            ptn_try_frame_pop(root, &destructor_frame);
+            root->suppress_user_call_frame_location =
+                previous_suppress_user_call_frame_location;
+            root->destructor_shutdown_phase = previous_shutdown_phase;
+            root->current_class_name = previous_scope;
+            ptn_value_destroy(&result);
+            return;
+        }
+    }
+    result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
+    if (catch_gc_exception) {
+        ptn_try_frame_pop(root, &destructor_frame);
+    }
     root->suppress_user_call_frame_location =
         previous_suppress_user_call_frame_location;
     root->destructor_shutdown_phase = previous_shutdown_phase;

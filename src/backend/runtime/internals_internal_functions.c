@@ -60913,6 +60913,9 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         root->gc_roots = 0;
     }
     root->gc_running = 0;
+    if (root->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(root);
+    }
     return ptn_int(collected);
 }
 
