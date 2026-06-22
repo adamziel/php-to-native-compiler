@@ -2221,6 +2221,13 @@ static PTN_UNUSED int ptn_direct_var_dump_simplexml_object(
 #endif
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_dom_token_list_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+);
+
 static PTN_UNUSED size_t ptn_direct_object_initialized_property_dump_count(PtnObject *object) {
     if (object == NULL || object->properties == NULL) {
         return ptn_xml_reader_var_dump_virtual_property_count(object) +
@@ -2517,6 +2524,9 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
                 break;
             }
             if (ptn_direct_var_dump_simplexml_object(runtime, object, indent, seen)) {
+                break;
+            }
+            if (ptn_direct_var_dump_dom_token_list_object(runtime, object, indent, seen)) {
                 break;
             }
             ptn_direct_value_var_dump_object_header(
@@ -6319,6 +6329,12 @@ static void ptn_var_dump_object_uninitialized_metadata(
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
+static int ptn_var_dump_dom_token_list_object(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+);
 static void ptn_var_dump_array_key(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
@@ -7315,6 +7331,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             if (ptn_var_dump_simplexml_object(object, indent, seen, 0)) {
                 break;
             }
+            if (ptn_var_dump_dom_token_list_object(object, indent, seen, 0)) {
+                break;
+            }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 0)) {
                 break;
             }
@@ -7479,6 +7498,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 break;
             }
             if (ptn_var_dump_simplexml_object(object, indent, seen, 1)) {
+                break;
+            }
+            if (ptn_var_dump_dom_token_list_object(object, indent, seen, 1)) {
                 break;
             }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 1)) {
@@ -73300,6 +73322,8 @@ typedef struct {
     int type;
 } PtnDateTimeZoneData;
 
+typedef struct PtnDomTokenListData PtnDomTokenListData;
+
 typedef struct {
     time_t timestamp;
     int microsecond;
@@ -73324,6 +73348,7 @@ typedef struct {
 
 typedef struct {
     PtnValue values;
+    PtnValue live_dom_token_list;
     size_t index;
 } PtnInternalIteratorData;
 
@@ -73408,6 +73433,7 @@ static void ptn_internal_iterator_data_free(void *data) {
         return;
     }
     ptn_value_destroy(&iterator->values);
+    ptn_value_destroy(&iterator->live_dom_token_list);
     free(iterator);
 }
 
@@ -76515,9 +76541,43 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
     return ptn_null();
 }
 
+static PtnDomTokenListData *ptn_dom_token_list_data(PtnValue value);
+static PtnValue ptn_dom_token_list_tokens_value(PtnDomTokenListData *data);
+static size_t ptn_dom_token_list_length(PtnDomTokenListData *data);
+static PtnValue ptn_dom_token_list_item_value(PtnDomTokenListData *data, size_t index);
+
 static PtnArray *ptn_internal_iterator_values(PtnInternalIteratorData *data) {
     PtnValue values = data == NULL ? ptn_null() : ptn_value_deref(data->values);
     return values.type == PTN_ARRAY ? values.as.array : NULL;
+}
+
+static PtnDomTokenListData *ptn_internal_iterator_live_dom_token_list(PtnInternalIteratorData *data) {
+    if (data == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(data->live_dom_token_list);
+    return value.type == PTN_OBJECT ? ptn_dom_token_list_data(value) : NULL;
+}
+
+static size_t ptn_internal_iterator_entry_count(PtnInternalIteratorData *data) {
+    PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
+    if (token_list != NULL) {
+        return ptn_dom_token_list_length(token_list);
+    }
+    PtnArray *array = ptn_internal_iterator_values(data);
+    return array == NULL ? 0 : array->len;
+}
+
+static PtnValue ptn_internal_iterator_current_value(PtnInternalIteratorData *data) {
+    PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
+    if (token_list != NULL) {
+        return ptn_dom_token_list_item_value(token_list, data->index);
+    }
+    PtnArray *array = ptn_internal_iterator_values(data);
+    if (array == NULL || data->index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[data->index].value);
 }
 
 static PtnValue ptn_internal_iterator_key_value(PtnArrayKey key) {
@@ -76537,6 +76597,23 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
     data->values = resolved_values.type == PTN_ARRAY
         ? ptn_value_clone_deref(resolved_values)
         : ptn_array_from_literal_entries(0, NULL);
+    data->live_dom_token_list = ptn_null();
+    data->index = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_internal_iterator_data_free;
+    return object;
+}
+
+static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, PtnValue token_list, size_t line) {
+    (void)line;
+    PtnInternalIteratorData *data = malloc(sizeof(PtnInternalIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->values = ptn_null();
+    data->live_dom_token_list = ptn_value_clone_deref(token_list);
     data->index = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
@@ -76590,7 +76667,7 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         return ptn_null();
     }
     PtnArray *array = ptn_internal_iterator_values(data);
-    size_t count = array == NULL ? 0 : array->len;
+    size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->index = 0;
         return ptn_null();
@@ -76599,13 +76676,13 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         return ptn_bool(data->index < count);
     }
     if (ptn_ascii_case_equal(name, "current")) {
-        if (array == NULL || data->index >= count) {
-            return ptn_null();
-        }
-        return ptn_value_clone_deref(array->entries[data->index].value);
+        return ptn_internal_iterator_current_value(data);
     }
     if (ptn_ascii_case_equal(name, "key")) {
-        if (array == NULL || data->index >= count) {
+        if (ptn_internal_iterator_live_dom_token_list(data) != NULL) {
+            return ptn_int((int64_t)data->index);
+        }
+        if (data->index >= count) {
             return ptn_null();
         }
         return ptn_internal_iterator_key_value(array->entries[data->index].key);
@@ -77799,6 +77876,7 @@ struct PtnXmlNode {
     size_t attribute_count;
     size_t attribute_capacity;
     PtnObject *object;
+    PtnObject *class_list;
     int uninitialized;
     int modern_dom;
     int html_document;
@@ -77818,8 +77896,9 @@ typedef struct {
     int attributes;
 } PtnXmlNodeListData;
 
-typedef struct {
+typedef struct PtnDomTokenListData {
     PtnXmlNode *element;
+    PtnObject *self;
 } PtnDomTokenListData;
 
 typedef struct {
@@ -78186,6 +78265,22 @@ static PtnValue ptn_xml_node_value_for_runtime(PtnRuntime *runtime, PtnXmlNode *
 
 static PTN_UNUSED PtnValue ptn_dom_clone(PtnRuntime *runtime, PtnValue value, size_t line) {
     (void)line;
+    PtnValue resolved = ptn_value_deref(value);
+    const char *class_name = resolved.type == PTN_OBJECT ? ptn_dom_effective_class_name(resolved.as.object->class_name) : "";
+    if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Trying to clone an uncloneable object of class %s",
+            resolved.type == PTN_OBJECT ? resolved.as.object->class_name : "Dom\\TokenList"
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
     PtnXmlNode *node = ptn_xml_node_data(value);
     if (node == NULL) {
         return ptn_null();
@@ -79083,7 +79178,11 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
 }
 
 static void ptn_dom_token_list_data_free(void *data) {
-    free(data);
+    PtnDomTokenListData *list = (PtnDomTokenListData *)data;
+    if (list != NULL && list->element != NULL && list->element->class_list == list->self) {
+        list->element->class_list = NULL;
+    }
+    free(list);
 }
 
 static PtnDomTokenListData *ptn_dom_token_list_data(PtnValue value) {
@@ -79096,17 +79195,27 @@ static PtnDomTokenListData *ptn_dom_token_list_data(PtnValue value) {
 }
 
 static PtnValue ptn_dom_token_list_object(PtnRuntime *runtime, PtnXmlNode *element) {
+    if (element != NULL && element->class_list != NULL) {
+        ptn_object_retain(element->class_list);
+        return ptn_object(element->class_list);
+    }
     PtnDomTokenListData *data = malloc(sizeof(PtnDomTokenListData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->element = element;
+    data->self = NULL;
     const char *class_name = element != NULL && ptn_xml_document_for_node(element) != NULL && ptn_xml_document_for_node(element)->modern_dom
         ? "Dom\\TokenList"
         : "DOMTokenList";
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_dom_token_list_data_free;
+    data->self = object.as.object;
+    if (element != NULL) {
+        element->class_list = object.as.object;
+        ptn_object_retain(element->class_list);
+    }
     return object;
 }
 
@@ -79143,6 +79252,719 @@ static PtnValue ptn_dom_token_list_tokens_value(PtnDomTokenListData *data) {
         }
     }
     return result;
+}
+
+static const char *ptn_dom_token_list_value_cstr(PtnDomTokenListData *data) {
+    const char *value = data == NULL || data->element == NULL
+        ? NULL
+        : ptn_xml_element_attribute_value(data->element, "class");
+    return value == NULL ? "" : value;
+}
+
+static size_t ptn_dom_token_list_length(PtnDomTokenListData *data) {
+    PtnValue tokens = ptn_dom_token_list_tokens_value(data);
+    size_t length = tokens.type == PTN_ARRAY ? tokens.as.array->len : 0;
+    ptn_value_destroy(&tokens);
+    return length;
+}
+
+static PtnValue ptn_dom_token_list_item_value(PtnDomTokenListData *data, size_t index) {
+    PtnValue tokens = ptn_dom_token_list_tokens_value(data);
+    PtnArray *array = tokens.type == PTN_ARRAY ? tokens.as.array : NULL;
+    PtnValue result = array == NULL || index >= array->len
+        ? ptn_null()
+        : ptn_value_clone_deref(array->entries[index].value);
+    ptn_value_destroy(&tokens);
+    return result;
+}
+
+static int ptn_dom_token_list_token_value_equals(PtnValue value, PtnStringOperand token) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_STRING &&
+        value.as.string.len == token.len &&
+        memcmp(value.as.string.data, token.data, token.len) == 0;
+}
+
+static int ptn_dom_token_list_index_of(PtnValue tokens, PtnStringOperand token, size_t *index_out) {
+    PtnValue resolved = ptn_value_deref(tokens);
+    PtnArray *array = resolved.type == PTN_ARRAY ? resolved.as.array : NULL;
+    for (size_t i = 0; array != NULL && i < array->len; i++) {
+        if (ptn_dom_token_list_token_value_equals(array->entries[i].value, token)) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_dom_token_list_append_token(PtnValue tokens, PtnStringOperand token) {
+    PtnArray *array = ptn_value_deref(tokens).as.array;
+    if (array->len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_array_set_entry(
+        array,
+        ptn_array_int_key((int64_t)array->len),
+        ptn_owned_string_len(ptn_duplicate_string_len(token.data, token.len), token.len)
+    );
+}
+
+static void ptn_dom_token_list_write_tokens(PtnRuntime *runtime, PtnDomTokenListData *data, PtnValue tokens) {
+    if (data == NULL || data->element == NULL) {
+        return;
+    }
+    PtnArray *array = ptn_value_deref(tokens).as.array;
+    size_t len = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type != PTN_STRING) {
+            continue;
+        }
+        if (len > SIZE_MAX - value.as.string.len - (i == 0 ? 0 : 1)) {
+            ptn_abort_out_of_memory();
+        }
+        len += value.as.string.len + (i == 0 ? 0 : 1);
+    }
+    char *joined = malloc(len + 1);
+    if (joined == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t cursor = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type != PTN_STRING) {
+            continue;
+        }
+        if (cursor != 0) {
+            joined[cursor++] = ' ';
+        }
+        memcpy(joined + cursor, value.as.string.data, value.as.string.len);
+        cursor += value.as.string.len;
+    }
+    joined[cursor] = '\0';
+    ptn_xml_element_set_attribute_string(runtime, data->element, "class", joined);
+    free(joined);
+}
+
+static int ptn_dom_token_list_operand_has_ascii_space(PtnStringOperand operand) {
+    for (size_t i = 0; i < operand.len; i++) {
+        if (ptn_dom_token_list_ascii_space(operand.data[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_dom_token_list_throw_string_type(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    char message[192];
+    int written = argument_name == NULL
+        ? snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu must be of type string, %s given",
+            function_name,
+            position,
+            ptn_internal_string_arg_type_name(value)
+        )
+        : snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type string, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_internal_string_arg_type_name(value)
+        );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int ptn_dom_token_list_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name_for_type,
+    const char *argument_name_for_null,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *operand_out
+) {
+    (void)line;
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING) {
+        ptn_dom_token_list_throw_string_type(runtime, function_name, position, argument_name_for_type, value);
+        *operand_out = ptn_string_operand_borrowed("");
+        return 0;
+    }
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    if (memchr(operand.data, '\0', operand.len) != NULL) {
+        char message[192];
+        int written = argument_name_for_null == NULL
+            ? snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #%zu must not contain any null bytes",
+                function_name,
+                position
+            )
+            : snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #%zu ($%s) must not contain any null bytes",
+                function_name,
+                position,
+                argument_name_for_null
+            );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_operand_free(operand);
+        ptn_throw_exception(runtime, "ValueError", message);
+        *operand_out = ptn_string_operand_borrowed("");
+        return 0;
+    }
+    *operand_out = operand;
+    return 1;
+}
+
+static int ptn_dom_token_list_expect_token_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name_for_type,
+    const char *argument_name_for_null,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *operand_out
+) {
+    if (!ptn_dom_token_list_expect_string_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name_for_type,
+        argument_name_for_null,
+        value,
+        line,
+        operand_out
+    )) {
+        return 0;
+    }
+    if (operand_out->len == 0) {
+        ptn_string_operand_free(*operand_out);
+        ptn_throw_exception(runtime, "DOMException", "The empty string is not a valid token");
+        *operand_out = ptn_string_operand_borrowed("");
+        return 0;
+    }
+    if (ptn_dom_token_list_operand_has_ascii_space(*operand_out)) {
+        ptn_string_operand_free(*operand_out);
+        ptn_throw_exception(runtime, "DOMException", "The token must not contain any ASCII whitespace");
+        *operand_out = ptn_string_operand_borrowed("");
+        return 0;
+    }
+    return 1;
+}
+
+static char *ptn_dom_token_list_method_label(const char *class_name, const char *method_name) {
+    int needed = snprintf(NULL, 0, "%s::%s", class_name == NULL ? "Dom\\TokenList" : class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *label = malloc((size_t)needed + 1);
+    if (label == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(label, (size_t)needed + 1, "%s::%s", class_name == NULL ? "Dom\\TokenList" : class_name, method_name);
+    return label;
+}
+
+static PtnValue ptn_dom_token_list_debug_info(PtnDomTokenListData *list) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("length"), ptn_int((int64_t)ptn_dom_token_list_length(list)));
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("value"),
+        ptn_owned_string(ptn_duplicate_string(ptn_dom_token_list_value_cstr(list)))
+    );
+    return result;
+}
+
+static int ptn_var_dump_dom_token_list_object(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+) {
+    if (object == NULL ||
+        !ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMTokenList")) {
+        return 0;
+    }
+    PtnValue properties_value = ptn_dom_token_list_debug_info((PtnDomTokenListData *)object->native_data);
+    PtnArray *properties = ptn_value_deref(properties_value).as.array;
+    ptn_var_dump_object_header(object, properties->len, debug);
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_array_key(properties->entries[i].key);
+        if (debug) {
+            ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        } else {
+            ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+    ptn_value_destroy(&properties_value);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_direct_var_dump_dom_token_list_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    if (object == NULL ||
+        !ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMTokenList")) {
+        return 0;
+    }
+    PtnValue properties_value = ptn_dom_token_list_debug_info((PtnDomTokenListData *)object->native_data);
+    PtnArray *properties = ptn_value_deref(properties_value).as.array;
+    ptn_direct_value_var_dump_object_header(runtime, object, properties->len);
+    ptn_direct_value_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_value_var_dump_value_indented(runtime, properties->entries[i].value, indent + 1, seen);
+    }
+    ptn_direct_value_dump_seen_object_pop(seen);
+    ptn_direct_value_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&properties_value);
+    return 1;
+}
+
+static PtnValue ptn_dom_token_list_contains_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char *label = ptn_dom_token_list_method_label(class_name, "contains");
+        PtnValue result = ptn_dom_throw_count(runtime, label, "exactly 1 argument", argc);
+        free(label);
+        return result;
+    }
+    char *label = ptn_dom_token_list_method_label(class_name, "contains");
+    PtnStringOperand token;
+    int ok = ptn_dom_token_list_expect_string_arg(runtime, label, 1, "token", "token", args[0], line, &token);
+    free(label);
+    if (!ok) {
+        return ptn_null();
+    }
+    PtnValue tokens = ptn_dom_token_list_tokens_value(list);
+    int contains = ptn_dom_token_list_index_of(tokens, token, NULL);
+    ptn_value_destroy(&tokens);
+    ptn_string_operand_free(token);
+    return ptn_bool(contains);
+}
+
+static PtnStringOperand *ptn_dom_token_list_validated_token_args(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    const char *type_arg_name,
+    const char *null_arg_name
+) {
+    char *label = ptn_dom_token_list_method_label(class_name, method_name);
+    PtnStringOperand *tokens = argc == 0 ? NULL : calloc(argc, sizeof(PtnStringOperand));
+    if (argc != 0 && tokens == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < argc; i++) {
+        if (!ptn_dom_token_list_expect_token_arg(
+            runtime,
+            label,
+            i + 1,
+            type_arg_name,
+            null_arg_name,
+            args[i],
+            line,
+            &tokens[i]
+        )) {
+            for (size_t j = 0; j < i; j++) {
+                ptn_string_operand_free(tokens[j]);
+            }
+            free(tokens);
+            free(label);
+            return NULL;
+        }
+    }
+    free(label);
+    return tokens;
+}
+
+static void ptn_dom_token_list_free_operands(PtnStringOperand *operands, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_operand_free(operands[i]);
+    }
+    free(operands);
+}
+
+static PtnValue ptn_dom_token_list_add_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand *operands = ptn_dom_token_list_validated_token_args(
+        runtime,
+        class_name,
+        "add",
+        argc,
+        args,
+        line,
+        NULL,
+        NULL
+    );
+    if (argc != 0 && operands == NULL) {
+        return ptn_null();
+    }
+    PtnValue tokens = ptn_dom_token_list_tokens_value(list);
+    for (size_t i = 0; i < argc; i++) {
+        if (!ptn_dom_token_list_index_of(tokens, operands[i], NULL)) {
+            ptn_dom_token_list_append_token(tokens, operands[i]);
+        }
+    }
+    ptn_dom_token_list_write_tokens(runtime, list, tokens);
+    ptn_value_destroy(&tokens);
+    ptn_dom_token_list_free_operands(operands, argc);
+    return ptn_null();
+}
+
+static PtnValue ptn_dom_token_list_remove_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand *operands = ptn_dom_token_list_validated_token_args(
+        runtime,
+        class_name,
+        "remove",
+        argc,
+        args,
+        line,
+        NULL,
+        NULL
+    );
+    if (argc != 0 && operands == NULL) {
+        return ptn_null();
+    }
+    PtnValue current = ptn_dom_token_list_tokens_value(list);
+    PtnValue kept = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = current.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        int remove = 0;
+        for (size_t j = 0; j < argc; j++) {
+            if (ptn_dom_token_list_token_value_equals(array->entries[i].value, operands[j])) {
+                remove = 1;
+                break;
+            }
+        }
+        if (!remove) {
+            PtnValue value = ptn_value_deref(array->entries[i].value);
+            PtnStringOperand token = ptn_value_to_string_operand(value);
+            ptn_dom_token_list_append_token(kept, token);
+            ptn_string_operand_free(token);
+        }
+    }
+    ptn_dom_token_list_write_tokens(runtime, list, kept);
+    ptn_value_destroy(&current);
+    ptn_value_destroy(&kept);
+    ptn_dom_token_list_free_operands(operands, argc);
+    return ptn_null();
+}
+
+static PtnValue ptn_dom_token_list_toggle_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        char *label = ptn_dom_token_list_method_label(class_name, "toggle");
+        PtnValue result = ptn_dom_throw_count(runtime, label, "1 or 2 arguments", argc);
+        free(label);
+        return result;
+    }
+    char *label = ptn_dom_token_list_method_label(class_name, "toggle");
+    PtnStringOperand token;
+    int ok = ptn_dom_token_list_expect_token_arg(runtime, label, 1, "token", "token", args[0], line, &token);
+    free(label);
+    if (!ok) {
+        return ptn_null();
+    }
+    int has_force = argc >= 2;
+    int force = has_force ? ptn_is_truthy(args[1]) : 0;
+    PtnValue current = ptn_dom_token_list_tokens_value(list);
+    size_t index = 0;
+    int present = ptn_dom_token_list_index_of(current, token, &index);
+    int should_have = has_force ? force : !present;
+    PtnValue next = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = current.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        if (present && !should_have && i == index) {
+            continue;
+        }
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnStringOperand item = ptn_value_to_string_operand(value);
+        ptn_dom_token_list_append_token(next, item);
+        ptn_string_operand_free(item);
+    }
+    if (!present && should_have) {
+        ptn_dom_token_list_append_token(next, token);
+    }
+    ptn_dom_token_list_write_tokens(runtime, list, next);
+    ptn_value_destroy(&current);
+    ptn_value_destroy(&next);
+    ptn_string_operand_free(token);
+    return ptn_bool(should_have);
+}
+
+static PtnValue ptn_dom_token_list_replace_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char *label = ptn_dom_token_list_method_label(class_name, "replace");
+        PtnValue result = ptn_dom_throw_count(runtime, label, "exactly 2 arguments", argc);
+        free(label);
+        return result;
+    }
+    char *label = ptn_dom_token_list_method_label(class_name, "replace");
+    PtnStringOperand token;
+    if (!ptn_dom_token_list_expect_token_arg(runtime, label, 1, "token", "token", args[0], line, &token)) {
+        free(label);
+        return ptn_null();
+    }
+    PtnStringOperand new_token;
+    if (!ptn_dom_token_list_expect_token_arg(runtime, label, 2, "newToken", "newToken", args[1], line, &new_token)) {
+        ptn_string_operand_free(token);
+        free(label);
+        return ptn_null();
+    }
+    free(label);
+    PtnValue current = ptn_dom_token_list_tokens_value(list);
+    size_t old_index = 0;
+    if (!ptn_dom_token_list_index_of(current, token, &old_index)) {
+        ptn_value_destroy(&current);
+        ptn_string_operand_free(token);
+        ptn_string_operand_free(new_token);
+        return ptn_bool(0);
+    }
+    PtnValue next = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = current.as.array;
+    int inserted = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (i == old_index) {
+            if (!ptn_dom_token_list_index_of(next, new_token, NULL)) {
+                ptn_dom_token_list_append_token(next, new_token);
+                inserted = 1;
+            }
+            continue;
+        }
+        if (ptn_dom_token_list_token_value_equals(array->entries[i].value, new_token)) {
+            continue;
+        }
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        PtnStringOperand item = ptn_value_to_string_operand(value);
+        if (!ptn_dom_token_list_index_of(next, item, NULL)) {
+            ptn_dom_token_list_append_token(next, item);
+        }
+        ptn_string_operand_free(item);
+    }
+    if (!inserted && !ptn_dom_token_list_index_of(next, new_token, NULL)) {
+        ptn_dom_token_list_append_token(next, new_token);
+    }
+    ptn_dom_token_list_write_tokens(runtime, list, next);
+    ptn_value_destroy(&current);
+    ptn_value_destroy(&next);
+    ptn_string_operand_free(token);
+    ptn_string_operand_free(new_token);
+    return ptn_bool(1);
+}
+
+static int ptn_dom_token_list_offset_index(
+    PtnRuntime *runtime,
+    PtnValue offset,
+    size_t line,
+    int isset_or_empty,
+    int64_t *index_out
+);
+
+static PtnValue ptn_dom_token_list_item_method(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char *label = ptn_dom_token_list_method_label(class_name, "item");
+        PtnValue result = ptn_dom_throw_count(runtime, label, "exactly 1 argument", argc);
+        free(label);
+        return result;
+    }
+    char *label = ptn_dom_token_list_method_label(class_name, "item");
+    int64_t index = 0;
+    int ok = ptn_dom_token_list_offset_index(runtime, args[0], line, 0, &index);
+    free(label);
+    if (!ok || index < 0) {
+        return ptn_null();
+    }
+    return ptn_dom_token_list_item_value(list, (size_t)index);
+}
+
+static const char *ptn_dom_token_list_offset_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_BOOL) {
+        return "bool";
+    }
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static void ptn_dom_token_list_throw_offset_error(PtnRuntime *runtime, PtnValue offset, int isset_or_empty) {
+    char message[192];
+    int written = isset_or_empty
+        ? snprintf(
+            message,
+            sizeof(message),
+            "Cannot access offset of type %s in isset or empty",
+            ptn_dom_token_list_offset_type_name(offset)
+        )
+        : snprintf(
+            message,
+            sizeof(message),
+            "Cannot access offset of type %s on Dom\\TokenList",
+            ptn_dom_token_list_offset_type_name(offset)
+        );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int ptn_dom_token_list_offset_index(
+    PtnRuntime *runtime,
+    PtnValue offset,
+    size_t line,
+    int isset_or_empty,
+    int64_t *index_out
+) {
+    offset = ptn_value_deref(offset);
+    if (offset.type == PTN_INT || offset.type == PTN_FLOAT || offset.type == PTN_BOOL) {
+        *index_out = ptn_value_to_integer_with_precision_deprecation_at(
+            runtime == NULL ? NULL : &runtime->diagnostics,
+            offset,
+            runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn",
+            line
+        );
+        return 1;
+    }
+    if (offset.type == PTN_RESOURCE) {
+        int64_t index = ptn_value_to_integer(offset);
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Resource ID#%lld used as offset, casting to integer (%lld)",
+            (long long)offset.as.resource->id,
+            (long long)index
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        *index_out = index;
+        return 1;
+    }
+    if (offset.type == PTN_STRING) {
+        int64_t parsed = 0;
+        if (ptn_string_is_integer_array_key_len((const char *)offset.as.string.data, offset.as.string.len, &parsed)) {
+            *index_out = parsed;
+            return 1;
+        }
+        ptn_dom_token_list_throw_offset_error(runtime, offset, isset_or_empty);
+        return 0;
+    }
+    ptn_dom_token_list_throw_offset_error(runtime, offset, isset_or_empty);
+    return 0;
+}
+
+static PtnValue ptn_dom_token_list_offset_get(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "Dom\\TokenList::offsetGet", "exactly 1 argument", argc);
+    }
+    int64_t index = 0;
+    if (!ptn_dom_token_list_offset_index(runtime, args[0], line, 0, &index) || index < 0) {
+        return ptn_null();
+    }
+    return ptn_dom_token_list_item_value(list, (size_t)index);
+}
+
+static PtnValue ptn_dom_token_list_offset_exists(
+    PtnRuntime *runtime,
+    PtnDomTokenListData *list,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "Dom\\TokenList::offsetExists", "exactly 1 argument", argc);
+    }
+    int64_t index = 0;
+    if (!ptn_dom_token_list_offset_index(runtime, args[0], line, 1, &index) || index < 0) {
+        return ptn_bool(0);
+    }
+    return ptn_bool((size_t)index < ptn_dom_token_list_length(list));
 }
 
 static const char *ptn_xml_local_name(const char *name) {
@@ -84072,7 +84894,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         snprintf(method, sizeof(method), "%s::replaceWith", class_name);
         return ptn_dom_child_insert_like(runtime, receiver, method, argc, args, line, 0, 1);
     }
-    if (ptn_ascii_case_equal(name, "remove")) {
+    if (ptn_ascii_case_equal(name, "remove") && !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return ptn_dom_remove_method(runtime, receiver);
     }
     if (ptn_ascii_case_equal(name, "hasChildNodes")) {
@@ -84339,7 +85161,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     if (ptn_ascii_case_equal(name, "isElementContentWhitespace")) {
         return ptn_dom_text_is_element_content_whitespace_method(runtime, receiver, argc);
     }
-    if (ptn_ascii_case_equal(name, "item")) {
+    if (ptn_ascii_case_equal(name, "item") && !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         PtnXmlNodeListData *list = ptn_xml_node_list_data(receiver);
         int64_t index = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
         if (list == NULL || index < 0 || (size_t)index >= ptn_xml_node_list_length(list)) {
@@ -84422,14 +85244,62 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (list == NULL) {
             return ptn_null();
         }
+        if (ptn_ascii_case_equal(name, "__debugInfo")) {
+            if (argc != 0) {
+                return ptn_dom_throw_count(runtime, "Dom\\TokenList::__debugInfo", "exactly 0 arguments", argc);
+            }
+            return ptn_dom_token_list_debug_info(list);
+        }
+        if (ptn_ascii_case_equal(name, "item")) {
+            return ptn_dom_token_list_item_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "contains")) {
+            return ptn_dom_token_list_contains_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "add")) {
+            return ptn_dom_token_list_add_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "remove")) {
+            return ptn_dom_token_list_remove_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "toggle")) {
+            return ptn_dom_token_list_toggle_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "replace")) {
+            return ptn_dom_token_list_replace_method(runtime, list, object_class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "supports")) {
+            if (argc != 1) {
+                return ptn_dom_throw_count(runtime, "Dom\\TokenList::supports", "exactly 1 argument", argc);
+            }
+            ptn_throw_exception(runtime, "TypeError", "Attribute \"class\" does not define any supported tokens");
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "count")) {
+            if (argc != 0) {
+                return ptn_dom_throw_count(runtime, "Dom\\TokenList::count", "exactly 0 arguments", argc);
+            }
+            return ptn_int((int64_t)ptn_dom_token_list_length(list));
+        }
+        if (ptn_ascii_case_equal(name, "offsetGet")) {
+            return ptn_dom_token_list_offset_get(runtime, list, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "offsetExists")) {
+            return ptn_dom_token_list_offset_exists(runtime, list, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "offsetSet")) {
+            ptn_throw_exception(runtime, "Error", "Cannot append to Dom\\TokenList");
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "offsetUnset")) {
+            ptn_throw_exception(runtime, "Error", "Cannot remove Dom\\TokenList offsets");
+            return ptn_null();
+        }
         if (ptn_ascii_case_equal(name, "getIterator")) {
             if (argc != 0) {
                 return ptn_dom_throw_count(runtime, "DOM\\TokenList::getIterator", "exactly 0 arguments", argc);
             }
-            PtnValue tokens = ptn_dom_token_list_tokens_value(list);
-            PtnValue iterator = ptn_internal_iterator_from_values(runtime, tokens, line);
-            ptn_value_destroy(&tokens);
-            return iterator;
+            return ptn_internal_iterator_from_dom_token_list(runtime, receiver, line);
         }
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -84713,6 +85583,22 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         if (ptn_ascii_case_equal(property, "length")) {
             PtnXmlNodeListData *list = ptn_xml_node_list_data(receiver);
             *value_out = ptn_int((int64_t)ptn_xml_node_list_length(list));
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal(receiver_dom_class_name, "DOMTokenList")) {
+        PtnDomTokenListData *list = ptn_dom_token_list_data(receiver);
+        if (list == NULL) {
+            *value_out = ptn_null();
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "length")) {
+            *value_out = ptn_int((int64_t)ptn_dom_token_list_length(list));
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "value")) {
+            *value_out = ptn_owned_string(ptn_duplicate_string(ptn_dom_token_list_value_cstr(list)));
             return 1;
         }
         return 0;
@@ -85027,6 +85913,36 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
         return 1;
     }
     const char *dom_class_name = ptn_dom_effective_class_name(receiver.as.object->class_name);
+    if (ptn_ascii_case_equal(dom_class_name, "DOMTokenList")) {
+        PtnDomTokenListData *list = ptn_dom_token_list_data(receiver);
+        if (list == NULL) {
+            *value_out = ptn_null();
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "value")) {
+            PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(string);
+                *value_out = ptn_null();
+                return 1;
+            }
+            if (memchr(string.data, '\0', string.len) != NULL) {
+                ptn_string_operand_free(string);
+                ptn_throw_exception(runtime, "ValueError", "Value must not contain any null bytes");
+                *value_out = ptn_null();
+                return 1;
+            }
+            char *copy = ptn_duplicate_string_len(string.data, string.len);
+            if (list->element != NULL) {
+                ptn_xml_element_set_attribute_string(runtime, list->element, "class", copy);
+            }
+            free(copy);
+            ptn_string_operand_free(string);
+            *value_out = ptn_value_clone_deref(value);
+            return 1;
+        }
+        return 0;
+    }
     if (!ptn_dom_effective_class_is_modeled(dom_class_name)) {
         return 0;
     }
@@ -85226,7 +86142,20 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
     class_name = ptn_dom_effective_class_name(class_name);
     if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
-        return ptn_ascii_case_equal(method_name, "getIterator");
+        return ptn_ascii_case_equal(method_name, "__debugInfo")
+            || ptn_ascii_case_equal(method_name, "item")
+            || ptn_ascii_case_equal(method_name, "contains")
+            || ptn_ascii_case_equal(method_name, "add")
+            || ptn_ascii_case_equal(method_name, "remove")
+            || ptn_ascii_case_equal(method_name, "toggle")
+            || ptn_ascii_case_equal(method_name, "replace")
+            || ptn_ascii_case_equal(method_name, "supports")
+            || ptn_ascii_case_equal(method_name, "count")
+            || ptn_ascii_case_equal(method_name, "getIterator")
+            || ptn_ascii_case_equal(method_name, "offsetExists")
+            || ptn_ascii_case_equal(method_name, "offsetGet")
+            || ptn_ascii_case_equal(method_name, "offsetSet")
+            || ptn_ascii_case_equal(method_name, "offsetUnset");
     }
     if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
         ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
@@ -85242,16 +86171,6 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || (ptn_ascii_case_equal(class_name, "DOMNamedNodeMap") &&
                 (ptn_ascii_case_equal(method_name, "getNamedItem") ||
                     ptn_ascii_case_equal(method_name, "getNamedItemNS")));
-    }
-    if (ptn_ascii_case_equal(class_name, "DOMTokenList")) {
-        return ptn_ascii_case_equal(method_name, "item")
-            || ptn_ascii_case_equal(method_name, "contains")
-            || ptn_ascii_case_equal(method_name, "count")
-            || ptn_ascii_case_equal(method_name, "rewind")
-            || ptn_ascii_case_equal(method_name, "valid")
-            || ptn_ascii_case_equal(method_name, "current")
-            || ptn_ascii_case_equal(method_name, "key")
-            || ptn_ascii_case_equal(method_name, "next");
     }
     if (ptn_ascii_case_equal(class_name, "DOMDocument")) {
         return ptn_ascii_case_equal(method_name, "__construct")
