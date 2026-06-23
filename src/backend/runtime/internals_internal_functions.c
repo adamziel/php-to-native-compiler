@@ -97545,8 +97545,9 @@ static PtnValue ptn_internal_xml_set_element_handler(PtnRuntime *runtime, size_t
         return ptn_null();
     }
     int non_callable_string_deprecation_emitted = 0;
+    /* PHP reports element-handler validation failures against start_handler for either handler slot. */
     if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[1], line, &non_callable_string_deprecation_emitted) ||
-        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 3, "end_handler", args[2], line, &non_callable_string_deprecation_emitted)) {
+        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[2], line, &non_callable_string_deprecation_emitted)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->start_handler, &data->has_start_handler, args[1]);

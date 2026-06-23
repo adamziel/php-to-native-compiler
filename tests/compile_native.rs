@@ -36760,6 +36760,49 @@ while ($reader->read()) {
 }
 
 #[test]
+fn compile_xml_parser_element_handler_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-element-handler-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-element-handler-validation.php");
+    let output = root.join("xml-parser-element-handler-validation-bin");
+    fs::write(
+        &input,
+        "<?php
+class TrampolineTest {
+    public function __call(string $name, array $arguments) {}
+}
+
+$object = new TrampolineTest();
+$parser = xml_parser_create();
+foreach ([[[], [$object, 'end_handler']], [[$object, 'start_handler'], []]] as $handlers) {
+    try {
+        xml_set_element_handler($parser, $handlers[0], $handlers[1]);
+    } catch (Throwable $exception) {
+        echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n",
+            "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_xml_set_element_handler"));
+}
+
+#[test]
 fn compile_simplexml_dom_backed_basics_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-dom-backed-basics");
     fs::create_dir_all(&root).unwrap();
