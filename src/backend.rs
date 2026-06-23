@@ -18269,7 +18269,7 @@ fn emit_runtime_parameter_signature_compatibility_validation(
                 ) =>
             {
                 for unavailable_name in
-                    runtime_object_compatibility_class_names(parent_type_hint, type_hint)
+                    runtime_object_compatibility_class_names(parent_type_hint, type_hint, classes)
                 {
                     emit_runtime_method_signature_unresolved_fatal_after_autoload(
                         out,
@@ -18403,7 +18403,7 @@ fn emit_runtime_return_signature_compatibility_validation(
 
     if runtime_type_hint_static_subtype(return_type, parent_return_type, class, classes) {
         for unavailable_name in
-            runtime_object_compatibility_class_names(return_type, parent_return_type)
+            runtime_object_compatibility_class_names(return_type, parent_return_type, classes)
         {
             emit_runtime_method_signature_unresolved_fatal_after_autoload(
                 out,
@@ -18518,14 +18518,50 @@ fn emit_runtime_return_signature_compatibility_validation(
 fn runtime_object_compatibility_class_names(
     candidate: &TypeHint,
     target: &TypeHint,
+    classes: &[ClassDecl],
 ) -> Vec<String> {
     if !type_hint_accepts_object_directly(target) {
         return Vec::new();
+    }
+    if let TypeHint::Intersection(types) = candidate {
+        if types
+            .iter()
+            .any(|member| runtime_type_hint_has_available_object_member(member, classes))
+        {
+            return Vec::new();
+        }
     }
     let mut seen = HashSet::new();
     let mut names = Vec::new();
     collect_runtime_variance_type_names(candidate, &mut seen, &mut names);
     names
+}
+
+fn runtime_type_hint_has_available_object_member(
+    type_hint: &TypeHint,
+    classes: &[ClassDecl],
+) -> bool {
+    match type_hint {
+        TypeHint::Class(name) => runtime_class_type_name_is_known(name, classes),
+        TypeHint::Static | TypeHint::Object => true,
+        TypeHint::Nullable(inner) => runtime_type_hint_has_available_object_member(inner, classes),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => types
+            .iter()
+            .any(|member| runtime_type_hint_has_available_object_member(member, classes)),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Callable
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never => false,
+    }
 }
 
 fn type_hint_accepts_object_directly(type_hint: &TypeHint) -> bool {

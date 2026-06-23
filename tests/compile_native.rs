@@ -4494,9 +4494,20 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 
 #[test]
 fn parser_rejects_qualified_builtin_type_names_with_php_diagnostic() {
-    let error = parser::parse("<?php function test(namespace\\int $value) {}").unwrap_err();
+    let error = parser::parse("<?php function test(Vendor\\int $value) {}").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
-    assert_eq!(error.message, "Type declaration 'int' must be unqualified");
+    assert_eq!(
+        error.message,
+        "Cannot use \"Vendor\\int\" as a type name as it is reserved"
+    );
+
+    let namespace_relative =
+        parser::parse("<?php function test(namespace\\int $value) {}").unwrap_err();
+    assert_eq!(namespace_relative.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        namespace_relative.message,
+        "Type declaration 'int' must be unqualified"
+    );
 }
 
 #[test]

@@ -10733,7 +10733,9 @@ fn validate_qualified_type_name_not_reserved(parsed: &ParsedName) -> Result<()> 
     if !is_reserved_namespace_qualified_type_name(last_segment) {
         return Ok(());
     }
-    if is_unqualified_only_builtin_type_hint_name(last_segment) {
+    if parsed.resolution == NameResolution::NamespaceRelative
+        && is_unqualified_only_builtin_type_hint_name(last_segment)
+    {
         return Err(Diagnostic::new(
             format!("Type declaration '{last_segment}' must be unqualified"),
             Some(parsed.span),
