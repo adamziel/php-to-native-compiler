@@ -27360,6 +27360,15 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    if name.eq_ignore_ascii_case("file_get_contents")
+        && (arguments.len() >= 3
+            || argument_names.iter().any(|name| {
+                name.as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("context"))
+            }))
+    {
+        requirements.ada_url = true;
+    }
     let has_named_arguments = argument_names.iter().any(Option::is_some);
     let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
     if is_generated_user_function_call(name, functions) {

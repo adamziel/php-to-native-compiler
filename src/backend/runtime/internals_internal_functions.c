@@ -49324,22 +49324,294 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 
+static int ptn_file_get_contents_argument_index(
+    size_t argc,
+    const char *const *arg_names,
+    const char *name,
+    size_t fallback,
+    size_t *index_out
+) {
+    if (arg_names != NULL) {
+        for (size_t i = 0; i < argc; i++) {
+            if (arg_names[i] != NULL && strcmp(arg_names[i], name) == 0) {
+                *index_out = i;
+                return 1;
+            }
+        }
+        if (fallback < argc && arg_names[fallback] == NULL) {
+            *index_out = fallback;
+            return 1;
+        }
+        return 0;
+    }
+    if (fallback < argc) {
+        *index_out = fallback;
+        return 1;
+    }
+    return 0;
+}
+
+static PtnArrayEntry *ptn_array_entry_for_literal_string_key(PtnArray *array, const char *key) {
+    PtnArrayKey lookup = ptn_array_string_key(key);
+    size_t index = ptn_array_find_key(array, lookup);
+    ptn_array_key_free(lookup);
+    return index < array->len ? &array->entries[index] : NULL;
+}
+
+static char *ptn_stream_context_path_scheme_key(const char *path) {
+    size_t delimiter = 0;
+    while (path[delimiter] != '\0' &&
+           path[delimiter] != '/' &&
+           path[delimiter] != '?' &&
+           path[delimiter] != '#') {
+        delimiter++;
+    }
+    size_t colon = 0;
+    while (colon < delimiter && path[colon] != ':') {
+        colon++;
+    }
+    if (colon == 0 || colon >= delimiter || !isalpha((unsigned char)path[0])) {
+        return NULL;
+    }
+    for (size_t i = 1; i < colon; i++) {
+        unsigned char byte = (unsigned char)path[i];
+        if (!isalnum(byte) && byte != '+' && byte != '-' && byte != '.') {
+            return NULL;
+        }
+    }
+
+    char *scheme = malloc(colon + 1);
+    if (scheme == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < colon; i++) {
+        scheme[i] = (char)tolower((unsigned char)path[i]);
+    }
+    scheme[colon] = '\0';
+    return scheme;
+}
+
+static PtnValue *ptn_stream_context_uri_parser_class_option(PtnResource *context, const char *path) {
+    if (context == NULL) {
+        return NULL;
+    }
+    PtnValue options = ptn_value_deref(context->context_options);
+    if (options.type != PTN_ARRAY) {
+        return NULL;
+    }
+    char *scheme = ptn_stream_context_path_scheme_key(path);
+    if (scheme == NULL) {
+        return NULL;
+    }
+    PtnArrayEntry *scheme_entry = ptn_array_entry_for_literal_string_key(options.as.array, scheme);
+    free(scheme);
+    if (scheme_entry == NULL) {
+        return NULL;
+    }
+    PtnValue scheme_options = ptn_value_deref(scheme_entry->value);
+    if (scheme_options.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayEntry *parser_entry = ptn_array_entry_for_literal_string_key(
+        scheme_options.as.array,
+        "uri_parser_class"
+    );
+    return parser_entry == NULL ? NULL : &parser_entry->value;
+}
+
+static void ptn_file_get_contents_throw_invalid_uri_parser_class(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "file_get_contents(): Provided stream context has invalid value for the \"uri_parser_class\" option"
+    );
+}
+
+static int ptn_file_get_contents_validate_context_arg(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnResource **context_out
+) {
+    *context_out = NULL;
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type != PTN_RESOURCE) {
+        const char *given = value.type == PTN_OBJECT
+            ? value.as.object->class_name
+            : ptn_offset_container_type_name(value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "file_get_contents(): Argument #3 ($context) must be of type resource or null, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        (void)line;
+        return 0;
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "file_get_contents(): supplied resource is not a valid Stream-Context resource"
+        );
+        return 0;
+    }
+    *context_out = value.as.resource;
+    return 1;
+}
+
+static int ptn_file_get_contents_uri_parser_accepts(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnValue parser_class,
+    size_t line
+) {
+    PtnStringOperand uri = ptn_string_operand_borrowed(path);
+    parser_class = ptn_value_deref(parser_class);
+    if (parser_class.type == PTN_NULL) {
+        PtnParseUrlResult parsed;
+        return ptn_parse_url_components(uri, &parsed);
+    }
+    if (parser_class.type != PTN_STRING) {
+        ptn_file_get_contents_throw_invalid_uri_parser_class(runtime);
+        (void)line;
+        return 0;
+    }
+
+    PtnStringOperand class_name = ptn_string_operand_borrowed_len(
+        (const char *)parser_class.as.string.data,
+        parser_class.as.string.len
+    );
+    if (ptn_string_operand_ascii_case_equal(class_name, "Uri\\Rfc3986\\Uri")) {
+        PtnUriData *data = NULL;
+        int valid = ptn_uri_parse(uri, &data);
+        if (data != NULL) {
+            ptn_uri_data_free(data);
+        }
+        return valid;
+    }
+    if (ptn_string_operand_ascii_case_equal(class_name, "Uri\\WhatWg\\Url")) {
+        PtnUriData *data = NULL;
+        const char *reason = NULL;
+        int valid = ptn_uri_parse_whatwg(uri, &data, &reason);
+        if (data != NULL) {
+            ptn_uri_data_free(data);
+        }
+        (void)reason;
+        return valid;
+    }
+
+    ptn_file_get_contents_throw_invalid_uri_parser_class(runtime);
+    return 0;
+}
+
+static int ptn_file_get_contents_validate_uri_parser_context(
+    PtnRuntime *runtime,
+    const char *path,
+    int has_context,
+    PtnValue context_arg,
+    size_t line,
+    int *operation_failed_out
+) {
+    *operation_failed_out = 0;
+    if (!has_context) {
+        return 1;
+    }
+
+    PtnResource *context = NULL;
+    if (!ptn_file_get_contents_validate_context_arg(runtime, context_arg, line, &context)) {
+        return 0;
+    }
+    PtnValue *parser_class = ptn_stream_context_uri_parser_class_option(context, path);
+    if (parser_class == NULL) {
+        return 1;
+    }
+    int accepted = ptn_file_get_contents_uri_parser_accepts(runtime, path, *parser_class, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    *operation_failed_out = !accepted;
+    return 1;
+}
+
 static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    const char *const *arg_names = runtime->next_call_arg_names;
+    size_t filename_index = 0;
+    (void)ptn_file_get_contents_argument_index(argc, arg_names, "filename", 0, &filename_index);
+    size_t use_include_path_index = 0;
+    int has_use_include_path = ptn_file_get_contents_argument_index(
+        argc,
+        arg_names,
+        "use_include_path",
+        1,
+        &use_include_path_index
+    ) && !ptn_value_is_missing(args[use_include_path_index]);
+    size_t context_index = 0;
+    int has_context = ptn_file_get_contents_argument_index(
+        argc,
+        arg_names,
+        "context",
+        2,
+        &context_index
+    ) && !ptn_value_is_missing(args[context_index]);
+    size_t offset_index = 0;
+    int has_offset = ptn_file_get_contents_argument_index(
+        argc,
+        arg_names,
+        "offset",
+        3,
+        &offset_index
+    ) && !ptn_value_is_missing(args[offset_index]);
+    size_t length_index = 0;
+    int has_length_argument = ptn_file_get_contents_argument_index(
+        argc,
+        arg_names,
+        "length",
+        4,
+        &length_index
+    ) && !ptn_value_is_missing(args[length_index]);
+
     char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
         runtime,
         "file_get_contents",
         1,
         "filename",
-        args[0],
+        args[filename_index],
         line
     );
     if (path == NULL) {
         return ptn_null();
     }
 
-    int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
-    int64_t offset = argc >= 4
-        ? ptn_internal_expect_integer_arg(runtime, "file_get_contents", 4, "offset", args[3], line)
+    int uri_parser_operation_failed = 0;
+    if (!ptn_file_get_contents_validate_uri_parser_context(
+            runtime,
+            path,
+            has_context,
+            has_context ? args[context_index] : ptn_null(),
+            line,
+            &uri_parser_operation_failed
+        )) {
+        free(path);
+        return ptn_null();
+    }
+    if (uri_parser_operation_failed) {
+        ptn_emit_file_warning(runtime, "file_get_contents", path, "Failed to open stream: operation failed", line);
+        free(path);
+        return ptn_bool(0);
+    }
+
+    int use_include_path = has_use_include_path && ptn_is_truthy(args[use_include_path_index]);
+    int64_t offset = has_offset
+        ? ptn_internal_expect_integer_arg(runtime, "file_get_contents", 4, "offset", args[offset_index], line)
         : 0;
     if (runtime->exceptions->active_exception != NULL) {
         free(path);
@@ -49347,8 +49619,8 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     }
     int has_length = 0;
     int64_t length = 0;
-    if (argc >= 5 && ptn_value_deref(args[4]).type != PTN_NULL) {
-        length = ptn_internal_expect_integer_arg(runtime, "file_get_contents", 5, "length", args[4], line);
+    if (has_length_argument && ptn_value_deref(args[length_index]).type != PTN_NULL) {
+        length = ptn_internal_expect_integer_arg(runtime, "file_get_contents", 5, "length", args[length_index], line);
         if (runtime->exceptions->active_exception != NULL) {
             free(path);
             return ptn_null();

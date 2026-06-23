@@ -21971,6 +21971,65 @@ print_r(stream_context_get_options($context));
 }
 
 #[test]
+fn compile_file_get_contents_uri_parser_context_to_native_binary() {
+    let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-get-contents-uri-parser-context.php");
+    let output = root.join("file-get-contents-uri-parser-context-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    $context = stream_context_create([
+        "http" => [
+            "uri_parser_class" => "not-exists",
+        ],
+    ]);
+    var_dump(file_get_contents("http://example.com", context: $context));
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+foreach ([
+    [null, "http:///example.com"],
+    [Uri\Rfc3986\Uri::class, "http://éxamplé.com"],
+    [Uri\WhatWg\Url::class, "http://exa%23mple.org"],
+] as [$parserClass, $uri]) {
+    $context = stream_context_create([
+        "http" => [
+            "uri_parser_class" => $parserClass,
+        ],
+    ]);
+    var_dump(file_get_contents($uri, context: $context));
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "file_get_contents(): Provided stream context has invalid value for the \"uri_parser_class\" option\n"
+    ));
+    assert_eq!(
+        stdout
+            .matches("Failed to open stream: operation failed")
+            .count(),
+        3
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 3);
+    assert!(!stdout.contains("No such file or directory"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_file_get_contents_validate_uri_parser_context"));
+    assert!(c_source.contains("#define PTN_USE_ADA_URL 1"));
+}
+
+#[test]
 fn compile_php_temp_and_memory_stream_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-php-temp-memory-streams");
     fs::create_dir_all(&root).unwrap();

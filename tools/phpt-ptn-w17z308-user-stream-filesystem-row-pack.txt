@@ -1,0 +1,8 @@
+ext/standard/tests/file/userdirstream.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/standard/tests/file/userstreams_002.phpt
+ext/standard/tests/file/file_get_contents_with_custom_uri_parser.phpt
+ext/standard/tests/streams/stream_read_object_return.phpt
+ext/standard/tests/streams/stream_get_wrappers.phpt
+ext/standard/tests/file/userstreams_004.phpt
