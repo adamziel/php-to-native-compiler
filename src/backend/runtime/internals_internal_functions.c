@@ -70427,36 +70427,47 @@ static PtnValue ptn_internal_mb_regex_set_options(PtnRuntime *runtime, size_t ar
     return ptn_bool(1);
 }
 
+static int ptn_mb_info_key_equal(PtnStringOperand key, const char *literal) {
+    size_t len = strlen(literal);
+    return key.len == len && memcmp(key.data, literal, len) == 0;
+}
+
 static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     if (argc >= 1) {
+        PtnValue raw_key = ptn_value_deref(args[0]);
+        if (raw_key.type == PTN_STRING &&
+            raw_key.as.string.len == sizeof("illegal_chars") - 1 &&
+            memcmp(raw_key.as.string.data, "illegal_chars", sizeof("illegal_chars") - 1) == 0) {
+            return ptn_int(ptn_mb_illegal_chars);
+        }
         PtnStringOperand key = ptn_value_to_string_operand(args[0]);
         PtnValue value = ptn_bool(0);
-        if (ptn_string_operand_ascii_case_equal(key, "internal_encoding")) {
+        if (ptn_mb_info_key_equal(key, "internal_encoding")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
-        } else if (ptn_string_operand_ascii_case_equal(key, "http_output")) {
+        } else if (ptn_mb_info_key_equal(key, "http_output")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_http_output(runtime)));
-        } else if (ptn_string_operand_ascii_case_equal(key, "http_input")) {
+        } else if (ptn_mb_info_key_equal(key, "http_input")) {
             value = ptn_string("pass");
-        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload")) {
+        } else if (ptn_mb_info_key_equal(key, "func_overload")) {
             value = ptn_int(0);
-        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload_list")) {
+        } else if (ptn_mb_info_key_equal(key, "func_overload_list")) {
             value = ptn_string("no overload");
-        } else if (ptn_string_operand_ascii_case_equal(key, "mail_charset")) {
+        } else if (ptn_mb_info_key_equal(key, "mail_charset")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
-        } else if (ptn_string_operand_ascii_case_equal(key, "mail_header_encoding")) {
+        } else if (ptn_mb_info_key_equal(key, "mail_header_encoding")) {
             value = ptn_string("BASE64");
-        } else if (ptn_string_operand_ascii_case_equal(key, "mail_body_encoding")) {
+        } else if (ptn_mb_info_key_equal(key, "mail_body_encoding")) {
             value = ptn_string("BASE64");
-        } else if (ptn_string_operand_ascii_case_equal(key, "illegal_chars")) {
+        } else if (ptn_mb_info_key_equal(key, "illegal_chars")) {
             value = ptn_int(ptn_mb_illegal_chars);
-        } else if (ptn_string_operand_ascii_case_equal(key, "encoding_translation")) {
+        } else if (ptn_mb_info_key_equal(key, "encoding_translation")) {
             value = ptn_string("Off");
-        } else if (ptn_string_operand_ascii_case_equal(key, "language")) {
+        } else if (ptn_mb_info_key_equal(key, "language")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language()));
-        } else if (ptn_string_operand_ascii_case_equal(key, "detect_order")) {
+        } else if (ptn_mb_info_key_equal(key, "detect_order")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order()));
-        } else if (ptn_string_operand_ascii_case_equal(key, "substitute_character")) {
+        } else if (ptn_mb_info_key_equal(key, "substitute_character")) {
             value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_substitute_character()));
         }
         ptn_string_operand_free(key);
