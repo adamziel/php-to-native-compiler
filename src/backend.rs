@@ -65,6 +65,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("IntlException", "Exception"),
     ("DOMException", "Exception"),
     ("RequestParseBodyException", "Exception"),
+    ("Filter\\FilterException", "Exception"),
+    ("Filter\\FilterFailedException", "Filter\\FilterException"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),

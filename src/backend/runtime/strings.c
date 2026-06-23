@@ -2629,7 +2629,15 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "FILTER_FLAG_IPV4") == 0 || strcmp(name, "FILTER_FLAG_HOSTNAME") == 0) {
-        *out = ptn_int(PTN_FILTER_FLAG_IPV4);
+        *out = ptn_int(PTN_FILTER_FLAG_HOSTNAME);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_EMAIL_UNICODE") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_EMAIL_UNICODE);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_THROW_ON_FAILURE") == 0) {
+        *out = ptn_int(PTN_FILTER_THROW_ON_FAILURE);
         return 1;
     }
     if (strcmp(name, "FILTER_FLAG_IPV6") == 0) {

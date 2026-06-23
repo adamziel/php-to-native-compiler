@@ -72,10 +72,16 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
                 "Constant FILE_TEXT is deprecated since 8.1, as the constant has no effect",
                 line
             );
-        } else if (strcmp(name, "FILTER_SANITIZE_STRING") == 0 || strcmp(name, "FILTER_SANITIZE_STRIPPED") == 0) {
+        } else if (strcmp(name, "FILTER_SANITIZE_STRING") == 0) {
             ptn_emit_deprecation(
                 &runtime->diagnostics,
                 "Constant FILTER_SANITIZE_STRING is deprecated since 8.1, use htmlspecialchars() instead",
+                line
+            );
+        } else if (strcmp(name, "FILTER_SANITIZE_STRIPPED") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant FILTER_SANITIZE_STRIPPED is deprecated since 8.1, use htmlspecialchars() instead",
                 line
             );
         } else if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
@@ -16989,6 +16995,15 @@ static int ptn_filter_id_for_name(PtnStringOperand name, int64_t *id_out) {
     return 0;
 }
 
+static const char *ptn_filter_name_for_id(int64_t id) {
+    for (size_t i = 0; i < sizeof(PTN_FILTER_INFOS) / sizeof(PTN_FILTER_INFOS[0]); i++) {
+        if (PTN_FILTER_INFOS[i].id == id) {
+            return PTN_FILTER_INFOS[i].name;
+        }
+    }
+    return "unknown";
+}
+
 typedef struct {
     int64_t flags;
     int has_default;
@@ -17190,11 +17205,164 @@ static int ptn_filter_options_from_value(
     return 1;
 }
 
-static PtnValue ptn_filter_failure_value(const PtnFilterOptions *options) {
+static PtnValue ptn_filter_throw_failure(PtnRuntime *runtime, const char *message) {
+    if (runtime != NULL) {
+        ptn_throw_exception(runtime, "Filter\\FilterFailedException", message);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_filter_throw_failure_owned(PtnRuntime *runtime, char *message) {
+    if (runtime != NULL) {
+        ptn_throw_exception_owned_message(runtime, "Filter\\FilterFailedException", message);
+    }
+    free(message);
+    return ptn_null();
+}
+
+static PtnValue ptn_filter_failure_value(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    const char *message
+) {
     if (options->has_default) {
         return ptn_value_clone_deref(options->default_value);
     }
+    if ((options->flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+        return ptn_filter_throw_failure(
+            runtime,
+            message == NULL ? "filter validation failed" : message
+        );
+    }
     return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_null() : ptn_bool(0);
+}
+
+static PtnValue ptn_filter_failure_owned_message(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    char *message
+) {
+    if (options->has_default) {
+        free(message);
+        return ptn_value_clone_deref(options->default_value);
+    }
+    if ((options->flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+        return ptn_filter_throw_failure_owned(runtime, message);
+    }
+    free(message);
+    return (options->flags & PTN_FILTER_NULL_ON_FAILURE) != 0 ? ptn_null() : ptn_bool(0);
+}
+
+static PtnValue ptn_filter_failure_not_array(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    PtnValue value
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "filter validation failed: not an array (got %s)",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_filter_failure_value(runtime, options, message);
+}
+
+static PtnValue ptn_filter_failure_not_scalar(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    PtnValue value
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "filter validation failed: not a scalar (got %s)",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_filter_failure_value(runtime, options, message);
+}
+
+static int ptn_filter_object_has_to_string(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (runtime == NULL || value.type != PTN_OBJECT) {
+        return 0;
+    }
+    int has_to_string = runtime->declared_method_exists != NULL &&
+        runtime->declared_method_exists(value.as.object->class_name, "__toString");
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    has_to_string = has_to_string ||
+        ptn_internal_class_method_exists(value.as.object->class_name, "__toString");
+#endif
+    return has_to_string;
+}
+
+static PtnValue ptn_filter_failure_object_no_to_string(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    const char *class_name = value.type == PTN_OBJECT ? value.as.object->class_name : "stdClass";
+    int needed = snprintf(
+        NULL,
+        0,
+        "filter validation failed: object of type %s has no __toString() method",
+        class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "filter validation failed: object of type %s has no __toString() method",
+        class_name
+    );
+    return ptn_filter_failure_owned_message(runtime, options, message);
+}
+
+static PtnValue ptn_filter_failure_unsatisfied(
+    PtnRuntime *runtime,
+    const PtnFilterOptions *options,
+    int64_t filter_id,
+    PtnStringOperand input
+) {
+    const char *filter_name = ptn_filter_name_for_id(filter_id);
+    int needed = snprintf(
+        NULL,
+        0,
+        "filter validation failed: filter %s not satisfied by '%.*s'",
+        filter_name,
+        (int)input.len,
+        input.data
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "filter validation failed: filter %s not satisfied by '%.*s'",
+        filter_name,
+        (int)input.len,
+        input.data
+    );
+    return ptn_filter_failure_owned_message(runtime, options, message);
 }
 
 static PtnStringOperand ptn_filter_scalar_string_operand(PtnRuntime *runtime, PtnValue value, size_t line) {
@@ -17536,7 +17704,7 @@ static PtnValue ptn_filter_sanitize_string(
 
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-    int strip_tag = 0;
+    int strip_tag_depth = 0;
     for (size_t i = 0; i < input.len; i++) {
         unsigned char byte = (unsigned char)input.data[i];
         if ((options->flags & PTN_FILTER_FLAG_STRIP_LOW) != 0 && byte < 32) {
@@ -17589,17 +17757,20 @@ static PtnValue ptn_filter_sanitize_string(
             }
         }
         if (filter_id == PTN_FILTER_SANITIZE_STRING || filter_id == PTN_FILTER_SANITIZE_STRIPPED) {
-            if (strip_tag) {
-                if (byte == '>') {
-                    strip_tag = 0;
+            if (strip_tag_depth > 0) {
+                if (byte == '<') {
+                    strip_tag_depth++;
+                } else if (byte == '>') {
+                    strip_tag_depth--;
                 }
                 continue;
             }
             if (byte == '<') {
-                strip_tag = 1;
+                strip_tag_depth = 1;
                 continue;
             }
-            if (byte == '\'' || byte == '"') {
+            if ((byte == '\'' || byte == '"') &&
+                (options->flags & PTN_FILTER_FLAG_NO_ENCODE_QUOTES) == 0) {
                 ptn_filter_append_html_entity(&output, byte);
                 continue;
             }
@@ -17618,32 +17789,244 @@ static PtnValue ptn_filter_sanitize_string(
     }
 
     ptn_string_operand_free(input);
+    if ((options->flags & PTN_FILTER_FLAG_EMPTY_STRING_NULL) != 0 && output.len == 0) {
+        free(output.data);
+        return ptn_null();
+    }
     return ptn_owned_string_len(output.data, output.len);
 }
 
-static int ptn_filter_validate_email_operand(PtnStringOperand input) {
-    size_t at = SIZE_MAX;
-    for (size_t i = 0; i < input.len; i++) {
-        unsigned char byte = (unsigned char)input.data[i];
-        if (byte <= 32 || byte == '\0') {
-            return 0;
-        }
-        if (byte == '@') {
-            if (at != SIZE_MAX || i == 0) {
-                return 0;
-            }
-            at = i;
-        }
+static int ptn_filter_validate_domain_operand(PtnStringOperand input, int64_t flags);
+static int ptn_filter_validate_ipv4_operand(PtnStringOperand input);
+
+static int ptn_filter_email_local_atext(unsigned char byte, int allow_unicode) {
+    if (byte >= 128) {
+        return allow_unicode;
     }
-    if (at == SIZE_MAX || at + 1 >= input.len) {
+    return isalnum(byte) || byte == '!' || byte == '#' || byte == '$' ||
+        byte == '%' || byte == '&' || byte == '\'' || byte == '*' ||
+        byte == '+' || byte == '-' || byte == '/' || byte == '=' ||
+        byte == '?' || byte == '^' || byte == '_' || byte == '`' ||
+        byte == '{' || byte == '|' || byte == '}' || byte == '~';
+}
+
+static int ptn_filter_validate_email_dot_atom_local(
+    const char *data,
+    size_t len,
+    int allow_unicode
+) {
+    if (len == 0) {
         return 0;
     }
-    for (size_t i = at + 1; i < input.len; i++) {
-        if (input.data[i] == '.') {
-            return i > at + 1 && i + 1 < input.len;
+    int previous_dot = 1;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '.') {
+            if (previous_dot) {
+                return 0;
+            }
+            previous_dot = 1;
+            continue;
+        }
+        if (byte <= 32 || byte == 127 || byte == '\0' ||
+            !ptn_filter_email_local_atext(byte, allow_unicode)) {
+            return 0;
+        }
+        previous_dot = 0;
+    }
+    return !previous_dot;
+}
+
+static int ptn_filter_validate_email_quoted_local(
+    const char *data,
+    size_t len,
+    int allow_unicode
+) {
+    if (len < 2 || data[0] != '"' || data[len - 1] != '"') {
+        return 0;
+    }
+    for (size_t i = 1; i + 1 < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '\\') {
+            if (i + 2 >= len) {
+                return 0;
+            }
+            byte = (unsigned char)data[++i];
+            if (byte < 32 || byte == 127 || (byte >= 128 && !allow_unicode)) {
+                return 0;
+            }
+            continue;
+        }
+        if (byte == '"' || byte < 32 || byte == 127 || (byte >= 128 && !allow_unicode)) {
+            return 0;
         }
     }
-    return 0;
+    return 1;
+}
+
+static int ptn_filter_validate_ipv6_literal(const char *data, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    int saw_colon = 0;
+    int saw_hex = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (isxdigit(byte)) {
+            saw_hex = 1;
+            continue;
+        }
+        if (byte == ':') {
+            saw_colon = 1;
+            continue;
+        }
+        if (byte == '.') {
+            continue;
+        }
+        return 0;
+    }
+    return saw_colon && saw_hex;
+}
+
+static int ptn_filter_validate_email_domain_literal(PtnStringOperand input) {
+    if (input.len < 3 || input.data[0] != '[' || input.data[input.len - 1] != ']') {
+        return 0;
+    }
+    const char *literal = input.data + 1;
+    size_t literal_len = input.len - 2;
+    if (literal_len > 5 && ptn_filter_ascii_case_equal_len(literal, "IPv6:", 5)) {
+        return ptn_filter_validate_ipv6_literal(literal + 5, literal_len - 5);
+    }
+    PtnStringOperand ipv4 = ptn_string_operand_borrowed_len(literal, literal_len);
+    return ptn_filter_validate_ipv4_operand(ipv4);
+}
+
+static int ptn_filter_validate_email_domain_operand(PtnStringOperand input) {
+    if (ptn_filter_validate_email_domain_literal(input)) {
+        return 1;
+    }
+    if (input.len == 0 || input.data[input.len - 1] == '.' ||
+        memchr(input.data, '.', input.len) == NULL ||
+        !ptn_filter_validate_domain_operand(input, PTN_FILTER_FLAG_HOSTNAME)) {
+        return 0;
+    }
+    size_t tld_start = input.len;
+    while (tld_start > 0 && input.data[tld_start - 1] != '.') {
+        tld_start--;
+    }
+    int has_non_digit = 0;
+    for (size_t i = tld_start; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (!isdigit(byte)) {
+            has_non_digit = 1;
+            break;
+        }
+    }
+    return has_non_digit;
+}
+
+static int ptn_filter_validate_email_operand(PtnStringOperand input, int64_t flags) {
+    if (input.len == 0 || input.len > 254) {
+        return 0;
+    }
+    int allow_unicode = (flags & PTN_FILTER_FLAG_EMAIL_UNICODE) != 0;
+    size_t at = SIZE_MAX;
+    if (input.data[0] == '"') {
+        int escaped = 0;
+        for (size_t i = 1; i < input.len; i++) {
+            unsigned char byte = (unsigned char)input.data[i];
+            if (escaped) {
+                escaped = 0;
+                continue;
+            }
+            if (byte == '\\') {
+                escaped = 1;
+                continue;
+            }
+            if (byte == '"') {
+                if (i + 1 >= input.len || input.data[i + 1] != '@') {
+                    return 0;
+                }
+                at = i + 1;
+                break;
+            }
+        }
+        if (at == SIZE_MAX ||
+            !ptn_filter_validate_email_quoted_local(input.data, at, allow_unicode)) {
+            return 0;
+        }
+    } else {
+        const void *found = memchr(input.data, '@', input.len);
+        if (found == NULL) {
+            return 0;
+        }
+        at = (size_t)((const char *)found - input.data);
+        if (!ptn_filter_validate_email_dot_atom_local(input.data, at, allow_unicode)) {
+            return 0;
+        }
+    }
+    if (at + 1 >= input.len) {
+        return 0;
+    }
+    PtnStringOperand domain = ptn_string_operand_borrowed_len(
+        input.data + at + 1,
+        input.len - at - 1
+    );
+    return ptn_filter_validate_email_domain_operand(domain);
+}
+
+static int ptn_filter_validate_domain_label(
+    const char *data,
+    size_t len,
+    int require_hostname
+) {
+    if (len == 0 || len > 63) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        int alnum = isalnum(byte);
+        if (require_hostname) {
+            if (!(alnum || byte == '-')) {
+                return 0;
+            }
+            if ((i == 0 || i + 1 == len) && !alnum) {
+                return 0;
+            }
+        } else if (!(alnum || byte == '-' || byte == '_')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_domain_operand(PtnStringOperand input, int64_t flags) {
+    if (input.len == 0 || input.len > 254) {
+        return 0;
+    }
+    size_t end = input.len;
+    if (end > 1 && input.data[end - 1] == '.') {
+        end--;
+    }
+    if (end == 0 || end > 253) {
+        return 0;
+    }
+    int require_hostname = (flags & PTN_FILTER_FLAG_HOSTNAME) != 0;
+    size_t label_start = 0;
+    for (size_t i = 0; i <= end; i++) {
+        if (i != end && input.data[i] != '.') {
+            continue;
+        }
+        if (!ptn_filter_validate_domain_label(
+                input.data + label_start,
+                i - label_start,
+                require_hostname
+            )) {
+            return 0;
+        }
+        label_start = i + 1;
+    }
+    return 1;
 }
 
 static int ptn_filter_validate_url_operand(PtnStringOperand input) {
@@ -17659,16 +18042,31 @@ static int ptn_filter_validate_url_operand(PtnStringOperand input) {
         return 0;
     }
     size_t host_start = (size_t)(found - input.data) + strlen(marker);
-    return host_start < input.len && memchr(input.data + host_start, '.', input.len - host_start) != NULL;
+    if (host_start >= input.len) {
+        return 0;
+    }
+    size_t host_end = host_start;
+    while (host_end < input.len &&
+        input.data[host_end] != '/' &&
+        input.data[host_end] != '?' &&
+        input.data[host_end] != '#') {
+        host_end++;
+    }
+    if (host_end == host_start) {
+        return 0;
+    }
+    PtnStringOperand host = ptn_string_operand_borrowed_len(
+        input.data + host_start,
+        host_end - host_start
+    );
+    return memchr(host.data, '.', host.len) != NULL &&
+        ptn_filter_validate_domain_operand(host, PTN_FILTER_FLAG_HOSTNAME);
 }
 
-static int ptn_filter_validate_domain_operand(PtnStringOperand input) {
-    return input.len != 0 && input.data[0] != '.' && input.data[input.len - 1] != '.';
-}
-
-static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
+static int ptn_filter_parse_ipv4_operand(PtnStringOperand input, uint32_t *out) {
     int parts = 0;
     size_t i = 0;
+    uint32_t address = 0;
     while (i < input.len) {
         if (!isdigit((unsigned char)input.data[i])) {
             return 0;
@@ -17684,8 +18082,13 @@ static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
             i++;
         }
         parts++;
+        address = (address << 8) | (uint32_t)value;
         if (parts == 4) {
-            return i == input.len;
+            if (i == input.len) {
+                *out = address;
+                return 1;
+            }
+            return 0;
         }
         if (i >= input.len || input.data[i] != '.') {
             return 0;
@@ -17693,6 +18096,40 @@ static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
         i++;
     }
     return 0;
+}
+
+static uint32_t ptn_filter_ipv4_address(unsigned a, unsigned b, unsigned c, unsigned d) {
+    return ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
+}
+
+static int ptn_filter_ipv4_in_cidr(uint32_t address, uint32_t network, unsigned prefix_len) {
+    uint32_t mask = prefix_len == 0 ? 0 : UINT32_MAX << (32 - prefix_len);
+    return (address & mask) == (network & mask);
+}
+
+static int ptn_filter_validate_ipv4_operand_with_flags(PtnStringOperand input, int64_t flags) {
+    uint32_t address = 0;
+    if (!ptn_filter_parse_ipv4_operand(input, &address)) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_PRIV_RANGE) != 0 &&
+        (ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(10, 0, 0, 0), 8) ||
+         ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(172, 16, 0, 0), 12) ||
+         ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(192, 168, 0, 0), 16))) {
+        return 0;
+    }
+    if ((flags & PTN_FILTER_FLAG_NO_RES_RANGE) != 0 &&
+        (ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(0, 0, 0, 0), 8) ||
+         ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(127, 0, 0, 0), 8) ||
+         ptn_filter_ipv4_in_cidr(address, ptn_filter_ipv4_address(169, 254, 0, 0), 16) ||
+         address == ptn_filter_ipv4_address(255, 255, 255, 255))) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_filter_validate_ipv4_operand(PtnStringOperand input) {
+    return ptn_filter_validate_ipv4_operand_with_flags(input, 0);
 }
 
 static int ptn_filter_validate_mac_operand(PtnStringOperand input) {
@@ -17748,30 +18185,42 @@ static PtnValue ptn_filter_apply_scalar(
     size_t line
 ) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_ARRAY || value.type == PTN_OBJECT) {
-        return ptn_filter_failure_value(options);
+    if (value.type == PTN_ARRAY) {
+        return ptn_filter_failure_not_scalar(runtime, options, value);
+    }
+    if (value.type == PTN_OBJECT && !ptn_filter_object_has_to_string(runtime, value)) {
+        return ptn_filter_failure_object_no_to_string(runtime, options, value);
     }
 
     if (filter_id == PTN_FILTER_VALIDATE_INT) {
         PtnStringOperand input = ptn_filter_scalar_string_operand(runtime, value, line);
         int64_t parsed = 0;
         int ok = ptn_filter_parse_int_operand(input, options, &parsed);
+        PtnValue result = ok
+            ? ptn_int(parsed)
+            : ptn_filter_failure_unsatisfied(runtime, options, filter_id, input);
         ptn_string_operand_free(input);
-        return ok ? ptn_int(parsed) : ptn_filter_failure_value(options);
+        return result;
     }
     if (filter_id == PTN_FILTER_VALIDATE_FLOAT) {
         PtnStringOperand input = ptn_filter_scalar_string_operand(runtime, value, line);
         double parsed = 0.0;
         int ok = ptn_filter_parse_float_operand(input, options, &parsed);
+        PtnValue result = ok
+            ? ptn_float(parsed)
+            : ptn_filter_failure_unsatisfied(runtime, options, filter_id, input);
         ptn_string_operand_free(input);
-        return ok ? ptn_float(parsed) : ptn_filter_failure_value(options);
+        return result;
     }
     if (filter_id == PTN_FILTER_VALIDATE_BOOLEAN) {
         PtnStringOperand input = ptn_filter_scalar_string_operand(runtime, value, line);
         int parsed = 0;
         int ok = ptn_filter_parse_boolean_operand(input, &parsed);
+        PtnValue result = ok
+            ? ptn_bool(parsed)
+            : ptn_filter_failure_unsatisfied(runtime, options, filter_id, input);
         ptn_string_operand_free(input);
-        return ok ? ptn_bool(parsed) : ptn_filter_failure_value(options);
+        return result;
     }
     if (filter_id == PTN_FILTER_VALIDATE_EMAIL || filter_id == PTN_FILTER_VALIDATE_URL ||
         filter_id == PTN_FILTER_VALIDATE_DOMAIN || filter_id == PTN_FILTER_VALIDATE_IP ||
@@ -17779,13 +18228,13 @@ static PtnValue ptn_filter_apply_scalar(
         PtnStringOperand input = ptn_filter_scalar_string_operand(runtime, value, line);
         int ok = 0;
         if (filter_id == PTN_FILTER_VALIDATE_EMAIL) {
-            ok = ptn_filter_validate_email_operand(input);
+            ok = ptn_filter_validate_email_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_URL) {
             ok = ptn_filter_validate_url_operand(input);
         } else if (filter_id == PTN_FILTER_VALIDATE_DOMAIN) {
-            ok = ptn_filter_validate_domain_operand(input);
+            ok = ptn_filter_validate_domain_operand(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_IP) {
-            ok = ptn_filter_validate_ipv4_operand(input);
+            ok = ptn_filter_validate_ipv4_operand_with_flags(input, options->flags);
         } else if (filter_id == PTN_FILTER_VALIDATE_MAC) {
             ok = ptn_filter_validate_mac_operand(input);
         } else {
@@ -17793,13 +18242,13 @@ static PtnValue ptn_filter_apply_scalar(
         }
         PtnValue result = ok
             ? ptn_owned_string_len(ptn_duplicate_string_len(input.data, input.len), input.len)
-            : ptn_filter_failure_value(options);
+            : ptn_filter_failure_unsatisfied(runtime, options, filter_id, input);
         ptn_string_operand_free(input);
         return result;
     }
     if (filter_id == PTN_FILTER_CALLBACK) {
         if (!options->has_callback) {
-            return ptn_filter_failure_value(options);
+            return ptn_filter_failure_value(runtime, options, "filter validation failed");
         }
         PtnValue callback_arg = ptn_value_clone_deref(value);
         PtnValue result = ptn_call_callable(runtime, options->callback, 1, &callback_arg, line, 0);
@@ -17818,9 +18267,12 @@ static PtnValue ptn_filter_apply_value(
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
+        if ((options->flags & PTN_FILTER_REQUIRE_SCALAR) != 0) {
+            return ptn_filter_failure_not_scalar(runtime, options, value);
+        }
         if (filter_id != PTN_FILTER_CALLBACK &&
             (options->flags & (PTN_FILTER_REQUIRE_ARRAY | PTN_FILTER_FORCE_ARRAY)) == 0) {
-            return ptn_filter_failure_value(options);
+            return ptn_filter_failure_not_scalar(runtime, options, value);
         }
         PtnFilterOptions child_options = *options;
         child_options.flags &= ~(PTN_FILTER_REQUIRE_ARRAY | PTN_FILTER_FORCE_ARRAY);
@@ -17838,7 +18290,7 @@ static PtnValue ptn_filter_apply_value(
         return result;
     }
     if ((options->flags & PTN_FILTER_REQUIRE_ARRAY) != 0) {
-        return ptn_filter_failure_value(options);
+        return ptn_filter_failure_not_array(runtime, options, value);
     }
     PtnValue filtered = ptn_filter_apply_scalar(runtime, value, filter_id, options, line);
     if ((options->flags & PTN_FILTER_FORCE_ARRAY) != 0) {
@@ -17879,6 +18331,117 @@ static PtnValue ptn_internal_filter_var(PtnRuntime *runtime, size_t argc, const 
         return ptn_bool(0);
     }
     return ptn_filter_apply_value(runtime, args[0], filter_id, &options, line);
+}
+
+static const char *ptn_filter_input_global_name(int64_t input_type) {
+    switch (input_type) {
+        case PTN_INPUT_GET:
+            return "_GET";
+        case PTN_INPUT_POST:
+            return "_POST";
+        case PTN_INPUT_COOKIE:
+            return "_COOKIE";
+        case PTN_INPUT_ENV:
+            return "_ENV";
+        case PTN_INPUT_SERVER:
+            return "_SERVER";
+        default:
+            return NULL;
+    }
+}
+
+static PtnValue ptn_internal_filter_input(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t input_type = ptn_value_to_integer(args[0]);
+    const char *global_name = ptn_filter_input_global_name(input_type);
+    if (global_name == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand variable_name =
+        ptn_internal_expect_string_arg(runtime, "filter_input", 2, "var_name", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(variable_name);
+        return ptn_null();
+    }
+    int64_t filter_id = argc >= 3 ? ptn_value_to_integer(args[2]) : PTN_FILTER_DEFAULT;
+    PtnFilterOptions options;
+    if (!ptn_filter_options_from_value(runtime, argc >= 4 ? args[3] : ptn_null(), &options, line)) {
+        ptn_string_operand_free(variable_name);
+        return ptn_null();
+    }
+    if (!ptn_filter_validate_id(runtime, "filter_input", filter_id, line)) {
+        ptn_string_operand_free(variable_name);
+        return ptn_bool(0);
+    }
+
+    PtnLookupResult global = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+    PtnValue container = ptn_value_deref(global.value);
+    if (!global.exists || container.type != PTN_ARRAY) {
+        if (!options.has_default && (options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "input value '%.*s' not found",
+                (int)variable_name.len,
+                variable_name.data
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "input value '%.*s' not found",
+                (int)variable_name.len,
+                variable_name.data
+            );
+            ptn_string_operand_free(variable_name);
+            return ptn_filter_failure_owned_message(runtime, &options, message);
+        }
+        ptn_string_operand_free(variable_name);
+        return options.has_default
+            ? ptn_value_clone_deref(options.default_value)
+            : ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key_len(variable_name.data, variable_name.len);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        if (!options.has_default && (options.flags & PTN_FILTER_THROW_ON_FAILURE) != 0) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "input value '%.*s' not found",
+                (int)variable_name.len,
+                variable_name.data
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "input value '%.*s' not found",
+                (int)variable_name.len,
+                variable_name.data
+            );
+            ptn_string_operand_free(variable_name);
+            return ptn_filter_failure_owned_message(runtime, &options, message);
+        }
+        ptn_string_operand_free(variable_name);
+        return options.has_default
+            ? ptn_value_clone_deref(options.default_value)
+            : ptn_null();
+    }
+    ptn_string_operand_free(variable_name);
+    return ptn_filter_apply_value(runtime, entry->value, filter_id, &options, line);
 }
 
 static int ptn_filter_spec_from_value(
@@ -75233,6 +75796,7 @@ static void ptn_defined_constants_add_filter(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "FILTER_REQUIRE_SCALAR", PTN_FILTER_REQUIRE_SCALAR);
     ptn_get_defined_constants_add_int(table, "FILTER_FORCE_ARRAY", PTN_FILTER_FORCE_ARRAY);
     ptn_get_defined_constants_add_int(table, "FILTER_NULL_ON_FAILURE", PTN_FILTER_NULL_ON_FAILURE);
+    ptn_get_defined_constants_add_int(table, "FILTER_THROW_ON_FAILURE", PTN_FILTER_THROW_ON_FAILURE);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_ALLOW_OCTAL", PTN_FILTER_FLAG_ALLOW_OCTAL);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_ALLOW_HEX", PTN_FILTER_FLAG_ALLOW_HEX);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_STRIP_LOW", PTN_FILTER_FLAG_STRIP_LOW);
@@ -75249,7 +75813,8 @@ static void ptn_defined_constants_add_filter(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_PATH_REQUIRED", PTN_FILTER_FLAG_PATH_REQUIRED);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_QUERY_REQUIRED", PTN_FILTER_FLAG_QUERY_REQUIRED);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_IPV4", PTN_FILTER_FLAG_IPV4);
-    ptn_get_defined_constants_add_int(table, "FILTER_FLAG_HOSTNAME", PTN_FILTER_FLAG_IPV4);
+    ptn_get_defined_constants_add_int(table, "FILTER_FLAG_HOSTNAME", PTN_FILTER_FLAG_HOSTNAME);
+    ptn_get_defined_constants_add_int(table, "FILTER_FLAG_EMAIL_UNICODE", PTN_FILTER_FLAG_EMAIL_UNICODE);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_IPV6", PTN_FILTER_FLAG_IPV6);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_NO_PRIV_RANGE", PTN_FILTER_FLAG_NO_PRIV_RANGE);
     ptn_get_defined_constants_add_int(table, "FILTER_FLAG_NO_RES_RANGE", PTN_FILTER_FLAG_NO_RES_RANGE);
@@ -75625,6 +76190,7 @@ static int ptn_reflection_constant_is_filter(const char *name) {
         "FILTER_REQUIRE_SCALAR",
         "FILTER_FORCE_ARRAY",
         "FILTER_NULL_ON_FAILURE",
+        "FILTER_THROW_ON_FAILURE",
         "FILTER_FLAG_ALLOW_OCTAL",
         "FILTER_FLAG_ALLOW_HEX",
         "FILTER_FLAG_STRIP_LOW",
@@ -75642,6 +76208,7 @@ static int ptn_reflection_constant_is_filter(const char *name) {
         "FILTER_FLAG_QUERY_REQUIRED",
         "FILTER_FLAG_IPV4",
         "FILTER_FLAG_HOSTNAME",
+        "FILTER_FLAG_EMAIL_UNICODE",
         "FILTER_FLAG_IPV6",
         "FILTER_FLAG_NO_PRIV_RANGE",
         "FILTER_FLAG_NO_RES_RANGE",
@@ -115160,6 +115727,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "filesize", 1, 1, ptn_internal_filesize },
         { "filetype", 1, 1, ptn_internal_filetype },
         { "filter_id", 1, 1, ptn_internal_filter_id },
+        { "filter_input", 2, 4, ptn_internal_filter_input },
         { "filter_list", 0, 0, ptn_internal_filter_list },
         { "filter_var", 1, 3, ptn_internal_filter_var },
         { "filter_var_array", 1, 3, ptn_internal_filter_var_array },

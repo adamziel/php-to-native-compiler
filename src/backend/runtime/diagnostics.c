@@ -2273,6 +2273,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->filter_default = ptn_duplicate_string(
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default
     );
+    if (configured_filter_default != NULL &&
+        ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+        runtime->diagnostics.emitted_deprecation = 1;
+        ptn_diagnostic_output_cstr(
+            &runtime->diagnostics,
+            "Deprecated: The filter.default ini setting is deprecated in Unknown on line 0\n"
+        );
+    }
     runtime->pcre_backtrack_limit = ptn_duplicate_string(
         configured_pcre_backtrack_limit == NULL ? "1000000" : configured_pcre_backtrack_limit
     );

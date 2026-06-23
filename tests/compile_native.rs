@@ -57297,6 +57297,53 @@ O&#39;Henry&#60;b&#62;Bold&#60;/b&#62;&#34;quotes&#34;\\slash"
 }
 
 #[test]
+fn phpc_filter_validation_and_input_semantics() {
+    let root = temp_dir("ptn-phpc-filter-validation-input");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-validation-input.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(filter_input(INPUT_ENV, 'PTN_FILTER_ENV_TEST'));\n\
+var_dump(filter_input(INPUT_GET, 'missing', FILTER_VALIDATE_INT, ['options' => ['default' => 23]]));\n\
+var_dump(filter_var('10.0.0.1', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE));\n\
+var_dump(filter_var('127.255.255.255', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var('100.64.0.0', FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_RES_RANGE));\n\
+var_dump(filter_var(\"!@#$%^&*()><<>+_\\\"'<br><p /><li />\", 513));\n\
+var_dump(filter_var('\"verî.uñusual.@.uñusual.com\"@example.com', FILTER_VALIDATE_EMAIL, FILTER_FLAG_EMAIL_UNICODE));\n\
+try {\n\
+    filter_var_array(['a' => true], ['a' => ['filter' => FILTER_VALIDATE_EMAIL, 'flags' => FILTER_THROW_ON_FAILURE]]);\n\
+} catch (Filter\\FilterFailedException $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("variables_order=EGPCS")
+        .arg("run")
+        .arg(&input)
+        .env("PTN_FILTER_ENV_TEST", "env-value")
+        .env("QUERY_STRING", "")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(9) \"env-value\"\n\
+int(23)\n\
+bool(false)\n\
+bool(false)\n\
+string(10) \"100.64.0.0\"\n\
+string(11) \"!@#$%^&*()>\"\n\
+string(43) \"\"verî.uñusual.@.uñusual.com\"@example.com\"\n\
+Filter\\FilterFailedException: filter validation failed: filter validate_email not satisfied by '1'\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cgi_php_input_fopen_streams_are_seekable_and_independent() {
     let root = temp_dir("ptn-phpc-cgi-php-input-stream");
     fs::create_dir_all(&root).unwrap();
