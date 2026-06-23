@@ -18306,7 +18306,9 @@ fn emit_runtime_return_signature_compatibility_validation(
         if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
             (return_type, parent_return_type)
         {
-            if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
+            if !target_name.eq_ignore_ascii_case(&class.name)
+                && runtime_return_candidate_should_autoload(candidate_name, target_name, classes)
+            {
                 emit_runtime_signature_type_autoload(
                     out,
                     candidate_name,
