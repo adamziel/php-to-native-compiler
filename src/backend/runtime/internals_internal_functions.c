@@ -7499,6 +7499,10 @@ static const PtnParameterMetadata PTN_INTERNAL_COLLATOR_SORT_WITH_SORT_KEYS_PARA
     { "array", "array", "array", 0, 1, 1, 0, 0, NULL, NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_COLLATOR_GET_SORT_KEY_PARAMETERS[] = {
+    { "string", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+};
+
 static const PtnParameterMetadata PTN_INTERNAL_DATETIME_SETTIME_PARAMETERS[] = {
     { "hour", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
     { "minute", "int", "int", 0, 1, 0, 0, 1, NULL, NULL, NULL },
@@ -65502,6 +65506,7 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
 
 typedef struct PtnIcuConverter PtnIcuConverter;
 typedef struct PtnIcuCollator PtnIcuCollator;
+typedef uint16_t PtnIcuUChar;
 
 typedef struct {
     int attempted;
@@ -65516,9 +65521,11 @@ typedef struct {
     uint16_t (*ucnv_countAliases)(const char *, int32_t *);
     const char *(*ucnv_getAlias)(const char *, uint16_t, int32_t *);
     const char *(*u_errorName)(int32_t);
+    PtnIcuUChar *(*u_strFromUTF8)(PtnIcuUChar *, int32_t, int32_t *, const char *, int32_t, int32_t *);
     PtnIcuCollator *(*ucol_open)(const char *, int32_t *);
     void (*ucol_close)(PtnIcuCollator *);
     int32_t (*ucol_strcollUTF8)(const PtnIcuCollator *, const char *, int32_t, const char *, int32_t, int32_t *);
+    int32_t (*ucol_getSortKey)(const PtnIcuCollator *, const PtnIcuUChar *, int32_t, uint8_t *, int32_t);
     const char *(*ucol_getLocaleByType)(const PtnIcuCollator *, int32_t, int32_t *);
     void (*ucol_setStrength)(PtnIcuCollator *, int32_t);
     int32_t (*ucol_getStrength)(const PtnIcuCollator *);
@@ -65616,34 +65623,34 @@ static PtnIcuApi *ptn_icu_load(void) {
     ptn_icu_api.attempted = 1;
 #if !defined(_WIN32)
     static const char *const uc_names[] = {
+        "libicuuc.so.73",
         "libicuuc.so.76",
         "libicuuc.so.75",
         "libicuuc.so.74",
-        "libicuuc.so.73",
         "libicuuc.so",
         NULL
     };
     static const char *const uc_patterns[] = {
+        "/nix/store/*-icu4c-*/lib/libicuuc.so.73*",
         "/nix/store/*-icu4c-*/lib/libicuuc.so.76*",
         "/nix/store/*-icu4c-*/lib/libicuuc.so.75*",
         "/nix/store/*-icu4c-*/lib/libicuuc.so.74*",
-        "/nix/store/*-icu4c-*/lib/libicuuc.so.73*",
         "/nix/store/*-icu4c-*/lib/libicuuc.so",
         NULL
     };
     static const char *const i18n_names[] = {
+        "libicui18n.so.73",
         "libicui18n.so.76",
         "libicui18n.so.75",
         "libicui18n.so.74",
-        "libicui18n.so.73",
         "libicui18n.so",
         NULL
     };
     static const char *const i18n_patterns[] = {
+        "/nix/store/*-icu4c-*/lib/libicui18n.so.73*",
         "/nix/store/*-icu4c-*/lib/libicui18n.so.76*",
         "/nix/store/*-icu4c-*/lib/libicui18n.so.75*",
         "/nix/store/*-icu4c-*/lib/libicui18n.so.74*",
-        "/nix/store/*-icu4c-*/lib/libicui18n.so.73*",
         "/nix/store/*-icu4c-*/lib/libicui18n.so",
         NULL
     };
@@ -65676,10 +65683,12 @@ static PtnIcuApi *ptn_icu_load(void) {
     PTN_ICU_LOAD_UC(ucnv_getAvailableName, "ucnv_getAvailableName");
     PTN_ICU_LOAD_UC(ucnv_countAliases, "ucnv_countAliases");
     PTN_ICU_LOAD_UC(ucnv_getAlias, "ucnv_getAlias");
+    PTN_ICU_LOAD_UC(u_strFromUTF8, "u_strFromUTF8");
     if (ptn_icu_api.i18n_handle != NULL) {
         PTN_ICU_LOAD_I18N(ucol_open, "ucol_open");
         PTN_ICU_LOAD_I18N(ucol_close, "ucol_close");
         PTN_ICU_LOAD_I18N(ucol_strcollUTF8, "ucol_strcollUTF8");
+        PTN_ICU_LOAD_I18N(ucol_getSortKey, "ucol_getSortKey");
         PTN_ICU_LOAD_I18N(ucol_getLocaleByType, "ucol_getLocaleByType");
         PTN_ICU_LOAD_I18N(ucol_setStrength, "ucol_setStrength");
         PTN_ICU_LOAD_I18N(ucol_getStrength, "ucol_getStrength");
@@ -66123,6 +66132,91 @@ static PtnValue ptn_internal_collator_compare(PtnRuntime *runtime, size_t argc, 
     return ptn_intl_collator_compare_values(runtime, args[0], args[1], args[2], line);
 }
 
+static PtnValue ptn_intl_collator_get_sort_key_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue string_value,
+    const char *function_name,
+    size_t string_position,
+    size_t line
+) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Object not initialized");
+        return ptn_null();
+    }
+    PtnStringOperand source =
+        ptn_internal_expect_string_arg(runtime, function_name, string_position, "string", string_value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (source.len > (size_t)INT32_MAX) {
+        ptn_string_operand_free(source);
+        return ptn_bool(0);
+    }
+
+    PtnIcuApi *api = ptn_icu_load();
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuCollator *collator =
+        api == NULL || api->ucol_getSortKey == NULL || api->u_strFromUTF8 == NULL
+            ? NULL
+            : ptn_intl_collator_open(data, &status);
+    if (collator == NULL || ptn_icu_failure(status)) {
+        ptn_string_operand_free(source);
+        return ptn_bool(0);
+    }
+
+    int32_t utf16_capacity = (int32_t)source.len + 1;
+    PtnIcuUChar *utf16 = malloc(sizeof(PtnIcuUChar) * (size_t)utf16_capacity);
+    if (utf16 == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int32_t utf16_len = 0;
+    status = PTN_ICU_ZERO_ERROR;
+    api->u_strFromUTF8(
+        utf16,
+        utf16_capacity,
+        &utf16_len,
+        source.data,
+        (int32_t)source.len,
+        &status
+    );
+    ptn_string_operand_free(source);
+    if (ptn_icu_failure(status)) {
+        free(utf16);
+        api->ucol_close(collator);
+        return ptn_bool(0);
+    }
+
+    int32_t needed = api->ucol_getSortKey(collator, utf16, utf16_len, NULL, 0);
+    if (needed <= 0) {
+        free(utf16);
+        api->ucol_close(collator);
+        return ptn_bool(0);
+    }
+    uint8_t *sort_key = malloc((size_t)needed);
+    if (sort_key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int32_t written = api->ucol_getSortKey(collator, utf16, utf16_len, sort_key, needed);
+    free(utf16);
+    api->ucol_close(collator);
+    if (written <= 0 || written > needed) {
+        free(sort_key);
+        return ptn_bool(0);
+    }
+    size_t result_len = (size_t)written;
+    if (result_len > 0 && sort_key[result_len - 1] == '\0') {
+        result_len--;
+    }
+    return ptn_owned_string_len((char *)sort_key, result_len);
+}
+
+static PtnValue ptn_internal_collator_get_sort_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_intl_collator_get_sort_key_value(runtime, args[0], args[1], "collator_get_sort_key", 2, line);
+}
+
 static PtnValue ptn_intl_collator_get_locale_value(PtnValue receiver, PtnValue type_value) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL) {
@@ -66237,6 +66331,9 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     }
     if (ptn_ascii_case_equal(name, "getLocale")) {
         return ptn_intl_collator_get_locale_value(receiver, args[0]);
+    }
+    if (ptn_ascii_case_equal(name, "getSortKey")) {
+        return ptn_intl_collator_get_sort_key_value(runtime, receiver, args[0], "Collator::getSortKey", 1, line);
     }
     if (ptn_ascii_case_equal(name, "getAttribute")) {
         return ptn_intl_collator_get_attribute_value(receiver, args[0], "Collator::getAttribute");
@@ -130631,6 +130728,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "collator_get_attribute", 2, 2, ptn_internal_collator_get_attribute },
         { "collator_get_error_message", 1, 1, ptn_internal_collator_get_error_message },
         { "collator_get_locale", 2, 2, ptn_internal_collator_get_locale },
+        { "collator_get_sort_key", 2, 2, ptn_internal_collator_get_sort_key },
         { "collator_get_strength", 1, 1, ptn_internal_collator_get_strength },
         { "collator_set_strength", 2, 2, ptn_internal_collator_set_strength },
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
@@ -135073,6 +135171,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getAttribute")
             || ptn_ascii_case_equal(method_name, "getErrorMessage")
             || ptn_ascii_case_equal(method_name, "getLocale")
+            || ptn_ascii_case_equal(method_name, "getSortKey")
             || ptn_ascii_case_equal(method_name, "getStrength")
             || ptn_ascii_case_equal(method_name, "setStrength")
             || ptn_ascii_case_equal(method_name, "sort")
@@ -136258,6 +136357,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getAttribute",
             "getErrorMessage",
             "getLocale",
+            "getSortKey",
             "getStrength",
             "setStrength",
             "sort",
@@ -140304,6 +140404,22 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
                 "bool",
                 0,
                 1
+            );
+        }
+        if (ptn_ascii_case_equal(data->name, "getSortKey")) {
+            return ptn_function_metadata_found(
+                "Collator::getSortKey",
+                1,
+                sizeof(PTN_INTERNAL_COLLATOR_GET_SORT_KEY_PARAMETERS) /
+                    sizeof(PTN_INTERNAL_COLLATOR_GET_SORT_KEY_PARAMETERS[0]),
+                1,
+                0,
+                PTN_INTERNAL_COLLATOR_GET_SORT_KEY_PARAMETERS,
+                0,
+                "string|false",
+                "string|false",
+                0,
+                0
             );
         }
     }

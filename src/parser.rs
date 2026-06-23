@@ -22779,6 +22779,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "collator_get_attribute"
             | "collator_get_error_message"
             | "collator_get_locale"
+            | "collator_get_sort_key"
             | "collator_get_strength"
             | "collator_set_strength"
             | "collator_sort"

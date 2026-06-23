@@ -41251,6 +41251,41 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_collator_sort_key_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-collator-sort-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-collator-sort-key.php");
+    let output = root.join("intl-collator-sort-key-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$coll = collator_create('en_US');\n\
+var_dump(function_exists('collator_get_sort_key'));\n\
+var_dump(method_exists($coll, 'getSortKey'));\n\
+echo bin2hex(collator_get_sort_key($coll, 'abc')), \"\\n\";\n\
+echo bin2hex($coll->getSortKey('abd')), \"\\n\";\n\
+class Collator2 extends Collator { public function __construct() {} }\n\
+try {\n\
+    (new Collator2())->getSortKey('h');\n\
+    echo \"returned\\n\";\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n2a2c2e01070107\n2a2c3001070107\nError: Object not initialized\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_xmlwriter_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-xmlwriter-extension-surface");
     fs::create_dir_all(&root).unwrap();
