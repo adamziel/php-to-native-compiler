@@ -30158,8 +30158,9 @@ fn hash_ext_sources() -> Vec<PathBuf> {
         "hash_tiger.c",
         "hash_whirlpool.c",
         "hash_xxhash.c",
+        "murmur/PMurHash.c",
+        "murmur/PMurHash128.c",
         "ptn_hash_ext.c",
-        "ptn_std_md5.c",
         "ptn_std_sha1.c",
     ]
     .into_iter()

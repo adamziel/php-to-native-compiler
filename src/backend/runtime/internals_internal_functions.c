@@ -9452,7 +9452,9 @@ static int ptn_serialize_declared_magic_method_exists(
         state->runtime != NULL &&
         state->runtime->method_dispatch != NULL &&
         object != NULL &&
-        ptn_declared_class_method_exists(object->class_name, method_name);
+        (ptn_declared_class_method_exists(object->class_name, method_name) ||
+         (ptn_ascii_case_equal(object->class_name, "HashContext") &&
+          ptn_ascii_case_equal(method_name, "__serialize")));
 }
 
 static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
@@ -12079,6 +12081,9 @@ static int ptn_unserialize_declared_magic_method_exists(
     }
     if (!ptn_ascii_case_equal(method_name, "__unserialize")) {
         return 0;
+    }
+    if (ptn_internal_class_name_is_hash_context(resolved.as.object->class_name)) {
+        return ptn_internal_class_method_exists("HashContext", "__unserialize");
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
@@ -56404,7 +56409,7 @@ static PtnValue ptn_hash_context_call_method(
 ) {
     (void)line;
     receiver = ptn_value_deref(receiver);
-    if (receiver.type != PTN_OBJECT || !ptn_internal_class_name_is_hash_context(receiver.as.object->class_name)) {
+    if (receiver.type != PTN_OBJECT || !ptn_ascii_case_equal(receiver.as.object->class_name, "HashContext")) {
         ptn_throw_exception(runtime, "Error", "Call to undefined method");
         return ptn_null();
     }
@@ -106173,10 +106178,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "hash", 2, 3, ptn_internal_hash },
+        { "hash_algos", 0, 0, ptn_internal_hash_algos },
         { "hash_copy", 1, 1, ptn_internal_hash_copy },
         { "hash_equals", 2, 2, ptn_internal_hash_equals },
         { "hash_final", 1, 2, ptn_internal_hash_final },
         { "hash_init", 1, 3, ptn_internal_hash_init },
+        { "hash_update", 2, 2, ptn_internal_hash_update },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "show_source", 1, 2, ptn_internal_highlight_file },
@@ -109831,6 +109838,10 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
         return ptn_ascii_case_equal(method_name, "getModifierNames");
+    }
+    if (ptn_internal_class_name_is_hash_context(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__unserialize");
     }
     if (ptn_internal_class_name_is_reflection_class(class_name) ||
         ptn_internal_class_name_is_reflection_object(class_name)) {
