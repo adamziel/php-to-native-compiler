@@ -66791,6 +66791,20 @@ static int ptn_mb_encoding_is_windows_1254(const char *encoding) {
         (ptn_ascii_case_equal(encoding, "Windows-1254") || ptn_ascii_case_equal(encoding, "CP1254"));
 }
 
+static int ptn_mb_encoding_is_utf16be_family(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "UTF-16BE") ||
+            ptn_ascii_case_equal(encoding, "UCS-2BE") ||
+            ptn_ascii_case_equal(encoding, "byte2be"));
+}
+
+static int ptn_mb_encoding_is_utf16le_family(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "UTF-16LE") ||
+            ptn_ascii_case_equal(encoding, "UCS-2LE") ||
+            ptn_ascii_case_equal(encoding, "byte2le"));
+}
+
 static uint32_t ptn_mb_windows_1254_decode_byte(unsigned char byte) {
     static const uint16_t c1_table[32] = {
         0x20ac, 0xffff, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
@@ -66898,6 +66912,76 @@ static char *ptn_mb_windows_1254_encode_from_utf8_alloc(
     return output.data;
 }
 
+static char *ptn_mb_windows_1254_encode_from_utf16_alloc(
+    const char *input,
+    size_t input_len,
+    int little_endian,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < input_len) {
+        if (offset + 1 >= input_len) {
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+            break;
+        }
+        unsigned char first = (unsigned char)input[offset];
+        unsigned char second = (unsigned char)input[offset + 1];
+        uint32_t cp = little_endian ? ((uint32_t)second << 8) | first : ((uint32_t)first << 8) | second;
+        offset += 2;
+        unsigned char byte = 0;
+        if ((cp < 0xd800 || cp > 0xdfff) && ptn_mb_windows_1254_encode_codepoint(cp, &byte)) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            continue;
+        }
+        if (illegal_chars != NULL) {
+            (*illegal_chars)++;
+        }
+        ptn_string_buffer_append_len(&output, replacement, replacement_len);
+    }
+    *output_len = output.len;
+    return output.data;
+}
+
+static char *ptn_mb_windows_1254_decode_to_utf16_alloc(
+    const char *input,
+    size_t input_len,
+    int little_endian,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input_len; i++) {
+        uint32_t cp = ptn_mb_windows_1254_decode_byte((unsigned char)input[i]);
+        if (cp == UINT32_MAX) {
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+            continue;
+        }
+        if (little_endian) {
+            ptn_string_buffer_append_char(&output, (char)(cp & 0xff));
+            ptn_string_buffer_append_char(&output, (char)((cp >> 8) & 0xff));
+        } else {
+            ptn_string_buffer_append_char(&output, (char)((cp >> 8) & 0xff));
+            ptn_string_buffer_append_char(&output, (char)(cp & 0xff));
+        }
+    }
+    *output_len = output.len;
+    return output.data;
+}
+
 static char *ptn_mb_windows_1254_convert_alloc_options(
     const char *input,
     size_t input_len,
@@ -66916,6 +67000,21 @@ static char *ptn_mb_windows_1254_convert_alloc_options(
     }
     if (from_windows_1254) {
         int64_t source_illegal = 0;
+        if (ptn_mb_encoding_is_utf16be_family(to_encoding) || ptn_mb_encoding_is_utf16le_family(to_encoding)) {
+            char *result = ptn_mb_windows_1254_decode_to_utf16_alloc(
+                input,
+                input_len,
+                ptn_mb_encoding_is_utf16le_family(to_encoding),
+                replacement,
+                replacement_len,
+                &source_illegal,
+                output_len
+            );
+            if (illegal_chars != NULL) {
+                *illegal_chars += source_illegal;
+            }
+            return result;
+        }
         size_t utf8_len = 0;
         char *utf8 = ptn_mb_windows_1254_decode_to_utf8_alloc(input, input_len, &source_illegal, &utf8_len);
         if (ptn_mb_encoding_is_utf8(to_encoding)) {
@@ -66939,6 +67038,22 @@ static char *ptn_mb_windows_1254_convert_alloc_options(
         free(utf8);
         if (illegal_chars != NULL) {
             *illegal_chars += source_illegal + target_illegal;
+        }
+        return result;
+    }
+    if (ptn_mb_encoding_is_utf16be_family(from_encoding) || ptn_mb_encoding_is_utf16le_family(from_encoding)) {
+        int64_t source_illegal = 0;
+        char *result = ptn_mb_windows_1254_encode_from_utf16_alloc(
+            input,
+            input_len,
+            ptn_mb_encoding_is_utf16le_family(from_encoding),
+            replacement,
+            replacement_len,
+            &source_illegal,
+            output_len
+        );
+        if (illegal_chars != NULL) {
+            *illegal_chars += source_illegal;
         }
         return result;
     }
