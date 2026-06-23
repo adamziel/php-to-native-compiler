@@ -1858,6 +1858,7 @@ fn compile_datetime_timezone_semantics_to_native_binary() {
         &input,
         r#"<?php
 date_default_timezone_set('UTC');
+error_reporting(E_ALL & ~E_DEPRECATED);
 
 $dt = date_create('2006-12-12');
 $tz = date_timezone_get($dt);
@@ -1889,6 +1890,27 @@ class DateTimeZoneExt extends DateTimeZone {
     }
 }
 echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
+
+$offsetTz = date_create('2012-01-01 10:00 +1:00')->getTimezone();
+echo $offsetTz->getName(), "\n";
+echo unserialize(serialize($offsetTz))->getName(), "\n";
+eval('$restored = ' . var_export(new DateTimeZone('America/New_York'), true) . ';');
+echo $restored->getName(), "\n";
+
+$transitions = timezone_transitions_get(new DateTimeZone('Europe/London'), -306972000, -37241999);
+var_dump(count($transitions));
+var_dump($transitions[6]['abbr']);
+
+date_default_timezone_set('America/Chicago');
+echo date_sunrise(mktime(8, 8, 8, 8, 11, 2008), 1, 41.85, -87.65, 90, -5), "\n";
+
+date_default_timezone_set('America/New_York');
+$spring = new DateTime('2010-03-14 03:00:00');
+echo $spring->sub(new DateInterval('PT1S'))->format('Y-m-d H:i:s T e'), "\n";
+$fallStart = new DateTime('2010-11-07 01:59:59');
+$fallEnd = new DateTime('2010-11-07 01:00:00 EST');
+$fallEnd->setTimezone(new DateTimeZone('America/New_York'));
+echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
 "#,
     )
     .unwrap();
@@ -1916,6 +1938,14 @@ echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
             "string(10) \"US/Eastern\"\n",
             "string(3) \"UTC\"\n",
             "Europe/Kyiv\n",
+            "+01:00\n",
+            "+01:00\n",
+            "America/New_York\n",
+            "int(18)\n",
+            "string(3) \"BST\"\n",
+            "05:58\n",
+            "2010-03-14 01:59:59 EST America/New_York\n",
+            "P0DT0H0M1S\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
