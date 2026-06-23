@@ -7986,6 +7986,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlListFormatter")
+        && ptn_internal_class_method_exists("IntlListFormatter", name)
+    ) {
+        return ptn_intl_list_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "NumberFormatter")
         && ptn_internal_class_method_exists("NumberFormatter", name)
     ) {

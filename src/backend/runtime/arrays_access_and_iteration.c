@@ -1091,6 +1091,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_intl_timezone(lookup_class_name) ||
         ptn_internal_class_name_is_intl_iterator(lookup_class_name) ||
         ptn_internal_class_name_is_message_formatter(lookup_class_name) ||
+        ptn_internal_class_name_is_intl_list_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_locale(lookup_class_name) ||
         ptn_internal_class_name_is_number_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_number_range_formatter(lookup_class_name) ||
@@ -1683,6 +1684,11 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "IntlBreakIterator")) {
         return ptn_intl_break_iterator_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "IntlDateFormatter") &&
+        source->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlDateFormatter");
+        return ptn_null();
     }
     if (ptn_internal_class_name_is_intl_number_range_formatter(source->class_name)) {
         char message[192];

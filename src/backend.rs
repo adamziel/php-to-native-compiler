@@ -7419,6 +7419,7 @@ fn emit_class_metadata_helpers(
         "IntlTimeZone",
         "IntlIterator",
         "MessageFormatter",
+        "IntlListFormatter",
         "Locale",
         "NumberFormatter",
         "IntlNumberRangeFormatter",
@@ -8190,6 +8191,7 @@ fn emit_class_metadata_helpers(
         "IntlTimeZone",
         "IntlIterator",
         "MessageFormatter",
+        "IntlListFormatter",
         "Locale",
         "NumberFormatter",
         "IntlNumberRangeFormatter",
@@ -20094,6 +20096,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intltimezone" => Some("IntlTimeZone"),
         "intliterator" => Some("IntlIterator"),
         "messageformatter" => Some("MessageFormatter"),
+        "intllistformatter" => Some("IntlListFormatter"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
@@ -29661,6 +29664,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlTimeZone")
                 || class_name.eq_ignore_ascii_case("IntlIterator")
                 || class_name.eq_ignore_ascii_case("MessageFormatter")
+                || class_name.eq_ignore_ascii_case("IntlListFormatter")
                 || class_name.eq_ignore_ascii_case("Locale")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
                 || class_name.eq_ignore_ascii_case("IntlNumberRangeFormatter")
