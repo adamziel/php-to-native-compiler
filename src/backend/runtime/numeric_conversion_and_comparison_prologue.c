@@ -2573,6 +2573,10 @@ static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
         ptn_declared_class_is_same_or_descendant(class_name, "SoapFault")) {
         return "SoapFault";
     }
+    if (ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Uri\\WhatWg\\InvalidUrlException")) {
+        return "Uri\\WhatWg\\InvalidUrlException";
+    }
     if (ptn_declared_class_is_same_or_descendant(class_name, "Error")) {
         return "Error";
     }
@@ -2583,6 +2587,9 @@ static PTN_UNUSED size_t ptn_exception_constructor_max_args(const char *declarin
     if (ptn_exception_name_equal(declaring_class, "ErrorException") ||
         ptn_exception_name_equal(declaring_class, "SoapFault")) {
         return 6;
+    }
+    if (ptn_exception_name_equal(declaring_class, "Uri\\WhatWg\\InvalidUrlException")) {
+        return 4;
     }
     return 3;
 }
@@ -2845,6 +2852,10 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     free(exception->message);
     exception->message = message.owned;
     exception->message_len = message.len;
+    if (ptn_exception_name_equal(declaring_class, "Uri\\WhatWg\\InvalidUrlException")) {
+        ptn_throw_exception(runtime, "Error", "Cannot modify readonly property Uri\\WhatWg\\InvalidUrlException::$errors");
+        return ptn_null();
+    }
     exception->code = 0;
     if (!ptn_exception_name_equal(declaring_class, "SoapFault") && argc >= 2) {
         PtnValue code_value = ptn_value_deref(args[1]);
@@ -4045,6 +4056,41 @@ static PTN_UNUSED const char *ptn_uri_comparison_mode_case_name(const char *case
     }
     if (strcmp(case_name, "ExcludeFragment") == 0) {
         return "ExcludeFragment";
+    }
+    return NULL;
+}
+
+static PTN_UNUSED const char *ptn_uri_url_validation_error_type_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "DomainInvalidCodePoint",
+        "HostMissing",
+        "HostInvalidCodePoint",
+        "InvalidCredentials",
+        "InvalidReverseSolidus",
+        "InvalidUrlUnit",
+        "PortInvalid",
+        "PortOutOfRange",
+        "MissingSchemeNonRelativeUrl",
+        "Ipv4EmptyPart",
+        "Ipv4TooManyParts",
+        "Ipv4NonNumericPart",
+        "Ipv4NonDecimalPart",
+        "Ipv4OutOfRangePart",
+        "Ipv6Unclosed",
+        "Ipv6InvalidCompression",
+        "Ipv6TooManyPieces",
+        "Ipv6MultipleCompression",
+        "Ipv6InvalidCodePoint",
+        "Ipv6TooFewPieces",
+        "Ipv4InIpv6TooManyPieces",
+        "Ipv4InIpv6InvalidCodePoint",
+        "Ipv4InIpv6OutOfRangePart",
+        "Ipv4InIpv6TooFewParts",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
     }
     return NULL;
 }
@@ -5545,6 +5591,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (comparison_mode_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\UriComparisonMode", comparison_mode_case);
+    }
+    const char *url_validation_error_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlValidationErrorType")
+        ? ptn_uri_url_validation_error_type_case_name(constant)
+        : NULL;
+    if (url_validation_error_type_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "Uri\\WhatWg\\UrlValidationErrorType", url_validation_error_type_case);
     }
     const char *property_hook_type_case = ptn_ascii_case_equal(resolved_class_name, "PropertyHookType")
         ? ptn_property_hook_type_case_name(constant)

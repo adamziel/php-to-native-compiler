@@ -2234,9 +2234,6 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
-            "array(0) {\n",
-            "}\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -78710,11 +78707,126 @@ try {
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (PortInvalid)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uri_validation_errors_and_readonly_behaviors_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-validation-errors-readonly");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-validation-errors-readonly.php");
+    let output = root.join("uri-validation-errors-readonly-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$error = new Uri\WhatWg\UrlValidationError("foo", Uri\WhatWg\UrlValidationErrorType::DomainInvalidCodePoint, true);
+try {
+    $error->__construct("bar", Uri\WhatWg\UrlValidationErrorType::HostMissing, false);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $error->context, "\n";
+echo $error->type === Uri\WhatWg\UrlValidationErrorType::DomainInvalidCodePoint ? "DomainInvalidCodePoint\n" : "bad\n";
+var_dump($error->failure);
+
+$failures = [];
+$url = new Uri\WhatWg\Url(" https://example.org ", null, $failures);
+echo $url->toAsciiString(), "\n";
+echo count($failures), " ", $failures[0]->context, " ", $failures[0]->type === Uri\WhatWg\UrlValidationErrorType::InvalidUrlUnit ? "InvalidUrlUnit" : "bad", " ", (int)$failures[0]->failure, "\n";
+echo $failures[1]->context, " ", $failures[1]->type === Uri\WhatWg\UrlValidationErrorType::InvalidUrlUnit ? "InvalidUrlUnit" : "bad", " ", (int)$failures[1]->failure, "\n";
+
+try {
+    new Uri\WhatWg\Url("https://example.com:8080@username:password/path?q=r#fragment");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo $e->getMessage(), "\n";
+    echo count($e->errors), " ", $e->errors[0]->context, " ", $e->errors[0]->type === Uri\WhatWg\UrlValidationErrorType::PortInvalid ? "PortInvalid" : "bad", " ", (int)$e->errors[0]->failure, "\n";
+    echo $e->errors[1]->context, " ", $e->errors[1]->type === Uri\WhatWg\UrlValidationErrorType::InvalidCredentials ? "InvalidCredentials" : "bad", " ", (int)$e->errors[1]->failure, "\n";
+}
+
+$ex = new Uri\WhatWg\InvalidUrlException("msg", [$error], 1, new Exception("prev"));
+try {
+    $ex->__construct("qax", [], 0, null);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $ex->getMessage(), " ", count($ex->errors), " ", $ex->getCode(), " ", get_class($ex->getPrevious()), "\n";
+
+var_dump(Uri\WhatWg\Url::parse("/page:1"));
+
+$u = Uri\WhatWg\Url::parse("https://example.com");
+var_dump($u->withPassword("pass")->getPassword());
+var_dump($u->withPassword("p:s/")->getPassword());
+var_dump(Uri\WhatWg\Url::parse("file:///foo/bar")->withPort(80)->getPort());
+
+$relative = Uri\Rfc3986\Uri::parse("/foo");
+try {
+    $relative->withPort(1);
+} catch (Uri\InvalidUriException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$big = new Uri\Rfc3986\Uri("https://example.com:9223372036854775807");
+echo $big->getPort(), "\n";
+try {
+    new Uri\Rfc3986\Uri("https://example.com:9223372036854775808");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+$readonly = new Uri\WhatWg\Url("https://example.com");
+try {
+    $readonly->__construct("ftp://example.org");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $readonly->__unserialize([]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot modify readonly property Uri\\WhatWg\\UrlValidationError::$context\n",
+            "foo\n",
+            "DomainInvalidCodePoint\n",
+            "bool(true)\n",
+            "https://example.org/\n",
+            "2   InvalidUrlUnit 0\n",
+            " https://example.org  InvalidUrlUnit 0\n",
+            "The specified URI is malformed (PortInvalid)\n",
+            "2 password/path?q=r#fragment PortInvalid 1\n",
+            "@username:password/path?q=r#fragment InvalidCredentials 0\n",
+            "Cannot modify readonly property Uri\\WhatWg\\InvalidUrlException::$errors\n",
+            "qax 1 1 Exception\n",
+            "NULL\n",
+            "string(4) \"pass\"\n",
+            "string(8) \"p%3As%2F\"\n",
+            "NULL\n",
+            "Cannot set a port without having a host\n",
+            "9223372036854775807\n",
+            "Uri\\InvalidUriException: The port is out of range\n",
+            "Error: Cannot modify readonly object of class Uri\\WhatWg\\Url\n",
+            "Exception: Invalid serialization data for Uri\\WhatWg\\Url object\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

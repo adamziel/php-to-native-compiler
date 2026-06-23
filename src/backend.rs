@@ -92,6 +92,7 @@ const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "Uri\\UriComparisonMode",
     "Uri\\Rfc3986\\UriHostType",
     "Uri\\WhatWg\\UrlHostType",
+    "Uri\\WhatWg\\UrlValidationErrorType",
 ];
 
 pub fn emit_c(module: &Module) -> String {
@@ -2081,6 +2082,20 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        assigned = ptn_object_declare_property(runtime, object, \"severity\", declaring_class, PTN_PROPERTY_PROTECTED, PTN_PROPERTY_PROTECTED, 0, PTN_PROPERTY_TYPE_NONE, NULL, NULL, 0, 1, severity, line);\n");
     out.push_str("        ptn_value_destroy(&assigned);\n");
     out.push_str("        ptn_value_destroy(&severity);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_EXCEPTION && ptn_exception_name_equal(declaring_class, \"Uri\\\\WhatWg\\\\InvalidUrlException\")) {\n");
+    out.push_str("        if (argc >= 2) {\n");
+    out.push_str("            PtnValue errors = ptn_value_clone_deref(args[1]);\n");
+    out.push_str("            ptn_value_destroy(&resolved.as.exception->errors);\n");
+    out.push_str("            resolved.as.exception->errors = errors;\n");
+    out.push_str(
+        "        } else if (ptn_value_deref(resolved.as.exception->errors).type != PTN_ARRAY) {\n",
+    );
+    out.push_str("            ptn_value_destroy(&resolved.as.exception->errors);\n");
+    out.push_str(
+        "            resolved.as.exception->errors = ptn_array_from_literal_entries(0, NULL);\n",
+    );
+    out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    ptn_value_destroy(&previous);\n");
     out.push_str("    ptn_value_destroy(&message);\n");
@@ -7015,6 +7030,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationError",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -7637,6 +7654,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriHostType",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
+        "Uri\\WhatWg\\UrlValidationError",
+        "Uri\\WhatWg\\UrlValidationErrorType",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(&c_string(builtin));
@@ -8030,6 +8049,9 @@ fn emit_class_metadata_helpers(
         "WeakMap",
         "WeakReference",
         "XMLParser",
+        "Uri\\Rfc3986\\Uri",
+        "Uri\\WhatWg\\Url",
+        "Uri\\WhatWg\\UrlValidationError",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -18650,6 +18672,10 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
                 "uri\\rfc3986\\urihosttype" => Some("Uri\\Rfc3986\\UriHostType"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
+                "uri\\whatwg\\urlvalidationerror" => Some("Uri\\WhatWg\\UrlValidationError"),
+                "uri\\whatwg\\urlvalidationerrortype" => {
+                    Some("Uri\\WhatWg\\UrlValidationErrorType")
+                }
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -20212,6 +20238,13 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str(
+        "    if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(class_name)) {\n",
+    );
+    out.push_str(
+        "        return ptn_uri_url_validation_error_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_soap_client(class_name) || ptn_internal_class_name_is_soap_server(class_name) || ptn_internal_class_name_is_soap_header(class_name)) {\n");
@@ -27489,6 +27522,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationError")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlValidationErrorType")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -39114,6 +39149,21 @@ impl ValueEmitter {
                 );
                 return result_temp;
             }
+            if compile_time_class_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("Uri\\WhatWg\\Url"))
+            {
+                self.emit_runtime_new_object(
+                    out,
+                    &result_temp,
+                    "Uri\\WhatWg\\Url",
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    true,
+                );
+                return result_temp;
+            }
 
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -40106,6 +40156,18 @@ impl ValueEmitter {
         );
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    } else if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(");
+        out.push_str(class_name_expr);
+        out.push_str(")) {\n");
+        out.push_str("        ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_uri_url_validation_error_new(&runtime, ");
+        out.push_str(argc_expr);
+        out.push_str(", ");
+        out.push_str(args_expr);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    } else {\n");
         out.push_str("        ");
         out.push_str(result_temp);
@@ -40232,8 +40294,21 @@ impl ValueEmitter {
         }
 
         let mut argument_temps = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            argument_temps.push(self.emit_materialized_value(out, argument));
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if class_name.eq_ignore_ascii_case("Uri\\WhatWg\\Url") && argument_index == 2 {
+                argument_temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    "Uri\\WhatWg\\Url::__construct",
+                    argument_index,
+                    "errors",
+                    line,
+                    true,
+                    true,
+                ));
+            } else {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
         }
         if argument_temps.is_empty() {
             self.emit_runtime_new_object_assignment(

@@ -664,6 +664,7 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
     const char *declaring_class = ptn_exception_constructor_declaring_class(runtime, class_name);
     int is_error_exception = ptn_exception_name_equal(declaring_class, "ErrorException");
     int is_soap_fault = ptn_exception_name_equal(declaring_class, "SoapFault");
+    int is_invalid_url_exception = ptn_exception_name_equal(declaring_class, "Uri\\WhatWg\\InvalidUrlException");
     size_t max_args = ptn_exception_constructor_max_args(declaring_class);
     if (argc > max_args) {
         char message[128];
@@ -695,8 +696,9 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         line
     );
     int64_t code = 0;
-    if (!is_soap_fault && argc >= 2) {
-        PtnValue code_value = ptn_value_deref(args[1]);
+    size_t code_index = is_invalid_url_exception ? 2 : 1;
+    if (!is_soap_fault && argc > code_index) {
+        PtnValue code_value = ptn_value_deref(args[code_index]);
         if (code_value.type == PTN_INT) {
             code = code_value.as.integer;
         } else if (code_value.type == PTN_BOOL) {
@@ -739,7 +741,7 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         }
     }
     PtnValue previous = ptn_null();
-    size_t previous_index = is_error_exception ? 5 : 2;
+    size_t previous_index = is_invalid_url_exception ? 3 : (is_error_exception ? 5 : 2);
     if (!is_soap_fault && argc > previous_index) {
         PtnValue previous_value = ptn_value_deref(args[previous_index]);
         if (previous_value.type == PTN_EXCEPTION ||
@@ -758,6 +760,12 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         exception_path,
         exception_line
     );
+    if (is_invalid_url_exception) {
+        ptn_value_destroy(&exception->errors);
+        exception->errors = argc >= 2
+            ? ptn_value_clone_deref(args[1])
+            : ptn_array_from_literal_entries(0, NULL);
+    }
     ptn_exception_set_soap_fault_headerfault(exception, argc, args);
     return ptn_exception_value(exception);
 }
