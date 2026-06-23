@@ -25855,13 +25855,6 @@ fn emit_try(
         finally_generator_yield_abort_target.as_deref(),
     );
     out.push_str("        } else {\n");
-    out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
-    if let Some(catch_entry_label) = &catch_entry_label {
-        out.push_str("            ");
-        out.push_str(catch_entry_label);
-        out.push_str(":\n");
-        out.push_str("            ;\n");
-    }
     if let Some(catch_active_temp) = &catch_active_temp {
         out.push_str("            if (");
         out.push_str(catch_active_temp);
@@ -25894,6 +25887,23 @@ fn emit_try(
             "                ",
         );
         out.push_str("            } else {\n");
+    }
+    if let Some(catch_active_temp) = &catch_active_temp {
+        out.push_str("                ");
+        out.push_str(catch_active_temp);
+        out.push_str(" = 1;\n");
+        out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
+        out.push_str("                ");
+        out.push_str(catch_active_temp);
+        out.push_str(" = 0;\n");
+    } else {
+        out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
+    }
+    if let Some(catch_entry_label) = &catch_entry_label {
+        out.push_str("            ");
+        out.push_str(catch_entry_label);
+        out.push_str(":\n");
+        out.push_str("            ;\n");
     }
     out.push_str("            runtime.trace_frame = ");
     out.push_str(&saved_trace_temp);
@@ -25955,17 +25965,17 @@ fn emit_try(
         out.push_str("                ");
         out.push_str(&caught_temp);
         out.push_str(" = 1;\n");
+        if let Some(catch_active_temp) = &catch_active_temp {
+            out.push_str("                ");
+            out.push_str(catch_active_temp);
+            out.push_str(" = 1;\n");
+        }
         if let Some(variable) = &catch.variable {
             out.push_str("                ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(variable));
             out.push_str("\", ptn_current_exception_value(&runtime));\n");
         }
         out.push_str("                ptn_clear_exception(&runtime);\n");
-        if let Some(catch_active_temp) = &catch_active_temp {
-            out.push_str("                ");
-            out.push_str(catch_active_temp);
-            out.push_str(" = 1;\n");
-        }
         out.push_str("                goto ");
         out.push_str(&catch_body_label);
         out.push_str(";\n");
