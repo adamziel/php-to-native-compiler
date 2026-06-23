@@ -65872,6 +65872,19 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
         ptn_string_operand_ascii_case_equal(encoding, "UTF8")) {
         return "UTF-8";
     }
+    if (ptn_string_operand_ascii_case_equal(encoding, "UTF-8-Mobile#DOCOMO")) {
+        return "UTF-8-Mobile#DOCOMO";
+    }
+    if (ptn_string_operand_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-A")) {
+        return "UTF-8-Mobile#KDDI-A";
+    }
+    if (ptn_string_operand_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-B")) {
+        return "UTF-8-Mobile#KDDI-B";
+    }
+    if (ptn_string_operand_ascii_case_equal(encoding, "UTF-8-Mobile#SOFTBANK") ||
+        ptn_string_operand_ascii_case_equal(encoding, "UTF-8-Mobile#SoftBank")) {
+        return "UTF-8-Mobile#SOFTBANK";
+    }
     if (ptn_string_operand_ascii_case_equal(encoding, "ASCII") ||
         ptn_string_operand_ascii_case_equal(encoding, "US-ASCII")) {
         return "ASCII";
@@ -66132,6 +66145,12 @@ static const char *ptn_mb_iconv_encoding_name(const char *encoding) {
         return NULL;
     }
     if (ptn_ascii_case_equal(encoding, "auto")) {
+        return "UTF-8";
+    }
+    if (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#DOCOMO") ||
+        ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-A") ||
+        ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-B") ||
+        ptn_ascii_case_equal(encoding, "UTF-8-Mobile#SOFTBANK")) {
         return "UTF-8";
     }
     if (ptn_ascii_case_equal(encoding, "SJIS") ||
@@ -67940,6 +67959,18 @@ static int ptn_mb_check_encoding_string_bytes(const char *data, size_t len, cons
     if (ptn_mb_encoding_is_utf8(encoding)) {
         return ptn_mb_utf8_is_valid(data, len);
     }
+    if (ptn_ascii_case_equal(encoding, "JIS")) {
+        for (size_t i = 0; i < len; i++) {
+            unsigned char byte = (unsigned char)data[i];
+            if (byte == 0x0e || byte == 0x0f) {
+                return 0;
+            }
+            if (byte >= 0x80 && (byte < 0xa1 || byte > 0xdf)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
     if (ptn_ascii_case_equal(encoding, "ASCII") || ptn_ascii_case_equal(encoding, "7bit")) {
         return ptn_mb_ascii_is_valid(data, len);
     }
@@ -68078,6 +68109,30 @@ static char *ptn_mb_operand_to_utf8(PtnStringOperand input, const char *encoding
     if (ptn_mb_encoding_is_utf8(encoding) || ptn_mb_encoding_is_raw(encoding) || ptn_ascii_case_equal(encoding, "ASCII")) {
         *utf8_len = input.len;
         return ptn_duplicate_string_len(input.data, input.len);
+    }
+    if (ptn_ascii_case_equal(encoding, "JIS") && memchr(input.data, 0x1b, input.len) == NULL) {
+        PtnStringBuffer output;
+        ptn_string_buffer_init(&output);
+        int kana_mode = 0;
+        for (size_t i = 0; i < input.len; i++) {
+            unsigned char byte = (unsigned char)input.data[i];
+            if (byte == 0x0e) {
+                kana_mode = 1;
+                continue;
+            }
+            if (byte == 0x0f) {
+                kana_mode = 0;
+                continue;
+            }
+            if ((kana_mode && byte >= 0x21 && byte <= 0x5f) || (byte >= 0xa1 && byte <= 0xdf)) {
+                uint32_t cp = 0xff61u + (uint32_t)(byte >= 0xa1 ? byte - 0xa1 : byte - 0x21);
+                ptn_mb_utf8_append_codepoint(&output, cp);
+                continue;
+            }
+            ptn_string_buffer_append_char(&output, (char)byte);
+        }
+        *utf8_len = output.len;
+        return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
     }
     return ptn_mb_iconv_convert_alloc(input.data, input.len, encoding, "UTF-8", utf8_len);
 }
@@ -68526,6 +68581,17 @@ static PtnValue ptn_mb_convert_string_operand(
     if (ptn_ascii_case_equal(from_encoding, "HZ")) {
         size_t utf8_len = 0;
         char *utf8 = ptn_mb_hz_to_utf8_alloc(input.data, input.len, &utf8_len);
+        if (ptn_mb_encoding_is_utf8(to_encoding)) {
+            return ptn_owned_string_len(utf8, utf8_len);
+        }
+        size_t out_len = 0;
+        char *out = ptn_mb_iconv_convert_alloc_counting(utf8, utf8_len, "UTF-8", to_encoding, &out_len);
+        free(utf8);
+        return ptn_owned_string_len(out, out_len);
+    }
+    if (ptn_ascii_case_equal(from_encoding, "JIS") && memchr(input.data, 0x1b, input.len) == NULL) {
+        size_t utf8_len = 0;
+        char *utf8 = ptn_mb_operand_to_utf8(input, from_encoding, &utf8_len);
         if (ptn_mb_encoding_is_utf8(to_encoding)) {
             return ptn_owned_string_len(utf8, utf8_len);
         }
@@ -69226,18 +69292,326 @@ static PtnValue ptn_internal_mb_substr_count(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
-static PtnValue ptn_internal_mb_convert_kana(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    if (argc >= 3) {
-        const char *encoding = ptn_mb_encoding_from_value(runtime, "mb_convert_kana", 3, "encoding", args[2], line, ptn_mb_current_internal_encoding(runtime), 1);
-        if (encoding == NULL) {
-            return ptn_null();
+static int ptn_mb_kana_mode_has(PtnStringOperand mode, char flag) {
+    for (size_t i = 0; i < mode.len; i++) {
+        if (mode.data[i] == flag) {
+            return 1;
         }
     }
+    return 0;
+}
+
+static void ptn_mb_convert_kana_throw_flag_error(PtnRuntime *runtime, const char *message) {
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_mb_convert_kana_validate_mode(PtnRuntime *runtime, PtnStringOperand mode) {
+    static const char valid[] = "rRnNaAsSkKhHcCmMV";
+    for (size_t i = 0; i < mode.len; i++) {
+        if (strchr(valid, mode.data[i]) == NULL) {
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "mb_convert_kana(): Argument #2 ($mode) contains invalid flag: '%c'",
+                mode.data[i]
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_mb_convert_kana_throw_flag_error(runtime, message);
+            return 0;
+        }
+    }
+    static const char *pairs[] = {
+        "Aa", "Ar", "An", "Ra", "Na", "Rr", "Nn", "Ss", "HK", "Cc", "Mm", "hC", "hc", "kC", "kc"
+    };
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
+        if (ptn_mb_kana_mode_has(mode, pairs[i][0]) && ptn_mb_kana_mode_has(mode, pairs[i][1])) {
+            char message[112];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "mb_convert_kana(): Argument #2 ($mode) must not combine '%c' and '%c' flags",
+                pairs[i][0],
+                pairs[i][1]
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_mb_convert_kana_throw_flag_error(runtime, message);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static uint32_t ptn_mb_kana_hiragana_to_katakana(uint32_t cp) {
+    if (cp >= 0x3041 && cp <= 0x3096) {
+        return cp + 0x60;
+    }
+    if (cp == 0x309d) {
+        return 0x30fd;
+    }
+    if (cp == 0x309e) {
+        return 0x30fe;
+    }
+    return cp;
+}
+
+static uint32_t ptn_mb_kana_katakana_to_hiragana(uint32_t cp) {
+    if (cp >= 0x30a1 && cp <= 0x30f6) {
+        return cp - 0x60;
+    }
+    if (cp == 0x30fd) {
+        return 0x309d;
+    }
+    if (cp == 0x30fe) {
+        return 0x309e;
+    }
+    return cp;
+}
+
+static uint32_t ptn_mb_kana_voiced(uint32_t base, uint32_t mark) {
+    if (mark == 0xff9e) {
+        switch (base) {
+            case 0x30a6: return 0x30f4;
+            case 0x30ab: return 0x30ac;
+            case 0x30ad: return 0x30ae;
+            case 0x30af: return 0x30b0;
+            case 0x30b1: return 0x30b2;
+            case 0x30b3: return 0x30b4;
+            case 0x30b5: return 0x30b6;
+            case 0x30b7: return 0x30b8;
+            case 0x30b9: return 0x30ba;
+            case 0x30bb: return 0x30bc;
+            case 0x30bd: return 0x30be;
+            case 0x30bf: return 0x30c0;
+            case 0x30c1: return 0x30c2;
+            case 0x30c4: return 0x30c5;
+            case 0x30c6: return 0x30c7;
+            case 0x30c8: return 0x30c9;
+            case 0x30cf: return 0x30d0;
+            case 0x30d2: return 0x30d3;
+            case 0x30d5: return 0x30d6;
+            case 0x30d8: return 0x30d9;
+            case 0x30db: return 0x30dc;
+            default: return base;
+        }
+    }
+    if (mark == 0xff9f) {
+        switch (base) {
+            case 0x30cf: return 0x30d1;
+            case 0x30d2: return 0x30d4;
+            case 0x30d5: return 0x30d7;
+            case 0x30d8: return 0x30da;
+            case 0x30db: return 0x30dd;
+            default: return base;
+        }
+    }
+    return base;
+}
+
+static int ptn_mb_kana_halfwidth_to_katakana(uint32_t cp, uint32_t *out) {
+    static const uint32_t table[] = {
+        0x3002, 0x300c, 0x300d, 0x3001, 0x30fb, 0x30f2, 0x30a1, 0x30a3,
+        0x30a5, 0x30a7, 0x30a9, 0x30e3, 0x30e5, 0x30e7, 0x30c3, 0x30fc,
+        0x30a2, 0x30a4, 0x30a6, 0x30a8, 0x30aa, 0x30ab, 0x30ad, 0x30af,
+        0x30b1, 0x30b3, 0x30b5, 0x30b7, 0x30b9, 0x30bb, 0x30bd, 0x30bf,
+        0x30c1, 0x30c4, 0x30c6, 0x30c8, 0x30ca, 0x30cb, 0x30cc, 0x30cd,
+        0x30ce, 0x30cf, 0x30d2, 0x30d5, 0x30d8, 0x30db, 0x30de, 0x30df,
+        0x30e0, 0x30e1, 0x30e2, 0x30e4, 0x30e6, 0x30e8, 0x30e9, 0x30ea,
+        0x30eb, 0x30ec, 0x30ed, 0x30ef, 0x30f3, 0x309b, 0x309c
+    };
+    if (cp < 0xff61 || cp > 0xff9f) {
+        return 0;
+    }
+    *out = table[cp - 0xff61];
+    return 1;
+}
+
+static int ptn_mb_kana_katakana_to_halfwidth(uint32_t cp, uint32_t *first, uint32_t *second) {
+    *second = 0;
+    switch (cp) {
+        case 0x30ac: *first = 0xff76; *second = 0xff9e; return 1;
+        case 0x30ae: *first = 0xff77; *second = 0xff9e; return 1;
+        case 0x30b0: *first = 0xff78; *second = 0xff9e; return 1;
+        case 0x30b2: *first = 0xff79; *second = 0xff9e; return 1;
+        case 0x30b4: *first = 0xff7a; *second = 0xff9e; return 1;
+        case 0x30b6: *first = 0xff7b; *second = 0xff9e; return 1;
+        case 0x30b8: *first = 0xff7c; *second = 0xff9e; return 1;
+        case 0x30ba: *first = 0xff7d; *second = 0xff9e; return 1;
+        case 0x30bc: *first = 0xff7e; *second = 0xff9e; return 1;
+        case 0x30be: *first = 0xff7f; *second = 0xff9e; return 1;
+        case 0x30c0: *first = 0xff80; *second = 0xff9e; return 1;
+        case 0x30c2: *first = 0xff81; *second = 0xff9e; return 1;
+        case 0x30c5: *first = 0xff82; *second = 0xff9e; return 1;
+        case 0x30c7: *first = 0xff83; *second = 0xff9e; return 1;
+        case 0x30c9: *first = 0xff84; *second = 0xff9e; return 1;
+        case 0x30d0: *first = 0xff8a; *second = 0xff9e; return 1;
+        case 0x30d1: *first = 0xff8a; *second = 0xff9f; return 1;
+        case 0x30d3: *first = 0xff8b; *second = 0xff9e; return 1;
+        case 0x30d4: *first = 0xff8b; *second = 0xff9f; return 1;
+        case 0x30d6: *first = 0xff8c; *second = 0xff9e; return 1;
+        case 0x30d7: *first = 0xff8c; *second = 0xff9f; return 1;
+        case 0x30d9: *first = 0xff8d; *second = 0xff9e; return 1;
+        case 0x30da: *first = 0xff8d; *second = 0xff9f; return 1;
+        case 0x30dc: *first = 0xff8e; *second = 0xff9e; return 1;
+        case 0x30dd: *first = 0xff8e; *second = 0xff9f; return 1;
+        case 0x30f0: *first = 0xff72; return 1;
+        case 0x30f1: *first = 0xff74; return 1;
+        case 0x30ee: *first = 0xff9c; return 1;
+        case 0x30f4: *first = 0xff73; *second = 0xff9e; return 1;
+        default: break;
+    }
+    uint32_t base = 0;
+    for (uint32_t cp_half = 0xff61; cp_half <= 0xff9f; cp_half++) {
+        if (ptn_mb_kana_halfwidth_to_katakana(cp_half, &base) && base == cp) {
+            *first = cp_half;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_mb_convert_kana_utf8_alloc(const char *input, size_t input_len, PtnStringOperand mode, size_t *output_len) {
+    int to_full_alnum = ptn_mb_kana_mode_has(mode, 'A');
+    int to_half_alnum = ptn_mb_kana_mode_has(mode, 'a');
+    int to_full_alpha = to_full_alnum || ptn_mb_kana_mode_has(mode, 'R');
+    int to_half_alpha = to_half_alnum || ptn_mb_kana_mode_has(mode, 'r');
+    int to_full_num = to_full_alnum || ptn_mb_kana_mode_has(mode, 'N');
+    int to_half_num = to_half_alnum || ptn_mb_kana_mode_has(mode, 'n');
+    int to_full_space = to_full_alnum || ptn_mb_kana_mode_has(mode, 'S');
+    int to_half_space = to_half_alnum || ptn_mb_kana_mode_has(mode, 's');
+    int to_full_katakana = ptn_mb_kana_mode_has(mode, 'K');
+    int to_full_hiragana = ptn_mb_kana_mode_has(mode, 'H');
+    int to_half_katakana = ptn_mb_kana_mode_has(mode, 'k');
+    int to_half_hiragana = ptn_mb_kana_mode_has(mode, 'h');
+    int hira_to_kata = ptn_mb_kana_mode_has(mode, 'C');
+    int kata_to_hira = ptn_mb_kana_mode_has(mode, 'c');
+    int to_full_symbols = ptn_mb_kana_mode_has(mode, 'M');
+    int to_half_symbols = ptn_mb_kana_mode_has(mode, 'm');
+    int glue_voiced = ptn_mb_kana_mode_has(mode, 'V');
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < input_len) {
+        uint32_t cp = 0;
+        ptn_mb_utf8_decode_one(input, input_len, &offset, &cp);
+        if ((to_full_katakana || to_full_hiragana) && cp >= 0xff61 && cp <= 0xff9f) {
+            uint32_t full = cp;
+            ptn_mb_kana_halfwidth_to_katakana(cp, &full);
+            if (glue_voiced && offset < input_len) {
+                size_t next_offset = offset;
+                uint32_t next = 0;
+                ptn_mb_utf8_decode_one(input, input_len, &next_offset, &next);
+                if (next == 0xff9e || next == 0xff9f) {
+                    uint32_t combined = ptn_mb_kana_voiced(full, next);
+                    if (combined != full) {
+                        full = combined;
+                        offset = next_offset;
+                    }
+                }
+            }
+            if (to_full_hiragana) {
+                full = ptn_mb_kana_katakana_to_hiragana(full);
+            }
+            ptn_mb_utf8_append_codepoint(&output, full);
+            continue;
+        }
+        if (to_half_katakana || to_half_hiragana) {
+            uint32_t half_source = cp;
+            if (to_half_hiragana) {
+                half_source = ptn_mb_kana_hiragana_to_katakana(half_source);
+            }
+            uint32_t first = 0;
+            uint32_t second = 0;
+            if (ptn_mb_kana_katakana_to_halfwidth(half_source, &first, &second)) {
+                ptn_mb_utf8_append_codepoint(&output, first);
+                if (second != 0) {
+                    ptn_mb_utf8_append_codepoint(&output, second);
+                }
+                continue;
+            }
+        }
+        if (hira_to_kata) {
+            uint32_t mapped = ptn_mb_kana_hiragana_to_katakana(cp);
+            if (mapped != cp) {
+                ptn_mb_utf8_append_codepoint(&output, mapped);
+                continue;
+            }
+        }
+        if (kata_to_hira) {
+            uint32_t mapped = ptn_mb_kana_katakana_to_hiragana(cp);
+            if (mapped != cp) {
+                ptn_mb_utf8_append_codepoint(&output, mapped);
+                continue;
+            }
+        }
+        if (to_full_symbols) {
+            if (cp == 0x005c || cp == 0x00a5) cp = 0xffe5;
+            else if (cp == 0x007e || cp == 0x203e) cp = 0xffe3;
+            else if (cp == 0x0027) cp = 0x2019;
+            else if (cp == 0x0022) cp = 0x201d;
+        } else if (to_half_symbols) {
+            if (cp == 0xffe5 || cp == 0xff3c) cp = 0x005c;
+            else if (cp == 0xffe3 || cp == 0x203e) cp = 0x007e;
+            else if (cp == 0x2018 || cp == 0x2019) cp = 0x0027;
+            else if (cp == 0x201c || cp == 0x201d) cp = 0x0022;
+        }
+        if (to_full_alpha && ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z'))) {
+            cp = cp >= 'a' ? 0xff41 + (cp - 'a') : 0xff21 + (cp - 'A');
+        } else if (to_half_alpha && ((cp >= 0xff21 && cp <= 0xff3a) || (cp >= 0xff41 && cp <= 0xff5a))) {
+            cp = cp >= 0xff41 ? 'a' + (cp - 0xff41) : 'A' + (cp - 0xff21);
+        } else if (to_full_num && cp >= '0' && cp <= '9') {
+            cp = 0xff10 + (cp - '0');
+        } else if (to_half_num && cp >= 0xff10 && cp <= 0xff19) {
+            cp = '0' + (cp - 0xff10);
+        } else if (to_full_space && cp == 0x20) {
+            cp = 0x3000;
+        } else if (to_half_space && cp == 0x3000) {
+            cp = 0x20;
+        } else if (to_half_alnum && cp >= 0xff01 && cp <= 0xff5e) {
+            cp = 0x21 + (cp - 0xff01);
+        } else if (to_half_alnum && cp == 0x2212) {
+            cp = 0x2d;
+        }
+        ptn_mb_utf8_append_codepoint(&output, cp);
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static PtnValue ptn_internal_mb_convert_kana(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand mode = argc >= 2
+        ? ptn_internal_expect_string_arg(runtime, "mb_convert_kana", 2, "mode", args[1], line)
+        : ptn_string_operand_borrowed("KV");
+    if (!ptn_mb_convert_kana_validate_mode(runtime, mode)) {
+        ptn_string_operand_free(mode);
+        return ptn_null();
+    }
+    const char *encoding = argc >= 3
+        ? ptn_mb_encoding_from_value(runtime, "mb_convert_kana", 3, "encoding", args[2], line, ptn_mb_current_internal_encoding(runtime), 1)
+        : ptn_mb_current_internal_encoding(runtime);
+    if (encoding == NULL) {
+        ptn_string_operand_free(mode);
+        return ptn_null();
+    }
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    char *copy = ptn_duplicate_string_len(input.data, input.len);
-    size_t len = input.len;
+    size_t utf8_len = 0;
+    char *utf8 = ptn_mb_operand_to_utf8(input, encoding, &utf8_len);
+    size_t converted_len = 0;
+    char *converted = ptn_mb_convert_kana_utf8_alloc(utf8, utf8_len, mode, &converted_len);
+    free(utf8);
     ptn_string_operand_free(input);
-    return ptn_owned_string_len(copy, len);
+    ptn_string_operand_free(mode);
+    if (ptn_mb_encoding_is_utf8(encoding)) {
+        return ptn_owned_string_len(converted, converted_len);
+    }
+    size_t output_len = 0;
+    char *output = ptn_mb_utf8_to_encoding(converted, converted_len, encoding, &output_len);
+    free(converted);
+    return ptn_owned_string_len(output, output_len);
 }
 
 static PtnValue ptn_internal_mb_scrub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -71134,19 +71508,29 @@ static PtnValue ptn_internal_iconv_mime_encode(PtnRuntime *runtime, size_t argc,
     return ptn_owned_string_len(output.data, output.len);
 }
 
-static int ptn_mb_numeric_entity_map_allows(PtnValue map_value, uint32_t cp) {
+static int ptn_mb_numeric_entity_map_apply(PtnValue map_value, uint32_t cp, uint64_t *mapped_out) {
     PtnValue resolved = ptn_value_deref(map_value);
     if (resolved.type != PTN_ARRAY) {
+        *mapped_out = cp;
         return 1;
     }
     for (size_t i = 0; i + 3 < resolved.as.array->len; i += 4) {
-        int64_t start = ptn_value_to_integer(resolved.as.array->entries[i].value);
-        int64_t end = ptn_value_to_integer(resolved.as.array->entries[i + 1].value);
-        if ((int64_t)cp >= start && (int64_t)cp <= end) {
+        uint64_t start = (uint64_t)ptn_value_to_integer(resolved.as.array->entries[i].value);
+        uint64_t end = (uint64_t)ptn_value_to_integer(resolved.as.array->entries[i + 1].value);
+        uint64_t offset = (uint64_t)ptn_value_to_integer(resolved.as.array->entries[i + 2].value);
+        uint64_t mask = (uint64_t)ptn_value_to_integer(resolved.as.array->entries[i + 3].value);
+        uint64_t codepoint = (uint64_t)cp;
+        if (codepoint >= start && codepoint <= end) {
+            *mapped_out = (codepoint + offset) & mask;
             return 1;
         }
     }
     return 0;
+}
+
+static int ptn_mb_numeric_entity_map_allows(PtnValue map_value, uint32_t cp) {
+    uint64_t mapped = 0;
+    return ptn_mb_numeric_entity_map_apply(map_value, cp, &mapped);
 }
 
 static int ptn_mb_numeric_entity_map_validate(PtnRuntime *runtime, const char *function_name, PtnValue map_value) {
@@ -71208,12 +71592,18 @@ static PtnValue ptn_internal_mb_encode_numericentity(PtnRuntime *runtime, size_t
     while (offset < utf8_len) {
         size_t before = offset;
         uint32_t cp = 0;
-        ptn_mb_utf8_decode_one(utf8, utf8_len, &offset, &cp);
-        if (ptn_mb_numeric_entity_map_allows(args[1], cp)) {
+        if (ptn_ascii_case_equal(encoding, "ASCII") && (unsigned char)utf8[offset] > 0x7f) {
+            cp = UINT32_MAX;
+            offset++;
+        } else {
+            ptn_mb_utf8_decode_one(utf8, utf8_len, &offset, &cp);
+        }
+        uint64_t mapped = 0;
+        if (ptn_mb_numeric_entity_map_apply(args[1], cp, &mapped)) {
             if (hex) {
-                ptn_string_buffer_append_format(&output, "&#x%X;", (unsigned int)cp);
+                ptn_string_buffer_append_format(&output, "&#x%llX;", (unsigned long long)mapped);
             } else {
-                ptn_string_buffer_append_format(&output, "&#%u;", (unsigned int)cp);
+                ptn_string_buffer_append_format(&output, "&#%llu;", (unsigned long long)mapped);
             }
         } else {
             ptn_string_buffer_append_len(&output, utf8 + before, offset - before);
