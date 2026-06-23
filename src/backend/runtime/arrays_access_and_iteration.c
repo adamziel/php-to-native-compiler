@@ -900,6 +900,8 @@ static PTN_UNUSED PtnValue ptn_date_period_new(
     const PtnValue *args,
     size_t line
 );
+static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
+static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
 #endif
 
 static PTN_UNUSED PtnValue ptn_new_object(
@@ -11422,6 +11424,13 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     if (ptn_object_is_generator(value.as.object)) {
         return ptn_array_iterator_from_generator(runtime, value.as.object, 0, path, line);
     }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_date_value_is_uninitialized_descendant(value, "DatePeriod")) {
+        ptn_date_throw_uninitialized_named_object_error(runtime, "DatePeriod");
+        return ptn_array_iterator_empty();
+    }
+#endif
 
     int has_declared_get_iterator =
         ptn_object_declares_iterator_method(runtime, value.as.object, "getIterator");
