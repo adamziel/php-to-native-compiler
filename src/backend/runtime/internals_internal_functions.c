@@ -49991,18 +49991,74 @@ static int ptn_stream_filter_kind_is_zlib(PtnStreamFilterKind kind) {
     return kind == PTN_STREAM_FILTER_ZLIB_DEFLATE || kind == PTN_STREAM_FILTER_ZLIB_INFLATE;
 }
 
+typedef struct {
+    PtnResource *stream;
+    PtnStreamFilter *read_filter;
+    PtnStreamFilter *write_filter;
+    int removed;
+} PtnStreamFilterResource;
+
+static void ptn_stream_filter_free(PtnStreamFilter *filter) {
+    if (filter == NULL) {
+        return;
+    }
+    free(filter->name);
+    free(filter);
+}
+
 static void ptn_stream_filter_chain_remove_zlib(PtnStreamFilter **chain) {
     PtnStreamFilter **slot = chain;
     while (*slot != NULL) {
         PtnStreamFilter *filter = *slot;
         if (ptn_stream_filter_kind_is_zlib(filter->kind)) {
             *slot = filter->next;
-            free(filter->name);
-            free(filter);
+            ptn_stream_filter_free(filter);
             continue;
         }
         slot = &filter->next;
     }
+}
+
+static int ptn_stream_filter_chain_unlink(PtnStreamFilter **chain, PtnStreamFilter *target) {
+    PtnStreamFilter **slot = chain;
+    while (*slot != NULL) {
+        PtnStreamFilter *filter = *slot;
+        if (filter == target) {
+            *slot = filter->next;
+            target->next = NULL;
+            return 1;
+        }
+        slot = &filter->next;
+    }
+    return 0;
+}
+
+static void ptn_stream_filter_resource_close(PtnResource *resource, void *opaque) {
+    (void)resource;
+    PtnStreamFilterResource *data = (PtnStreamFilterResource *)opaque;
+    if (data == NULL) {
+        return;
+    }
+    if (data->stream != NULL) {
+        PtnResource *stream = data->stream;
+        data->stream = NULL;
+        ptn_resource_release(stream);
+    }
+    data->read_filter = NULL;
+    data->write_filter = NULL;
+    data->removed = 1;
+}
+
+static void ptn_stream_filter_resource_data_free(void *opaque) {
+    free(opaque);
+}
+
+static void ptn_throw_invalid_stream_filter_resource(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "TypeError",
+        "stream_filter_remove(): supplied resource is not a valid stream filter resource"
+    );
 }
 
 static void ptn_stream_apply_filter_in_place(PtnStreamFilterKind kind, unsigned char *data, size_t len) {
@@ -50243,13 +50299,16 @@ static PtnValue ptn_internal_stream_filter_attach(
     }
 
     PtnResource *stream = stream_value.as.resource;
+    PtnStreamFilter *read_filter = NULL;
+    PtnStreamFilter *write_filter = NULL;
     if (ptn_stream_filter_kind_is_zlib(kind) && (mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filter_chain_remove_zlib(&stream->read_filters);
     }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
+        read_filter = ptn_stream_filter_new(kind, name);
         ptn_stream_filter_chain_insert(
             &stream->read_filters,
-            ptn_stream_filter_new(kind, name),
+            read_filter,
             prepend
         );
     }
@@ -50257,14 +50316,30 @@ static PtnValue ptn_internal_stream_filter_attach(
         ptn_stream_filter_chain_remove_zlib(&stream->write_filters);
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
+        write_filter = ptn_stream_filter_new(kind, name);
         ptn_stream_filter_chain_insert(
             &stream->write_filters,
-            ptn_stream_filter_new(kind, name),
+            write_filter,
             prepend
         );
     }
     ptn_string_operand_free(name);
-    return ptn_resource(ptn_resource_new_named("stream filter"));
+
+    PtnStreamFilterResource *filter_data = malloc(sizeof(PtnStreamFilterResource));
+    if (filter_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_resource_retain(stream);
+    filter_data->stream = stream;
+    filter_data->read_filter = read_filter;
+    filter_data->write_filter = write_filter;
+    filter_data->removed = 0;
+
+    PtnResource *filter_resource = ptn_resource_new_named("stream filter");
+    filter_resource->close_hook = ptn_stream_filter_resource_close;
+    filter_resource->close_hook_data = filter_data;
+    filter_resource->close_hook_data_free = ptn_stream_filter_resource_data_free;
+    return ptn_resource(filter_resource);
 }
 
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -50276,11 +50351,62 @@ static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t a
 }
 
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnValue filter = ptn_value_deref(args[0]);
-    return ptn_bool(filter.type == PTN_RESOURCE && filter.as.resource != NULL);
+    if (filter.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_filter_remove(): Argument #1 ($stream_filter) must be of type resource, %s given",
+            ptn_offset_container_type_name(filter)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnResource *filter_resource = filter.as.resource;
+    if (filter_resource == NULL ||
+        strcmp(filter_resource->type_name, "stream filter") != 0 ||
+        filter_resource->close_hook_data == NULL) {
+        ptn_throw_invalid_stream_filter_resource(runtime);
+        return ptn_null();
+    }
+
+    PtnStreamFilterResource *filter_data = (PtnStreamFilterResource *)filter_resource->close_hook_data;
+    if (filter_data->removed || filter_data->stream == NULL) {
+        ptn_throw_invalid_stream_filter_resource(runtime);
+        return ptn_null();
+    }
+
+    PtnResource *stream = filter_data->stream;
+    int removed = 0;
+    if (filter_data->read_filter != NULL &&
+        ptn_stream_filter_chain_unlink(&stream->read_filters, filter_data->read_filter)) {
+        ptn_stream_filter_free(filter_data->read_filter);
+        removed = 1;
+    }
+    if (filter_data->write_filter != NULL &&
+        filter_data->write_filter != filter_data->read_filter &&
+        ptn_stream_filter_chain_unlink(&stream->write_filters, filter_data->write_filter)) {
+        ptn_stream_filter_free(filter_data->write_filter);
+        removed = 1;
+    }
+
+    filter_data->read_filter = NULL;
+    filter_data->write_filter = NULL;
+    filter_data->removed = 1;
+    filter_data->stream = NULL;
+    ptn_resource_release(stream);
+
+    if (!removed) {
+        ptn_throw_invalid_stream_filter_resource(runtime);
+        return ptn_null();
+    }
+    return ptn_bool(1);
 }
 
 static void ptn_emit_stream_write_notice(

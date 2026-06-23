@@ -31,6 +31,7 @@ const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
     "Using ${expr} (variable variables) in strings is deprecated, use {${expr}} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
+    "php_user_filter",
     "Phar",
     "PharFileInfo",
     "Fiber",

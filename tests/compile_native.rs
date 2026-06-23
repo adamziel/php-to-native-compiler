@@ -4311,6 +4311,32 @@ class Sub implements ArrayAccess {
         error.message,
         "Declaration of Sub::offsetSet(): void must be compatible with ArrayAccess::offsetSet(mixed $offset, mixed $value): void"
     );
+
+    let error = parser::parse(
+        "<?php
+class BadFilter extends php_user_filter {
+    public function filter($in, $out, $consumed, bool $closing): int {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of BadFilter::filter($in, $out, $consumed, bool $closing): int must be compatible with php_user_filter::filter($in, $out, &$consumed, bool $closing): int"
+    );
+
+    let error = parser::parse(
+        "<?php
+class BadSeek extends php_user_filter {
+    public function seek($offset): bool {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of BadSeek::seek($offset): bool must be compatible with php_user_filter::seek(int $offset, int $whence, int $chain): bool"
+    );
 }
 
 #[test]
@@ -23158,6 +23184,59 @@ bool(true)\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_stream_filter_append"));
     assert!(c_source.contains("ptn_stream_apply_filter_chain_in_place"));
+}
+
+#[test]
+fn compile_stream_filter_remove_detaches_and_invalidates_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-filter-remove-detaches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-filter-remove-detaches.php");
+    let output = root.join("stream-filter-remove-detaches-bin");
+    fs::write(
+        &input,
+        "<?php
+$stream = fopen('php://temp', 'w+');
+$filter = stream_filter_append($stream, 'string.rot13', STREAM_FILTER_WRITE);
+var_dump(is_resource($filter));
+var_dump(fwrite($stream, \"foo\\n\"));
+var_dump(stream_filter_remove($filter));
+var_dump(fwrite($stream, \"bar\\n\"));
+rewind($stream);
+fpassthru($stream);
+try {
+    stream_filter_remove($stream);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    stream_filter_remove($filter);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+int(4)\n\
+bool(true)\n\
+int(4)\n\
+sbb\n\
+bar\n\
+stream_filter_remove(): supplied resource is not a valid stream filter resource\n\
+stream_filter_remove(): supplied resource is not a valid stream filter resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_filter_chain_unlink"));
+    assert!(c_source.contains("ptn_stream_filter_resource_close"));
 }
 
 #[test]

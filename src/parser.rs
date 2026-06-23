@@ -15344,6 +15344,47 @@ fn tentative_internal_method(
                 TypeHint::False,
             ]),
         )),
+        ("php_user_filter", "filter") => Some(modeled_internal_method(
+            "php_user_filter",
+            "filter",
+            "filter($in, $out, &$consumed, bool $closing): int",
+            false,
+            vec![
+                internal_parameter("in", None, None),
+                internal_parameter("out", None, None),
+                internal_parameter_by_ref("consumed", None, None),
+                internal_parameter("closing", Some(TypeHint::Bool), None),
+            ],
+            TypeHint::Int,
+        )),
+        ("php_user_filter", "oncreate") => Some(modeled_internal_method(
+            "php_user_filter",
+            "onCreate",
+            "onCreate(): bool",
+            false,
+            Vec::new(),
+            TypeHint::Bool,
+        )),
+        ("php_user_filter", "onclose") => Some(modeled_internal_method(
+            "php_user_filter",
+            "onClose",
+            "onClose(): void",
+            false,
+            Vec::new(),
+            TypeHint::Void,
+        )),
+        ("php_user_filter", "seek") => Some(modeled_internal_method(
+            "php_user_filter",
+            "seek",
+            "seek(int $offset, int $whence, int $chain): bool",
+            false,
+            vec![
+                internal_parameter("offset", Some(TypeHint::Int), None),
+                internal_parameter("whence", Some(TypeHint::Int), None),
+                internal_parameter("chain", Some(TypeHint::Int), None),
+            ],
+            TypeHint::Bool,
+        )),
         _ => None,
     }
 }
@@ -15384,12 +15425,29 @@ fn internal_parameter(
     type_hint: Option<TypeHint>,
     default_value: Option<Expr>,
 ) -> FunctionParameter {
+    internal_parameter_with_ref(name, type_hint, default_value, false)
+}
+
+fn internal_parameter_by_ref(
+    name: &str,
+    type_hint: Option<TypeHint>,
+    default_value: Option<Expr>,
+) -> FunctionParameter {
+    internal_parameter_with_ref(name, type_hint, default_value, true)
+}
+
+fn internal_parameter_with_ref(
+    name: &str,
+    type_hint: Option<TypeHint>,
+    default_value: Option<Expr>,
+    by_ref: bool,
+) -> FunctionParameter {
     FunctionParameter {
         name: name.to_string(),
         attributes: AttributeMetadata::default(),
         doc_comment: None,
         type_hint,
-        by_ref: false,
+        by_ref,
         is_variadic: false,
         default_value,
         promoted_property: None,
