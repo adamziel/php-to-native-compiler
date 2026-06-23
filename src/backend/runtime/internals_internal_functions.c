@@ -10389,6 +10389,7 @@ static int ptn_serialize_append_value_with_id(
                 ptn_ascii_case_equal(class_name, "SensitiveParameterValue") ||
                 ptn_internal_class_name_is_weak_reference(class_name) ||
                 ptn_internal_class_name_is_weak_map(class_name) ||
+                ptn_internal_class_name_is_number_formatter(class_name) ||
                 ptn_internal_class_name_is_sensitive_parameter_value(class_name) ||
                 ptn_internal_class_name_is_xml_parser(class_name)) {
                 ptn_serialize_throw_not_allowed(state->runtime, class_name);

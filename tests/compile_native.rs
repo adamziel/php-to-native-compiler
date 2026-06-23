@@ -41262,6 +41262,39 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_number_formatter_serialization_is_rejected_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-serialization.php");
+    let output = root.join("intl-number-formatter-serialization-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$formatter = new NumberFormatter('en_GB', NumberFormatter::CURRENCY);\n\
+try {\n\
+    serialize($formatter);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception: Serialization of 'NumberFormatter' is not allowed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_class_name_is_number_formatter"));
+    assert!(c_source.contains("ptn_serialize_throw_not_allowed"));
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();
