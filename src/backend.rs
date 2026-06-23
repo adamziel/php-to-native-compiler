@@ -17979,7 +17979,12 @@ fn emit_runtime_parameter_signature_compatibility_validation(
                 return;
             }
             (Some(type_hint), Some(parent_type_hint))
-                if runtime_type_hint_static_subtype(parent_type_hint, type_hint, classes) => {}
+                if runtime_type_hint_static_subtype(
+                    parent_type_hint,
+                    type_hint,
+                    class,
+                    classes,
+                ) => {}
             (Some(type_hint), Some(parent_type_hint)) => {
                 if let Some(unavailable_name) =
                     runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
@@ -18048,7 +18053,7 @@ fn emit_runtime_return_signature_compatibility_validation(
         return;
     };
 
-    if runtime_type_hint_static_subtype(return_type, parent_return_type, classes) {
+    if runtime_type_hint_static_subtype(return_type, parent_return_type, class, classes) {
         if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
             (return_type, parent_return_type)
         {
@@ -18398,6 +18403,7 @@ fn runtime_modeled_builtin_interface_name(name: &str) -> bool {
 fn runtime_type_hint_static_subtype(
     candidate: &TypeHint,
     target: &TypeHint,
+    current_class: &ClassDecl,
     classes: &[ClassDecl],
 ) -> bool {
     if candidate == target
@@ -18408,33 +18414,44 @@ fn runtime_type_hint_static_subtype(
     }
     match (candidate, target) {
         (TypeHint::Nullable(inner), _) => {
-            runtime_type_hint_static_subtype(inner, target, classes)
-                && runtime_type_hint_static_subtype(&TypeHint::Null, target, classes)
+            runtime_type_hint_static_subtype(inner, target, current_class, classes)
+                && runtime_type_hint_static_subtype(&TypeHint::Null, target, current_class, classes)
         }
         (_, TypeHint::Nullable(inner)) => {
-            runtime_type_hint_static_subtype(candidate, inner, classes)
-                || runtime_type_hint_static_subtype(candidate, &TypeHint::Null, classes)
+            runtime_type_hint_static_subtype(candidate, inner, current_class, classes)
+                || runtime_type_hint_static_subtype(
+                    candidate,
+                    &TypeHint::Null,
+                    current_class,
+                    classes,
+                )
         }
         (TypeHint::Union(types), _) => types
             .iter()
-            .all(|member| runtime_type_hint_static_subtype(member, target, classes)),
-        (_, TypeHint::Union(types)) => types
-            .iter()
-            .any(|member| runtime_type_hint_static_subtype(candidate, member, classes)),
-        (_, TypeHint::Intersection(types)) => types
-            .iter()
-            .all(|member| runtime_type_hint_static_subtype(candidate, member, classes)),
+            .all(|member| runtime_type_hint_static_subtype(member, target, current_class, classes)),
+        (_, TypeHint::Union(types)) => types.iter().any(|member| {
+            runtime_type_hint_static_subtype(candidate, member, current_class, classes)
+        }),
+        (_, TypeHint::Intersection(types)) => types.iter().all(|member| {
+            runtime_type_hint_static_subtype(candidate, member, current_class, classes)
+        }),
         (TypeHint::Intersection(types), _) => types
             .iter()
-            .any(|member| runtime_type_hint_static_subtype(member, target, classes)),
-        (TypeHint::Iterable, _) => runtime_iterable_static_subtype(target, classes),
+            .any(|member| runtime_type_hint_static_subtype(member, target, current_class, classes)),
+        (TypeHint::Iterable, _) => runtime_iterable_static_subtype(target, current_class, classes),
         (_, TypeHint::Iterable) => {
             let traversable = TypeHint::Class("Traversable".to_string());
-            runtime_type_hint_static_subtype(candidate, &TypeHint::Array, classes)
-                || runtime_type_hint_static_subtype(candidate, &traversable, classes)
+            runtime_type_hint_static_subtype(candidate, &TypeHint::Array, current_class, classes)
+                || runtime_type_hint_static_subtype(candidate, &traversable, current_class, classes)
         }
         (TypeHint::True | TypeHint::False, TypeHint::Bool) => true,
         (TypeHint::Class(_), TypeHint::Object) | (TypeHint::Static, TypeHint::Object) => true,
+        (TypeHint::Static, TypeHint::Class(target_name)) => {
+            runtime_class_type_static_subtype(&current_class.name, target_name, classes)
+        }
+        (TypeHint::Class(candidate_name), TypeHint::Static) => {
+            current_class.is_final && candidate_name.eq_ignore_ascii_case(&current_class.name)
+        }
         (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) => {
             runtime_class_type_static_subtype(candidate_name, target_name, classes)
         }
@@ -18442,10 +18459,14 @@ fn runtime_type_hint_static_subtype(
     }
 }
 
-fn runtime_iterable_static_subtype(target: &TypeHint, classes: &[ClassDecl]) -> bool {
+fn runtime_iterable_static_subtype(
+    target: &TypeHint,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
     let traversable = TypeHint::Class("Traversable".to_string());
-    runtime_type_hint_static_subtype(&TypeHint::Array, target, classes)
-        && runtime_type_hint_static_subtype(&traversable, target, classes)
+    runtime_type_hint_static_subtype(&TypeHint::Array, target, current_class, classes)
+        && runtime_type_hint_static_subtype(&traversable, target, current_class, classes)
 }
 
 fn runtime_class_type_static_subtype(
@@ -18459,6 +18480,11 @@ fn runtime_class_type_static_subtype(
     let Some(candidate) = class_by_name(classes, candidate_name) else {
         return false;
     };
+    if target_name.eq_ignore_ascii_case("Stringable")
+        && class_has_stringable_method(candidate, classes)
+    {
+        return true;
+    }
     if class_transitive_interfaces(candidate, classes)
         .iter()
         .any(|interface| interface.eq_ignore_ascii_case(target_name))
@@ -18480,6 +18506,12 @@ fn runtime_class_type_static_subtype(
         parent_name = parent.parent_name.as_deref();
     }
     false
+}
+
+fn class_has_stringable_method(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    class_method_lookup_chain(class, classes)
+        .iter()
+        .any(|method| method.name.eq_ignore_ascii_case("__toString"))
 }
 
 fn runtime_method_signature_display(
@@ -23629,41 +23661,63 @@ fn collect_runtime_variance_type_names(
     }
 }
 
+fn collect_runtime_variance_type_name_map(
+    type_hint: &TypeHint,
+    names: &mut HashMap<String, String>,
+) {
+    let mut seen = names.keys().cloned().collect::<HashSet<_>>();
+    let mut ordered = Vec::new();
+    collect_runtime_variance_type_names(type_hint, &mut seen, &mut ordered);
+    for name in ordered {
+        names.entry(name.to_ascii_lowercase()).or_insert(name);
+    }
+}
+
 fn runtime_variance_type_names_for_pair(
     function: &FunctionDecl,
     parent_function: &FunctionDecl,
-    classes: &[ClassDecl],
+    _classes: &[ClassDecl],
 ) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut names = Vec::new();
+    let mut child_names = HashMap::new();
+    let mut parent_names = HashMap::new();
     let parameter_count = function
         .parameters
         .len()
         .max(parent_function.parameters.len());
     for index in 0..parameter_count {
-        let type_hint = function
+        if let Some(type_hint) = function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref());
-        let parent_type_hint = parent_function
+            .and_then(|parameter| parameter.type_hint.as_ref())
+        {
+            collect_runtime_variance_type_name_map(type_hint, &mut child_names);
+        }
+        if let Some(type_hint) = parent_function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref());
-        if let (Some(type_hint), Some(parent_type_hint)) = (type_hint, parent_type_hint) {
-            if !runtime_type_hint_static_subtype(parent_type_hint, type_hint, classes) {
-                collect_runtime_variance_type_names(parent_type_hint, &mut seen, &mut names);
-                collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
-            }
+            .and_then(|parameter| parameter.type_hint.as_ref())
+        {
+            collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
         }
     }
-    if let (Some(type_hint), Some(parent_type_hint)) =
-        (&function.return_type, &parent_function.return_type)
-    {
-        if !runtime_type_hint_static_subtype(type_hint, parent_type_hint, classes) {
-            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
-            collect_runtime_variance_type_names(parent_type_hint, &mut seen, &mut names);
+    if let Some(type_hint) = &function.return_type {
+        collect_runtime_variance_type_name_map(type_hint, &mut child_names);
+    }
+    if let Some(type_hint) = &parent_function.return_type {
+        collect_runtime_variance_type_name_map(type_hint, &mut parent_names);
+    }
+    let mut names = Vec::new();
+    for (key, name) in &child_names {
+        if !parent_names.contains_key(key) {
+            names.push(name.clone());
         }
     }
+    for (key, name) in parent_names {
+        if !child_names.contains_key(&key) {
+            names.push(name);
+        }
+    }
+    names.sort_by_key(|name| name.to_ascii_lowercase());
     names
 }
 
