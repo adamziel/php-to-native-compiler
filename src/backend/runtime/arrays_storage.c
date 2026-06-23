@@ -79,6 +79,7 @@ static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index);
 static PTN_UNUSED void ptn_runtime_register_closure(PtnRuntime *runtime, PtnClosure *closure);
 static PTN_UNUSED void ptn_runtime_unregister_closure(PtnRuntime *runtime, PtnClosure *closure);
 static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnValue value);
+static PTN_UNUSED void ptn_runtime_push_owned_temporary_root(PtnRuntime *runtime, PtnValue *value);
 static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
@@ -1131,6 +1132,43 @@ static PTN_UNUSED void ptn_runtime_push_temporary_root(PtnRuntime *runtime, PtnV
         root->temporary_roots_capacity = new_capacity;
     }
     root->temporary_roots[root->temporary_roots_len++] = ptn_value_clone(value);
+}
+
+static PTN_UNUSED void ptn_runtime_push_owned_temporary_root(
+    PtnRuntime *runtime,
+    PtnValue *value
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    if (root->temporary_roots_len == root->temporary_roots_capacity) {
+        size_t new_capacity = root->temporary_roots_capacity == 0
+            ? 8
+            : root->temporary_roots_capacity * 2;
+        if (new_capacity < root->temporary_roots_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnValue)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue *new_roots = realloc(
+            root->temporary_roots,
+            new_capacity * sizeof(PtnValue)
+        );
+        if (new_roots == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->temporary_roots = new_roots;
+        root->temporary_roots_capacity = new_capacity;
+    }
+    if (value == NULL || value->owned <= 0) {
+        root->temporary_roots[root->temporary_roots_len++] = ptn_null();
+        return;
+    }
+    root->temporary_roots[root->temporary_roots_len++] = *value;
+    value->owned = 0;
+    value->by_ref_return_fallback = 0;
+    value->by_ref_argument_source_disabled = 0;
+    value->from_string_offset = 0;
 }
 
 static PTN_UNUSED void ptn_runtime_pop_temporary_root(PtnRuntime *runtime) {

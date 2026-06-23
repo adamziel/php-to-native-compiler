@@ -78798,6 +78798,84 @@ var_dump($d);
 }
 
 #[test]
+fn compile_typed_property_failed_assignment_releases_rhs_handle_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-failed-assignment-rhs-handle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-failed-assignment-rhs-handle.php");
+    let output = root.join("typed-property-failed-assignment-rhs-handle-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public X $propX;
+    public ?Y $propY;
+}
+
+spl_autoload_register(function($class) {
+    echo "Loading $class\n";
+});
+
+$test = new Test;
+try {
+    $test->propX = new stdClass;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+if (true) {
+    class X {}
+}
+
+$test->propX = new X;
+var_dump($test->propX);
+
+$test->propY = null;
+$r =& $test->propY;
+try {
+    $test->propY = new stdClass;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+if (true) {
+    class Y {}
+}
+
+$r = new Y;
+var_dump($test->propY);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot assign stdClass to property Test::$propX of type X\n",
+            "object(X)#3 (0) {\n",
+            "}\n",
+            "Cannot assign stdClass to property Test::$propY of type ?Y\n",
+            "object(Y)#4 (0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_push_owned_temporary_root(&runtime"));
+    assert!(c_source.contains("ptn_object_write_property(&runtime"));
+}
+
+#[test]
 fn compile_inherited_uninitialized_typed_property_var_dump_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-uninitialized-typed-property-var-dump");
     fs::create_dir_all(&root).unwrap();

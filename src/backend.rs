@@ -36489,6 +36489,9 @@ impl ValueEmitter {
             let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.next_temp();
+            out.push_str("    ptn_runtime_push_owned_temporary_root(&runtime, &");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_object_write_property(&runtime, ");
@@ -36502,6 +36505,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            out.push_str("    ptn_runtime_pop_temporary_root(&runtime);\n");
             emit_value_cleanup(out, "    ", &value_temp);
             emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
