@@ -10366,6 +10366,28 @@ static PTN_UNUSED int ptn_arrayaccess_append_reference_temporary(
     if (
         value.type == PTN_OBJECT &&
         value.as.object != NULL &&
+        (ptn_ascii_case_equal(value.as.object->class_name, "DOMNamedNodeMap") ||
+            ptn_ascii_case_equal(value.as.object->class_name, "Dom\\NamedNodeMap"))
+    ) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot append to %s",
+            value.as.object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        if (reference_out != NULL) {
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+        return 1;
+    }
+    if (
+        value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
         ptn_object_is_internal_or_descendant(value, "SplFixedArray")
     ) {
         ptn_throw_exception(runtime, "Error", "[] operator not supported for SplFixedArray");

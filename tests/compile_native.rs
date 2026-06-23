@@ -40043,6 +40043,102 @@ echo $dest->saveXML();
 }
 
 #[test]
+fn compile_dom_modern_attribute_metadata_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-modern-attribute-metadata-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-modern-attribute-metadata-pack.php");
+    let output = root.join("dom-modern-attribute-metadata-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$ids = Dom\HTMLDocument::createFromString('<main><em id="x"></em></main>', LIBXML_NOERROR);
+$em = $ids->getElementById('x');
+$em->setAttribute('ID', 'y');
+var_dump($ids->getElementById('x')?->nodeName);
+var_dump($ids->getElementById('y')?->nodeName);
+
+$html = Dom\HTMLDocument::createEmpty();
+$container = $html->appendChild($html->createElement('container'));
+
+$other = Dom\HTMLDocument::createEmpty();
+$plain = $other->createAttribute('my-attribute');
+$plain->value = '1';
+$container->setAttributeNode($plain);
+var_dump($plain->ownerDocument === $html);
+
+$other = Dom\HTMLDocument::createEmpty();
+$first = $other->createAttributeNS('urn:a', 'a:my-attribute');
+$first->value = '2';
+$container->setAttributeNode($first);
+
+$other = Dom\HTMLDocument::createEmpty();
+$second = $other->createAttributeNS('urn:b', 'a:my-attribute');
+$second->value = '3';
+$container->setAttributeNode($second);
+echo $html->saveHtml($container), "\n";
+
+$plain = $container->getAttributeNode('MY-ATTRIBUTE');
+$plain->value = '&amp;';
+var_dump($plain->firstChild->nodeValue);
+$plain->removeChild($plain->firstChild);
+var_dump($plain->value);
+echo $html->saveHtml($container), "\n";
+
+try {
+    $container->prefix = 'x';
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$xml = Dom\XMLDocument::createEmpty();
+$renamed = $xml->createElementNS('http://www.w3.org/1999/xhtml', 'foo:bar');
+$renamed->rename('urn:x', 'foo:baz');
+var_dump($renamed->nodeName, $renamed->namespaceURI, $renamed->prefix);
+
+try {
+    $container->attributes[][0] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "string(2) \"EM\"\n",
+            "bool(true)\n",
+            "<container my-attribute=\"1\" a:my-attribute=\"2\" a:my-attribute=\"3\"></container>\n",
+            "string(5) \"&amp;\"\n",
+            "string(0) \"\"\n",
+            "<container my-attribute=\"\" a:my-attribute=\"2\" a:my-attribute=\"3\"></container>\n",
+            "Cannot modify private(set) property Dom\\Element::$prefix from global scope\n",
+            "string(7) \"foo:baz\"\n",
+            "string(5) \"urn:x\"\n",
+            "string(3) \"foo\"\n",
+            "Cannot append to Dom\\NamedNodeMap\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_element_rename_method"));
+    assert!(c_source.contains("ptn_xml_attribute_ensure_text_child"));
+    assert!(c_source.contains("Cannot append to %s"));
+}
+
+#[test]
 fn compile_dom_clone_import_namespace_residual_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-clone-import-namespace-residual-pack");
     fs::create_dir_all(&root).unwrap();
