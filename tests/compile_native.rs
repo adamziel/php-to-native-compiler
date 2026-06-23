@@ -21654,6 +21654,180 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_json_encode_validate_edge_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-json-edge-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-edge-semantics.php");
+    let output = root.join("json-edge-semantics-bin");
+    fs::write(
+        &input,
+        "<?php
+class JsonEdge implements JsonSerializable {
+    public $a = 1;
+    public function jsonSerialize(): mixed {
+        var_dump(json_encode($this));
+        return $this;
+    }
+}
+var_dump(json_encode(new JsonEdge()));
+
+echo json_encode([[], (object) [], new class {}], JSON_PRETTY_PRINT), \"\\n\";
+class PrettyJson implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        return json_encode([1], JSON_PRETTY_PRINT);
+    }
+}
+echo json_encode([new PrettyJson]), \"\\n\";
+
+var_dump(json_encode([\"test\" => \"123343e871700\"], JSON_NUMERIC_CHECK));
+var_dump(json_encode(\"\\x61\\xf0\\x80\\x80\\x41\", JSON_INVALID_UTF8_SUBSTITUTE));
+echo bin2hex(json_encode(\"\\x61\\xf0\\x80\\x80\\x41\", JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), \"\\n\";
+
+function dump_validate_edge($json, $depth = 512, $flags = 0) {
+    try {
+        var_dump(json_validate($json, $depth, $flags));
+    } catch (Throwable $e) {
+        echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+    }
+    var_dump(json_last_error(), json_last_error_msg());
+}
+json_decode(\"{}\");
+dump_validate_edge(\"-\", 512, JSON_BIGINT_AS_STRING);
+dump_validate_edge(\"-\", 512, JSON_INVALID_UTF8_IGNORE);
+try {
+    var_dump(json_validate(\"-\", PHP_INT_MAX));
+} catch (Throwable $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+    var_dump(json_last_error(), json_last_error_msg());
+}
+try {
+    var_dump(json_decode(\"[]\", true, PHP_INT_MAX));
+} catch (Throwable $e) {
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";
+}
+
+var_dump(json_decode('{\"key\":{\"\\u0000\":\"aa\"}}'));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode('{\"123\":{\"012\":1}}', true));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "string(7) \"{\"a\":1}\"\n",
+            "[\n",
+            "    [],\n",
+            "    {},\n",
+            "    {}\n",
+            "]\n",
+            "[\"[\\n    1\\n]\"]\n",
+            "string(24) \"{\"test\":\"123343e871700\"}\"\n",
+            "string(10) \"\"a\\ufffdA\"\"\n",
+            "2261efbfbd4122\n",
+            "ValueError: json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:1\"\n",
+            "ValueError: json_validate(): Argument #2 ($depth) must be less than 2147483647\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:1\"\n",
+            "ValueError: json_decode(): Argument #3 ($depth) must be less than 2147483647\n",
+            "NULL\n",
+            "int(9)\n",
+            "string(54) \"The decoded property name is invalid near location 1:9\"\n",
+            "array(1) {\n",
+            "  [123]=>\n",
+            "  array(1) {\n",
+            "    [\"012\"]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_json_encode_append_object_properties"));
+    assert!(c_source.contains("ptn_internal_json_validate"));
+}
+
+#[test]
+fn compile_json_decode_locations_and_reentrant_debug_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-json-decode-location-debug-recursion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-decode-location-debug-recursion.php");
+    let output = root.join("json-decode-location-debug-recursion-bin");
+    fs::write(
+        &input,
+        "<?php
+class DebugJson implements JsonSerializable {
+    public $a = 1;
+    public function __debugInfo(): array {
+        return [\"result\" => json_encode($this)];
+    }
+    public function jsonSerialize(): mixed {
+        var_dump($this);
+        return $this;
+    }
+}
+var_dump(json_encode(new DebugJson()));
+echo \"----\\n\";
+var_dump(new DebugJson());
+
+$decoded = json_decode('[{}, {\"child\": {}}]');
+var_dump(spl_object_id($decoded[0]) < spl_object_id($decoded[1]));
+var_dump(spl_object_id($decoded[1]) < spl_object_id($decoded[1]->child));
+
+json_validate('{\"\\u30D7\\u30EC\\u30B9\": \"value}');
+var_dump(json_last_error_msg());
+json_validate('{\"num\": 1e}');
+var_dump(json_last_error_msg());
+json_decode('[{\"key1\": 0, \"\\u1234\": 1, \"\\u0000\": 1}]');
+var_dump(json_last_error_msg());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(DebugJson)#"));
+    assert!(stdout.contains("  [\"result\"]=>\n  bool(false)\n}\nstring(7) \"{\"a\":1}\""));
+    assert!(stdout.contains("----\n*RECURSION*\nobject(DebugJson)#"));
+    assert!(stdout.contains("  [\"result\"]=>\n  string(7) \"{\"a\":1}\"\n}"));
+    assert!(stdout.contains("bool(true)\nbool(true)\n"));
+    assert!(stdout.contains(
+        "string(71) \"Control character error, possibly incorrectly encoded near location 1:9\""
+    ));
+    assert!(stdout.contains("string(31) \"Syntax error near location 1:10\""));
+    assert!(
+        stdout.contains("string(55) \"The decoded property name is invalid near location 1:27\"")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_json_decode"));
+    assert!(c_source.contains("ptn_internal_json_validate"));
+}
+
+#[test]
 fn compile_ctype_extension_to_native_binary() {
     let root = temp_dir("ptn-native-ctype-extension");
     fs::create_dir_all(&root).unwrap();
