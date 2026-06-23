@@ -11553,6 +11553,80 @@ class C extends Z implements C {}
             "Declaration of Y::test(): C must be compatible with X::test(): I",
             "Class \"Z\" not found",
         ),
+        (
+            "autoload-variance-loading-exception-parent",
+            r#"<?php
+spl_autoload_register(function($class) {
+    throw new Exception("Class $class does not exist");
+});
+
+for ($i = 0; $i < 2; $i++) {
+    try {
+        class B extends A {}
+    } catch (Exception $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+interface I {}
+
+spl_autoload_register(function($class) {
+    class X {
+        public function test(): I {}
+    }
+    class Y extends X {
+        public function test(): B {}
+    }
+}, true, true);
+
+try {
+    class B extends A implements I {}
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+            "Class A does not exist\nClass A does not exist",
+            "During inheritance of B with variance dependencies: Uncaught Exception: Class A does not exist",
+            "Declaration of Y::test(): B must be compatible with X::test(): I",
+        ),
+        (
+            "autoload-variance-loading-exception-interface",
+            r#"<?php
+spl_autoload_register(function($class) {
+    throw new Exception("Class $class does not exist");
+});
+
+class A {}
+
+for ($i = 0; $i < 2; $i++) {
+    try {
+        class B extends A implements I {}
+    } catch (Exception $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+interface J {}
+
+spl_autoload_register(function($class) {
+    class X {
+        public function test(): J {}
+    }
+    class Y extends X {
+        public function test(): B {}
+    }
+}, true, true);
+
+try {
+    class B extends A implements I, J {}
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+            "Class I does not exist\nClass I does not exist",
+            "During inheritance of B with variance dependencies: Uncaught Exception: Class I does not exist",
+            "Declaration of Y::test(): B must be compatible with X::test(): J",
+        ),
     ];
 
     for (name, source, required_stdout, required_stderr, forbidden_output) in cases {

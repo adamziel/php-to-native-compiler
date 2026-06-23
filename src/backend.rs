@@ -1145,6 +1145,7 @@ fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
 fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_class_is_variance_dependency(PtnRuntime *runtime, const char *name);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_runtime_linking_class_static_subtype(PtnRuntime *runtime, const char *candidate_name, const char *target_name);\n");
     out.push_str("static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index);\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
@@ -7709,6 +7710,47 @@ fn emit_class_metadata_helpers(
             out.push_str(&index.to_string());
             out.push_str(")) {\n");
             out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_linking_class_static_subtype(PtnRuntime *runtime, const char *candidate_name, const char *target_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)candidate_name;\n");
+        out.push_str("    (void)target_name;\n");
+    } else {
+        out.push_str("    if (ptn_ascii_case_equal(candidate_name, target_name)) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+        for (index, class) in classes.iter().enumerate() {
+            if class.is_interface {
+                continue;
+            }
+            let mut subtype_names = Vec::new();
+            if let Some(parent_name) = &class.parent_name {
+                subtype_names.push(parent_name.as_str());
+            }
+            subtype_names.extend(class_transitive_interfaces(class, classes));
+            if subtype_names.is_empty() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(candidate_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && ptn_declared_runtime_class_slot_linking(runtime, ");
+            out.push_str(&index.to_string());
+            out.push_str(")) {\n");
+            for subtype_name in subtype_names {
+                out.push_str("        if (ptn_ascii_case_equal(target_name, \"");
+                out.push_str(&c_string(subtype_name));
+                out.push_str("\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
             out.push_str("    }\n");
         }
     }
@@ -18235,6 +18277,52 @@ fn emit_runtime_parameter_signature_compatibility_validation(
                         type_temp_counter,
                     );
                 } else {
+                    if let (TypeHint::Class(parent_candidate_name), TypeHint::Class(type_name)) =
+                        (parent_type_hint, type_hint)
+                    {
+                        if runtime_return_candidate_should_autoload(
+                            parent_candidate_name,
+                            type_name,
+                            classes,
+                        ) {
+                            let resolved_candidate = emit_runtime_signature_type_autoload(
+                                out,
+                                parent_candidate_name,
+                                method.line,
+                                class_index,
+                                method_index,
+                                type_temp_counter,
+                            );
+                            let resolved_target = format!(
+                                "ptn_variance_target_{}_{}_{}",
+                                class_index, method_index, *type_temp_counter
+                            );
+                            *type_temp_counter += 1;
+                            out.push_str("        const char *");
+                            out.push_str(&resolved_target);
+                            out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                            out.push_str(&c_string(type_name));
+                            out.push_str("\");\n");
+                            out.push_str("        if (!ptn_declared_runtime_linking_class_static_subtype(&runtime, ");
+                            out.push_str(&resolved_candidate);
+                            out.push_str(", ");
+                            out.push_str(&resolved_target);
+                            out.push_str(")) {\n");
+                            emit_runtime_method_signature_compatibility_fatal_with_indent(
+                                out,
+                                class,
+                                method,
+                                function,
+                                parent_class,
+                                parent_method,
+                                parent_function,
+                                source_path,
+                                "            ",
+                            );
+                            out.push_str("        }\n");
+                            return;
+                        }
+                    }
                     emit_runtime_method_signature_compatibility_fatal(
                         out,
                         class,
@@ -18346,7 +18434,7 @@ fn emit_runtime_return_signature_compatibility_validation(
         (return_type, parent_return_type)
     {
         if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
-            emit_runtime_signature_type_autoload(
+            let resolved_candidate = emit_runtime_signature_type_autoload(
                 out,
                 candidate_name,
                 method.line,
@@ -18354,6 +18442,36 @@ fn emit_runtime_return_signature_compatibility_validation(
                 method_index,
                 type_temp_counter,
             );
+            let resolved_target = format!(
+                "ptn_variance_target_{}_{}_{}",
+                class_index, method_index, *type_temp_counter
+            );
+            *type_temp_counter += 1;
+            out.push_str("        const char *");
+            out.push_str(&resolved_target);
+            out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+            out.push_str(&c_string(target_name));
+            out.push_str("\");\n");
+            out.push_str(
+                "        if (!ptn_declared_runtime_linking_class_static_subtype(&runtime, ",
+            );
+            out.push_str(&resolved_candidate);
+            out.push_str(", ");
+            out.push_str(&resolved_target);
+            out.push_str(")) {\n");
+            emit_runtime_method_signature_compatibility_fatal_with_indent(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+                "            ",
+            );
+            out.push_str("        }\n");
+            return;
         }
     }
     emit_runtime_method_signature_compatibility_fatal(
