@@ -22557,6 +22557,69 @@ echo $set->format('D M j'), "\n";
 }
 
 #[test]
+fn compile_datetime_tokyo_textual_clone_lifecycle_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-tokyo-textual-clone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-tokyo-textual-clone.php");
+    let output = root.join("datetime-tokyo-textual-clone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('Europe/London');
+
+$tokyo = new DateTimeZone('Asia/Tokyo');
+var_dump($tokyo->getName());
+
+$immutable = new DateTimeImmutable('2012-12-27 16:24:08');
+$changed = $immutable->setTimezone($tokyo);
+echo $immutable->format('Y-m-d H:i:s e'), "\n";
+echo $changed->format('Y-m-d H:i:s e'), "\n";
+
+class NativeDateTimeChild extends DateTime {}
+class NativeDateTimeZoneChild extends DateTimeZone {}
+
+$date = new NativeDateTimeChild('1pm Aug 1 GMT 2007');
+$copy = clone $date;
+$date->modify('1 hour');
+$copy->modify('1 second ago');
+echo $date->format(DateTime::RFC822), "\n";
+echo $copy->format(DateTime::RFC822), "\n";
+
+$zone = new NativeDateTimeZoneChild('Asia/Tokyo');
+$zoneCopy = clone $zone;
+echo $zoneCopy->getName(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(10) \"Asia/Tokyo\"\n",
+            "2012-12-27 16:24:08 Europe/London\n",
+            "2012-12-28 01:24:08 Asia/Tokyo\n",
+            "Wed, 01 Aug 07 14:00:00 +0000\n",
+            "Wed, 01 Aug 07 12:59:59 +0000\n",
+            "Asia/Tokyo\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Asia/Tokyo"));
+    assert!(c_source.contains("ptn_datetime_parse_meridian_time_token"));
+}
+
+#[test]
 fn compile_iso_week_and_textual_strtotime_dates_to_native_binary() {
     let root = temp_dir("ptn-native-iso-week-textual-strtotime");
     fs::create_dir_all(&root).unwrap();
