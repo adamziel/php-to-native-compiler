@@ -848,6 +848,8 @@ fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     fs::create_dir_all(&root).unwrap();
     let data_path = root.join("rows.csv");
     fs::write(&data_path, "first\nsecond\n").unwrap();
+    let seek_path = root.join("seek.txt");
+    fs::write(&seek_path, "Line 1\nLine 2\nLine 3\nLine 4\n").unwrap();
     let include_dir = root.join("include");
     fs::create_dir_all(&include_dir).unwrap();
     let included_path = include_dir.join("included.txt");
@@ -866,6 +868,7 @@ class BadCurrentObject extends SplFileObject {{\n\
     public function getCurrentLine(): array {{ return [1, 2, 3]; }}\n\
 }}\n\
 $path = {};\n\
+$seekPath = {};\n\
 $includeDir = {};\n\
 $includeFile = {};\n\
 $info = new SplFileInfo($path);\n\
@@ -882,6 +885,9 @@ try {{ $file->seek(-1); }} catch (ValueError $e) {{ echo $e->getMessage(), \"\\n
 set_include_path($includeDir);\n\
 $included = new SplFileObject('included.txt', 'r', true);\n\
 var_dump($included->getPath() === $includeDir, $included->getFilename(), $included->getRealPath() === $includeFile);\n\
+$seek = new SplFileObject($seekPath);\n\
+$seek->setFlags(SplFileObject::SKIP_EMPTY);\n\
+foreach ([0, 1, 2] as $seekLine) {{ $seek->seek($seekLine); echo $seek->fgets(); }}\n\
 echo $file->current();\n\
 $file->next();\n\
 echo $file->current();\n\
@@ -928,6 +934,7 @@ echo \"\\n\";\n\
 $method = new ReflectionMethod('SplFileObject', 'fputcsv');\n\
 foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), \"\\n\"; }}\n",
             php_string_literal(&data_path),
+            php_string_literal(&seek_path),
             php_string_literal(&include_dir),
             php_string_literal(&included_real_path)
         ),
@@ -958,6 +965,9 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             "bool(true)\n",
             "string(12) \"included.txt\"\n",
             "bool(true)\n",
+            "Line 1\n",
+            "Line 2\n",
+            "Line 3\n",
             "first\n",
             "second\n",
             "string(3) \"fir\"\n",

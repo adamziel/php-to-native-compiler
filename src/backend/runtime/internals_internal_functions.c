@@ -130236,6 +130236,7 @@ static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *cl
     }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
         ptn_internal_class_name_is_directory(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "SplFileObject") ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return 0;
     }
@@ -146503,6 +146504,33 @@ static void ptn_spl_file_object_load_current(
     data->has_current = 1;
 }
 
+static void ptn_spl_file_object_seek_to_line(
+    PtnRuntime *runtime,
+    PtnSplFileObjectData *data,
+    int64_t target,
+    size_t line
+) {
+    PtnValue seek_args[2] = { ptn_value_clone_deref(data->stream), ptn_int(0) };
+    PtnValue seek = ptn_internal_fseek(runtime, 2, seek_args, line);
+    ptn_value_destroy(&seek_args[0]);
+    ptn_value_destroy(&seek_args[1]);
+    ptn_value_destroy(&seek);
+    data->key = 0;
+    ptn_spl_file_object_clear_current(data);
+    while (runtime->exceptions->active_exception == NULL && data->key < target) {
+        PtnValue discarded = (data->flags & PTN_SPL_FILE_OBJECT_READ_CSV) != 0
+            ? ptn_spl_file_object_read_csv(runtime, data, line)
+            : ptn_spl_file_object_read_line(runtime, data, line);
+        PtnValue resolved = ptn_value_deref(discarded);
+        if (resolved.type == PTN_BOOL && resolved.as.boolean == 0) {
+            ptn_value_destroy(&discarded);
+            return;
+        }
+        ptn_value_destroy(&discarded);
+        data->key++;
+    }
+}
+
 static PtnValue ptn_spl_file_object_new_for_class(
     PtnRuntime *runtime,
     const char *class_name,
@@ -146556,6 +146584,14 @@ static PtnValue ptn_spl_file_object_new_for_class(
         if (runtime->exceptions->active_exception != NULL || path == NULL) {
             free(path);
             return ptn_null();
+        }
+        int use_include_path = argc >= 3 && ptn_is_truthy(args[2]);
+        if (use_include_path) {
+            char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
+            if (resolved_path != NULL) {
+                free(path);
+                path = resolved_path;
+            }
         }
         PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
         PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
@@ -147063,21 +147099,10 @@ static PtnValue ptn_spl_file_object_call_method(
             return ptn_null();
         }
         if (target < 0) {
-            ptn_throw_exception(runtime, "LogicException", "Can't seek file to negative line");
+            ptn_throw_exception(runtime, "ValueError", "SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0");
             return ptn_null();
         }
-        PtnValue rewind_result = ptn_spl_file_object_call_method(runtime, receiver, "rewind", 0, NULL, line);
-        ptn_value_destroy(&rewind_result);
-        while (runtime->exceptions->active_exception == NULL && data->key < target) {
-            PtnValue next_result = ptn_spl_file_object_call_method(runtime, receiver, "next", 0, NULL, line);
-            ptn_value_destroy(&next_result);
-            PtnValue valid = ptn_spl_file_object_call_method(runtime, receiver, "valid", 0, NULL, line);
-            int still_valid = ptn_is_truthy(valid);
-            ptn_value_destroy(&valid);
-            if (!still_valid) {
-                break;
-            }
-        }
+        ptn_spl_file_object_seek_to_line(runtime, data, target, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "next")) {
