@@ -77032,9 +77032,12 @@ static int ptn_session_user_handler_bool(PtnRuntime *runtime, int index, size_t 
     if (resolved.type == PTN_BOOL) {
         ok = resolved.as.boolean != 0;
     } else if (resolved.type == PTN_INT && resolved.as.integer == 0) {
+        PtnRuntime *root = ptn_session_root(runtime);
         ptn_emit_deprecation(
             &runtime->diagnostics,
-            "session_start(): Session callback must have a return value of type bool, int returned",
+            root != NULL && root->shutdown_in_progress
+                ? "PHP Request Shutdown: Session callback must have a return value of type bool, int returned"
+                : "session_start(): Session callback must have a return value of type bool, int returned",
             line
         );
         ok = 1;
