@@ -61041,6 +61041,31 @@ var_dump($ext->getName(), $inis['user_agent']);",
 }
 
 #[test]
+fn phpc_session_save_handler_user_startup_ini_emits_diagnostic() {
+    let root = temp_dir("ptn-phpc-session-save-handler-user-startup-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-save-handler-user-startup-ini.php");
+    fs::write(&input, "<?php print \"Done!\\n\";").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("session.save_handler=user")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Fatal error: PHP Startup: Session save handler \"user\" cannot be set by ini_set() in Unknown on line 0\n",
+            "Done!\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_opcache_metadata_surface_is_runtime_visible() {
     let root = temp_dir("ptn-phpc-opcache-metadata");
     fs::create_dir_all(&root).unwrap();
