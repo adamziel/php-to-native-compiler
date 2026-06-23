@@ -10142,6 +10142,37 @@ register_shutdown_function(function () {
 }
 
 #[test]
+fn compile_shutdown_function_forward_static_call_no_active_file_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-forward-static-no-active-file");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-forward-static-no-active-file.php");
+    let output = root.join("shutdown-forward-static-no-active-file-bin");
+    fs::write(
+        &input,
+        "<?php
+register_shutdown_function('forward_static_call', 'hash_hkdf');
+?>
+Done
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Done\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains(
+        "Fatal error: Uncaught Error: Cannot call forward_static_call() when no class scope is active in [no active file]:0\n"
+    ));
+    assert!(stderr.contains("#0 [internal function]: forward_static_call('hash_hkdf')\n"));
+    assert!(stderr.contains("#1 {main}\n"));
+    assert!(stderr.contains("  thrown in [no active file] on line 0\n"));
+    assert!(!stderr.contains("shutdown-forward-static-no-active-file.php:0"));
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (

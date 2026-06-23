@@ -87523,11 +87523,18 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (runtime->current_class_name == NULL && runtime->current_called_class_name == NULL) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        const char *path =
+            line == 0 &&
+            root != NULL &&
+            root->shutdown_functions_running
+                ? "[no active file]"
+                : runtime->source_path;
         ptn_throw_exception_at(
             runtime,
             "Error",
             "Cannot call forward_static_call() when no class scope is active",
-            runtime->source_path,
+            path,
             line
         );
         return ptn_null();
@@ -87610,11 +87617,18 @@ static PtnValue ptn_internal_forward_static_call_array(PtnRuntime *runtime, size
     if (runtime->current_class_name == NULL && runtime->current_called_class_name == NULL) {
         ptn_call_arguments_destroy(&expanded);
         ptn_value_destroy(&callback);
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        const char *path =
+            line == 0 &&
+            root != NULL &&
+            root->shutdown_functions_running
+                ? "[no active file]"
+                : runtime->source_path;
         ptn_throw_exception_at(
             runtime,
             "Error",
             "Cannot call forward_static_call_array() when no class scope is active",
-            runtime->source_path,
+            path,
             line
         );
         return ptn_null();
