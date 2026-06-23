@@ -16760,7 +16760,7 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Constant { name, .. }) => name.clone(),
         Some(ValueExpr::ClassConstantFetch {
             class_name, name, ..
-        }) => format!("{class_name}::{name}"),
+        }) => format!("{}::{name}", reflection_default_class_name_repr(class_name)),
         Some(ValueExpr::NewObject {
             class_name,
             arguments,
@@ -16768,6 +16768,17 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
             ..
         }) => reflection_new_object_default_repr(class_name, arguments, argument_names),
         _ => "NULL".to_string(),
+    }
+}
+
+fn reflection_default_class_name_repr(class_name: &str) -> String {
+    if class_name.eq_ignore_ascii_case("self")
+        || class_name.eq_ignore_ascii_case("parent")
+        || class_name.eq_ignore_ascii_case("static")
+    {
+        class_name.to_string()
+    } else {
+        format!("\\{}", class_name.trim_start_matches('\\'))
     }
 }
 
@@ -16787,8 +16798,8 @@ fn reflection_new_object_default_repr(
     argument_names: &[Option<String>],
 ) -> String {
     let mut display = String::new();
-    display.push_str("new \\");
-    display.push_str(class_name.trim_start_matches('\\'));
+    display.push_str("new ");
+    display.push_str(&reflection_default_class_name_repr(class_name));
     display.push('(');
     for (index, argument) in arguments.iter().enumerate() {
         if index > 0 {

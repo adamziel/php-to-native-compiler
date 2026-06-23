@@ -1170,6 +1170,66 @@ bool(false)\nbool(false)\nbool(false)\n"
 }
 
 #[test]
+fn compile_reflection_parameter_class_names_and_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-class-names-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-class-names-defaults.php");
+    let output = root.join("reflection-parameter-class-names-defaults-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace App;\n\
+class Foo {}\n\
+class Bar { const BAZ = 1; }\n\
+class Base {}\n\
+class Child extends Base {\n\
+    public function defaults($a = Bar::BAZ, $b = new Bar(), $c = new parent(), $d = new self()) {}\n\
+}\n\
+function hinted(foo $value) {}\n\
+\n\
+$param = (new \\ReflectionFunction(__NAMESPACE__ . '\\\\hinted'))->getParameters()[0];\n\
+echo $param->getClass()->getName(), \"\\n\";\n\
+echo new \\ReflectionMethod(Child::class, 'defaults');\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout
+            .contains("Deprecated: Method ReflectionParameter::getClass() is deprecated since 8.0"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("App\\Foo\n"), "{stdout}");
+    assert!(
+        stdout.contains("Parameter #0 [ <optional> $a = \\App\\Bar::BAZ ]"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Parameter #1 [ <optional> $b = new \\App\\Bar() ]"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Parameter #2 [ <optional> $c = new parent() ]"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Parameter #3 [ <optional> $d = new self() ]"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_default_properties_skip_uninitialized_typed_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-default-typed-properties");
     fs::create_dir_all(&root).unwrap();

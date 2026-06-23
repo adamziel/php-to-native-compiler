@@ -119819,10 +119819,11 @@ static int ptn_reflection_class_runtime_symbol_exists_after_autoload(
         }
         resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     }
+    int exists = ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name);
     if (resolved_name_out != NULL) {
-        *resolved_name_out = resolved_name;
+        *resolved_name_out = exists ? ptn_declared_class_canonical_name(resolved_name) : resolved_name;
     }
-    return ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name);
+    return exists;
 }
 
 static int ptn_reflection_class_is_interface_name(const char *name) {
