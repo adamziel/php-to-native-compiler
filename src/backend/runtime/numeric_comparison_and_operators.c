@@ -2226,8 +2226,12 @@ static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue val
             return ptn_add_integers(value.as.integer, 1);
         case PTN_FLOAT:
             return ptn_float(value.as.floating + 1.0);
-        case PTN_STRING:
-            return ptn_increment_string(runtime, value.as.string, line);
+        case PTN_STRING: {
+            PtnValue snapshot = ptn_value_clone(value);
+            PtnValue result = ptn_increment_string(runtime, snapshot.as.string, line);
+            ptn_value_destroy(&snapshot);
+            return result;
+        }
         case PTN_ARRAY:
         case PTN_RESOURCE:
         case PTN_OBJECT:
@@ -2270,8 +2274,12 @@ static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue val
             return ptn_subtract_integers(value.as.integer, 1);
         case PTN_FLOAT:
             return ptn_float(value.as.floating - 1.0);
-        case PTN_STRING:
-            return ptn_decrement_string(runtime, value.as.string, line);
+        case PTN_STRING: {
+            PtnValue snapshot = ptn_value_clone(value);
+            PtnValue result = ptn_decrement_string(runtime, snapshot.as.string, line);
+            ptn_value_destroy(&snapshot);
+            return result;
+        }
         case PTN_ARRAY:
         case PTN_RESOURCE:
         case PTN_OBJECT:
