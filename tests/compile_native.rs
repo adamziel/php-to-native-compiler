@@ -27123,6 +27123,61 @@ echo bin2hex(mb_convert_encoding(hex2bin('7e7b7e7d61626364'), 'UTF-8', 'HZ')), \
 }
 
 #[test]
+fn compile_mbstring_cp936_and_euctw_table_overrides_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-cp936-euctw-table-overrides");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-cp936-euctw-table-overrides.php");
+    let output = root.join("mb-cp936-euctw-table-overrides-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+$cp936 = hex2bin('f8ac');\n\
+var_dump(mb_check_encoding($cp936, 'CP936'));\n\
+echo bin2hex(mb_convert_encoding($cp936, 'UTF-16BE', 'CP936')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('e23f'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('20ac'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('fe10'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('f900'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
+echo mb_strlen($cp936, 'CP936'), \"\\n\";\n\
+$euctw = hex2bin('8eaecfa6');\n\
+var_dump(mb_check_encoding($euctw, 'EUC-TW'));\n\
+var_dump(mb_check_encoding(hex2bin('8ea3a1a1'), 'EUC-TW'));\n\
+echo bin2hex(mb_convert_encoding($euctw, 'UTF-16BE', 'EUC-TW')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('8d9d'), 'EUC-TW', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('4e28'), 'EUC-TW', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('3401'), 'EUC-TW', 'UTF-16BE')), \"\\n\";\n\
+echo mb_strlen($euctw, 'EUC-TW'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "e23f\n",
+            "f8ac\n",
+            "80\n",
+            "25\n",
+            "d84d\n",
+            "1\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "8d9d\n",
+            "8eaecfa6\n",
+            "8eaea1a1\n",
+            "25\n",
+            "1\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_check_encoding_self_referential_array_to_native_binary() {
     let root = temp_dir("ptn-native-mb-check-encoding-self-referential-array");
     fs::create_dir_all(&root).unwrap();
