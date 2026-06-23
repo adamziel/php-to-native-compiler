@@ -919,6 +919,13 @@ $temp->seek(5);\n\
 echo \"temp-seek=\" . $temp->key() . \":\" . var_export($temp->valid(), true) . \"\\n\";\n\
 $bad = new BadCurrentObject($path);\n\
 try {{ var_dump($bad->current()); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+$debug = get_mangled_object_vars(new SplFileObject($path, 'r', false, null));\n\
+var_dump($debug[\"\\0SplFileObject\\0openMode\"], $debug[\"\\0SplFileObject\\0delimiter\"], $debug[\"\\0SplFileObject\\0enclosure\"]);\n\
+$reader = new SplFileObject($path);\n\
+var_dump($reader->fread(5));\n\
+try {{ $reader->fread(0); }} catch (ValueError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ new SplFileObject($includeDir); }} catch (LogicException $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ new SplFileObject($path, []); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
 $csv = new SplFileObject($path, 'w+');\n\
 $csv->setCsvControl(escape: '');\n\
 $csv->fputcsv(fields: ['a', 'b'], escape: '', eol: \"\\n\");\n\
@@ -981,6 +988,13 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             "temp-next=2:false\n",
             "temp-seek=2:false\n",
             "BadCurrentObject::getCurrentLine(): Return value must be of type string, array returned\n",
+            "string(1) \"r\"\n",
+            "string(1) \",\"\n",
+            "string(1) \"\"\"\n",
+            "string(5) \"first\"\n",
+            "SplFileObject::fread(): Argument #1 ($length) must be greater than 0\n",
+            "Cannot use SplFileObject with directories\n",
+            "SplFileObject::__construct(): Argument #2 ($mode) must be of type string, array given\n",
             "array(3) {\n",
             "  [0]=>\n",
             "  string(1) \",\"\n",
