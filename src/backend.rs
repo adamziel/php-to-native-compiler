@@ -83,6 +83,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("Uri\\WhatWg\\InvalidUrlException", "ValueError"),
     ("DateRangeError", "ValueError"),
     ("DateObjectError", "Error"),
+    ("DateMalformedStringException", "Exception"),
+    ("DateInvalidTimeZoneException", "Exception"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),
     ("AssertionError", "Error"),
@@ -20536,6 +20538,11 @@ fn emit_method_dispatch(
         "        return ptn_random_randomizer_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT && ptn_runtime_declared_class_is_same_or_descendant(runtime, resolved.as.object->class_name, \"DatePeriod\") && ptn_internal_class_method_exists(\"DatePeriod\", method_name)) {\n");
+    out.push_str(
+        "        return ptn_date_period_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str(
         "    if (resolved.type == PTN_OBJECT && !ptn_internal_class_exists_name(class_name)) {\n",
     );
@@ -39438,6 +39445,7 @@ impl ValueEmitter {
                 &result_temp,
                 &declared_class,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 true,
@@ -39529,6 +39537,7 @@ impl ValueEmitter {
                     &result_temp,
                     &declared_class,
                     arguments,
+                    argument_names,
                     argument_unpacks,
                     line,
                     false,
@@ -39617,6 +39626,7 @@ impl ValueEmitter {
                 &result_temp,
                 &declared_class,
                 arguments,
+                argument_names,
                 argument_unpacks,
                 line,
                 false,
@@ -39951,6 +39961,7 @@ impl ValueEmitter {
         result_temp: &str,
         declared_class: &ClassDecl,
         arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
         declare_result: bool,
@@ -40095,7 +40106,7 @@ impl ValueEmitter {
                     out,
                     "__construct",
                     arguments,
-                    &[],
+                    argument_names,
                     argument_unpacks,
                     line,
                     true,
@@ -40123,6 +40134,96 @@ impl ValueEmitter {
                 out.push_str(", \"__construct\", 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+            } else if argument_names.iter().any(Option::is_some) {
+                let argument_slots =
+                    match bind_named_call_arguments(&constructor_parameters, argument_names) {
+                        Ok(argument_slots) => argument_slots,
+                        Err(error) => {
+                            self.emit_error_value(out, &constructor_result, &error.message(), line);
+                            Vec::new()
+                        }
+                    };
+                if !argument_slots.is_empty() {
+                    let frame_len = argument_slots
+                        .iter()
+                        .copied()
+                        .max()
+                        .map(|slot| slot + 1)
+                        .unwrap_or(arguments.len())
+                        .max(arguments.len());
+                    let mut slot_temps = vec![None; frame_len];
+                    let mut temps = Vec::with_capacity(arguments.len());
+                    let mut unwrap_array_dim_reference_temps = Vec::new();
+                    for (argument_index, argument) in arguments.iter().enumerate() {
+                        let slot_index = argument_slots[argument_index];
+                        let by_ref_parameter = constructor_parameters
+                            .get(slot_index)
+                            .filter(|parameter| parameter.by_ref);
+                        let temp = if let Some(parameter) = by_ref_parameter {
+                            let parameter_name = if parameter.is_variadic {
+                                ""
+                            } else {
+                                &parameter.name
+                            };
+                            self.emit_by_ref_call_argument(
+                                out,
+                                argument,
+                                "__construct",
+                                slot_index,
+                                parameter_name,
+                                line,
+                                true,
+                                true,
+                            )
+                        } else {
+                            self.emit_call_argument(out, "__construct", argument_index, argument)
+                        };
+                        if by_ref_parameter.is_some()
+                            && value_is_array_dim_reference_target(argument)
+                        {
+                            unwrap_array_dim_reference_temps.push(temp.clone());
+                        }
+                        slot_temps[slot_index] = Some(temp.clone());
+                        temps.push(temp);
+                    }
+                    let args_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&args_temp);
+                    out.push_str("[] = { ");
+                    for (index, temp) in slot_temps.iter().enumerate() {
+                        if index > 0 {
+                            out.push_str(", ");
+                        }
+                        if let Some(temp) = temp {
+                            out.push_str("ptn_value_share(");
+                            out.push_str(temp);
+                            out.push(')');
+                        } else {
+                            out.push_str("ptn_missing()");
+                        }
+                    }
+                    out.push_str(" };\n");
+                    out.push_str("    PtnValue ");
+                    out.push_str(&constructor_result);
+                    out.push_str(" = ptn_call_declared_method(&runtime, ");
+                    out.push_str(result_temp);
+                    out.push_str(", \"__construct\", ");
+                    out.push_str(&slot_temps.len().to_string());
+                    out.push_str(", ");
+                    out.push_str(&args_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    for temp in &unwrap_array_dim_reference_temps {
+                        emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
+                    }
+                    for index in 0..slot_temps.len() {
+                        emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+                    }
+                    for temp in temps {
+                        emit_value_cleanup(out, "    ", &temp);
+                    }
+                }
             } else {
                 let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
                 let mut unwrap_array_dim_reference_temps = Vec::new();

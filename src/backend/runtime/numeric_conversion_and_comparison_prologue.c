@@ -7655,7 +7655,11 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_date_period(receiver.as.object->class_name)
+        && ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            receiver.as.object->class_name,
+            "DatePeriod"
+        )
         && ptn_internal_class_method_exists("DatePeriod", name)
     ) {
         return ptn_date_period_call_method(runtime, receiver, name, argc, args, line);
