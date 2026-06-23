@@ -59,11 +59,12 @@ static PTN_UNUSED void ptn_gc_end_replaced_reference_cycle_suppression(
     PtnReference *reference
 );
 
-static PTN_UNUSED int ptn_reference_assign_result_with_context(
+static PTN_UNUSED int ptn_reference_assign_result_with_context_at(
     PtnRuntime *runtime,
     PtnReference *reference,
     PtnValue value,
     int reference_context,
+    size_t line,
     PtnValue *result_out
 ) {
     PtnValue stored_value = ptn_null();
@@ -72,7 +73,7 @@ static PTN_UNUSED int ptn_reference_assign_result_with_context(
         reference,
         value,
         reference_context,
-        0,
+        line,
         &stored_value
     )) {
         return 0;
@@ -90,6 +91,23 @@ static PTN_UNUSED int ptn_reference_assign_result_with_context(
     reference->value = stored_value;
     *result_out = result;
     return 1;
+}
+
+static PTN_UNUSED int ptn_reference_assign_result_with_context(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue value,
+    int reference_context,
+    PtnValue *result_out
+) {
+    return ptn_reference_assign_result_with_context_at(
+        runtime,
+        reference,
+        value,
+        reference_context,
+        0,
+        result_out
+    );
 }
 
 static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out) {

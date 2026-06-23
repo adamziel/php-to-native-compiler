@@ -538,6 +538,7 @@ pub struct CatchClause {
     pub type_names: Vec<String>,
     pub variable: Option<String>,
     pub body: Vec<Instruction>,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -4395,6 +4396,7 @@ impl<'a> LoweringContext<'a> {
             type_names: catch.type_names.clone(),
             variable: catch.variable.clone(),
             body: self.lower_statements(&catch.body),
+            line: catch.span.line,
         }
     }
 

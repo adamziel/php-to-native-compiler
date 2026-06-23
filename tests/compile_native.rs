@@ -79613,6 +79613,62 @@ clone $box;
 }
 
 #[test]
+fn compile_catch_binding_typed_reference_error_to_native_binary() {
+    let root = temp_dir("ptn-native-catch-binding-typed-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("catch-binding-typed-reference.php");
+    let output = root.join("catch-binding-typed-reference-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public int $i = 42;
+}
+
+$test = new Test();
+$ref =& $test->i;
+
+try {
+    try {
+        throw new Exception("ex");
+    } catch (Exception $ref) {
+        echo "unreachable\n";
+    } catch (TypeError $e) {
+        echo "same catch\n";
+    } finally {
+        echo "inner finally\n";
+    }
+} catch (TypeError $e) {
+    echo $test->i, "\n";
+    echo $e->getMessage(), "\n";
+    echo $e->getPrevious() === null ? "no previous\n" : "has previous\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "inner finally\n",
+            "42\n",
+            "Cannot assign Exception to reference held by property Test::$i of type int\n",
+            "no previous\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_readonly_object_incdec_preserves_previous_exception_identity_to_native_binary() {
     let root = temp_dir("ptn-native-readonly-object-incdec-previous");
     fs::create_dir_all(&root).unwrap();

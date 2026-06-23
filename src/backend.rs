@@ -26191,6 +26191,10 @@ fn emit_try(
             out.push_str("            }\n");
         }
     }
+    let catch_binding_failed_label = catches
+        .iter()
+        .any(|catch| catch.variable.is_some())
+        .then(|| values.next_label("ptn_try_catch_binding_failed"));
     for catch in catches {
         let catch_body_label = values.next_label("ptn_try_catch_body");
         let catch_after_label = values.next_label("ptn_try_catch_after");
@@ -26215,11 +26219,30 @@ fn emit_try(
             out.push_str(" = 1;\n");
         }
         if let Some(variable) = &catch.variable {
-            out.push_str("                ptn_runtime_write_variable(&runtime, \"");
+            out.push_str("                if (!ptn_runtime_bind_catch_variable(&runtime, \"");
             out.push_str(&c_string(variable));
-            out.push_str("\", ptn_current_exception_value(&runtime));\n");
+            out.push_str("\", ");
+            out.push_str(&catch.line.to_string());
+            out.push_str(")) {\n");
+            out.push_str("                    ");
+            out.push_str(&caught_temp);
+            out.push_str(" = 0;\n");
+            if let Some(catch_active_temp) = &catch_active_temp {
+                out.push_str("                    ");
+                out.push_str(catch_active_temp);
+                out.push_str(" = 0;\n");
+            }
+            out.push_str("                    goto ");
+            out.push_str(
+                catch_binding_failed_label
+                    .as_ref()
+                    .expect("catch binding failure label exists"),
+            );
+            out.push_str(";\n");
+            out.push_str("                }\n");
+        } else {
+            out.push_str("                ptn_clear_exception(&runtime);\n");
         }
-        out.push_str("                ptn_clear_exception(&runtime);\n");
         out.push_str("                goto ");
         out.push_str(&catch_body_label);
         out.push_str(";\n");
@@ -26249,6 +26272,12 @@ fn emit_try(
         }
         out.push_str("            ");
         out.push_str(&catch_after_label);
+        out.push_str(":\n");
+        out.push_str("            ;\n");
+    }
+    if let Some(catch_binding_failed_label) = &catch_binding_failed_label {
+        out.push_str("            ");
+        out.push_str(catch_binding_failed_label);
         out.push_str(":\n");
         out.push_str("            ;\n");
     }
