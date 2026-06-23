@@ -25780,6 +25780,71 @@ echo 'illegal=', mb_get_info('illegal_chars') - $before, \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_encoding_conversion_row_pack_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-encoding-conversion-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-encoding-conversion-row-pack.php");
+    let output = root.join("mb-encoding-conversion-row-pack-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(mb_scrub(\"\\x80\") === \"?\");\n\
+var_dump(mb_substitute_character('LoNg'));\n\
+var_dump(mb_substitute_character());\n\
+echo bin2hex(mb_convert_encoding(\"\\xe2\\x99\\xa0\\xe3\\x81\\x82\", 'CP932', 'UTF-8')), \"\\n\";\n\
+try {\n\
+    mb_substitute_character('BAD_NAME');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    mb_check_encoding('x', 'pass');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    mb_encode_numericentity('str', [0xff, 0x2ffff, 0], 'UTF-8');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    mb_encode_numericentity('str', [0xff, 'not an int', 0, 0], 'UTF-8');\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$euc_jp = hex2bin('c6fccbdcb8eca5c6a5ada5b9a5c8a4c7a4b9a1a33031323334a3b5a3b6a3b7a3b8a3b9a1a3');\n\
+echo base64_encode(mb_convert_encoding($euc_jp, 'SJIS', 'JIS,UTF-8,EUC-JP,SJIS')), \"\\n\";\n\
+mb_language('Japanese');\n\
+$jis = hex2bin('1b2442467c4b5c386c2546252d253925482447243921231b284230313233341b24422335233623372338233921231b2842');\n\
+echo bin2hex(mb_convert_encoding($jis, 'EUC-JP', 'auto')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('7e7b7e7d61626364'), 'UTF-8', 'HZ')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(4) \"long\"\n",
+            "552b3236363082a0\n",
+            "mb_substitute_character(): Argument #1 ($substitute_character) must be \"none\", \"long\", \"entity\" or a valid codepoint\n",
+            "mb_check_encoding(): Argument #2 ($encoding) must be a valid encoding, \"pass\" given\n",
+            "mb_encode_numericentity(): Argument #2 ($map) must have a multiple of 4 elements\n",
+            "mb_encode_numericentity(): Argument #2 ($map) must only be composed of values of type int\n",
+            "k/qWe4zqg2WDTINYg2eCxYK3gUIwMTIzNIJUglWCVoJXgliBQg==\n",
+            "c6fccbdcb8eca5c6a5ada5b9a5c8a4c7a4b9a1a33031323334a3b5a3b6a3b7a3b8a3b9a1a3\n",
+            "61626364\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_ucs4_bom_and_invalid_codepoints_to_native_binary() {
     let root = temp_dir("ptn-native-mb-ucs4-bom-invalid");
     fs::create_dir_all(&root).unwrap();
