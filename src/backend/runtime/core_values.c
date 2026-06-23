@@ -3041,6 +3041,14 @@ static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_intl_uconverter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_xmlwriter_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

@@ -4380,8 +4380,46 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Collator")) {
+        if (strcmp(constant, "PRIMARY") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "SECONDARY") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "TERTIARY") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
         if (strcmp(constant, "SORT_REGULAR") == 0) {
             *out = ptn_int(0);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "UConverter")) {
+        if (strcmp(constant, "REASON_UNASSIGNED") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "REASON_ILLEGAL") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "REASON_IRREGULAR") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "REASON_RESET") == 0) {
+            *out = ptn_int(3);
+            return 1;
+        }
+        if (strcmp(constant, "REASON_CLOSE") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "REASON_CLONE") == 0) {
+            *out = ptn_int(5);
             return 1;
         }
     }
@@ -7409,6 +7447,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("Spoofchecker", name)
     ) {
         return ptn_intl_spoofchecker_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "UConverter")
+        && ptn_internal_class_method_exists("UConverter", name)
+    ) {
+        return ptn_intl_uconverter_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

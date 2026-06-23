@@ -19982,6 +19982,11 @@ fn emit_method_dispatch(
         "        return ptn_intl_spoofchecker_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
+    out.push_str("    if (ptn_object_is_internal_or_descendant(resolved, \"UConverter\") && ptn_internal_class_method_exists(\"UConverter\", method_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_uconverter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",

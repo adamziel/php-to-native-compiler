@@ -58568,6 +58568,9 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_new(
     return object;
 }
 
+static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+
 static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -58577,6 +58580,12 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
 ) {
     if (ptn_ascii_case_equal(class_name, "IntlDateFormatter")) {
         return ptn_intl_date_formatter_new(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "Collator")) {
+        return ptn_intl_collator_new(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "UConverter")) {
+        return ptn_intl_uconverter_new(runtime, class_name, argc, args, line);
     }
     (void)argc;
     (void)args;
@@ -59089,6 +59098,387 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
     return ptn_null();
 }
 
+typedef struct PtnIcuConverter PtnIcuConverter;
+typedef struct PtnIcuCollator PtnIcuCollator;
+
+typedef struct {
+    int attempted;
+    void *uc_handle;
+    void *i18n_handle;
+    PtnIcuConverter *(*ucnv_open)(const char *, int32_t *);
+    void (*ucnv_close)(PtnIcuConverter *);
+    const char *(*ucnv_getName)(const PtnIcuConverter *, int32_t *);
+    int32_t (*ucnv_convert)(const char *, const char *, char *, int32_t, const char *, int32_t, int32_t *);
+    int32_t (*ucnv_countAvailable)(void);
+    const char *(*ucnv_getAvailableName)(int32_t);
+    uint16_t (*ucnv_countAliases)(const char *, int32_t *);
+    const char *(*ucnv_getAlias)(const char *, uint16_t, int32_t *);
+    PtnIcuCollator *(*ucol_open)(const char *, int32_t *);
+    void (*ucol_close)(PtnIcuCollator *);
+    int32_t (*ucol_strcollUTF8)(const PtnIcuCollator *, const char *, int32_t, const char *, int32_t, int32_t *);
+    const char *(*ucol_getLocaleByType)(const PtnIcuCollator *, int32_t, int32_t *);
+    void (*ucol_setStrength)(PtnIcuCollator *, int32_t);
+    int32_t (*ucol_getStrength)(const PtnIcuCollator *);
+    int32_t (*ucol_getAttribute)(const PtnIcuCollator *, int32_t, int32_t *);
+} PtnIcuApi;
+
+static PtnIcuApi ptn_icu_api = {0};
+
+#define PTN_ICU_ZERO_ERROR 0
+#define PTN_ICU_BUFFER_OVERFLOW_ERROR 15
+#define PTN_ICU_ACTUAL_LOCALE 0
+#define PTN_ICU_VALID_LOCALE 1
+#define PTN_ICU_PRIMARY 0
+#define PTN_ICU_SECONDARY 1
+#define PTN_ICU_TERTIARY 2
+#define PTN_UCONVERTER_REASON_UNASSIGNED 0
+#define PTN_UCONVERTER_REASON_ILLEGAL 1
+#define PTN_UCONVERTER_REASON_IRREGULAR 2
+#define PTN_UCONVERTER_REASON_RESET 3
+#define PTN_UCONVERTER_REASON_CLOSE 4
+#define PTN_UCONVERTER_REASON_CLONE 5
+
+static int ptn_icu_failure(int32_t status) {
+    return status > PTN_ICU_ZERO_ERROR;
+}
+
+static void *ptn_icu_open_library(const char *env_name, const char *const *names, const char *const *patterns) {
+#if defined(_WIN32)
+    (void)env_name;
+    (void)names;
+    (void)patterns;
+    return NULL;
+#else
+    const char *env_library = getenv(env_name);
+    if (env_library != NULL && env_library[0] != '\0') {
+        void *handle = dlopen(env_library, RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    for (size_t i = 0; names[i] != NULL; i++) {
+        void *handle = dlopen(names[i], RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    for (size_t pattern = 0; patterns[pattern] != NULL; pattern++) {
+        glob_t matches;
+        memset(&matches, 0, sizeof(matches));
+        void *handle = NULL;
+        if (glob(patterns[pattern], 0, NULL, &matches) == 0) {
+            for (size_t i = 0; i < matches.gl_pathc; i++) {
+                handle = dlopen(matches.gl_pathv[i], RTLD_LAZY | RTLD_LOCAL);
+                if (handle != NULL) {
+                    break;
+                }
+            }
+        }
+        globfree(&matches);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+#endif
+}
+
+static void *ptn_icu_symbol(void *handle, const char *name) {
+    if (handle == NULL) {
+        return NULL;
+    }
+    void *symbol = dlsym(handle, name);
+    if (symbol != NULL) {
+        return symbol;
+    }
+    static const int suffixes[] = { 76, 75, 74, 73, 72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60 };
+    for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
+        char renamed[128];
+        int written = snprintf(renamed, sizeof(renamed), "%s_%d", name, suffixes[i]);
+        if (written < 0 || (size_t)written >= sizeof(renamed)) {
+            continue;
+        }
+        symbol = dlsym(handle, renamed);
+        if (symbol != NULL) {
+            return symbol;
+        }
+    }
+    return NULL;
+}
+
+static PtnIcuApi *ptn_icu_load(void) {
+    if (ptn_icu_api.attempted) {
+        return ptn_icu_api.uc_handle != NULL ? &ptn_icu_api : NULL;
+    }
+    ptn_icu_api.attempted = 1;
+#if !defined(_WIN32)
+    static const char *const uc_names[] = {
+        "libicuuc.so.76",
+        "libicuuc.so.75",
+        "libicuuc.so.74",
+        "libicuuc.so.73",
+        "libicuuc.so",
+        NULL
+    };
+    static const char *const uc_patterns[] = {
+        "/nix/store/*-icu4c-*/lib/libicuuc.so.76*",
+        "/nix/store/*-icu4c-*/lib/libicuuc.so.75*",
+        "/nix/store/*-icu4c-*/lib/libicuuc.so.74*",
+        "/nix/store/*-icu4c-*/lib/libicuuc.so.73*",
+        "/nix/store/*-icu4c-*/lib/libicuuc.so",
+        NULL
+    };
+    static const char *const i18n_names[] = {
+        "libicui18n.so.76",
+        "libicui18n.so.75",
+        "libicui18n.so.74",
+        "libicui18n.so.73",
+        "libicui18n.so",
+        NULL
+    };
+    static const char *const i18n_patterns[] = {
+        "/nix/store/*-icu4c-*/lib/libicui18n.so.76*",
+        "/nix/store/*-icu4c-*/lib/libicui18n.so.75*",
+        "/nix/store/*-icu4c-*/lib/libicui18n.so.74*",
+        "/nix/store/*-icu4c-*/lib/libicui18n.so.73*",
+        "/nix/store/*-icu4c-*/lib/libicui18n.so",
+        NULL
+    };
+    ptn_icu_api.uc_handle = ptn_icu_open_library("PTN_ICUUC_LIBRARY", uc_names, uc_patterns);
+    ptn_icu_api.i18n_handle = ptn_icu_open_library("PTN_ICUI18N_LIBRARY", i18n_names, i18n_patterns);
+#endif
+    if (ptn_icu_api.uc_handle == NULL) {
+        return NULL;
+    }
+#define PTN_ICU_LOAD_UC(slot, symbol) \
+    do { \
+        *(void **)(&ptn_icu_api.slot) = ptn_icu_symbol(ptn_icu_api.uc_handle, symbol); \
+        if (ptn_icu_api.slot == NULL) { \
+            return NULL; \
+        } \
+    } while (0)
+#define PTN_ICU_LOAD_I18N(slot, symbol) \
+    do { \
+        *(void **)(&ptn_icu_api.slot) = ptn_icu_symbol(ptn_icu_api.i18n_handle, symbol); \
+        if (ptn_icu_api.slot == NULL) { \
+            return NULL; \
+        } \
+    } while (0)
+    PTN_ICU_LOAD_UC(ucnv_open, "ucnv_open");
+    PTN_ICU_LOAD_UC(ucnv_close, "ucnv_close");
+    PTN_ICU_LOAD_UC(ucnv_getName, "ucnv_getName");
+    PTN_ICU_LOAD_UC(ucnv_convert, "ucnv_convert");
+    PTN_ICU_LOAD_UC(ucnv_countAvailable, "ucnv_countAvailable");
+    PTN_ICU_LOAD_UC(ucnv_getAvailableName, "ucnv_getAvailableName");
+    PTN_ICU_LOAD_UC(ucnv_countAliases, "ucnv_countAliases");
+    PTN_ICU_LOAD_UC(ucnv_getAlias, "ucnv_getAlias");
+    if (ptn_icu_api.i18n_handle != NULL) {
+        PTN_ICU_LOAD_I18N(ucol_open, "ucol_open");
+        PTN_ICU_LOAD_I18N(ucol_close, "ucol_close");
+        PTN_ICU_LOAD_I18N(ucol_strcollUTF8, "ucol_strcollUTF8");
+        PTN_ICU_LOAD_I18N(ucol_getLocaleByType, "ucol_getLocaleByType");
+        PTN_ICU_LOAD_I18N(ucol_setStrength, "ucol_setStrength");
+        PTN_ICU_LOAD_I18N(ucol_getStrength, "ucol_getStrength");
+        PTN_ICU_LOAD_I18N(ucol_getAttribute, "ucol_getAttribute");
+    }
+#undef PTN_ICU_LOAD_UC
+#undef PTN_ICU_LOAD_I18N
+    return &ptn_icu_api;
+}
+
+static char *ptn_icu_converter_canonical_name(const char *name) {
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || name == NULL || name[0] == '\0') {
+        return ptn_duplicate_string(name == NULL || name[0] == '\0' ? "UTF-8" : name);
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuConverter *converter = api->ucnv_open(name, &status);
+    if (converter == NULL || ptn_icu_failure(status)) {
+        return ptn_duplicate_string(name);
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    const char *canonical = api->ucnv_getName(converter, &status);
+    char *result = ptn_duplicate_string((canonical != NULL && !ptn_icu_failure(status)) ? canonical : name);
+    api->ucnv_close(converter);
+    return result;
+}
+
+static PtnValue ptn_icu_transcode_bytes(
+    const char *to_encoding,
+    const char *from_encoding,
+    const char *source,
+    size_t source_len
+) {
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || source_len > (size_t)INT32_MAX) {
+        return ptn_bool(0);
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    int32_t needed = api->ucnv_convert(
+        to_encoding,
+        from_encoding,
+        NULL,
+        0,
+        source,
+        (int32_t)source_len,
+        &status
+    );
+    if (ptn_icu_failure(status) && status != PTN_ICU_BUFFER_OVERFLOW_ERROR) {
+        return ptn_bool(0);
+    }
+    if (needed < 0) {
+        return ptn_bool(0);
+    }
+    char *output = malloc((size_t)needed + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    int32_t written = api->ucnv_convert(
+        to_encoding,
+        from_encoding,
+        output,
+        needed == 0 ? 1 : needed,
+        source,
+        (int32_t)source_len,
+        &status
+    );
+    if (ptn_icu_failure(status) || written < 0) {
+        free(output);
+        return ptn_bool(0);
+    }
+    output[written] = '\0';
+    return ptn_owned_string_len(output, (size_t)written);
+}
+
+typedef struct {
+    char *locale;
+    char *valid_locale;
+    char *actual_locale;
+    int32_t strength;
+    char *last_error_message;
+} PtnIntlCollatorData;
+
+static void ptn_intl_collator_data_free(void *ptr) {
+    PtnIntlCollatorData *data = (PtnIntlCollatorData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->valid_locale);
+    free(data->actual_locale);
+    free(data->last_error_message);
+    free(data);
+}
+
+static void ptn_intl_collator_set_error(PtnIntlCollatorData *data, const char *function_name, const char *icu_error) {
+    if (data == NULL) {
+        return;
+    }
+    free(data->last_error_message);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Error getting attribute value: %s",
+        function_name,
+        icu_error
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    data->last_error_message = malloc((size_t)needed + 1);
+    if (data->last_error_message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        data->last_error_message,
+        (size_t)needed + 1,
+        "%s(): Error getting attribute value: %s",
+        function_name,
+        icu_error
+    );
+}
+
+static PtnIcuCollator *ptn_intl_collator_open(PtnIntlCollatorData *data, int32_t *status_out) {
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || api->ucol_open == NULL) {
+        *status_out = 1;
+        return NULL;
+    }
+    *status_out = PTN_ICU_ZERO_ERROR;
+    PtnIcuCollator *collator = api->ucol_open(data->locale, status_out);
+    if (collator != NULL && !ptn_icu_failure(*status_out)) {
+        api->ucol_setStrength(collator, data->strength);
+    }
+    return collator;
+}
+
+static void ptn_intl_collator_compute_locales(PtnIntlCollatorData *data) {
+    free(data->valid_locale);
+    free(data->actual_locale);
+    data->valid_locale = ptn_duplicate_string("");
+    data->actual_locale = ptn_duplicate_string("");
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuApi *api = ptn_icu_load();
+    PtnIcuCollator *collator = api == NULL || api->ucol_open == NULL ? NULL : api->ucol_open(data->locale, &status);
+    if (collator == NULL || ptn_icu_failure(status)) {
+        free(data->valid_locale);
+        free(data->actual_locale);
+        data->valid_locale = ptn_duplicate_string(data->locale[0] == '\0' ? "root" : data->locale);
+        data->actual_locale = ptn_duplicate_string(data->locale[0] == '\0' ? "root" : data->locale);
+        return;
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    const char *valid = api->ucol_getLocaleByType(collator, PTN_ICU_VALID_LOCALE, &status);
+    free(data->valid_locale);
+    data->valid_locale = ptn_duplicate_string(valid != NULL && !ptn_icu_failure(status) ? valid : "");
+    status = PTN_ICU_ZERO_ERROR;
+    const char *actual = api->ucol_getLocaleByType(collator, PTN_ICU_ACTUAL_LOCALE, &status);
+    free(data->actual_locale);
+    data->actual_locale = ptn_duplicate_string(actual != NULL && !ptn_icu_failure(status) ? actual : "");
+    api->ucol_close(collator);
+}
+
+static PtnIntlCollatorData *ptn_intl_collator_data_new(const char *locale) {
+    PtnIntlCollatorData *data = malloc(sizeof(PtnIntlCollatorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = ptn_duplicate_string(locale);
+    data->valid_locale = NULL;
+    data->actual_locale = NULL;
+    data->strength = PTN_ICU_TERTIARY;
+    data->last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    ptn_intl_collator_compute_locales(data);
+    return data;
+}
+
+static PtnIntlCollatorData *ptn_intl_collator_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnIntlCollatorData *)value.as.object->native_data;
+}
+
+static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    const char *locale_text = "";
+    PtnStringOperand locale = { "", NULL, 0 };
+    if (argc >= 1) {
+        locale = ptn_internal_expect_string_arg(runtime, "Collator::__construct", 1, "locale", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locale);
+            return ptn_null();
+        }
+        locale_text = locale.data;
+    }
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = ptn_intl_collator_data_new(locale_text);
+    object.as.object->native_data_free = ptn_intl_collator_data_free;
+    ptn_string_operand_free(locale);
+    return object;
+}
+
 static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand locale =
@@ -59096,8 +59486,11 @@ static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, c
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    PtnValue object = ptn_object_new_shell(runtime, "Collator");
+    object.as.object->native_data = ptn_intl_collator_data_new(locale.data);
+    object.as.object->native_data_free = ptn_intl_collator_data_free;
     ptn_string_operand_free(locale);
-    return ptn_object_new_shell(runtime, "Collator");
+    return object;
 }
 
 static PtnValue ptn_intl_collator_sort_array(
@@ -59140,6 +59533,153 @@ static PtnValue ptn_internal_collator_sort_with_sort_keys(PtnRuntime *runtime, s
     return ptn_intl_collator_sort_array(runtime, "collator_sort_with_sort_keys", 2, args[1], PTN_SORT_REGULAR, line);
 }
 
+static PtnValue ptn_intl_collator_compare_values(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue left_value,
+    PtnValue right_value,
+    size_t line
+) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand left = ptn_value_to_string_operand(left_value);
+    PtnStringOperand right = ptn_value_to_string_operand(right_value);
+    if (left.len > (size_t)INT32_MAX || right.len > (size_t)INT32_MAX) {
+        ptn_string_operand_free(left);
+        ptn_string_operand_free(right);
+        return ptn_bool(0);
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuApi *api = ptn_icu_load();
+    PtnIcuCollator *collator = ptn_intl_collator_open(data, &status);
+    if (api == NULL || collator == NULL || ptn_icu_failure(status)) {
+        size_t common_len = left.len < right.len ? left.len : right.len;
+        int cmp = common_len == 0 ? 0 : memcmp(left.data, right.data, common_len);
+        if (cmp == 0 && left.len != right.len) {
+            cmp = left.len < right.len ? -1 : 1;
+        }
+        ptn_string_operand_free(left);
+        ptn_string_operand_free(right);
+        return ptn_int(cmp < 0 ? -1 : (cmp > 0 ? 1 : 0));
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    int32_t compared = api->ucol_strcollUTF8(
+        collator,
+        left.data,
+        (int32_t)left.len,
+        right.data,
+        (int32_t)right.len,
+        &status
+    );
+    api->ucol_close(collator);
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    if (ptn_icu_failure(status)) {
+        return ptn_bool(0);
+    }
+    return ptn_int(compared < 0 ? -1 : (compared > 0 ? 1 : 0));
+}
+
+static PtnValue ptn_internal_collator_compare(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_intl_collator_compare_values(runtime, args[0], args[1], args[2], line);
+}
+
+static PtnValue ptn_intl_collator_get_locale_value(PtnValue receiver, PtnValue type_value) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL) {
+        return ptn_bool(0);
+    }
+    int64_t type = ptn_value_to_integer(type_value);
+    if (type == PTN_ICU_VALID_LOCALE) {
+        return ptn_string(data->valid_locale);
+    }
+    if (type == PTN_ICU_ACTUAL_LOCALE) {
+        return ptn_string(data->actual_locale);
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_collator_get_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_intl_collator_get_locale_value(args[0], args[1]);
+}
+
+static PtnValue ptn_intl_collator_get_attribute_value(PtnValue receiver, PtnValue attribute_value, const char *function_name) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL) {
+        return ptn_bool(0);
+    }
+    int64_t attribute = ptn_value_to_integer(attribute_value);
+    if (attribute < INT32_MIN || attribute > INT32_MAX) {
+        ptn_intl_collator_set_error(data, function_name, "U_ILLEGAL_ARGUMENT_ERROR");
+        return ptn_bool(0);
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuApi *api = ptn_icu_load();
+    PtnIcuCollator *collator = ptn_intl_collator_open(data, &status);
+    if (api == NULL || collator == NULL || ptn_icu_failure(status)) {
+        ptn_intl_collator_set_error(data, function_name, "U_ILLEGAL_ARGUMENT_ERROR");
+        return ptn_bool(0);
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    int32_t result = api->ucol_getAttribute(collator, (int32_t)attribute, &status);
+    api->ucol_close(collator);
+    if (ptn_icu_failure(status)) {
+        ptn_intl_collator_set_error(data, function_name, "U_ILLEGAL_ARGUMENT_ERROR");
+        return ptn_bool(0);
+    }
+    free(data->last_error_message);
+    data->last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    return ptn_int(result);
+}
+
+static PtnValue ptn_internal_collator_get_attribute(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_intl_collator_get_attribute_value(args[0], args[1], "collator_get_attribute");
+}
+
+static PtnValue ptn_intl_collator_get_error_message_value(PtnValue receiver) {
+    PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+    if (data == NULL || data->last_error_message == NULL) {
+        return ptn_string("U_ZERO_ERROR");
+    }
+    return ptn_string(data->last_error_message);
+}
+
+static PtnValue ptn_internal_collator_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_intl_collator_get_error_message_value(args[0]);
+}
+
+static PtnValue ptn_internal_collator_get_strength(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnIntlCollatorData *data = ptn_intl_collator_data(args[0]);
+    return data == NULL ? ptn_bool(0) : ptn_int(data->strength);
+}
+
+static PtnValue ptn_internal_collator_set_strength(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnIntlCollatorData *data = ptn_intl_collator_data(args[0]);
+    if (data == NULL) {
+        return ptn_bool(0);
+    }
+    data->strength = (int32_t)ptn_value_to_integer(args[1]);
+    return ptn_bool(1);
+}
+
 static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -59148,9 +59688,41 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)receiver;
     if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_intl_collator_new(runtime, "Collator", argc, args, line);
+        if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "compare")) {
+        return ptn_intl_collator_compare_values(runtime, receiver, args[0], args[1], line);
+    }
+    if (ptn_ascii_case_equal(name, "getLocale")) {
+        return ptn_intl_collator_get_locale_value(receiver, args[0]);
+    }
+    if (ptn_ascii_case_equal(name, "getAttribute")) {
+        return ptn_intl_collator_get_attribute_value(receiver, args[0], "Collator::getAttribute");
+    }
+    if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+        (void)argc;
+        (void)args;
+        return ptn_intl_collator_get_error_message_value(receiver);
+    }
+    if (ptn_ascii_case_equal(name, "getStrength")) {
+        (void)argc;
+        (void)args;
+        PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+        return data == NULL ? ptn_bool(0) : ptn_int(data->strength);
+    }
+    if (ptn_ascii_case_equal(name, "setStrength")) {
+        PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
+        if (data == NULL) {
+            return ptn_bool(0);
+        }
+        data->strength = (int32_t)ptn_value_to_integer(args[0]);
+        return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "sort")) {
         int64_t flags = argc >= 2 ? ptn_internal_sort_flags_arg(runtime, "Collator::sort", args[1], line) : PTN_SORT_REGULAR;
@@ -59210,19 +59782,386 @@ static int ptn_intl_options_to_subst_is_invalid(PtnValue options_value) {
     return invalid;
 }
 
+typedef struct {
+    char *destination_encoding;
+    char *source_encoding;
+    int close_callbacks_emitted;
+} PtnIntlUConverterData;
+
+static void ptn_intl_uconverter_data_free(void *ptr) {
+    PtnIntlUConverterData *data = (PtnIntlUConverterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->destination_encoding);
+    free(data->source_encoding);
+    free(data);
+}
+
+static PtnIntlUConverterData *ptn_intl_uconverter_data_new(const char *destination, const char *source) {
+    PtnIntlUConverterData *data = malloc(sizeof(PtnIntlUConverterData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->destination_encoding = ptn_icu_converter_canonical_name(destination);
+    data->source_encoding = ptn_icu_converter_canonical_name(source);
+    data->close_callbacks_emitted = 0;
+    return data;
+}
+
+static PtnIntlUConverterData *ptn_intl_uconverter_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnIntlUConverterData *)value.as.object->native_data;
+}
+
+static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand destination = { "UTF-8", NULL, 5 };
+    PtnStringOperand source = { "UTF-8", NULL, 5 };
+    if (argc >= 1) {
+        destination = ptn_internal_expect_string_arg(runtime, "UConverter::__construct", 1, "destination_encoding", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(destination);
+            return ptn_null();
+        }
+    }
+    if (argc >= 2) {
+        source = ptn_internal_expect_string_arg(runtime, "UConverter::__construct", 2, "source_encoding", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(destination);
+            ptn_string_operand_free(source);
+            return ptn_null();
+        }
+    }
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = ptn_intl_uconverter_data_new(destination.data, source.data);
+    object.as.object->native_data_free = ptn_intl_uconverter_data_free;
+    ptn_string_operand_free(destination);
+    ptn_string_operand_free(source);
+    return object;
+}
+
+static int ptn_intl_uconverter_invalid_utf8_count(const char *data, size_t len) {
+    int count = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte < 0x80) {
+            continue;
+        }
+        size_t need = 0;
+        if (byte >= 0xC2 && byte <= 0xDF) {
+            need = 1;
+        } else if (byte >= 0xE0 && byte <= 0xEF) {
+            need = 2;
+        } else if (byte >= 0xF0 && byte <= 0xF4) {
+            need = 3;
+        } else {
+            count++;
+            continue;
+        }
+        if (i + need >= len) {
+            count++;
+            continue;
+        }
+        int valid = 1;
+        for (size_t j = 1; j <= need; j++) {
+            unsigned char continuation = (unsigned char)data[i + j];
+            if (continuation < 0x80 || continuation > 0xBF) {
+                valid = 0;
+                break;
+            }
+        }
+        if (!valid) {
+            count++;
+            continue;
+        }
+        i += need;
+    }
+    return count;
+}
+
+static int ptn_intl_uconverter_non_ascii_utf8_count(const char *data, size_t len) {
+    int count = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte < 0x80) {
+            continue;
+        }
+        count++;
+        if (byte >= 0xC2 && byte <= 0xDF && i + 1 < len) {
+            i += 1;
+        } else if (byte >= 0xE0 && byte <= 0xEF && i + 2 < len) {
+            i += 2;
+        } else if (byte >= 0xF0 && byte <= 0xF4 && i + 3 < len) {
+            i += 3;
+        }
+    }
+    return count;
+}
+
+static int ptn_intl_uconverter_is_ascii_encoding(const char *encoding) {
+    return ptn_ascii_case_equal(encoding, "ASCII") || ptn_ascii_case_equal(encoding, "US-ASCII");
+}
+
+static const char *ptn_intl_uconverter_reason_text(int64_t reason) {
+    switch (reason) {
+        case PTN_UCONVERTER_REASON_UNASSIGNED:
+            return "REASON_UNASSIGNED";
+        case PTN_UCONVERTER_REASON_ILLEGAL:
+            return "REASON_ILLEGAL";
+        case PTN_UCONVERTER_REASON_IRREGULAR:
+            return "REASON_IRREGULAR";
+        case PTN_UCONVERTER_REASON_RESET:
+            return "REASON_RESET";
+        case PTN_UCONVERTER_REASON_CLOSE:
+            return "REASON_CLOSE";
+        case PTN_UCONVERTER_REASON_CLONE:
+            return "REASON_CLONE";
+        default:
+            return "REASON_UNKNOWN";
+    }
+}
+
+static int ptn_intl_uconverter_has_user_callbacks(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (runtime == NULL || runtime->declared_method_exists == NULL || receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(receiver.as.object->class_name, "UConverter")) {
+        return 0;
+    }
+    return runtime->declared_method_exists(receiver.as.object->class_name, "toUCallback") ||
+        runtime->declared_method_exists(receiver.as.object->class_name, "fromUCallback");
+}
+
+static void ptn_intl_uconverter_call_user_callback(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    int64_t reason,
+    size_t line
+) {
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
+        return;
+    }
+    PtnValue error = ptn_reference_value(ptn_reference_new_owned(ptn_int(0)));
+    PtnValue args[4] = {
+        ptn_int(reason),
+        ptn_string(""),
+        ptn_int(0),
+        ptn_value_share(error)
+    };
+    PtnValue result = runtime->method_dispatch(runtime, receiver, method_name, 4, args, line);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    ptn_value_destroy(&args[2]);
+    ptn_value_destroy(&args[3]);
+    ptn_value_destroy(&error);
+}
+
+static void ptn_intl_uconverter_emit_callback_pair(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    int64_t reason,
+    int count,
+    size_t line
+) {
+    for (int i = 0; i < count; i++) {
+        ptn_intl_uconverter_call_user_callback(runtime, receiver, method_name, reason, line);
+    }
+}
+
+static void ptn_intl_uconverter_emit_convert_callbacks(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnIntlUConverterData *data,
+    PtnStringOperand source,
+    const char *to_encoding,
+    const char *from_encoding,
+    size_t line
+) {
+    (void)from_encoding;
+    if (!ptn_intl_uconverter_has_user_callbacks(runtime, receiver)) {
+        return;
+    }
+    int invalid = ptn_intl_uconverter_invalid_utf8_count(source.data, source.len);
+    int unassigned = ptn_intl_uconverter_is_ascii_encoding(to_encoding)
+        ? ptn_intl_uconverter_non_ascii_utf8_count(source.data, source.len)
+        : 0;
+    if (invalid > unassigned) {
+        unassigned = invalid;
+    }
+    ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_RESET, 1, line);
+    if (invalid > 0) {
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_ILLEGAL, invalid, line);
+    }
+    ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_RESET, 1, line);
+    if (invalid > 0) {
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_ILLEGAL, invalid, line);
+    }
+    ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_RESET, 1, line);
+    if (unassigned > 0) {
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_UNASSIGNED, unassigned, line);
+    }
+    ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_RESET, 1, line);
+    if (unassigned > 0) {
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_UNASSIGNED, unassigned, line);
+    }
+    if (!data->close_callbacks_emitted && unassigned > 0 && invalid == 0) {
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_CLOSE, 1, line);
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_CLOSE, 1, line);
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "toUCallback", PTN_UCONVERTER_REASON_CLOSE, 1, line);
+        ptn_intl_uconverter_emit_callback_pair(runtime, receiver, "fromUCallback", PTN_UCONVERTER_REASON_CLOSE, 1, line);
+        data->close_callbacks_emitted = 1;
+    }
+}
+
 static PtnValue ptn_internal_uconverter_transcode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "UConverter::transcode", 1, "str", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(source);
         return ptn_null();
     }
+    PtnStringOperand to_encoding = ptn_internal_expect_string_arg(runtime, "UConverter::transcode", 2, "toEncoding", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        ptn_string_operand_free(to_encoding);
+        return ptn_null();
+    }
+    PtnStringOperand from_encoding = ptn_internal_expect_string_arg(runtime, "UConverter::transcode", 3, "fromEncoding", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        ptn_string_operand_free(to_encoding);
+        ptn_string_operand_free(from_encoding);
+        return ptn_null();
+    }
     if (argc >= 4 && ptn_intl_options_to_subst_is_invalid(args[3])) {
         ptn_string_operand_free(source);
+        ptn_string_operand_free(to_encoding);
+        ptn_string_operand_free(from_encoding);
         return ptn_bool(0);
     }
-    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(source.data, source.len), source.len);
+    PtnValue result = ptn_icu_transcode_bytes(to_encoding.data, from_encoding.data, source.data, source.len);
     ptn_string_operand_free(source);
+    ptn_string_operand_free(to_encoding);
+    ptn_string_operand_free(from_encoding);
     return result;
+}
+
+static PtnValue ptn_internal_uconverter_get_available(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnIcuApi *api = ptn_icu_load();
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (api == NULL) {
+        return result;
+    }
+    int32_t count = api->ucnv_countAvailable();
+    for (int32_t i = 0; i < count; i++) {
+        const char *name = api->ucnv_getAvailableName(i);
+        if (name == NULL) {
+            continue;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(result.as.array->next_auto_key), ptn_string(name));
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_uconverter_get_aliases(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, "UConverter::getAliases", 1, "name", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(encoding);
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnIcuApi *api = ptn_icu_load();
+    if (api != NULL) {
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        uint16_t count = api->ucnv_countAliases(encoding.data, &status);
+        if (!ptn_icu_failure(status)) {
+            for (uint16_t i = 0; i < count; i++) {
+                status = PTN_ICU_ZERO_ERROR;
+                const char *alias = api->ucnv_getAlias(encoding.data, i, &status);
+                if (alias != NULL && !ptn_icu_failure(status)) {
+                    ptn_array_set_entry(result.as.array, ptn_array_int_key(result.as.array->next_auto_key), ptn_string(alias));
+                }
+            }
+        }
+    }
+    ptn_string_operand_free(encoding);
+    return result;
+}
+
+static PtnValue ptn_internal_uconverter_reason_text(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_string(ptn_intl_uconverter_reason_text(ptn_value_to_integer(args[0])));
+}
+
+static PTN_UNUSED PtnValue ptn_intl_uconverter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_intl_uconverter_new(runtime, "UConverter", argc, args, line);
+        if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getDestinationEncoding")) {
+        (void)argc;
+        (void)args;
+        PtnIntlUConverterData *data = ptn_intl_uconverter_data(receiver);
+        return data == NULL ? ptn_bool(0) : ptn_string(data->destination_encoding);
+    }
+    if (ptn_ascii_case_equal(name, "getSourceEncoding")) {
+        (void)argc;
+        (void)args;
+        PtnIntlUConverterData *data = ptn_intl_uconverter_data(receiver);
+        return data == NULL ? ptn_bool(0) : ptn_string(data->source_encoding);
+    }
+    if (ptn_ascii_case_equal(name, "convert")) {
+        PtnIntlUConverterData *data = ptn_intl_uconverter_data(receiver);
+        if (data == NULL) {
+            return ptn_bool(0);
+        }
+        PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "UConverter::convert", 1, "str", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(source);
+            return ptn_null();
+        }
+        int reverse = argc >= 2 && ptn_is_truthy(args[1]);
+        const char *to_encoding = reverse ? data->source_encoding : data->destination_encoding;
+        const char *from_encoding = reverse ? data->destination_encoding : data->source_encoding;
+        ptn_intl_uconverter_emit_convert_callbacks(runtime, receiver, data, source, to_encoding, from_encoding, line);
+        PtnValue result = ptn_icu_transcode_bytes(to_encoding, from_encoding, source.data, source.len);
+        ptn_string_operand_free(source);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "toUCallback") || ptn_ascii_case_equal(name, "fromUCallback")) {
+        (void)runtime;
+        (void)receiver;
+        (void)argc;
+        (void)args;
+        (void)line;
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static char *ptn_quoted_printable_decode_string(const char *input, size_t len, size_t *output_len_out) {
@@ -103568,6 +104507,18 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "transcode")) {
         return ptn_internal_uconverter_transcode(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "UConverter") &&
+        ptn_ascii_case_equal(name, "getAvailable")) {
+        return ptn_internal_uconverter_get_available(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "UConverter") &&
+        ptn_ascii_case_equal(name, "getAliases")) {
+        return ptn_internal_uconverter_get_aliases(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "UConverter") &&
+        ptn_ascii_case_equal(name, "reasonText")) {
+        return ptn_internal_uconverter_reason_text(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
         ptn_ascii_case_equal(name, "getKeywordValuesForLocale")) {
         return ptn_intl_calendar_get_keyword_values(runtime, argc, args, line);
@@ -109041,7 +109992,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
         { "Collator::create", 1, 1, ptn_internal_collator_create },
+        { "collator_compare", 3, 3, ptn_internal_collator_compare },
         { "collator_create", 1, 1, ptn_internal_collator_create },
+        { "collator_get_attribute", 2, 2, ptn_internal_collator_get_attribute },
+        { "collator_get_error_message", 1, 1, ptn_internal_collator_get_error_message },
+        { "collator_get_locale", 2, 2, ptn_internal_collator_get_locale },
+        { "collator_get_strength", 1, 1, ptn_internal_collator_get_strength },
+        { "collator_set_strength", 2, 2, ptn_internal_collator_set_strength },
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
         { "collator_sort_with_sort_keys", 2, 2, ptn_internal_collator_sort_with_sort_keys },
         { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
@@ -109707,6 +110664,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "urlencode", 1, 1, ptn_internal_urlencode },
         { "user_error", 1, 2, ptn_internal_user_error },
         { "usleep", 1, 1, ptn_internal_usleep },
+        { "UConverter::getAliases", 1, 1, ptn_internal_uconverter_get_aliases },
+        { "UConverter::getAvailable", 0, 0, ptn_internal_uconverter_get_available },
+        { "UConverter::reasonText", 1, 1, ptn_internal_uconverter_reason_text },
         { "UConverter::transcode", 3, 4, ptn_internal_uconverter_transcode },
         { "usort", 2, 2, ptn_internal_usort },
         { "utf8_decode", 1, 1, ptn_internal_utf8_decode },
@@ -113098,6 +114058,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_collator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "compare")
+            || ptn_ascii_case_equal(method_name, "getAttribute")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage")
+            || ptn_ascii_case_equal(method_name, "getLocale")
+            || ptn_ascii_case_equal(method_name, "getStrength")
+            || ptn_ascii_case_equal(method_name, "setStrength")
             || ptn_ascii_case_equal(method_name, "sort")
             || ptn_ascii_case_equal(method_name, "sortWithSortKeys")
             || ptn_ascii_case_equal(method_name, "create");
@@ -113108,7 +114074,16 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "areConfusable");
     }
     if (ptn_internal_class_name_is_uconverter(class_name)) {
-        return ptn_ascii_case_equal(method_name, "transcode");
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "convert")
+            || ptn_ascii_case_equal(method_name, "fromUCallback")
+            || ptn_ascii_case_equal(method_name, "getAliases")
+            || ptn_ascii_case_equal(method_name, "getAvailable")
+            || ptn_ascii_case_equal(method_name, "getDestinationEncoding")
+            || ptn_ascii_case_equal(method_name, "getSourceEncoding")
+            || ptn_ascii_case_equal(method_name, "reasonText")
+            || ptn_ascii_case_equal(method_name, "toUCallback")
+            || ptn_ascii_case_equal(method_name, "transcode");
     }
     if (ptn_internal_class_name_is_array_object(class_name)) {
         return ptn_array_object_method_exists(method_name);
@@ -113500,7 +114475,10 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
         return ptn_ascii_case_equal(method_name, "create");
     }
     if (ptn_internal_class_name_is_uconverter(class_name)) {
-        return ptn_ascii_case_equal(method_name, "transcode");
+        return ptn_ascii_case_equal(method_name, "getAliases")
+            || ptn_ascii_case_equal(method_name, "getAvailable")
+            || ptn_ascii_case_equal(method_name, "reasonText")
+            || ptn_ascii_case_equal(method_name, "transcode");
     }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
@@ -114134,7 +115112,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_collator(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "compare",
             "create",
+            "getAttribute",
+            "getErrorMessage",
+            "getLocale",
+            "getStrength",
+            "setStrength",
             "sort",
             "sortWithSortKeys",
         };
@@ -114151,7 +115135,19 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_uconverter(class_name)) {
-        ptn_append_method_name(result, &index, "transcode");
+        static const char *const names[] = {
+            "__construct",
+            "convert",
+            "fromUCallback",
+            "getAliases",
+            "getAvailable",
+            "getDestinationEncoding",
+            "getSourceEncoding",
+            "reasonText",
+            "toUCallback",
+            "transcode",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
     if (ptn_internal_class_name_is_intl_calendar(class_name)) {
@@ -121771,7 +122767,19 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         return;
     }
     if (ptn_internal_class_name_is_collator(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("PRIMARY"), ptn_int(PTN_ICU_PRIMARY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SECONDARY"), ptn_int(PTN_ICU_SECONDARY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("TERTIARY"), ptn_int(PTN_ICU_TERTIARY));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("SORT_REGULAR"), ptn_int(0));
+        return;
+    }
+    if (ptn_internal_class_name_is_uconverter(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_UNASSIGNED"), ptn_int(PTN_UCONVERTER_REASON_UNASSIGNED));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_ILLEGAL"), ptn_int(PTN_UCONVERTER_REASON_ILLEGAL));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_IRREGULAR"), ptn_int(PTN_UCONVERTER_REASON_IRREGULAR));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_RESET"), ptn_int(PTN_UCONVERTER_REASON_RESET));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_CLOSE"), ptn_int(PTN_UCONVERTER_REASON_CLOSE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("REASON_CLONE"), ptn_int(PTN_UCONVERTER_REASON_CLONE));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {
