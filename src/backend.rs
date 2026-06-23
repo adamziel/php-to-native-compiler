@@ -203,6 +203,15 @@ pub fn emit_c(module: &Module) -> String {
         runtime_requirements.internal_function_dispatch,
     );
     emit_declared_property_default_array_helpers(&mut out, &module.classes);
+    emit_function_parameter_default_providers(
+        &mut out,
+        &module.source_file,
+        &module.source_dir,
+        &module.functions,
+        &module.classes,
+        &module.includes,
+        runtime_requirements.internal_function_dispatch,
+    );
     emit_user_functions(
         &mut out,
         &module.classes,
@@ -3425,6 +3434,7 @@ fn emit_function_metadata_parameters(
     out: &mut String,
     indent: &str,
     name: &str,
+    function_index: Option<usize>,
     parameters: &[FunctionParameter],
 ) -> String {
     if parameters.is_empty() {
@@ -3474,6 +3484,19 @@ fn emit_function_metadata_parameters(
         out.push_str(&c_optional_string(default_constant_name.as_deref()));
         out.push_str(", ");
         out.push_str(&c_optional_string(parameter.doc_comment.as_deref()));
+        out.push_str(", ");
+        if parameter.default_value.is_some() {
+            if let Some(function_index) = function_index {
+                out.push_str(&function_parameter_default_provider_name(
+                    function_index,
+                    index,
+                ));
+            } else {
+                out.push_str("NULL");
+            }
+        } else {
+            out.push_str("NULL");
+        }
         out.push_str(" }");
     }
     out.push_str(" };\n");
@@ -6426,6 +6449,63 @@ fn emit_function_static_variable_providers(
     }
 }
 
+fn function_parameter_default_provider_name(
+    function_index: usize,
+    parameter_index: usize,
+) -> String {
+    format!("ptn_function_{function_index}_parameter_{parameter_index}_default_value")
+}
+
+fn emit_function_parameter_default_providers(
+    out: &mut String,
+    source_file: &str,
+    source_dir: &str,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+    includes: &[IncludeFile],
+    full_internal_dispatch: bool,
+) {
+    for (function_index, function) in functions.iter().enumerate() {
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            let Some(default_value) = parameter.default_value.as_ref() else {
+                continue;
+            };
+            out.push_str("\nstatic PtnValue ");
+            out.push_str(&function_parameter_default_provider_name(
+                function_index,
+                parameter_index,
+            ));
+            out.push_str(
+                "(PtnRuntime *caller_runtime, const char *scope_class_name, size_t line) {\n",
+            );
+            out.push_str("    (void)line;\n");
+            out.push_str("    if (caller_runtime == NULL) {\n");
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
+            out.push_str("    PtnRuntime runtime = *caller_runtime;\n");
+            out.push_str("    runtime.current_class_name = scope_class_name;\n");
+            out.push_str("    runtime.current_called_class_name = scope_class_name;\n");
+            let mut values = ValueEmitter::new_for_function(
+                source_file,
+                source_dir,
+                functions,
+                classes,
+                includes,
+                function_index,
+                function,
+                full_internal_dispatch,
+            );
+            values.current_function_is_anonymous = true;
+            values.use_runtime_class_scope = true;
+            let default_temp = values.emit_const_materialized_value(out, default_value);
+            out.push_str("    return ");
+            out.push_str(&default_temp);
+            out.push_str(";\n");
+            out.push_str("}\n");
+        }
+    }
+}
+
 fn emit_function_metadata_source_suffix(
     out: &mut String,
     function: &FunctionDecl,
@@ -6541,6 +6621,7 @@ fn emit_user_function_dispatch(
             out,
             "        ",
             &format!("ptn_function_{function_index}_parameters"),
+            Some(function_index),
             &function.parameters,
         );
         out.push_str(
@@ -6585,6 +6666,7 @@ fn emit_user_function_dispatch(
                 out,
                 "        ",
                 &format!("ptn_function_{}_parameters", method.function_index),
+                Some(method.function_index),
                 &function.parameters,
             );
             out.push_str(
@@ -6669,6 +6751,7 @@ fn emit_user_function_dispatch(
                 out,
                 "        ",
                 &format!("ptn_trait_method_{}_parameters", method.function_index),
+                Some(method.function_index),
                 &function.parameters,
             );
             out.push_str(
@@ -9599,6 +9682,7 @@ fn emit_class_metadata_helpers(
                 out,
                 "            ",
                 &format!("ptn_declared_method_{}_parameters", method.function_index),
+                Some(method.function_index),
                 &function.parameters,
             );
             out.push_str("            return ptn_function_metadata_with_flags(ptn_function_metadata_found(\"");
@@ -12840,6 +12924,7 @@ fn emit_attribute_closure_argument(
         out,
         indent,
         &format!("{target}_parameters"),
+        Some(function_index),
         &function.parameters,
     );
     out.push_str(indent);
@@ -17193,11 +17278,26 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Bool(true)) => "true".to_string(),
         Some(ValueExpr::Bool(false)) => "false".to_string(),
         Some(ValueExpr::Null) | None => "NULL".to_string(),
-        Some(ValueExpr::Array(_)) => "Array".to_string(),
+        Some(ValueExpr::Array(elements)) => reflection_default_array_repr(elements),
         Some(ValueExpr::Constant { name, .. }) => name.clone(),
         Some(ValueExpr::ClassConstantFetch {
             class_name, name, ..
         }) => format!("{}::{name}", reflection_default_class_name_repr(class_name)),
+        Some(ValueExpr::Unary { op, expr, .. }) => {
+            format!(
+                "{}{}",
+                reflection_default_unary_op(*op),
+                reflection_default_repr(Some(expr))
+            )
+        }
+        Some(ValueExpr::Binary {
+            op, left, right, ..
+        }) => format!(
+            "{} {} {}",
+            reflection_default_repr(Some(left)),
+            reflection_default_binary_op(*op),
+            reflection_default_repr(Some(right))
+        ),
         Some(ValueExpr::NewObject {
             class_name,
             arguments,
@@ -17205,6 +17305,82 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
             ..
         }) => reflection_new_object_default_repr(class_name, arguments, argument_names),
         _ => "NULL".to_string(),
+    }
+}
+
+fn reflection_default_array_repr(elements: &[IrArrayElement]) -> String {
+    let elements = elements
+        .iter()
+        .map(reflection_default_array_element_repr)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{elements}]")
+}
+
+fn reflection_default_array_element_repr(element: &IrArrayElement) -> String {
+    let value = match &element.value {
+        IrArrayElementValue::Value(value) => reflection_default_repr(Some(value)),
+        IrArrayElementValue::Reference(target) => {
+            format!("&{}", reference_target_reflection_default_repr(target))
+        }
+        IrArrayElementValue::Unpack { value, .. } => {
+            format!("...{}", reflection_default_repr(Some(value)))
+        }
+    };
+    if let Some(key) = &element.key {
+        format!("{} => {value}", reflection_default_repr(Some(key)))
+    } else {
+        value
+    }
+}
+
+fn reference_target_reflection_default_repr(target: &ReferenceTarget) -> String {
+    match target {
+        ReferenceTarget::Variable { name, .. } => format!("${name}"),
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            format!("${{{}}}", reflection_default_repr(Some(name)))
+        }
+        _ => "NULL".to_string(),
+    }
+}
+
+fn reflection_default_unary_op(op: UnaryOp) -> &'static str {
+    match op {
+        UnaryOp::Positive => "+",
+        UnaryOp::Negate => "-",
+        UnaryOp::Not => "!",
+        UnaryOp::BitwiseNot => "~",
+        UnaryOp::ErrorSuppress => "@",
+    }
+}
+
+fn reflection_default_binary_op(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Subtract => "-",
+        BinaryOp::Multiply => "*",
+        BinaryOp::Divide => "/",
+        BinaryOp::Modulo => "%",
+        BinaryOp::Power => "**",
+        BinaryOp::Concat => ".",
+        BinaryOp::Equal => "==",
+        BinaryOp::Identical => "===",
+        BinaryOp::NotEqual => "!=",
+        BinaryOp::NotIdentical => "!==",
+        BinaryOp::Less => "<",
+        BinaryOp::LessEqual => "<=",
+        BinaryOp::Greater => ">",
+        BinaryOp::GreaterEqual => ">=",
+        BinaryOp::Spaceship => "<=>",
+        BinaryOp::And => "&&",
+        BinaryOp::Or => "||",
+        BinaryOp::Xor => "xor",
+        BinaryOp::BitwiseAnd => "&",
+        BinaryOp::BitwiseOr => "|",
+        BinaryOp::BitwiseXor => "^",
+        BinaryOp::ShiftLeft => "<<",
+        BinaryOp::ShiftRight => ">>",
+        BinaryOp::Coalesce => "??",
     }
 }
 
@@ -39440,6 +39616,7 @@ impl ValueEmitter {
             out,
             "    ",
             &format!("ptn_closure_{function_index}_parameters"),
+            Some(function_index),
             &function.parameters,
         );
         out.push_str("    PtnValue ");

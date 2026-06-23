@@ -33827,6 +33827,36 @@ class B {
     use T;
 }
 
+class Baz {
+    const B = 3;
+}
+
+class Foo {
+    const X = 1;
+    public function x($a = self::X, $b = Baz::B, $c = 99) {}
+}
+
+class Bar extends Foo {
+    const Y = 2;
+    public function y($a = self::Y, $b = Baz::B, $c = 99) {}
+}
+
+class DefaultParent {
+    const Y = 20;
+}
+
+class DefaultChild extends DefaultParent {
+    const X = 12;
+    public function x($x = 1, $y = [self::X], $z = parent::Y) {}
+}
+
+function arrayDefaults(
+    array $x = ['a', 'b'],
+    array $y = ['x' => 'y'],
+    array $z = [0 => 0, 2 => -2],
+    array $a = [[], [1], [2, 3]],
+) {}
+
 $cases = [
     [F::class, 'Parameter #0 [ <optional> $x = \'F\' ]'],
     [T::class, 'Parameter #0 [ <optional> $x = self::class ]'],
@@ -33842,6 +33872,27 @@ foreach ([F::class, B::class] as $className) {
     $method = new ReflectionMethod($className, 'bar');
     echo $className, ":", $method->getParameters()[0]->getDefaultValue(), "\n";
 }
+
+foreach ((new ReflectionClass('Bar'))->getMethods() as $method) {
+    foreach ($method->getParameters() as $param) {
+        if ($param->isDefaultValueAvailable()) {
+            echo $method->getDeclaringClass()->getName(), '::', $method->getName(), '($', $param->getName(), ' = ', $param->getDefaultValue(), ")\n";
+        }
+    }
+}
+
+$method = (new ReflectionClass('DefaultChild'))->getMethod('x');
+foreach ($method->getParameters() as $param) {
+    if ($param->isDefaultValueAvailable()) {
+        echo $param->getName(), ':', var_export($param->getDefaultValue(), true), "\n";
+    }
+}
+
+$arrayDefaults = (string) new ReflectionFunction('arrayDefaults');
+echo str_contains($arrayDefaults, 'array $x = [\'a\', \'b\']') ? "array-x:string\n" : "array-x:missing\n";
+echo str_contains($arrayDefaults, 'array $y = [\'x\' => \'y\']') ? "array-y:string\n" : "array-y:missing\n";
+echo str_contains($arrayDefaults, 'array $z = [0 => 0, 2 => -2]') ? "array-z:string\n" : "array-z:missing\n";
+echo str_contains($arrayDefaults, 'array $a = [[], [1], [2, 3]]') ? "array-a:string\n" : "array-a:missing\n";
 "#,
     )
     .unwrap();
@@ -33852,7 +33903,28 @@ foreach ([F::class, B::class] as $className) {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!("F:string\n", "T:string\n", "B:string\n", "F:F\n", "B:B\n",)
+        concat!(
+            "F:string\n",
+            "T:string\n",
+            "B:string\n",
+            "F:F\n",
+            "B:B\n",
+            "Bar::y($a = 2)\n",
+            "Bar::y($b = 3)\n",
+            "Bar::y($c = 99)\n",
+            "Foo::x($a = 1)\n",
+            "Foo::x($b = 3)\n",
+            "Foo::x($c = 99)\n",
+            "x:1\n",
+            "y:array (\n",
+            "  0 => 12,\n",
+            ")\n",
+            "z:20\n",
+            "array-x:string\n",
+            "array-y:string\n",
+            "array-z:string\n",
+            "array-a:string\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

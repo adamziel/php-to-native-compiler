@@ -699,6 +699,12 @@ typedef struct {
     uint64_t mutation_epoch;
 } PtnSymbolTable;
 
+typedef PtnValue (*PtnParameterDefaultProvider)(
+    PtnRuntime *runtime,
+    const char *scope_class_name,
+    size_t line
+);
+
 typedef struct {
     const char *name;
     const char *type_name;
@@ -711,6 +717,7 @@ typedef struct {
     const char *default_value_display;
     const char *default_value_constant_name;
     const char *doc_comment;
+    PtnParameterDefaultProvider default_value_provider;
 } PtnParameterMetadata;
 
 typedef struct {
