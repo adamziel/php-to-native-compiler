@@ -73667,6 +73667,27 @@ var_dump($lazyA->isReadable(null, $lazy));
 var_dump($lazyB->isReadable(null, $lazy));
 var_dump($lazyA->isWritable(null, $lazy));
 var_dump($lazyB->isWritable(null, $lazy));
+
+class ReflectVirtualDump {
+    protected string $virtual {
+        get => \"computed\";
+    }
+    public string $backed {
+        get => $this->backed;
+        set => $value;
+    }
+    public string $plain = \"plain\";
+}
+
+$virtualDump = new ReflectVirtualDump();
+$virtual = new ReflectionProperty($virtualDump, \"virtual\");
+echo str_replace(\"\\0\", \"%0\", $virtual->getMangledName()), \"\\n\";
+ob_start();
+var_dump($virtualDump);
+$virtualDumpText = ob_get_clean();
+var_dump(strpos($virtualDumpText, '[\"virtual\":protected]') === false);
+var_dump(strpos($virtualDumpText, '[\"backed\"]') !== false);
+var_dump(strpos($virtualDumpText, '[\"plain\"]') !== false);
 ",
     )
     .unwrap();
@@ -73703,6 +73724,10 @@ var_dump($lazyB->isWritable(null, $lazy));
             "bool(true)\n",
             "bool(false)\n",
             "bool(false)\n",
+            "bool(true)\n",
+            "%0*%0virtual\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
         )
     );

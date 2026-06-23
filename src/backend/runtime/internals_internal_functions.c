@@ -2122,6 +2122,9 @@ static PTN_UNUSED int ptn_object_property_metadata_dumps_uninitialized(
     if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
         return 0;
     }
+    if (metadata->is_virtual) {
+        return 0;
+    }
     return (metadata->is_unset || ptn_property_type_is_declared(metadata->type_kind)) &&
         ptn_property_metadata_uninitialized_type_name(metadata) != NULL;
 }
