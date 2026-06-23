@@ -49067,6 +49067,57 @@ static char *ptn_runtime_source_dir_alloc(PtnRuntime *runtime) {
     return ptn_duplicate_string_len(path, len);
 }
 
+static int ptn_existing_file_or_current_source_snapshot(PtnRuntime *runtime, const char *path) {
+    struct stat info;
+    return (path != NULL && stat(path, &info) == 0) ||
+        ptn_current_source_snapshot_matches(runtime, path);
+}
+
+static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *path) {
+    if (path == NULL ||
+        path[0] == '\0' ||
+        ptn_path_string_is_absolute(path) ||
+        ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return NULL;
+    }
+    if (ptn_existing_file_or_current_source_snapshot(runtime, path)) {
+        return ptn_duplicate_string(path);
+    }
+
+    const char *include_path = ptn_runtime_current_include_path(runtime);
+    const char separator =
+#if defined(_WIN32)
+        ';';
+#else
+        ':';
+#endif
+    const char *segment = include_path;
+    while (segment != NULL && *segment != '\0') {
+        const char *end = strchr(segment, separator);
+        size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
+        char *directory = ptn_duplicate_string_len(segment, segment_len);
+        char *candidate = ptn_path_join_alloc(directory, path);
+        free(directory);
+        if (ptn_existing_file_or_current_source_snapshot(runtime, candidate)) {
+            return candidate;
+        }
+        free(candidate);
+        segment = end == NULL ? NULL : end + 1;
+    }
+
+    char *source_dir = ptn_runtime_source_dir_alloc(runtime);
+    if (source_dir != NULL) {
+        char *candidate = ptn_path_join_alloc(source_dir, path);
+        free(source_dir);
+        if (ptn_existing_file_or_current_source_snapshot(runtime, candidate)) {
+            return candidate;
+        }
+        free(candidate);
+    }
+
+    return NULL;
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *path,
@@ -126088,6 +126139,8 @@ static int ptn_reflection_class_is_cloneable(PtnRuntime *runtime, const char *cl
     }
     if (ptn_internal_class_name_is_xml_writer(class_name) ||
         ptn_internal_class_name_is_directory(class_name) ||
+        ptn_internal_class_name_is_spl_file_object(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "SplFileObject") ||
         ptn_declared_class_is_same_or_descendant(class_name, "XMLWriter")) {
         return 0;
     }
@@ -142376,15 +142429,27 @@ static PtnValue ptn_spl_file_object_new_for_class(
             free(path);
             return ptn_null();
         }
+        int use_include_path = argc >= 3 && ptn_is_truthy(args[2]);
+        char *opened_path = use_include_path
+            ? ptn_resolve_existing_include_path(runtime, path)
+            : NULL;
+        const char *stream_path = opened_path == NULL ? path : opened_path;
         PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
-        PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
+        PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(stream_path)), mode };
         stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
         ptn_value_destroy(&fopen_args[0]);
         ptn_value_destroy(&fopen_args[1]);
         if (runtime->exceptions->active_exception != NULL) {
+            free(opened_path);
             free(path);
             ptn_value_destroy(&stream);
             return ptn_null();
+        }
+        if (opened_path != NULL && ptn_value_deref(stream).type == PTN_RESOURCE) {
+            free(path);
+            path = opened_path;
+        } else {
+            free(opened_path);
         }
     }
     PtnValue resolved_stream = ptn_value_deref(stream);
@@ -142882,7 +142947,7 @@ static PtnValue ptn_spl_file_object_call_method(
             return ptn_null();
         }
         if (target < 0) {
-            ptn_throw_exception(runtime, "LogicException", "Can't seek file to negative line");
+            ptn_throw_exception(runtime, "ValueError", "SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0");
             return ptn_null();
         }
         PtnValue rewind_result = ptn_spl_file_object_call_method(runtime, receiver, "rewind", 0, NULL, line);

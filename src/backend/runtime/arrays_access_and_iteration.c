@@ -1509,7 +1509,18 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         return ptn_spl_doubly_linked_list_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileObject")) {
-        return ptn_spl_file_object_clone(runtime, resolved, line);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Trying to clone an uncloneable object of class %s",
+            source->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileInfo")) {
         return ptn_spl_file_info_clone(runtime, resolved, line);

@@ -848,6 +848,11 @@ fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     fs::create_dir_all(&root).unwrap();
     let data_path = root.join("rows.csv");
     fs::write(&data_path, "first\nsecond\n").unwrap();
+    let include_dir = root.join("include");
+    fs::create_dir_all(&include_dir).unwrap();
+    let included_path = include_dir.join("included.txt");
+    fs::write(&included_path, "included\n").unwrap();
+    let included_real_path = fs::canonicalize(&included_path).unwrap();
     let input = root.join("spl-file-list-surfaces.php");
     let output = root.join("spl-file-list-surfaces-bin");
     fs::write(
@@ -861,6 +866,8 @@ class BadCurrentObject extends SplFileObject {{\n\
     public function getCurrentLine(): array {{ return [1, 2, 3]; }}\n\
 }}\n\
 $path = {};\n\
+$includeDir = {};\n\
+$includeFile = {};\n\
 $info = new SplFileInfo($path);\n\
 var_dump($info->getFilename(), $info->getExtension(), $info->getSize() > 0);\n\
 $info->setInfoClass('MyInfoObject');\n\
@@ -869,6 +876,12 @@ echo get_class($info->getFileInfo()), \"\\n\";\n\
 echo get_class($info->getPathInfo()), \"\\n\";\n\
 echo get_class($info->openFile()), \"\\n\";\n\
 $file = new SplFileObject($path);\n\
+var_dump((new ReflectionObject($file))->isCloneable());\n\
+try {{ clone $file; }} catch (Throwable $e) {{ echo $e::class, ': ', $e->getMessage(), \"\\n\"; }}\n\
+try {{ $file->seek(-1); }} catch (ValueError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+set_include_path($includeDir);\n\
+$included = new SplFileObject('included.txt', 'r', true);\n\
+var_dump($included->getPath() === $includeDir, $included->getFilename(), $included->getRealPath() === $includeFile);\n\
 echo $file->current();\n\
 $file->next();\n\
 echo $file->current();\n\
@@ -914,7 +927,9 @@ foreach ($list as $value) {{ echo $value; }}\n\
 echo \"\\n\";\n\
 $method = new ReflectionMethod('SplFileObject', 'fputcsv');\n\
 foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), \"\\n\"; }}\n",
-            php_string_literal(&data_path)
+            php_string_literal(&data_path),
+            php_string_literal(&include_dir),
+            php_string_literal(&included_real_path)
         ),
     )
     .unwrap();
@@ -937,6 +952,12 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             "MyInfoObject\n",
             "MyInfoObject\n",
             "MyFileObject\n",
+            "bool(false)\n",
+            "Error: Trying to clone an uncloneable object of class SplFileObject\n",
+            "SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0\n",
+            "bool(true)\n",
+            "string(12) \"included.txt\"\n",
+            "bool(true)\n",
             "first\n",
             "second\n",
             "string(3) \"fir\"\n",
