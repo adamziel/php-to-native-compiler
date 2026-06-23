@@ -69408,6 +69408,11 @@ static PtnValue ptn_internal_mb_strlen(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_mb_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_substr", 1, "string", args[0], line);
     int64_t raw_start = ptn_internal_expect_integer_arg(runtime, "mb_substr", 2, "start", args[1], line);
+    if (raw_start == INT64_MIN) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(runtime, "ValueError", "mb_substr(): Argument #2 ($start) must be between -9223372036854775807 and 9223372036854775807");
+        return ptn_null();
+    }
     const char *encoding = argc >= 4
         ? ptn_mb_encoding_from_value(runtime, "mb_substr", 4, "encoding", args[3], line, ptn_mb_current_internal_encoding(runtime), 1)
         : ptn_mb_current_internal_encoding(runtime);
@@ -69433,6 +69438,12 @@ static PtnValue ptn_internal_mb_substr(PtnRuntime *runtime, size_t argc, const P
     size_t end = char_count;
     if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
         int64_t raw_length = ptn_internal_expect_integer_arg(runtime, "mb_substr", 3, "length", args[2], line);
+        if (raw_length == INT64_MIN) {
+            free(utf8);
+            ptn_string_operand_free(input);
+            ptn_throw_exception(runtime, "ValueError", "mb_substr(): Argument #3 ($length) must be between -9223372036854775807 and 9223372036854775807");
+            return ptn_null();
+        }
         if (raw_length >= 0) {
             uint64_t requested = (uint64_t)raw_length;
             end = requested > char_count - start ? char_count : start + (size_t)requested;

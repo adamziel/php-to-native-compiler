@@ -504,17 +504,21 @@ static PtnArrayKey ptn_parse_str_key_from_decoded(const char *data, size_t len) 
 
 static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
     PtnParseStrPath path = {0};
-    size_t base_len = 0;
-    while (base_len < len && data[base_len] != '[') {
-        base_len++;
+    size_t name_start = 0;
+    while (name_start < len && data[name_start] == ' ') {
+        name_start++;
+    }
+    size_t base_end = name_start;
+    while (base_end < len && data[base_end] != '[') {
+        base_end++;
     }
 
     size_t mangled_len = 0;
-    char *mangled = ptn_parse_str_mangle_name(data, base_len, &mangled_len);
+    char *mangled = ptn_parse_str_mangle_name(data + name_start, base_end - name_start, &mangled_len);
     ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len), 0);
     free(mangled);
 
-    size_t cursor = base_len;
+    size_t cursor = base_end;
     int valid_segment_count = 0;
     while (cursor < len && data[cursor] == '[') {
         size_t close = cursor + 1;
@@ -525,7 +529,7 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
             if (valid_segment_count == 0) {
                 ptn_array_key_free(path.segments[0].key);
                 path.len = 0;
-                mangled = ptn_parse_str_mangle_name(data, len, &mangled_len);
+                mangled = ptn_parse_str_mangle_name(data + name_start, len - name_start, &mangled_len);
                 ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len), 0);
                 free(mangled);
             }

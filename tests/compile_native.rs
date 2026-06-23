@@ -26506,6 +26506,74 @@ echo mb_strimwidth('abcde', 0, 3, '...', 'UTF-8'), \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_parse_str_names_and_substr_min_bounds_to_native_binary() {
+    let root = temp_dir("ptn-native-mbstring-parse-str-substr-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-parse-str-substr-bounds.php");
+    let output = root.join("mbstring-parse-str-substr-bounds-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_parse_str('%2bfoo=def&-bar=jkl#+fubar', $first);\n\
+var_dump($first);\n\
+mb_parse_str('  foo[]=abc&foo[]=def#foo[]=ghi#bar[]=#foo[]&fubar[]==', $second);\n\
+var_dump($second);\n\
+try { mb_substr('abcd', PHP_INT_MIN, 4, 'UTF-8'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { mb_substr('abcd', 0, PHP_INT_MIN, 'UTF-8'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(mb_substr('abcd', PHP_INT_MAX, PHP_INT_MAX, 'UTF-8'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ARG_SEPARATOR_INPUT", "&#")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"+foo\"]=>\n",
+            "  string(3) \"def\"\n",
+            "  [\"-bar\"]=>\n",
+            "  string(3) \"jkl\"\n",
+            "  [\"fubar\"]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"foo\"]=>\n",
+            "  array(4) {\n",
+            "    [0]=>\n",
+            "    string(3) \"abc\"\n",
+            "    [1]=>\n",
+            "    string(3) \"def\"\n",
+            "    [2]=>\n",
+            "    string(3) \"ghi\"\n",
+            "    [3]=>\n",
+            "    string(0) \"\"\n",
+            "  }\n",
+            "  [\"bar\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(0) \"\"\n",
+            "  }\n",
+            "  [\"fubar\"]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    string(1) \"=\"\n",
+            "  }\n",
+            "}\n",
+            "mb_substr(): Argument #2 ($start) must be between -9223372036854775807 and 9223372036854775807\n",
+            "mb_substr(): Argument #3 ($length) must be between -9223372036854775807 and 9223372036854775807\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_decoding_and_reverse_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-mb-decoding-reverse-offsets");
     fs::create_dir_all(&root).unwrap();
