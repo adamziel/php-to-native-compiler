@@ -86585,6 +86585,7 @@ typedef struct {
 
 static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Africa/Abidjan", 1, 0 },
+    { "Africa/Addis_Ababa", 1, 0 },
     { "Africa/Casablanca", 1, 0 },
     { "America/Bogota", 2, 0 },
     { "America/Chicago", 2, 0 },
@@ -86599,11 +86600,18 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Asia/Calcutta", 16, 1 },
     { "Asia/Hong_Kong", 16, 0 },
     { "Asia/Jerusalem", 16, 0 },
+    { "Asia/Yerevan", 16, 0 },
     { "Asia/Kolkata", 16, 0 },
     { "Asia/Singapore", 16, 0 },
     { "Asia/Tehran", 16, 0 },
+    { "Australia/Adelaide", 8, 0 },
+    { "Australia/Broken_Hill", 8, 0 },
     { "Australia/Brisbane", 8, 0 },
+    { "Australia/Darwin", 8, 0 },
+    { "Australia/North", 8, 0 },
     { "Australia/Perth", 8, 0 },
+    { "Australia/South", 8, 0 },
+    { "Australia/Yancowinna", 8, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Istanbul", 128, 0 },
@@ -86896,6 +86904,37 @@ static int ptn_datetime_timestamp_dst_month(time_t timestamp) {
     return ptn_datetime_timestamp_europe_dst(timestamp);
 }
 
+static int ptn_timezone_is_europe_dst_zone(const char *name) {
+    return ptn_ascii_case_equal(name, "Europe/London") ||
+        ptn_ascii_case_equal(name, "Europe/Paris") ||
+        ptn_ascii_case_equal(name, "Europe/Berlin") ||
+        ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
+        ptn_ascii_case_equal(name, "Europe/Oslo") ||
+        ptn_ascii_case_equal(name, "Europe/Kyiv") ||
+        ptn_ascii_case_equal(name, "Europe/Rome");
+}
+
+static int ptn_timezone_us_standard_offset(const char *name, int *standard_offset) {
+    if (ptn_ascii_case_equal(name, "America/New_York") ||
+        ptn_ascii_case_equal(name, "US/Eastern")) {
+        *standard_offset = -18000;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "America/Chicago")) {
+        *standard_offset = -21600;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
+        *standard_offset = -28800;
+        return 1;
+    }
+    if (ptn_ascii_case_equal(name, "America/Halifax")) {
+        *standard_offset = -14400;
+        return 1;
+    }
+    return 0;
+}
+
 static int ptn_datetime_timestamp_us_dst_for_standard_offset(time_t timestamp, int standard_offset) {
     struct tm *parts = gmtime(&timestamp);
     if (parts == NULL) {
@@ -86915,6 +86954,26 @@ static int ptn_datetime_timestamp_us_dst_for_standard_offset(time_t timestamp, i
     time_t start = ptn_datetime_utc_timestamp_for_parts(year, start_month, start_day, 2, 0, 0) - standard_offset;
     time_t end = ptn_datetime_utc_timestamp_for_parts(year, end_month, end_day, 2, 0, 0) - (standard_offset + 3600);
     return timestamp >= start && timestamp < end;
+}
+
+static int ptn_timezone_is_dst_for_name(const char *name, time_t timestamp) {
+    if (ptn_timezone_is_europe_dst_zone(name)) {
+        return ptn_datetime_timestamp_europe_dst(timestamp);
+    }
+    int standard_offset = 0;
+    if (ptn_timezone_us_standard_offset(name, &standard_offset)) {
+        return ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, standard_offset);
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
+        return ptn_datetime_timestamp_europe_dst(timestamp);
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Tehran")) {
+        return ptn_timezone_offset_for_name(name, timestamp) == 16200;
+    }
+    return ptn_ascii_case_equal(name, "BST") ||
+        ptn_ascii_case_equal(name, "CEST") ||
+        ptn_ascii_case_equal(name, "EDT") ||
+        ptn_ascii_case_equal(name, "ADT");
 }
 
 static int ptn_timezone_us_wall_offset_for_standard_offset(time_t wall_timestamp, int standard_offset) {
@@ -87510,6 +87569,132 @@ static PtnValue ptn_object_named_public_properties_array(PtnObject *object, cons
         }
     }
     return result;
+}
+
+static int ptn_string_len_in_list(
+    const char *value,
+    size_t value_len,
+    const char *const *names,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        if (strlen(names[i]) == value_len && memcmp(value, names[i], value_len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_object_named_public_properties_with_extra_public_array(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *const *names,
+    size_t count
+) {
+    PtnValue result = ptn_object_named_public_properties_array(object, names, count);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING ||
+            ptn_string_len_in_list(entry->key.as.string, entry->key.string_len, names, count) ||
+            !ptn_object_property_visible_for_foreach(runtime, object, entry->key, NULL)) {
+            continue;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
+        PtnArrayKey output_key = metadata == NULL
+            ? ptn_array_string_key_len(entry->key.as.string, entry->key.string_len)
+            : ptn_array_string_key(metadata->display_name);
+        ptn_array_set_entry(result.as.array, output_key, ptn_value_clone_deref(entry->value));
+    }
+    return result;
+}
+
+static int ptn_array_key_is_string_literal(PtnArrayKey key, const char *name) {
+    return key.type == PTN_ARRAY_KEY_STRING &&
+        strlen(name) == key.string_len &&
+        memcmp(key.as.string, name, key.string_len) == 0;
+}
+
+static int ptn_datetime_zone_serialized_key_is_internal(PtnArrayKey key) {
+    return ptn_array_key_is_string_literal(key, "timezone_type") ||
+        ptn_array_key_is_string_literal(key, "timezone");
+}
+
+static int ptn_datetime_zone_unserialize_extra_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    PtnArray *data,
+    size_t line
+) {
+    if (object == NULL || object->properties == NULL || data == NULL) {
+        return 1;
+    }
+
+    for (size_t i = 0; i < data->len; i++) {
+        PtnArrayEntry *entry = &data->entries[i];
+        if (ptn_datetime_zone_serialized_key_is_internal(entry->key)) {
+            continue;
+        }
+
+        PtnArrayKey property_key =
+            ptn_unserialize_object_property_key(runtime, object, ptn_array_key_clone(entry->key), line);
+        const PtnObjectPropertyMetadata *metadata =
+            property_key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_property_metadata(object, property_key.as.string)
+                : NULL;
+        PtnUnserializeValue parsed = {
+            .value = ptn_value_clone_deref(entry->value),
+            .id = 0,
+        };
+        if (!ptn_unserialize_prepare_property_value(runtime, metadata, &parsed, line)) {
+            ptn_array_key_free(property_key);
+            ptn_value_destroy(&parsed.value);
+            return 0;
+        }
+
+        PtnArray *properties = object->properties;
+        size_t existing_index = ptn_array_find_key(properties, property_key);
+        if (existing_index >= properties->len &&
+            metadata == NULL &&
+            property_key.type == PTN_ARRAY_KEY_STRING &&
+            memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
+            if (runtime != NULL &&
+                runtime->declared_class_is_readonly != NULL &&
+                runtime->declared_class_is_readonly(object->class_name)) {
+                ptn_throw_dynamic_property_readonly_class_error(
+                    runtime,
+                    object->class_name,
+                    property_key.as.string,
+                    line
+                );
+                ptn_array_key_free(property_key);
+                ptn_value_destroy(&parsed.value);
+                return 0;
+            }
+            ptn_emit_dynamic_property_deprecation(runtime, object, property_key.as.string, line);
+        }
+
+        PtnArrayKey lookup = ptn_array_key_clone(property_key);
+        ptn_array_set_entry(properties, property_key, parsed.value);
+        size_t index = ptn_array_find_key(properties, lookup);
+        ptn_array_key_free(lookup);
+        if (index >= properties->len) {
+            return 0;
+        }
+        ptn_unserialize_order_object_property_entry(object, &index, metadata);
+        PtnObjectPropertyMetadata *mutable_metadata =
+            properties->entries[index].key.type == PTN_ARRAY_KEY_STRING
+                ? ptn_object_mutable_property_metadata(object, properties->entries[index].key.as.string)
+                : NULL;
+        if (mutable_metadata != NULL) {
+            mutable_metadata->is_unset = 0;
+            ptn_object_metadata_remember_value_type(mutable_metadata, properties->entries[index].value);
+        }
+    }
+    return 1;
 }
 
 static void ptn_date_interval_sync_data_from_properties(PtnValue value) {
@@ -89358,7 +89543,6 @@ static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue sour
 }
 
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
-    (void)line;
     source = ptn_value_deref(source);
     PtnValue clone = ptn_clone_object_storage(runtime, source.as.object);
     PtnDateTimeZoneData *source_data = (PtnDateTimeZoneData *)source.as.object->native_data;
@@ -89372,7 +89556,7 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue
         clone.as.object->native_data = data;
         clone.as.object->native_data_free = ptn_datetime_zone_data_free;
     }
-    return clone;
+    return ptn_object_invoke_clone_magic(runtime, clone, line);
 }
 
 static PtnValue ptn_datetime_timezone_object(PtnRuntime *runtime, PtnValue datetime, size_t line) {
@@ -91873,6 +92057,126 @@ static PTN_UNUSED PtnValue ptn_date_period_call_method(
     return ptn_null();
 }
 
+static int ptn_timezone_year_from_timestamp(int64_t timestamp) {
+    time_t time = (time_t)timestamp;
+    struct tm *parts = gmtime(&time);
+    return parts == NULL ? 1970 : parts->tm_year + 1900;
+}
+
+static time_t ptn_timezone_europe_dst_start_utc(const char *name, int year) {
+    int hour = ptn_ascii_case_equal(name, "Europe/London") && year < 1970 ? 2 : 1;
+    int day = ptn_date_last_weekday_in_month(year, 3, 0);
+    return ptn_datetime_utc_timestamp_for_parts(year, 3, day, hour, 0, 0);
+}
+
+static time_t ptn_timezone_europe_dst_end_utc(const char *name, int year) {
+    if (ptn_ascii_case_equal(name, "Europe/London") && year == 1968) {
+        return ptn_datetime_utc_timestamp_for_parts(1968, 10, 26, 23, 0, 0);
+    }
+    int hour = ptn_ascii_case_equal(name, "Europe/London") && year < 1970 ? 2 : 1;
+    int day = ptn_date_last_weekday_in_month(year, 10, 0);
+    return ptn_datetime_utc_timestamp_for_parts(year, 10, day, hour, 0, 0);
+}
+
+static time_t ptn_timezone_us_dst_start_utc(int year, int standard_offset) {
+    int month = year < 2007 ? 4 : 3;
+    int day = year < 2007
+        ? ptn_date_nth_weekday_in_month(year, 4, 0, 1)
+        : ptn_date_nth_weekday_in_month(year, 3, 0, 2);
+    return ptn_datetime_utc_timestamp_for_parts(year, month, day, 2, 0, 0) - standard_offset;
+}
+
+static time_t ptn_timezone_us_dst_end_utc(int year, int standard_offset) {
+    int month = year < 2007 ? 10 : 11;
+    int day = year < 2007
+        ? ptn_date_last_weekday_in_month(year, 10, 0)
+        : ptn_date_nth_weekday_in_month(year, 11, 0, 1);
+    return ptn_datetime_utc_timestamp_for_parts(year, month, day, 2, 0, 0) - (standard_offset + 3600);
+}
+
+static void ptn_datetime_zone_append_transition(
+    PtnRuntime *runtime,
+    PtnValue result,
+    int64_t *index,
+    const char *timezone,
+    int64_t timestamp,
+    size_t line
+) {
+    PtnValue row = ptn_array_from_literal_entries(0, NULL);
+    int offset = ptn_timezone_offset_for_name(timezone, (time_t)timestamp);
+    PtnStringOperand iso_format = { "Y-m-d\\TH:i:sP", NULL, 13 };
+    PtnValue time_value = ptn_format_date_value_for_timezone(
+        runtime,
+        "DateTimeZone::getTransitions",
+        iso_format,
+        (time_t)timestamp,
+        0,
+        "+00:00",
+        line
+    );
+    ptn_array_set_entry(row.as.array, ptn_array_string_key("ts"), ptn_int(timestamp));
+    ptn_array_set_entry(row.as.array, ptn_array_string_key("time"), time_value);
+    ptn_array_set_entry(row.as.array, ptn_array_string_key("offset"), ptn_int(offset));
+    ptn_array_set_entry(
+        row.as.array,
+        ptn_array_string_key("isdst"),
+        ptn_bool(ptn_timezone_is_dst_for_name(timezone, (time_t)timestamp))
+    );
+    ptn_array_set_entry(
+        row.as.array,
+        ptn_array_string_key("abbr"),
+        ptn_string(ptn_timezone_abbreviation_for_name(timezone, (time_t)timestamp))
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), row);
+}
+
+static PtnValue ptn_datetime_zone_transitions_value(
+    PtnRuntime *runtime,
+    const char *timezone,
+    int64_t start,
+    int64_t end,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    ptn_datetime_zone_append_transition(runtime, result, &index, timezone, start, line);
+
+    if (end < start) {
+        return result;
+    }
+
+    int start_year = ptn_timezone_year_from_timestamp(start) - 1;
+    int end_year = ptn_timezone_year_from_timestamp(end) + 1;
+    if (ptn_timezone_is_europe_dst_zone(timezone)) {
+        for (int year = start_year; year <= end_year; year++) {
+            time_t spring = ptn_timezone_europe_dst_start_utc(timezone, year);
+            time_t autumn = ptn_timezone_europe_dst_end_utc(timezone, year);
+            if ((int64_t)spring > start && (int64_t)spring <= end) {
+                ptn_datetime_zone_append_transition(runtime, result, &index, timezone, (int64_t)spring, line);
+            }
+            if ((int64_t)autumn > start && (int64_t)autumn <= end) {
+                ptn_datetime_zone_append_transition(runtime, result, &index, timezone, (int64_t)autumn, line);
+            }
+        }
+        return result;
+    }
+
+    int standard_offset = 0;
+    if (ptn_timezone_us_standard_offset(timezone, &standard_offset)) {
+        for (int year = start_year; year <= end_year; year++) {
+            time_t spring = ptn_timezone_us_dst_start_utc(year, standard_offset);
+            time_t autumn = ptn_timezone_us_dst_end_utc(year, standard_offset);
+            if ((int64_t)spring > start && (int64_t)spring <= end) {
+                ptn_datetime_zone_append_transition(runtime, result, &index, timezone, (int64_t)spring, line);
+            }
+            if ((int64_t)autumn > start && (int64_t)autumn <= end) {
+                ptn_datetime_zone_append_transition(runtime, result, &index, timezone, (int64_t)autumn, line);
+            }
+        }
+    }
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -91912,7 +92216,12 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
         }
         static const char *const names[] = { "timezone_type", "timezone" };
         return receiver.type == PTN_OBJECT
-            ? ptn_object_named_public_properties_array(receiver.as.object, names, sizeof(names) / sizeof(names[0]))
+            ? ptn_object_named_public_properties_with_extra_public_array(
+                runtime,
+                receiver.as.object,
+                names,
+                sizeof(names) / sizeof(names[0])
+            )
             : ptn_array_from_literal_entries(0, NULL);
     }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
@@ -91939,6 +92248,11 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
             return ptn_null();
         }
         ptn_datetime_zone_replace_native_data(runtime, receiver, timezone, timezone_type, line);
+        if (receiver.type == PTN_OBJECT &&
+            !ptn_datetime_zone_unserialize_extra_properties(runtime, receiver.as.object, data.as.array, line)) {
+            free(timezone);
+            return ptn_null();
+        }
         free(timezone);
         return ptn_null();
     }
@@ -91986,29 +92300,52 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
         }
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         const char *country = "??";
+        const char *comments = "";
         double latitude = 0.0;
         double longitude = 0.0;
-        if (strncmp(zone->name, "America/", 8) == 0 || strncmp(zone->name, "US/", 3) == 0) {
+        if (ptn_ascii_case_equal(zone->name, "America/Halifax") ||
+            ptn_ascii_case_equal(zone->name, "America/Toronto")) {
+            country = "CA";
+            comments = ptn_ascii_case_equal(zone->name, "America/Halifax")
+                ? "Atlantic - NS (most areas), PE"
+                : "Eastern - ON, QC (most areas)";
+            latitude = 44.6;
+            longitude = -63.6;
+        } else if (ptn_ascii_case_equal(zone->name, "Africa/Addis_Ababa")) {
+            country = "ET";
+            comments = "Ethiopia";
+            latitude = 9.0;
+            longitude = 38.7;
+        } else if (ptn_ascii_case_equal(zone->name, "Asia/Yerevan")) {
+            country = "AM";
+            comments = "Armenia";
+            latitude = 40.2;
+            longitude = 44.5;
+        } else if (strncmp(zone->name, "America/", 8) == 0 || strncmp(zone->name, "US/", 3) == 0) {
             country = "US";
+            comments = "United States";
             latitude = 40.7;
             longitude = -74.0;
         } else if (strncmp(zone->name, "Europe/", 7) == 0) {
             country = "GB";
+            comments = "United Kingdom";
             latitude = 51.5;
             longitude = -0.1;
         } else if (strncmp(zone->name, "Africa/", 7) == 0) {
             country = "CI";
+            comments = "Africa";
             latitude = 5.3;
             longitude = -4.0;
         } else if (strncmp(zone->name, "Australia/", 10) == 0) {
             country = "AU";
+            comments = "South Australia";
             latitude = -34.9;
             longitude = 138.6;
         }
         ptn_array_set_entry(result.as.array, ptn_array_string_key("country_code"), ptn_string(country));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("latitude"), ptn_float(latitude));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("longitude"), ptn_float(longitude));
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("comments"), ptn_string(""));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("comments"), ptn_string(comments));
         return result;
     }
     if (ptn_ascii_case_equal(name, "getTransitions")) {
@@ -92022,25 +92359,8 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
             return ptn_null();
         }
         int64_t start = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
-        PtnValue result = ptn_array_from_literal_entries(0, NULL);
-        int64_t count = ptn_ascii_case_equal(zone->name, "Europe/London") && argc >= 2 ? 18 : 1;
-        for (int64_t i = 0; i < count; i++) {
-            int64_t ts = start + i * 1209600;
-            if (ptn_ascii_case_equal(zone->name, "Europe/London") && argc >= 2 && i == 6) {
-                ts = -213228000;
-            }
-            PtnValue row = ptn_array_from_literal_entries(0, NULL);
-            int offset = ptn_timezone_offset_for_name(zone->name, (time_t)ts);
-            PtnStringOperand iso_format = { "Y-m-d\\TH:i:sP", NULL, 13 };
-            PtnValue time_value = ptn_format_date_value_for_timezone(runtime, "DateTimeZone::getTransitions", iso_format, (time_t)ts, 0, "+00:00", line);
-            ptn_array_set_entry(row.as.array, ptn_array_string_key("ts"), ptn_int(ts));
-            ptn_array_set_entry(row.as.array, ptn_array_string_key("time"), time_value);
-            ptn_array_set_entry(row.as.array, ptn_array_string_key("offset"), ptn_int(offset));
-            ptn_array_set_entry(row.as.array, ptn_array_string_key("isdst"), ptn_bool(offset != 0 && ptn_datetime_timestamp_dst_month((time_t)ts)));
-            ptn_array_set_entry(row.as.array, ptn_array_string_key("abbr"), ptn_string(ptn_timezone_abbreviation_for_name(zone->name, (time_t)ts)));
-            ptn_array_set_entry(result.as.array, ptn_array_int_key(i), row);
-        }
-        return result;
+        int64_t end = argc >= 2 ? ptn_value_to_integer(args[1]) : start;
+        return ptn_datetime_zone_transitions_value(runtime, zone->name, start, end, line);
     }
     if (ptn_ascii_case_equal(name, "listIdentifiers")) {
         return ptn_internal_class_static_call_method(runtime, "DateTimeZone", name, argc, args, line);
@@ -92076,7 +92396,11 @@ static PtnValue ptn_timezone_abbreviation_entry(int dst, int offset, const char 
     PtnValue entry = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(entry.as.array, ptn_array_string_key("dst"), ptn_bool(dst));
     ptn_array_set_entry(entry.as.array, ptn_array_string_key("offset"), ptn_int(offset));
-    ptn_array_set_entry(entry.as.array, ptn_array_string_key("timezone_id"), ptn_string(timezone_id));
+    ptn_array_set_entry(
+        entry.as.array,
+        ptn_array_string_key("timezone_id"),
+        timezone_id == NULL ? ptn_null() : ptn_string(timezone_id)
+    );
     return entry;
 }
 
@@ -92119,19 +92443,29 @@ static PtnValue ptn_timezone_abbreviations_value(void) {
         "Australia/South",
         "Australia/Yancowinna",
     };
+    static const char *const null_ids[] = { NULL };
+    static const char *const amt_ids[] = { "Asia/Yerevan" };
+    static const char *const ast_ids[] = { "America/Halifax" };
+    static const char *const eat_ids[] = { "Africa/Addis_Ababa" };
     for (size_t i = 0; i < sizeof(abbreviation_names) / sizeof(abbreviation_names[0]); i++) {
         if (ptn_ascii_case_equal(abbreviation_names[i], "utc") ||
-            ptn_ascii_case_equal(abbreviation_names[i], "acst")) {
+            ptn_ascii_case_equal(abbreviation_names[i], "acst") ||
+            ptn_ascii_case_equal(abbreviation_names[i], "amt") ||
+            ptn_ascii_case_equal(abbreviation_names[i], "ast") ||
+            ptn_ascii_case_equal(abbreviation_names[i], "eat")) {
             continue;
         }
         ptn_array_set_entry(
             result.as.array,
             ptn_array_string_key(abbreviation_names[i]),
-            ptn_array_from_literal_entries(0, NULL)
+            ptn_timezone_abbreviation_rows(1, null_ids, 0, 0)
         );
     }
     ptn_array_set_entry(result.as.array, ptn_array_string_key("utc"), ptn_timezone_abbreviation_rows(5, utc_ids, 0, 0));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("acst"), ptn_timezone_abbreviation_rows(6, acst_ids, 0, 34200));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("amt"), ptn_timezone_abbreviation_rows(1, amt_ids, 0, 14400));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("ast"), ptn_timezone_abbreviation_rows(1, ast_ids, 0, -14400));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("eat"), ptn_timezone_abbreviation_rows(1, eat_ids, 0, 10800));
     return result;
 }
 

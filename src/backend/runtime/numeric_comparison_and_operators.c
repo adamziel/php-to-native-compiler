@@ -231,6 +231,13 @@ static PTN_UNUSED int ptn_compare_arrays_identical(
 }
 
 static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared);
+static int ptn_compare_datetimezone_objects_order(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line,
+    int *compared
+);
 
 static PTN_UNUSED int ptn_compare_objects_equal(
     PtnRuntime *runtime,
@@ -257,6 +264,10 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     int datetime_compared = PTN_COMPARE_UNORDERED;
     if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
         return datetime_compared == PTN_COMPARE_EQUAL;
+    }
+    int timezone_compared = PTN_COMPARE_UNORDERED;
+    if (ptn_compare_datetimezone_objects_order(runtime, left, right, line, &timezone_compared)) {
+        return timezone_compared == PTN_COMPARE_EQUAL;
     }
     if (strcmp(left->class_name, right->class_name) != 0) {
         return 0;
@@ -289,6 +300,11 @@ static int ptn_compare_object_is_datetime(PtnObject *object) {
          ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable"));
 }
 
+static int ptn_compare_object_is_datetimezone(PtnObject *object) {
+    return object != NULL &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeZone");
+}
+
 static PtnArrayEntry *ptn_compare_object_string_property_entry(PtnObject *object, const char *name) {
     if (object == NULL || object->properties == NULL) {
         return NULL;
@@ -301,6 +317,20 @@ static PtnArrayEntry *ptn_compare_object_string_property_entry(PtnObject *object
     }
     PtnValue value = ptn_value_deref(entry->value);
     return value.type == PTN_STRING ? entry : NULL;
+}
+
+static PtnArrayEntry *ptn_compare_object_int_property_entry(PtnObject *object, const char *name) {
+    if (object == NULL || object->properties == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    return value.type == PTN_INT ? entry : NULL;
 }
 
 static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared) {
@@ -320,6 +350,44 @@ static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right,
         right_date.as.string.data,
         right_date.as.string.len
     );
+    return 1;
+}
+
+static int ptn_compare_datetimezone_objects_order(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line,
+    int *compared
+) {
+    if (!ptn_compare_object_is_datetimezone(left) || !ptn_compare_object_is_datetimezone(right)) {
+        return 0;
+    }
+    PtnArrayEntry *left_type_entry = ptn_compare_object_int_property_entry(left, "timezone_type");
+    PtnArrayEntry *right_type_entry = ptn_compare_object_int_property_entry(right, "timezone_type");
+    PtnArrayEntry *left_name_entry = ptn_compare_object_string_property_entry(left, "timezone");
+    PtnArrayEntry *right_name_entry = ptn_compare_object_string_property_entry(right, "timezone");
+    if (left_type_entry == NULL || right_type_entry == NULL ||
+        left_name_entry == NULL || right_name_entry == NULL) {
+        ptn_throw_exception(runtime, "DateObjectError", "Trying to compare uninitialized DateTimeZone objects");
+        *compared = PTN_COMPARE_UNORDERED;
+        return 1;
+    }
+
+    PtnValue left_type = ptn_value_deref(left_type_entry->value);
+    PtnValue right_type = ptn_value_deref(right_type_entry->value);
+    if (left_type.as.integer != right_type.as.integer) {
+        ptn_throw_exception(runtime, "DateException", "Cannot compare two different kinds of DateTimeZone objects");
+        *compared = PTN_COMPARE_UNORDERED;
+        return 1;
+    }
+
+    PtnValue left_name = ptn_value_deref(left_name_entry->value);
+    PtnValue right_name = ptn_value_deref(right_name_entry->value);
+    *compared = ptn_compare_value_strings(left_name.as.string, right_name.as.string) == PTN_COMPARE_EQUAL
+        ? PTN_COMPARE_EQUAL
+        : PTN_COMPARE_UNORDERED;
+    (void)line;
     return 1;
 }
 
@@ -534,6 +602,10 @@ static PTN_UNUSED int ptn_compare_objects_order(
     int datetime_compared = PTN_COMPARE_UNORDERED;
     if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
         return datetime_compared;
+    }
+    int timezone_compared = PTN_COMPARE_UNORDERED;
+    if (ptn_compare_datetimezone_objects_order(runtime, left, right, line, &timezone_compared)) {
+        return timezone_compared;
     }
     if (left->enum_case_name != NULL || right->enum_case_name != NULL) {
         if (
