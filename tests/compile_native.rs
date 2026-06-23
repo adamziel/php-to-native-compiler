@@ -62323,6 +62323,62 @@ var_dump($counts);",
 }
 
 #[test]
+fn compile_array_assign_op_snapshots_string_key_before_warning_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-array-assign-op-snapshot-string-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-assign-op-snapshot-string-key.php");
+    let output = root.join("array-assign-op-snapshot-string-key-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$key = \"foo\";\n\
+$key .= \"bar\";\n\
+set_error_handler(function($_, $message) use (&$key) {\n\
+    echo $message, \"\\n\";\n\
+    $key .= \"baz\";\n\
+});\n\
+$ary = [];\n\
+$ary[$key]++;\n\
+var_dump($ary);\n\
+$ary[$key] += 1;\n\
+var_dump($ary);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Undefined array key \"foobar\"\n",
+            "array(1) {\n",
+            "  [\"foobar\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "Undefined array key \"foobarbaz\"\n",
+            "array(2) {\n",
+            "  [\"foobar\"]=>\n",
+            "  int(1)\n",
+            "  [\"foobarbaz\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_path_segments_clone_values"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_inc_dec"));
+}
+
+#[test]
 fn compile_increment_and_decrement_expression_results_to_native_binary() {
     let root = temp_dir("ptn-native-inc-dec-expression-results");
     fs::create_dir_all(&root).unwrap();

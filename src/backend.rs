@@ -22431,6 +22431,7 @@ fn emit_instruction(
                 out.push_str(", \"offsetGet\");\n");
 
                 let path = emit_array_path_segments(out, values, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, values, &path);
                 let value_temp = values.emit_materialized_value(out, value);
                 let base_temp = values.next_temp();
                 let container_temp = values.next_temp();
@@ -22450,7 +22451,7 @@ fn emit_instruction(
                 );
                 out.push_str(&root_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -22464,7 +22465,7 @@ fn emit_instruction(
                 );
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -22483,7 +22484,7 @@ fn emit_instruction(
                 out.push_str(" ? ptn_value_array_path_read_for_overloaded_assign_op(&runtime, ");
                 out.push_str(&base_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(" + 1, ");
                 out.push_str(&(path.len.saturating_sub(1)).to_string());
                 out.push_str(", ");
@@ -22515,7 +22516,7 @@ fn emit_instruction(
                 );
                 out.push_str(&root_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -22531,7 +22532,7 @@ fn emit_instruction(
                 out.push_str(", ");
                 out.push_str(&container_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(" + 1, ");
                 out.push_str(&(path.len.saturating_sub(1)).to_string());
                 out.push_str(", ");
@@ -22546,7 +22547,7 @@ fn emit_instruction(
                 out.push_str("            ptn_value_array_path_set_from_assign_op(&runtime, &");
                 out.push_str(&root_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -22558,7 +22559,7 @@ fn emit_instruction(
                 out.push_str("            ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -22574,6 +22575,7 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &base_temp);
                 emit_value_cleanup(out, "    ", &container_temp);
                 emit_value_cleanup(out, "    ", &root_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -25187,6 +25189,36 @@ fn emit_array_path(
         value_temps,
         deferred_undefined_variable_warnings: Vec::new(),
     }
+}
+
+fn emit_array_path_value_snapshot(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    path: &EmittedArrayPath,
+) -> String {
+    let snapshot = values.next_temp();
+    out.push_str("    PtnArrayPathSegment *");
+    out.push_str(&snapshot);
+    out.push_str(" = ptn_array_path_segments_clone_values(");
+    out.push_str(&path.name);
+    out.push_str(", ");
+    out.push_str(&path.len.to_string());
+    out.push_str(");\n");
+    snapshot
+}
+
+fn emit_array_path_value_snapshot_cleanup(
+    out: &mut String,
+    indent: &str,
+    snapshot: &str,
+    path: &EmittedArrayPath,
+) {
+    out.push_str(indent);
+    out.push_str("ptn_array_path_segments_free_cloned_values(");
+    out.push_str(snapshot);
+    out.push_str(", ");
+    out.push_str(&path.len.to_string());
+    out.push_str(");\n");
 }
 
 fn emit_deferred_missing_variable_null_key_deprecation_flag(
@@ -30306,13 +30338,14 @@ fn emit_increment_statement(
             out.push_str(&array_temp);
             out.push_str(");\n");
             let path = emit_array_path_segments(out, values, dimensions);
+            let path_snapshot = emit_array_path_value_snapshot(out, values, &path);
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&current_temp);
             out.push_str(" = ptn_value_array_path_read_for_inc_dec(&runtime, ");
             out.push_str(&array_temp);
             out.push_str(", ");
-            out.push_str(&path.name);
+            out.push_str(&path_snapshot);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
             out.push_str(", ");
@@ -30331,7 +30364,7 @@ fn emit_increment_statement(
             out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
             out.push_str(&array_temp);
             out.push_str(", ");
-            out.push_str(&path.name);
+            out.push_str(&path_snapshot);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
             out.push_str(", ");
@@ -30344,6 +30377,7 @@ fn emit_increment_statement(
             emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &result_temp);
             emit_value_cleanup(out, "    ", &array_temp);
+            emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
@@ -30359,13 +30393,14 @@ fn emit_increment_statement(
             out.push_str(&line.to_string());
             out.push_str(");\n");
             let path = emit_array_path_segments(out, values, dimensions);
+            let path_snapshot = emit_array_path_value_snapshot(out, values, &path);
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&current_temp);
             out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
             out.push_str(&c_string(array));
             out.push_str("\", ");
-            out.push_str(&path.name);
+            out.push_str(&path_snapshot);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
             out.push_str(", ");
@@ -30384,7 +30419,7 @@ fn emit_increment_statement(
             out.push_str("    ptn_runtime_array_path_set_from_inc_dec(&runtime, \"");
             out.push_str(&c_string(array));
             out.push_str("\", ");
-            out.push_str(&path.name);
+            out.push_str(&path_snapshot);
             out.push_str(", ");
             out.push_str(&path.len.to_string());
             out.push_str(", ");
@@ -30396,6 +30431,7 @@ fn emit_increment_statement(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &result_temp);
+            emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
@@ -33959,6 +33995,7 @@ impl ValueEmitter {
             out.push_str(&array_temp);
             out.push_str(");\n");
             if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
                 let value_temp = self.emit_materialized_value(out, value);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -33966,7 +34003,7 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_array_path_read_for_inc_dec(&runtime, ");
                 out.push_str(&array_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -33989,7 +34026,7 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
                 out.push_str(&array_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -34008,6 +34045,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &result_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
                 emit_value_cleanup(out, "    ", &array_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -35250,6 +35288,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(", 1)) {\n");
         let path = emit_array_path_segments(out, self, dimensions);
+        let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_value_temp = self.next_temp();
@@ -35271,7 +35310,7 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35288,7 +35327,7 @@ impl ValueEmitter {
         out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35320,6 +35359,7 @@ impl ValueEmitter {
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -35356,6 +35396,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(", 1)) {\n");
         let path = emit_array_path_segments(out, self, dimensions);
+        let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_value_temp = self.next_temp();
@@ -35377,7 +35418,7 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35394,7 +35435,7 @@ impl ValueEmitter {
         out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35426,6 +35467,7 @@ impl ValueEmitter {
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -35445,6 +35487,7 @@ impl ValueEmitter {
     ) -> String {
         let receiver_temp = self.emit_nested_write_receiver(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
+        let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_value_temp = self.next_temp();
@@ -35466,7 +35509,7 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35483,7 +35526,7 @@ impl ValueEmitter {
         out.push_str("        ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
         out.push_str(", ");
-        out.push_str(&path.name);
+        out.push_str(&path_snapshot);
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
@@ -35511,6 +35554,7 @@ impl ValueEmitter {
         emit_value_cleanup(out, "    ", &current_value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         emit_value_cleanup(out, "    ", &receiver_temp);
+        emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -38436,13 +38480,14 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 let path = emit_array_path_segments(out, self, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
                 out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38474,7 +38519,7 @@ impl ValueEmitter {
                 out.push_str("    ptn_runtime_array_path_set_from_inc_dec(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38488,6 +38533,7 @@ impl ValueEmitter {
                 out.push_str(&name_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -38510,13 +38556,14 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 let path = emit_array_path_segments(out, self, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
                 out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38548,7 +38595,7 @@ impl ValueEmitter {
                 out.push_str("    ptn_runtime_array_path_set_from_inc_dec(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38559,6 +38606,7 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -38578,13 +38626,14 @@ impl ValueEmitter {
                 out.push_str(&array_temp);
                 out.push_str(");\n");
                 let path = emit_array_path_segments(out, self, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
                 out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
                 out.push_str(&array_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38616,7 +38665,7 @@ impl ValueEmitter {
                 out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
                 out.push_str(&array_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38628,6 +38677,7 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
                 emit_value_cleanup(out, "    ", &array_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -38647,6 +38697,7 @@ impl ValueEmitter {
             } => {
                 let receiver_temp = self.emit_materialized_value(out, receiver);
                 let path = emit_array_path_segments(out, self, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
                 out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -38674,7 +38725,7 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
                 out.push_str(&current_value_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38706,7 +38757,7 @@ impl ValueEmitter {
                 out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
                 out.push_str(&current_value_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38735,6 +38786,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &current_element_temp);
                 emit_value_cleanup(out, "    ", &current_value_temp);
                 emit_value_cleanup(out, "    ", &receiver_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
@@ -38754,6 +38806,7 @@ impl ValueEmitter {
             } => {
                 let resolved_class_name = self.static_property_class_name(class_name);
                 let path = emit_array_path_segments(out, self, dimensions);
+                let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
 
                 let current_value_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -38774,7 +38827,7 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
                 out.push_str(&current_value_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38806,7 +38859,7 @@ impl ValueEmitter {
                 out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
                 out.push_str(&current_value_temp);
                 out.push_str(", ");
-                out.push_str(&path.name);
+                out.push_str(&path_snapshot);
                 out.push_str(", ");
                 out.push_str(&path.len.to_string());
                 out.push_str(", ");
@@ -38834,6 +38887,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &assigned_temp);
                 emit_value_cleanup(out, "    ", &current_element_temp);
                 emit_value_cleanup(out, "    ", &current_value_temp);
+                emit_array_path_value_snapshot_cleanup(out, "    ", &path_snapshot, &path);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }

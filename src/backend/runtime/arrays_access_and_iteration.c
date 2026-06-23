@@ -13464,6 +13464,44 @@ static PTN_UNUSED int ptn_array_path_segment_key(
     return ptn_array_offset_key_from_value(runtime, segment->value, line, 0, key_out);
 }
 
+static PTN_UNUSED PtnArrayPathSegment *ptn_array_path_segments_clone_values(
+    const PtnArrayPathSegment *segments,
+    size_t segment_count
+) {
+    if (segment_count == 0) {
+        return NULL;
+    }
+    if (segment_count > SIZE_MAX / sizeof(PtnArrayPathSegment)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnArrayPathSegment *cloned = malloc(segment_count * sizeof(PtnArrayPathSegment));
+    if (cloned == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < segment_count; i++) {
+        cloned[i].append = segments[i].append;
+        cloned[i].value = segments[i].append
+            ? ptn_null()
+            : ptn_value_clone_deref(segments[i].value);
+        cloned[i].deferred_missing_variable_name = segments[i].deferred_missing_variable_name;
+        cloned[i].deferred_missing_variable_line = segments[i].deferred_missing_variable_line;
+    }
+    return cloned;
+}
+
+static PTN_UNUSED void ptn_array_path_segments_free_cloned_values(
+    PtnArrayPathSegment *segments,
+    size_t segment_count
+) {
+    if (segments == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < segment_count; i++) {
+        ptn_value_drop(&segments[i].value);
+    }
+    free(segments);
+}
+
 static PTN_UNUSED int ptn_runtime_is_globals_name(const char *name) {
     return strcmp(name, "GLOBALS") == 0;
 }
