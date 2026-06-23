@@ -122220,6 +122220,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *c
     return ptn_ascii_case_equal(class_name, "IteratorIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_multiple_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "MultipleIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_no_rewind_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "NoRewindIterator");
 }
@@ -122632,6 +122636,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_recursive_filter_iterator(class_name)
         || ptn_internal_class_name_is_infinite_iterator(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
+        || ptn_internal_class_name_is_multiple_iterator(class_name)
         || ptn_internal_class_name_is_no_rewind_iterator(class_name)
         || ptn_internal_class_name_is_recursive_iterator_iterator(class_name)
         || ptn_internal_class_name_is_spl_object_storage(class_name)
@@ -123998,6 +124003,21 @@ static int ptn_regex_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "setPregFlags");
 }
 
+static int ptn_multiple_iterator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "attachIterator")
+        || ptn_ascii_case_equal(method_name, "containsIterator")
+        || ptn_ascii_case_equal(method_name, "countIterators")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "detachIterator")
+        || ptn_ascii_case_equal(method_name, "getFlags")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "setFlags")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
 static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
         || ptn_ascii_case_equal(method_name, "bind")
@@ -124429,6 +124449,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_no_rewind_iterator(class_name) ||
         ptn_internal_class_name_is_iterator_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_multiple_iterator(class_name)) {
+        return ptn_multiple_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_regex_iterator(class_name)) {
         return ptn_regex_iterator_method_exists(method_name);
@@ -137637,6 +137660,12 @@ typedef struct {
 } PtnRegexIteratorData;
 
 typedef struct {
+    PtnValue iterators;
+    PtnValue infos;
+    int64_t flags;
+} PtnMultipleIteratorData;
+
+typedef struct {
     PtnValue iterator;
     PtnValue post_value;
     PtnValue post_key;
@@ -137962,6 +137991,16 @@ static void ptn_regex_iterator_data_free(void *data) {
     free(iterator_data);
 }
 
+static void ptn_multiple_iterator_data_free(void *data) {
+    PtnMultipleIteratorData *iterator_data = (PtnMultipleIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->iterators);
+    ptn_value_destroy(&iterator_data->infos);
+    free(iterator_data);
+}
+
 static void ptn_recursive_iterator_iterator_data_free(void *data) {
     PtnRecursiveIteratorIteratorData *iterator_data =
         (PtnRecursiveIteratorIteratorData *)data;
@@ -138280,6 +138319,29 @@ static PtnRegexIteratorData *ptn_regex_iterator_data(PtnRuntime *runtime, PtnVal
         return NULL;
     }
     return (PtnRegexIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnMultipleIteratorData *ptn_multiple_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "MultipleIterator")
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid MultipleIterator object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnMultipleIteratorData *data = malloc(sizeof(PtnMultipleIteratorData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->iterators = ptn_array_from_literal_entries(0, NULL);
+        data->infos = ptn_array_from_literal_entries(0, NULL);
+        data->flags = 1;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_multiple_iterator_data_free;
+    }
+    return (PtnMultipleIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
@@ -150501,6 +150563,7 @@ static PtnValue ptn_iterator_inner_call_no_args(
     const char *name,
     size_t line
 );
+static int ptn_iterator_inner_valid(PtnRuntime *runtime, PtnValue inner, size_t line);
 
 static PtnValue ptn_iterator_iterator_resolve_inner(
     PtnRuntime *runtime,
@@ -150681,6 +150744,262 @@ static PTN_UNUSED PtnValue ptn_append_iterator_new(
         return ptn_null();
     }
     return ptn_object_new_shell(runtime, "AppendIterator");
+}
+
+static PtnMultipleIteratorData *ptn_multiple_iterator_data_new(void) {
+    PtnMultipleIteratorData *data = malloc(sizeof(PtnMultipleIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->iterators = ptn_array_from_literal_entries(0, NULL);
+    data->infos = ptn_array_from_literal_entries(0, NULL);
+    data->flags = 1;
+    return data;
+}
+
+static PTN_UNUSED PtnValue ptn_multiple_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "MultipleIterator::__construct() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "ArgumentCountError",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            "MultipleIterator->__construct",
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        return ptn_null();
+    }
+
+    PtnValue object = ptn_object_new_shell(runtime, "MultipleIterator");
+    object.as.object->native_data = ptn_multiple_iterator_data_new();
+    object.as.object->native_data_free = ptn_multiple_iterator_data_free;
+    return object;
+}
+
+static int ptn_multiple_iterator_info_is_key(PtnValue info) {
+    info = ptn_value_deref(info);
+    return info.type == PTN_INT || info.type == PTN_STRING;
+}
+
+static int ptn_multiple_iterator_info_keys_equal(PtnValue left, PtnValue right) {
+    if (!ptn_multiple_iterator_info_is_key(left) ||
+        !ptn_multiple_iterator_info_is_key(right)) {
+        return 0;
+    }
+    PtnArrayKey left_key = ptn_array_key_from_value(ptn_value_deref(left));
+    PtnArrayKey right_key = ptn_array_key_from_value(ptn_value_deref(right));
+    int equal = ptn_array_keys_equal(left_key, right_key);
+    ptn_array_key_free(left_key);
+    ptn_array_key_free(right_key);
+    return equal;
+}
+
+static PtnArrayKey ptn_multiple_iterator_info_key(PtnValue info) {
+    return ptn_array_key_from_value(ptn_value_deref(info));
+}
+
+static int ptn_multiple_iterator_attached_index(
+    PtnRuntime *runtime,
+    PtnMultipleIteratorData *data,
+    PtnValue iterator,
+    size_t line,
+    size_t *index_out
+) {
+    if (data == NULL || data->iterators.type != PTN_ARRAY) {
+        return 0;
+    }
+    for (size_t i = 0; i < data->iterators.as.array->len; i++) {
+        PtnValue attached = data->iterators.as.array->entries[i].value;
+        if (ptn_compare_identical(runtime, attached, iterator, line)) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_multiple_iterator_info_duplicate(
+    PtnMultipleIteratorData *data,
+    PtnValue info,
+    int has_excluded_index,
+    size_t excluded_index
+) {
+    if (!ptn_multiple_iterator_info_is_key(info)) {
+        return 0;
+    }
+    for (size_t i = 0; i < data->infos.as.array->len; i++) {
+        if (has_excluded_index && i == excluded_index) {
+            continue;
+        }
+        if (ptn_multiple_iterator_info_keys_equal(data->infos.as.array->entries[i].value, info)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_multiple_iterator_remove_attached_index(
+    PtnMultipleIteratorData *data,
+    size_t removed_index
+) {
+    PtnValue iterators = ptn_array_from_literal_entries(0, NULL);
+    PtnValue infos = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < data->iterators.as.array->len; i++) {
+        if (i == removed_index) {
+            continue;
+        }
+        int64_t next = (int64_t)iterators.as.array->len;
+        ptn_array_set_entry(
+            iterators.as.array,
+            ptn_array_int_key(next),
+            ptn_value_clone_deref(data->iterators.as.array->entries[i].value)
+        );
+        ptn_array_set_entry(
+            infos.as.array,
+            ptn_array_int_key(next),
+            ptn_value_clone_deref(data->infos.as.array->entries[i].value)
+        );
+    }
+    ptn_value_destroy(&data->iterators);
+    ptn_value_destroy(&data->infos);
+    data->iterators = iterators;
+    data->infos = infos;
+}
+
+static int ptn_multiple_iterator_needs_all(PtnMultipleIteratorData *data) {
+    return (data->flags & 1) != 0;
+}
+
+static int ptn_multiple_iterator_keys_assoc(PtnMultipleIteratorData *data) {
+    return (data->flags & 2) != 0;
+}
+
+static int ptn_multiple_iterator_valid_state(
+    PtnRuntime *runtime,
+    PtnMultipleIteratorData *data,
+    size_t line
+) {
+    if (data == NULL || data->iterators.type != PTN_ARRAY || data->iterators.as.array->len == 0) {
+        return 0;
+    }
+    int any_valid = 0;
+    for (size_t i = 0; i < data->iterators.as.array->len; i++) {
+        PtnValue iterator = data->iterators.as.array->entries[i].value;
+        int is_valid = ptn_iterator_inner_valid(runtime, iterator, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+        if (is_valid) {
+            any_valid = 1;
+        } else if (ptn_multiple_iterator_needs_all(data)) {
+            return 0;
+        }
+    }
+    return ptn_multiple_iterator_needs_all(data) ? 1 : any_valid;
+}
+
+static int ptn_multiple_iterator_append_result(
+    PtnRuntime *runtime,
+    PtnMultipleIteratorData *data,
+    PtnValue result,
+    size_t index,
+    PtnValue value
+) {
+    if (ptn_multiple_iterator_keys_assoc(data)) {
+        PtnValue info = data->infos.as.array->entries[index].value;
+        if (!ptn_multiple_iterator_info_is_key(info)) {
+            ptn_value_destroy(&value);
+            ptn_throw_exception(runtime, "InvalidArgumentException", "Sub-Iterator is associated with NULL");
+            return 0;
+        }
+        ptn_array_set_entry(result.as.array, ptn_multiple_iterator_info_key(info), value);
+        return 1;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)index), value);
+    return 1;
+}
+
+static PtnValue ptn_multiple_iterator_collect(
+    PtnRuntime *runtime,
+    PtnMultipleIteratorData *data,
+    const char *method,
+    size_t line
+) {
+    size_t count = data->iterators.as.array->len;
+    if (count == 0) {
+        char message[96];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Called %s() on an invalid iterator",
+            method
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "RuntimeException", message);
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < count; i++) {
+        PtnValue iterator = data->iterators.as.array->entries[i].value;
+        int is_valid = ptn_iterator_inner_valid(runtime, iterator, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+        PtnValue value = ptn_null();
+        if (is_valid) {
+            value = ptn_iterator_inner_call_no_args(runtime, iterator, method, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&value);
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+        } else if (ptn_multiple_iterator_needs_all(data)) {
+            ptn_value_destroy(&result);
+            char message[112];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Called %s() with non valid sub iterator",
+                method
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "RuntimeException", message);
+            return ptn_null();
+        }
+        if (!ptn_multiple_iterator_append_result(runtime, data, result, i, value)) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+    }
+    return result;
 }
 
 static PtnValue ptn_recursive_iterator_iterator_resolve_inner(
@@ -153588,6 +153907,262 @@ static int ptn_iterator_inner_valid(PtnRuntime *runtime, PtnValue inner, size_t 
     int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
     ptn_value_destroy(&valid);
     return result;
+}
+
+static int ptn_multiple_iterator_expect_iterator_arg(
+    PtnRuntime *runtime,
+    const char *method,
+    PtnValue value
+) {
+    if (ptn_value_is_iterator_object(value)) {
+        return 1;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "MultipleIterator::%s(): Argument #1 ($iterator) must be of type Iterator, %s given",
+        method,
+        ptn_internal_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static int ptn_multiple_iterator_validate_info_arg(
+    PtnRuntime *runtime,
+    PtnValue info
+) {
+    PtnValue resolved = ptn_value_deref(info);
+    if (resolved.type == PTN_NULL || resolved.type == PTN_INT || resolved.type == PTN_STRING) {
+        return 1;
+    }
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "MultipleIterator::attachIterator(): Argument #2 ($info) must be of type string|int|null, %s given",
+        ptn_internal_string_arg_type_name(resolved)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_multiple_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnMultipleIteratorData *data = ptn_multiple_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_multiple_iterator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnMultipleIteratorData *new_data =
+                (PtnMultipleIteratorData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_multiple_iterator_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_multiple_iterator_data_free;
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "attachIterator")) {
+        if (argc < 1) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "MultipleIterator::attachIterator() expects at least 1 argument"
+            );
+            return ptn_null();
+        }
+        if (argc > 2) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "MultipleIterator::attachIterator() expects at most 2 arguments, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (!ptn_multiple_iterator_expect_iterator_arg(runtime, "attachIterator", args[0])) {
+            return ptn_null();
+        }
+        PtnValue info = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();
+        if (!ptn_multiple_iterator_validate_info_arg(runtime, info)) {
+            return ptn_null();
+        }
+        size_t existing_index = 0;
+        int attached = ptn_multiple_iterator_attached_index(
+            runtime,
+            data,
+            args[0],
+            line,
+            &existing_index
+        );
+        if (ptn_multiple_iterator_info_duplicate(data, info, attached, existing_index)) {
+            ptn_throw_exception(runtime, "InvalidArgumentException", "Key duplication error");
+            return ptn_null();
+        }
+        if (attached) {
+            ptn_array_set_entry(
+                data->infos.as.array,
+                ptn_array_int_key((int64_t)existing_index),
+                ptn_value_clone_deref(info)
+            );
+            return ptn_null();
+        }
+        int64_t next = (int64_t)data->iterators.as.array->len;
+        ptn_array_set_entry(
+            data->iterators.as.array,
+            ptn_array_int_key(next),
+            ptn_value_clone_deref(args[0])
+        );
+        ptn_array_set_entry(
+            data->infos.as.array,
+            ptn_array_int_key(next),
+            ptn_value_clone_deref(info)
+        );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "detachIterator")) {
+        if (argc != 1) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "MultipleIterator::detachIterator() expects exactly 1 argument"
+            );
+            return ptn_null();
+        }
+        if (!ptn_multiple_iterator_expect_iterator_arg(runtime, "detachIterator", args[0])) {
+            return ptn_null();
+        }
+        size_t index = 0;
+        if (ptn_multiple_iterator_attached_index(runtime, data, args[0], line, &index)) {
+            ptn_multiple_iterator_remove_attached_index(data, index);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "containsIterator")) {
+        if (argc != 1) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "MultipleIterator::containsIterator() expects exactly 1 argument"
+            );
+            return ptn_null();
+        }
+        if (!ptn_multiple_iterator_expect_iterator_arg(runtime, "containsIterator", args[0])) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_multiple_iterator_attached_index(runtime, data, args[0], line, NULL));
+    }
+    if (ptn_ascii_case_equal(name, "countIterators")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_int((int64_t)data->iterators.as.array->len);
+    }
+    if (ptn_ascii_case_equal(name, "getFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "setFlags")) {
+        if (argc != 1) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "MultipleIterator::setFlags() expects exactly 1 argument"
+            );
+            return ptn_null();
+        }
+        data->flags = ptn_internal_expect_integer_arg(
+            runtime,
+            "MultipleIterator::setFlags",
+            1,
+            "flags",
+            args[0],
+            line
+        );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        for (size_t i = 0; i < data->iterators.as.array->len; i++) {
+            PtnValue rewind = ptn_iterator_inner_call_no_args(
+                runtime,
+                data->iterators.as.array->entries[i].value,
+                "rewind",
+                line
+            );
+            ptn_value_destroy(&rewind);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        for (size_t i = 0; i < data->iterators.as.array->len; i++) {
+            PtnValue next = ptn_iterator_inner_call_no_args(
+                runtime,
+                data->iterators.as.array->entries[i].value,
+                "next",
+                line
+            );
+            ptn_value_destroy(&next);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_multiple_iterator_valid_state(runtime, data, line));
+    }
+    if (ptn_ascii_case_equal(name, "current") || ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "MultipleIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_multiple_iterator_collect(runtime, data, name, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method MultipleIterator");
+    return ptn_null();
 }
 
 static PtnValue ptn_regex_iterator_pattern_value(PtnRegexIteratorData *data) {

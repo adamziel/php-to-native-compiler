@@ -1495,10 +1495,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"RegexIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"InfiniteIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"MultipleIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"NoRewindIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
-    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
+    out.push_str("            (!ptn_ascii_case_equal(class_name, \"MultipleIterator\") && ptn_ascii_case_equal(interface_name, \"OuterIterator\")) ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str(
@@ -7053,6 +7054,7 @@ fn emit_class_metadata_helpers(
         "RecursiveCallbackFilterIterator",
         "InfiniteIterator",
         "LimitIterator",
+        "MultipleIterator",
         "NoRewindIterator",
         "SplDoublyLinkedList",
         "SplQueue",
@@ -7689,6 +7691,7 @@ fn emit_class_metadata_helpers(
         "RecursiveIteratorIterator",
         "SplObjectStorage",
         "LimitIterator",
+        "MultipleIterator",
         "NoRewindIterator",
         "RegexIterator",
         "SplDoublyLinkedList",
@@ -18743,6 +18746,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
+        "multipleiterator" => Some("MultipleIterator"),
         "norewinditerator" => Some("NoRewindIterator"),
         "regexiterator" => Some("RegexIterator"),
         "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),

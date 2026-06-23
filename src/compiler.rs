@@ -1732,6 +1732,7 @@ fn include_collection_known_internal_class(class_name: &str) -> bool {
         "InternalIterator",
         "IteratorIterator",
         "LimitIterator",
+        "MultipleIterator",
         "NoDiscard",
         "NoRewindIterator",
         "RegexIterator",

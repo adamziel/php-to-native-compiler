@@ -1145,6 +1145,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_no_rewind_iterator(lookup_class_name)) {
         return ptn_no_rewind_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_multiple_iterator(lookup_class_name)) {
+        return ptn_multiple_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
         return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
     }
