@@ -42599,6 +42599,60 @@ var_dump($client->test());
 }
 
 #[test]
+fn compile_soap12_rejects_envelope_encoding_style_to_native_binary() {
+    let root = temp_dir("ptn-native-soap12-envelope-encoding-style");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap12-envelope-encoding-style.php");
+    let output = root.join("soap12-envelope-encoding-style-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Soap12Test {
+    function echoOk($x) {
+        return $x;
+    }
+}
+
+$request = <<<XML
+<?xml version='1.0' ?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"
+              env:encodingStyle="http://www.w3.org/2003/05/soap-encoding">
+  <env:Body>
+    <test:echoOk xmlns:test="http://example.org/ts-tests">foo</test:echoOk>
+  </env:Body>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, [
+    'uri' => 'http://example.org/ts-tests',
+    'soap_version' => SOAP_1_2,
+]);
+$server->setClass(Soap12Test::class);
+$server->handle($request);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<env:Envelope xmlns:env=\"http://www.w3.org/2003/05/soap-envelope\"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang=\"en\">encodingStyle cannot be specified on the Envelope</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_validate_soap_12_envelope"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();

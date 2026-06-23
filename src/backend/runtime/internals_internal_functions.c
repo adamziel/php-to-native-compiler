@@ -122885,6 +122885,33 @@ static PtnXmlNode *ptn_soap_find_body(PtnXmlNode *node) {
     return NULL;
 }
 
+static int ptn_soap_node_is_soap_12_envelope(PtnXmlNode *node) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+        return 0;
+    }
+    const char *uri = node->namespace_uri == NULL ? "" : node->namespace_uri;
+    return ptn_ascii_case_equal(ptn_xml_local_name(node->name), "Envelope") &&
+        strcmp(uri, "http://www.w3.org/2003/05/soap-envelope") == 0;
+}
+
+static int ptn_soap_element_has_soap_12_attribute(PtnXmlNode *element, const char *local_name) {
+    if (element == NULL || local_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < element->attribute_count; i++) {
+        PtnXmlNode *attr = element->attributes[i];
+        if (attr == NULL || attr->name == NULL) {
+            continue;
+        }
+        const char *uri = attr->namespace_uri == NULL ? "" : attr->namespace_uri;
+        if (strcmp(uri, "http://www.w3.org/2003/05/soap-envelope") == 0 &&
+            ptn_ascii_case_equal(ptn_xml_local_name(attr->name), local_name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static char *ptn_soap_wsdl_find_output_message(PtnXmlNode *node, const char *operation_name) {
     if (node == NULL) {
         return NULL;
@@ -123608,6 +123635,36 @@ static void ptn_soap_emit_fault_and_exit(
     const char *code,
     const char *message,
     const char *lang
+);
+
+static int ptn_soap_validate_soap_12_envelope(
+    PtnRuntime *runtime,
+    PtnSoapServerData *data,
+    PtnXmlNode *envelope
+) {
+    if (!ptn_soap_server_uses_soap_12(data) ||
+        !ptn_soap_node_is_soap_12_envelope(envelope)) {
+        return 1;
+    }
+    if (ptn_soap_element_has_soap_12_attribute(envelope, "encodingStyle")) {
+        ptn_soap_emit_fault_and_exit(
+            runtime,
+            1,
+            "env:Sender",
+            "encodingStyle cannot be specified on the Envelope",
+            "en"
+        );
+        return 0;
+    }
+    return 1;
+}
+
+static void ptn_soap_emit_fault_and_exit(
+    PtnRuntime *runtime,
+    int soap_12,
+    const char *code,
+    const char *message,
+    const char *lang
 ) {
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
@@ -123727,7 +123784,11 @@ static PtnValue ptn_soap_server_handle(
         return ptn_null();
     }
     ptn_string_operand_free(request);
-    PtnXmlNode *body = ptn_soap_find_body(ptn_xml_document_element(document));
+    PtnXmlNode *envelope = ptn_xml_document_element(document);
+    if (!ptn_soap_validate_soap_12_envelope(runtime, data, envelope)) {
+        return ptn_null();
+    }
+    PtnXmlNode *body = ptn_soap_find_body(envelope);
     PtnXmlNode *operation = ptn_xml_first_element_child(body);
     if (operation == NULL) {
         return ptn_null();
