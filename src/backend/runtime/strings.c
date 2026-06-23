@@ -1649,6 +1649,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(3);
         return 1;
     }
+    if (strcmp(name, "XML_SAX_IMPL") == 0) {
+        *out = ptn_string("libxml");
+        return 1;
+    }
     if (strcmp(name, "XML_OPTION_CASE_FOLDING") == 0) {
         *out = ptn_int(1);
         return 1;
@@ -2138,6 +2142,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "CASE_UPPER") == 0) {
         *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "INFO_MODULES") == 0) {
+        *out = ptn_int(8);
         return 1;
     }
     if (strcmp(name, "SORT_REGULAR") == 0) {
