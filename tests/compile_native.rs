@@ -70731,6 +70731,163 @@ var_dump($lazyB->isWritable(null, $lazy));
 }
 
 #[test]
+fn compile_reflection_property_runtime_value_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-runtime-value-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-runtime-value-semantics.php");
+    let output = root.join("reflection-property-runtime-value-semantics-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectMagicGet {
+    private $bar;
+
+    public function __construct() {
+        unset($this->bar);
+    }
+
+    public function __isset($name) {
+        echo \"isset:$name\\n\";
+        return true;
+    }
+
+    public function __get($name) {
+        echo \"get:$name\\n\";
+        return $name;
+    }
+}
+
+$magic = new ReflectionProperty(ReflectMagicGet::class, 'bar');
+var_dump($magic->getValue(new ReflectMagicGet()));
+
+class ReflectWarningFoo {
+    public $dummy1;
+    public $dummy2;
+
+    public function __construct() {
+        unset($this->dummy2);
+    }
+}
+
+class ReflectWarningHandler {
+    private $private = \"PRIVATE\\n\";
+
+    public function __construct() {
+        set_error_handler(function ($errno, $errstr) {
+            $this->handle($errstr);
+            return true;
+        });
+    }
+
+    private function handle($errstr) {
+        echo \"handled:$errstr\\n\";
+        echo $this->private;
+    }
+}
+
+new ReflectWarningHandler();
+$warningTarget = new ReflectWarningFoo();
+foreach ((new ReflectionObject($warningTarget))->getProperties() as $property) {
+    echo $property->getName() . '=' . $property->getValue($warningTarget) . \"\\n\";
+}
+restore_error_handler();
+
+class ReflectDynamicParent {
+    private $value = 1;
+}
+
+#[AllowDynamicProperties]
+class ReflectDynamicChild extends ReflectDynamicParent {}
+
+$dynamicTarget = new ReflectDynamicChild();
+$dynamicTarget->value = 'dynamic';
+$properties = (new ReflectionObject($dynamicTarget))->getProperties();
+var_dump(count($properties));
+var_dump($properties[0]->getName());
+var_dump($properties[0]->getDeclaringClass()->getName());
+var_dump($properties[0]->isPublic());
+
+class ReflectStaticBase {
+    public static $data;
+
+    public static function selfData() {
+        return self::$data;
+    }
+
+    public static function staticData() {
+        return static::$data;
+    }
+}
+
+class ReflectStaticChild extends ReflectStaticBase {}
+
+$baseProperty = new ReflectionProperty(ReflectStaticBase::class, 'data');
+$childProperty = new ReflectionProperty(ReflectStaticChild::class, 'data');
+
+set_error_handler(function ($errno, $errstr) {
+    echo \"dep:$errstr\\n\";
+    return true;
+});
+$baseProperty->setValue(ReflectStaticBase::class, 'world');
+$childProperty->setValue(ReflectStaticChild::class, 'hello');
+restore_error_handler();
+
+var_dump(ReflectStaticChild::selfData());
+var_dump(ReflectStaticChild::staticData());
+
+set_error_handler(function ($errno, $errstr) {
+    throw new Exception($errstr);
+});
+try {
+    $childProperty->setValue(ReflectStaticChild::class, 'hi');
+} catch (Exception $e) {
+    echo \"caught:\", $e->getMessage(), \"\\n\";
+}
+restore_error_handler();
+var_dump(ReflectStaticChild::staticData());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "get:bar\n",
+            "string(3) \"bar\"\n",
+            "dummy1=\n",
+            "handled:Undefined property: ReflectWarningFoo::$dummy2\n",
+            "PRIVATE\n",
+            "dummy2=\n",
+            "int(1)\n",
+            "string(5) \"value\"\n",
+            "string(19) \"ReflectDynamicChild\"\n",
+            "bool(true)\n",
+            "dep:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
+            "dep:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
+            "string(5) \"hello\"\n",
+            "string(5) \"hello\"\n",
+            "caught:Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated\n",
+            "string(5) \"hello\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_object_dynamic_property_entry"));
+    assert!(c_source.contains("ptn_object_read_property"));
+}
+
+#[test]
 fn compile_reflection_property_qualified_names_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-qualified-names");
     fs::create_dir_all(&root).unwrap();

@@ -133278,16 +133278,13 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 line
             );
         }
-        PtnLookupResult lookup = ptn_object_property_lookup_quiet(
+        return ptn_object_read_property(
             runtime,
             target,
             data->name,
-            data->class_name,
+            storage_declaring_class,
             line
         );
-        return lookup.exists
-            ? lookup.value
-            : ptn_reflection_property_default_value(runtime, data->class_name, data->name);
     }
     if (ptn_ascii_case_equal(name, "isReadable")) {
         ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 2);
@@ -133524,6 +133521,26 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                     "Calling ReflectionProperty::setValue() with a single argument is deprecated",
                     line
                 );
+                if (runtime->exceptions->active_exception != NULL) {
+                    return ptn_null();
+                }
+            } else {
+                PtnValue object_arg = ptn_value_deref(args[0]);
+                if (
+                    object_arg.type != PTN_NULL &&
+                    object_arg.type != PTN_OBJECT &&
+                    object_arg.type != PTN_EXCEPTION &&
+                    object_arg.type != PTN_CLOSURE
+                ) {
+                    ptn_emit_deprecation(
+                        &runtime->diagnostics,
+                        "Calling ReflectionProperty::setValue() with a 1st argument which is not null or an object is deprecated",
+                        line
+                    );
+                    if (runtime->exceptions->active_exception != NULL) {
+                        return ptn_null();
+                    }
+                }
             }
             PtnValue value = argc == 1 ? args[0] : args[1];
             PtnValue written = ptn_runtime_write_static_property(
@@ -134692,9 +134709,6 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
         return 0;
     }
     if (ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
-        return 0;
-    }
-    if (ptn_object_metadata_for_display_name(object, entry->key.as.string) != NULL) {
         return 0;
     }
     return 1;
