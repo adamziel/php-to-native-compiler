@@ -88,6 +88,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Dom\\AdjacentPosition",
     "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",
     "Uri\\Rfc3986\\UriHostType",
@@ -7133,6 +7134,7 @@ fn emit_class_metadata_helpers(
         "Dom\\NodeList",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
+        "Dom\\AdjacentPosition",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -7757,6 +7759,7 @@ fn emit_class_metadata_helpers(
         "Dom\\NodeList",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
+        "Dom\\AdjacentPosition",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -18766,6 +18769,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "dom\\nodelist" => Some("Dom\\NodeList"),
         "dom\\namednodemap" => Some("Dom\\NamedNodeMap"),
         "dom\\tokenlist" => Some("Dom\\TokenList"),
+        "dom\\adjacentposition" => Some("Dom\\AdjacentPosition"),
         "libxmlerror" => Some("LibXMLError"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),
@@ -27659,6 +27663,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Dom\\NodeList")
                 || class_name.eq_ignore_ascii_case("Dom\\NamedNodeMap")
                 || class_name.eq_ignore_ascii_case("Dom\\TokenList")
+                || class_name.eq_ignore_ascii_case("Dom\\AdjacentPosition")
                 || class_name.eq_ignore_ascii_case("XMLReader")
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")

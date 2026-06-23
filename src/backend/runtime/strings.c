@@ -1633,6 +1633,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(8192);
         return 1;
     }
+    if (strcmp(name, "Dom\\HTML_NO_DEFAULT_NS") == 0) {
+        *out = ptn_int(2147483648LL);
+        return 1;
+    }
     if (strcmp(name, "LIBXML_ERR_NONE") == 0) {
         *out = ptn_int(0);
         return 1;
@@ -3519,6 +3523,14 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         : NULL;
     if (property_hook_type_case != NULL) {
         *out = ptn_builtin_enum_case_singleton(runtime, "PropertyHookType", property_hook_type_case);
+        free(class_name);
+        return 1;
+    }
+    const char *dom_adjacent_position_case = ptn_ascii_case_equal(resolved_class_name, "Dom\\AdjacentPosition")
+        ? ptn_dom_adjacent_position_case_name(constant_name)
+        : NULL;
+    if (dom_adjacent_position_case != NULL) {
+        *out = ptn_builtin_enum_case_singleton(runtime, "Dom\\AdjacentPosition", dom_adjacent_position_case);
         free(class_name);
         return 1;
     }

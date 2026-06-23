@@ -4152,6 +4152,22 @@ static PTN_UNUSED const char *ptn_property_hook_type_case_name(const char *case_
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_dom_adjacent_position_case_name(const char *case_name) {
+    if (strcmp(case_name, "BeforeBegin") == 0) {
+        return "BeforeBegin";
+    }
+    if (strcmp(case_name, "AfterBegin") == 0) {
+        return "AfterBegin";
+    }
+    if (strcmp(case_name, "BeforeEnd") == 0) {
+        return "BeforeEnd";
+    }
+    if (strcmp(case_name, "AfterEnd") == 0) {
+        return "AfterEnd";
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *class_name,
     size_t class_len,
@@ -5638,6 +5654,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (comparison_mode_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\UriComparisonMode", comparison_mode_case);
+    }
+    const char *dom_adjacent_position_case = ptn_ascii_case_equal(resolved_class_name, "Dom\\AdjacentPosition")
+        ? ptn_dom_adjacent_position_case_name(constant)
+        : NULL;
+    if (dom_adjacent_position_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "Dom\\AdjacentPosition", dom_adjacent_position_case);
     }
     const char *url_validation_error_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlValidationErrorType")
         ? ptn_uri_url_validation_error_type_case_name(constant)

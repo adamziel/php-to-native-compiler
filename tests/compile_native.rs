@@ -39967,6 +39967,64 @@ var_dump($detachedAttr->ownerElement);
 }
 
 #[test]
+fn compile_dom_html_document_parser_interactions_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-document-parser-interactions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-html-document-parser-interactions.php");
+    let output = root.join("dom-html-document-parser-interactions-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\HTMLDocument::createFromString("<div></div>", LIBXML_NOERROR);
+$div = $dom->body->firstChild;
+$div->append("Sample text");
+$div->insertAdjacentHTML(Dom\AdjacentPosition::AfterBegin, "<p>foo</p><p>bar</p>");
+echo $dom->saveXML(), "\n";
+echo $dom->saveHTML(), "\n";
+
+try {
+    Dom\HTMLDocument::createFromString("x", LIBXML_NOBLANKS);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    $dom->saveHtml(Dom\HTMLDocument::createEmpty());
+} catch (DOMException $exception) {
+    echo $exception->getMessage(), ":", $exception->getCode(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+            "<html xmlns=\"http://www.w3.org/1999/xhtml\"><head></head><body><div><p>foo</p><p>bar</p>Sample text</div></body></html>\n",
+            "<html><head></head><body><div><p>foo</p><p>bar</p>Sample text</div></body></html>\n",
+            "Dom\\HTMLDocument::createFromString(): Argument #2 ($options) contains invalid flags (allowed flags: LIBXML_NOERROR, LIBXML_COMPACT, LIBXML_HTML_NOIMPLIED, Dom\\HTML_NO_DEFAULT_NS)\n",
+            "Wrong Document Error:4\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_insert_adjacent_html_method"));
+    assert!(c_source.contains("ptn_dom_html_document_validate_options"));
+    assert!(c_source.contains("ptn_dom_throw_exception_code_with_trace_frame"));
+}
+
+#[test]
 fn compile_dom_attribute_node_namespace_conflicts_to_native_binary() {
     let root = temp_dir("ptn-native-dom-attribute-node-namespace-conflicts");
     fs::create_dir_all(&root).unwrap();
