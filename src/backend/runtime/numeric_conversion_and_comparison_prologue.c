@@ -4660,10 +4660,71 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(0);
             return 1;
         }
+        if (strcmp(constant, "LONG") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "MEDIUM") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "SHORT") == 0) {
+            *out = ptn_int(3);
+            return 1;
+        }
+        if (strcmp(constant, "NONE") == 0) {
+            *out = ptn_int(-1);
+            return 1;
+        }
+        if (strcmp(constant, "TRADITIONAL") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
         if (strcmp(constant, "GREGORIAN") == 0) {
             *out = ptn_int(1);
             return 1;
         }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlCalendar") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlGregorianCalendar")) {
+        if (strcmp(constant, "FIELD_ERA") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "FIELD_YEAR") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "FIELD_MONTH") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "FIELD_WEEK_OF_YEAR") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "FIELD_WEEK_OF_MONTH") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "FIELD_DAY_OF_MONTH") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "FIELD_DAY_OF_YEAR") == 0) { *out = ptn_int(6); return 1; }
+        if (strcmp(constant, "FIELD_DAY_OF_WEEK") == 0) { *out = ptn_int(7); return 1; }
+        if (strcmp(constant, "FIELD_DAY_OF_WEEK_IN_MONTH") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "FIELD_AM_PM") == 0) { *out = ptn_int(9); return 1; }
+        if (strcmp(constant, "FIELD_HOUR") == 0) { *out = ptn_int(10); return 1; }
+        if (strcmp(constant, "FIELD_HOUR_OF_DAY") == 0) { *out = ptn_int(11); return 1; }
+        if (strcmp(constant, "FIELD_MINUTE") == 0) { *out = ptn_int(12); return 1; }
+        if (strcmp(constant, "FIELD_SECOND") == 0) { *out = ptn_int(13); return 1; }
+        if (strcmp(constant, "FIELD_MILLISECOND") == 0) { *out = ptn_int(14); return 1; }
+        if (strcmp(constant, "FIELD_ZONE_OFFSET") == 0) { *out = ptn_int(15); return 1; }
+        if (strcmp(constant, "FIELD_DST_OFFSET") == 0) { *out = ptn_int(16); return 1; }
+        if (strcmp(constant, "FIELD_YEAR_WOY") == 0) { *out = ptn_int(17); return 1; }
+        if (strcmp(constant, "FIELD_DOW_LOCAL") == 0) { *out = ptn_int(18); return 1; }
+        if (strcmp(constant, "FIELD_EXTENDED_YEAR") == 0) { *out = ptn_int(19); return 1; }
+        if (strcmp(constant, "FIELD_JULIAN_DAY") == 0) { *out = ptn_int(20); return 1; }
+        if (strcmp(constant, "FIELD_MILLISECONDS_IN_DAY") == 0) { *out = ptn_int(21); return 1; }
+        if (strcmp(constant, "FIELD_IS_LEAP_MONTH") == 0) { *out = ptn_int(22); return 1; }
+        if (strcmp(constant, "DOW_SUNDAY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "DOW_MONDAY") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "DOW_TUESDAY") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "DOW_WEDNESDAY") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "DOW_THURSDAY") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "DOW_FRIDAY") == 0) { *out = ptn_int(6); return 1; }
+        if (strcmp(constant, "DOW_SATURDAY") == 0) { *out = ptn_int(7); return 1; }
+        if (strcmp(constant, "WALLTIME_LAST") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "WALLTIME_FIRST") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "WALLTIME_NEXT_VALID") == 0) { *out = ptn_int(2); return 1; }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlTimeZone")) {
+        if (strcmp(constant, "TYPE_ANY") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "TYPE_CANONICAL") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "TYPE_CANONICAL_LOCATION") == 0) { *out = ptn_int(2); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Locale")) {
         if (strcmp(constant, "LANG_TAG") == 0) {
@@ -7769,6 +7830,34 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("IntlDateFormatter", name)
     ) {
         return ptn_intl_date_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlCalendar")
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_intl_calendar_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlTimeZone")
+        && ptn_internal_class_method_exists("IntlTimeZone", name)
+    ) {
+        return ptn_intl_timezone_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlIterator")
+        && ptn_internal_class_method_exists("IntlIterator", name)
+    ) {
+        return ptn_intl_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "MessageFormatter")
+        && ptn_internal_class_method_exists("MessageFormatter", name)
+    ) {
+        return ptn_intl_message_formatter_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

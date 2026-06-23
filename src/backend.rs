@@ -1602,7 +1602,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"IntlBreakIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlRuleBasedBreakIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlCodePointBreakIterator\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlPartsIterator\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlPartsIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
@@ -7347,8 +7348,11 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "IntlGregorianCalendar",
         "IntlDateFormatter",
         "IntlTimeZone",
+        "IntlIterator",
+        "MessageFormatter",
         "Locale",
         "NumberFormatter",
         "Collator",
@@ -8113,8 +8117,11 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "IntlGregorianCalendar",
         "IntlDateFormatter",
         "IntlTimeZone",
+        "IntlIterator",
+        "MessageFormatter",
         "Locale",
         "NumberFormatter",
         "Collator",
@@ -8717,6 +8724,7 @@ fn emit_class_metadata_helpers(
         ("SplStack", "SplDoublyLinkedList"),
         ("IntlRuleBasedBreakIterator", "IntlBreakIterator"),
         ("IntlCodePointBreakIterator", "IntlBreakIterator"),
+        ("IntlGregorianCalendar", "IntlCalendar"),
         ("DOMDocument", "DOMNode"),
         ("DOMDocumentFragment", "DOMNode"),
         ("DOMDocumentType", "DOMNode"),
@@ -19961,8 +19969,11 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intlcodepointbreakiterator" => Some("IntlCodePointBreakIterator"),
         "intlpartsiterator" => Some("IntlPartsIterator"),
         "intlcalendar" => Some("IntlCalendar"),
+        "intlgregoriancalendar" => Some("IntlGregorianCalendar"),
         "intldateformatter" => Some("IntlDateFormatter"),
         "intltimezone" => Some("IntlTimeZone"),
+        "intliterator" => Some("IntlIterator"),
+        "messageformatter" => Some("MessageFormatter"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
         "collator" => Some("Collator"),
@@ -21614,6 +21625,26 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {\n");
     out.push_str(
         "        return ptn_intl_date_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_object_is_internal_or_descendant(resolved, \"IntlCalendar\")) {\n");
+    out.push_str(
+        "        return ptn_intl_calendar_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_timezone(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_timezone_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_iterator(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_iterator_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_message_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_message_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_number_formatter(class_name)) {\n");
@@ -29450,8 +29481,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlCodePointBreakIterator")
                 || class_name.eq_ignore_ascii_case("IntlPartsIterator")
                 || class_name.eq_ignore_ascii_case("IntlCalendar")
+                || class_name.eq_ignore_ascii_case("IntlGregorianCalendar")
                 || class_name.eq_ignore_ascii_case("IntlDateFormatter")
                 || class_name.eq_ignore_ascii_case("IntlTimeZone")
+                || class_name.eq_ignore_ascii_case("IntlIterator")
+                || class_name.eq_ignore_ascii_case("MessageFormatter")
                 || class_name.eq_ignore_ascii_case("Locale")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
                 || class_name.eq_ignore_ascii_case("Collator")

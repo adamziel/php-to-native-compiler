@@ -1086,8 +1086,11 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_ascii_case_equal(lookup_class_name, "IntlPartsIterator")) {
         return ptn_intl_break_iterator_new(runtime, lookup_class_name, argc, args, line);
     }
-    if (ptn_internal_class_name_is_intl_date_formatter(lookup_class_name) ||
+    if (ptn_internal_class_name_is_intl_calendar(lookup_class_name) ||
+        ptn_internal_class_name_is_intl_date_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_timezone(lookup_class_name) ||
+        ptn_internal_class_name_is_intl_iterator(lookup_class_name) ||
+        ptn_internal_class_name_is_message_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_locale(lookup_class_name) ||
         ptn_internal_class_name_is_number_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_collator(lookup_class_name) ||

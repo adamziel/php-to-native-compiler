@@ -2085,8 +2085,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_soap_param(const char *class_na
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_session_handler(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_calendar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_timezone(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
@@ -3126,6 +3129,38 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_calendar_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_timezone_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
