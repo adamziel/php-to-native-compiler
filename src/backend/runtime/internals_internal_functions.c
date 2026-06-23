@@ -149432,7 +149432,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
         metadata = target.as.closure->metadata;
     } else {
         name = ptn_value_to_string(target);
-        metadata = ptn_find_runtime_function_metadata(runtime, name);
+        metadata = ptn_find_runtime_function_metadata(runtime, ptn_symbol_name_without_leading_slash(name));
     }
     if (!metadata.found) {
         char message[256];

@@ -15565,6 +15565,7 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        emit_reflection_class_constant_default_validation(out, class, classes);
         for (index, entry) in class_reflection_property_defaults_chain(class, classes, true)
             .into_iter()
             .enumerate()
@@ -16160,6 +16161,52 @@ fn emit_class_reflection_metadata_helpers(
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
+}
+
+fn emit_reflection_class_constant_default_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) {
+    let mut read_index = 0usize;
+    for entry in class_constant_lookup_chain(class, classes) {
+        out.push_str("        if (runtime->exceptions->active_exception == NULL) {\n");
+        out.push_str("            PtnValue ptn_reflection_class_constant_read_");
+        out.push_str(&read_index.to_string());
+        out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(runtime, \"");
+        out.push_str(&c_string(entry.declaring_class));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&entry.constant.name));
+        out.push_str("\", line);\n");
+        out.push_str("            ptn_value_destroy(&ptn_reflection_class_constant_read_");
+        out.push_str(&read_index.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
+        read_index += 1;
+    }
+    for read in property_default_class_constant_reads(class, classes) {
+        out.push_str("        if (runtime->exceptions->active_exception == NULL) {\n");
+        out.push_str("            PtnValue ptn_reflection_class_constant_read_");
+        out.push_str(&read_index.to_string());
+        out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(runtime, \"");
+        out.push_str(&c_string(&read.class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&read.constant_name));
+        out.push_str("\", ");
+        out.push_str(&read.line.to_string());
+        out.push_str(");\n");
+        out.push_str("            ptn_value_destroy(&ptn_reflection_class_constant_read_");
+        out.push_str(&read_index.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
+        read_index += 1;
+    }
+    if read_index > 0 {
+        out.push_str("        if (runtime->exceptions->active_exception != NULL) {\n");
+        out.push_str("            ptn_value_destroy(&result);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+    }
 }
 
 fn emit_reflection_class_to_string_runtime(
