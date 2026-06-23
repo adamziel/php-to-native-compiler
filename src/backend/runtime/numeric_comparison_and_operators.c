@@ -1182,6 +1182,12 @@ static PTN_UNUSED int ptn_arithmetic_number(
         case PTN_ARRAY:
         case PTN_RESOURCE:
         case PTN_OBJECT:
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+            if (ptn_simplexml_numeric_value(value, number)) {
+                return 1;
+            }
+#endif
+            return 0;
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_REFERENCE:
@@ -1217,7 +1223,15 @@ static PTN_UNUSED int ptn_numeric_operator_rejects_operand(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_ARRAY:
-        case PTN_OBJECT:
+        case PTN_OBJECT: {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+            PtnNumber ignored;
+            if (ptn_simplexml_numeric_value(value, &ignored)) {
+                return 0;
+            }
+#endif
+            return 1;
+        }
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
             return 1;

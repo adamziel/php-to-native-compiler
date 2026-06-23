@@ -8334,7 +8334,15 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_string_to_number((const char *)value.as.string.data);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
-        case PTN_OBJECT:
+        case PTN_OBJECT: {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+            PtnNumber simplexml_number;
+            if (ptn_simplexml_numeric_value(value, &simplexml_number)) {
+                return simplexml_number;
+            }
+#endif
+            return ptn_number_int(1);
+        }
         case PTN_CLOSURE:
             return ptn_number_int(1);
         case PTN_EXCEPTION:
@@ -8530,6 +8538,12 @@ static PTN_UNUSED void ptn_emit_object_numeric_cast_warning(
     if (class_name == NULL) {
         return;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnNumber simplexml_number;
+    if (ptn_simplexml_numeric_value(value, &simplexml_number)) {
+        return;
+    }
+#endif
 
     char message[256];
     int written = snprintf(
