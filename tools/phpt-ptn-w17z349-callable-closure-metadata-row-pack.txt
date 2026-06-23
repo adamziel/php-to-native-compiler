@@ -1,0 +1,19 @@
+# Exact Zend first-class callable / closure metadata row pack for ptn-w17z.349.
+Zend/tests/first_class_callable/constexpr/error_static_call_trait_method_001.phpt
+Zend/tests/first_class_callable/constexpr/attributes_ast_printing_runtime.phpt
+Zend/tests/first_class_callable/first_class_callable_assert3.phpt
+Zend/tests/closures/closure_const_expr/attributes_ast_printing.phpt
+Zend/tests/first_class_callable/constexpr/error_dynamic_005.phpt
+Zend/tests/closures/closure_const_expr/attributes_ast_printing_runtime.phpt
+Zend/tests/first_class_callable/constexpr/attributes_ast_printing.phpt
+Zend/tests/closures/closure_061.phpt
+Zend/tests/closures/bug70685.phpt
+Zend/tests/closures/closure_const_expr/attributes_autoload.phpt
+Zend/tests/first_class_callable/constexpr/autoload.phpt
+Zend/tests/first_class_callable/constexpr/attributes.phpt
+Zend/tests/first_class_callable/constexpr/attributes_scope_001.phpt
+Zend/tests/first_class_callable/constexpr/property_initializer_scope_003.phpt
+Zend/tests/closures/closure_const_expr/attributes_scope_002.phpt
+Zend/tests/first_class_callable/constexpr/error_dynamic_002.phpt
+Zend/tests/closures/closure_const_expr/property_initializer_scope_001.phpt
+Zend/tests/first_class_callable/first_class_callable_signature.phpt

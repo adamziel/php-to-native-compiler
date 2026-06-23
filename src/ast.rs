@@ -390,6 +390,10 @@ pub enum AttributeArgumentExpression {
         reflection_text: String,
         line: usize,
     },
+    FirstClassCallable {
+        callable: String,
+        line: usize,
+    },
     Array(Vec<AttributeArgumentArrayElement>),
     Unary {
         op: UnaryOp,

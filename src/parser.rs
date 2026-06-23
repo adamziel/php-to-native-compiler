@@ -7072,6 +7072,19 @@ impl Parser<'_> {
                 reflection_text: String::new(),
                 line: function.span.line,
             }),
+            Expr::FirstClassCallable { callable, span } => {
+                let Some(callable) = supported_first_class_callable_const_target_name(callable)
+                else {
+                    return Err(Diagnostic::new(
+                        "Constant expression contains invalid operations",
+                        Some(expr.span()),
+                    ));
+                };
+                Ok(AttributeArgumentExpression::FirstClassCallable {
+                    callable: callable.to_string(),
+                    line: span.line,
+                })
+            }
             Expr::Array { elements, .. } => {
                 let mut attribute_elements = Vec::with_capacity(elements.len());
                 for element in elements {
@@ -12319,6 +12332,11 @@ fn parsed_attribute_argument_expression_metadata(
             None,
         ),
         AttributeArgumentExpression::Closure { .. } => (
+            "Closure".to_string(),
+            ParsedAttributeArgumentKind::Closure,
+            None,
+        ),
+        AttributeArgumentExpression::FirstClassCallable { .. } => (
             "Closure".to_string(),
             ParsedAttributeArgumentKind::Closure,
             None,
@@ -26029,6 +26047,25 @@ fn is_supported_constant_closure(function: &AnonymousFunction) -> bool {
     function.is_static && function.captures.is_empty()
 }
 
+fn supported_first_class_callable_const_target_name(callable: &Expr) -> Option<&str> {
+    match callable {
+        Expr::String(name, _) => Some(name),
+        Expr::Grouped { expr, .. } => supported_first_class_callable_const_target_name(expr),
+        _ => None,
+    }
+}
+
+fn first_class_callable_const_target_diagnostic(callable: &Expr) -> Option<&'static str> {
+    match callable {
+        Expr::Grouped { expr, .. } => first_class_callable_const_target_diagnostic(expr),
+        Expr::String(_, _) => None,
+        Expr::Int(_, _) | Expr::Float(_, _) | Expr::Bool(_, _) | Expr::Null(_) => {
+            Some("Illegal function name")
+        }
+        _ => Some("Cannot use dynamic function name in constant expression"),
+    }
+}
+
 fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
     match expr {
         Expr::AnonymousFunction(function) => {
@@ -26198,6 +26235,9 @@ fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> 
             validate_constant_expression_runtime_restrictions(right)
         }
         Expr::FirstClassCallable { callable, .. } => {
+            if let Some(message) = first_class_callable_const_target_diagnostic(callable) {
+                return Err(Diagnostic::new(message, Some(callable.span())));
+            }
             validate_constant_expression_runtime_restrictions(callable)
         }
         Expr::Ternary {
@@ -26883,11 +26923,7 @@ fn array_dim_target_uses_this_property(target: &ArrayDimTarget, property_name: &
 }
 
 fn is_supported_first_class_callable_const_target(callable: &Expr) -> bool {
-    matches!(callable, Expr::String(_, _))
-        || matches!(
-            callable,
-            Expr::Grouped { expr, .. } if is_supported_first_class_callable_const_target(expr)
-        )
+    supported_first_class_callable_const_target_name(callable).is_some()
 }
 
 fn is_supported_parameter_default_expr(expr: &Expr) -> bool {

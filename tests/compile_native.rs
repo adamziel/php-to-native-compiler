@@ -34753,6 +34753,140 @@ try {
 }
 
 #[test]
+fn compile_reflection_attribute_first_class_callable_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-first-class-callable-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-first-class-callable-args.php");
+    let output = root.join("attribute-first-class-callable-args-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
+class CallbackAttr {
+    public function __construct(public Closure $value) {}
+}
+
+#[CallbackAttr(strrev(...))]
+#[CallbackAttr(strlen(...))]
+#[CallbackAttr(Subject::secret(...))]
+class Subject {
+    private static function secret(string $value): string {
+        return \"secret:$value\";
+    }
+}
+
+foreach ((new ReflectionClass(Subject::class))->getAttributes() as $attribute) {
+    echo ($attribute->newInstance()->value)(\"abc\"), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "cba\n3\nsecret:abc\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_first_class_callable_create(runtime"));
+    assert!(c_source.contains("Subject::secret"));
+}
+
+#[test]
+fn compile_property_first_class_callable_uses_declaring_method_metadata() {
+    let root = temp_dir("ptn-native-property-first-class-callable-declaring-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-first-class-callable-declaring-method.php");
+    let output = root.join("property-first-class-callable-declaring-method-bin");
+    fs::write(
+        &input,
+        "<?php
+class P {
+    protected static function myMethod(string $foo) {
+        echo \"Called \", __METHOD__, PHP_EOL;
+        var_dump($foo);
+    }
+}
+
+class C extends P {
+    public Closure $d = self::myMethod(...);
+}
+
+$c = new C();
+var_dump($c->d);
+($c->d)(\"abc\");
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(11) \"P::myMethod\""), "{stdout}");
+    assert!(stdout.contains("Called P::myMethod\n"), "{stdout}");
+    assert!(stdout.contains("string(3) \"abc\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_metadata_found(\"P::myMethod\""));
+}
+
+#[test]
+fn compile_first_class_callable_reflection_to_string_uses_target_name() {
+    let root = temp_dir("ptn-native-first-class-callable-reflection-to-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-reflection-to-string.php");
+    let output = root.join("first-class-callable-reflection-to-string-bin");
+    fs::write(
+        &input,
+        "<?php
+function fcc_reflected(int $a, string &$b, Foo ...$c) {}
+
+echo new ReflectionFunction(fcc_reflected(...));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Closure [ <user> function fcc_reflected ]"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Parameter #1 [ <required> string &$b ]"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Closure::__invoke"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_trait_reflection_attributes_defer_scoped_argument_errors_to_native_binary() {
     let root = temp_dir("ptn-native-trait-attribute-deferred-scope-error");
     fs::create_dir_all(&root).unwrap();

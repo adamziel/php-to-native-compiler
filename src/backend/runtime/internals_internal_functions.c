@@ -136902,7 +136902,9 @@ static PtnValue ptn_reflection_function_to_string(
             &buffer,
             "%s [ <user> function %s ] {\n",
             reflected_closure == NULL ? "Function" : "Closure",
-            reflected_closure != NULL && reflected_closure->display_name != NULL
+            reflected_closure != NULL &&
+                    !reflected_closure->has_wrapped_callable &&
+                    reflected_closure->display_name != NULL
                 ? reflected_closure->display_name
                 : metadata.name
         );

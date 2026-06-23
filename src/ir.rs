@@ -2547,6 +2547,7 @@ impl<'a> LoweringContext<'a> {
                     format!("Closure({})", self.functions[lowered_index].display_name);
                 *function_index = Some(lowered_index);
             }
+            AttributeArgumentExpression::FirstClassCallable { .. } => {}
             AttributeArgumentExpression::NewObject { arguments, .. } => {
                 for argument in arguments {
                     self.lower_attribute_argument_expression_closures(argument);
@@ -2986,6 +2987,9 @@ fn resolve_attribute_argument_expression_for_class_scope(
                 *class_name = resolved_class;
             }
         }
+        AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
+            resolve_first_class_callable_scope_name(callable, current_class, current_parent);
+        }
         AttributeArgumentExpression::Array(elements) => {
             for element in elements {
                 if let Some(key) = &mut element.key {
@@ -3037,6 +3041,22 @@ fn resolve_attribute_class_scope_name(
     } else {
         None
     }
+}
+
+fn resolve_first_class_callable_scope_name(
+    callable: &mut String,
+    current_class: &str,
+    current_parent: Option<&str>,
+) {
+    let Some((class_name, method_name)) = callable.split_once("::") else {
+        return;
+    };
+    let Some(resolved_class) =
+        resolve_attribute_class_scope_name(class_name, current_class, current_parent)
+    else {
+        return;
+    };
+    *callable = format!("{resolved_class}::{method_name}");
 }
 
 fn collect_constant_deprecations(
@@ -5574,6 +5594,9 @@ fn assertion_attribute_argument_expression_text(
             .as_ref()
             .map(|function| assertion_anonymous_function_text(function))
             .unwrap_or_else(|| source_text.clone()),
+        AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
+            format!("{callable}(...)")
+        }
         AttributeArgumentExpression::Array(_) => "array".to_string(),
         AttributeArgumentExpression::Unary { op, expr } => {
             let prefix = match op {

@@ -6418,7 +6418,7 @@ fn emit_user_function_dispatch(
             out.push_str(
                 "        return ptn_function_metadata_with_user_function_index(ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
             );
-            out.push_str(&c_string(&class.name));
+            out.push_str(&c_string(entry.declaring_class));
             out.push_str("::");
             out.push_str(&c_string(&method.name));
             out.push_str("\", 0, ");
@@ -9424,7 +9424,7 @@ fn emit_class_metadata_helpers(
                 &function.parameters,
             );
             out.push_str("            return ptn_function_metadata_with_flags(ptn_function_metadata_found(\"");
-            out.push_str(&c_string(&class.name));
+            out.push_str(&c_string(entry.declaring_class));
             out.push_str("::");
             out.push_str(&c_string(&method.name));
             out.push_str("\", 0, ");
@@ -11198,6 +11198,9 @@ fn attribute_flag_argument_expression_value(
         AttributeArgumentExpression::Closure { .. } => Err(AttributeFlagError::Type {
             type_name: "object",
         }),
+        AttributeArgumentExpression::FirstClassCallable { .. } => Err(AttributeFlagError::Type {
+            type_name: "object",
+        }),
         AttributeArgumentExpression::NewObject { .. } => Err(AttributeFlagError::Type {
             type_name: "object",
         }),
@@ -12086,6 +12089,9 @@ fn attribute_argument_expression_display_text(expression: &AttributeArgumentExpr
         AttributeArgumentExpression::Closure {
             reflection_text, ..
         } => reflection_text.clone(),
+        AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
+            format!("{callable}(...)")
+        }
         AttributeArgumentExpression::Array(_) => "Array".to_string(),
         AttributeArgumentExpression::Unary { op, expr } => {
             let prefix = match op {
@@ -12520,6 +12526,16 @@ fn emit_attribute_argument_expression(
         AttributeArgumentExpression::Closure { function_index, .. } => {
             emit_attribute_closure_argument(out, target, *function_index, functions, indent);
         }
+        AttributeArgumentExpression::FirstClassCallable { callable, line } => {
+            emit_attribute_first_class_callable_argument(
+                out,
+                target,
+                callable,
+                *line,
+                indent,
+                attribute_scope_class_var,
+            );
+        }
         AttributeArgumentExpression::Array(elements) => {
             out.push_str(indent);
             out.push_str("PtnValue ");
@@ -12682,6 +12698,73 @@ fn emit_attribute_closure_argument(
     out.push_str(", ");
     out.push_str(&c_optional_string(function.class_name.as_deref()));
     out.push_str(");\n");
+}
+
+fn emit_attribute_first_class_callable_argument(
+    out: &mut String,
+    target: &str,
+    callable: &str,
+    line: usize,
+    indent: &str,
+    attribute_scope_class_var: Option<&str>,
+) {
+    let callable_temp = format!("{target}_callable");
+    out.push_str(indent);
+    out.push_str("PtnValue ");
+    out.push_str(&callable_temp);
+    out.push_str(" = ptn_string(\"");
+    out.push_str(&c_string(callable));
+    out.push_str("\");\n");
+    if let Some(scope_var) = attribute_scope_class_var {
+        out.push_str(indent);
+        out.push_str("PtnValue ");
+        out.push_str(target);
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("{\n");
+        out.push_str(indent);
+        out.push_str("    const char *ptn_previous_class_name = runtime->current_class_name;\n");
+        out.push_str(indent);
+        out.push_str("    const char *ptn_previous_called_class_name = runtime->current_called_class_name;\n");
+        out.push_str(indent);
+        out.push_str("    if (");
+        out.push_str(scope_var);
+        out.push_str(" != NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        runtime->current_class_name = ");
+        out.push_str(scope_var);
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("        runtime->current_called_class_name = ");
+        out.push_str(scope_var);
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    ");
+        out.push_str(target);
+        out.push_str(" = ptn_first_class_callable_create(runtime, ");
+        out.push_str(&callable_temp);
+        out.push_str(", 1, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str(indent);
+        out.push_str("    runtime->current_called_class_name = ptn_previous_called_class_name;\n");
+        out.push_str(indent);
+        out.push_str("    runtime->current_class_name = ptn_previous_class_name;\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+    } else {
+        out.push_str(indent);
+        out.push_str("PtnValue ");
+        out.push_str(target);
+        out.push_str(" = ptn_first_class_callable_create(runtime, ");
+        out.push_str(&callable_temp);
+        out.push_str(", 1, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+    emit_value_cleanup(out, indent, &callable_temp);
 }
 
 fn c_attribute_argument_class_name_expression(
