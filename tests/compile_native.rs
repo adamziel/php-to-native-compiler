@@ -14141,6 +14141,41 @@ var_dump(gc_collect_cycles());
 }
 
 #[test]
+fn compile_gc_inside_by_value_foreach_preserves_snapshot_iterator_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-foreach-by-value-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-foreach-by-value-snapshot.php");
+    let output = root.join("gc-foreach-by-value-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php
+foreach ([\"a\", \"b\"] as $i => $value) {
+    echo $i, \":\", $value, \"\\n\";
+    gc_collect_cycles();
+}
+
+$object = (object)[\"x\" => 1, \"y\" => 2];
+foreach ($object as $name => $value) {
+    echo $name, \"=\", $value, \"\\n\";
+    gc_collect_cycles();
+}
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0:a\n1:b\nx=1\ny=2\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_root_buffer_auto_collection_remainder_to_native_binary() {
     let root = temp_dir("ptn-native-gc-root-buffer-auto-collection");
     fs::create_dir_all(&root).unwrap();

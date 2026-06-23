@@ -11615,6 +11615,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_array_snapshot(PtnArr
         return iterator;
     }
     iterator.array = ptn_array_clone(array);
+    ptn_array_iterator_retain(iterator.array);
     iterator.length = iterator.array->len;
     iterator.valid = iterator.length != 0;
     ptn_array_iterator_remember_current_key(&iterator);
@@ -11795,6 +11796,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
         }
     }
     iterator.array = keys;
+    ptn_array_iterator_retain(iterator.array);
     iterator.object = object;
     iterator.runtime = runtime;
     iterator.access_scope = access_scope;
@@ -12727,6 +12729,7 @@ static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
         if (iterator->live) {
             ptn_array_iterator_release(iterator->array);
         } else {
+            ptn_array_iterator_release(iterator->array);
             ptn_array_free(iterator->array);
         }
         iterator->array = NULL;
