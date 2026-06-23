@@ -602,8 +602,16 @@ static PTN_UNUSED void ptn_array_write_entry(PtnRuntime *runtime, PtnArray *arra
     ptn_array_set_entry(array, key, value);
 }
 
+static PTN_UNUSED PtnValue ptn_array_value_clone_for_write(PtnArray *array, PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (value.type == PTN_REFERENCE && resolved.type == PTN_ARRAY && resolved.as.array == array) {
+        return ptn_value_clone(value);
+    }
+    return ptn_value_clone(resolved);
+}
+
 static PTN_UNUSED PtnValue ptn_array_write_entry_result(PtnRuntime *runtime, PtnArray *array, PtnArrayKey key, PtnValue value) {
-    PtnValue stored = ptn_value_clone(ptn_value_deref(value));
+    PtnValue stored = ptn_array_value_clone_for_write(array, value);
     size_t index = ptn_array_find_key(array, key);
     if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {
         PtnReference *reference = array->entries[index].value.as.reference;
@@ -624,7 +632,7 @@ static PTN_UNUSED PtnValue ptn_array_write_entry_result(PtnRuntime *runtime, Ptn
         ptn_reference_release(reference);
         return ptn_value_clone_deref(value);
     }
-    PtnValue result = ptn_value_clone(stored);
+    PtnValue result = ptn_value_clone_deref(stored);
     ptn_array_set_entry(array, key, stored);
     return result;
 }
@@ -3540,6 +3548,12 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_value_snapshot_for_array_path_write(PtnValue value) {
+    if (value.type == PTN_REFERENCE) {
+        PtnValue resolved = ptn_value_deref(value);
+        if (resolved.type == PTN_ARRAY) {
+            return ptn_value_clone(value);
+        }
+    }
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY || value.type == PTN_OBJECT) {
         return ptn_value_clone(value);

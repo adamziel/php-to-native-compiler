@@ -15476,7 +15476,7 @@ static PTN_UNUSED void ptn_array_set_path_leaf(
         return;
     }
     ptn_array_enforce_memory_limit_for_entry_write(runtime, array, key, line);
-    ptn_array_write_entry(runtime, array, key, ptn_value_clone(ptn_value_deref(value)));
+    ptn_array_write_entry(runtime, array, key, ptn_array_value_clone_for_write(array, value));
 }
 
 static PTN_UNUSED PtnValue ptn_array_set_path_leaf_result(

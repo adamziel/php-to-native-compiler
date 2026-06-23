@@ -26649,6 +26649,58 @@ echo bin2hex(mb_convert_encoding(hex2bin('7e7b7e7d61626364'), 'UTF-8', 'HZ')), \
 }
 
 #[test]
+fn compile_mb_check_encoding_self_referential_array_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-check-encoding-self-referential-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-check-encoding-self-referential-array.php");
+    let output = root.join("mb-check-encoding-self-referential-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('default_charset', 'UTF-8');\n\
+$valid = \"Japanese UTF-8 text. 日本語のUTF-8テキスト\";\n\
+$arr = [1234, 12.34, true, false, null, $valid, 'key' => $valid, $valid => 'val'];\n\
+$tmp = &$arr;\n\
+$arr[] = $tmp;\n\
+var_dump(mb_check_encoding($valid), mb_check_encoding($arr));\n\
+$invalid = \"Japanese UTF-8 text. 日本語\\xFE\\x01\\x02のUTF-8テキスト\";\n\
+$arr1 = [1234, 12.34, true, false, null, 'key' => $invalid, $invalid => 'val'];\n\
+$tmp = &$arr1;\n\
+$arr1[] = $tmp;\n\
+$arr2 = [1234, 12.34, true, false, null, $invalid => 'val'];\n\
+$tmp = &$arr2;\n\
+$arr2[] = $tmp;\n\
+var_dump(mb_check_encoding($invalid), mb_check_encoding($arr1), mb_check_encoding($arr2));\n\
+$copy = [1];\n\
+$copy[] = $copy;\n\
+var_dump(mb_check_encoding($copy));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("mb_check_encoding(): Cannot not handle circular references")
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("on line 7\nbool(true)\nbool(false)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(false)\nbool(false)\nbool(false)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_ucs4_bom_and_invalid_codepoints_to_native_binary() {
     let root = temp_dir("ptn-native-mb-ucs4-bom-invalid");
     fs::create_dir_all(&root).unwrap();

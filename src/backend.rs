@@ -24369,7 +24369,7 @@ fn emit_instruction(
 
                 let path = emit_array_path_segments(out, values, dimensions);
                 let path_snapshot = emit_array_path_value_snapshot(out, values, &path);
-                let value_temp = values.emit_materialized_value(out, value);
+                let value_temp = values.emit_array_path_write_value(out, value);
                 let base_temp = values.next_temp();
                 let container_temp = values.next_temp();
                 let split_temp = values.next_temp();
@@ -24559,7 +24559,7 @@ fn emit_instruction(
                 } else {
                     None
                 };
-                let value_temp = values.emit_materialized_value(out, value);
+                let value_temp = values.emit_array_path_write_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&snapshot_temp);
@@ -35859,6 +35859,23 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_array_path_write_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        if let ValueExpr::Load { name, line } = value {
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_read_variable_for_increment(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+        self.emit_materialized_value(out, value)
+    }
+
     fn emit_dynamic_variable_quiet_lookup(
         &mut self,
         out: &mut String,
@@ -36112,7 +36129,7 @@ impl ValueEmitter {
             } else {
                 emit_array_path_segments(out, self, dimensions)
             };
-            let value_temp = self.emit_materialized_value(out, value);
+            let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&snapshot_temp);
@@ -36207,7 +36224,7 @@ impl ValueEmitter {
             } else {
                 None
             };
-            let value_temp = self.emit_materialized_value(out, value);
+            let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&snapshot_temp);
@@ -36372,7 +36389,7 @@ impl ValueEmitter {
                 }
                 return assigned_temp;
             }
-            let value_temp = self.emit_materialized_value(out, value);
+            let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&snapshot_temp);
@@ -36775,7 +36792,7 @@ impl ValueEmitter {
                 .emit_dynamic_static_property_name_assignment(out, class_name, name, *line, value);
         }
 
-        let value_temp = self.emit_materialized_value(out, value);
+        let value_temp = self.emit_array_path_write_value(out, value);
         let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
         emit_value_cleanup(out, "    ", &value_temp);
         result_temp
