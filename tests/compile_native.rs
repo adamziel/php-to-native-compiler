@@ -11402,6 +11402,48 @@ new B;
             "Declaration of B::m2(): Y must be compatible with A::m2(): B",
             "object(X)#",
         ),
+        (
+            "autoload-variance-current-class-candidate-fatal",
+            r#"<?php
+spl_autoload_register(function($class) {
+    if ($class === 'A') {
+        class A {
+            public function method() : C {}
+        }
+    } else if ($class == 'B') {
+        class B extends A {
+            public function method() : B {}
+        }
+    } else {
+        class C extends B {
+        }
+    }
+});
+
+$b = new B;
+"#,
+            "",
+            "Declaration of B::method(): B must be compatible with A::method(): C",
+            "Class \"C\" not found",
+        ),
+        (
+            "autoload-variance-linking-candidate-fatal-before-parent",
+            r#"<?php
+interface I {}
+spl_autoload_register(function() {
+    class X {
+        function test(): I {}
+    }
+    class Y extends X {
+        function test(): C {}
+    }
+});
+class C extends Z implements C {}
+"#,
+            "",
+            "Declaration of Y::test(): C must be compatible with X::test(): I",
+            "Class \"Z\" not found",
+        ),
     ];
 
     for (name, source, required_stdout, required_stderr, forbidden_output) in cases {
@@ -11430,6 +11472,40 @@ new B;
             assert!(stdout.contains("object(Y)#"), "{stdout}");
         }
     }
+}
+
+#[test]
+fn compile_autoload_unlinked_parent_reports_requested_parent_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-unlinked-parent");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-unlinked-parent.php");
+    let output = root.join("autoload-unlinked-parent-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function($class) {
+    class X extends B {}
+});
+
+try {
+    class B extends A {
+    }
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Class \"B\" not found\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

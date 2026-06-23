@@ -1144,6 +1144,8 @@ fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
 
 fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_runtime_class_is_variance_dependency(PtnRuntime *runtime, const char *name);\n");
+    out.push_str("static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index);\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
     out.push_str("#endif\n");
@@ -7692,6 +7694,28 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_class_is_variance_dependency(PtnRuntime *runtime, const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+    } else {
+        for (index, class) in classes.iter().enumerate() {
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str(
+                "\") && ptn_declared_runtime_class_slot_has_variance_dependency(runtime, ",
+            );
+            out.push_str(&index.to_string());
+            out.push_str(")) {\n");
+            out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency(PtnRuntime *runtime, const char *name) {\n",
     );
     if classes.is_empty() {
@@ -7712,6 +7736,22 @@ fn emit_class_metadata_helpers(
             out.push_str("] = 3;\n");
             out.push_str("    }\n");
         }
+    }
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency_slot(PtnRuntime *runtime, size_t index) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)index;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
+        out.push_str("        return;\n");
+        out.push_str("    }\n");
+        out.push_str("    if (runtime->declared_user_classes[index] == 2) {\n");
+        out.push_str("        runtime->declared_user_classes[index] = 3;\n");
+        out.push_str("    }\n");
     }
     out.push_str("}\n");
 
@@ -18021,7 +18061,7 @@ fn emit_class_method_signature_compatibility_validation(
     source_path: &str,
 ) {
     let mut type_temp_counter = 0usize;
-    for (method_index, method) in class.methods.iter().enumerate() {
+    for (method_index, method) in class.methods.iter().enumerate().rev() {
         if method.visibility == PropertyVisibility::Private {
             continue;
         }
@@ -18304,7 +18344,7 @@ fn emit_runtime_return_signature_compatibility_validation(
         (return_type, parent_return_type)
     {
         if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
-            let resolved_temp = emit_runtime_signature_type_autoload(
+            emit_runtime_signature_type_autoload(
                 out,
                 candidate_name,
                 method.line,
@@ -18312,22 +18352,6 @@ fn emit_runtime_return_signature_compatibility_validation(
                 method_index,
                 type_temp_counter,
             );
-            out.push_str("        if (!ptn_declared_runtime_class_is_linking(&runtime, ");
-            out.push_str(&resolved_temp);
-            out.push_str(")) {\n");
-            emit_runtime_method_signature_compatibility_fatal_with_indent(
-                out,
-                class,
-                method,
-                function,
-                parent_class,
-                parent_method,
-                parent_function,
-                source_path,
-                "            ",
-            );
-            out.push_str("        }\n");
-            return;
         }
     }
     emit_runtime_method_signature_compatibility_fatal(
@@ -18423,6 +18447,9 @@ fn emit_runtime_signature_type_autoload(
     out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
     out.push_str(&c_string(class_name));
     out.push_str("\");\n");
+    out.push_str("        ptn_declared_runtime_class_mark_variance_dependency_slot(&runtime, ");
+    out.push_str(&class_index.to_string());
+    out.push_str(");\n");
     out.push_str("        if (ptn_declared_runtime_class_is_linking(&runtime, ");
     out.push_str(&resolved_temp);
     out.push_str(")) {\n");
@@ -18547,17 +18574,8 @@ fn runtime_return_candidate_should_autoload(
     classes: &[ClassDecl],
 ) -> bool {
     !runtime_class_type_static_subtype(candidate_name, target_name, classes)
-        || class_type_has_runtime_signature_validation(candidate_name, classes)
-}
-
-fn class_type_has_runtime_signature_validation(class_name: &str, classes: &[ClassDecl]) -> bool {
-    let Some(class) = class_by_name(classes, class_name) else {
-        return true;
-    };
-    class.methods.iter().any(|method| {
-        method.visibility != PropertyVisibility::Private
-            && find_runtime_visible_parent_method(class, &method.name, classes).is_some()
-    })
+        || (!candidate_name.eq_ignore_ascii_case(target_name)
+            && runtime_class_type_name_is_known(candidate_name, classes))
 }
 
 fn runtime_unavailable_class_name(
@@ -23675,7 +23693,7 @@ fn emit_declare_parent_class_dependency_check(
     out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
-    out.push_str("            && !ptn_declared_runtime_class_is_linking(&runtime, ");
+    out.push_str("            && !ptn_declared_runtime_class_is_variance_dependency(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
@@ -23726,7 +23744,7 @@ fn emit_declare_parent_class_dependency_check(
     out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
-    out.push_str("            && !ptn_declared_runtime_class_is_linking(&runtime, ");
+    out.push_str("            && !ptn_declared_runtime_class_is_variance_dependency(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
