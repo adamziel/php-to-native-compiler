@@ -80034,6 +80034,7 @@ struct PtnXmlNode {
     int html_document;
     int namespace_declaration;
     int detached_parent_hidden;
+    int allow_reconstructed_document_element_sibling;
 };
 
 typedef struct {
@@ -80332,6 +80333,7 @@ static PtnValue ptn_xml_node_value_for_runtime(PtnRuntime *runtime, PtnXmlNode *
 static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode *node, int deep);
 static void ptn_xml_set_owner_document_recursive(PtnXmlNode *node, PtnXmlNode *document);
 static void ptn_xml_append_child(PtnXmlNode *parent, PtnXmlNode *child);
+static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len);
 static void ptn_xml_element_add_attribute(PtnXmlNode *element, PtnXmlNode *attr);
 static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode *element, const char *name, const char *value);
 static int ptn_xml_attribute_name_is_namespace_declaration(const char *name);
@@ -80717,7 +80719,11 @@ static int ptn_xml_check_document_element_insertion_sequence(
             element_count--;
         }
         size_t incoming = ptn_xml_inserted_document_element_count(node);
-        if (incoming > 0 && element_count + incoming > 1) {
+        int allow_reconstructed_sibling = node != NULL &&
+            node->parent == NULL &&
+            node->allow_reconstructed_document_element_sibling &&
+            ptn_xml_document_for_node(node) == parent;
+        if (incoming > 0 && element_count + incoming > 1 && !allow_reconstructed_sibling) {
             ptn_throw_exception(runtime, "DOMException", "Cannot have more than one element child in a document");
             return 0;
         }
@@ -83736,6 +83742,9 @@ typedef void *PtnLibxml2ValidCtxtPtr;
 typedef void *PtnLibxml2ParserCtxtPtr;
 typedef void *PtnLibxml2ParserInputPtr;
 typedef void *PtnLibxml2TextReaderPtr;
+typedef void *PtnLibxml2SchemaParserCtxtPtr;
+typedef void *PtnLibxml2SchemaPtr;
+typedef void *PtnLibxml2SchemaValidCtxtPtr;
 typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
 typedef void (*PtnLibxml2FreeFunc)(void *);
 typedef void *(*PtnLibxml2MallocFunc)(size_t);
@@ -83780,6 +83789,15 @@ typedef struct {
     PtnLibxml2ValidCtxtPtr (*xmlNewValidCtxt)(void);
     void (*xmlFreeValidCtxt)(PtnLibxml2ValidCtxtPtr);
     int (*xmlValidateDocument)(PtnLibxml2ValidCtxtPtr, PtnLibxml2DocPtr);
+    PtnLibxml2SchemaParserCtxtPtr (*xmlSchemaNewMemParserCtxt)(const char *, int);
+    void (*xmlSchemaFreeParserCtxt)(PtnLibxml2SchemaParserCtxtPtr);
+    PtnLibxml2SchemaPtr (*xmlSchemaParse)(PtnLibxml2SchemaParserCtxtPtr);
+    void (*xmlSchemaFree)(PtnLibxml2SchemaPtr);
+    PtnLibxml2SchemaValidCtxtPtr (*xmlSchemaNewValidCtxt)(PtnLibxml2SchemaPtr);
+    void (*xmlSchemaFreeValidCtxt)(PtnLibxml2SchemaValidCtxtPtr);
+    int (*xmlSchemaSetValidOptions)(PtnLibxml2SchemaValidCtxtPtr, int);
+    int (*xmlSchemaValidateDoc)(PtnLibxml2SchemaValidCtxtPtr, PtnLibxml2DocPtr);
+    void (*xmlDocDumpMemory)(PtnLibxml2DocPtr, unsigned char **, int *);
     PtnLibxml2ExternalEntityLoader (*xmlGetExternalEntityLoader)(void);
     void (*xmlSetExternalEntityLoader)(PtnLibxml2ExternalEntityLoader);
     PtnLibxml2ParserInputPtr (*xmlNewStringInputStream)(PtnLibxml2ParserCtxtPtr, const unsigned char *);
@@ -84184,6 +84202,15 @@ static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
     PTN_LIBXML2_LOAD_REQUIRED(xmlNewValidCtxt, "xmlNewValidCtxt");
     PTN_LIBXML2_LOAD_REQUIRED(xmlFreeValidCtxt, "xmlFreeValidCtxt");
     PTN_LIBXML2_LOAD_REQUIRED(xmlValidateDocument, "xmlValidateDocument");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaNewMemParserCtxt, "xmlSchemaNewMemParserCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaFreeParserCtxt, "xmlSchemaFreeParserCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaParse, "xmlSchemaParse");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaFree, "xmlSchemaFree");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaNewValidCtxt, "xmlSchemaNewValidCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaFreeValidCtxt, "xmlSchemaFreeValidCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaSetValidOptions, "xmlSchemaSetValidOptions");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaValidateDoc, "xmlSchemaValidateDoc");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlDocDumpMemory, "xmlDocDumpMemory");
     PTN_LIBXML2_LOAD_REQUIRED(xmlGetExternalEntityLoader, "xmlGetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetExternalEntityLoader, "xmlSetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlNewStringInputStream, "xmlNewStringInputStream");
@@ -84777,6 +84804,108 @@ static int ptn_dom_validate_external_subset(PtnRuntime *runtime, PtnXmlNode *doc
         ptn_emit_warning(&runtime->diagnostics, message, line);
     }
     return ok;
+}
+
+static int ptn_libxml2_schema_api_available(PtnLibxml2Api *api) {
+    return api != NULL &&
+        api->xmlSchemaNewMemParserCtxt != NULL &&
+        api->xmlSchemaFreeParserCtxt != NULL &&
+        api->xmlSchemaParse != NULL &&
+        api->xmlSchemaFree != NULL &&
+        api->xmlSchemaNewValidCtxt != NULL &&
+        api->xmlSchemaFreeValidCtxt != NULL &&
+        api->xmlSchemaSetValidOptions != NULL &&
+        api->xmlSchemaValidateDoc != NULL &&
+        api->xmlDocDumpMemory != NULL;
+}
+
+static int ptn_dom_schema_validate_source_with_libxml(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    const char *source,
+    size_t source_len,
+    int64_t flags,
+    const char *method,
+    size_t line
+) {
+    if (document == NULL || ptn_xml_document_element(document) == NULL) {
+        return 0;
+    }
+    if (source_len > (size_t)INT_MAX) {
+        return 0;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (!ptn_libxml2_schema_api_available(api)) {
+        return 1;
+    }
+    PtnValue serialized = ptn_xml_serialized_value(runtime, document, 1, line);
+    PtnValue serialized_value = ptn_value_deref(serialized);
+    if (serialized_value.type != PTN_STRING || serialized_value.as.string.len > (size_t)INT_MAX) {
+        ptn_value_destroy(&serialized);
+        return 0;
+    }
+
+    PtnLibxml2DomParseErrorCapture capture;
+    memset(&capture, 0, sizeof(capture));
+    capture.runtime = runtime;
+    capture.function_name = method;
+    capture.line = line;
+    capture.suppress_warnings = ptn_libxml_internal_errors;
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    api->xmlSetStructuredErrorFunc(&capture, ptn_libxml2_dom_parse_structured_error);
+
+    PtnLibxml2SchemaParserCtxtPtr parser = api->xmlSchemaNewMemParserCtxt(source, (int)source_len);
+    PtnLibxml2SchemaPtr schema = parser == NULL ? NULL : api->xmlSchemaParse(parser);
+    PtnLibxml2DocPtr doc = schema == NULL ? NULL : api->xmlReadMemory(
+        (const char *)serialized_value.as.string.data,
+        (int)serialized_value.as.string.len,
+        runtime->source_path,
+        NULL,
+        0
+    );
+    PtnLibxml2SchemaValidCtxtPtr valid = doc == NULL ? NULL : api->xmlSchemaNewValidCtxt(schema);
+    int status = -1;
+    if (valid != NULL) {
+        if ((flags & PTN_LIBXML_SCHEMA_CREATE) != 0) {
+            (void)api->xmlSchemaSetValidOptions(valid, PTN_LIBXML_SCHEMA_CREATE);
+        }
+        status = api->xmlSchemaValidateDoc(valid, doc);
+    }
+
+    int reloaded = 1;
+    if (status == 0 && (flags & PTN_LIBXML_SCHEMA_CREATE) != 0) {
+        unsigned char *dumped = NULL;
+        int dumped_len = 0;
+        api->xmlDocDumpMemory(doc, &dumped, &dumped_len);
+        if (dumped != NULL && dumped_len >= 0) {
+            document->child_count = 0;
+            reloaded = ptn_xml_parse_document_into(runtime, document, (const char *)dumped, (size_t)dumped_len);
+        } else {
+            reloaded = 0;
+        }
+        ptn_libxml2_free_owned(api, dumped);
+    }
+
+    if (valid != NULL) {
+        api->xmlSchemaFreeValidCtxt(valid);
+    }
+    if (doc != NULL) {
+        api->xmlFreeDoc(doc);
+    }
+    if (schema != NULL) {
+        api->xmlSchemaFree(schema);
+    }
+    if (parser != NULL) {
+        api->xmlSchemaFreeParserCtxt(parser);
+    }
+    api->xmlSetStructuredErrorFunc(NULL, NULL);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    ptn_value_destroy(&serialized);
+    return status == 0 && reloaded;
 }
 
 static void ptn_xml_element_add_attribute(PtnXmlNode *element, PtnXmlNode *attr) {
@@ -86349,6 +86478,8 @@ static void ptn_dom_replace_receiver_node(PtnValue receiver, PtnValue replacemen
         return;
     }
     PtnXmlNode *old_node = (PtnXmlNode *)receiver.as.object->native_data;
+    PtnXmlNode *old_document = ptn_xml_document_for_node(old_node);
+    int old_connected = ptn_xml_node_is_connected(old_node);
     if (old_node != NULL && old_node->object == receiver.as.object) {
         old_node->object = NULL;
     }
@@ -86357,6 +86488,12 @@ static void ptn_dom_replace_receiver_node(PtnValue receiver, PtnValue replacemen
     PtnXmlNode *node = (PtnXmlNode *)receiver.as.object->native_data;
     if (node != NULL) {
         node->object = receiver.as.object;
+        if (old_document != NULL) {
+            ptn_xml_set_owner_document_recursive(node, old_document);
+        }
+        if (old_connected && node->type == PTN_XML_NODE_ELEMENT && old_document != NULL) {
+            node->allow_reconstructed_document_element_sibling = 1;
+        }
     }
     replacement.as.object->native_data = NULL;
     replacement.as.object->native_data_free = NULL;
@@ -89291,12 +89428,24 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (!looks_like_schema) {
             ptn_dom_emit_schema_source_parse_warnings(runtime, method, source.data, source.len, line);
         }
-        ptn_string_operand_free(source);
         if (!looks_like_schema) {
+            ptn_string_operand_free(source);
             ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidateSource") ? "DOMDocument::schemaValidateSource(): Invalid Schema" : "DOMDocument::relaxNGValidateSource(): Invalid RelaxNG", line);
             return ptn_bool(0);
         }
-        return ptn_bool(ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        int ok = ptn_ascii_case_equal(name, "schemaValidateSource")
+            ? ptn_dom_schema_validate_source_with_libxml(
+                runtime,
+                ptn_xml_node_data(receiver),
+                source.data,
+                source.len,
+                argc >= 2 ? ptn_value_to_integer(args[1]) : 0,
+                method,
+                line
+            )
+            : (ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        ptn_string_operand_free(source);
+        return ptn_bool(ok);
     }
     if (ptn_ascii_case_equal(name, "xinclude")) {
         if (argc > 1) {

@@ -37562,6 +37562,92 @@ echo $xml->saveXML();
 }
 
 #[test]
+fn compile_dom_current_red_schema_and_reconstructed_element_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-current-red-schema-reconstructed-element");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-current-red-schema-reconstructed-element.php");
+    let output = root.join("dom-current-red-schema-reconstructed-element-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$doc->loadXML(<<<'XML'
+<books>
+    <book><title>First</title></book>
+    <book is-hardback="true"><title>Second</title></book>
+</books>
+XML);
+$xsd = <<<'XSD'
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="books">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="book" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="title" type="xs:string"/>
+            </xs:sequence>
+            <xs:attribute name="is-hardback" type="xs:boolean" default="false" use="optional"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+XSD;
+var_dump($doc->schemaValidateSource($xsd, LIBXML_SCHEMA_CREATE));
+foreach ($doc->getElementsByTagName('book') as $book) {
+    var_dump($book->getAttribute('is-hardback'));
+}
+
+$el = new DOMElement('name');
+$el->append($child = new DOMElement('child'));
+$container = new DOMDocument();
+$container->appendChild($el);
+$el->__construct('newname');
+$container->appendChild($el);
+echo $container->saveXML();
+$other = new DOMDocument();
+try {
+    $other->appendChild($el);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($child->ownerDocument === $container);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(5) \"false\"\n",
+            "string(4) \"true\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<name><child/></name>\n",
+            "<newname/>\n",
+            "Wrong Document Error\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_schema_validate_source_with_libxml"));
+    assert!(c_source.contains("allow_reconstructed_document_element_sibling"));
+}
+
+#[test]
 fn compile_dom_element_attribute_map_and_parent_mutators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-attribute-map-parent-mutators");
     fs::create_dir_all(&root).unwrap();
