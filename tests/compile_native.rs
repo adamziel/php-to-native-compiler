@@ -34077,6 +34077,68 @@ new C();
 }
 
 #[test]
+fn compile_property_default_constant_expression_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-property-default-constant-expression-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-default-constant-expression-trace.php");
+    let output = root.join("property-default-constant-expression-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class S {
+    public function __toString() {
+        static $i = 0;
+        $i++;
+        if ($i === 1) {
+            return 'S';
+        }
+        throw new \Exception('Thrown from S');
+    }
+}
+
+const S = new S();
+
+class B {
+    public $prop = A::C . S;
+}
+
+spl_autoload_register(function ($class) {
+    class A { const C = "A"; }
+    var_dump(new B());
+});
+
+var_dump(new B());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(B)#3 (1) {\n  [\"prop\"]=>\n  string(2) \"AS\"\n}\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: Thrown from S"),
+        "{stderr}"
+    );
+    let constant_frame = stderr
+        .find(": [constant expression]()")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let tostring_frame = stderr
+        .find(": S->__toString()")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    assert!(constant_frame < tostring_frame, "{stderr}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant_suppress_deprecation"));
+    assert!(c_source.contains("\"[constant expression]\""));
+}
+
+#[test]
 fn compile_typed_class_constants_to_native_binary() {
     let root = temp_dir("ptn-native-typed-class-constants");
     fs::create_dir_all(&root).unwrap();

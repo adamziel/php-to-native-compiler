@@ -1933,21 +1933,43 @@ static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
     return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
 }
 
+static PTN_UNUSED void ptn_exception_trace_append_frame(
+    PtnValue trace,
+    PtnTraceFrame *frame,
+    size_t *index
+) {
+    if (*index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_array_set_entry(
+        trace.as.array,
+        ptn_array_int_key((int64_t)*index),
+        ptn_trace_frame_array(frame)
+    );
+    (*index)++;
+}
+
 static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     PtnValue trace = ptn_array_from_literal_entries(0, NULL);
     size_t index = 0;
-    for (PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
-         frame != NULL;
-         frame = frame->previous) {
+    PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
+    while (frame != NULL) {
+        if (
+            frame->previous != NULL &&
+            frame->previous->function_name != NULL &&
+            strcmp(frame->previous->function_name, "[constant expression]") == 0
+        ) {
+            PtnTraceFrame *constant_frame = frame->previous;
+            ptn_exception_trace_append_frame(trace, constant_frame, &index);
+            ptn_exception_trace_append_frame(trace, frame, &index);
+            frame = constant_frame->previous;
+            continue;
+        }
         if (index > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        ptn_array_set_entry(
-            trace.as.array,
-            ptn_array_int_key((int64_t)index),
-            ptn_trace_frame_array(frame)
-        );
-        index++;
+        ptn_exception_trace_append_frame(trace, frame, &index);
+        frame = frame->previous;
     }
     return trace;
 }
