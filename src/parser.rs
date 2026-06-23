@@ -15495,7 +15495,8 @@ fn validate_tentative_internal_return_signature(
         );
     }
     if method.return_type.as_ref().is_some_and(|return_type| {
-        type_hint_is_subtype(
+        method_return_type_is_subtype(
+            class,
             return_type,
             tentative_method
                 .method
@@ -15793,7 +15794,8 @@ fn validate_method_signature_pair_named(
                 parent_method,
             ));
         };
-        if !type_hint_is_subtype(
+        if !method_return_type_is_subtype(
+            class,
             return_type,
             parent_return_type,
             classes,
@@ -15850,11 +15852,14 @@ fn validate_method_parameter_signature_pair_named(
                     classes,
                     runtime_class_aliases,
                 ) {
-                    return Err(method_signature_compatibility_error_named(
+                    return Err(parameter_signature_compatibility_error_named(
                         class,
                         method,
                         parent_class_name,
                         parent_method,
+                        parameter,
+                        parent_parameter,
+                        classes,
                     ));
                 }
                 if !parameter.is_variadic && parameter.default_value.is_none() {
@@ -15899,6 +15904,22 @@ fn validate_method_parameter_signature_pair_named(
             && parameter.default_value.is_none()
             && !parameter.is_variadic)
         {
+            if !parameter_can_satisfy_parent_parameter(
+                parameter,
+                parent_parameter,
+                classes,
+                runtime_class_aliases,
+            ) {
+                return Err(parameter_signature_compatibility_error_named(
+                    class,
+                    method,
+                    parent_class_name,
+                    parent_method,
+                    parameter,
+                    parent_parameter,
+                    classes,
+                ));
+            }
             return Err(method_signature_compatibility_error_named(
                 class,
                 method,
@@ -15937,6 +15958,33 @@ fn parameter_can_satisfy_parent_parameter(
             classes,
             runtime_class_aliases,
         )
+}
+
+fn parameter_signature_compatibility_error_named(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class_name: &str,
+    parent_method: &MethodDecl,
+    parameter: &FunctionParameter,
+    parent_parameter: &FunctionParameter,
+    classes: &[ClassDecl],
+) -> Diagnostic {
+    if let (Some(type_hint), Some(parent_type_hint)) =
+        (&parameter.type_hint, &parent_parameter.type_hint)
+    {
+        if let Some(unavailable_name) =
+            unresolved_compatibility_class(type_hint, parent_type_hint, classes)
+        {
+            return method_signature_unresolved_compatibility_error_named(
+                class,
+                method,
+                parent_class_name,
+                parent_method,
+                &unavailable_name,
+            );
+        }
+    }
+    method_signature_compatibility_error_named(class, method, parent_class_name, parent_method)
 }
 
 fn unresolved_compatibility_class(
@@ -16254,11 +16302,50 @@ fn type_hint_is_subtype(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
+    type_hint_is_subtype_with_context(
+        candidate,
+        target,
+        classes,
+        runtime_class_aliases,
+        TypeCompatibilityContext::default(),
+    )
+}
+
+fn method_return_type_is_subtype(
+    class: &ClassDecl,
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> bool {
+    type_hint_is_subtype_with_context(
+        candidate,
+        target,
+        classes,
+        runtime_class_aliases,
+        TypeCompatibilityContext {
+            final_class_static_name: class.is_final.then_some(class.name.as_str()),
+        },
+    )
+}
+
+#[derive(Clone, Copy, Default)]
+struct TypeCompatibilityContext<'a> {
+    final_class_static_name: Option<&'a str>,
+}
+
+fn type_hint_is_subtype_with_context(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+    context: TypeCompatibilityContext<'_>,
+) -> bool {
     let candidate_alternatives = type_hint_alternatives(candidate);
     let target_alternatives = type_hint_alternatives(target);
     candidate_alternatives.iter().all(|candidate| {
         target_alternatives.iter().any(|target| {
-            type_alternative_is_subtype(candidate, target, classes, runtime_class_aliases)
+            type_alternative_is_subtype(candidate, target, classes, runtime_class_aliases, context)
         })
     })
 }
@@ -16350,10 +16437,17 @@ fn type_alternative_is_subtype(
     target: &TypeAlternative,
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
+    context: TypeCompatibilityContext<'_>,
 ) -> bool {
     target.atoms.iter().all(|target_atom| {
         candidate.atoms.iter().any(|candidate_atom| {
-            type_atom_is_subtype(candidate_atom, target_atom, classes, runtime_class_aliases)
+            type_atom_is_subtype(
+                candidate_atom,
+                target_atom,
+                classes,
+                runtime_class_aliases,
+                context,
+            )
         })
     })
 }
@@ -16363,6 +16457,7 @@ fn type_atom_is_subtype(
     target: &TypeAtom,
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
+    context: TypeCompatibilityContext<'_>,
 ) -> bool {
     if matches!(candidate, TypeAtom::Void) && matches!(target, TypeAtom::Mixed) {
         return false;
@@ -16376,6 +16471,13 @@ fn type_atom_is_subtype(
     match (candidate, target) {
         (TypeAtom::True | TypeAtom::False, TypeAtom::Bool) => true,
         (TypeAtom::Static, TypeAtom::Object) => true,
+        (TypeAtom::Class(candidate), TypeAtom::Static) => {
+            context.final_class_static_name.is_some_and(|class_name| {
+                let candidate_name =
+                    resolve_runtime_class_alias_from_map(candidate, runtime_class_aliases);
+                candidate_name.eq_ignore_ascii_case(class_name)
+            })
+        }
         (TypeAtom::Class(candidate), TypeAtom::Callable)
             if candidate.eq_ignore_ascii_case("Closure") =>
         {

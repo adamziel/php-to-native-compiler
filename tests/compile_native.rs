@@ -4273,6 +4273,65 @@ class ChildDnf extends ParentDnf {
 }
 
 #[test]
+fn parser_accepts_final_class_self_return_for_static_variance() {
+    parser::parse(
+        "<?php
+interface StaticContract {
+    public function fromInterface(): static|string;
+}
+abstract class StaticBase {
+    abstract public function fromBase(): static;
+}
+trait StaticTrait {
+    abstract public function fromTrait(): static;
+}
+final class StaticImpl extends StaticBase implements StaticContract {
+    use StaticTrait;
+    public function fromInterface(): self { return $this; }
+    public function fromBase(): StaticImpl { return $this; }
+    public function fromTrait(): self { return $this; }
+}",
+    )
+    .unwrap();
+}
+
+#[test]
+fn parser_rejects_other_final_class_return_for_static_variance() {
+    let error = parser::parse(
+        "<?php
+interface StaticUnionContract {
+    public function value(): static|bool;
+}
+final class StaticUnionOther implements StaticUnionContract {
+    public function value(): self { return $this; }
+}
+final class StaticUnionImpl implements StaticUnionContract {
+    public function value(): StaticUnionOther { return new StaticUnionOther(); }
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of StaticUnionImpl::value(): StaticUnionOther must be compatible with StaticUnionContract::value(): static|bool"
+    );
+}
+
+#[test]
+fn parser_reports_unavailable_parameter_class_for_method_variance() {
+    let error = parser::parse(
+        "<?php
+class MissingParameterTypeTest extends DateTime {
+    public static function createFromFormat($format, $datetime, ?Wrong $timezone = null): DateTime|false {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Could not check compatibility between MissingParameterTypeTest::createFromFormat($format, $datetime, ?Wrong $timezone = null): DateTime|false and DateTime::createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false, because class Wrong is not available"
+    );
+}
+
+#[test]
 fn parser_validates_internal_method_signature_defaults() {
     let error = parser::parse(
         "<?php
