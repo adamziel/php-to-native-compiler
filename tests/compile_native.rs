@@ -856,6 +856,10 @@ fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
             "<?php\n\
 class MyInfoObject extends SplFileInfo {{}}\n\
 class MyFileObject extends SplFileObject {{}}\n\
+class BadCurrentObject extends SplFileObject {{\n\
+    #[ReturnTypeWillChange]\n\
+    public function getCurrentLine(): array {{ return [1, 2, 3]; }}\n\
+}}\n\
 $path = {};\n\
 $info = new SplFileInfo($path);\n\
 var_dump($info->getFilename(), $info->getExtension(), $info->getSize() > 0);\n\
@@ -868,6 +872,34 @@ $file = new SplFileObject($path);\n\
 echo $file->current();\n\
 $file->next();\n\
 echo $file->current();\n\
+$limited = new SplFileObject($path);\n\
+$limited->setMaxLineLen(3);\n\
+var_dump($limited->fgets());\n\
+$chars = new SplFileObject($path);\n\
+while (($char = $chars->fgetc()) !== false) {{ if ($char === \"\\n\") {{ break; }} }}\n\
+var_dump($chars->key());\n\
+$scan = new SplFileObject($path);\n\
+$matched = null;\n\
+var_dump($scan->fscanf('%s', $matched), $matched);\n\
+foreach ([\"A\\0B\", \"A\\rB\"] as $line) {{\n\
+    $temp = new SplTempFileObject();\n\
+    $temp->fwrite($line);\n\
+    $temp->rewind();\n\
+    var_dump($line === $temp->fgets());\n\
+    $temp->rewind();\n\
+    $temp->setFlags(SplFileObject::DROP_NEW_LINE);\n\
+    var_dump($line === $temp->fgets());\n\
+}}\n\
+$temp = new SplTempFileObject();\n\
+for ($i = 0; $i < 2; $i++) {{ $temp->fwrite(\"line $i\\n\"); }}\n\
+$temp->rewind();\n\
+for ($i = 0; $i < 5; $temp->next(), $i++);\n\
+echo \"temp-next=\" . $temp->key() . \":\" . var_export($temp->valid(), true) . \"\\n\";\n\
+$temp->rewind();\n\
+$temp->seek(5);\n\
+echo \"temp-seek=\" . $temp->key() . \":\" . var_export($temp->valid(), true) . \"\\n\";\n\
+$bad = new BadCurrentObject($path);\n\
+try {{ var_dump($bad->current()); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
 $csv = new SplFileObject($path, 'w+');\n\
 $csv->setCsvControl(escape: '');\n\
 $csv->fputcsv(fields: ['a', 'b'], escape: '', eol: \"\\n\");\n\
@@ -907,6 +939,17 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             "MyFileObject\n",
             "first\n",
             "second\n",
+            "string(3) \"fir\"\n",
+            "int(1)\n",
+            "int(1)\n",
+            "string(5) \"first\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "temp-next=2:false\n",
+            "temp-seek=2:false\n",
+            "BadCurrentObject::getCurrentLine(): Return value must be of type string, array returned\n",
             "array(3) {\n",
             "  [0]=>\n",
             "  string(1) \",\"\n",

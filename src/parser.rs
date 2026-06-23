@@ -12625,6 +12625,7 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
             | "spldoublylinkedlist"
             | "splfileinfo"
             | "splfileobject"
+            | "spltempfileobject"
             | "splheap"
             | "splmaxheap"
             | "splminheap"
@@ -15692,6 +15693,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("SplStack")
         || name.eq_ignore_ascii_case("SplFileInfo")
         || name.eq_ignore_ascii_case("SplFileObject")
+        || name.eq_ignore_ascii_case("SplTempFileObject")
         || name
             .trim_start_matches('\\')
             .eq_ignore_ascii_case("BcMath\\Number")
@@ -16156,7 +16158,9 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         &["Iterator", "SeekableIterator", "Stringable", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("RegexIterator") {
         &["Iterator", "OuterIterator", "Traversable"][..]
-    } else if candidate_name.eq_ignore_ascii_case("SplFileObject") {
+    } else if candidate_name.eq_ignore_ascii_case("SplFileObject")
+        || candidate_name.eq_ignore_ascii_case("SplTempFileObject")
+    {
         &[
             "Iterator",
             "RecursiveIterator",

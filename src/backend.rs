@@ -1542,7 +1542,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFileObject\")) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFileObject\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplTempFileObject\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
@@ -6883,6 +6884,7 @@ fn emit_class_metadata_helpers(
         "SplStack",
         "SplFileInfo",
         "SplFileObject",
+        "SplTempFileObject",
         "FilesystemIterator",
         "GlobIterator",
         "RecursiveDirectoryIterator",
@@ -7514,6 +7516,7 @@ fn emit_class_metadata_helpers(
         "SplStack",
         "SplFileInfo",
         "SplFileObject",
+        "SplTempFileObject",
         "Closure",
         "DateTime",
         "DateTimeImmutable",
@@ -8122,6 +8125,7 @@ fn emit_class_metadata_helpers(
         ("ReflectionObject", "ReflectionClass"),
         ("PharFileInfo", "SplFileInfo"),
         ("SplFileObject", "SplFileInfo"),
+        ("SplTempFileObject", "SplFileObject"),
         ("SplMaxHeap", "SplHeap"),
         ("SplMinHeap", "SplHeap"),
         ("SplQueue", "SplDoublyLinkedList"),
@@ -18276,6 +18280,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "splstack" => Some("SplStack"),
         "splfileinfo" => Some("SplFileInfo"),
         "splfileobject" => Some("SplFileObject"),
+        "spltempfileobject" => Some("SplTempFileObject"),
         "internaliterator" => Some("InternalIterator"),
         "datetimezone" => Some("DateTimeZone"),
         "dateinterval" => Some("DateInterval"),
@@ -20023,7 +20028,7 @@ fn emit_method_dispatch(
     );
     out.push_str("        while (ptn_modeled_parent != NULL) {\n");
     out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
-    out.push_str("                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\") || ptn_internal_class_name_is_spl_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_modeled_parent)) {\n");
+    out.push_str("                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFileObject\") || ptn_internal_class_name_is_spl_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_modeled_parent)) {\n");
     out.push_str("                    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("                }\n");
     out.push_str(
@@ -20055,6 +20060,9 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if ((ptn_ascii_case_equal(class_name, \"SplFileObject\") || ptn_ascii_case_equal(class_name, \"SplTempFileObject\")) && ptn_ascii_case_equal(method_name, \"fscanf\") && argument_index >= 1) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_exists_name(class_name)) {\n");
     out.push_str("        char ptn_internal_method_name[256];\n");
     out.push_str("        int ptn_internal_method_written = snprintf(ptn_internal_method_name, sizeof(ptn_internal_method_name), \"%s::%s\", class_name, method_name);\n");
@@ -20345,7 +20353,7 @@ fn emit_method_dispatch(
             out.push_str("            const char *ptn_scoped_modeled_parent = ptn_declared_class_parent_name(target_class_name);\n");
             out.push_str("            while (ptn_scoped_modeled_parent != NULL) {\n");
             out.push_str("                if (ptn_internal_class_exists_name(ptn_scoped_modeled_parent) && ptn_internal_class_method_exists(ptn_scoped_modeled_parent, method_name)) {\n");
-            out.push_str("                    if (ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFixedArray\") || ptn_internal_class_name_is_spl_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_scoped_modeled_parent)) {\n");
+            out.push_str("                    if (ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFileObject\") || ptn_internal_class_name_is_spl_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_scoped_modeled_parent)) {\n");
             out.push_str("                        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
             out.push_str("                        return 1;\n");
             out.push_str("                    }\n");

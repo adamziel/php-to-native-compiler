@@ -1755,6 +1755,7 @@ fn include_collection_known_internal_class(class_name: &str) -> bool {
         "SplDoublyLinkedList",
         "SplFileInfo",
         "SplFileObject",
+        "SplTempFileObject",
         "SplFixedArray",
         "SplHeap",
         "SplMaxHeap",

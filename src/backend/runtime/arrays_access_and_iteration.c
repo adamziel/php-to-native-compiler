@@ -305,6 +305,19 @@ static PTN_UNUSED PtnValue ptn_caching_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *class_name);
+static PtnValue ptn_spl_file_object_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1126,7 +1139,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         return ptn_spl_doubly_linked_list_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_spl_file_object(lookup_class_name)) {
-        return ptn_spl_file_object_new(runtime, argc, args, line);
+        return ptn_spl_file_object_new_for_class(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_directory_iterator(lookup_class_name)) {
         return ptn_directory_iterator_new_for_class(runtime, lookup_class_name, argc, args, line);

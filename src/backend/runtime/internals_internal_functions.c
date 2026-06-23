@@ -48434,7 +48434,7 @@ static PtnValue ptn_internal_fscanf(PtnRuntime *runtime, size_t argc, const PtnV
         argc > 2 ? argc - 2 : 0,
         argc > 2 ? args + 2 : NULL,
         1,
-        1,
+        0,
         line
     );
     free(buffer.data);
@@ -109719,7 +109719,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_info(const char *class
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "SplFileObject");
+    return ptn_ascii_case_equal(class_name, "SplFileObject")
+        || ptn_ascii_case_equal(class_name, "SplTempFileObject");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_directory_iterator(const char *class_name) {
@@ -136291,7 +136292,10 @@ static PtnValue ptn_spl_file_object_read_line(
     size_t argc = 1;
     args[0] = ptn_value_clone_deref(data->stream);
     if (data->max_line_len > 0) {
-        args[1] = ptn_int(data->max_line_len);
+        if (data->max_line_len == INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        args[1] = ptn_int(data->max_line_len + 1);
         argc = 2;
     }
     PtnValue result = ptn_internal_fgets(runtime, argc, args, line);
@@ -136413,7 +136417,23 @@ static PtnValue ptn_spl_file_object_new_for_class(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc < 1 || argc > 4) {
+    int is_temp_file_object = ptn_ascii_case_equal(class_name, "SplTempFileObject");
+    if (is_temp_file_object) {
+        if (argc > 1) {
+            char message[176];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplTempFileObject::__construct() expects at most 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+    } else if (argc < 1 || argc > 4) {
         char message[176];
         int written = snprintf(
             message,
@@ -136427,20 +136447,33 @@ static PtnValue ptn_spl_file_object_new_for_class(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    char *path = ptn_spl_file_path_arg(runtime, "SplFileObject::__construct", 1, args[0], line);
-    if (runtime->exceptions->active_exception != NULL || path == NULL) {
-        free(path);
-        return ptn_null();
-    }
-    PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
-    PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
-    PtnValue stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
-    ptn_value_destroy(&fopen_args[0]);
-    ptn_value_destroy(&fopen_args[1]);
-    if (runtime->exceptions->active_exception != NULL) {
-        free(path);
-        ptn_value_destroy(&stream);
-        return ptn_null();
+    char *path = NULL;
+    PtnValue stream = ptn_null();
+    if (is_temp_file_object) {
+        (void)args;
+        path = ptn_duplicate_string("php://temp");
+        stream = ptn_internal_tmpfile(runtime, 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            ptn_value_destroy(&stream);
+            return ptn_null();
+        }
+    } else {
+        path = ptn_spl_file_path_arg(runtime, "SplFileObject::__construct", 1, args[0], line);
+        if (runtime->exceptions->active_exception != NULL || path == NULL) {
+            free(path);
+            return ptn_null();
+        }
+        PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
+        PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
+        stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
+        ptn_value_destroy(&fopen_args[0]);
+        ptn_value_destroy(&fopen_args[1]);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            ptn_value_destroy(&stream);
+            return ptn_null();
+        }
     }
     PtnValue resolved_stream = ptn_value_deref(stream);
     if (resolved_stream.type != PTN_RESOURCE) {
@@ -136449,7 +136482,8 @@ static PtnValue ptn_spl_file_object_new_for_class(
         int written = snprintf(
             message,
             sizeof(message),
-            "SplFileObject::__construct(%s): Failed to open stream",
+            "%s::__construct(%s): Failed to open stream",
+            is_temp_file_object ? "SplTempFileObject" : "SplFileObject",
             path
         );
         free(path);
@@ -136504,6 +136538,68 @@ static PTN_UNUSED PtnValue ptn_spl_file_object_new(
     return ptn_spl_file_object_new_for_class(runtime, "SplFileObject", argc, args, line);
 }
 
+static PtnValue ptn_spl_file_object_current_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplFileObjectData *data,
+    size_t line
+) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type == PTN_OBJECT &&
+        runtime->method_dispatch != NULL &&
+        !ptn_internal_class_name_is_spl_file_object(resolved_receiver.as.object->class_name) &&
+        ptn_declared_class_method_exists(resolved_receiver.as.object->class_name, "getCurrentLine")) {
+        PtnValue result = runtime->method_dispatch(runtime, receiver, "getCurrentLine", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            return ptn_null();
+        }
+        PtnValue resolved = ptn_value_deref(result);
+        if (!(resolved.type == PTN_STRING ||
+            (resolved.type == PTN_BOOL && resolved.as.boolean == 0))) {
+            const char *given = ptn_offset_container_type_name(resolved);
+            int needed = snprintf(
+                NULL,
+                0,
+                "%s::getCurrentLine(): Return value must be of type string, %s returned",
+                resolved_receiver.as.object->class_name,
+                given
+            );
+            if (needed < 0) {
+                ptn_value_destroy(&result);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_value_destroy(&result);
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(
+                message,
+                (size_t)needed + 1,
+                "%s::getCurrentLine(): Return value must be of type string, %s returned",
+                resolved_receiver.as.object->class_name,
+                given
+            );
+            if (written < 0 || written != needed) {
+                free(message);
+                ptn_value_destroy(&result);
+                ptn_abort_out_of_memory();
+            }
+            ptn_value_destroy(&result);
+            ptn_throw_exception(runtime, "TypeError", message);
+            free(message);
+            return ptn_null();
+        }
+        return result;
+    }
+
+    ptn_spl_file_object_ensure_current(runtime, data, line);
+    return runtime->exceptions->active_exception != NULL
+        ? ptn_null()
+        : ptn_value_clone_deref(data->current);
+}
+
 static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
     PtnRuntime *runtime,
     PtnValue source,
@@ -136549,12 +136645,15 @@ static PtnValue ptn_spl_file_object_call_method(
         return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_spl_file_object_new(runtime, argc, args, line);
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        const char *receiver_class = resolved_receiver.type == PTN_OBJECT
+            ? resolved_receiver.as.object->class_name
+            : "SplFileObject";
+        PtnValue replacement = ptn_spl_file_object_new_for_class(runtime, receiver_class, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
             return ptn_null();
         }
-        PtnValue resolved_receiver = ptn_value_deref(receiver);
         if (replacement.type == PTN_OBJECT &&
             replacement.as.object->native_data != NULL &&
             resolved_receiver.type == PTN_OBJECT) {
@@ -136608,6 +136707,12 @@ static PtnValue ptn_spl_file_object_call_method(
             data->escape = escape;
             data->escape_enabled = escape_enabled;
             data->escape_configured = 1;
+        } else {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change in PHP 9.0",
+                line
+            );
         }
         return ptn_null();
     }
@@ -136756,9 +136861,17 @@ static PtnValue ptn_spl_file_object_call_method(
     }
     if (ptn_ascii_case_equal(name, "fgetc")) {
         ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fgetc, 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fgetc, 0, NULL, line);
+        PtnValue resolved = ptn_value_deref(result);
+        if (resolved.type == PTN_STRING &&
+            resolved.as.string.len == 1 &&
+            resolved.as.string.data[0] == '\n') {
+            data->key++;
+        }
+        return result;
     }
     if (ptn_ascii_case_equal(name, "fseek")) {
         if (argc < 1 || argc > 2) {
@@ -136773,7 +136886,20 @@ static PtnValue ptn_spl_file_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fscanf() expects at least 1 argument");
             return ptn_null();
         }
-        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fscanf, argc, args, line);
+        PtnValue *forwarded = malloc((argc + 1) * sizeof(PtnValue));
+        if (forwarded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        forwarded[0] = ptn_value_clone_deref(data->stream);
+        for (size_t i = 0; i < argc; i++) {
+            forwarded[i + 1] = ptn_value_clone(args[i]);
+        }
+        PtnValue result = ptn_internal_fscanf(runtime, argc + 1, forwarded, line);
+        for (size_t i = 0; i < argc + 1; i++) {
+            ptn_value_destroy(&forwarded[i]);
+        }
+        free(forwarded);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "ftruncate")) {
         if (argc != 1) {
@@ -136856,8 +136982,7 @@ static PtnValue ptn_spl_file_object_call_method(
             int still_valid = ptn_is_truthy(valid);
             ptn_value_destroy(&valid);
             if (!still_valid) {
-                ptn_throw_exception(runtime, "RuntimeException", "Cannot seek to line beyond EOF");
-                return ptn_null();
+                break;
             }
         }
         return ptn_null();
@@ -136867,12 +136992,21 @@ static PtnValue ptn_spl_file_object_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        int advance = 1;
         if (!data->has_current) {
             PtnValue discarded = ptn_spl_file_object_read_line(runtime, data, line);
+            PtnValue resolved_discarded = ptn_value_deref(discarded);
+            if (resolved_discarded.type == PTN_BOOL && resolved_discarded.as.boolean == 0) {
+                advance = 0;
+            }
             ptn_value_destroy(&discarded);
+        } else if (!ptn_spl_file_object_current_valid(data)) {
+            advance = 0;
         }
         ptn_spl_file_object_clear_current(data);
-        data->key++;
+        if (advance) {
+            data->key++;
+        }
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
@@ -136888,8 +137022,7 @@ static PtnValue ptn_spl_file_object_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        ptn_spl_file_object_ensure_current(runtime, data, line);
-        return ptn_value_clone_deref(data->current);
+        return ptn_spl_file_object_current_value(runtime, receiver, data, line);
     }
     if (ptn_ascii_case_equal(name, "key")) {
         ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
