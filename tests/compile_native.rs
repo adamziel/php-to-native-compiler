@@ -4657,6 +4657,32 @@ class BadFilter extends php_user_filter {
 
     let error = parser::parse(
         "<?php
+class MissingClosingFilter extends php_user_filter {
+    function filter($in, $out, &$consumed): int {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of MissingClosingFilter::filter($in, $out, &$consumed): int must be compatible with php_user_filter::filter($in, $out, &$consumed, bool $closing): int"
+    );
+
+    let error = parser::parse(
+        "<?php
+class BadOnCreateFilter extends php_user_filter {
+    function onCreate($var): bool {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of BadOnCreateFilter::onCreate($var): bool must be compatible with php_user_filter::onCreate(): bool"
+    );
+
+    let error = parser::parse(
+        "<?php
 class BadSeek extends php_user_filter {
     public function seek($offset): bool {}
 }
@@ -4666,6 +4692,19 @@ class BadSeek extends php_user_filter {
     assert_eq!(
         error.message,
         "Declaration of BadSeek::seek($offset): bool must be compatible with php_user_filter::seek(int $offset, int $whence, int $chain): bool"
+    );
+
+    let error = parser::parse(
+        "<?php
+class ImplicitBadSeek extends php_user_filter {
+    function seek($offset): bool {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of ImplicitBadSeek::seek($offset): bool must be compatible with php_user_filter::seek(int $offset, int $whence, int $chain): bool"
     );
 }
 
