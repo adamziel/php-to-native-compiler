@@ -459,6 +459,14 @@ typedef struct {
 #define PTN_INTL_PARTS_KEY_SEQUENTIAL 0
 #define PTN_INTL_PARTS_KEY_LEFT 1
 #define PTN_INTL_PARTS_KEY_RIGHT 2
+#define PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO 0
+#define PTN_INTL_NUMBER_RANGE_COLLAPSE_NONE 1
+#define PTN_INTL_NUMBER_RANGE_COLLAPSE_UNIT 2
+#define PTN_INTL_NUMBER_RANGE_COLLAPSE_ALL 3
+#define PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE 0
+#define PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE 1
+#define PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY 2
+#define PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_RANGE 3
 #define PTN_T_INCLUDE 1000
 #define PTN_T_INCLUDE_ONCE 1001
 #define PTN_T_EVAL 1002
@@ -2097,6 +2105,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_iterator(const char *class
 static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_number_range_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spoofchecker(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uconverter(const char *class_name);

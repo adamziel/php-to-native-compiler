@@ -4764,6 +4764,16 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlNumberRangeFormatter")) {
+        if (strcmp(constant, "COLLAPSE_AUTO") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO); return 1; }
+        if (strcmp(constant, "COLLAPSE_NONE") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_NONE); return 1; }
+        if (strcmp(constant, "COLLAPSE_UNIT") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_UNIT); return 1; }
+        if (strcmp(constant, "COLLAPSE_ALL") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_ALL); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_SINGLE_VALUE") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_APPROXIMATELY") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_RANGE") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_RANGE); return 1; }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Collator")) {
         if (strcmp(constant, "PRIMARY") == 0) {
             *out = ptn_int(0);

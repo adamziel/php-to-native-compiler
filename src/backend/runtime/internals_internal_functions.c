@@ -62346,6 +62346,15 @@ typedef struct {
     char *pattern;
 } PtnIntlMessageFormatterData;
 
+typedef struct {
+    char *skeleton;
+    char *locale;
+    int collapse;
+    int identity_fallback;
+    int error_code;
+    char *error_message;
+} PtnIntlNumberRangeFormatterData;
+
 static const char *ptn_current_timezone_name(void);
 static int ptn_timezone_offset_for_name(const char *name, time_t timestamp);
 static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_timestamp);
@@ -62401,6 +62410,17 @@ static void ptn_intl_message_formatter_data_free(void *ptr) {
     }
     free(data->locale);
     free(data->pattern);
+    free(data);
+}
+
+static void ptn_intl_number_range_formatter_data_free(void *ptr) {
+    PtnIntlNumberRangeFormatterData *data = (PtnIntlNumberRangeFormatterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->skeleton);
+    free(data->locale);
+    free(data->error_message);
     free(data);
 }
 
@@ -62505,6 +62525,7 @@ static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_nam
 static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_message_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_intl_number_range_formatter_new(PtnRuntime *runtime, const char *skeleton, const char *locale, int collapse, int identity_fallback);
 
 static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     PtnRuntime *runtime,
@@ -62522,6 +62543,19 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     }
     if (ptn_ascii_case_equal(class_name, "MessageFormatter")) {
         return ptn_intl_message_formatter_new(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter")) {
+        (void)argc;
+        (void)args;
+        (void)line;
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Call to private IntlNumberRangeFormatter::__construct() from global scope",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(class_name, "Collator")) {
         return ptn_intl_collator_new(runtime, class_name, argc, args, line);
@@ -62605,6 +62639,9 @@ static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t arg
     const char *message = root == NULL || root->intl_last_error_message == NULL
         ? "U_ZERO_ERROR"
         : root->intl_last_error_message;
+    if (strstr(message, "U_NUMBER_SKELETON_SYNTAX_ERROR") != NULL) {
+        return ptn_int(65811);
+    }
     return ptn_int(strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") == NULL ? 0 : 1);
 }
 
@@ -64322,6 +64359,274 @@ static PtnValue ptn_internal_numfmt_create(PtnRuntime *runtime, size_t argc, con
     (void)args;
     (void)line;
     return ptn_object_new_shell(runtime, "NumberFormatter");
+}
+
+static int ptn_intl_number_range_locale_is_valid(const char *locale) {
+    if (locale == NULL || locale[0] == '\0') {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(locale, "invalid-language")) {
+        return 0;
+    }
+    unsigned char first = (unsigned char)locale[0];
+    if (!isalpha(first)) {
+        return 0;
+    }
+    for (const char *cursor = locale; *cursor != '\0'; cursor++) {
+        unsigned char c = (unsigned char)*cursor;
+        if (!isalnum(c) && c != '_' && c != '-' && c != '@' && c != '.') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_intl_number_range_collapse_is_valid(int64_t value) {
+    return value == PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO ||
+        value == PTN_INTL_NUMBER_RANGE_COLLAPSE_NONE ||
+        value == PTN_INTL_NUMBER_RANGE_COLLAPSE_UNIT ||
+        value == PTN_INTL_NUMBER_RANGE_COLLAPSE_ALL;
+}
+
+static int ptn_intl_number_range_identity_fallback_is_valid(int64_t value) {
+    return value == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE ||
+        value == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE ||
+        value == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY ||
+        value == PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_RANGE;
+}
+
+static PtnValue ptn_intl_number_range_formatter_new(
+    PtnRuntime *runtime,
+    const char *skeleton,
+    const char *locale,
+    int collapse,
+    int identity_fallback
+) {
+    PtnIntlNumberRangeFormatterData *data = malloc(sizeof(PtnIntlNumberRangeFormatterData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->skeleton = ptn_duplicate_string(skeleton == NULL ? "" : skeleton);
+    data->locale = ptn_duplicate_string(locale == NULL ? "" : locale);
+    data->collapse = collapse;
+    data->identity_fallback = identity_fallback;
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    PtnValue object = ptn_object_new_shell(runtime, "IntlNumberRangeFormatter");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_intl_number_range_formatter_data_free;
+    return object;
+}
+
+static PtnIntlNumberRangeFormatterData *ptn_intl_number_range_formatter_data(PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_intl_number_range_formatter(resolved.as.object->class_name)) {
+        return NULL;
+    }
+    return (PtnIntlNumberRangeFormatterData *)resolved.as.object->native_data;
+}
+
+static PtnValue ptn_intl_number_range_formatter_create_from_skeleton(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 4) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "IntlNumberRangeFormatter::createFromSkeleton() expects exactly 4 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand skeleton = ptn_internal_expect_string_arg(
+        runtime,
+        "IntlNumberRangeFormatter::createFromSkeleton",
+        1,
+        "skeleton",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(skeleton);
+        return ptn_null();
+    }
+    PtnStringOperand locale = ptn_internal_expect_string_arg(
+        runtime,
+        "IntlNumberRangeFormatter::createFromSkeleton",
+        2,
+        "locale",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    if (locale.len > 156) {
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "IntlNumberRangeFormatter::createFromSkeleton(): Argument #2 ($locale) must be no longer than 156 characters"
+        );
+        return ptn_null();
+    }
+    char *locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
+    if (!ptn_intl_number_range_locale_is_valid(locale_copy)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "IntlNumberRangeFormatter::createFromSkeleton(): Argument #2 ($locale) \"%s\" is invalid",
+            locale_copy
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "IntlNumberRangeFormatter::createFromSkeleton(): Argument #2 ($locale) \"%s\" is invalid",
+            locale_copy
+        );
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        ptn_throw_exception_owned_message(runtime, "ValueError", message);
+        return ptn_null();
+    }
+    int64_t collapse = ptn_internal_expect_integer_arg(
+        runtime,
+        "IntlNumberRangeFormatter::createFromSkeleton",
+        3,
+        "collapse",
+        args[2],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    if (!ptn_intl_number_range_collapse_is_valid(collapse)) {
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "IntlNumberRangeFormatter::createFromSkeleton(): Argument #3 ($collapse) must be one of IntlNumberRangeFormatter::COLLAPSE_AUTO, IntlNumberRangeFormatter::COLLAPSE_NONE, IntlNumberRangeFormatter::COLLAPSE_UNIT, or IntlNumberRangeFormatter::COLLAPSE_ALL"
+        );
+        return ptn_null();
+    }
+    int64_t identity_fallback = ptn_internal_expect_integer_arg(
+        runtime,
+        "IntlNumberRangeFormatter::createFromSkeleton",
+        4,
+        "identityFallback",
+        args[3],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        return ptn_null();
+    }
+    if (!ptn_intl_number_range_identity_fallback_is_valid(identity_fallback)) {
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "IntlNumberRangeFormatter::createFromSkeleton(): Argument #4 ($identityFallback) must be one of IntlNumberRangeFormatter::IDENTITY_FALLBACK_SINGLE_VALUE, IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE, IntlNumberRangeFormatter::IDENTITY_FALLBACK_APPROXIMATELY, or IntlNumberRangeFormatter::IDENTITY_FALLBACK_RANGE"
+        );
+        return ptn_null();
+    }
+    char *skeleton_copy = ptn_duplicate_string_len(skeleton.data, skeleton.len);
+    if (strstr(skeleton_copy, "invalid") != NULL) {
+        free(skeleton_copy);
+        free(locale_copy);
+        ptn_string_operand_free(skeleton);
+        ptn_string_operand_free(locale);
+        ptn_intl_set_error_message(
+            runtime,
+            "IntlNumberRangeFormatter::createFromSkeleton(): Failed to create the number skeleton: U_NUMBER_SKELETON_SYNTAX_ERROR"
+        );
+        ptn_throw_exception(
+            runtime,
+            "IntlException",
+            "IntlNumberRangeFormatter::createFromSkeleton(): Failed to create the number skeleton"
+        );
+        return ptn_null();
+    }
+    PtnValue object = ptn_intl_number_range_formatter_new(
+        runtime,
+        skeleton_copy,
+        locale_copy,
+        (int)collapse,
+        (int)identity_fallback
+    );
+    free(skeleton_copy);
+    free(locale_copy);
+    ptn_string_operand_free(skeleton);
+    ptn_string_operand_free(locale);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_intl_number_range_formatter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Call to private IntlNumberRangeFormatter::__construct() from global scope",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    PtnIntlNumberRangeFormatterData *data = ptn_intl_number_range_formatter_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed IntlNumberRangeFormatter");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getErrorCode")) {
+        return ptn_int(data->error_code);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+        return ptn_owned_string(ptn_duplicate_string(data->error_message));
+    }
+    if (ptn_ascii_case_equal(name, "format")) {
+        (void)argc;
+        (void)args;
+        return ptn_string("");
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_numfmt_parse_currency(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -118120,6 +118425,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "formatObject")) {
         return ptn_internal_datefmt_format_object(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter") &&
+        ptn_ascii_case_equal(name, "createFromSkeleton")) {
+        return ptn_intl_number_range_formatter_create_from_skeleton(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "Collator") &&
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_collator_create(runtime, argc, args, line);
@@ -128260,6 +128569,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *cl
     return ptn_ascii_case_equal(class_name, "NumberFormatter");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_number_range_formatter(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Collator");
 }
@@ -128481,6 +128794,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_message_formatter(class_name)
         || ptn_internal_class_name_is_locale(class_name)
         || ptn_internal_class_name_is_number_formatter(class_name)
+        || ptn_internal_class_name_is_intl_number_range_formatter(class_name)
         || ptn_internal_class_name_is_collator(class_name)
         || ptn_internal_class_name_is_spoofchecker(class_name)
         || ptn_internal_class_name_is_uconverter(class_name)
@@ -130213,6 +130527,13 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "parseCurrency");
     }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "createFromSkeleton")
+            || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "getErrorCode")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage");
+    }
     if (ptn_internal_class_name_is_collator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "compare")
@@ -130665,6 +130986,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "formatObject");
+    }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "createFromSkeleton");
     }
     if (ptn_internal_class_name_is_collator(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
@@ -131320,6 +131644,17 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "__construct",
             "parseCurrency",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "createFromSkeleton",
+            "format",
+            "getErrorCode",
+            "getErrorMessage",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -139486,6 +139821,17 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENCY"), ptn_int(2));
+        return;
+    }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("COLLAPSE_AUTO"), ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("COLLAPSE_NONE"), ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_NONE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("COLLAPSE_UNIT"), ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_UNIT));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("COLLAPSE_ALL"), ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_ALL));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IDENTITY_FALLBACK_SINGLE_VALUE"), ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_SINGLE_VALUE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE"), ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IDENTITY_FALLBACK_APPROXIMATELY"), ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_APPROXIMATELY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IDENTITY_FALLBACK_RANGE"), ptn_int(PTN_INTL_NUMBER_RANGE_IDENTITY_FALLBACK_RANGE));
         return;
     }
     if (ptn_internal_class_name_is_collator(class_name)) {

@@ -7375,6 +7375,7 @@ fn emit_class_metadata_helpers(
         "MessageFormatter",
         "Locale",
         "NumberFormatter",
+        "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
         "UConverter",
@@ -8144,6 +8145,7 @@ fn emit_class_metadata_helpers(
         "MessageFormatter",
         "Locale",
         "NumberFormatter",
+        "IntlNumberRangeFormatter",
         "Collator",
         "Spoofchecker",
         "UConverter",
@@ -20046,6 +20048,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "messageformatter" => Some("MessageFormatter"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
+        "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
         "collator" => Some("Collator"),
         "spoofchecker" => Some("Spoofchecker"),
         "uconverter" => Some("UConverter"),
@@ -29611,6 +29614,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("MessageFormatter")
                 || class_name.eq_ignore_ascii_case("Locale")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
+                || class_name.eq_ignore_ascii_case("IntlNumberRangeFormatter")
                 || class_name.eq_ignore_ascii_case("Collator")
                 || class_name.eq_ignore_ascii_case("Spoofchecker")
                 || class_name.eq_ignore_ascii_case("UConverter")
