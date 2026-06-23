@@ -8,6 +8,7 @@
 #include <locale.h>
 #include <math.h>
 #include <stdarg.h>
+#include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdint.h>

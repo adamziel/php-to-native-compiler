@@ -47167,6 +47167,12 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
 }
 
 static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
+    if (ptn_ascii_case_equal(path, "php://stdin")) {
+        PtnResource *resource = ptn_resource_new_stream(stdin, path, "r");
+        resource->stream_backend = PTN_STREAM_BACKEND_OUTPUT;
+        *out = ptn_resource(resource);
+        return 1;
+    }
     if (ptn_ascii_case_equal(path, "php://output") ||
         ptn_ascii_case_equal(path, "php://stdout")) {
         PtnResource *resource = ptn_resource_new_stream(stdout, path, "w");
@@ -72403,6 +72409,1061 @@ static PtnValue ptn_internal_shell_exec(PtnRuntime *runtime, size_t argc, const 
     return ptn_owned_string_len(command_result.output.data, command_result.output.len);
 }
 
+typedef struct {
+    pid_t pid;
+    char *command;
+    int closed;
+    int has_status;
+    int status;
+    PtnResource **pipes;
+    size_t pipe_count;
+    size_t pipe_capacity;
+} PtnProcessData;
+
+typedef struct {
+    int target_fd;
+    int child_fd;
+    int parent_fd;
+    char parent_mode[3];
+    int has_parent;
+    int is_redirect;
+    int redirect_fd;
+} PtnProcessDescriptor;
+
+typedef struct {
+    PtnProcessDescriptor *items;
+    size_t len;
+    size_t capacity;
+} PtnProcessDescriptorList;
+
+static void ptn_process_descriptor_list_init(PtnProcessDescriptorList *list) {
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static void ptn_process_descriptor_list_free(PtnProcessDescriptorList *list) {
+    if (list == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->items[i].child_fd >= 0) {
+            close(list->items[i].child_fd);
+        }
+        if (list->items[i].parent_fd >= 0) {
+            close(list->items[i].parent_fd);
+        }
+    }
+    free(list->items);
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static PtnProcessDescriptor *ptn_process_descriptor_list_add(
+    PtnProcessDescriptorList *list,
+    int target_fd
+) {
+    if (list->len == list->capacity) {
+        size_t new_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        if (new_capacity < list->capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnProcessDescriptor)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnProcessDescriptor *new_items =
+            realloc(list->items, new_capacity * sizeof(PtnProcessDescriptor));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    PtnProcessDescriptor *descriptor = &list->items[list->len++];
+    descriptor->target_fd = target_fd;
+    descriptor->child_fd = -1;
+    descriptor->parent_fd = -1;
+    descriptor->parent_mode[0] = '\0';
+    descriptor->has_parent = 0;
+    descriptor->is_redirect = 0;
+    descriptor->redirect_fd = -1;
+    return descriptor;
+}
+
+static PtnProcessDescriptor *ptn_process_descriptor_find(
+    PtnProcessDescriptorList *list,
+    int target_fd
+) {
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->items[i].target_fd == target_fd) {
+            return &list->items[i];
+        }
+    }
+    return NULL;
+}
+
+static int ptn_process_array_key_fd(PtnArrayKey key, int *fd_out) {
+    int64_t fd = 0;
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        fd = key.as.integer;
+    } else {
+        if (!ptn_string_is_integer_array_key_len(key.as.string, key.string_len, &fd)) {
+            return 0;
+        }
+    }
+    if (fd < 0 || fd > INT_MAX) {
+        return 0;
+    }
+    *fd_out = (int)fd;
+    return 1;
+}
+
+static int ptn_process_set_pipe_descriptor(
+    PtnProcessDescriptor *descriptor,
+    int child_reads,
+    int socket_pair
+) {
+    int fds[2] = { -1, -1 };
+    if (socket_pair) {
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+            return 0;
+        }
+        descriptor->child_fd = fds[0];
+        descriptor->parent_fd = fds[1];
+        descriptor->parent_mode[0] = 'r';
+        descriptor->parent_mode[1] = '+';
+        descriptor->parent_mode[2] = '\0';
+    } else {
+        if (pipe(fds) != 0) {
+            return 0;
+        }
+        if (child_reads) {
+            descriptor->child_fd = fds[0];
+            descriptor->parent_fd = fds[1];
+            descriptor->parent_mode[0] = 'w';
+            descriptor->parent_mode[1] = '\0';
+        } else {
+            descriptor->child_fd = fds[1];
+            descriptor->parent_fd = fds[0];
+            descriptor->parent_mode[0] = 'r';
+            descriptor->parent_mode[1] = '\0';
+        }
+    }
+    descriptor->has_parent = 1;
+    return 1;
+}
+
+static int ptn_process_open_null_descriptor(PtnProcessDescriptor *descriptor) {
+    int flags = descriptor->target_fd == STDIN_FILENO ? O_RDONLY : O_WRONLY;
+    int fd = open("/dev/null", flags);
+    if (fd < 0 && flags == O_WRONLY) {
+        fd = open("/dev/null", O_RDWR);
+    }
+    if (fd < 0) {
+        return 0;
+    }
+    descriptor->child_fd = fd;
+    return 1;
+}
+
+static int ptn_process_open_file_descriptor(
+    PtnRuntime *runtime,
+    PtnProcessDescriptor *descriptor,
+    PtnValue path_value,
+    PtnValue mode_value,
+    size_t line
+) {
+    PtnStringOperand path_operand =
+        ptn_internal_expect_string_arg(runtime, "proc_open", 2, "descriptor_spec", path_value, line);
+    char *path = ptn_fopen_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        return 0;
+    }
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "proc_open(): Filename contains null byte", line);
+        return 0;
+    }
+
+    PtnStringOperand mode_operand =
+        ptn_internal_expect_string_arg(runtime, "proc_open", 2, "descriptor_spec", mode_value, line);
+    char *mode = ptn_path_operand_to_c_string(mode_operand);
+    ptn_string_operand_free(mode_operand);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        free(mode);
+        return 0;
+    }
+    if (mode == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "proc_open(): file descriptor mode must not contain any null bytes", line);
+        free(path);
+        return 0;
+    }
+
+    char *c_mode = ptn_fopen_c_mode(mode);
+    FILE *stream = fopen(path, c_mode);
+    free(c_mode);
+    free(mode);
+    if (stream == NULL) {
+        char detail[192];
+        int written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "proc_open", path, detail, line);
+        free(path);
+        return 0;
+    }
+    int fd = dup(fileno(stream));
+    fclose(stream);
+    free(path);
+    if (fd < 0) {
+        return 0;
+    }
+    descriptor->child_fd = fd;
+    return 1;
+}
+
+static int ptn_process_open_stream_descriptor(PtnProcessDescriptor *descriptor, PtnResource *resource) {
+    if (resource == NULL || !ptn_stream_resource_is_open(resource) || resource->stream == NULL) {
+        return 0;
+    }
+    (void)fflush(resource->stream);
+    int fd = dup(fileno(resource->stream));
+    if (fd < 0) {
+        return 0;
+    }
+    descriptor->child_fd = fd;
+    return 1;
+}
+
+static int ptn_process_descriptor_is_available(
+    PtnProcessDescriptorList *list,
+    int target_fd
+) {
+    if (target_fd >= 0 && target_fd <= STDERR_FILENO) {
+        return 1;
+    }
+    return ptn_process_descriptor_find(list, target_fd) != NULL;
+}
+
+static int ptn_process_parse_descriptor_array(
+    PtnRuntime *runtime,
+    PtnProcessDescriptorList *list,
+    PtnProcessDescriptor *descriptor,
+    PtnArray *spec,
+    size_t line
+) {
+    if (spec->len == 0) {
+        ptn_emit_warning(&runtime->diagnostics, "proc_open():  is not a valid descriptor spec/mode", line);
+        return 0;
+    }
+
+    PtnStringOperand kind_operand =
+        ptn_value_to_string_operand_with_runtime(runtime, spec->entries[0].value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(kind_operand);
+        return 0;
+    }
+    char *kind = ptn_duplicate_string_len(kind_operand.data, kind_operand.len);
+    ptn_string_operand_free(kind_operand);
+
+    if (ptn_ascii_case_equal(kind, "pipe")) {
+        int child_reads = 1;
+        if (spec->len >= 2) {
+            PtnStringOperand mode =
+                ptn_value_to_string_operand_with_runtime(runtime, spec->entries[1].value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(mode);
+                free(kind);
+                return 0;
+            }
+            child_reads = memchr(mode.data, 'w', mode.len) == NULL &&
+                memchr(mode.data, 'W', mode.len) == NULL;
+            ptn_string_operand_free(mode);
+        }
+        free(kind);
+        return ptn_process_set_pipe_descriptor(descriptor, child_reads, 0);
+    }
+
+    if (ptn_ascii_case_equal(kind, "socket")) {
+        free(kind);
+        return ptn_process_set_pipe_descriptor(descriptor, 0, 1);
+    }
+
+    if (ptn_ascii_case_equal(kind, "null")) {
+        free(kind);
+        return ptn_process_open_null_descriptor(descriptor);
+    }
+
+    if (ptn_ascii_case_equal(kind, "file")) {
+        free(kind);
+        if (spec->len < 3) {
+            ptn_emit_warning(&runtime->diagnostics, "proc_open(): file descriptor spec must include path and mode", line);
+            return 0;
+        }
+        return ptn_process_open_file_descriptor(
+            runtime,
+            descriptor,
+            spec->entries[1].value,
+            spec->entries[2].value,
+            line
+        );
+    }
+
+    if (ptn_ascii_case_equal(kind, "redirect")) {
+        free(kind);
+        if (spec->len < 2) {
+            ptn_throw_exception(runtime, "ValueError", "Missing redirection target");
+            return 0;
+        }
+        PtnValue target = ptn_value_deref(spec->entries[1].value);
+        if (target.type != PTN_INT) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Redirection target must be of type int, %s given",
+                ptn_offset_container_type_name(target)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return 0;
+        }
+        if (target.as.integer < 0 || target.as.integer > INT_MAX ||
+            !ptn_process_descriptor_is_available(list, (int)target.as.integer)) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "proc_open(): Redirection target %lld not found",
+                (long long)target.as.integer
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            return 0;
+        }
+        descriptor->is_redirect = 1;
+        descriptor->redirect_fd = (int)target.as.integer;
+        return 1;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "proc_open(): %s is not a valid descriptor spec/mode",
+        kind
+    );
+    free(kind);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    return 0;
+}
+
+static int ptn_process_parse_descriptor_spec(
+    PtnRuntime *runtime,
+    PtnValue descriptor_spec,
+    PtnProcessDescriptorList *list,
+    size_t line
+) {
+    PtnValue value = ptn_value_deref(descriptor_spec);
+    if (value.type != PTN_ARRAY) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "proc_open(): Argument #2 ($descriptor_spec) must be of type array, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        int target_fd = 0;
+        if (!ptn_process_array_key_fd(array->entries[i].key, &target_fd)) {
+            continue;
+        }
+        PtnValue spec = ptn_value_deref(array->entries[i].value);
+        PtnProcessDescriptor *descriptor =
+            ptn_process_descriptor_list_add(list, target_fd);
+        if (spec.type == PTN_ARRAY) {
+            if (!ptn_process_parse_descriptor_array(runtime, list, descriptor, spec.as.array, line)) {
+                return 0;
+            }
+        } else if (spec.type == PTN_RESOURCE) {
+            if (!ptn_process_open_stream_descriptor(descriptor, spec.as.resource)) {
+                ptn_emit_warning(&runtime->diagnostics, "proc_open(): supplied stream descriptor is not valid", line);
+                return 0;
+            }
+        } else {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "proc_open(): Argument #2 ($descriptor_spec) must only contain arrays and streams"
+            );
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_process_data_retain_pipe(PtnProcessData *data, PtnResource *resource) {
+    if (data == NULL || resource == NULL) {
+        return;
+    }
+    if (data->pipe_count == data->pipe_capacity) {
+        size_t new_capacity = data->pipe_capacity == 0 ? 4 : data->pipe_capacity * 2;
+        if (new_capacity < data->pipe_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnResource *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnResource **new_pipes = realloc(data->pipes, new_capacity * sizeof(PtnResource *));
+        if (new_pipes == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->pipes = new_pipes;
+        data->pipe_capacity = new_capacity;
+    }
+    ptn_resource_retain(resource);
+    data->pipes[data->pipe_count++] = resource;
+}
+
+static void ptn_process_data_close_pipes(PtnProcessData *data) {
+    if (data == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < data->pipe_count; i++) {
+        ptn_resource_close(data->pipes[i]);
+    }
+}
+
+static int ptn_process_wait(PtnProcessData *data) {
+    if (data == NULL) {
+        return -1;
+    }
+    if (data->has_status) {
+        return ptn_shell_status_code(data->status);
+    }
+    int status = 0;
+    while (waitpid(data->pid, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        return -1;
+    }
+    data->status = status;
+    data->has_status = 1;
+    return ptn_shell_status_code(status);
+}
+
+static int ptn_process_poll(PtnProcessData *data) {
+    if (data == NULL || data->has_status) {
+        return 0;
+    }
+    int status = 0;
+    pid_t result;
+    do {
+        result = waitpid(data->pid, &status, WNOHANG | WUNTRACED);
+    } while (result < 0 && errno == EINTR);
+    if (result == data->pid) {
+        data->status = status;
+        data->has_status = 1;
+        return 0;
+    }
+    return result == 0;
+}
+
+static void ptn_process_close_hook(PtnResource *resource, void *hook_data) {
+    (void)resource;
+    PtnProcessData *data = (PtnProcessData *)hook_data;
+    if (data == NULL || data->closed) {
+        return;
+    }
+    data->closed = 1;
+    ptn_process_data_close_pipes(data);
+    (void)ptn_process_wait(data);
+}
+
+static void ptn_process_data_free(void *hook_data) {
+    PtnProcessData *data = (PtnProcessData *)hook_data;
+    if (data == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < data->pipe_count; i++) {
+        ptn_resource_release(data->pipes[i]);
+    }
+    free(data->pipes);
+    free(data->command);
+    free(data);
+}
+
+static PtnProcessData *ptn_process_data_from_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE ||
+        strcmp(value.as.resource->type_name, "process") != 0 ||
+        value.as.resource->close_hook_data == NULL) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): supplied resource is not a valid process resource",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    return (PtnProcessData *)value.as.resource->close_hook_data;
+}
+
+static char **ptn_process_build_argv(
+    PtnRuntime *runtime,
+    PtnValue command,
+    char **display_command_out,
+    size_t line
+) {
+    PtnValue value = ptn_value_deref(command);
+    if (value.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArray *array = value.as.array;
+    if (array->len == 0) {
+        ptn_throw_exception(runtime, "ValueError", "proc_open(): Argument #1 ($command) must not be empty");
+        return NULL;
+    }
+    if (array->len > (SIZE_MAX / sizeof(char *)) - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char **argv = calloc(array->len + 1, sizeof(char *));
+    if (argv == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnStringOperand operand =
+            ptn_value_to_string_operand_with_runtime(runtime, array->entries[i].value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(operand);
+            for (size_t j = 0; j < i; j++) {
+                free(argv[j]);
+            }
+            free(argv);
+            return NULL;
+        }
+        if (memchr(operand.data, '\0', operand.len) != NULL) {
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Command array element %zu contains a null byte",
+                i + 1
+            );
+            ptn_string_operand_free(operand);
+            for (size_t j = 0; j < i; j++) {
+                free(argv[j]);
+            }
+            free(argv);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return NULL;
+        }
+        if (i == 0 && operand.len == 0) {
+            ptn_string_operand_free(operand);
+            free(argv);
+            ptn_throw_exception(runtime, "ValueError", "First element must contain a non-empty program name");
+            return NULL;
+        }
+        argv[i] = ptn_duplicate_string_len(operand.data, operand.len);
+        if (i == 0) {
+            *display_command_out = ptn_duplicate_string_len(operand.data, operand.len);
+        }
+        ptn_string_operand_free(operand);
+    }
+    argv[array->len] = NULL;
+    return argv;
+}
+
+static void ptn_process_free_argv(char **argv) {
+    if (argv == NULL) {
+        return;
+    }
+    for (size_t i = 0; argv[i] != NULL; i++) {
+        free(argv[i]);
+    }
+    free(argv);
+}
+
+static char *ptn_process_env_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_duplicate_string_len(key.as.string, key.string_len);
+    }
+    char buffer[64];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_duplicate_string(buffer);
+}
+
+static char **ptn_process_build_envp(PtnRuntime *runtime, PtnValue env_value, size_t line) {
+    PtnValue env = ptn_value_deref(env_value);
+    if (env.type == PTN_NULL) {
+        return NULL;
+    }
+    if (env.type != PTN_ARRAY) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "proc_open(): Argument #5 ($env_vars) must be of type ?array, string given"
+        );
+        return NULL;
+    }
+    PtnArray *array = env.as.array;
+    if (array->len > (SIZE_MAX / sizeof(char *)) - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char **envp = calloc(array->len + 1, sizeof(char *));
+    if (envp == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        char *key = ptn_process_env_key(array->entries[i].key);
+        PtnStringOperand value =
+            ptn_value_to_string_operand_with_runtime(runtime, array->entries[i].value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(value);
+            free(key);
+            for (size_t j = 0; j < i; j++) {
+                free(envp[j]);
+            }
+            free(envp);
+            return NULL;
+        }
+        if (memchr(key, '\0', strlen(key)) != NULL ||
+            memchr(value.data, '\0', value.len) != NULL) {
+            ptn_string_operand_free(value);
+            free(key);
+            continue;
+        }
+        size_t key_len = strlen(key);
+        if (key_len > SIZE_MAX - value.len - 2) {
+            ptn_abort_out_of_memory();
+        }
+        envp[i] = malloc(key_len + value.len + 2);
+        if (envp[i] == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(envp[i], key, key_len);
+        envp[i][key_len] = '=';
+        memcpy(envp[i] + key_len + 1, value.data, value.len);
+        envp[i][key_len + value.len + 1] = '\0';
+        ptn_string_operand_free(value);
+        free(key);
+    }
+    envp[array->len] = NULL;
+    return envp;
+}
+
+static void ptn_process_free_envp(char **envp) {
+    if (envp == NULL) {
+        return;
+    }
+    for (size_t i = 0; envp[i] != NULL; i++) {
+        free(envp[i]);
+    }
+    free(envp);
+}
+
+static const char *ptn_process_env_lookup(char **envp, const char *name) {
+    size_t name_len = strlen(name);
+    char **source = envp == NULL ? PTN_ENVIRON : envp;
+    if (source == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; source[i] != NULL; i++) {
+        if (strncmp(source[i], name, name_len) == 0 && source[i][name_len] == '=') {
+            return source[i] + name_len + 1;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_process_exec_path_search(char **argv, char **envp) {
+    const char *program = argv[0];
+    if (strchr(program, '/') != NULL) {
+        execve(program, argv, envp == NULL ? PTN_ENVIRON : envp);
+        return;
+    }
+    const char *path = ptn_process_env_lookup(envp, "PATH");
+    if (path == NULL || path[0] == '\0') {
+        path = "/bin:/usr/bin";
+    }
+    const char *cursor = path;
+    while (1) {
+        const char *colon = strchr(cursor, ':');
+        size_t dir_len = colon == NULL ? strlen(cursor) : (size_t)(colon - cursor);
+        size_t program_len = strlen(program);
+        char *candidate = malloc(dir_len + program_len + 2);
+        if (candidate == NULL) {
+            _exit(127);
+        }
+        if (dir_len == 0) {
+            candidate[0] = '.';
+            candidate[1] = '/';
+            memcpy(candidate + 2, program, program_len + 1);
+        } else {
+            memcpy(candidate, cursor, dir_len);
+            candidate[dir_len] = '/';
+            memcpy(candidate + dir_len + 1, program, program_len + 1);
+        }
+        execve(candidate, argv, envp == NULL ? PTN_ENVIRON : envp);
+        free(candidate);
+        if (colon == NULL) {
+            break;
+        }
+        cursor = colon + 1;
+    }
+}
+
+static void ptn_process_child_apply_descriptors(PtnProcessDescriptorList *list) {
+    for (size_t i = 0; i < list->len; i++) {
+        PtnProcessDescriptor *descriptor = &list->items[i];
+        if (descriptor->is_redirect || descriptor->child_fd < 0) {
+            continue;
+        }
+        if (descriptor->child_fd != descriptor->target_fd) {
+            if (dup2(descriptor->child_fd, descriptor->target_fd) < 0) {
+                _exit(127);
+            }
+        }
+    }
+    for (size_t i = 0; i < list->len; i++) {
+        PtnProcessDescriptor *descriptor = &list->items[i];
+        if (!descriptor->is_redirect) {
+            continue;
+        }
+        if (dup2(descriptor->redirect_fd, descriptor->target_fd) < 0) {
+            _exit(127);
+        }
+    }
+    for (size_t i = 0; i < list->len; i++) {
+        PtnProcessDescriptor *descriptor = &list->items[i];
+        if (descriptor->parent_fd >= 0) {
+            close(descriptor->parent_fd);
+        }
+        if (descriptor->child_fd >= 0 && descriptor->child_fd != descriptor->target_fd) {
+            close(descriptor->child_fd);
+        }
+    }
+}
+
+static PtnValue ptn_process_parent_streams_value(
+    PtnRuntime *runtime,
+    PtnProcessDescriptorList *list,
+    PtnProcessData *process_data,
+    pid_t child,
+    size_t line
+) {
+    PtnValue pipes = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < list->len; i++) {
+        PtnProcessDescriptor *descriptor = &list->items[i];
+        if (!descriptor->has_parent || descriptor->parent_fd < 0) {
+            continue;
+        }
+        char uri[64];
+        int written = snprintf(uri, sizeof(uri), "php://fd/%d", descriptor->parent_fd);
+        if (written < 0 || (size_t)written >= sizeof(uri)) {
+            ptn_abort_out_of_memory();
+        }
+        FILE *stream = fdopen(descriptor->parent_fd, descriptor->parent_mode);
+        descriptor->parent_fd = -1;
+        if (stream == NULL) {
+            kill(child, SIGTERM);
+            (void)waitpid(child, NULL, 0);
+            ptn_value_destroy(&pipes);
+            ptn_emit_warning(&runtime->diagnostics, "proc_open(): unable to open parent pipe stream", line);
+            return ptn_bool(0);
+        }
+        PtnResource *resource = ptn_resource_new_stream(stream, uri, descriptor->parent_mode);
+        ptn_process_data_retain_pipe(process_data, resource);
+        ptn_array_set_entry(
+            pipes.as.array,
+            ptn_array_int_key((int64_t)descriptor->target_fd),
+            ptn_resource(resource)
+        );
+    }
+    return pipes;
+}
+
+static char *ptn_process_cwd_arg(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 4 || ptn_value_deref(args[3]).type == PTN_NULL) {
+        return NULL;
+    }
+    PtnStringOperand cwd = ptn_internal_expect_string_arg(runtime, "proc_open", 4, "cwd", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(cwd);
+        return NULL;
+    }
+    if (memchr(cwd.data, '\0', cwd.len) != NULL) {
+        ptn_string_operand_free(cwd);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "proc_open(): Argument #4 ($cwd) must not contain any null bytes"
+        );
+        return NULL;
+    }
+    char *result = ptn_duplicate_string_len(cwd.data, cwd.len);
+    ptn_string_operand_free(cwd);
+    return result;
+}
+
+static PtnValue ptn_internal_proc_open(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue command_value = ptn_value_deref(args[0]);
+    int command_is_array = command_value.type == PTN_ARRAY;
+    char *display_command = NULL;
+    char **argv = NULL;
+    PtnStringOperand command_string = {0};
+    if (command_is_array) {
+        argv = ptn_process_build_argv(runtime, args[0], &display_command, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_process_free_argv(argv);
+            free(display_command);
+            return ptn_null();
+        }
+    } else {
+        command_string = ptn_internal_expect_string_arg(runtime, "proc_open", 1, "command", args[0], line);
+        if (!ptn_shell_validate_command(runtime, "proc_open", command_string)) {
+            ptn_string_operand_free(command_string);
+            return ptn_null();
+        }
+        display_command = ptn_duplicate_string_len(command_string.data, command_string.len);
+    }
+
+    PtnProcessDescriptorList descriptors;
+    ptn_process_descriptor_list_init(&descriptors);
+    if (!ptn_process_parse_descriptor_spec(runtime, args[1], &descriptors, line)) {
+        ptn_process_descriptor_list_free(&descriptors);
+        ptn_process_free_argv(argv);
+        if (!command_is_array) {
+            ptn_string_operand_free(command_string);
+        }
+        free(display_command);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
+
+    char *cwd = ptn_process_cwd_arg(runtime, argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_process_descriptor_list_free(&descriptors);
+        ptn_process_free_argv(argv);
+        if (!command_is_array) {
+            ptn_string_operand_free(command_string);
+        }
+        free(display_command);
+        free(cwd);
+        return ptn_null();
+    }
+
+    char **envp = NULL;
+    if (argc >= 5) {
+        envp = ptn_process_build_envp(runtime, args[4], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_process_descriptor_list_free(&descriptors);
+            ptn_process_free_argv(argv);
+            if (!command_is_array) {
+                ptn_string_operand_free(command_string);
+            }
+            free(display_command);
+            free(cwd);
+            return ptn_null();
+        }
+    }
+
+    pid_t child = fork();
+    if (child < 0) {
+        ptn_emit_warning(&runtime->diagnostics, "proc_open(): unable to fork child process", line);
+        ptn_process_descriptor_list_free(&descriptors);
+        ptn_process_free_argv(argv);
+        ptn_process_free_envp(envp);
+        if (!command_is_array) {
+            ptn_string_operand_free(command_string);
+        }
+        free(display_command);
+        free(cwd);
+        return ptn_bool(0);
+    }
+
+    if (child == 0) {
+        if (cwd != NULL && chdir(cwd) != 0) {
+            _exit(127);
+        }
+        ptn_process_child_apply_descriptors(&descriptors);
+        if (command_is_array) {
+            ptn_process_exec_path_search(argv, envp);
+        } else {
+            char *shell_argv[4] = { (char *)"sh", (char *)"-c", (char *)command_string.data, NULL };
+            execve("/bin/sh", shell_argv, envp == NULL ? PTN_ENVIRON : envp);
+        }
+        _exit(127);
+    }
+
+    for (size_t i = 0; i < descriptors.len; i++) {
+        if (descriptors.items[i].child_fd >= 0) {
+            close(descriptors.items[i].child_fd);
+            descriptors.items[i].child_fd = -1;
+        }
+    }
+
+    PtnProcessData *process_data = calloc(1, sizeof(PtnProcessData));
+    if (process_data == NULL) {
+        kill(child, SIGTERM);
+        (void)waitpid(child, NULL, 0);
+        ptn_process_descriptor_list_free(&descriptors);
+        ptn_process_free_argv(argv);
+        ptn_process_free_envp(envp);
+        if (!command_is_array) {
+            ptn_string_operand_free(command_string);
+        }
+        free(display_command);
+        free(cwd);
+        ptn_abort_out_of_memory();
+    }
+    process_data->pid = child;
+    process_data->command = display_command;
+
+    PtnValue pipes = ptn_process_parent_streams_value(runtime, &descriptors, process_data, child, line);
+    if (ptn_value_deref(pipes).type == PTN_BOOL && !ptn_value_deref(pipes).as.boolean) {
+        ptn_process_descriptor_list_free(&descriptors);
+        ptn_process_free_argv(argv);
+        ptn_process_free_envp(envp);
+        if (!command_is_array) {
+            ptn_string_operand_free(command_string);
+        }
+        free(cwd);
+        ptn_process_data_free(process_data);
+        return ptn_bool(0);
+    }
+
+    if (args[2].type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, args[2].as.reference, pipes);
+    }
+    ptn_value_destroy(&pipes);
+
+    PtnResource *resource = ptn_resource_new_named("process");
+    resource->close_hook = ptn_process_close_hook;
+    resource->close_hook_data = process_data;
+    resource->close_hook_data_free = ptn_process_data_free;
+
+    ptn_process_descriptor_list_free(&descriptors);
+    ptn_process_free_argv(argv);
+    ptn_process_free_envp(envp);
+    if (!command_is_array) {
+        ptn_string_operand_free(command_string);
+    }
+    free(cwd);
+    return ptn_resource(resource);
+}
+
+static PtnValue ptn_internal_proc_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    PtnProcessData *data = ptn_process_data_from_value(runtime, "proc_close", value);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    ptn_process_data_close_pipes(data);
+    int exit_code = ptn_process_wait(data);
+    ptn_resource_close(value.as.resource);
+    return ptn_int(exit_code);
+}
+
+static PtnValue ptn_process_status_value(PtnProcessData *data, int running, int cached) {
+    PtnValue status = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("command"), ptn_string(data->command == NULL ? "" : data->command));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("pid"), ptn_int((int64_t)data->pid));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("cached"), ptn_bool(cached));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("running"), ptn_bool(running));
+#if !defined(_WIN32)
+    int signaled = data->has_status && WIFSIGNALED(data->status);
+    int stopped = data->has_status && WIFSTOPPED(data->status);
+    int exitcode = data->has_status && WIFEXITED(data->status) ? WEXITSTATUS(data->status) : -1;
+    int termsig = signaled ? WTERMSIG(data->status) : 0;
+    int stopsig = stopped ? WSTOPSIG(data->status) : 0;
+#else
+    int signaled = 0;
+    int stopped = 0;
+    int exitcode = data->has_status ? data->status : -1;
+    int termsig = 0;
+    int stopsig = 0;
+#endif
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("signaled"), ptn_bool(signaled));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("stopped"), ptn_bool(stopped));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("exitcode"), ptn_int(exitcode));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("termsig"), ptn_int(termsig));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("stopsig"), ptn_int(stopsig));
+    return status;
+}
+
+static PtnValue ptn_internal_proc_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnProcessData *data = ptn_process_data_from_value(runtime, "proc_get_status", args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    int had_status = data->has_status;
+    int running = ptn_process_poll(data);
+    return ptn_process_status_value(data, running, had_status);
+}
+
+static PtnValue ptn_internal_proc_terminate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnProcessData *data = ptn_process_data_from_value(runtime, "proc_terminate", args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    int64_t signal_number = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "proc_terminate", 2, "signal", args[1], line)
+        : SIGTERM;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (signal_number < 0 || signal_number > INT_MAX) {
+        return ptn_bool(0);
+    }
+    if (data->has_status) {
+        return ptn_bool(0);
+    }
+    return ptn_bool(kill(data->pid, (int)signal_number) == 0);
+}
+
 static size_t ptn_shell_command_max_len(void) {
 #ifdef _SC_ARG_MAX
     long value = sysconf(_SC_ARG_MAX);
@@ -96206,6 +97267,235 @@ static PtnValue ptn_internal_stream_socket_pair(PtnRuntime *runtime, size_t argc
 #endif
 }
 
+static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_blocking", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int enabled = ptn_is_truthy(args[1]);
+#if defined(_WIN32)
+    (void)resource;
+    (void)enabled;
+    return ptn_bool(0);
+#else
+    if (resource->stream == NULL) {
+        return ptn_bool(0);
+    }
+    int fd = fileno(resource->stream);
+    if (fd < 0) {
+        return ptn_bool(0);
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return ptn_bool(0);
+    }
+    if (enabled) {
+        flags &= ~O_NONBLOCK;
+    } else {
+        flags |= O_NONBLOCK;
+    }
+    return ptn_bool(fcntl(fd, F_SETFL, flags) == 0);
+#endif
+}
+
+static int ptn_stream_select_arg_array(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    PtnArray **array_out,
+    int *is_null_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *array_out = NULL;
+        *is_null_out = 1;
+        return 1;
+    }
+    *is_null_out = 0;
+    if (value.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type ?array, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *array_out = value.as.array;
+    return 1;
+}
+
+static int ptn_stream_select_add_array(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *array,
+    fd_set *set,
+    int *max_fd,
+    size_t line
+) {
+    if (array == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type != PTN_RESOURCE || !ptn_stream_resource_is_open(value.as.resource) || value.as.resource->stream == NULL) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): supplied resource is not a valid stream resource",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            return 0;
+        }
+        int fd = fileno(value.as.resource->stream);
+        if (fd < 0 || fd >= FD_SETSIZE) {
+            ptn_emit_warning(&runtime->diagnostics, "stream_select(): supplied stream file descriptor cannot be selected", line);
+            return 0;
+        }
+        FD_SET(fd, set);
+        if (fd > *max_fd) {
+            *max_fd = fd;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_stream_select_selected_array(PtnArray *array, fd_set *set) {
+    PtnValue selected = ptn_array_from_literal_entries(0, NULL);
+    if (array == NULL) {
+        return selected;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type != PTN_RESOURCE || value.as.resource->stream == NULL) {
+            continue;
+        }
+        int fd = fileno(value.as.resource->stream);
+        if (fd >= 0 && fd < FD_SETSIZE && FD_ISSET(fd, set)) {
+            ptn_array_set_entry(
+                selected.as.array,
+                ptn_array_key_clone(array->entries[i].key),
+                ptn_value_clone_deref(array->entries[i].value)
+            );
+        }
+    }
+    return selected;
+}
+
+static void ptn_stream_select_assign_result(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
+    if (arg.type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, arg.as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_internal_stream_select(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+#if defined(_WIN32)
+    (void)runtime;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
+#else
+    PtnArray *read_array = NULL;
+    PtnArray *write_array = NULL;
+    PtnArray *except_array = NULL;
+    int read_null = 0;
+    int write_null = 0;
+    int except_null = 0;
+    if (!ptn_stream_select_arg_array(runtime, "stream_select", 1, "read", args[0], &read_array, &read_null) ||
+        !ptn_stream_select_arg_array(runtime, "stream_select", 2, "write", args[1], &write_array, &write_null) ||
+        !ptn_stream_select_arg_array(runtime, "stream_select", 3, "except", args[2], &except_array, &except_null)) {
+        return ptn_null();
+    }
+
+    fd_set read_set;
+    fd_set write_set;
+    fd_set except_set;
+    FD_ZERO(&read_set);
+    FD_ZERO(&write_set);
+    FD_ZERO(&except_set);
+    int max_fd = -1;
+    if (!ptn_stream_select_add_array(runtime, "stream_select", read_array, &read_set, &max_fd, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", write_array, &write_set, &max_fd, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", except_array, &except_set, &max_fd, line)) {
+        return ptn_bool(0);
+    }
+    if (max_fd < 0) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_select(): no stream arrays were passed", line);
+        return ptn_bool(0);
+    }
+
+    struct timeval timeout;
+    struct timeval *timeout_ptr = NULL;
+    PtnValue seconds_value = ptn_value_deref(args[3]);
+    if (seconds_value.type != PTN_NULL) {
+        int64_t seconds = ptn_internal_expect_integer_arg(runtime, "stream_select", 4, "seconds", args[3], line);
+        int64_t microseconds = argc >= 5
+            ? ptn_internal_expect_integer_arg(runtime, "stream_select", 5, "microseconds", args[4], line)
+            : 0;
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (seconds < 0 || microseconds < 0) {
+            ptn_throw_exception(runtime, "ValueError", "stream_select(): timeout must be greater than or equal to 0");
+            return ptn_null();
+        }
+        timeout.tv_sec = (time_t)seconds;
+        timeout.tv_usec = (suseconds_t)microseconds;
+        timeout_ptr = &timeout;
+    }
+
+    int selected = 0;
+    do {
+        selected = select(
+            max_fd + 1,
+            read_array == NULL ? NULL : &read_set,
+            write_array == NULL ? NULL : &write_set,
+            except_array == NULL ? NULL : &except_set,
+            timeout_ptr
+        );
+    } while (selected < 0 && errno == EINTR);
+    if (selected < 0) {
+        ptn_emit_warning(&runtime->diagnostics, "stream_select(): unable to select on supplied streams", line);
+        return ptn_bool(0);
+    }
+
+    ptn_stream_select_assign_result(
+        runtime,
+        args[0],
+        read_null ? ptn_null() : ptn_stream_select_selected_array(read_array, &read_set)
+    );
+    ptn_stream_select_assign_result(
+        runtime,
+        args[1],
+        write_null ? ptn_null() : ptn_stream_select_selected_array(write_array, &write_set)
+    );
+    ptn_stream_select_assign_result(
+        runtime,
+        args[2],
+        except_null ? ptn_null() : ptn_stream_select_selected_array(except_array, &except_set)
+    );
+    return ptn_int(selected);
+#endif
+}
+
 static PtnValue ptn_internal_stream_socket_shutdown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_shutdown", args[0], line);
@@ -108220,6 +109510,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "preg_split", 2, 4, ptn_internal_preg_split },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
+        { "proc_close", 1, 1, ptn_internal_proc_close },
+        { "proc_get_status", 1, 1, ptn_internal_proc_get_status },
+        { "proc_open", 3, 6, ptn_internal_proc_open },
+        { "proc_terminate", 1, 2, ptn_internal_proc_terminate },
         { "printf", 1, PTN_VARIADIC_ARGS, ptn_internal_printf },
         { "property_exists", 2, 2, ptn_internal_property_exists },
         { "putenv", 1, 1, ptn_internal_putenv },
@@ -108343,6 +109637,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_select", 4, 5, ptn_internal_stream_select },
+        { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
         { "strip_tags", 1, 2, ptn_internal_strip_tags },
@@ -108774,6 +110070,21 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
         { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_PROC_OPEN_PARAMETERS[] = {
+        { "command", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "descriptor_spec", "array", "array", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "pipes", NULL, NULL, 0, 0, 1, 0, 0, NULL, NULL, NULL },
+        { "cwd", "string", "?string", 1, 0, 0, 0, 1, "null", NULL, NULL },
+        { "env_vars", "array", "?array", 1, 0, 0, 0, 1, "null", NULL, NULL },
+        { "options", "array", "?array", 1, 0, 0, 0, 1, "null", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_STREAM_SELECT_PARAMETERS[] = {
+        { "read", "array", "?array", 1, 0, 1, 0, 0, NULL, NULL, NULL },
+        { "write", "array", "?array", 1, 0, 1, 0, 0, NULL, NULL, NULL },
+        { "except", "array", "?array", 1, 0, 1, 0, 0, NULL, NULL, NULL },
+        { "seconds", "int", "?int", 1, 1, 0, 0, 1, NULL, NULL, NULL },
+        { "microseconds", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
+    };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",
@@ -108851,6 +110162,36 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "void",
             0,
             1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "proc_open")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_PROC_OPEN_PARAMETERS) / sizeof(PTN_INTERNAL_PROC_OPEN_PARAMETERS[0]),
+            3,
+            0,
+            PTN_INTERNAL_PROC_OPEN_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "stream_select")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_STREAM_SELECT_PARAMETERS) / sizeof(PTN_INTERNAL_STREAM_SELECT_PARAMETERS[0]),
+            4,
+            0,
+            PTN_INTERNAL_STREAM_SELECT_PARAMETERS,
+            0,
+            "int|false",
+            "int|false",
+            0,
+            0
         );
     }
     if (ptn_ascii_case_equal(function->name, "array_slice")) {

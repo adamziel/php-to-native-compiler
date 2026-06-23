@@ -3809,6 +3809,18 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     {
         return Some("count");
     }
+    if name.eq_ignore_ascii_case("proc_open") && argument_index == 2 {
+        return Some("pipes");
+    }
+    if name.eq_ignore_ascii_case("stream_select") && argument_index == 0 {
+        return Some("read");
+    }
+    if name.eq_ignore_ascii_case("stream_select") && argument_index == 1 {
+        return Some("write");
+    }
+    if name.eq_ignore_ascii_case("stream_select") && argument_index == 2 {
+        return Some("except");
+    }
     if name.eq_ignore_ascii_case("similar_text") && argument_index == 2 {
         return Some("percent");
     }
