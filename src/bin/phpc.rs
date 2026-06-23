@@ -455,7 +455,9 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.input_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_encoding") {
         ini.output_encoding = Some(normalize_ini_scalar(raw_value));
-    } else if name.eq_ignore_ascii_case("iconv.internal_encoding") {
+    } else if name.eq_ignore_ascii_case("iconv.internal_encoding")
+        || name.eq_ignore_ascii_case("iconv.internal_charset")
+    {
         ini.iconv_internal_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("iconv.input_encoding") {
         ini.iconv_input_encoding = Some(normalize_ini_scalar(raw_value));

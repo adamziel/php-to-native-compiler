@@ -23571,6 +23571,92 @@ var_dump(iconv_set_encoding('foo', 'UTF-8'));\n",
 }
 
 #[test]
+fn compile_iconv_mime_decode_and_headers_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-mime-decode-headers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-mime-decode-headers.php");
+    let output = root.join("iconv-mime-decode-headers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('iconv_mime_decode'), function_exists('iconv_mime_decode_headers'));\n\
+var_dump(defined('ICONV_MIME_DECODE_STRICT'), defined('ICONV_MIME_DECODE_CONTINUE_ON_ERROR'));\n\
+$folded = \"Subject: =?ISO-8859-1?Q?Pr=FCfung?=\\r\\n =?ISO-8859-1*de_DE?Q?Pr=FCfung?=\";\n\
+var_dump(iconv_mime_decode($folded, 0, 'UTF-8'));\n\
+$adjacent = \"=?ISO-8859-1?Q?Pr=FCfung?==?ISO-8859-1?Q?Pr=FCfung?=\";\n\
+var_dump(iconv_mime_decode($adjacent, ICONV_MIME_DECODE_STRICT, 'UTF-8'));\n\
+$headers = \"Subject: =?ISO-8859-1?Q?Pr=FCfung?=\\r\\n\\t=?ISO-8859-1?Q?Pr=FCfung?=\\r\\nReceived: one\\r\\nReceived: two\";\n\
+var_dump(iconv_mime_decode_headers($headers, 0, 'UTF-8'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(25) \"Subject: PrüfungPrüfung\"\n",
+            "string(52) \"=?ISO-8859-1?Q?Pr=FCfung?==?ISO-8859-1?Q?Pr=FCfung?=\"\n",
+            "array(2) {\n",
+            "  [\"Subject\"]=>\n",
+            "  string(16) \"PrüfungPrüfung\"\n",
+            "  [\"Received\"]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(3) \"one\"\n",
+            "    [1]=>\n",
+            "    string(3) \"two\"\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_iconv_mime_charset_length_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-iconv-mime-charset-length");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-mime-charset-length.php");
+    let output = root.join("iconv-mime-charset-length-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$encoding = str_repeat('/', 65);\n\
+var_dump(iconv_mime_decode('a', 0, $encoding));\n\
+var_dump(iconv_mime_decode_headers('a', 0, $encoding));\n\
+var_dump(iconv_mime_encode('Subject', 'a', ['input-charset' => $encoding]));\n\
+var_dump(iconv_mime_encode('Subject', 'a', ['output-charset' => $encoding]));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: iconv_mime_decode(): Encoding parameter exceeds the maximum allowed length of 64 characters in ptn on line 3\n",
+            "bool(false)\n",
+            "\nWarning: iconv_mime_decode_headers(): Encoding parameter exceeds the maximum allowed length of 64 characters in ptn on line 4\n",
+            "bool(false)\n",
+            "\nWarning: iconv_mime_encode(): Encoding parameter exceeds the maximum allowed length of 64 characters in ptn on line 5\n",
+            "bool(false)\n",
+            "\nWarning: iconv_mime_encode(): Encoding parameter exceeds the maximum allowed length of 64 characters in ptn on line 6\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
     let root = temp_dir("ptn-native-mb-strimwidth-marker");
     fs::create_dir_all(&root).unwrap();
@@ -56905,7 +56991,7 @@ var_dump(iconv_get_encoding('all'));\n",
         .arg("-d")
         .arg("output_encoding=")
         .arg("-d")
-        .arg("iconv.internal_encoding=CP1252")
+        .arg("iconv.internal_charset=CP1252")
         .arg("-d")
         .arg("iconv.input_encoding=EUC-JP")
         .arg("-d")
