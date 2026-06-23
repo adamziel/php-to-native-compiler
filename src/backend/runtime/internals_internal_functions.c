@@ -122397,6 +122397,8 @@ typedef struct {
     PtnValue functions;
     PtnValue object;
     char *class_name;
+    size_t class_ctor_argc;
+    PtnValue *class_ctor_args;
 } PtnSoapServerData;
 
 typedef struct {
@@ -122415,7 +122417,25 @@ static void ptn_soap_server_data_free(void *raw) {
     ptn_value_destroy(&data->functions);
     ptn_value_destroy(&data->object);
     free(data->class_name);
+    for (size_t i = 0; i < data->class_ctor_argc; i++) {
+        ptn_value_destroy(&data->class_ctor_args[i]);
+    }
+    free(data->class_ctor_args);
     free(data);
+}
+
+static void ptn_soap_server_clear_class_binding(PtnSoapServerData *data) {
+    if (data == NULL) {
+        return;
+    }
+    free(data->class_name);
+    data->class_name = NULL;
+    for (size_t i = 0; i < data->class_ctor_argc; i++) {
+        ptn_value_destroy(&data->class_ctor_args[i]);
+    }
+    free(data->class_ctor_args);
+    data->class_ctor_args = NULL;
+    data->class_ctor_argc = 0;
 }
 
 static PtnSoapServerData *ptn_soap_server_data_new(PtnValue wsdl, PtnValue options) {
@@ -122430,6 +122450,8 @@ static PtnSoapServerData *ptn_soap_server_data_new(PtnValue wsdl, PtnValue optio
     data->functions = ptn_array_from_literal_entries(0, NULL);
     data->object = ptn_null();
     data->class_name = NULL;
+    data->class_ctor_argc = 0;
+    data->class_ctor_args = NULL;
     return data;
 }
 
@@ -122613,8 +122635,20 @@ static PtnValue ptn_soap_server_set_class(
         return ptn_null();
     }
     const char *resolved = ptn_runtime_resolve_class_alias(runtime, class_name);
-    free(data->class_name);
+    ptn_soap_server_clear_class_binding(data);
     data->class_name = ptn_duplicate_string(resolved == NULL ? class_name : resolved);
+    if (argc > 1) {
+        data->class_ctor_argc = argc - 1;
+        data->class_ctor_args = calloc(data->class_ctor_argc, sizeof(PtnValue));
+        if (data->class_ctor_args == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < data->class_ctor_argc; i++) {
+            data->class_ctor_args[i] = ptn_value_clone_deref(args[i + 1]);
+        }
+    }
+    ptn_value_destroy(&data->object);
+    data->object = ptn_null();
     free(class_name);
     return ptn_null();
 }
@@ -122662,8 +122696,7 @@ static PtnValue ptn_soap_server_set_object(
     PtnValue replacement = ptn_value_clone_deref(object);
     ptn_value_destroy(&data->object);
     data->object = replacement;
-    free(data->class_name);
-    data->class_name = NULL;
+    ptn_soap_server_clear_class_binding(data);
     return ptn_null();
 }
 
@@ -124210,23 +124243,36 @@ static PtnValue ptn_soap_server_handle(
         return ptn_null();
     }
     PtnValue result = ptn_null();
-    if (data != NULL && data->class_name != NULL) {
-        PtnValue service = ptn_declared_class_new_instance(runtime, data->class_name, 0, NULL, line);
-        if (runtime->exceptions->active_exception == NULL && ptn_value_deref(service).type == PTN_OBJECT) {
-            PtnValue callable = ptn_array_from_literal_entries(0, NULL);
-            ptn_array_set_entry(callable.as.array, ptn_array_int_key(0), ptn_value_clone(service));
-            ptn_array_set_entry(
-                callable.as.array,
-                ptn_array_int_key(1),
-                ptn_owned_string(ptn_duplicate_string(method_name))
-            );
-            result = ptn_call_callable(runtime, callable, call_argc, call_args, line, 0);
-            ptn_value_destroy(&callable);
-        }
-        ptn_value_destroy(&service);
+    PtnValue service = ptn_null();
+    int has_service = 0;
+    if (data != NULL && ptn_value_deref(data->object).type == PTN_OBJECT) {
+        service = ptn_value_clone_deref(data->object);
+        has_service = 1;
+    } else if (data != NULL && data->class_name != NULL) {
+        service = ptn_declared_class_new_instance(
+            runtime,
+            data->class_name,
+            data->class_ctor_argc,
+            data->class_ctor_args,
+            line
+        );
+        has_service = runtime->exceptions->active_exception == NULL &&
+            ptn_value_deref(service).type == PTN_OBJECT;
+    }
+    if (has_service) {
+        PtnValue callable = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(callable.as.array, ptn_array_int_key(0), ptn_value_clone(service));
+        ptn_array_set_entry(
+            callable.as.array,
+            ptn_array_int_key(1),
+            ptn_owned_string(ptn_duplicate_string(method_name))
+        );
+        result = ptn_call_callable(runtime, callable, call_argc, call_args, line, 0);
+        ptn_value_destroy(&callable);
     } else if (ptn_soap_server_function_registered(runtime, data, method_name, line)) {
         result = ptn_call_function(runtime, method_name, call_argc, call_args, line);
     }
+    ptn_value_destroy(&service);
     for (size_t i = 0; i < call_argc; i++) {
         ptn_value_destroy(&call_args[i]);
     }

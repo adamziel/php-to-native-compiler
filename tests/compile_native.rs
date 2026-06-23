@@ -42801,6 +42801,81 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap_server_setclass_constructor_and_setobject_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-server-service-binding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-server-service-binding.php");
+    let output = root.join("soap-server-service-binding-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ClassService {
+    private string $value;
+
+    function __construct(string $prefix) {
+        $this->value = $prefix . " World";
+    }
+
+    function test() {
+        return $this->value;
+    }
+}
+
+class ObjectService {
+    function test() {
+        return "Object World";
+    }
+}
+
+$request = <<<XML
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<SOAP-ENV:Envelope
+  SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SOAP-ENV:Body>
+    <ns1:test xmlns:ns1="http://testuri.org" />
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://testuri.org']);
+$server->setClass(ClassService::class, "Hello");
+$server->handle($request);
+
+$server = new SoapServer(null, ['uri' => 'http://testuri.org']);
+$server->setObject(new ObjectService());
+$server->handle($request);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<return xsi:type=\"xsd:string\">Hello World</return>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<return xsi:type=\"xsd:string\">Object World</return>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("class_ctor_args"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();
