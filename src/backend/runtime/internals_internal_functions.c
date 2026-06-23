@@ -167228,6 +167228,8 @@ static int ptn_dynamic_execute_try_catch_statement(
         return 0;
     }
     size_t catch_cursor = try_close + 1;
+    size_t catch_header_pos = ptn_eval_skip_ws(code, end, catch_cursor);
+    size_t catch_line = ptn_eval_line_for_pos(code, catch_header_pos, base_line);
     char *catch_type = NULL;
     char *catch_variable = NULL;
     if (!ptn_dynamic_parse_catch_header(code, end, &catch_cursor, &catch_type, &catch_variable)) {
@@ -167249,6 +167251,7 @@ static int ptn_dynamic_execute_try_catch_statement(
 
     PtnTryFrame frame;
     int frame_active = 1;
+    volatile int catch_active = 0;
     int ok = 1;
     ptn_try_frame_push(runtime, &frame);
     if (setjmp(frame.jump) == 0) {
@@ -167265,14 +167268,31 @@ static int ptn_dynamic_execute_try_catch_statement(
         );
         ptn_try_frame_pop(runtime, &frame);
         frame_active = 0;
+    } else if (catch_active) {
+        if (frame_active) {
+            ptn_try_frame_pop(runtime, &frame);
+            frame_active = 0;
+        }
+        catch_active = 0;
+        ptn_rethrow_exception(runtime);
     } else {
         ptn_runtime_clear_temporary_roots(runtime);
     }
 
     if (ptn_runtime_has_active_exception(runtime)) {
         if (ptn_exception_matches(runtime, catch_type)) {
-            ptn_runtime_write_variable(runtime, catch_variable, ptn_current_exception_value(runtime));
-            ptn_clear_exception(runtime);
+            catch_active = 1;
+            if (!ptn_runtime_bind_catch_variable(runtime, catch_variable, catch_line)) {
+                catch_active = 0;
+                if (frame_active) {
+                    ptn_try_frame_pop(runtime, &frame);
+                    frame_active = 0;
+                }
+                ptn_rethrow_exception(runtime);
+                ok = 1;
+            } else {
+                catch_active = 0;
+            }
             if (frame_active) {
                 ptn_try_frame_pop(runtime, &frame);
                 frame_active = 0;

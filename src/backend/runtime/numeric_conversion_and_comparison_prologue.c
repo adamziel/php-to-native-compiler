@@ -898,18 +898,30 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
     return snapshot;
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_write_variable_result_at(PtnRuntime *runtime, const char *name, PtnValue value, size_t line) {
     PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
     PtnValue current;
     if (ptn_symbols_get(symbols, name, &current) && current.type == PTN_REFERENCE) {
-        if (ptn_reference_assign(runtime, current.as.reference, value)) {
-            return ptn_value_clone(current.as.reference->value);
+        PtnValue result = ptn_null();
+        if (ptn_reference_assign_result_with_context_at(
+            runtime,
+            current.as.reference,
+            value,
+            1,
+            line,
+            &result
+        )) {
+            return result;
         }
         return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
     ptn_symbols_set_with_runtime_scope(symbols, name, result, runtime);
     return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime, const char *name, PtnValue value) {
+    return ptn_runtime_write_variable_result_at(runtime, name, value, 0);
 }
 
 static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -7312,6 +7324,35 @@ static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
 static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const char *name, size_t line) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL
+    ) {
+        return 1;
+    }
+    PtnException *caught_exception = runtime->exceptions->active_exception;
+    ptn_exception_retain(caught_exception);
+    runtime->exceptions->active_exception = NULL;
+    ptn_exception_free(caught_exception);
+
+    PtnTryFrame frame;
+    int ok = 1;
+    ptn_try_frame_push(runtime, &frame);
+    if (setjmp(frame.jump) == 0) {
+        PtnValue caught_value = ptn_exception_borrow(caught_exception);
+        PtnValue result = ptn_runtime_write_variable_result_at(runtime, name, caught_value, line);
+        ptn_value_destroy(&result);
+        ptn_try_frame_pop(runtime, &frame);
+    } else {
+        ok = 0;
+        ptn_try_frame_pop(runtime, &frame);
+    }
+    ptn_exception_free(caught_exception);
+    return ok && runtime->exceptions->active_exception == NULL;
 }
 
 static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
