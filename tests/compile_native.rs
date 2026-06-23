@@ -38561,6 +38561,14 @@ $reader = new XMLReader();
 $reader->XML('<root att/>');
 var_dump($reader->read());
 dump_errors_once();
+
+$bad = simplexml_load_string('<root><item></root>');
+var_dump($bad);
+foreach (libxml_get_errors() as $error) {
+    echo 'SimpleXML:', $error->code, ':', trim($error->message), ':', $error->line, "\n";
+}
+libxml_clear_errors();
+
 var_dump(libxml_get_last_error());
 libxml_use_internal_errors(false);
 
@@ -38585,6 +38593,7 @@ var_dump($dom->getElementsByTagName('bar')->item(0)->getLineNo());
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("bool(true)\nbool(false)\nLibXMLError:Specification mandate"));
+    assert!(stdout.contains("bool(false)\nSimpleXML:76:Opening and ending tag mismatch"));
     assert!(
         stdout.contains("bool(false)\nbool(true)\nint(65540)\n"),
         "{stdout}"

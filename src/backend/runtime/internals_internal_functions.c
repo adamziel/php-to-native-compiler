@@ -139111,10 +139111,17 @@ static PTN_UNUSED int ptn_simplexml_debug_properties(
 
 static PtnValue ptn_simplexml_from_bytes(
     PtnRuntime *runtime,
+    const char *function_name,
     const char *data,
     size_t len,
+    const char *url,
+    int options,
+    size_t line,
     const char *class_name
 ) {
+    if (!ptn_dom_libxml_accepts_document_source(runtime, function_name, data, len, url, options, line)) {
+        return ptn_bool(0);
+    }
     PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
     int ok = ptn_xml_parse_document_into(runtime, document, data, len);
     if (!ok) {
@@ -139157,7 +139164,17 @@ static PtnValue ptn_internal_simplexml_load_string(PtnRuntime *runtime, size_t a
         ptn_string_operand_free(source);
         return ptn_null();
     }
-    PtnValue result = ptn_simplexml_from_bytes(runtime, source.data, source.len, class_name);
+    int options = argc >= 3 ? (int)ptn_value_to_integer(args[2]) : 0;
+    PtnValue result = ptn_simplexml_from_bytes(
+        runtime,
+        "simplexml_load_string",
+        source.data,
+        source.len,
+        NULL,
+        options,
+        line,
+        class_name
+    );
     free(class_name);
     ptn_string_operand_free(source);
     return result;
@@ -139178,18 +139195,30 @@ static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t arg
     unsigned char *bytes = NULL;
     size_t len = 0;
     int read_result = ptn_read_file_bytes(path, &bytes, &len);
-    free(path);
     if (read_result <= 0) {
+        free(path);
         free(bytes);
         return ptn_bool(0);
     }
     char *class_name = ptn_simplexml_class_name_arg(runtime, "simplexml_load_file", argc, args, line);
     if (class_name == NULL) {
+        free(path);
         free(bytes);
         return ptn_null();
     }
-    PtnValue result = ptn_simplexml_from_bytes(runtime, (const char *)bytes, len, class_name);
+    int options = argc >= 3 ? (int)ptn_value_to_integer(args[2]) : 0;
+    PtnValue result = ptn_simplexml_from_bytes(
+        runtime,
+        "simplexml_load_file",
+        (const char *)bytes,
+        len,
+        path,
+        options,
+        line,
+        class_name
+    );
     free(class_name);
+    free(path);
     free(bytes);
     return result;
 }
