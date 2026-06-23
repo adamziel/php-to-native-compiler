@@ -129856,6 +129856,7 @@ static int ptn_reflection_class_runtime_symbol_exists_after_autoload(
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     if (
         !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
+        !ptn_declared_runtime_class_is_linking(runtime, resolved_name) &&
         ptn_class_name_should_autoload(lookup_name)
     ) {
         runtime->call_site_line = line;
@@ -131194,6 +131195,12 @@ static char *ptn_reflection_class_target_name(
     size_t line
 );
 static void ptn_reflection_class_throw_missing_class(PtnRuntime *runtime, const char *name);
+static void ptn_reflection_class_throw_missing_class_at_constructor(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnValue *args,
+    size_t line
+);
 
 static PtnValue ptn_reflection_class_constant_object_from_name_as(
     PtnRuntime *runtime,
@@ -131474,6 +131481,35 @@ static void ptn_reflection_class_throw_missing_class(PtnRuntime *runtime, const 
     ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
 }
 
+static void ptn_reflection_class_throw_missing_class_at_constructor(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnValue *args,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "Class \"%s\" does not exist", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Class \"%s\" does not exist", name);
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "ReflectionException",
+        message,
+        runtime->source_path,
+        line,
+        "ReflectionClass->__construct",
+        runtime->source_path,
+        line,
+        1,
+        args
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_class_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -131508,6 +131544,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     if (
         !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
+        !ptn_declared_runtime_class_is_linking(runtime, resolved_name) &&
         ptn_class_name_should_autoload(lookup_name)
     ) {
         runtime->call_site_line = line;
@@ -131519,7 +131556,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
         resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     }
     if (!ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name)) {
-        ptn_reflection_class_throw_missing_class(runtime, name);
+        ptn_reflection_class_throw_missing_class_at_constructor(runtime, name, args, line);
         free(name);
         return ptn_null();
     }

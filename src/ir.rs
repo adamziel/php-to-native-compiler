@@ -108,6 +108,7 @@ pub struct ClassDeclarationFatal {
 struct ClassNameEntry {
     source_file: String,
     name: String,
+    line: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1214,6 +1215,7 @@ impl<'a> LoweringContext<'a> {
             .map(|class| ClassNameEntry {
                 source_file: source_file.clone(),
                 name: class.name.clone(),
+                line: class.span.line,
             })
             .collect();
         let runtime_class_names = program
@@ -1250,6 +1252,7 @@ impl<'a> LoweringContext<'a> {
                 .extend(include.program.classes.iter().map(|class| ClassNameEntry {
                     source_file: include.source_file.clone(),
                     name: class.name.clone(),
+                    line: class.span.line,
                 }));
             self.runtime_class_names.extend(
                 include
@@ -1426,6 +1429,17 @@ impl<'a> LoweringContext<'a> {
             })
     }
 
+    fn class_index_by_declaration(&self, name: &str, line: usize) -> Option<usize> {
+        self.class_names
+            .iter()
+            .position(|class_name| {
+                class_name.source_file == self.source_file
+                    && class_name.line == line
+                    && class_name.name.eq_ignore_ascii_case(name)
+            })
+            .or_else(|| self.class_index_by_name(name))
+    }
+
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
         let previous_source_file =
             std::mem::replace(&mut self.source_file, include.source_file.clone());
@@ -1459,7 +1473,8 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .filter(|class| !class.is_conditionally_declared)
         {
-            if let Some(class_index) = self.class_index_by_name(&class.name) {
+            if let Some(class_index) = self.class_index_by_declaration(&class.name, class.span.line)
+            {
                 instructions.push(Instruction::EarlyDeclareClass {
                     class_index,
                     line: class.span.line,
@@ -2089,7 +2104,7 @@ impl<'a> LoweringContext<'a> {
             match statement {
                 Statement::Empty { .. } => {}
                 Statement::ClassDeclaration { name, span, .. } => {
-                    if let Some(class_index) = self.class_index_by_name(name) {
+                    if let Some(class_index) = self.class_index_by_declaration(name, span.line) {
                         let declaration_key =
                             class_runtime_declaration_key(&self.source_file, name);
                         if self.runtime_class_names.contains(&declaration_key) {

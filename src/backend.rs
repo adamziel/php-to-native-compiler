@@ -7511,7 +7511,82 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
-        out.push_str("    return runtime->declared_user_classes[index];\n");
+        out.push_str("    return runtime->declared_user_classes[index] == 1;\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_class_slot_linking(PtnRuntime *runtime, size_t index) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)index;\n");
+        out.push_str("    return 0;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+        out.push_str("    int state = runtime->declared_user_classes[index];\n");
+        out.push_str("    return state == 2 || state == 3;\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_class_slot_has_variance_dependency(PtnRuntime *runtime, size_t index) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)index;\n");
+        out.push_str("    return 0;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+        out.push_str("    return runtime->declared_user_classes[index] == 3;\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_class_is_linking(PtnRuntime *runtime, const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+    } else {
+        for (index, class) in classes.iter().enumerate() {
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && ptn_declared_runtime_class_slot_linking(runtime, ");
+            out.push_str(&index.to_string());
+            out.push_str(")) {\n");
+            out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency(PtnRuntime *runtime, const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
+        out.push_str("        return;\n");
+        out.push_str("    }\n");
+        for (index, class) in classes.iter().enumerate() {
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && runtime->declared_user_classes[");
+            out.push_str(&index.to_string());
+            out.push_str("] == 2) {\n");
+            out.push_str("        runtime->declared_user_classes[");
+            out.push_str(&index.to_string());
+            out.push_str("] = 3;\n");
+            out.push_str("    }\n");
+        }
     }
     out.push_str("}\n");
 
@@ -7526,9 +7601,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -7564,9 +7641,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -7583,9 +7662,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
@@ -7625,9 +7706,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -7689,9 +7772,11 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
@@ -7809,11 +7894,64 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str("        if (ptn_declared_runtime_class_slot_available(runtime, ");
         out.push_str(&index.to_string());
-        out.push_str(");\n");
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
         out.push_str("    }\n");
     }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_variance_type_available(PtnRuntime *runtime, const char *name, size_t line) {\n",
+    );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str(
+        "    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);\n",
+    );
+    out.push_str("    if (ptn_declared_runtime_class_is_linking(runtime, resolved_name)) {\n");
+    out.push_str(
+        "        ptn_declared_runtime_class_mark_variance_dependency(runtime, resolved_name);\n",
+    );
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    if (ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_declared_runtime_interface_exists(runtime, resolved_name)\n",
+    );
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str(
+        "        || ptn_internal_class_exists_name(resolved_name) || ptn_internal_interface_exists_name(resolved_name)\n",
+    );
+    out.push_str("#endif\n");
+    out.push_str("    ) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_class_name_should_autoload(lookup_name)) {\n");
+    out.push_str("        ptn_runtime_autoload_class(runtime, lookup_name, line);\n");
+    out.push_str("        if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("            ptn_rethrow_exception(runtime);\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);\n",
+    );
+    out.push_str(
+        "        if (ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_declared_runtime_interface_exists(runtime, resolved_name)\n",
+    );
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str(
+        "            || ptn_internal_class_exists_name(resolved_name) || ptn_internal_interface_exists_name(resolved_name)\n",
+    );
+    out.push_str("#endif\n");
+    out.push_str("        ) {\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_declared_runtime_class_is_linking(runtime, resolved_name)) {\n");
+    out.push_str("            ptn_declared_runtime_class_mark_variance_dependency(runtime, resolved_name);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -17942,7 +18080,7 @@ fn emit_runtime_return_signature_compatibility_validation(
         (return_type, parent_return_type)
     {
         if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
-            emit_runtime_signature_type_autoload(
+            let resolved_temp = emit_runtime_signature_type_autoload(
                 out,
                 candidate_name,
                 method.line,
@@ -17950,6 +18088,22 @@ fn emit_runtime_return_signature_compatibility_validation(
                 method_index,
                 type_temp_counter,
             );
+            out.push_str("        if (!ptn_declared_runtime_class_is_linking(&runtime, ");
+            out.push_str(&resolved_temp);
+            out.push_str(")) {\n");
+            emit_runtime_method_signature_compatibility_fatal_with_indent(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+                "            ",
+            );
+            out.push_str("        }\n");
+            return;
         }
     }
     emit_runtime_method_signature_compatibility_fatal(
@@ -18023,6 +18177,13 @@ fn emit_runtime_signature_type_autoload(
     out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
     out.push_str(&c_string(class_name));
     out.push_str("\");\n");
+    out.push_str("        if (ptn_declared_runtime_class_is_linking(&runtime, ");
+    out.push_str(&resolved_temp);
+    out.push_str(")) {\n");
+    out.push_str("            ptn_declared_runtime_class_mark_variance_dependency(&runtime, ");
+    out.push_str(&resolved_temp);
+    out.push_str(");\n");
+    out.push_str("        }\n");
     out.push_str("        if (!");
     out.push_str(&runtime_type_name_available_condition(&resolved_temp));
     out.push_str(" && ptn_class_name_should_autoload(");
@@ -18042,7 +18203,7 @@ fn emit_runtime_signature_type_autoload(
 
 fn runtime_type_name_available_condition(resolved_temp: &str) -> String {
     format!(
-        "(ptn_runtime_autoloading_class(&runtime, {0}) || ptn_declared_runtime_class_exists(&runtime, {0}) || ptn_declared_runtime_interface_exists(&runtime, {0}) || ptn_internal_class_exists_name({0}) || ptn_internal_interface_exists_name({0}))",
+        "(ptn_runtime_autoloading_class(&runtime, {0}) || ptn_declared_runtime_class_is_linking(&runtime, {0}) || ptn_declared_runtime_class_exists(&runtime, {0}) || ptn_declared_runtime_interface_exists(&runtime, {0}) || ptn_internal_class_exists_name({0}) || ptn_internal_interface_exists_name({0}))",
         resolved_temp
     )
 }
@@ -18058,6 +18219,31 @@ fn emit_runtime_method_signature_compatibility_fatal(
     parent_function: &FunctionDecl,
     source_path: &str,
 ) {
+    emit_runtime_method_signature_compatibility_fatal_with_indent(
+        out,
+        class,
+        method,
+        function,
+        parent_class,
+        parent_method,
+        parent_function,
+        source_path,
+        "        ",
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_method_signature_compatibility_fatal_with_indent(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    source_path: &str,
+    indent: &str,
+) {
     let message = format!(
         "Declaration of {}::{} must be compatible with {}::{}",
         class.name,
@@ -18065,7 +18251,7 @@ fn emit_runtime_method_signature_compatibility_fatal(
         parent_class.name,
         runtime_method_signature_display(parent_method, parent_function)
     );
-    emit_runtime_signature_fatal(out, &message, source_path, method.line, "        ");
+    emit_runtime_signature_fatal(out, &message, source_path, method.line, indent);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -22934,10 +23120,50 @@ fn emit_no_discard_callable_dispatch(
     out.push_str("}\n");
 }
 
+fn emit_declaration_dependency_exception_handling(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    class_index: usize,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str(indent);
+    out.push_str("if (ptn_declared_runtime_class_slot_has_variance_dependency(&runtime, ");
+    out.push_str(&class_index.to_string());
+    out.push_str(")) {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_emit_inheritance_variance_uncaught_exception(&runtime, runtime.exceptions->active_exception, \"");
+    out.push_str(&c_string(class_name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("    ptn_runtime_shutdown_before_exit(&runtime);\n");
+    out.push_str(indent);
+    out.push_str("    exit(255);\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    out.push_str(indent);
+    out.push_str("if (runtime.declared_user_classes != NULL) {\n");
+    out.push_str(indent);
+    out.push_str("    runtime.declared_user_classes[");
+    out.push_str(&class_index.to_string());
+    out.push_str("] = 0;\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    out.push_str(indent);
+    out.push_str("ptn_rethrow_exception(&runtime);\n");
+}
+
 fn emit_dependency_not_found_throw(
     out: &mut String,
     indent: &str,
     dependency_label: &str,
+    class_name: &str,
+    class_index: usize,
     resolved_name_temp: &str,
     source_path: &str,
     line: usize,
@@ -22956,8 +23182,14 @@ fn emit_dependency_not_found_throw(
     out.push_str("\", ");
     out.push_str(&line.to_string());
     out.push_str(");\n");
-    out.push_str(indent);
-    out.push_str("ptn_rethrow_exception(&runtime);\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        indent,
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
 }
 
 fn emit_parent_interface_kind_fatal(
@@ -23008,9 +23240,63 @@ fn emit_implemented_class_kind_fatal(
     out.push_str(");\n");
 }
 
+fn emit_declaration_dependency_autoload(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    class_index: usize,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    let frame_temp = format!(
+        "ptn_dependency_autoload_frame_{}_{}",
+        class_index, resolved_name_temp
+    );
+    out.push_str(indent);
+    out.push_str("PtnTryFrame ");
+    out.push_str(&frame_temp);
+    out.push_str(";\n");
+    out.push_str(indent);
+    out.push_str("ptn_try_frame_push(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("if (setjmp(");
+    out.push_str(&frame_temp);
+    out.push_str(".jump) == 0) {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_runtime_autoload_class(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("    ptn_try_frame_pop(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("} else {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_try_frame_pop(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        &format!("{indent}    "),
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
+    out.push_str(indent);
+    out.push_str("}\n");
+}
+
 fn emit_declare_parent_class_dependency_check(
     out: &mut String,
     class_name: &str,
+    class_index: usize,
     resolved_name_temp: &str,
     source_path: &str,
     line: usize,
@@ -23042,13 +23328,24 @@ fn emit_declare_parent_class_dependency_check(
         line,
     );
     out.push_str("            } else {\n");
-    out.push_str("                ptn_runtime_autoload_class(&runtime, ");
-    out.push_str(resolved_name_temp);
-    out.push_str(", ");
-    out.push_str(&line.to_string());
-    out.push_str(");\n");
+    emit_declaration_dependency_autoload(
+        out,
+        "                ",
+        class_name,
+        class_index,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
     out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
-    out.push_str("                    ptn_rethrow_exception(&runtime);\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        "                    ",
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
@@ -23083,6 +23380,8 @@ fn emit_declare_parent_class_dependency_check(
         out,
         "                ",
         "Class",
+        class_name,
+        class_index,
         resolved_name_temp,
         source_path,
         line,
@@ -23094,6 +23393,7 @@ fn emit_declare_parent_class_dependency_check(
 fn emit_declare_interface_dependency_check(
     out: &mut String,
     class_name: &str,
+    class_index: usize,
     resolved_name_temp: &str,
     source_path: &str,
     line: usize,
@@ -23125,13 +23425,24 @@ fn emit_declare_interface_dependency_check(
         line,
     );
     out.push_str("            } else {\n");
-    out.push_str("                ptn_runtime_autoload_class(&runtime, ");
-    out.push_str(resolved_name_temp);
-    out.push_str(", ");
-    out.push_str(&line.to_string());
-    out.push_str(");\n");
+    emit_declaration_dependency_autoload(
+        out,
+        "                ",
+        class_name,
+        class_index,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
     out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
-    out.push_str("                    ptn_rethrow_exception(&runtime);\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        "                    ",
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
@@ -23166,12 +23477,232 @@ fn emit_declare_interface_dependency_check(
         out,
         "                ",
         "Interface",
+        class_name,
+        class_index,
         resolved_name_temp,
         source_path,
         line,
     );
     out.push_str("            }\n");
     out.push_str("        }\n");
+}
+
+struct RuntimeVarianceTypeAvailabilityCheck {
+    type_name: String,
+    message: String,
+    line: usize,
+}
+
+fn method_runtime_signature_display(
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+) -> String {
+    let mut signature = String::new();
+    if function.return_by_ref {
+        signature.push('&');
+    }
+    signature.push_str(&method.name);
+    signature.push('(');
+    for (index, parameter) in function.parameters.iter().enumerate() {
+        if index > 0 {
+            signature.push_str(", ");
+        }
+        signature.push_str(&parameter_runtime_signature_display(parameter));
+    }
+    signature.push(')');
+    if let Some(return_type) = &function.return_type {
+        signature.push_str(": ");
+        signature.push_str(&type_hint_label(return_type));
+    }
+    signature
+}
+
+fn class_method_runtime_signature_display(
+    class_name: &str,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+) -> String {
+    let method_display = method_runtime_signature_display(method, function);
+    if function.return_by_ref {
+        format!(
+            "&{}::{}",
+            class_name,
+            method_display.trim_start_matches('&')
+        )
+    } else {
+        format!("{class_name}::{method_display}")
+    }
+}
+
+fn parameter_runtime_signature_display(parameter: &FunctionParameter) -> String {
+    let mut display = String::new();
+    if let Some(type_hint) = &parameter.type_hint {
+        display.push_str(&type_hint_label(type_hint));
+        display.push(' ');
+    }
+    if parameter.by_ref {
+        display.push('&');
+    }
+    if parameter.is_variadic {
+        display.push_str("...");
+    }
+    display.push('$');
+    display.push_str(&parameter.name);
+    display
+}
+
+fn collect_runtime_variance_type_names(
+    type_hint: &TypeHint,
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    match type_hint {
+        TypeHint::Class(name)
+            if !matches!(
+                name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+                "self" | "static" | "parent"
+            ) =>
+        {
+            let key = name.trim_start_matches('\\').to_ascii_lowercase();
+            if seen.insert(key) {
+                names.push(name.trim_start_matches('\\').to_string());
+            }
+        }
+        TypeHint::Nullable(inner) => collect_runtime_variance_type_names(inner, seen, names),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            for member in types {
+                collect_runtime_variance_type_names(member, seen, names);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn runtime_variance_type_names_for_pair(
+    function: &FunctionDecl,
+    parent_function: &FunctionDecl,
+) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut names = Vec::new();
+    let parameter_count = function
+        .parameters
+        .len()
+        .max(parent_function.parameters.len());
+    for index in 0..parameter_count {
+        if let Some(type_hint) = function
+            .parameters
+            .get(index)
+            .and_then(|parameter| parameter.type_hint.as_ref())
+        {
+            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+        }
+        if let Some(type_hint) = parent_function
+            .parameters
+            .get(index)
+            .and_then(|parameter| parameter.type_hint.as_ref())
+        {
+            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+        }
+    }
+    if let Some(type_hint) = &function.return_type {
+        collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+    }
+    if let Some(type_hint) = &parent_function.return_type {
+        collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+    }
+    names
+}
+
+fn append_runtime_variance_type_checks_for_pair(
+    checks: &mut Vec<RuntimeVarianceTypeAvailabilityCheck>,
+    emitted: &mut HashSet<String>,
+    class_name: &str,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class_name: &str,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+) {
+    let type_names = runtime_variance_type_names_for_pair(function, parent_function);
+    if type_names.is_empty() {
+        return;
+    }
+    let method_display = class_method_runtime_signature_display(class_name, method, function);
+    let parent_method_display =
+        class_method_runtime_signature_display(parent_class_name, parent_method, parent_function);
+    for type_name in type_names {
+        let key = format!(
+            "{}\0{}\0{}",
+            method.line,
+            method_display,
+            type_name.to_ascii_lowercase()
+        );
+        if !emitted.insert(key) {
+            continue;
+        }
+        checks.push(RuntimeVarianceTypeAvailabilityCheck {
+            message: format!(
+                "Could not check compatibility between {method_display} and {parent_method_display}, because class {type_name} is not available"
+            ),
+            type_name,
+            line: method.line,
+        });
+    }
+}
+
+fn class_runtime_variance_type_checks(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> Vec<RuntimeVarianceTypeAvailabilityCheck> {
+    let mut checks = Vec::new();
+    let mut emitted = HashSet::new();
+    for method in &class.methods {
+        if method.visibility == PropertyVisibility::Private {
+            continue;
+        }
+        let function = &functions[method.function_index];
+        if let Some((parent_class, parent_method)) =
+            find_runtime_visible_parent_method(class, &method.name, classes)
+        {
+            let parent_function = &functions[parent_method.function_index];
+            append_runtime_variance_type_checks_for_pair(
+                &mut checks,
+                &mut emitted,
+                &class.name,
+                method,
+                function,
+                &parent_class.name,
+                parent_method,
+                parent_function,
+            );
+        }
+        for interface_name in class_transitive_interfaces(class, classes) {
+            let Some(interface) = class_by_name(classes, interface_name) else {
+                continue;
+            };
+            if !interface.is_interface {
+                continue;
+            }
+            for parent_method in interface.methods.iter().filter(|candidate| {
+                candidate.visibility == PropertyVisibility::Public
+                    && candidate.name.eq_ignore_ascii_case(&method.name)
+            }) {
+                let parent_function = &functions[parent_method.function_index];
+                append_runtime_variance_type_checks_for_pair(
+                    &mut checks,
+                    &mut emitted,
+                    &class.name,
+                    method,
+                    function,
+                    &interface.name,
+                    parent_method,
+                    parent_function,
+                );
+            }
+        }
+    }
+    checks
 }
 
 fn emit_class_declaration_validation(
@@ -23206,6 +23737,7 @@ fn emit_class_declaration_validation(
         emit_declare_parent_class_dependency_check(
             out,
             &class.name,
+            class_index,
             &parent_temp,
             source_path,
             line,
@@ -23248,10 +23780,26 @@ fn emit_class_declaration_validation(
         emit_declare_interface_dependency_check(
             out,
             &class.name,
+            class_index,
             &interface_temp,
             source_path,
             line,
         );
+    }
+    for check in class_runtime_variance_type_checks(class, classes, functions) {
+        out.push_str("        if (!ptn_declared_runtime_variance_type_available(&runtime, \"");
+        out.push_str(&c_string(&check.type_name));
+        out.push_str("\", ");
+        out.push_str(&check.line.to_string());
+        out.push_str(")) {\n");
+        out.push_str("            ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(&check.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&check.line.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
     }
     emit_class_method_signature_compatibility_validation(
         out,
@@ -23829,6 +24377,21 @@ fn emit_instruction(
             out.push_str("    }\n");
         }
         Instruction::ValidateClass { class_index, line } => {
+            out.push_str("    int ptn_validate_class_marked_");
+            out.push_str(&class_index.to_string());
+            out.push_str(" = 0;\n");
+            out.push_str(
+                "    if (runtime.declared_user_classes != NULL && runtime.declared_user_classes[",
+            );
+            out.push_str(&class_index.to_string());
+            out.push_str("] == 0) {\n");
+            out.push_str("        runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 2;\n");
+            out.push_str("        ptn_validate_class_marked_");
+            out.push_str(&class_index.to_string());
+            out.push_str(" = 1;\n");
+            out.push_str("    }\n");
             emit_class_declaration_validation(
                 out,
                 &values.classes,
@@ -23837,6 +24400,17 @@ fn emit_instruction(
                 *line,
                 source_path,
             );
+            out.push_str("    if (ptn_validate_class_marked_");
+            out.push_str(&class_index.to_string());
+            out.push_str(
+                " && runtime.declared_user_classes != NULL && runtime.declared_user_classes[",
+            );
+            out.push_str(&class_index.to_string());
+            out.push_str("] == 2) {\n");
+            out.push_str("        runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 0;\n");
+            out.push_str("    }\n");
         }
         Instruction::EarlyDeclareClass { class_index, line } => {
             let class = &values.classes[*class_index];
@@ -23852,6 +24426,9 @@ fn emit_instruction(
             out.push_str("\")\n");
             out.push_str("#endif\n");
             out.push_str("        ) {\n");
+            out.push_str("            runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 2;\n");
             emit_class_declaration_validation(
                 out,
                 &values.classes,
@@ -23875,7 +24452,7 @@ fn emit_instruction(
             out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
             out.push_str("        if (runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
-            out.push_str("]) {\n");
+            out.push_str("] == 1) {\n");
             if *allow_predeclared || class.is_anonymous {
                 out.push_str(
                     "            /* This class was already declared before its statement was reached. */\n",
@@ -23907,7 +24484,7 @@ fn emit_instruction(
                 }
                 out.push_str("        } else if (runtime.declared_user_classes[");
                 out.push_str(&other_index.to_string());
-                out.push_str("]) {\n");
+                out.push_str("] == 1) {\n");
                 out.push_str("            char message[1024];\n");
                 out.push_str(
                     "            snprintf(message, sizeof(message), \"Cannot redeclare class ",
@@ -23955,7 +24532,7 @@ fn emit_instruction(
             out.push_str("        } else {\n");
             out.push_str("        runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
-            out.push_str("] = 1;\n");
+            out.push_str("] = 2;\n");
             emit_class_declaration_validation(
                 out,
                 &values.classes,
@@ -23964,6 +24541,9 @@ fn emit_instruction(
                 *line,
                 source_path,
             );
+            out.push_str("        runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 1;\n");
             out.push_str("        }\n");
             out.push_str("    }\n");
         }

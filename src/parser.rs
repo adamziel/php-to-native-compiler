@@ -14374,7 +14374,7 @@ fn validate_class_names(
     traits: &[TraitDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
-    let mut names = HashSet::new();
+    let mut names: HashMap<String, bool> = HashMap::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
         if lookup_name == "stdclass" {
@@ -14397,21 +14397,27 @@ fn validate_class_names(
                 kind: CompileWarningKind::Deprecation,
             });
         }
-        if !names.insert(lookup_name.clone()) {
+        let unconditionally_declared = !class.is_conditionally_declared;
+        if unconditionally_declared && names.get(&lookup_name).copied().unwrap_or(false) {
             return Err(Diagnostic::new(
                 format!("Cannot declare class {lookup_name}, because the name is already in use"),
                 Some(class.span),
             ));
         }
+        names
+            .entry(lookup_name)
+            .and_modify(|previous| *previous |= unconditionally_declared)
+            .or_insert(unconditionally_declared);
     }
     for trait_decl in traits {
         let lookup_name = trait_decl.name.to_ascii_lowercase();
-        if !names.insert(lookup_name.clone()) {
+        if names.get(&lookup_name).copied().unwrap_or(false) {
             return Err(Diagnostic::new(
                 format!("Cannot declare trait {lookup_name}, because the name is already in use"),
                 Some(trait_decl.span),
             ));
         }
+        names.insert(lookup_name, true);
     }
     Ok(())
 }
@@ -16647,6 +16653,11 @@ fn class_type_name_is_subtype(
     if candidate_name.eq_ignore_ascii_case(&target_name) {
         return true;
     }
+    if class_type_name_is_conditionally_declared(&candidate_name, classes)
+        || class_type_name_is_conditionally_declared(&target_name, classes)
+    {
+        return true;
+    }
     if builtin_class_type_is_subtype(&candidate_name, &target_name) {
         return true;
     }
@@ -16657,6 +16668,10 @@ fn class_type_name_is_subtype(
         return interface_type_extends(candidate, &target_name, classes, runtime_class_aliases);
     }
     class_type_extends_or_implements(candidate, &target_name, classes, runtime_class_aliases)
+}
+
+fn class_type_name_is_conditionally_declared(name: &str, classes: &[ClassDecl]) -> bool {
+    find_class(classes, name).is_some_and(|class| class.is_conditionally_declared)
 }
 
 fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> bool {
