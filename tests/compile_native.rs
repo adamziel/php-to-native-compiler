@@ -24616,6 +24616,7 @@ fn compile_mb_split_empty_pattern_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
 var_dump(mb_split(\"\", \"\"));\n\
 var_dump(mb_split(\"\", \"abc\"));\n\
 var_dump(mb_split(\"b\", \"abc\"));\n",
