@@ -22082,8 +22082,11 @@ var_dump(function_exists(\"strftime\"), function_exists(\"gmstrftime\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "2008-08-08 08:08:08 Friday\n\
+        "\nDeprecated: Function strftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 5\n\
+2008-08-08 08:08:08 Friday\n\
+\nDeprecated: Function gmstrftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 6\n\
 2008-08-08 08:08:08\n\
+\nDeprecated: Function strftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 7\n\
 \n\
 bool(true)\n\
 bool(true)\n"
@@ -22506,6 +22509,17 @@ echo $immutable->format('H:i:s.u e p'), '/', $changed->format('H:i:s.u e p'), "\
 $chicago = new DateTime('2020-03-10 12:00:00 America/Chicago');
 echo date_offset_get($chicago), ' ', $chicago->format('T P p'), "\n";
 
+date_default_timezone_set('America/Chicago');
+$spring = new DateTime('2020-03-08 01:30:00');
+echo $spring->setTime(2, 0)->format('Y-m-d H:i:s T/e - U'), "\n";
+$spring = new DateTime('2020-03-08 01:30:00');
+echo $spring->setTime(2, 30)->format('Y-m-d H:i:s T/e - U'), "\n";
+$spring = new DateTime('2020-03-08 01:30:00');
+echo $spring->setTime(3, 0)->format('Y-m-d H:i:s T/e - U'), "\n";
+$spring = new DateTime('2020-03-08 01:30:00');
+echo $spring->setTime(1, 59, 59)->format('Y-m-d H:i:s T/e - U'), "\n";
+date_default_timezone_set('UTC');
+
 echo gmdate('Y-m-d H:i:s', strtotime('1 Jul 06 14:27:30 +0200')), "\n";
 $parsed = date_parse('2009-02-27 10:00:00.5');
 echo $parsed['year'], ' ', $parsed['month'], ' ', $parsed['day'], ' ', $parsed['hour'], ' ', $parsed['fraction'], "\n";
@@ -22540,6 +22554,10 @@ echo $set->format('D M j'), "\n";
             "18:54:24.000000/01:02:03.456789\n",
             "12:13:14.987654 Z Z/05:06:07.000890 Z Z\n",
             "-18000 CDT -05:00 -05:00\n",
+            "2020-03-08 03:00:00 CDT/America/Chicago - 1583654400\n",
+            "2020-03-08 03:30:00 CDT/America/Chicago - 1583656200\n",
+            "2020-03-08 03:00:00 CDT/America/Chicago - 1583654400\n",
+            "2020-03-08 01:59:59 CST/America/Chicago - 1583654399\n",
             "2006-07-01 12:27:30\n",
             "2009 2 27 10 0.5\n",
             "bool(false)\n",

@@ -87433,6 +87433,18 @@ static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_strftime_named(PtnRuntime *runtime, const char *function_name, int use_gmt, size_t argc, const PtnValue *args, size_t line) {
+    char deprecation[128];
+    int written = snprintf(
+        deprecation,
+        sizeof(deprecation),
+        "Function %s() is deprecated since 8.1, use IntlDateFormatter::format() instead",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(deprecation)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, deprecation, line);
+
     PtnStringOperand format = ptn_internal_expect_string_arg(runtime, function_name, 1, "format", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(format);
@@ -92195,7 +92207,7 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         parts->tm_sec = (int)second;
         parts->tm_isdst = -1;
         time_t adjusted_wall = ptn_mktime_in_utc(parts);
-        int adjusted_offset = ptn_timezone_offset_for_name(data->timezone, adjusted_wall);
+        int adjusted_offset = ptn_timezone_offset_for_wall_timestamp(data->timezone, adjusted_wall);
         data->timestamp = adjusted_wall - adjusted_offset;
         data->microsecond = (int)microsecond;
         ptn_datetime_sync_properties(runtime, target, target.as.object->class_name, line);
