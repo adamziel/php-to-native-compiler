@@ -62840,6 +62840,41 @@ static void ptn_intl_set_error_message(PtnRuntime *runtime, const char *message)
     root->intl_last_error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
 }
 
+static int ptn_runtime_intl_error_level(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? 0 : root->intl_error_level;
+}
+
+static void ptn_runtime_set_intl_error_level(PtnRuntime *runtime, int error_level) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        root->intl_error_level = error_level;
+    }
+}
+
+static int ptn_runtime_intl_use_exceptions(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? 0 : root->intl_use_exceptions;
+}
+
+static void ptn_runtime_set_intl_use_exceptions(PtnRuntime *runtime, int use_exceptions) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        root->intl_use_exceptions = use_exceptions ? 1 : 0;
+    }
+}
+
+static void ptn_intl_signal_error(PtnRuntime *runtime, const char *message, size_t line) {
+    ptn_intl_set_error_message(runtime, message);
+    if (ptn_runtime_intl_use_exceptions(runtime)) {
+        ptn_throw_exception(runtime, "IntlException", message);
+        return;
+    }
+    if ((ptn_runtime_intl_error_level(runtime) & PTN_E_WARNING) != 0) {
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+}
+
 static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -65383,6 +65418,7 @@ typedef struct {
     const char *(*ucnv_getAvailableName)(int32_t);
     uint16_t (*ucnv_countAliases)(const char *, int32_t *);
     const char *(*ucnv_getAlias)(const char *, uint16_t, int32_t *);
+    const char *(*u_errorName)(int32_t);
     PtnIcuCollator *(*ucol_open)(const char *, int32_t *);
     void (*ucol_close)(PtnIcuCollator *);
     int32_t (*ucol_strcollUTF8)(const PtnIcuCollator *, const char *, int32_t, const char *, int32_t, int32_t *);
@@ -65534,6 +65570,7 @@ static PtnIcuApi *ptn_icu_load(void) {
             return NULL; \
         } \
     } while (0)
+    PTN_ICU_LOAD_UC(u_errorName, "u_errorName");
     PTN_ICU_LOAD_UC(ucnv_open, "ucnv_open");
     PTN_ICU_LOAD_UC(ucnv_close, "ucnv_close");
     PTN_ICU_LOAD_UC(ucnv_getName, "ucnv_getName");
@@ -65554,6 +65591,12 @@ static PtnIcuApi *ptn_icu_load(void) {
 #undef PTN_ICU_LOAD_UC
 #undef PTN_ICU_LOAD_I18N
     return &ptn_icu_api;
+}
+
+static const char *ptn_icu_error_name(int32_t status) {
+    PtnIcuApi *api = ptn_icu_load();
+    const char *name = api == NULL || api->u_errorName == NULL ? NULL : api->u_errorName(status);
+    return name == NULL || name[0] == '\0' ? "U_ZERO_ERROR" : name;
 }
 
 static char *ptn_icu_converter_canonical_name(const char *name) {
@@ -65577,8 +65620,12 @@ static PtnValue ptn_icu_transcode_bytes(
     const char *to_encoding,
     const char *from_encoding,
     const char *source,
-    size_t source_len
+    size_t source_len,
+    int32_t *status_out
 ) {
+    if (status_out != NULL) {
+        *status_out = PTN_ICU_ZERO_ERROR;
+    }
     PtnIcuApi *api = ptn_icu_load();
     if (api == NULL || source_len > (size_t)INT32_MAX) {
         return ptn_bool(0);
@@ -65594,6 +65641,9 @@ static PtnValue ptn_icu_transcode_bytes(
         &status
     );
     if (ptn_icu_failure(status) && status != PTN_ICU_BUFFER_OVERFLOW_ERROR) {
+        if (status_out != NULL) {
+            *status_out = status;
+        }
         return ptn_bool(0);
     }
     if (needed < 0) {
@@ -65615,6 +65665,9 @@ static PtnValue ptn_icu_transcode_bytes(
     );
     if (ptn_icu_failure(status) || written < 0) {
         free(output);
+        if (status_out != NULL) {
+            *status_out = status;
+        }
         return ptn_bool(0);
     }
     output[written] = '\0';
@@ -66290,6 +66343,45 @@ static void ptn_intl_uconverter_emit_convert_callbacks(
     }
 }
 
+static char *ptn_intl_uconverter_encoding_error_message(const char *function_name, int32_t status) {
+    const char *status_name = ptn_icu_error_name(status);
+    int needed = snprintf(NULL, 0, "%s(): Error setting encoding: %d - %s", function_name, (int)status, status_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Error setting encoding: %d - %s",
+        function_name,
+        (int)status,
+        status_name
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static void ptn_intl_uconverter_signal_transcode_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int32_t status,
+    size_t line
+) {
+    if (!ptn_icu_failure(status)) {
+        return;
+    }
+    char *message = ptn_intl_uconverter_encoding_error_message(function_name, status);
+    ptn_intl_signal_error(runtime, message, line);
+    free(message);
+}
+
 static PtnValue ptn_internal_uconverter_transcode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "UConverter::transcode", 1, "str", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -66315,7 +66407,9 @@ static PtnValue ptn_internal_uconverter_transcode(PtnRuntime *runtime, size_t ar
         ptn_string_operand_free(from_encoding);
         return ptn_bool(0);
     }
-    PtnValue result = ptn_icu_transcode_bytes(to_encoding.data, from_encoding.data, source.data, source.len);
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnValue result = ptn_icu_transcode_bytes(to_encoding.data, from_encoding.data, source.data, source.len, &status);
+    ptn_intl_uconverter_signal_transcode_error(runtime, "UConverter::transcode", status, line);
     ptn_string_operand_free(source);
     ptn_string_operand_free(to_encoding);
     ptn_string_operand_free(from_encoding);
@@ -66418,7 +66512,9 @@ static PTN_UNUSED PtnValue ptn_intl_uconverter_call_method(
         const char *to_encoding = reverse ? data->source_encoding : data->destination_encoding;
         const char *from_encoding = reverse ? data->destination_encoding : data->source_encoding;
         ptn_intl_uconverter_emit_convert_callbacks(runtime, receiver, data, source, to_encoding, from_encoding, line);
-        PtnValue result = ptn_icu_transcode_bytes(to_encoding, from_encoding, source.data, source.len);
+        int32_t status = PTN_ICU_ZERO_ERROR;
+        PtnValue result = ptn_icu_transcode_bytes(to_encoding, from_encoding, source.data, source.len, &status);
+        ptn_intl_uconverter_signal_transcode_error(runtime, "UConverter::convert", status, line);
         ptn_string_operand_free(source);
         return result;
     }
@@ -78338,6 +78434,14 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_ini_bool_string(root == NULL ? runtime->diagnostics.html_errors : root->diagnostics.html_errors);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "intl.error_level")) {
+        *out = ptn_ini_int_string(ptn_runtime_intl_error_level(runtime));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "intl.use_exceptions")) {
+        *out = ptn_ini_int_string(ptn_runtime_intl_use_exceptions(runtime));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
         return 1;
@@ -79485,6 +79589,26 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         }
         PtnValue previous = ptn_ini_bool_string(root->diagnostics.html_errors);
         root->diagnostics.html_errors = ptn_is_truthy(args[1]);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "intl.error_level")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_intl_error_level(runtime));
+        int64_t requested = ptn_value_to_integer(args[1]);
+        if (requested != 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "ini_set(): Using a value different than 0 for intl.error_level is deprecated, as the intl.error_level INI setting is deprecated. Instead the intl.use_exceptions INI setting should be enabled to throw exceptions on errors or intl_get_error_code()/intl_get_error_message() should be used to manually deal with errors",
+                line
+            );
+        }
+        ptn_runtime_set_intl_error_level(runtime, (int)requested);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "intl.use_exceptions")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_intl_use_exceptions(runtime));
+        ptn_runtime_set_intl_use_exceptions(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }

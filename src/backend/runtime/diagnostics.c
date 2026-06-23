@@ -2537,5 +2537,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->pcre_utf8_cache_len = 0;
     runtime->pcre_utf8_cache_known = 0;
     runtime->pcre_utf8_cache_valid = 0;
+    runtime->intl_error_level = 0;
+    runtime->intl_use_exceptions = 0;
     runtime->intl_last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
 }

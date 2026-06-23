@@ -306,6 +306,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->pcre_utf8_cache_len = 0;
     runtime->pcre_utf8_cache_known = 0;
     runtime->pcre_utf8_cache_valid = 0;
+    runtime->intl_error_level = caller_runtime->intl_error_level;
+    runtime->intl_use_exceptions = caller_runtime->intl_use_exceptions;
     runtime->intl_last_error_message = NULL;
 }
 
