@@ -15982,6 +15982,77 @@ var_dump($_SESSION);
 }
 
 #[test]
+fn compile_session_php_codec_references_and_start_options_to_native_binary() {
+    let root = temp_dir("ptn-native-session-php-codec-references-start-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-php-codec-references-start-options.php");
+    let output = root.join("session-php-codec-references-start-options-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+
+var_dump(session_unset());
+try {{
+    session_start(['option' => new stdClass()]);
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    session_start(['bad']);
+}} catch (ValueError $e) {{
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}}
+
+var_dump(session_start(['option' => false]));
+$array = [1, 2, 3];
+$_SESSION['foo'] = &$array;
+$_SESSION['guff'] = &$array;
+$_SESSION['blah'] = &$array;
+var_dump(session_encode());
+var_dump(session_decode('foo|a:3:{{i:0;i:1;i:1;i:2;i:2;i:3;}}guff|R:1;blah|R:1;'));
+var_dump($_SESSION);
+var_dump(session_destroy());
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(false)\nsession_start(): Option \"option\" must be of type string|int|bool, stdClass given\nValueError: session_start(): Argument #1 ($options) must be of type array with keys as string"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_start(): Setting option \"option\" failed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(52) \"foo|a:3:{i:0;i:1;i:1;i:2;i:2;i:3;}guff|R:1;blah|R:1;\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\narray(3) {\n"), "{stdout}");
+    assert!(stdout.contains("  [\"foo\"]=>\n  &array(3) {"), "{stdout}");
+    assert!(stdout.contains("  [\"guff\"]=>\n  &array(3) {"), "{stdout}");
+    assert!(stdout.contains("  [\"blah\"]=>\n  &array(3) {"), "{stdout}");
+    assert!(stdout.ends_with("bool(true)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_encode_decode_lifecycle_edges_to_native_binary() {
     let root = temp_dir("ptn-native-session-encode-decode-lifecycle");
     fs::create_dir_all(&root).unwrap();
