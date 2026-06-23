@@ -37150,6 +37150,66 @@ echo $doc->saveXML();
 }
 
 #[test]
+fn compile_dom_child_move_equal_node_and_html_namespace_suppression() {
+    let root = temp_dir("ptn-native-dom-child-move-equal-node-html-ns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-child-move-equal-node-html-ns.php");
+    let output = root.join("dom-child-move-equal-node-html-ns-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$doc->loadXML('<a>foo<last/></a>');
+$target = $doc->documentElement->lastChild;
+$target->before('bar', $doc->documentElement->firstChild, 'baz');
+echo $doc->saveXML($doc->documentElement), "\n";
+
+$html = Dom\HTMLDocument::createEmpty();
+$container = $html->appendChild($html->createElement("container"));
+$left = $container->appendChild($html->createElement("foo"));
+$right = $html->createElement("foo");
+var_dump($left->isEqualNode($right));
+$right->setAttribute("id", "x");
+var_dump($left->isEqualNode($right));
+$left->setAttribute("id", "x");
+var_dump($left->isEqualNode($right));
+
+$namespaced = $html->createElementNS("urn:x", "x:node");
+$namespaced->setAttributeNS("urn:y", "y:attr", "v");
+$container->appendChild($namespaced);
+echo $html->saveHtml($container), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<a>barfoobaz<last/></a>\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "<container><foo id=\"x\"></foo><x:node y:attr=\"v\"></x:node></container>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_child_insert_like"));
+    assert!(c_source.contains("ptn_dom_is_equal_node_method"));
+    assert!(c_source.contains("ptn_xml_attribute_is_namespace_declaration"));
+}
+
+#[test]
 fn compile_libxml_streams_context_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-streams-context");
     fs::create_dir_all(&root).unwrap();
