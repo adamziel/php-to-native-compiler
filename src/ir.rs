@@ -3291,6 +3291,7 @@ fn ast_known_internal_class(class_name: &str) -> bool {
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
+        "ReflectionFiber",
         "ReflectionFunction",
         "ReflectionMethod",
         "ReflectionObject",

@@ -1978,6 +1978,69 @@ $fiber->start();
 }
 
 #[test]
+fn compile_reflection_fiber_suspend_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-fiber-suspend-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-fiber-suspend-trace.php");
+    let output = root.join("reflection-fiber-suspend-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$direct = new Fiber(Fiber::suspend(...));
+$direct->start();
+$directReflection = new ReflectionFiber($direct);
+var_dump($directReflection->getExecutingFile());
+var_dump($directReflection->getExecutingLine());
+$directTrace = $directReflection->getTrace();
+var_dump($directTrace[0]["function"], $directTrace[0]["class"], $directTrace[0]["type"], $directTrace[0]["args"]);
+
+$wrapped = new Fiber(fn() => call_user_func(["Fiber", "suspend"]));
+$wrapped->start();
+$wrappedReflection = new ReflectionFiber($wrapped);
+var_dump(basename($wrappedReflection->getExecutingFile()));
+var_dump($wrappedReflection->getExecutingLine());
+$wrappedTrace = $wrappedReflection->getTrace();
+var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[1]["function"], is_array($wrappedTrace[1]["args"][0]), isset($wrappedTrace[2]["function"]), array_key_exists("file", $wrappedTrace[2]));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_fiber_call_method"));
+    assert!(c_source.contains("ptn_fiber_capture_suspension"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "string(7) \"suspend\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(2) \"::\"\n",
+            "array(0) {\n",
+            "}\n",
+            "string(34) \"reflection-fiber-suspend-trace.php\"\n",
+            "int(10)\n",
+            "string(7) \"suspend\"\n",
+            "string(5) \"Fiber\"\n",
+            "string(14) \"call_user_func\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uri_whatwg_url_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-uri-whatwg-url-semantics");
     fs::create_dir_all(&root).unwrap();

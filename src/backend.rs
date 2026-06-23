@@ -6908,6 +6908,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
+        "ReflectionFiber",
         "ReflectionFunction",
         "ReflectionGenerator",
         "ReflectionMethod",
@@ -7475,6 +7476,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
+        "ReflectionFiber",
         "ReflectionFunction",
         "ReflectionGenerator",
         "ReflectionMethod",
@@ -12142,6 +12144,7 @@ fn attribute_class_constant_class_available(
         || class_name.eq_ignore_ascii_case("ReflectionEnum")
         || class_name.eq_ignore_ascii_case("ReflectionEnumBackedCase")
         || class_name.eq_ignore_ascii_case("ReflectionEnumUnitCase")
+        || class_name.eq_ignore_ascii_case("ReflectionFiber")
         || class_name.eq_ignore_ascii_case("ReflectionFunction")
         || class_name.eq_ignore_ascii_case("ReflectionGenerator")
         || class_name.eq_ignore_ascii_case("ReflectionMethod")
@@ -18312,6 +18315,7 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
         "reflectionenumbackedcase" => Some("ReflectionEnumBackedCase"),
         "reflectionenumunitcase" => Some("ReflectionEnumUnitCase"),
         "reflectionextension" => Some("ReflectionExtension"),
+        "reflectionfiber" => Some("ReflectionFiber"),
         "reflectionfunction" => Some("ReflectionFunction"),
         "reflectionfunctionabstract" => Some("ReflectionFunctionAbstract"),
         "reflectiongenerator" => Some("ReflectionGenerator"),
@@ -19950,6 +19954,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_reflection_generator(class_name)) {\n");
     out.push_str(
         "        return ptn_reflection_generator_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_reflection_fiber(class_name)) {\n");
+    out.push_str(
+        "        return ptn_reflection_fiber_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_fiber(class_name)) {\n");
