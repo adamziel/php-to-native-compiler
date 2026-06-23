@@ -33,6 +33,7 @@ const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "php_user_filter",
     "Phar",
+    "PharData",
     "PharFileInfo",
     "Fiber",
     "WeakMap",
@@ -1574,7 +1575,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Stringable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Phar\")) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Phar\") || ptn_ascii_case_equal(class_name, \"PharData\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
@@ -7083,6 +7084,7 @@ fn emit_class_metadata_helpers(
         "SensitiveParameter",
         "SensitiveParameterValue",
         "Phar",
+        "PharData",
         "ZipArchive",
         "SoapClient",
         "SoapServer",
@@ -7708,6 +7710,7 @@ fn emit_class_metadata_helpers(
         "DatePeriod",
         "RoundingMode",
         "Phar",
+        "PharData",
         "PharFileInfo",
         "ZipArchive",
         "SoapClient",
@@ -18893,6 +18896,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapheader" => Some("SoapHeader"),
                 "phptoken" => Some("PhpToken"),
                 "phar" => Some("Phar"),
+                "phardata" => Some("PharData"),
                 "pharfileinfo" => Some("PharFileInfo"),
                 "__php_incomplete_class" => Some("__PHP_Incomplete_Class"),
                 "weakmap" => Some("WeakMap"),

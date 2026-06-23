@@ -59463,7 +59463,13 @@ var_dump($ext->getName(), $inis['phar.readonly'], $inis['phar.require_hash'], $i
 $compression = Phar::getSupportedCompression();\n\
 $signatures = Phar::getSupportedSignatures();\n\
 var_dump($compression, count($signatures), in_array('OpenSSL_SHA512', $signatures, true));\n\
-var_dump(Phar::isValidPharFilename('boo.phar'), Phar::isValidPharFilename('boo.tar'), Phar::isValidPharFilename('boo.tar', false));",
+var_dump(Phar::isValidPharFilename('boo.phar'), Phar::isValidPharFilename('boo.tar'), Phar::isValidPharFilename('boo.tar', false));\n\
+$running = new ReflectionMethod(Phar::class, 'running');\n\
+var_dump($running->getNumberOfParameters(), $running->getNumberOfRequiredParameters(), $running->getParameters()[0]->isOptional());\n\
+$ctor = new ReflectionMethod(Phar::class, '__construct');\n\
+var_dump($ctor->getNumberOfRequiredParameters(), $ctor->getNumberOfParameters());\n\
+$dataCtor = new ReflectionMethod(PharData::class, '__construct');\n\
+var_dump($dataCtor->getNumberOfRequiredParameters(), $dataCtor->getNumberOfParameters());",
     )
     .unwrap();
 
@@ -59502,6 +59508,62 @@ var_dump(Phar::isValidPharFilename('boo.phar'), Phar::isValidPharFilename('boo.t
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_phar_enabled_ini_flags_cannot_be_disabled_at_runtime() {
+    let root = temp_dir("ptn-phpc-phar-ini-locked");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-ini-locked.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(ini_set('phar.require_hash', 1));\n\
+var_dump(ini_set('phar.readonly', 1));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(ini_set('phar.require_hash', 0));\n\
+var_dump(ini_set('phar.readonly', 0));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("phar.require_hash=1")
+        .arg("-d")
+        .arg("phar.readonly=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

@@ -4426,6 +4426,7 @@ static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
@@ -7464,6 +7465,23 @@ static const PtnParameterMetadata PTN_INTERNAL_URI_WHATWG_URL_PARSE_PARAMETERS[]
     { "uri", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
     { "baseUrl", "Uri\\WhatWg\\Url", "?Uri\\WhatWg\\Url", 1, 0, 0, 0, 1, "null", NULL, NULL },
     { "errors", "array", "?array", 1, 1, 1, 0, 0, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_PHAR_CONSTRUCT_PARAMETERS[] = {
+    { "filename", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, "FilesystemIterator::SKIP_DOTS | FilesystemIterator::UNIX_PATHS", NULL, NULL },
+    { "alias", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_PHAR_DATA_CONSTRUCT_PARAMETERS[] = {
+    { "filename", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, "FilesystemIterator::SKIP_DOTS | FilesystemIterator::UNIX_PATHS", NULL, NULL },
+    { "alias", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "format", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
+};
+
+static const PtnParameterMetadata PTN_INTERNAL_PHAR_RUNNING_PARAMETERS[] = {
+    { "returnPhar", "bool", "bool", 0, 1, 0, 0, 1, "true", NULL, NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -75533,6 +75551,13 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_readonly(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
+        if (ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+            free(next);
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         ptn_runtime_set_phar_readonly(runtime, next);
         free(next);
         ptn_string_operand_free(value);
@@ -75543,6 +75568,13 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_require_hash(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
+        if (ptn_runtime_ini_bool(ptn_runtime_phar_require_hash(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+            free(next);
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         ptn_runtime_set_phar_require_hash(runtime, next);
         free(next);
         ptn_string_operand_free(value);
@@ -110956,6 +110988,21 @@ static PtnValue ptn_internal_phar_can_write(PtnRuntime *runtime, size_t argc, co
     return ptn_bool(!ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1));
 }
 
+static PtnValue ptn_internal_phar_running(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "Phar::running() expects at most 1 argument, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_string("");
+}
+
 static PtnValue ptn_internal_phar_get_supported_compression(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)args;
@@ -113017,6 +113064,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
         if (ptn_ascii_case_equal(name, "mount")) {
             return ptn_internal_phar_mount(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "running")) {
+            return ptn_internal_phar_running(runtime, argc, args, line);
         }
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
@@ -120907,6 +120957,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
         { "php_uname", 0, 1, ptn_internal_php_uname },
         { "phpversion", 0, 1, ptn_internal_phpversion },
+        { "Phar::__construct", 1, 3, ptn_internal_method_metadata_stub },
         { "Phar::apiVersion", 0, 0, ptn_internal_phar_api_version },
         { "Phar::canCompress", 0, 1, ptn_internal_phar_can_compress },
         { "Phar::canWrite", 0, 0, ptn_internal_phar_can_write },
@@ -120914,6 +120965,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Phar::getSupportedSignatures", 0, 0, ptn_internal_phar_get_supported_signatures },
         { "Phar::isValidPharFilename", 1, 2, ptn_internal_phar_is_valid_phar_filename },
         { "Phar::mount", 2, 2, ptn_internal_phar_mount },
+        { "Phar::running", 0, 1, ptn_internal_phar_running },
+        { "PharData::__construct", 1, 4, ptn_internal_method_metadata_stub },
         { "pi", 0, 0, ptn_internal_pi },
         { "pdo_drivers", 0, 0, ptn_internal_pdo_drivers },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
@@ -121259,7 +121312,8 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         if (ptn_internal_function_name_has_prefix(name, "DateTimeZone::")) {
             return "date";
         }
-        if (ptn_internal_function_name_has_prefix(name, "Phar::")) {
+        if (ptn_internal_function_name_has_prefix(name, "Phar::") ||
+            ptn_internal_function_name_has_prefix(name, "PharData::")) {
             return "Phar";
         }
         if (ptn_internal_function_name_has_prefix(name, "Intl")) {
@@ -121827,6 +121881,54 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "Uri\\WhatWg\\Url",
             "Uri\\WhatWg\\Url",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Phar::__construct")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_PHAR_CONSTRUCT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_PHAR_CONSTRUCT_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_PHAR_CONSTRUCT_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "PharData::__construct")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_PHAR_DATA_CONSTRUCT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_PHAR_DATA_CONSTRUCT_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_PHAR_DATA_CONSTRUCT_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Phar::running")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_PHAR_RUNNING_PARAMETERS) /
+                sizeof(PTN_INTERNAL_PHAR_RUNNING_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_PHAR_RUNNING_PARAMETERS,
+            0,
+            "string",
+            "string",
             0,
             0
         );
@@ -122628,6 +122730,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Phar");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "PharData");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "PharFileInfo");
 }
@@ -122904,6 +123010,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_sqlite3_result(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_phar(class_name)
+        || ptn_internal_class_name_is_phar_data(class_name)
         || ptn_internal_class_name_is_phar_file_info(class_name)
         || ptn_internal_class_name_is_random_randomizer(class_name)
         || ptn_internal_class_name_is_zip_archive(class_name)
@@ -124819,7 +124926,11 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
-            || ptn_ascii_case_equal(method_name, "mount");
+            || ptn_ascii_case_equal(method_name, "mount")
+            || ptn_ascii_case_equal(method_name, "running");
+    }
+    if (ptn_internal_class_name_is_phar_data(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct");
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
         return ptn_ascii_case_equal(method_name, "chmod")
@@ -125021,7 +125132,8 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
-            || ptn_ascii_case_equal(method_name, "mount");
+            || ptn_ascii_case_equal(method_name, "mount")
+            || ptn_ascii_case_equal(method_name, "running");
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return ptn_ascii_case_equal(method_name, "tokenize");
@@ -126265,6 +126377,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "offsetSet");
         ptn_append_method_name(result, &index, "offsetUnset");
         ptn_append_method_name(result, &index, "rewind");
+        ptn_append_method_name(result, &index, "running");
         ptn_append_method_name(result, &index, "setAlias");
         ptn_append_method_name(result, &index, "setDefaultStub");
         ptn_append_method_name(result, &index, "setInfoClass");
@@ -126274,6 +126387,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "startBuffering");
         ptn_append_method_name(result, &index, "stopBuffering");
         ptn_append_method_name(result, &index, "valid");
+        return result;
+    }
+    if (ptn_internal_class_name_is_phar_data(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
         return result;
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
@@ -128953,6 +129070,17 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             free(method_name);
             free(class_name);
             return method;
+        }
+        if (ptn_internal_class_method_exists(resolved_class_name, method_name)) {
+            PtnValue internal_method = ptn_reflection_method_object_from_name_with_reflected(
+                runtime,
+                ptn_reflection_method_internal_declaring_class(resolved_class_name, method_name),
+                method_name,
+                resolved_class_name
+            );
+            free(method_name);
+            free(class_name);
+            return internal_method;
         }
         const char *parent_class_name = ptn_declared_class_parent_name(resolved_class_name);
         while (parent_class_name != NULL) {
@@ -133299,7 +133427,8 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     if (ptn_internal_class_name_is_directory(class_name)) {
         return "standard";
     }
-    if (ptn_internal_class_name_is_phar(class_name)) {
+    if (ptn_internal_class_name_is_phar(class_name) ||
+        ptn_internal_class_name_is_phar_data(class_name)) {
         return "Phar";
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
@@ -140985,6 +141114,7 @@ static PtnValue ptn_reflection_extension_classes(
     }
     if (ptn_ascii_case_equal(extension_name, "Phar")) {
         ptn_reflection_extension_add_class(runtime, result, &index, "Phar", objects);
+        ptn_reflection_extension_add_class(runtime, result, &index, "PharData", objects);
         ptn_reflection_extension_add_class(runtime, result, &index, "PharFileInfo", objects);
         return result;
     }
