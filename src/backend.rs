@@ -4586,9 +4586,9 @@ fn emit_class_constant_initializer_helper(
             out.push_str(", ");
             out.push_str(&initializing_key_temp);
             out.push_str(", ptn_bool(1));\n");
-            out.push_str(
-                "            runtime.current_class_constant_initializing_class_name = \"self\";\n",
-            );
+            out.push_str("            runtime.current_class_constant_initializing_class_name = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
             out.push_str(
                 "            runtime.current_class_constant_initializing_constant_name = \"",
             );
