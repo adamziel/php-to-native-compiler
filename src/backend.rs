@@ -7500,6 +7500,7 @@ fn emit_class_metadata_helpers(
         "Dom\\NodeList",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
+        "Dom\\XPath",
         "Dom\\AdjacentPosition",
         "XMLReader",
         "XMLWriter",
@@ -8273,6 +8274,7 @@ fn emit_class_metadata_helpers(
         "Dom\\NodeList",
         "Dom\\NamedNodeMap",
         "Dom\\TokenList",
+        "Dom\\XPath",
         "Dom\\AdjacentPosition",
         "XMLReader",
         "XMLWriter",
@@ -20291,6 +20293,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "dom\\nodelist" => Some("Dom\\NodeList"),
         "dom\\namednodemap" => Some("Dom\\NamedNodeMap"),
         "dom\\tokenlist" => Some("Dom\\TokenList"),
+        "dom\\xpath" => Some("Dom\\XPath"),
         "dom\\adjacentposition" => Some("Dom\\AdjacentPosition"),
         "libxmlerror" => Some("LibXMLError"),
         "xmlreader" => Some("XMLReader"),
@@ -31687,6 +31690,20 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static DOM_CREATE_FROM_STRING_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "source",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static DOM_APPEND_XML_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
         name: "data",
         default: None,
@@ -31838,6 +31855,8 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         Some(&DOM_LOAD_PARAMETERS)
     } else if name.eq_ignore_ascii_case("loadHTML") || name.eq_ignore_ascii_case("loadXML") {
         Some(&DOM_LOAD_SOURCE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createFromString") {
+        Some(&DOM_CREATE_FROM_STRING_PARAMETERS)
     } else if name.eq_ignore_ascii_case("appendXML") {
         Some(&DOM_APPEND_XML_PARAMETERS)
     } else if name.eq_ignore_ascii_case("cloneNode") {

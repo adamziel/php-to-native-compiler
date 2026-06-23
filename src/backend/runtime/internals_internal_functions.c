@@ -1693,7 +1693,8 @@ static int ptn_dom_class_name_is_modern(const char *class_name) {
         ptn_ascii_case_equal(class_name, "Dom\\Comment") ||
         ptn_ascii_case_equal(class_name, "Dom\\NodeList") ||
         ptn_ascii_case_equal(class_name, "Dom\\NamedNodeMap") ||
-        ptn_ascii_case_equal(class_name, "Dom\\TokenList")
+        ptn_ascii_case_equal(class_name, "Dom\\TokenList") ||
+        ptn_ascii_case_equal(class_name, "Dom\\XPath")
     );
 }
 
@@ -1741,6 +1742,7 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
         return "DOMTokenList";
     }
     if (ptn_ascii_case_equal(class_name, "DOMXPath") ||
+        ptn_ascii_case_equal(class_name, "Dom\\XPath") ||
         ptn_declared_class_is_same_or_descendant(class_name, "DOMXPath")) {
         return "DOMXPath";
     }
@@ -103541,6 +103543,78 @@ static PtnValue ptn_dom_xpath_evaluate_method(PtnRuntime *runtime, PtnValue rece
     return result;
 }
 
+static char *ptn_dom_xpath_name_predicate_copy(const char *expr) {
+    const char *cursor = strstr(expr == NULL ? "" : expr, "name()");
+    if (cursor == NULL) {
+        return NULL;
+    }
+    cursor += strlen("name()");
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != '=') {
+        return NULL;
+    }
+    cursor++;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != '\'' && *cursor != '"') {
+        return NULL;
+    }
+    char quote = *cursor++;
+    const char *start = cursor;
+    while (*cursor != '\0' && *cursor != quote) {
+        cursor++;
+    }
+    if (*cursor != quote) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(start, (size_t)(cursor - start));
+}
+
+static void ptn_dom_xpath_collect_elements_by_name(PtnXmlNodeListData *list, PtnXmlNode *node, const char *name) {
+    if (list == NULL || node == NULL || name == NULL) {
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT && strcmp(node->name == NULL ? "" : node->name, name) == 0) {
+        ptn_xml_node_list_push(list, node);
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_dom_xpath_collect_elements_by_name(list, node->children[i], name);
+    }
+}
+
+static PtnValue ptn_dom_xpath_query_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::query", argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid State Error");
+        return ptn_null();
+    }
+    PtnStringOperand expression = ptn_internal_expect_string_arg(runtime, "DOMXPath::query", 1, "expression", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *expr = ptn_duplicate_string_len(expression.data, expression.len);
+    ptn_string_operand_free(expression);
+    PtnXmlNode *context = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? ptn_xml_node_data(args[1])
+        : ptn_dom_xpath_document(data);
+    PtnValue list = ptn_xml_node_list_object(runtime, context);
+    PtnXmlNodeListData *list_data = ptn_xml_node_list_data(list);
+    char *name = ptn_dom_xpath_name_predicate_copy(expr);
+    if (name != NULL && strstr(expr, "//*") != NULL) {
+        ptn_dom_xpath_collect_elements_by_name(list_data, context, name);
+    }
+    free(name);
+    free(expr);
+    return list;
+}
+
 static PTN_UNUSED PtnValue ptn_dom_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -105768,9 +105842,13 @@ static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const cha
 }
 
 static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
-    if (argc < 1 || argc > 2) {
+    int html_document = ptn_dom_class_name_is_html_document(class_name);
+    size_t max_args = html_document ? 3 : 2;
+    if (argc < 1 || argc > max_args) {
         char message[176];
-        int written = snprintf(message, sizeof(message), "%s::createFromString() expects 1 or 2 arguments, %zu given", class_name, argc);
+        int written = html_document
+            ? snprintf(message, sizeof(message), "%s::createFromString() expects 1 to 3 arguments, %zu given", class_name, argc)
+            : snprintf(message, sizeof(message), "%s::createFromString() expects 1 or 2 arguments, %zu given", class_name, argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
@@ -105783,7 +105861,6 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
     }
     PtnValue document_value = ptn_xml_document_new_for_class(runtime, class_name, 0, NULL, line);
     PtnXmlNode *document = ptn_xml_node_data(document_value);
-    int html_document = ptn_dom_class_name_is_html_document(class_name);
     int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     const char *method_name = ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")
         ? "Dom\\XMLDocument::createFromString"
@@ -105792,6 +105869,17 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
         ptn_string_operand_free(source);
         ptn_value_destroy(&document_value);
         return ptn_null();
+    }
+    if (html_document && argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, method_name, 3, "encoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(source);
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        free(document->encoding);
+        document->encoding = ptn_duplicate_string_len(encoding.data, encoding.len);
+        ptn_string_operand_free(encoding);
     }
     if (source.len == 0 && html_document) {
         ptn_string_operand_free(source);
@@ -106729,8 +106817,11 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (ptn_ascii_case_equal(name, "registerPhpFunctions")) {
             return ptn_dom_xpath_register_php_functions_method(runtime, receiver, argc, args, line);
         }
-        if (ptn_ascii_case_equal(name, "evaluate") || ptn_ascii_case_equal(name, "query")) {
+        if (ptn_ascii_case_equal(name, "evaluate")) {
             return ptn_dom_xpath_evaluate_method(runtime, receiver, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "query")) {
+            return ptn_dom_xpath_query_method(runtime, receiver, argc, args, line);
         }
     }
     if (ptn_ascii_case_equal(name, "__construct")) {
@@ -107477,6 +107568,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "resolveExternals") ||
         ptn_ascii_case_equal(property, "recover") ||
         ptn_ascii_case_equal(property, "config") ||
+        ptn_ascii_case_equal(property, "charset") ||
         ptn_ascii_case_equal(property, "childElementCount") ||
         ptn_ascii_case_equal(property, "length") ||
         ptn_ascii_case_equal(property, "data") ||
@@ -107825,6 +107917,13 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         }
         if (ptn_ascii_case_equal(property, "implementation")) {
             *value_out = ptn_object_new_shell(runtime, "DOMImplementation");
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "charset")) {
+            const char *encoding = node->encoding == NULL || node->encoding[0] == '\0'
+                ? "UTF-8"
+                : node->encoding;
+            *value_out = ptn_owned_string(ptn_duplicate_string(encoding));
             return 1;
         }
         if (ptn_ascii_case_equal(property, "head")) {
@@ -108230,6 +108329,19 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
                 ptn_array_string_key(property),
                 ptn_owned_string_len(copy, string.len)
             );
+            ptn_string_operand_free(string);
+            *value_out = ptn_value_clone_deref(value);
+            return 1;
+        }
+        if (ptn_ascii_case_equal(property, "charset")) {
+            PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(string);
+                *value_out = ptn_null();
+                return 1;
+            }
+            free(node->encoding);
+            node->encoding = ptn_duplicate_string_len(string.data, string.len);
             ptn_string_operand_free(string);
             *value_out = ptn_value_clone_deref(value);
             return 1;
@@ -131592,6 +131704,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(effective, "DOMNodeList")
         || ptn_ascii_case_equal(effective, "DOMNamedNodeMap")
         || ptn_ascii_case_equal(effective, "DOMTokenList")
+        || ptn_ascii_case_equal(effective, "DOMXPath")
         || ptn_ascii_case_equal(class_name, "DOMNode")
         || ptn_ascii_case_equal(class_name, "DOMDocument")
         || ptn_ascii_case_equal(class_name, "DOM\\XMLDocument")
