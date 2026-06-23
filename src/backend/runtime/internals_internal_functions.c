@@ -29517,6 +29517,12 @@ static PtnValue ptn_uri_with_string_component(
         }
     } else if (strcmp(component_name, "host") == 0) {
         if (is_null) {
+            if (copy->userinfo_present || copy->username != NULL || copy->password != NULL) {
+                ptn_string_operand_free(value);
+                ptn_uri_data_free(copy);
+                ptn_throw_exception(runtime, "Uri\\InvalidUriException", "Cannot remove the host from a URI that has a userinfo");
+                return ptn_null();
+            }
             free(copy->host);
             copy->host = NULL;
             copy->authority_present = 0;
@@ -29671,6 +29677,7 @@ static const char *ptn_uri_whatwg_host_invalid_code_point_reason(
     }
     for (size_t i = 0; i < host_len; i++) {
         unsigned char byte = (unsigned char)host[i];
+        int percent_decoded = 0;
         if (byte == '/' || byte == '?' || byte == '#') {
             return NULL;
         }
@@ -29679,6 +29686,7 @@ static const char *ptn_uri_whatwg_host_invalid_code_point_reason(
             int low = ptn_uri_hex_value(host[i + 2]);
             if (high >= 0 && low >= 0) {
                 byte = (unsigned char)((high << 4) | low);
+                percent_decoded = 1;
                 i += 2;
             }
         }
@@ -29686,7 +29694,7 @@ static const char *ptn_uri_whatwg_host_invalid_code_point_reason(
             return reason;
         }
         if (byte == ':' && special) {
-            return "";
+            return percent_decoded ? reason : "";
         }
     }
     return NULL;
@@ -29727,6 +29735,7 @@ static PtnValue ptn_uri_whatwg_with_host(
         ptn_string_operand_free(host_arg);
         return ptn_null();
     }
+    const char *code_point_reason = ptn_uri_whatwg_host_invalid_code_point_reason(host_arg.data, host_arg.len, special);
     char *ascii_host = NULL;
     char *unicode_host = NULL;
     int host_type = PTN_URI_HOST_TYPE_NONE;
@@ -29745,6 +29754,9 @@ static PtnValue ptn_uri_whatwg_with_host(
     if (!ok) {
         free(ascii_host);
         free(unicode_host);
+        if ((invalid_reason == NULL || invalid_reason[0] == '\0') && code_point_reason != NULL) {
+            invalid_reason = code_point_reason;
+        }
         ptn_uri_whatwg_throw_malformed(runtime, "host", invalid_reason);
         return ptn_null();
     }
@@ -29891,6 +29903,24 @@ static PtnValue ptn_uri_whatwg_with_userinfo_part(
     }
     PtnUriData *source = ptn_uri_data_from_value(receiver);
     PtnValue value = ptn_value_deref(args[0]);
+    if (source->scheme != NULL && strcmp(source->scheme, "file") == 0) {
+        if (value.type != PTN_NULL) {
+            PtnStringOperand string = ptn_internal_expect_string_arg(runtime, function_name, 1, username_part ? "username" : "password", value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(string);
+                return ptn_null();
+            }
+            ptn_string_operand_free(string);
+        }
+        PtnUriData *copy = ptn_uri_data_clone(source);
+        free(copy->username);
+        free(copy->password);
+        copy->username = NULL;
+        copy->password = NULL;
+        copy->userinfo_present = 0;
+        copy->userinfo_colon_present = 0;
+        return ptn_uri_clone_with(runtime, receiver, copy);
+    }
 #ifndef PTN_USE_ADA_URL
     (void)source;
     (void)value;
@@ -29986,7 +30016,7 @@ static PtnValue ptn_uri_with_port(
         ptn_uri_throw_malformed(runtime, "port");
         return ptn_null();
     }
-    if (copy->host == NULL) {
+    if (copy->host == NULL && !copy->authority_present) {
         ptn_uri_data_free(copy);
         ptn_throw_exception(runtime, "Uri\\InvalidUriException", "Cannot set a port without having a host");
         return ptn_null();
