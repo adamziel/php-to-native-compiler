@@ -86660,6 +86660,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Australia/North", 8, 0 },
     { "Australia/Perth", 8, 0 },
     { "Australia/South", 8, 0 },
+    { "Australia/Sydney", 8, 0 },
     { "Australia/Yancowinna", 8, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
@@ -86953,6 +86954,8 @@ static int ptn_datetime_timestamp_dst_month(time_t timestamp) {
     return ptn_datetime_timestamp_europe_dst(timestamp);
 }
 
+static int ptn_timezone_system_offset_for_name(const char *name, time_t timestamp, int *offset_out);
+
 static int ptn_timezone_is_europe_dst_zone(const char *name) {
     return ptn_ascii_case_equal(name, "Europe/London") ||
         ptn_ascii_case_equal(name, "Europe/Paris") ||
@@ -87019,6 +87022,10 @@ static int ptn_timezone_is_dst_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "Asia/Tehran")) {
         return ptn_timezone_offset_for_name(name, timestamp) == 16200;
     }
+    if (ptn_ascii_case_equal(name, "Australia/Sydney")) {
+        int offset = 0;
+        return ptn_timezone_system_offset_for_name(name, timestamp, &offset) && offset != 36000;
+    }
     return ptn_ascii_case_equal(name, "BST") ||
         ptn_ascii_case_equal(name, "CEST") ||
         ptn_ascii_case_equal(name, "EDT") ||
@@ -87068,10 +87075,70 @@ static int ptn_timezone_us_wall_offset_for_standard_offset(time_t wall_timestamp
     return hour < 2 ? standard_offset + 3600 : standard_offset;
 }
 
+static void ptn_timezone_restore_env(char *old_copy) {
+    if (old_copy == NULL) {
+#if defined(_WIN32)
+        _putenv("TZ=");
+#else
+        unsetenv("TZ");
+#endif
+        ptn_tzset();
+        return;
+    }
+    ptn_set_timezone_env(old_copy);
+    free(old_copy);
+}
+
+static int ptn_timezone_system_zone_is_supported(const char *name) {
+    return ptn_ascii_case_equal(name, "Australia/Sydney");
+}
+
+static int ptn_timezone_system_offset_for_name(const char *name, time_t timestamp, int *offset_out) {
+    if (!ptn_timezone_system_zone_is_supported(name) || offset_out == NULL) {
+        return 0;
+    }
+    const char *old_tz = getenv("TZ");
+    char *old_copy = old_tz == NULL ? NULL : ptn_duplicate_string(old_tz);
+    ptn_set_timezone_env(name);
+    *offset_out = (int)ptn_date_timezone_offset(timestamp);
+    ptn_timezone_restore_env(old_copy);
+    return 1;
+}
+
+static int ptn_timezone_system_offset_for_wall_timestamp(
+    const char *name,
+    time_t wall_timestamp,
+    int *offset_out
+) {
+    if (!ptn_timezone_system_zone_is_supported(name) || offset_out == NULL) {
+        return 0;
+    }
+    struct tm *parts = gmtime(&wall_timestamp);
+    if (parts == NULL) {
+        return 0;
+    }
+    struct tm local_parts = *parts;
+    local_parts.tm_isdst = -1;
+    const char *old_tz = getenv("TZ");
+    char *old_copy = old_tz == NULL ? NULL : ptn_duplicate_string(old_tz);
+    ptn_set_timezone_env(name);
+    time_t local_timestamp = mktime(&local_parts);
+    ptn_timezone_restore_env(old_copy);
+    if (local_timestamp == (time_t)-1) {
+        return 0;
+    }
+    *offset_out = (int)difftime(wall_timestamp, local_timestamp);
+    return 1;
+}
+
 static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_timestamp) {
     int literal_offset = 0;
     if (ptn_timezone_parse_offset_literal(name, &literal_offset)) {
         return literal_offset;
+    }
+    int system_offset = 0;
+    if (ptn_timezone_system_offset_for_wall_timestamp(name, wall_timestamp, &system_offset)) {
+        return system_offset;
     }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
         ptn_ascii_case_equal(name, "US/Eastern")) {
@@ -87093,6 +87160,10 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     int literal_offset = 0;
     if (ptn_timezone_parse_offset_literal(name, &literal_offset)) {
         return literal_offset;
+    }
+    int system_offset = 0;
+    if (ptn_timezone_system_offset_for_name(name, timestamp, &system_offset)) {
+        return system_offset;
     }
     int europe_dst = ptn_datetime_timestamp_europe_dst(timestamp);
     if (ptn_ascii_case_equal(name, "UTC") ||
@@ -87296,6 +87367,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "Australia/Brisbane")) {
         return "AEST";
+    }
+    if (ptn_ascii_case_equal(name, "Australia/Sydney")) {
+        return ptn_timezone_offset_for_name(name, timestamp) == 39600 ? "AEDT" : "AEST";
     }
     if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
         return europe_dst ? "IDT" : "IST";
