@@ -62970,6 +62970,45 @@ echo "end\n";
 }
 
 #[test]
+fn compile_foreach_temporary_return_destructor_trace_uses_return_line_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-temp-return-destructor-line");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-temp-return-destructor-line.php");
+    let output = root.join("foreach-temp-return-destructor-line-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Bar {
+    public $y;
+    function __destruct() {
+        y;
+    }
+}
+foreach (new Bar as $y) {
+    try {
+        return new Exception;
+    } catch (y) {
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Uncaught Error: Undefined constant \"y\""));
+    assert!(
+        stderr.contains(&format!("#0 {}(10): Bar->__destruct()", input.display())),
+        "{stderr}"
+    );
+    assert!(!stderr.contains(&format!("#0 {}(1): Bar->__destruct()", input.display())));
+}
+
+#[test]
 fn compile_goto_inside_plain_blocks_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-goto-jump14-blocks");
     fs::create_dir_all(&root).unwrap();

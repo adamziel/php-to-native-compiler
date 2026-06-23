@@ -866,7 +866,7 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     ptn_value_drop(value);
 }
 
-static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value) {
+static PTN_UNUSED void ptn_value_destroy_with_runtime_scope_at(PtnRuntime *runtime, PtnValue *value, size_t line) {
     PtnRuntime *root = runtime == NULL ? NULL : ptn_runtime_root(runtime);
     if (root == NULL) {
         ptn_value_destroy(value);
@@ -875,7 +875,9 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime,
     const char *previous_scope = root->destructor_access_scope;
     size_t previous_call_site_line = root->call_site_line;
     root->destructor_access_scope = runtime->current_class_name;
-    if (runtime != root && runtime->call_site_line != 0) {
+    if (line != 0) {
+        root->call_site_line = line;
+    } else if (runtime != root && runtime->call_site_line != 0) {
         root->call_site_line = runtime->call_site_line;
     } else if (
         runtime != root &&
@@ -887,6 +889,10 @@ static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime,
     ptn_value_destroy(value);
     root->call_site_line = previous_call_site_line;
     root->destructor_access_scope = previous_scope;
+}
+
+static PTN_UNUSED void ptn_value_destroy_with_runtime_scope(PtnRuntime *runtime, PtnValue *value) {
+    ptn_value_destroy_with_runtime_scope_at(runtime, value, 0);
 }
 
 static PTN_UNUSED void ptn_value_detach_for_write(PtnValue *value) {

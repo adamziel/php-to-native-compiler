@@ -24541,7 +24541,13 @@ fn emit_instruction(
             if let Some(target) = generator_yield_abort_target {
                 out.push_str("    runtime.generator_aborted_after_yield = 1;\n");
                 let context_indices = return_cleanup_context_indices(finally_stack);
-                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
+                emit_jump_through_finally_contexts_with_line(
+                    out,
+                    finally_stack,
+                    &context_indices,
+                    &target,
+                    value_expr_runtime_line(value),
+                );
             }
         }
         Instruction::Echo(value) => {
@@ -25125,11 +25131,12 @@ fn emit_instruction(
                         emit_value_cleanup(out, "    ", &return_temp);
                     }
                     let context_indices = return_cleanup_context_indices(finally_stack);
-                    emit_jump_through_finally_contexts(
+                    emit_jump_through_finally_contexts_with_line(
                         out,
                         finally_stack,
                         &context_indices,
                         target,
+                        Some(*line),
                     );
                     return;
                 }
@@ -25183,7 +25190,13 @@ fn emit_instruction(
                     emit_value_cleanup(out, "    ", &result_value);
                 }
                 let context_indices = return_cleanup_context_indices(finally_stack);
-                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, target);
+                emit_jump_through_finally_contexts_with_line(
+                    out,
+                    finally_stack,
+                    &context_indices,
+                    target,
+                    Some(*line),
+                );
             }
             None => {
                 if let Some(value) = value {
@@ -25437,6 +25450,7 @@ fn emit_instruction(
             let continue_label = values.next_label("ptn_foreach_continue");
             let iterator_temp = values.next_temp();
             let cleanup_target_temp = values.next_temp();
+            let cleanup_line_temp = values.next_temp();
             let cleanup_frame_temp = values.next_temp();
             let cleanup_frame_active_temp = values.next_temp();
             out.push_str("    PtnArrayIterator ");
@@ -25447,6 +25461,11 @@ fn emit_instruction(
             out.push_str(" = 0;\n");
             out.push_str("    (void)");
             out.push_str(&cleanup_target_temp);
+            out.push_str(";\n");
+            out.push_str("    size_t ");
+            out.push_str(&cleanup_line_temp);
+            out.push_str(" = ");
+            out.push_str(&line.to_string());
             out.push_str(";\n");
             out.push_str("    PtnTryFrame ");
             out.push_str(&cleanup_frame_temp);
@@ -25560,6 +25579,7 @@ fn emit_instruction(
                 control_targets.len(),
                 cleanup_label.clone(),
                 cleanup_target_temp.clone(),
+                Some(cleanup_line_temp.clone()),
                 instruction_labels(body),
             ));
             out.push_str("    ptn_try_frame_push(&runtime, &");
@@ -25656,11 +25676,18 @@ fn emit_instruction(
             out.push_str(&cleanup_frame_active_temp);
             out.push_str(" = 0;\n");
             out.push_str("    }\n");
-            out.push_str("    ptn_array_iterator_destroy(&");
+            out.push_str("    ptn_array_iterator_destroy_with_runtime_scope_at(&");
             out.push_str(&iterator_temp);
+            out.push_str(", &runtime, ");
+            out.push_str(&cleanup_line_temp);
             out.push_str(");\n");
             if let Some(iterable_temp) = iterable_temp {
-                emit_value_cleanup(out, "    ", &iterable_temp);
+                emit_value_cleanup_with_runtime_line(
+                    out,
+                    "    ",
+                    &iterable_temp,
+                    &cleanup_line_temp,
+                );
             }
             out.push_str("    if (");
             out.push_str(&cleanup_target_temp);
@@ -25726,7 +25753,13 @@ fn emit_instruction(
                         (target_index < context.control_depth).then_some(index)
                     })
                     .collect();
-                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
+                emit_jump_through_finally_contexts_with_line(
+                    out,
+                    finally_stack,
+                    &context_indices,
+                    &target,
+                    Some(*line),
+                );
             } else {
                 let suffix = if *level == 1 { "level" } else { "levels" };
                 out.push_str("    ptn_abort_control_error(\"Cannot 'break' ");
@@ -25751,7 +25784,13 @@ fn emit_instruction(
                         (target_index < context.control_depth).then_some(index)
                     })
                     .collect();
-                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
+                emit_jump_through_finally_contexts_with_line(
+                    out,
+                    finally_stack,
+                    &context_indices,
+                    &target,
+                    Some(*line),
+                );
             } else {
                 let suffix = if *level == 1 { "level" } else { "levels" };
                 out.push_str("    ptn_abort_control_error(\"Cannot 'continue' ");
@@ -26027,6 +26066,7 @@ fn emit_try(
                 control_targets.len(),
                 dispatch_label.clone(),
                 target_temp.clone(),
+                None,
                 context_labels,
             )
         } else {
@@ -26734,6 +26774,7 @@ struct FinallyContext {
     control_depth: usize,
     dispatch_label: String,
     target_temp: String,
+    line_temp: Option<String>,
     labels: HashSet<String>,
     targets: Vec<String>,
 }
@@ -26750,6 +26791,7 @@ impl FinallyContext {
             control_depth,
             dispatch_label,
             target_temp,
+            None,
             labels,
         )
     }
@@ -26758,6 +26800,7 @@ impl FinallyContext {
         control_depth: usize,
         dispatch_label: String,
         target_temp: String,
+        line_temp: Option<String>,
         labels: HashSet<String>,
     ) -> Self {
         Self::new(
@@ -26765,6 +26808,7 @@ impl FinallyContext {
             control_depth,
             dispatch_label,
             target_temp,
+            line_temp,
             labels,
         )
     }
@@ -26774,6 +26818,7 @@ impl FinallyContext {
         control_depth: usize,
         dispatch_label: String,
         target_temp: String,
+        line_temp: Option<String>,
         labels: HashSet<String>,
     ) -> Self {
         Self {
@@ -26781,6 +26826,7 @@ impl FinallyContext {
             control_depth,
             dispatch_label,
             target_temp,
+            line_temp,
             labels,
             targets: Vec::new(),
         }
@@ -27036,6 +27082,22 @@ fn emit_jump_through_finally_contexts(
     context_indices: &[usize],
     target_label: &str,
 ) {
+    emit_jump_through_finally_contexts_with_line(
+        out,
+        finally_stack,
+        context_indices,
+        target_label,
+        None,
+    );
+}
+
+fn emit_jump_through_finally_contexts_with_line(
+    out: &mut String,
+    finally_stack: &mut [FinallyContext],
+    context_indices: &[usize],
+    target_label: &str,
+    line: Option<usize>,
+) {
     if context_indices.is_empty() {
         out.push_str("    goto ");
         out.push_str(target_label);
@@ -27044,6 +27106,13 @@ fn emit_jump_through_finally_contexts(
     }
 
     for (position, context_index) in context_indices.iter().enumerate() {
+        if let (Some(line_temp), Some(line)) = (&finally_stack[*context_index].line_temp, line) {
+            out.push_str("    ");
+            out.push_str(line_temp);
+            out.push_str(" = ");
+            out.push_str(&line.to_string());
+            out.push_str(";\n");
+        }
         let target = if position == 0 {
             target_label.to_string()
         } else {
@@ -32466,6 +32535,15 @@ fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str(indent);
     out.push_str("ptn_value_drop(&");
     out.push_str(value);
+    out.push_str(");\n");
+}
+
+fn emit_value_cleanup_with_runtime_line(out: &mut String, indent: &str, value: &str, line: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_value_destroy_with_runtime_scope_at(&runtime, &");
+    out.push_str(value);
+    out.push_str(", ");
+    out.push_str(line);
     out.push_str(");\n");
 }
 
