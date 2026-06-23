@@ -18419,6 +18419,18 @@ fn runtime_type_hint_static_subtype(
         (_, TypeHint::Union(types)) => types
             .iter()
             .any(|member| runtime_type_hint_static_subtype(candidate, member, classes)),
+        (_, TypeHint::Intersection(types)) => types
+            .iter()
+            .all(|member| runtime_type_hint_static_subtype(candidate, member, classes)),
+        (TypeHint::Intersection(types), _) => types
+            .iter()
+            .any(|member| runtime_type_hint_static_subtype(member, target, classes)),
+        (TypeHint::Iterable, _) => runtime_iterable_static_subtype(target, classes),
+        (_, TypeHint::Iterable) => {
+            let traversable = TypeHint::Class("Traversable".to_string());
+            runtime_type_hint_static_subtype(candidate, &TypeHint::Array, classes)
+                || runtime_type_hint_static_subtype(candidate, &traversable, classes)
+        }
         (TypeHint::True | TypeHint::False, TypeHint::Bool) => true,
         (TypeHint::Class(_), TypeHint::Object) | (TypeHint::Static, TypeHint::Object) => true,
         (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) => {
@@ -18426,6 +18438,12 @@ fn runtime_type_hint_static_subtype(
         }
         _ => false,
     }
+}
+
+fn runtime_iterable_static_subtype(target: &TypeHint, classes: &[ClassDecl]) -> bool {
+    let traversable = TypeHint::Class("Traversable".to_string());
+    runtime_type_hint_static_subtype(&TypeHint::Array, target, classes)
+        && runtime_type_hint_static_subtype(&traversable, target, classes)
 }
 
 fn runtime_class_type_static_subtype(
@@ -23612,6 +23630,7 @@ fn collect_runtime_variance_type_names(
 fn runtime_variance_type_names_for_pair(
     function: &FunctionDecl,
     parent_function: &FunctionDecl,
+    classes: &[ClassDecl],
 ) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut names = Vec::new();
@@ -23620,26 +23639,28 @@ fn runtime_variance_type_names_for_pair(
         .len()
         .max(parent_function.parameters.len());
     for index in 0..parameter_count {
-        if let Some(type_hint) = function
+        let type_hint = function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref())
-        {
-            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
-        }
-        if let Some(type_hint) = parent_function
+            .and_then(|parameter| parameter.type_hint.as_ref());
+        let parent_type_hint = parent_function
             .parameters
             .get(index)
-            .and_then(|parameter| parameter.type_hint.as_ref())
-        {
-            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+            .and_then(|parameter| parameter.type_hint.as_ref());
+        if let (Some(type_hint), Some(parent_type_hint)) = (type_hint, parent_type_hint) {
+            if !runtime_type_hint_static_subtype(parent_type_hint, type_hint, classes) {
+                collect_runtime_variance_type_names(parent_type_hint, &mut seen, &mut names);
+                collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+            }
         }
     }
-    if let Some(type_hint) = &function.return_type {
-        collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
-    }
-    if let Some(type_hint) = &parent_function.return_type {
-        collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+    if let (Some(type_hint), Some(parent_type_hint)) =
+        (&function.return_type, &parent_function.return_type)
+    {
+        if !runtime_type_hint_static_subtype(type_hint, parent_type_hint, classes) {
+            collect_runtime_variance_type_names(type_hint, &mut seen, &mut names);
+            collect_runtime_variance_type_names(parent_type_hint, &mut seen, &mut names);
+        }
     }
     names
 }
@@ -23653,8 +23674,9 @@ fn append_runtime_variance_type_checks_for_pair(
     parent_class_name: &str,
     parent_method: &crate::ir::MethodDecl,
     parent_function: &FunctionDecl,
+    classes: &[ClassDecl],
 ) {
-    let type_names = runtime_variance_type_names_for_pair(function, parent_function);
+    let type_names = runtime_variance_type_names_for_pair(function, parent_function, classes);
     if type_names.is_empty() {
         return;
     }
@@ -23706,6 +23728,7 @@ fn class_runtime_variance_type_checks(
                 &parent_class.name,
                 parent_method,
                 parent_function,
+                classes,
             );
         }
         for interface_name in class_transitive_interfaces(class, classes) {
@@ -23729,6 +23752,7 @@ fn class_runtime_variance_type_checks(
                     &interface.name,
                     parent_method,
                     parent_function,
+                    classes,
                 );
             }
         }

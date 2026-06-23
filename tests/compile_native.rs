@@ -82149,6 +82149,100 @@ var_dump($randomizer->getBytes(64));
     assert!(c_source.contains("ptn_declared_class_implements_interface"));
 }
 
+#[test]
+fn compile_intersection_type_variance_to_native_binary() {
+    let root = temp_dir("ptn-native-intersection-type-variance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intersection-type-variance.php");
+    let output = root.join("intersection-type-variance-bin");
+    fs::write(
+        &input,
+        r#"<?php
+interface A {}
+interface B {}
+interface C {}
+interface X {}
+interface Y {}
+interface Z {}
+
+class Test implements A, B, C, X, Y, Z {}
+
+class CovariantParent {
+    public function foo(): A { return new Test(); }
+}
+class CovariantChild extends CovariantParent {
+    public function foo(): A&B { return new Test(); }
+}
+class CovariantGrandChild extends CovariantChild {
+    public function foo(): A&B&C { return new Test(); }
+}
+
+class CommutativeParent {
+    public A&B $prop;
+    public function foo(A&B $v): A&B { return $v; }
+}
+class CommutativeChild extends CommutativeParent {
+    public B&A $prop;
+    public function foo(B&A $v): B&A { return $v; }
+}
+
+class VarianceParent {
+    public function method1(X&Y&Z $a): X&Y { return $a; }
+    public function method2(X&Y $a): X { return $a; }
+}
+class VarianceChild extends VarianceParent {
+    public function method1(X&Y $a): X&Y&Z { return $a; }
+    public function method2(X $a): X&Y { return $a; }
+}
+
+class UnionParent {
+    public function test(): X|Z { return new Test(); }
+}
+class UnionChild extends UnionParent {
+    public function test(): X&Y { return new Test(); }
+}
+
+class ObjectParent {
+    public function method(): object {}
+    public function method2(): object|int {}
+    public function method3(): Y|int {}
+}
+class ObjectChild extends ObjectParent {
+    public function method(): MissingX&Y {}
+    public function method2(): MissingX&Y {}
+    public function method3(): MissingX&Y {}
+}
+
+abstract class MyIterator implements Traversable {}
+class IterableParent {
+    public function method(): iterable {}
+    public function method2(): iterable|int {}
+    public function method3(): iterable|MissingZ {}
+}
+class IterableChild extends IterableParent {
+    public function method(): MissingX&Traversable {}
+    public function method2(): MissingX&MyIterator {}
+    public function method3(): MissingX&MissingZ {}
+}
+
+echo "===DONE===\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
