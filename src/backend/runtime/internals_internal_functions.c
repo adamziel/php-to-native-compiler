@@ -93552,9 +93552,12 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
         ptn_string_buffer_init(&buffer);
         for (size_t i = 0; i < format.len; i++) {
             char ch = format.data[i];
-            if (ch != '%' || i + 1 >= format.len) {
+            if (ch != '%') {
                 ptn_string_buffer_append_char(&buffer, ch);
                 continue;
+            }
+            if (i + 1 >= format.len) {
+                break;
             }
             char token = format.data[++i];
             switch (token) {

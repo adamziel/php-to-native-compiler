@@ -22705,7 +22705,8 @@ $constructed = new DateInterval(\"P2Y4DT6H8M\");\n\
 var_dump($constructed->y, $constructed->m, $constructed->d, $constructed->h, $constructed->i, $constructed->s, $constructed->f, $constructed->invert, $constructed->days, $constructed->from_string);\n\
 $f = 0.5;\n\
 var_dump($constructed->f = $f, $f);\n\
-echo $constructed->format(\"p=%Y-%M-%D %H:%I:%S %a\"), \"\\n\";",
+echo $constructed->format(\"p=%Y-%M-%D %H:%I:%S %a\"), \"\\n\";\n\
+var_dump($constructed->format(\"%\"), $constructed->format(\"%%\"), $constructed->format(\"x%\"), $constructed->format(\"%Q\"), date_interval_format($constructed, \"%\"));",
     )
     .unwrap();
 
@@ -22729,7 +22730,12 @@ bool(false)\n\
 bool(false)\n\
 float(0.5)\n\
 float(0.5)\n\
-p=02-00-04 06:08:00 (unknown)\n"
+p=02-00-04 06:08:00 (unknown)\n\
+string(0) \"\"\n\
+string(1) \"%\"\n\
+string(1) \"x\"\n\
+string(2) \"%Q\"\n\
+string(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
