@@ -16758,7 +16758,7 @@ fn compile_spl_object_storage_unserialize_key_reference_to_native_binary() {
         &input,
         r#"<?php
 $inner = 'x:i:1;O:8:"stdClass":0:{};m:a:0:{}';
-$payload = 'a:2:{i:0;C:16:"SplObjectStorage":' . strlen($inner) . ':{' . $inner . '}i:1;R:4;}';
+$payload = 'a:2:{i:0;C:16:"SPlObjectStorage":' . strlen($inner) . ':{' . $inner . '}i:1;R:4;}';
 $value = unserialize($payload);
 ob_start();
 var_dump($value);
