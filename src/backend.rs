@@ -5321,6 +5321,15 @@ fn emit_return_type_boundary(
 }
 
 fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHint) -> String {
+    type_hint_condition_with_static_scope(value_expr, runtime_expr, type_hint, None)
+}
+
+fn type_hint_condition_with_static_scope(
+    value_expr: &str,
+    runtime_expr: &str,
+    type_hint: &TypeHint,
+    static_scope_class: Option<&str>,
+) -> String {
     match type_hint {
         TypeHint::Null => format!("ptn_value_deref({value_expr}).type == PTN_NULL"),
         TypeHint::Array => format!("ptn_value_deref({value_expr}).type == PTN_ARRAY"),
@@ -5341,19 +5350,33 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Callable => format!("ptn_callable_is_valid({runtime_expr}, {value_expr}, 0)"),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
-        TypeHint::Static => format!(
-            "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, ({runtime_expr})->current_called_class_name != NULL ? ({runtime_expr})->current_called_class_name : ({runtime_expr})->current_class_name)"
-        ),
+        TypeHint::Static => {
+            if let Some(class_name) = static_scope_class {
+                format!(
+                    "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, \"{}\")",
+                    c_string(class_name)
+                )
+            } else {
+                format!(
+                    "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, ({runtime_expr})->current_called_class_name != NULL ? ({runtime_expr})->current_called_class_name : ({runtime_expr})->current_class_name)"
+                )
+            }
+        }
         TypeHint::Nullable(inner) => format!(
             "ptn_value_deref({value_expr}).type == PTN_NULL || ({})",
-            type_hint_condition(value_expr, runtime_expr, inner)
+            type_hint_condition_with_static_scope(value_expr, runtime_expr, inner, static_scope_class)
         ),
         TypeHint::Union(types) => types
             .iter()
             .map(|type_hint| {
                 format!(
                     "({})",
-                    type_hint_condition(value_expr, runtime_expr, type_hint)
+                    type_hint_condition_with_static_scope(
+                        value_expr,
+                        runtime_expr,
+                        type_hint,
+                        static_scope_class
+                    )
                 )
             })
             .collect::<Vec<_>>()
@@ -5363,7 +5386,12 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
             .map(|type_hint| {
                 format!(
                     "({})",
-                    type_hint_condition(value_expr, runtime_expr, type_hint)
+                    type_hint_condition_with_static_scope(
+                        value_expr,
+                        runtime_expr,
+                        type_hint,
+                        static_scope_class
+                    )
                 )
             })
             .collect::<Vec<_>>()
@@ -5385,7 +5413,12 @@ fn emit_class_constant_type_boundary(
         return;
     };
     if class_constant_type_allows_float_coercion(type_hint) {
-        let condition = type_hint_condition(value_temp, "&runtime", type_hint);
+        let condition = type_hint_condition_with_static_scope(
+            value_temp,
+            "&runtime",
+            type_hint,
+            Some(&class.name),
+        );
         out.push_str("            if (!(");
         out.push_str(&condition);
         out.push_str(") && ptn_value_deref(");
@@ -5402,7 +5435,8 @@ fn emit_class_constant_type_boundary(
         out.push_str(" = ptn_class_constant_float_value;\n");
         out.push_str("            }\n");
     }
-    let condition = type_hint_condition(value_temp, "&runtime", type_hint);
+    let condition =
+        type_hint_condition_with_static_scope(value_temp, "&runtime", type_hint, Some(&class.name));
     out.push_str("            if (!(");
     out.push_str(&condition);
     out.push_str(")) {\n");
@@ -18102,7 +18136,27 @@ fn emit_runtime_parameter_signature_compatibility_validation(
                     type_hint,
                     class,
                     classes,
-                ) => {}
+                ) =>
+            {
+                for unavailable_name in
+                    runtime_object_compatibility_class_names(parent_type_hint, type_hint)
+                {
+                    emit_runtime_method_signature_unresolved_fatal_after_autoload(
+                        out,
+                        class,
+                        method,
+                        function,
+                        parent_class,
+                        parent_method,
+                        parent_function,
+                        &unavailable_name,
+                        class_index,
+                        method_index,
+                        source_path,
+                        type_temp_counter,
+                    );
+                }
+            }
             (Some(type_hint), Some(parent_type_hint)) => {
                 if let Some(unavailable_name) =
                     runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
@@ -18172,6 +18226,24 @@ fn emit_runtime_return_signature_compatibility_validation(
     };
 
     if runtime_type_hint_static_subtype(return_type, parent_return_type, class, classes) {
+        for unavailable_name in
+            runtime_object_compatibility_class_names(return_type, parent_return_type)
+        {
+            emit_runtime_method_signature_unresolved_fatal_after_autoload(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                &unavailable_name,
+                class_index,
+                method_index,
+                source_path,
+                type_temp_counter,
+            );
+        }
         if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
             (return_type, parent_return_type)
         {
@@ -18249,6 +18321,28 @@ fn emit_runtime_return_signature_compatibility_validation(
         parent_function,
         source_path,
     );
+}
+
+fn runtime_object_compatibility_class_names(
+    candidate: &TypeHint,
+    target: &TypeHint,
+) -> Vec<String> {
+    if !type_hint_accepts_object_directly(target) {
+        return Vec::new();
+    }
+    let mut seen = HashSet::new();
+    let mut names = Vec::new();
+    collect_runtime_variance_type_names(candidate, &mut seen, &mut names);
+    names
+}
+
+fn type_hint_accepts_object_directly(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Object => true,
+        TypeHint::Nullable(inner) => type_hint_accepts_object_directly(inner),
+        TypeHint::Union(types) => types.iter().any(type_hint_accepts_object_directly),
+        _ => false,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

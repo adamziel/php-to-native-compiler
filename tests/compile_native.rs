@@ -11306,6 +11306,46 @@ echo "===DONE===\n";
 }
 
 #[test]
+fn compile_autoload_variance_object_class_type_names_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-variance-object-class-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-variance-object-class-types.php");
+    let output = root.join("autoload-variance-object-class-types-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function($class) {
+    var_dump($class);
+    if ($class === 'X') {
+        class X {}
+    } else {
+        class Y {}
+    }
+});
+
+class A {
+    public function method(X $param) : object {}
+}
+
+class B extends A {
+    public function method(object $param) : Y {}
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"X\"\nstring(1) \"Y\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_autoload_variance_class_order_to_native_binary() {
     let cases = [
         (
@@ -36474,6 +36514,59 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Cannot assign %s to class constant RuntimeBad::VALUE of type int"));
     assert!(c_source.contains("ptn_class_constant_float_value"));
+}
+
+#[test]
+fn compile_static_typed_enum_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-static-typed-enum-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-typed-enum-constants.php");
+    let output = root.join("static-typed-enum-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+enum E {
+    case Foo;
+    public const static CONST1 = E::Foo;
+    public const static|stdClass CONST2 = E::Foo;
+}
+
+enum Other {
+    case Foo;
+}
+
+enum Bad {
+    public const static C = Other::Foo;
+}
+
+var_dump(E::CONST1);
+var_dump(E::CONST2);
+
+try {
+    var_dump(Bad::C);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "enum(E::Foo)\n",
+            "enum(E::Foo)\n",
+            "Cannot assign Other to class constant Bad::C of type static\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot assign %s to class constant Bad::C of type static"));
 }
 
 #[test]
