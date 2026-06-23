@@ -9241,6 +9241,7 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->pending_exception = ptn_null();
     generator->pending_exception_position = 0;
     generator->has_pending_exception = 0;
+    generator->pending_exception_on_rewind = 0;
     ptn_string_buffer_init(&generator->pending_output);
     generator->closure_owner = ptn_null();
     generator->has_receiver = 0;
@@ -9608,6 +9609,11 @@ static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtim
     generator->pending_exception = ptn_value_clone(ptn_exception_borrow(runtime->exceptions->active_exception));
     generator->pending_exception_position = generator->values->len - 1;
     generator->has_pending_exception = 1;
+    generator->pending_exception_on_rewind =
+        runtime->generator_aborted_after_yield && runtime->generator_aborted_rethrow_on_rewind ? 1 : 0;
+    runtime->generator_aborted_after_yield = 0;
+    runtime->generator_aborted_rethrow_on_rewind = 0;
+    runtime->generator_chained_exception_during_unwind = 0;
     ptn_clear_exception(runtime);
     return 1;
 }
@@ -10064,6 +10070,16 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
                 if (source != NULL) {
                     source->position = 0;
                 }
+            }
+        }
+        if (generator->pending_exception_on_rewind) {
+            generator->pending_exception_on_rewind = 0;
+            if (ptn_generator_throw_pending_exception_at_position(
+                    runtime,
+                    generator,
+                    generator->pending_exception_position
+                )) {
+                return ptn_null();
             }
         }
     }

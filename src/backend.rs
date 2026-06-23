@@ -24633,6 +24633,9 @@ fn emit_instruction(
             out.push_str(";\n");
             emit_value_cleanup(out, "    ", &emitted_value);
             if let Some(target) = generator_yield_abort_target {
+                out.push_str("    if (runtime.generator_chained_exception_during_unwind) {\n");
+                out.push_str("        runtime.generator_aborted_rethrow_on_rewind = 1;\n");
+                out.push_str("    }\n");
                 out.push_str("    runtime.generator_aborted_after_yield = 1;\n");
                 let context_indices = return_cleanup_context_indices(finally_stack);
                 emit_jump_through_finally_contexts_with_line(
@@ -26593,10 +26596,19 @@ fn emit_exceptional_finally_and_rethrow(
     indent: &str,
 ) {
     let saved_exception_temp = values.next_temp();
+    let saved_exception_had_previous_temp = values.next_temp();
     out.push_str(indent);
     out.push_str("PtnException *");
     out.push_str(&saved_exception_temp);
     out.push_str(" = runtime.exceptions->active_exception;\n");
+    out.push_str(indent);
+    out.push_str("int ");
+    out.push_str(&saved_exception_had_previous_temp);
+    out.push_str(" = ");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" != NULL && ptn_value_deref(");
+    out.push_str(&saved_exception_temp);
+    out.push_str("->previous).type != PTN_NULL;\n");
     out.push_str(indent);
     out.push_str("if (");
     out.push_str(&saved_exception_temp);
@@ -26614,6 +26626,9 @@ fn emit_exceptional_finally_and_rethrow(
     } else {
         None
     };
+    let previous_exceptional_finally_saved_exception =
+        values.exceptional_finally_saved_exception.clone();
+    values.exceptional_finally_saved_exception = Some(saved_exception_temp.clone());
     emit_finally_instructions_excluding_current(
         out,
         values,
@@ -26625,6 +26640,7 @@ fn emit_exceptional_finally_and_rethrow(
         has_current_context,
         generator_yield_resume_label.as_deref(),
     );
+    values.exceptional_finally_saved_exception = previous_exceptional_finally_saved_exception;
     if let Some(label) = &generator_yield_resume_label {
         out.push_str(indent);
         out.push_str(label);
@@ -26642,6 +26658,30 @@ fn emit_exceptional_finally_and_rethrow(
     out.push_str(";\n");
     out.push_str(indent);
     out.push_str("} else {\n");
+    out.push_str(indent);
+    out.push_str("    if (runtime.exceptions->active_exception != NULL && ");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" != NULL) {\n");
+    out.push_str(indent);
+    out.push_str("        if (runtime.generator_aborted_after_yield && (runtime.exceptions->active_exception != ");
+    out.push_str(&saved_exception_temp);
+    out.push_str(" || (!");
+    out.push_str(&saved_exception_had_previous_temp);
+    out.push_str(" && ptn_value_deref(");
+    out.push_str(&saved_exception_temp);
+    out.push_str("->previous).type != PTN_NULL))) {\n");
+    out.push_str(indent);
+    out.push_str("            runtime.generator_aborted_rethrow_on_rewind = 1;\n");
+    out.push_str(indent);
+    out.push_str("        }\n");
+    out.push_str(indent);
+    out.push_str(
+        "        ptn_exception_chain_previous_if_missing(runtime.exceptions->active_exception, ",
+    );
+    out.push_str(&saved_exception_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("    }\n");
     out.push_str(indent);
     out.push_str("    ptn_exception_free(");
     out.push_str(&saved_exception_temp);
@@ -26695,6 +26735,18 @@ fn emit_instruction_sequence_with_generator_yield_abort_target(
     let previous_target = values.generator_yield_abort_target.clone();
     values.generator_yield_abort_target = generator_yield_abort_target.map(str::to_string);
     for instruction in instructions {
+        if let Some(saved_exception_temp) = &values.exceptional_finally_saved_exception {
+            out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
+            out.push_str(saved_exception_temp);
+            out.push_str(" != NULL) {\n");
+            out.push_str("        ptn_exception_retain(");
+            out.push_str(saved_exception_temp);
+            out.push_str(");\n");
+            out.push_str("        runtime.exceptions->active_exception = ");
+            out.push_str(saved_exception_temp);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+        }
         emit_instruction(
             out,
             values,
@@ -33040,6 +33092,7 @@ struct ValueEmitter {
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
+    exceptional_finally_saved_exception: Option<String>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -34705,6 +34758,7 @@ impl ValueEmitter {
             current_function_is_anonymous,
             current_function_index,
             generator_yield_abort_target: None,
+            exceptional_finally_saved_exception: None,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),

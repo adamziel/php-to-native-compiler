@@ -191,6 +191,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
     runtime->generator_aborted_after_yield = 0;
+    runtime->generator_aborted_rethrow_on_rewind = 0;
+    runtime->generator_chained_exception_during_unwind = 0;
     runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
@@ -3373,6 +3375,18 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         int64_t code = ptn_throwable_int_property(runtime, resolved, "code", 0, line);
         int64_t severity = ptn_throwable_int_property(runtime, resolved, "severity", PTN_E_ERROR, line);
         PtnValue previous = ptn_throwable_previous_value(runtime, resolved, line);
+        int chains_active_generator_exception =
+            runtime != NULL &&
+            runtime->current_generator != NULL &&
+            runtime->exceptions != NULL &&
+            runtime->exceptions->active_exception != NULL &&
+            ptn_value_deref(previous).type == PTN_NULL;
+        if (chains_active_generator_exception) {
+            runtime->generator_chained_exception_during_unwind = 1;
+            if (runtime->generator_aborted_after_yield) {
+                runtime->generator_aborted_rethrow_on_rewind = 1;
+            }
+        }
         PtnValue chained_previous = ptn_exception_previous_or_active(runtime, previous);
         PtnValue file_value = ptn_throwable_file_value(runtime, resolved, line);
         char *exception_path = ptn_value_to_string(file_value);
@@ -3418,6 +3432,18 @@ static PTN_UNUSED PtnValue ptn_throw_value(
     if (resolved.type != PTN_EXCEPTION) {
         ptn_throw_exception_at(runtime, "Error", "Can only throw objects", path, line);
         return ptn_null();
+    }
+    int chains_active_generator_exception =
+        runtime != NULL &&
+        runtime->current_generator != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        ptn_value_deref(resolved.as.exception->previous).type == PTN_NULL;
+    if (chains_active_generator_exception) {
+        runtime->generator_chained_exception_during_unwind = 1;
+        if (runtime->generator_aborted_after_yield) {
+            runtime->generator_aborted_rethrow_on_rewind = 1;
+        }
     }
     PtnValue chained_previous = ptn_exception_previous_or_active(
         runtime,
@@ -7326,6 +7352,7 @@ static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
 static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = NULL;
+    runtime->generator_chained_exception_during_unwind = 0;
 }
 
 static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const char *name, size_t line) {

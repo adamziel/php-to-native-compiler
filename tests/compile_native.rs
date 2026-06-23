@@ -19756,6 +19756,79 @@ try {
 }
 
 #[test]
+fn compile_nested_finally_exception_replacement_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-finally-exception-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-finally-exception-replacement.php");
+    let output = root.join("nested-finally-exception-replacement-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test_a() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            try {
+            } finally {
+                throw new Exception(2);
+            }
+        } catch (Exception $e) {}
+        try {
+        } finally {
+            throw new Exception(3);
+        }
+    }
+}
+
+function test_b() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            throw new Exception(2);
+        } catch (Exception $e) {
+            try {
+            } finally {
+                throw new Exception(3);
+            }
+        }
+    }
+}
+
+try {
+    test_a();
+} catch (Exception $e) {
+    echo $e, "\n";
+}
+echo "--\n";
+try {
+    test_b();
+} catch (Exception $e) {
+    echo $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(stdout.matches("Exception: 1 in ").count(), 2, "{stdout}");
+    assert_eq!(
+        stdout.matches("Next Exception: 3 in ").count(),
+        2,
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Next Exception: 2 in "), "{stdout}");
+    assert!(stdout.contains(": test_a()\n#1 {main}"), "{stdout}");
+    assert!(stdout.contains(": test_b()\n#1 {main}"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_abort_through_nested_finally_to_native_binary() {
     let root = temp_dir("ptn-native-generator-abort-nested-finally");
     fs::create_dir_all(&root).unwrap();
@@ -19777,6 +19850,14 @@ function gen_one() {
         print "OUTER\n";
     }
     print "NOTREACHED\n";
+}
+
+function gen_cleanup() {
+    try {
+        throw new Exception("suppressed");
+    } finally {
+        yield;
+    }
 }
 
 function gen_two() {
@@ -19811,6 +19892,9 @@ function gen_three() {
 
 gen_one()->current();
 echo "--\n";
+gen_cleanup()->rewind();
+echo "cleanup\n";
+echo "--\n";
 try {
     gen_two()->rewind();
 } catch (Exception $e) {
@@ -19833,7 +19917,8 @@ try {
     let stdout = String::from_utf8(execution.stdout).unwrap();
     let path = input.display().to_string();
     assert!(!stdout.contains("NOTREACHED"));
-    assert!(stdout.starts_with("INNER\nOUTER\n--\n"));
+    assert!(stdout.starts_with("INNER\nOUTER\n--\ncleanup\n--\n"));
+    assert!(!stdout.contains("suppressed"));
     assert!(stdout.contains("Exception: 1 in "));
     assert!(stdout.contains("\n\nNext Exception: 2 in "));
     assert!(stdout.contains("Stack trace:\n#0 [internal function]: gen_two()\n#1 "));

@@ -968,6 +968,7 @@ struct PtnGenerator {
     PtnValue pending_exception;
     size_t pending_exception_position;
     int has_pending_exception;
+    int pending_exception_on_rewind;
     PtnStringBuffer pending_output;
     PtnValue closure_owner;
     int has_receiver;
@@ -1503,6 +1504,8 @@ struct PtnRuntime {
     int destructor_shutdown_phase;
     PtnGenerator *current_generator;
     int generator_aborted_after_yield;
+    int generator_aborted_rethrow_on_rewind;
+    int generator_chained_exception_during_unwind;
     PtnObject *current_fiber;
     int has_current_receiver;
     PtnValue current_receiver;
