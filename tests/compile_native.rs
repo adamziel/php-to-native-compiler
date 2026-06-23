@@ -43342,6 +43342,171 @@ $server->handle($client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-round2-encoded-arrays-scalars.php");
+    let output = root.join("soap-round2-encoded-arrays-scalars-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/round2-mini.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:tns="http://soapinterop.org/"
+  xmlns:s="http://soapinterop.org/xsd"
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://soapinterop.org/xsd">
+      <import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <complexType name="ArrayOfstring">
+        <complexContent><restriction base="SOAP-ENC:Array"><attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="string[]"/></restriction></complexContent>
+      </complexType>
+      <complexType name="ArrayOfString2D">
+        <complexContent><restriction base="SOAP-ENC:Array"><attribute ref="SOAP-ENC:arrayType" wsdl:arrayType="string[,]"/></restriction></complexContent>
+      </complexType>
+      <complexType name="SOAPArrayStruct">
+        <all>
+          <element name="varString" type="string"/>
+          <element name="varInt" type="int"/>
+          <element name="varFloat" type="float"/>
+          <element name="varArray" type="s:ArrayOfstring"/>
+        </all>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoBase64Request"><part name="inputBase64" type="xsd:base64Binary"/></message>
+  <message name="echoBase64Response"><part name="outputBase64" type="xsd:base64Binary"/></message>
+  <message name="echoHexBinaryRequest"><part name="inputHexBinary" type="xsd:hexBinary"/></message>
+  <message name="echoHexBinaryResponse"><part name="outputHexBinary" type="xsd:hexBinary"/></message>
+  <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echo2DStringArrayRequest"><part name="input2DStringArray" type="s:ArrayOfString2D"/></message>
+  <message name="echo2DStringArrayResponse"><part name="return" type="s:ArrayOfString2D"/></message>
+  <message name="echoNestedArrayRequest"><part name="inputStruct" type="s:SOAPArrayStruct"/></message>
+  <message name="echoNestedArrayResponse"><part name="return" type="s:SOAPArrayStruct"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoBase64"><input message="tns:echoBase64Request"/><output message="tns:echoBase64Response"/></operation>
+    <operation name="echoHexBinary"><input message="tns:echoHexBinaryRequest"/><output message="tns:echoHexBinaryResponse"/></operation>
+    <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echo2DStringArray"><input message="tns:echo2DStringArrayRequest"/><output message="tns:echo2DStringArrayResponse"/></operation>
+    <operation name="echoNestedArray"><input message="tns:echoNestedArrayRequest"/><output message="tns:echoNestedArrayResponse"/></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoBase64"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoHexBinary"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoDecimal"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echo2DStringArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+    <operation name="echoNestedArray"><soap:operation soapAction="http://soapinterop.org/"/><input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input><output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output></operation>
+  </binding>
+</definitions>
+WSDL);
+
+class Round2Service {
+    function echoBase64($value) { return $value; }
+    function echoHexBinary($value) { return $value; }
+    function echoDecimal($value) { return $value; }
+    function echo2DStringArray($value) { return $value; }
+    function echoNestedArray($value) { return $value; }
+}
+
+function round2_server_response($wsdl, $request) {
+    $server = new SoapServer($wsdl);
+    $server->setClass(Round2Service::class);
+    ob_start();
+    $server->handle($request);
+    return ob_get_clean();
+}
+
+$client = new SoapClient(NULL, ['location' => 'test://', 'uri' => 'http://soapinterop.org/', 'trace' => 1, 'exceptions' => 0]);
+foreach ([
+    'echoBase64' => 'Nebraska',
+    'echoHexBinary' => 'soapx4',
+    'echoDecimal' => '12345.67890',
+] as $method => $value) {
+    $client->__soapCall($method, [$value], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+    echo round2_server_response($wsdl, $client->__getLastRequest());
+}
+
+$param2d = new SoapParam(new SoapVar([
+    new SoapVar([new SoapVar('row0col0', XSD_STRING), new SoapVar('row0col1', XSD_STRING)], SOAP_ENC_ARRAY),
+    new SoapVar([new SoapVar('row1col0', XSD_STRING), new SoapVar('row1col1', XSD_STRING)], SOAP_ENC_ARRAY),
+], SOAP_ENC_ARRAY, 'ArrayOfString2D', 'http://soapinterop.org/xsd'), 'input2DStringArray');
+$client->__soapCall('echo2DStringArray', [$param2d], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+echo $client->__getLastRequest();
+echo round2_server_response($wsdl, $client->__getLastRequest());
+
+$nested = new SoapParam(new SoapVar([
+    new SoapVar('arg', XSD_STRING, null, null, 'varString'),
+    new SoapVar(34, XSD_INT, null, null, 'varInt'),
+    new SoapVar(325.325, XSD_FLOAT, null, null, 'varFloat'),
+    new SoapVar([new SoapVar('red', XSD_STRING), new SoapVar('blue', XSD_STRING)], SOAP_ENC_ARRAY, 'ArrayOfString', 'http://soapinterop.org/xsd', 'varArray'),
+], SOAP_ENC_OBJECT, 'SOAPArrayStruct', 'http://soapinterop.org/xsd'), 'inputStruct');
+$client->__soapCall('echoNestedArray', [$nested], ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']);
+echo $client->__getLastRequest();
+echo round2_server_response($wsdl, $client->__getLastRequest());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<outputBase64 xsi:type=\"xsd:base64Binary\">TmVicmFza2E=</outputBase64>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("<outputHexBinary xsi:type=\"xsd:hexBinary\">736F61707834</outputHexBinary>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<outputDecimal xsi:type=\"xsd:decimal\">12345.67890</outputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<input2DStringArray SOAP-ENC:arrayType=\"SOAP-ENC:Array[2]\" xsi:type=\"ns2:ArrayOfString2D\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<item SOAP-ENC:arrayType=\"xsd:string[2]\" xsi:type=\"SOAP-ENC:Array\"><item xsi:type=\"xsd:string\">row0col0</item><item xsi:type=\"xsd:string\">row0col1</item></item>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<return SOAP-ENC:arrayType=\"xsd:string[2,2]\" xsi:type=\"ns2:ArrayOfString2D\"><item xsi:type=\"xsd:string\">row0col0</item><item xsi:type=\"xsd:string\">row0col1</item><item xsi:type=\"xsd:string\">row1col0</item><item xsi:type=\"xsd:string\">row1col1</item></return>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<varArray SOAP-ENC:arrayType=\"xsd:string[2]\" xsi:type=\"ns2:ArrayOfString\"><item xsi:type=\"xsd:string\">red</item><item xsi:type=\"xsd:string\">blue</item></varArray>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<return xsi:type=\"ns2:SOAPArrayStruct\"><varString xsi:type=\"xsd:string\">arg</varString><varInt xsi:type=\"xsd:int\">34</varInt><varFloat xsi:type=\"xsd:float\">325.325</varFloat><varArray SOAP-ENC:arrayType=\"xsd:string[2]\" xsi:type=\"ns2:ArrayOfstring\"><item xsi:type=\"xsd:string\">red</item><item xsi:type=\"xsd:string\">blue</item></varArray></return>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_request_array_scalar_xsd_type"));
+    assert!(c_source.contains("ptn_soap_wsdl_response_part_type"));
+}
+
+#[test]
 fn compile_soap_non_wsdl_iso_8859_1_response_to_native_binary() {
     let root = temp_dir("ptn-native-soap-non-wsdl-iso-8859-1-response");
     fs::create_dir_all(&root).unwrap();
