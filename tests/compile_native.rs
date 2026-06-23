@@ -13633,6 +13633,100 @@ try {
 }
 
 #[test]
+fn compile_weak_string_type_declarations_accept_stringable_objects_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-string-type-declaration-stringable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-string-type-declaration-stringable.php");
+    let strict = root.join("strict-string-type-call.php");
+    let output = root.join("weak-string-type-declaration-stringable-bin");
+    fs::write(
+        &strict,
+        "<?php
+declare(strict_types=1);
+takes_string(new StringCapable());
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+class StringCapable {
+    public function __toString() {
+        return \"foobar\";
+    }
+}
+class PlainObject {}
+function takes_string(string $value) {
+    var_dump($value);
+}
+function returns_string($value): string {
+    return $value;
+}
+takes_string(new StringCapable());
+var_dump(returns_string(new StringCapable()));
+try {
+    takes_string(new PlainObject());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    include __DIR__ . '/strict-string-type-call.php';
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "string(6) \"foobar\"\n\
+string(6) \"foobar\"\n\
+takes_string(): Argument #1 ($value) must be of type string, PlainObject given, called in {} on line 17\n\
+takes_string(): Argument #1 ($value) must be of type string, StringCapable given, called in {} on line 3\n",
+            input.display(),
+            strict.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_int_parameter_precision_diagnostic_uses_declaration_line_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-int-parameter-precision-line");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-int-parameter-precision-line.php");
+    let output = root.join("weak-int-parameter-precision-line-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function ($errno, $msg, $file, $line) {
+    echo \"line=$line\\n\";
+    return true;
+});
+function takes_int(int $value) { var_dump($value); }
+takes_int(1.5);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "line=6\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_object_string_array_helper_keys_to_native_binary() {
     let root = temp_dir("ptn-native-object-string-array-helper-keys");
     fs::create_dir_all(&root).unwrap();

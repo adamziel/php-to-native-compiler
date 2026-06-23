@@ -1917,6 +1917,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
 
     out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_int(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    size_t diagnostic_line = declaration_line == 0 ? line : declaration_line;\n");
     out.push_str("    if (resolved.type == PTN_INT) {\n");
     out.push_str("        *out = ptn_value_clone(resolved);\n");
     out.push_str("        return 1;\n");
@@ -1934,7 +1935,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "                    runtime->source_path == NULL ? \"ptn\" : runtime->source_path,\n",
     );
-    out.push_str("                    line\n");
+    out.push_str("                    diagnostic_line\n");
     out.push_str("                );\n");
     out.push_str("            }\n");
     out.push_str("            *out = ptn_cast_int(resolved);\n");
@@ -1942,7 +1943,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_STRING) {\n");
     out.push_str("            int64_t integer = 0;\n");
-    out.push_str("            if (ptn_userland_string_to_int(runtime, resolved.as.string, line, 1, &integer)) {\n");
+    out.push_str("            if (ptn_userland_string_to_int(runtime, resolved.as.string, diagnostic_line, 1, &integer)) {\n");
     out.push_str("                *out = ptn_int(integer);\n");
     out.push_str("                return 1;\n");
     out.push_str("            }\n");
@@ -1990,6 +1991,20 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
     out.push_str("        *out = ptn_cast_string_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && resolved.type == PTN_OBJECT) {\n");
+    out.push_str("        PtnStringOperand object_string;\n");
+    out.push_str("        if (ptn_try_object_to_string_operand(runtime, resolved, line, &object_string)) {\n");
+    out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                ptn_string_operand_free(object_string);\n");
+    out.push_str("                return 0;\n");
+    out.push_str("            }\n");
+    out.push_str("            char *copy = ptn_duplicate_string_len(object_string.data, object_string.len);\n");
+    out.push_str("            size_t len = object_string.len;\n");
+    out.push_str("            ptn_string_operand_free(object_string);\n");
+    out.push_str("            *out = ptn_owned_string_len(copy, len);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
     out.push_str("    return 0;\n");
@@ -2117,6 +2132,20 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
     out.push_str("        *out = ptn_cast_string_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && resolved.type == PTN_OBJECT) {\n");
+    out.push_str("        PtnStringOperand object_string;\n");
+    out.push_str("        if (ptn_try_object_to_string_operand(runtime, resolved, line, &object_string)) {\n");
+    out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                ptn_string_operand_free(object_string);\n");
+    out.push_str("                return 0;\n");
+    out.push_str("            }\n");
+    out.push_str("            char *copy = ptn_duplicate_string_len(object_string.data, object_string.len);\n");
+    out.push_str("            size_t len = object_string.len;\n");
+    out.push_str("            ptn_string_operand_free(object_string);\n");
+    out.push_str("            *out = ptn_owned_string_len(copy, len);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
     out.push_str("    return 0;\n");
