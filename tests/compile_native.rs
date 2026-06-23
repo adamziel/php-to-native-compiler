@@ -73867,6 +73867,69 @@ var_dump($a);
 }
 
 #[test]
+fn compile_lazy_proxy_magic_isset_get_recursion_tracks_real_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-magic-isset-get-recursion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-magic-isset-get-recursion.php");
+    let output = root.join("lazy-proxy-magic-isset-get-recursion-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class LazyProxyMagicFrame {
+    public $_;
+    public function __isset($name) {
+        echo \"__isset\\n\";
+        return isset($this->$name[\"\"]);
+    }
+    public function __get($name) {
+        echo \"__get\\n\";
+        return $this->$name[\"\"];
+    }
+}
+
+$rc = new ReflectionClass(LazyProxyMagicFrame::class);
+$proxy = $rc->newLazyProxy(function () {
+    echo \"init\\n\";
+    return new LazyProxyMagicFrame();
+});
+var_dump(isset($proxy->prop[\"\"]));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "__isset\n",
+                "__get\n",
+                "init\n",
+                "\nWarning: Undefined property: LazyProxyMagicFrame::$prop in {} on line 11\n",
+                "\nWarning: Trying to access array offset on null in {} on line 11\n",
+                "bool(false)\n",
+            ),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_magic_property_note_lazy_proxy_initialized"));
+    assert!(c_source.contains("effective_object_id"));
+}
+
+#[test]
 fn compile_overloaded_reference_assignment_deprecates_dynamic_target_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-reference-dynamic-target");
     fs::create_dir_all(&root).unwrap();

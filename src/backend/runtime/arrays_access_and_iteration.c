@@ -112,7 +112,7 @@ static PTN_UNUSED int ptn_compare_decimal_integer_strings(
 
     if (left_integer.len == 0 && right_integer.len == 0) {
         *compared = PTN_COMPARE_EQUAL;
-        return 1;
+    return 1;
     }
     if (left_integer.negative != right_integer.negative) {
         *compared = left_integer.negative ? PTN_COMPARE_LESS : PTN_COMPARE_GREATER;
@@ -4067,11 +4067,19 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
     if (receiver.type != PTN_OBJECT) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
+    size_t receiver_object_id = receiver.as.object->object_id;
+    PtnValue effective_receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
+    size_t effective_object_id = effective_receiver.type == PTN_OBJECT &&
+            effective_receiver.as.object != NULL
+        ? effective_receiver.as.object->object_id
+        : receiver_object_id;
     for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
         PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
         if (
-            frame->object_id == receiver.as.object->object_id &&
+            (frame->object_id == receiver_object_id ||
+             frame->object_id == effective_object_id ||
+             frame->effective_object_id == receiver_object_id ||
+             frame->effective_object_id == effective_object_id) &&
             frame->operation == operation &&
             frame->property != NULL &&
             frame->property_len == property_len &&
@@ -4110,7 +4118,12 @@ static PTN_UNUSED size_t ptn_magic_property_push_len(
     if (receiver.type != PTN_OBJECT || property == NULL) {
         return mark;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
+    size_t receiver_object_id = receiver.as.object->object_id;
+    PtnValue effective_receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
+    size_t effective_object_id = effective_receiver.type == PTN_OBJECT &&
+            effective_receiver.as.object != NULL
+        ? effective_receiver.as.object->object_id
+        : receiver_object_id;
     if (runtime->magic_property_frame_len == runtime->magic_property_frame_capacity) {
         size_t new_capacity = runtime->magic_property_frame_capacity == 0
             ? 4
@@ -4133,7 +4146,8 @@ static PTN_UNUSED size_t ptn_magic_property_push_len(
     }
     PtnMagicPropertyFrame *frame =
         &runtime->magic_property_frames[runtime->magic_property_frame_len++];
-    frame->object_id = receiver.as.object->object_id;
+    frame->object_id = receiver_object_id;
+    frame->effective_object_id = effective_object_id;
     frame->property = ptn_duplicate_string_len(property, property_len);
     frame->property_len = property_len;
     frame->operation = operation;
@@ -5857,6 +5871,22 @@ static PTN_UNUSED int ptn_lazy_object_property_access_uses_local_slot(
     return blocked_metadata != NULL && blocked_metadata->lazy_skip;
 }
 
+static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+) {
+    receiver = ptn_value_deref(receiver);
+    return runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        receiver.type == PTN_OBJECT &&
+        receiver.as.object != NULL &&
+        receiver.as.object->lazy_uninitialized &&
+        receiver.as.object->lazy_is_proxy &&
+        !receiver.as.object->lazy_initializing &&
+        runtime->declared_method_exists(receiver.as.object->class_name, method_name);
+}
+
 static PTN_UNUSED int ptn_lazy_object_property_read_needs_initialization(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -5904,6 +5934,48 @@ static PTN_UNUSED int ptn_lazy_object_property_read_needs_initialization(
     if (allow_magic_get &&
         metadata == NULL &&
         ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
+        return 0;
+    }
+
+        return 1;
+}
+
+static PTN_UNUSED int ptn_lazy_object_property_isset_needs_initialization(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !receiver.as.object->lazy_uninitialized ||
+        receiver.as.object->lazy_initializing) {
+        return 0;
+    }
+
+    const PtnObjectPropertyMetadata *metadata = NULL;
+    if (ptn_lazy_object_property_access_uses_local_slot(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            line,
+            &metadata
+        )) {
+        return 0;
+    }
+
+    if (metadata == NULL &&
+        ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET) &&
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
+        return 0;
+    }
+
+    if (metadata == NULL &&
+        ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__isset") &&
+        !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
 
@@ -7071,12 +7143,11 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
-        if (ptn_lazy_object_property_read_needs_initialization(
+        if (ptn_lazy_object_property_isset_needs_initialization(
                 runtime,
                 receiver,
                 property,
                 access_scope,
-                0,
                 line
             ) &&
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
@@ -7207,12 +7278,11 @@ static PTN_UNUSED int ptn_object_property_is_set(
         goto done;
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
-        if (ptn_lazy_object_property_read_needs_initialization(
+        if (ptn_lazy_object_property_isset_needs_initialization(
                 runtime,
                 receiver,
                 property,
                 access_scope,
-                0,
                 line
             ) &&
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
@@ -7369,6 +7439,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         int lazy_set_hook_dispatch = 0;
+        int lazy_magic_set_dispatch = 0;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
             runtime,
             receiver.as.object,
@@ -7379,8 +7450,12 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             line
         );
         if (lazy_storage_key != NULL) {
+            PtnArrayKey lazy_key = ptn_array_string_key(lazy_storage_key);
+            PtnArrayEntry *lazy_entry =
+                ptn_array_entry_for_key(receiver.as.object->properties, lazy_key);
             const PtnObjectPropertyMetadata *lazy_metadata =
                 ptn_object_property_metadata(receiver.as.object, lazy_storage_key);
+            ptn_array_key_free(lazy_key);
             local_lazy_slot = lazy_metadata != NULL && lazy_metadata->lazy_skip;
             if (
                 !indirect_write &&
@@ -7396,9 +7471,32 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             ) {
                 lazy_set_hook_dispatch = 1;
             }
+            lazy_magic_set_dispatch =
+                !indirect_write &&
+                lazy_metadata == NULL &&
+                lazy_entry == NULL &&
+                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                !ptn_magic_property_is_active_len(
+                    runtime,
+                    receiver,
+                    property,
+                    property_len,
+                    PTN_MAGIC_PROPERTY_SET
+                );
             free(lazy_storage_key);
+        } else {
+            lazy_magic_set_dispatch =
+                !indirect_write &&
+                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                !ptn_magic_property_is_active_len(
+                    runtime,
+                    receiver,
+                    property,
+                    property_len,
+                    PTN_MAGIC_PROPERTY_SET
+                );
         }
-        if (!local_lazy_slot && !lazy_set_hook_dispatch) {
+        if (!local_lazy_slot && !lazy_set_hook_dispatch && !lazy_magic_set_dispatch) {
             if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
                 return ptn_null();
             }

@@ -2772,6 +2772,40 @@ static PTN_UNUSED const char *ptn_lazy_object_initializer_type_name(PtnValue val
     return "unknown";
 }
 
+static void ptn_magic_property_update_lazy_proxy_frame_ids(
+    PtnRuntime *runtime,
+    size_t proxy_object_id,
+    size_t real_object_id
+) {
+    if (runtime == NULL || proxy_object_id == 0 || real_object_id == 0) {
+        return;
+    }
+    for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
+        PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
+        if (frame->object_id == proxy_object_id ||
+            frame->effective_object_id == proxy_object_id) {
+            frame->effective_object_id = real_object_id;
+        }
+    }
+}
+
+static void ptn_magic_property_note_lazy_proxy_initialized(
+    PtnRuntime *runtime,
+    size_t proxy_object_id,
+    size_t real_object_id
+) {
+    ptn_magic_property_update_lazy_proxy_frame_ids(runtime, proxy_object_id, real_object_id);
+    if (runtime != NULL &&
+        runtime->lifecycle_root != NULL &&
+        runtime->lifecycle_root != runtime) {
+        ptn_magic_property_update_lazy_proxy_frame_ids(
+            runtime->lifecycle_root,
+            proxy_object_id,
+            real_object_id
+        );
+    }
+}
+
 static PTN_UNUSED int ptn_lazy_object_initialize(
     PtnRuntime *runtime,
     PtnValue value,
@@ -2872,6 +2906,11 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
         }
         ptn_value_destroy(&object->lazy_proxy_instance);
         object->lazy_proxy_instance = ptn_value_clone_deref(real);
+        ptn_magic_property_note_lazy_proxy_initialized(
+            runtime,
+            object->object_id,
+            real.as.object->object_id
+        );
         ptn_lazy_object_copy_properties_from_instance(object, real.as.object);
     } else {
         PtnValue returned = ptn_value_deref(result);

@@ -20655,15 +20655,11 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        }\n");
         out.push_str("        PtnValue ptn_magic_receiver = ptn_value_clone_deref(resolved);\n");
         out.push_str("        resolved = ptn_value_deref(ptn_magic_receiver);\n");
-        out.push_str(
-            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_GET);\n",
-        );
-        out.push_str(
-            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
-        );
-        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
         if let Some(isset_method) = isset_method {
-            out.push_str("        if (require_isset) {\n");
+            out.push_str("        if (require_isset && !ptn_magic_property_is_active_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_ISSET)) {\n");
+            out.push_str("            size_t ptn_isset_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_ISSET);\n");
+            out.push_str("            int ptn_previous_isset_dispatch = runtime->in_magic_property_dispatch;\n");
+            out.push_str("            runtime->in_magic_property_dispatch = 1;\n");
             out.push_str("            PtnValue ptn_isset_args[1];\n");
             out.push_str(
                 "            ptn_isset_args[0] = ptn_string_literal(property, property_len);\n",
@@ -20681,29 +20677,30 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             );
             out.push_str("            ptn_value_destroy(&ptn_isset_result);\n");
             out.push_str("            ptn_value_destroy(&ptn_isset_args[0]);\n");
+            out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_isset_property_frame_mark);\n",
+            );
+            out.push_str(
+                "            runtime->in_magic_property_dispatch = ptn_previous_isset_dispatch;\n",
+            );
             out.push_str("            if (!ptn_isset_truthy) {\n");
-            out.push_str(
-                "                ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
-            );
-            out.push_str(
-                "                runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
-            );
             out.push_str("                ptn_value_destroy(&ptn_magic_receiver);\n");
             out.push_str("                return 0;\n");
             out.push_str("            }\n");
             out.push_str("        }\n");
         } else {
             out.push_str("        if (require_isset) {\n");
-            out.push_str(
-                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
-            );
-            out.push_str(
-                "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
-            );
             out.push_str("            ptn_value_destroy(&ptn_magic_receiver);\n");
             out.push_str("            return 0;\n");
             out.push_str("        }\n");
         }
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push_len(runtime, resolved, property, property_len, PTN_MAGIC_PROPERTY_GET);\n",
+        );
+        out.push_str(
+            "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
+        );
+        out.push_str("        runtime->in_magic_property_dispatch = 1;\n");
         if let Some(get_method) = get_method {
             out.push_str("        PtnValue ptn_get_args[1];\n");
             out.push_str("        ptn_get_args[0] = ptn_string_literal(property, property_len);\n");

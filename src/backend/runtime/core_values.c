@@ -1062,6 +1062,7 @@ typedef struct {
 
 typedef struct {
     size_t object_id;
+    size_t effective_object_id;
     char *property;
     size_t property_len;
     int operation;
