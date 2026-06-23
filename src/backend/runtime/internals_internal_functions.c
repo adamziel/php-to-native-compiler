@@ -64729,6 +64729,294 @@ static char *ptn_mb_iconv_convert_alloc(
     return ptn_mb_iconv_convert_alloc_options(input, input_len, from_encoding, to_encoding, "?", 1, NULL, output_len);
 }
 
+static uint32_t ptn_mb_substitute_character_codepoint_current(void);
+
+static int ptn_mb_encoding_is_ucs4_family(const char *encoding) {
+    return ptn_ascii_case_equal(encoding, "UCS-4") ||
+        ptn_ascii_case_equal(encoding, "UCS-4BE") ||
+        ptn_ascii_case_equal(encoding, "UCS-4LE") ||
+        ptn_ascii_case_equal(encoding, "UTF-32") ||
+        ptn_ascii_case_equal(encoding, "UTF-32BE") ||
+        ptn_ascii_case_equal(encoding, "UTF-32LE") ||
+        ptn_ascii_case_equal(encoding, "byte4be") ||
+        ptn_ascii_case_equal(encoding, "byte4le");
+}
+
+static char *ptn_mb_substitute_utf8_bytes_alloc(size_t *replacement_len) {
+    const char *mode = ptn_mb_current_substitute_character();
+    if (ptn_ascii_case_equal(mode, "none")) {
+        *replacement_len = 0;
+        return ptn_duplicate_string_len("", 0);
+    }
+    uint32_t cp = ptn_mb_substitute_character_codepoint_current();
+    if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
+        cp = 0x3f;
+    }
+    char utf8[4];
+    *replacement_len = ptn_mb_codepoint_to_utf8(cp, utf8);
+    return ptn_duplicate_string_len(utf8, *replacement_len);
+}
+
+static void ptn_mb_append_utf8_substitute(PtnStringBuffer *buffer) {
+    size_t replacement_len = 0;
+    char *replacement = ptn_mb_substitute_utf8_bytes_alloc(&replacement_len);
+    if (replacement_len > 0) {
+        ptn_string_buffer_append_len(buffer, replacement, replacement_len);
+    }
+    free(replacement);
+}
+
+static void ptn_mb_append_invalid_ucs4_marker(PtnStringBuffer *buffer, uint32_t codepoint, int has_codepoint) {
+    const char *mode = ptn_mb_current_substitute_character();
+    if (has_codepoint && ptn_ascii_case_equal(mode, "long")) {
+        char marker[16];
+        int written = snprintf(marker, sizeof(marker), "U+%X", codepoint);
+        if (written < 0 || (size_t)written >= sizeof(marker)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_buffer_append_len(buffer, marker, (size_t)written);
+        return;
+    }
+    ptn_mb_append_utf8_substitute(buffer);
+}
+
+static int ptn_mb_ucs4_endian_and_offset(const char *input, size_t input_len, const char *encoding, int *little_out, size_t *offset_out) {
+    int little = ptn_ascii_case_equal(encoding, "UCS-4LE") ||
+        ptn_ascii_case_equal(encoding, "UTF-32LE") ||
+        ptn_ascii_case_equal(encoding, "byte4le");
+    size_t offset = 0;
+    if (ptn_ascii_case_equal(encoding, "UCS-4") || ptn_ascii_case_equal(encoding, "UTF-32")) {
+        little = 0;
+        if (input_len >= 4 &&
+            (unsigned char)input[0] == 0xff &&
+            (unsigned char)input[1] == 0xfe &&
+            (unsigned char)input[2] == 0x00 &&
+            (unsigned char)input[3] == 0x00) {
+            little = 1;
+            offset = 4;
+        } else if (input_len >= 4 &&
+            (unsigned char)input[0] == 0x00 &&
+            (unsigned char)input[1] == 0x00 &&
+            (unsigned char)input[2] == 0xfe &&
+            (unsigned char)input[3] == 0xff) {
+            little = 0;
+            offset = 4;
+        }
+    }
+    *little_out = little;
+    *offset_out = offset;
+    return 1;
+}
+
+static uint32_t ptn_mb_ucs4_read_codepoint(const char *data, int little) {
+    const unsigned char *bytes = (const unsigned char *)data;
+    if (little) {
+        return ((uint32_t)bytes[3] << 24) |
+            ((uint32_t)bytes[2] << 16) |
+            ((uint32_t)bytes[1] << 8) |
+            (uint32_t)bytes[0];
+    }
+    return ((uint32_t)bytes[0] << 24) |
+        ((uint32_t)bytes[1] << 16) |
+        ((uint32_t)bytes[2] << 8) |
+        (uint32_t)bytes[3];
+}
+
+static int ptn_mb_ucs4_codepoint_valid(uint32_t codepoint) {
+    return codepoint <= 0x10ffff && !(codepoint >= 0xd800 && codepoint <= 0xdfff);
+}
+
+static int ptn_mb_ucs4_validate_bytes(const char *input, size_t input_len, const char *encoding) {
+    int little = 0;
+    size_t offset = 0;
+    ptn_mb_ucs4_endian_and_offset(input, input_len, encoding, &little, &offset);
+    if ((input_len - offset) % 4 != 0) {
+        return 0;
+    }
+    while (offset < input_len) {
+        uint32_t codepoint = ptn_mb_ucs4_read_codepoint(input + offset, little);
+        if (!ptn_mb_ucs4_codepoint_valid(codepoint)) {
+            return 0;
+        }
+        offset += 4;
+    }
+    return 1;
+}
+
+static char *ptn_mb_ucs4_to_utf8_alloc(
+    const char *input,
+    size_t input_len,
+    const char *encoding,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    int little = 0;
+    size_t offset = 0;
+    ptn_mb_ucs4_endian_and_offset(input, input_len, encoding, &little, &offset);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    while (offset < input_len) {
+        if (input_len - offset < 4) {
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_mb_append_invalid_ucs4_marker(&output, 0, 0);
+            break;
+        }
+        uint32_t codepoint = ptn_mb_ucs4_read_codepoint(input + offset, little);
+        if (!ptn_mb_ucs4_codepoint_valid(codepoint)) {
+            if (illegal_chars != NULL) {
+                (*illegal_chars)++;
+            }
+            ptn_mb_append_invalid_ucs4_marker(&output, codepoint, 1);
+            offset += 4;
+            continue;
+        }
+        char encoded[4];
+        size_t encoded_len = ptn_mb_codepoint_to_utf8(codepoint, encoded);
+        ptn_string_buffer_append_len(&output, encoded, encoded_len);
+        offset += 4;
+    }
+    *output_len = output.len;
+    if (output.data == NULL) {
+        return ptn_duplicate_string_len("", 0);
+    }
+    return output.data;
+}
+
+static int ptn_mb_utf8_is_continuation(unsigned char byte) {
+    return (byte & 0xc0) == 0x80;
+}
+
+static int ptn_mb_utf8_second_byte_valid(unsigned char lead, unsigned char byte) {
+    if (lead == 0xe0) {
+        return byte >= 0xa0 && byte <= 0xbf;
+    }
+    if (lead >= 0xe1 && lead <= 0xec) {
+        return ptn_mb_utf8_is_continuation(byte);
+    }
+    if (lead == 0xed) {
+        return byte >= 0x80 && byte <= 0x9f;
+    }
+    if (lead >= 0xee && lead <= 0xef) {
+        return ptn_mb_utf8_is_continuation(byte);
+    }
+    if (lead == 0xf0) {
+        return byte >= 0x90 && byte <= 0xbf;
+    }
+    if (lead >= 0xf1 && lead <= 0xf3) {
+        return ptn_mb_utf8_is_continuation(byte);
+    }
+    if (lead == 0xf4) {
+        return byte >= 0x80 && byte <= 0x8f;
+    }
+    return 0;
+}
+
+static int ptn_mb_utf8_valid_sequence_len_at(const char *data, size_t len, size_t offset, size_t *sequence_len) {
+    unsigned char lead = (unsigned char)data[offset];
+    if (lead < 0x80) {
+        *sequence_len = 1;
+        return 1;
+    }
+    if (lead >= 0xc2 && lead <= 0xdf) {
+        if (offset + 1 < len && ptn_mb_utf8_is_continuation((unsigned char)data[offset + 1])) {
+            *sequence_len = 2;
+            return 1;
+        }
+        return 0;
+    }
+    if (lead >= 0xe0 && lead <= 0xef) {
+        if (offset + 2 < len &&
+            ptn_mb_utf8_second_byte_valid(lead, (unsigned char)data[offset + 1]) &&
+            ptn_mb_utf8_is_continuation((unsigned char)data[offset + 2])) {
+            *sequence_len = 3;
+            return 1;
+        }
+        return 0;
+    }
+    if (lead >= 0xf0 && lead <= 0xf4) {
+        if (offset + 3 < len &&
+            ptn_mb_utf8_second_byte_valid(lead, (unsigned char)data[offset + 1]) &&
+            ptn_mb_utf8_is_continuation((unsigned char)data[offset + 2]) &&
+            ptn_mb_utf8_is_continuation((unsigned char)data[offset + 3])) {
+            *sequence_len = 4;
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+static size_t ptn_mb_utf8_invalid_sequence_len_at(const char *data, size_t len, size_t offset) {
+    unsigned char lead = (unsigned char)data[offset];
+    if (lead < 0x80) {
+        return 0;
+    }
+    if (lead >= 0xc2 && lead <= 0xdf) {
+        return 1;
+    }
+    if (lead >= 0xe0 && lead <= 0xef) {
+        if (offset + 1 >= len || !ptn_mb_utf8_second_byte_valid(lead, (unsigned char)data[offset + 1])) {
+            return 1;
+        }
+        if (offset + 2 >= len || !ptn_mb_utf8_is_continuation((unsigned char)data[offset + 2])) {
+            return 2;
+        }
+        return 1;
+    }
+    if (lead >= 0xf0 && lead <= 0xf4) {
+        if (offset + 1 >= len || !ptn_mb_utf8_second_byte_valid(lead, (unsigned char)data[offset + 1])) {
+            return 1;
+        }
+        if (offset + 2 >= len || !ptn_mb_utf8_is_continuation((unsigned char)data[offset + 2])) {
+            return 2;
+        }
+        if (offset + 3 >= len || !ptn_mb_utf8_is_continuation((unsigned char)data[offset + 3])) {
+            return 3;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static char *ptn_mb_utf8_replace_invalid_alloc(
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < input_len) {
+        size_t sequence_len = 0;
+        if (ptn_mb_utf8_valid_sequence_len_at(input, input_len, offset, &sequence_len)) {
+            ptn_string_buffer_append_len(&output, input + offset, sequence_len);
+            offset += sequence_len;
+            continue;
+        }
+        size_t invalid_len = ptn_mb_utf8_invalid_sequence_len_at(input, input_len, offset);
+        if (invalid_len == 0) {
+            invalid_len = 1;
+        }
+        if (illegal_chars != NULL) {
+            (*illegal_chars)++;
+        }
+        if (replacement_len > 0) {
+            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+        }
+        offset += invalid_len;
+    }
+    *output_len = output.len;
+    if (output.data == NULL) {
+        return ptn_duplicate_string_len("", 0);
+    }
+    return output.data;
+}
+
 static char *ptn_mb_iconv_convert_alloc_counting(
     const char *input,
     size_t input_len,
@@ -64739,6 +65027,45 @@ static char *ptn_mb_iconv_convert_alloc_counting(
     size_t replacement_len = 0;
     char *replacement = ptn_mb_substitute_bytes_for_encoding_alloc(to_encoding, &replacement_len);
     int64_t illegal_delta = 0;
+    if (ptn_mb_encoding_is_ucs4_family(from_encoding)) {
+        size_t utf8_len = 0;
+        char *utf8 = ptn_mb_ucs4_to_utf8_alloc(input, input_len, from_encoding, &illegal_delta, &utf8_len);
+        char *result = NULL;
+        if (ptn_mb_encoding_is_utf8(to_encoding)) {
+            result = utf8;
+            *output_len = utf8_len;
+        } else {
+            int64_t target_illegal_delta = 0;
+            result = ptn_mb_iconv_convert_alloc_options(
+                utf8,
+                utf8_len,
+                "UTF-8",
+                to_encoding,
+                replacement,
+                replacement_len,
+                &target_illegal_delta,
+                output_len
+            );
+            illegal_delta += target_illegal_delta;
+            free(utf8);
+        }
+        free(replacement);
+        ptn_mb_illegal_chars += illegal_delta;
+        return result;
+    }
+    if (ptn_mb_encoding_is_utf8(from_encoding) && ptn_mb_encoding_is_utf8(to_encoding)) {
+        char *result = ptn_mb_utf8_replace_invalid_alloc(
+            input,
+            input_len,
+            replacement,
+            replacement_len,
+            &illegal_delta,
+            output_len
+        );
+        free(replacement);
+        ptn_mb_illegal_chars += illegal_delta;
+        return result;
+    }
     char *result = ptn_mb_iconv_convert_alloc_options(
         input,
         input_len,
@@ -64880,6 +65207,9 @@ static int ptn_mb_check_encoding_string_bytes(const char *data, size_t len, cons
     }
     if (ptn_ascii_case_equal(encoding, "8bit") || ptn_ascii_case_equal(encoding, "pass")) {
         return 1;
+    }
+    if (ptn_mb_encoding_is_ucs4_family(encoding)) {
+        return ptn_mb_ucs4_validate_bytes(data, len, encoding);
     }
     return ptn_mb_iconv_validate_bytes(data, len, encoding);
 }

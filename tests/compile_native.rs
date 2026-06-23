@@ -24410,6 +24410,121 @@ var_dump(iconv_mime_encode('Subject', 'a', ['output-charset' => $encoding]));\n"
 }
 
 #[test]
+fn compile_mbstring_utf8_self_conversion_replaces_invalid_sequences_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-utf8-invalid-self-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-utf8-invalid-self-conversion.php");
+    let output = root.join("mb-utf8-invalid-self-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+$cases = [\n\
+    \"80\" => \"%\",\n\
+    \"ff\" => \"%\",\n\
+    \"c27f\" => \"%\\x7f\",\n\
+    \"c280\" => \"\\xc2\\x80\",\n\
+    \"dfbf\" => \"\\xdf\\xbf\",\n\
+    \"dfc0\" => \"%%\",\n\
+    \"e0a07f\" => \"%\\x7f\",\n\
+    \"e0a080\" => \"\\xe0\\xa0\\x80\",\n\
+    \"efbfbf\" => \"\\xef\\xbf\\xbf\",\n\
+    \"efbfc0\" => \"%%\",\n\
+    \"f090807f\" => \"%\\x7f\",\n\
+    \"f0908080\" => \"\\xf0\\x90\\x80\\x80\",\n\
+    \"f48fbfbf\" => \"\\xf4\\x8f\\xbf\\xbf\",\n\
+    \"f48fbfc0\" => \"%%\",\n\
+    \"fa80808080\" => \"%%%%%\",\n\
+    \"fbbfbfbfbf\" => \"%%%%%\",\n\
+    \"fd8080808080\" => \"%%%%%%\",\n\
+    \"fdbfbfbfbfbf\" => \"%%%%%%\",\n\
+];\n\
+$before = mb_get_info('illegal_chars');\n\
+foreach ($cases as $hex => $expected) {\n\
+    $result = mb_convert_encoding(hex2bin($hex), 'UTF-8', 'UTF-8');\n\
+    echo $hex, ':', bin2hex($result), ':', $result === $expected ? 'ok' : 'bad', \"\\n\";\n\
+}\n\
+echo 'illegal=', mb_get_info('illegal_chars') - $before, \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "80:25:ok\n",
+            "ff:25:ok\n",
+            "c27f:257f:ok\n",
+            "c280:c280:ok\n",
+            "dfbf:dfbf:ok\n",
+            "dfc0:2525:ok\n",
+            "e0a07f:257f:ok\n",
+            "e0a080:e0a080:ok\n",
+            "efbfbf:efbfbf:ok\n",
+            "efbfc0:2525:ok\n",
+            "f090807f:257f:ok\n",
+            "f0908080:f0908080:ok\n",
+            "f48fbfbf:f48fbfbf:ok\n",
+            "f48fbfc0:2525:ok\n",
+            "fa80808080:2525252525:ok\n",
+            "fbbfbfbfbf:2525252525:ok\n",
+            "fd8080808080:252525252525:ok\n",
+            "fdbfbfbfbfbf:252525252525:ok\n",
+            "illegal=33\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mbstring_ucs4_bom_and_invalid_codepoints_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-ucs4-bom-invalid");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-ucs4-bom-invalid.php");
+    let output = root.join("mb-ucs4-bom-invalid-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+var_dump(mb_check_encoding(\"\\xff\\xfe\\x00\\x00\\x00\\x30\\x00\\x00\", 'UCS-4'));\n\
+echo bin2hex(mb_convert_encoding(\"\\xff\\xfe\\x00\\x00\\x00\\x30\\x00\\x00\", 'UTF-16BE', 'UCS-4')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(\"\\x00\\x00\\xfe\\xff\\x00\\x00\\x30\\x01\", 'UTF-16BE', 'UCS-4')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(\"\\x02\\x30\\x00\\x00\", 'UTF-16BE', 'UCS-4LE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(\"\\x00\\x00\\x30\\x03\", 'UTF-16BE', 'UCS-4BE')), \"\\n\";\n\
+$before = mb_get_info('illegal_chars');\n\
+echo mb_convert_encoding(\"\\x00\\x11\\x00\\x00\", 'UTF-8', 'UCS-4BE'), \"\\n\";\n\
+echo mb_get_info('illegal_chars') - $before, \"\\n\";\n\
+mb_substitute_character('long');\n\
+echo mb_convert_encoding(\"\\x6f\\x00\\x00\\x00\", 'UTF-8', 'UCS-4BE'), \"\\n\";\n\
+echo mb_convert_encoding(\"\\x00\\x01\\x02\", 'UTF-8', 'UCS-4BE'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "3000\n",
+            "3001\n",
+            "3002\n",
+            "3003\n",
+            "%\n",
+            "1\n",
+            "U+6F000000\n",
+            "%\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
     let root = temp_dir("ptn-native-mb-strimwidth-marker");
     fs::create_dir_all(&root).unwrap();
