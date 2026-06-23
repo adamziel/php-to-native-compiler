@@ -5163,7 +5163,41 @@ static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
         && !ptn_internal_class_exists_name(resolved_class_name)
 #endif
     ) {
+        char *suspended_constant_key = NULL;
+        int restore_suspended_constant = 0;
+        if (
+            runtime->current_class_constant_initializing_class_name != NULL &&
+            runtime->current_class_constant_initializing_constant_name != NULL
+        ) {
+            suspended_constant_key = ptn_class_constant_key(
+                runtime->current_class_constant_initializing_class_name,
+                runtime->current_class_constant_initializing_constant_name
+            );
+            PtnValue initializing;
+            if (
+                ptn_symbols_get(
+                    ptn_runtime_class_constant_initializing_table(runtime),
+                    suspended_constant_key,
+                    &initializing
+                ) &&
+                ptn_is_truthy(initializing)
+            ) {
+                ptn_symbols_unset(
+                    ptn_runtime_class_constant_initializing_table(runtime),
+                    suspended_constant_key
+                );
+                restore_suspended_constant = 1;
+            }
+        }
         ptn_runtime_autoload_class(runtime, resolved_class_name, line);
+        if (restore_suspended_constant) {
+            ptn_symbols_set(
+                ptn_runtime_class_constant_initializing_table(runtime),
+                suspended_constant_key,
+                ptn_bool(1)
+            );
+        }
+        free(suspended_constant_key);
         if (runtime->exceptions->active_exception != NULL) {
             return resolved_class_name;
         }

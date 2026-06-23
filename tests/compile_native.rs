@@ -6802,6 +6802,17 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     }
 }
 
+#[test]
+fn parser_rejects_class_constant_assignment_as_parse_error() {
+    let class_constant_write =
+        parser::parse("<?php class A { const C = 1; } A::C = 2;").unwrap_err();
+    assert_eq!(
+        class_constant_write.message,
+        "syntax error, unexpected token \"=\""
+    );
+    assert_eq!(class_constant_write.kind, DiagnosticKind::ParseError);
+}
+
 fn assert_reference_lvalue_diagnostic(source: &str, message: &str, target: &str) {
     let error = parser::parse(source).unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
@@ -48106,7 +48117,7 @@ var_dump(A::FOO);
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "\nFatal error: Uncaught Error: Cannot declare self-referencing constant self::BAR in {}:4\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 4\n",
+            "\nFatal error: Uncaught Error: Cannot declare self-referencing constant A::BAR in {}:4\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 4\n",
             input.display(),
             input.display(),
             input.display()

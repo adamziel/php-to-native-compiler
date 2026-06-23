@@ -7318,6 +7318,15 @@ impl Parser<'_> {
             Err(diagnostic) if diagnostic.message == TEMPORARY_WRITE_CONTEXT_MESSAGE => {
                 return Err(diagnostic);
             }
+            Err(diagnostic)
+                if diagnostic.message == "class constant fetch is not a writable target"
+                    || diagnostic.message == "class name fetch is not a writable target" =>
+            {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"=\"",
+                    Some(operator.span),
+                ));
+            }
             Err(diagnostic) if list_assignment_diagnostic_should_surface(&diagnostic) => {
                 return Err(diagnostic);
             }
