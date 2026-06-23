@@ -65846,6 +65846,39 @@ static const char *ptn_mb_canonical_encoding_name(PtnStringOperand encoding) {
     if (encoding.len == 0) {
         return NULL;
     }
+    switch (encoding.len) {
+        case 5:
+            if (ptn_string_operand_ascii_case_equal(encoding, "UTF-8")) {
+                return "UTF-8";
+            }
+            if (ptn_string_operand_ascii_case_equal(encoding, "ASCII")) {
+                return "ASCII";
+            }
+            break;
+        case 6:
+            if (ptn_string_operand_ascii_case_equal(encoding, "CP1254")) {
+                return "Windows-1254";
+            }
+            if (ptn_string_operand_ascii_case_equal(encoding, "UTF-16")) {
+                return "UTF-16";
+            }
+            break;
+        case 8:
+            if (ptn_string_operand_ascii_case_equal(encoding, "UTF-16BE")) {
+                return "UTF-16BE";
+            }
+            if (ptn_string_operand_ascii_case_equal(encoding, "UTF-16LE")) {
+                return "UTF-16LE";
+            }
+            break;
+        case 12:
+            if (ptn_string_operand_ascii_case_equal(encoding, "Windows-1254")) {
+                return "Windows-1254";
+            }
+            break;
+        default:
+            break;
+    }
     if (ptn_string_operand_ascii_case_equal(encoding, "auto")) {
         return "auto";
     }
@@ -67571,7 +67604,42 @@ static uint32_t ptn_mb_substitute_character_codepoint_current(void) {
     return ptn_mb_substitute_character_codepoint;
 }
 
+static int ptn_mb_substitute_bytes_for_encoding_stack(
+    const char *to_encoding,
+    char *replacement,
+    size_t replacement_cap,
+    size_t *replacement_len
+) {
+    const char *mode = ptn_mb_current_substitute_character();
+    if (ptn_ascii_case_equal(mode, "none")) {
+        *replacement_len = 0;
+        return 1;
+    }
+    if (!ptn_mb_encoding_is_windows_1254(to_encoding) || replacement_cap < 1) {
+        return 0;
+    }
+    uint32_t cp = ptn_mb_substitute_character_codepoint_current();
+    if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
+        cp = 0x3f;
+    }
+    unsigned char byte = 0;
+    if (!ptn_mb_windows_1254_encode_codepoint(cp, &byte)) {
+        byte = '?';
+    }
+    replacement[0] = (char)byte;
+    *replacement_len = 1;
+    return 1;
+}
+
 static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding, size_t *replacement_len) {
+    char stack_replacement[8];
+    if (ptn_mb_substitute_bytes_for_encoding_stack(
+            to_encoding,
+            stack_replacement,
+            sizeof(stack_replacement),
+            replacement_len)) {
+        return ptn_duplicate_string_len(stack_replacement, *replacement_len);
+    }
     const char *mode = ptn_mb_current_substitute_character();
     if (ptn_ascii_case_equal(mode, "none")) {
         *replacement_len = 0;
@@ -67907,8 +67975,18 @@ static char *ptn_mb_iconv_convert_alloc_counting(
     const char *to_encoding,
     size_t *output_len
 ) {
+    char replacement_stack[8];
     size_t replacement_len = 0;
-    char *replacement = ptn_mb_substitute_bytes_for_encoding_alloc(to_encoding, &replacement_len);
+    char *replacement_alloc = NULL;
+    const char *replacement = replacement_stack;
+    if (!ptn_mb_substitute_bytes_for_encoding_stack(
+            to_encoding,
+            replacement_stack,
+            sizeof(replacement_stack),
+            &replacement_len)) {
+        replacement_alloc = ptn_mb_substitute_bytes_for_encoding_alloc(to_encoding, &replacement_len);
+        replacement = replacement_alloc;
+    }
     int64_t illegal_delta = 0;
     if (ptn_mb_encoding_is_ucs4_family(from_encoding)) {
         size_t utf8_len = 0;
@@ -67932,7 +68010,7 @@ static char *ptn_mb_iconv_convert_alloc_counting(
             illegal_delta += target_illegal_delta;
             free(utf8);
         }
-        free(replacement);
+        free(replacement_alloc);
         ptn_mb_illegal_chars += illegal_delta;
         return result;
     }
@@ -67945,7 +68023,7 @@ static char *ptn_mb_iconv_convert_alloc_counting(
             &illegal_delta,
             output_len
         );
-        free(replacement);
+        free(replacement_alloc);
         ptn_mb_illegal_chars += illegal_delta;
         return result;
     }
@@ -67959,7 +68037,7 @@ static char *ptn_mb_iconv_convert_alloc_counting(
         &illegal_delta,
         output_len
     );
-    free(replacement);
+    free(replacement_alloc);
     ptn_mb_illegal_chars += illegal_delta;
     return result;
 }
