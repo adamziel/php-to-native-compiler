@@ -12777,6 +12777,55 @@ static const PtnObjectPropertyMetadata *ptn_unserialize_find_metadata_by_display
     return fallback;
 }
 
+static const char *ptn_unserialize_dynamic_property_class_name(
+    PtnRuntime *runtime,
+    PtnObject *object
+) {
+    const char *class_name = object == NULL ? NULL : object->class_name;
+    if (runtime == NULL || class_name == NULL || !ptn_internal_class_exists_name(class_name)) {
+        return class_name;
+    }
+
+    const char *candidate = runtime->called_class_name_override != NULL
+        ? runtime->called_class_name_override
+        : runtime->current_called_class_name;
+    if (candidate != NULL &&
+        !ptn_ascii_case_equal(candidate, class_name) &&
+        ptn_declared_class_is_same_or_descendant(candidate, class_name)) {
+        return candidate;
+    }
+    return class_name;
+}
+
+static void ptn_unserialize_emit_dynamic_property_deprecation(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    size_t line
+) {
+    const char *class_name = ptn_unserialize_dynamic_property_class_name(runtime, object);
+    if (runtime == NULL ||
+        class_name == NULL ||
+        property == NULL ||
+        ptn_object_class_allows_dynamic_properties(runtime, class_name) ||
+        !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Creation of dynamic property %s::$%s is deprecated",
+        class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_deprecation(runtime, message, line);
+}
+
 static const PtnObjectPropertyMetadata *ptn_unserialize_register_dynamic_mangled_property(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -12799,7 +12848,7 @@ static const PtnObjectPropertyMetadata *ptn_unserialize_register_dynamic_mangled
         metadata_declaring_class = owned_declaring_class;
     }
 
-    ptn_emit_dynamic_property_deprecation(runtime, object, property_name, line);
+    ptn_unserialize_emit_dynamic_property_deprecation(runtime, object, property_name, line);
     ptn_object_register_property_metadata(
         object,
         property_name,
@@ -13421,12 +13470,15 @@ static int ptn_unserialize_store_object_property_entry(
                 !ptn_unserialize_key_is_spl_array_backed_payload_slot(object, property_key)) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
+        const char *dynamic_class_name =
+            ptn_unserialize_dynamic_property_class_name(runtime, object);
         if (runtime != NULL &&
+            dynamic_class_name != NULL &&
             runtime->declared_class_is_readonly != NULL &&
-            runtime->declared_class_is_readonly(object->class_name)) {
+            runtime->declared_class_is_readonly(dynamic_class_name)) {
             ptn_throw_dynamic_property_readonly_class_error(
                 runtime,
-                object->class_name,
+                dynamic_class_name,
                 property_key.as.string,
                 state->line
             );
@@ -13434,7 +13486,7 @@ static int ptn_unserialize_store_object_property_entry(
             ptn_value_destroy(&parsed.value);
             return 0;
         }
-        ptn_emit_dynamic_property_deprecation(
+        ptn_unserialize_emit_dynamic_property_deprecation(
             runtime,
             object,
             property_key.as.string,
@@ -147863,18 +147915,29 @@ static PtnValue ptn_spl_prepare_backing_storage(
             if (written < 0 || (size_t)written >= sizeof(trace_name)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception_owned_message_at_with_trace_frame(
-                runtime,
-                "InvalidArgumentException",
-                ptn_duplicate_string(message),
-                runtime->source_path,
-                line,
-                trace_name,
-                runtime->source_path,
-                line,
-                trace_argc,
-                trace_args
-            );
+            char *owned_message = ptn_duplicate_string(message);
+            if (trace_argc == 0 && trace_args == NULL) {
+                ptn_throw_exception_owned_message_at(
+                    runtime,
+                    "InvalidArgumentException",
+                    owned_message,
+                    runtime->source_path,
+                    line
+                );
+            } else {
+                ptn_throw_exception_owned_message_at_with_trace_frame(
+                    runtime,
+                    "InvalidArgumentException",
+                    owned_message,
+                    runtime->source_path,
+                    line,
+                    trace_name,
+                    runtime->source_path,
+                    line,
+                    trace_argc,
+                    trace_args
+                );
+            }
             return ptn_null();
         }
         return ptn_value_clone(value);
@@ -151572,30 +151635,31 @@ static void ptn_spl_load_unserialized_members(
     PtnUnserializeState *state = runtime == NULL
         ? NULL
         : (PtnUnserializeState *)runtime->active_unserialize_state;
+    PtnUnserializeState local_state;
+    int using_local_state = 0;
+    if (state == NULL) {
+        ptn_unserialize_state_init(&local_state, "", 0, line);
+        state = &local_state;
+        using_local_state = 1;
+    }
     for (size_t i = 0; i < resolved_members.as.array->len; i++) {
         PtnArrayEntry *entry = &resolved_members.as.array->entries[i];
-        if (state != NULL) {
-            PtnUnserializeValue parsed;
-            parsed.value = ptn_value_clone(entry->value);
-            parsed.id = 0;
-            if (!ptn_unserialize_store_object_property_entry(
-                    runtime,
-                    state,
-                    object,
-                    ptn_array_key_clone(entry->key),
-                    parsed,
-                    1
-                )) {
-                return;
-            }
-            continue;
+        PtnUnserializeValue parsed;
+        parsed.value = ptn_value_clone(entry->value);
+        parsed.id = 0;
+        if (!ptn_unserialize_store_object_property_entry(
+                runtime,
+                state,
+                object,
+                ptn_array_key_clone(entry->key),
+                parsed,
+                1
+            )) {
+            break;
         }
-        (void)line;
-        ptn_array_set_entry(
-            object->properties,
-            ptn_array_key_clone(entry->key),
-            ptn_value_clone(entry->value)
-        );
+    }
+    if (using_local_state) {
+        ptn_unserialize_state_free(&local_state);
     }
 }
 
