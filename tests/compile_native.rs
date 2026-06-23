@@ -19778,6 +19778,72 @@ var_dump($a);
 }
 
 #[test]
+fn compile_eval_redirecttest_config_body_returns_array_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-redirecttest-config");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-redirecttest-config.php");
+    let output = root.join("eval-redirecttest-config-bin");
+    fs::write(
+        &input,
+        r#"<?php
+putenv('PTN_EVAL_REDIRECT_DSN');
+putenv('PTN_EVAL_REDIRECT_ATTR');
+
+$common = <<<'PHP'
+# magic auto-configuration
+$config = array(
+    'TESTS' => __DIR__ . '/ext/pdo/tests'
+);
+
+if (false !== getenv('PTN_EVAL_REDIRECT_DSN')) {
+    $config['ENV']['PDOTEST_DSN'] = getenv('PTN_EVAL_REDIRECT_DSN');
+    if (false !== getenv('PTN_EVAL_REDIRECT_ATTR')) {
+        $config['ENV']['PDOTEST_ATTR'] = getenv('PTN_EVAL_REDIRECT_ATTR');
+    }
+} else {
+    $config['ENV']['PDOTEST_DSN'] = 'pgsql:default';
+    $config['ENV']['PDOTEST_USER'] = 'postgres';
+    $config['ENV']['PDOTEST_PASS'] = 'postgres';
+}
+
+return $config;
+PHP;
+
+$conf = eval($common);
+echo basename($conf['TESTS']), "\n";
+foreach ($conf['ENV'] as $name => $value) {
+    echo $name, '=', $value, "\n";
+}
+
+putenv('PTN_EVAL_REDIRECT_DSN=pgsql:custom');
+putenv('PTN_EVAL_REDIRECT_ATTR=a:0:{}');
+$conf = eval($common);
+foreach ($conf['ENV'] as $name => $value) {
+    echo $name, '=', $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "tests\n",
+            "PDOTEST_DSN=pgsql:default\n",
+            "PDOTEST_USER=postgres\n",
+            "PDOTEST_PASS=postgres\n",
+            "PDOTEST_DSN=pgsql:custom\n",
+            "PDOTEST_ATTR=a:0:{}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();
