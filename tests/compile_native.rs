@@ -11267,6 +11267,93 @@ echo "===DONE===\n";
 }
 
 #[test]
+fn compile_autoload_variance_class_order_to_native_binary() {
+    let cases = [
+        (
+            "autoload-variance-outstanding-dependency",
+            r#"<?php
+spl_autoload_register(function ($class) {
+    if ($class == 'A') {
+        class A {
+            function m(): B {}
+        }
+    } elseif ($class == 'B') {
+        class B extends A {
+            function m(): X {}
+        }
+    } else {
+        class C extends B {}
+    }
+});
+
+new B;
+"#,
+            "",
+            "Could not check compatibility between B::m(): X and A::m(): B, because class X is not available",
+            "Class \"B\" not found",
+        ),
+        (
+            "autoload-variance-no-extra-candidate",
+            r#"<?php
+spl_autoload_register(function ($class) {
+    if ($class == 'A') {
+        class A {
+            function m(): B {}
+            function m2(): B {}
+        }
+        var_dump(new A);
+    } elseif ($class == 'B') {
+        class B extends A {
+            function m(): X {}
+            function m2(): Y {}
+        }
+        var_dump(new B);
+    } elseif ($class == 'X') {
+        class X extends B {}
+        var_dump(new X);
+    } else {
+        class Y extends A {}
+        var_dump(new Y);
+    }
+});
+
+new B;
+"#,
+            "object(A)#",
+            "Declaration of B::m2(): Y must be compatible with A::m2(): B",
+            "object(X)#",
+        ),
+    ];
+
+    for (name, source, required_stdout, required_stderr, forbidden_output) in cases {
+        let root_name = format!("ptn-native-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+
+        let stdout = String::from_utf8(execution.stdout).unwrap();
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(stdout.contains(required_stdout), "{name}: {stdout}");
+        assert!(stderr.contains(required_stderr), "{name}: {stderr}");
+        assert!(
+            !stdout.contains(forbidden_output) && !stderr.contains(forbidden_output),
+            "{name}: stdout={stdout} stderr={stderr}"
+        );
+        if name == "autoload-variance-no-extra-candidate" {
+            assert!(stdout.contains("object(Y)#"), "{stdout}");
+        }
+    }
+}
+
+#[test]
 fn compile_abstract_static_method_call_throws_error_to_native_binary() {
     let root = temp_dir("ptn-native-abstract-static-method-call");
     fs::create_dir_all(&root).unwrap();
