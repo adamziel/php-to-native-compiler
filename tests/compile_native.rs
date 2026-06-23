@@ -78882,13 +78882,21 @@ var_dump(function_exists(\"stream_get_meta_data\"));\n\
 var_dump($meta[\"timed_out\"], $meta[\"blocked\"], $meta[\"eof\"]);\n\
 var_dump($meta[\"wrapper_type\"], $meta[\"stream_type\"], $meta[\"mode\"]);\n\
 var_dump($meta[\"unread_bytes\"], $meta[\"seekable\"], str_contains($meta[\"uri\"], \"payload.txt\"));\n\
+fread($fp, 2);\n\
+$afterRead = stream_get_meta_data($fp);\n\
+var_dump($afterRead[\"unread_bytes\"] > 0);\n\
 var_dump(fclose($fp));\n\
+$fileUri = \"File://{}\";\n\
+$caseFp = fopen($fileUri, \"r\");\n\
+$caseMeta = stream_get_meta_data($caseFp);\n\
+var_dump($caseFp !== false, $caseMeta[\"uri\"] === $fileUri);\n\
+fclose($caseFp);\n\
 try {{\n\
     stream_get_meta_data($fp);\n\
 }} catch (TypeError $e) {{\n\
     echo $e->getMessage(), \"\\n\";\n\
 }}",
-            data_path
+            data_path, data_path
         ),
     )
     .unwrap();
@@ -78907,6 +78915,9 @@ string(9) \"plainfile\"\n\
 string(5) \"STDIO\"\n\
 string(1) \"r\"\n\
 int(0)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\

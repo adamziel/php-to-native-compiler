@@ -48511,7 +48511,7 @@ static char *ptn_fopen_path_operand_to_c_string(PtnStringOperand path) {
     if (memchr(path.data, '\0', path.len) != NULL) {
         return NULL;
     }
-    if (path.len >= 8 && strncmp(path.data, "file:///", 8) == 0) {
+    if (path.len >= 8 && ptn_ascii_case_equal_n(path.data, "file:///", 8)) {
         return ptn_duplicate_string_len(path.data + 7, path.len - 7);
     }
     return ptn_duplicate_string_len(path.data, path.len);
@@ -49490,31 +49490,36 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
     char *path = ptn_fopen_path_operand_to_c_string(path_operand);
+    char *uri = path == NULL ? NULL : ptn_duplicate_string_len(path_operand.data, path_operand.len);
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Filename contains null byte", line);
         return ptn_bool(0);
     }
-    if (strncmp(path, "file://", 7) == 0 && strncmp(path, "file:///", 8) != 0) {
+    if (ptn_ascii_case_has_prefix(path, "file://") && !ptn_ascii_case_has_prefix(path, "file:///")) {
         int needed = snprintf(NULL, 0, "fopen(): Remote host file access not supported, %s", path);
         if (needed < 0) {
+            free(uri);
             free(path);
             ptn_abort_out_of_memory();
         }
         char *message = malloc((size_t)needed + 1);
         if (message == NULL) {
+            free(uri);
             free(path);
             ptn_abort_out_of_memory();
         }
         int written = snprintf(message, (size_t)needed + 1, "fopen(): Remote host file access not supported, %s", path);
         if (written < 0 || written != needed) {
             free(message);
+            free(uri);
             free(path);
             ptn_abort_out_of_memory();
         }
         ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
         free(message);
         ptn_emit_file_warning(runtime, "fopen", path, "Failed to open stream: no suitable wrapper could be found", line);
+        free(uri);
         free(path);
         return ptn_bool(0);
     }
@@ -49524,12 +49529,14 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     ptn_string_operand_free(mode_operand);
     if (mode == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Argument #2 ($mode) must not contain any null bytes", line);
+        free(uri);
         free(path);
         return ptn_bool(0);
     }
 
     PtnValue php_stream;
     if (ptn_try_open_php_input_stream(runtime, path, &php_stream)) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
@@ -49537,6 +49544,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     char *wrapper_detail = NULL;
     int php_fd_result = ptn_try_open_php_fd_stream(path, &php_stream, &wrapper_detail);
     if (php_fd_result > 0) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
@@ -49544,22 +49552,26 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     if (php_fd_result < 0) {
         ptn_emit_file_warning(runtime, "fopen", path, wrapper_detail, line);
         free(wrapper_detail);
+        free(uri);
         free(mode);
         free(path);
         return ptn_bool(0);
     }
     if (ptn_try_open_php_standard_stream(path, &php_stream)) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
     }
     if (ptn_try_open_php_memory_stream(path, mode, &php_stream)) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
     }
     int data_url_result = ptn_try_open_data_url_stream(path, mode, &php_stream, &wrapper_detail);
     if (data_url_result > 0) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
@@ -49567,16 +49579,19 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     if (data_url_result < 0) {
         ptn_emit_file_warning(runtime, "fopen", path, wrapper_detail, line);
         free(wrapper_detail);
+        free(uri);
         free(mode);
         free(path);
         return ptn_bool(0);
     }
     if (ptn_try_open_compress_zlib_stream(path, mode, &php_stream)) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
     }
     if (ptn_try_open_phar_stream(path, mode, &php_stream)) {
+        free(uri);
         free(mode);
         free(path);
         return php_stream;
@@ -49587,6 +49602,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     free(c_mode);
     if (stream == NULL) {
         if (ptn_try_open_current_source_snapshot_stream(runtime, path, mode, &php_stream)) {
+            free(uri);
             free(mode);
             free(path);
             return php_stream;
@@ -49597,6 +49613,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        free(uri);
         free(mode);
         free(path);
         return ptn_bool(0);
@@ -49605,7 +49622,8 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         (void)fseek(stream, 0, SEEK_SET);
     }
 
-    PtnValue resource = ptn_resource(ptn_resource_new_stream(stream, path, mode));
+    PtnValue resource = ptn_resource(ptn_resource_new_stream(stream, uri == NULL ? path : uri, mode));
+    free(uri);
     free(mode);
     free(path);
     return resource;
@@ -51696,6 +51714,30 @@ static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value
     ptn_array_set_entry(array, ptn_array_string_key(key), value);
 }
 
+static int64_t ptn_stream_regular_file_unread_bytes(PtnResource *resource) {
+    if (resource == NULL || resource->stream == NULL || resource->memory_stream != NULL) {
+        return 0;
+    }
+#if defined(_WIN32)
+    return 0;
+#else
+    int descriptor = fileno(resource->stream);
+    if (descriptor < 0) {
+        return 0;
+    }
+    long logical_position = ftell(resource->stream);
+    if (logical_position < 0) {
+        return 0;
+    }
+    off_t physical_position = lseek(descriptor, 0, SEEK_CUR);
+    if (physical_position < 0 || physical_position <= (off_t)logical_position) {
+        return 0;
+    }
+    off_t unread = physical_position - (off_t)logical_position;
+    return unread > INT64_MAX ? INT64_MAX : (int64_t)unread;
+#endif
+}
+
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -51770,7 +51812,7 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         "mode",
         ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
     );
-    ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+    ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(ptn_stream_regular_file_unread_bytes(resource)));
     ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
     if (!is_directory) {
         ptn_stream_meta_set(
