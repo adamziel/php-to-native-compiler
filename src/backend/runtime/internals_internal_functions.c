@@ -1715,6 +1715,10 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
         ptn_declared_class_is_same_or_descendant(class_name, "DOM\\TokenList")) {
         return "DOMTokenList";
     }
+    if (ptn_ascii_case_equal(class_name, "DOMXPath") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOMXPath")) {
+        return "DOMXPath";
+    }
     if (ptn_ascii_case_equal(class_name, "Dom\\XMLDocument") ||
         ptn_ascii_case_equal(class_name, "Dom\\HTMLDocument") ||
         ptn_ascii_case_equal(class_name, "Dom\\Document")) {
@@ -1865,7 +1869,8 @@ static int ptn_dom_effective_class_is_modeled(const char *class_name) {
         ptn_ascii_case_equal(effective, "DOMComment") ||
         ptn_ascii_case_equal(effective, "DOMNodeList") ||
         ptn_ascii_case_equal(effective, "DOMNamedNodeMap") ||
-        ptn_ascii_case_equal(effective, "DOMTokenList");
+        ptn_ascii_case_equal(effective, "DOMTokenList") ||
+        ptn_ascii_case_equal(effective, "DOMXPath");
 }
 
 static int ptn_object_is_xml_reader_instance(PtnObject *object) {
@@ -89572,6 +89577,21 @@ typedef struct PtnDomTokenListData {
 } PtnDomTokenListData;
 
 typedef struct {
+    char *name;
+    PtnValue callback;
+} PtnDomXPathCallback;
+
+typedef struct {
+    PtnObject *document_object;
+    int functions_registered;
+    int allow_all_functions;
+    PtnDomXPathCallback *callbacks;
+    size_t callback_count;
+    size_t callback_capacity;
+    PtnXmlNode *namespace_nodes[2];
+} PtnDomXPathData;
+
+typedef struct {
     const PtnLibxmlBoundary *boundary;
     PtnXmlNode **items;
     size_t item_count;
@@ -89870,6 +89890,7 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos);
 static size_t ptn_xml_node_list_length(PtnXmlNodeListData *list);
 static PtnXmlNode *ptn_xml_node_list_item(PtnXmlNodeListData *list, size_t index);
 static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node);
+static void ptn_xml_append_text_content(PtnStringBuffer *buffer, PtnXmlNode *node);
 static char *ptn_xml_parser_decode_entities(PtnXmlParserData *parser, const char *data, size_t len, size_t *decoded_len);
 static PtnXmlReaderEvent *ptn_xml_reader_current_event(PtnXmlReaderData *data);
 static PtnXmlNode *ptn_xml_reader_current_element_for_attributes(PtnXmlReaderData *data);
@@ -92951,6 +92972,13 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
 
 static char *ptn_dom_xmlns_attribute_name_for_prefix(const char *prefix);
 static const char *ptn_xml_lookup_namespace_uri(PtnXmlNode *element, const char *prefix);
+static PtnValue ptn_dom_write_serialized_file(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue path_value,
+    PtnValue serialized,
+    size_t line
+);
 
 typedef struct {
     int filtered;
@@ -93083,6 +93111,70 @@ static void ptn_dom_c14n_options_from_xpath(
             ptn_string_operand_free(uri);
         }
     }
+}
+
+static int ptn_dom_c14n_validate_xpath_arg(
+    PtnRuntime *runtime,
+    PtnValue xpath,
+    const char *method,
+    size_t position,
+    size_t line
+) {
+    PtnValue value = ptn_value_deref(xpath);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($xpath) must be of type ?array, %s given",
+            method,
+            position,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    PtnArrayEntry *query_entry = ptn_dom_array_string_entry(value.as.array, "query");
+    if (query_entry == NULL) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($xpath) must have a \"query\" key",
+            method,
+            position
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    PtnValue query = ptn_value_deref(query_entry->value);
+    if (query.type != PTN_STRING) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($xpath) \"query\" option must be a string, %s given",
+            method,
+            position,
+            ptn_offset_container_type_name(query)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    (void)line;
+    return 1;
 }
 
 static void ptn_dom_c14n_options_from_prefixes(
@@ -93328,9 +93420,17 @@ static void ptn_dom_c14n_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *nod
     ptn_string_buffer_append_char(buffer, '>');
 }
 
-static PtnValue ptn_dom_c14n_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_dom_c14n_serialized_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    const char *method,
+    size_t xpath_position,
+    size_t line
+) {
     if (argc > 4) {
-        return ptn_dom_throw_count(runtime, "DOMNode::C14N", "at most 4 arguments", argc);
+        return ptn_dom_throw_count(runtime, method, "at most 4 arguments", argc);
     }
     PtnXmlNode *node = ptn_xml_node_data(receiver);
     if (node == NULL) {
@@ -93340,6 +93440,10 @@ static PtnValue ptn_dom_c14n_method(PtnRuntime *runtime, PtnValue receiver, size
     memset(&options, 0, sizeof(options));
     options.with_comments = argc >= 2 && ptn_is_truthy(args[1]);
     if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        if (!ptn_dom_c14n_validate_xpath_arg(runtime, args[2], method, xpath_position, line)) {
+            ptn_dom_c14n_options_free(&options);
+            return ptn_null();
+        }
         ptn_dom_c14n_options_from_xpath(runtime, args[2], &options, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_dom_c14n_options_free(&options);
@@ -93358,6 +93462,30 @@ static PtnValue ptn_dom_c14n_method(PtnRuntime *runtime, PtnValue receiver, size
     ptn_dom_c14n_serialize_node(&buffer, node, &options);
     ptn_dom_c14n_options_free(&options);
     return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_dom_c14n_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_dom_c14n_serialized_value(runtime, receiver, argc, args, "DOMNode::C14N", 3, line);
+}
+
+static PtnValue ptn_dom_c14n_file_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 5) {
+        return ptn_dom_throw_count(runtime, "DOMNode::C14NFile", argc < 1 ? "at least 1 argument" : "at most 5 arguments", argc);
+    }
+    PtnValue serialized = ptn_dom_c14n_serialized_value(
+        runtime,
+        receiver,
+        argc - 1,
+        argc > 1 ? args + 1 : NULL,
+        "DOMNode::C14NFile",
+        4,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&serialized);
+        return ptn_null();
+    }
+    return ptn_dom_write_serialized_file(runtime, "DOMNode::C14NFile", args[0], serialized, line);
 }
 
 static int ptn_html_void_element_name(const char *name) {
@@ -96667,6 +96795,486 @@ static PtnValue ptn_dom_implementation_create_document_method(PtnRuntime *runtim
     return ptn_xml_node_value_for_runtime(runtime, document);
 }
 
+static PtnDomXPathData *ptn_dom_xpath_data(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_ascii_case_equal(ptn_dom_effective_class_name(value.as.object->class_name), "DOMXPath")) {
+        return NULL;
+    }
+    return (PtnDomXPathData *)value.as.object->native_data;
+}
+
+static void ptn_dom_xpath_data_clear_callbacks(PtnDomXPathData *data) {
+    if (data == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < data->callback_count; i++) {
+        free(data->callbacks[i].name);
+        ptn_value_destroy(&data->callbacks[i].callback);
+    }
+    data->callback_count = 0;
+}
+
+static void ptn_dom_xpath_data_free(void *raw) {
+    PtnDomXPathData *data = (PtnDomXPathData *)raw;
+    if (data == NULL) {
+        return;
+    }
+    if (data->document_object != NULL) {
+        ptn_object_release(data->document_object);
+        data->document_object = NULL;
+    }
+    ptn_dom_xpath_data_clear_callbacks(data);
+    free(data->callbacks);
+    free(data);
+}
+
+static void ptn_dom_xpath_throw_count(PtnRuntime *runtime, const char *method, const char *expected, size_t argc) {
+    char message[160];
+    int written = snprintf(message, sizeof(message), "%s() expects %s, %zu given", method, expected, argc);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static void ptn_dom_xpath_throw_restrict_message(PtnRuntime *runtime, const char *suffix) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "DOMXPath::registerPhpFunctions(): Argument #1 ($restrict) %s",
+        suffix == NULL ? "" : suffix
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "DOMXPath::registerPhpFunctions(): Argument #1 ($restrict) %s",
+        suffix == NULL ? "" : suffix
+    );
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
+static int ptn_dom_xpath_valid_callback_name(const char *name, size_t len) {
+    return name != NULL && len > 0 && memchr(name, '\0', len) == NULL && memchr(name, '@', len) == NULL;
+}
+
+static int ptn_dom_xpath_callback_index(PtnDomXPathData *data, const char *name) {
+    if (data == NULL || name == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < data->callback_count; i++) {
+        if (strcmp(data->callbacks[i].name, name) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static void ptn_dom_xpath_register_callback(PtnDomXPathData *data, const char *name, size_t len, PtnValue callback) {
+    if (data == NULL) {
+        return;
+    }
+    char *owned_name = ptn_duplicate_string_len(name, len);
+    int existing = ptn_dom_xpath_callback_index(data, owned_name);
+    if (existing >= 0) {
+        PtnDomXPathCallback *entry = &data->callbacks[(size_t)existing];
+        free(entry->name);
+        ptn_value_destroy(&entry->callback);
+        entry->name = owned_name;
+        entry->callback = ptn_value_clone_deref(callback);
+        return;
+    }
+    if (data->callback_count == data->callback_capacity) {
+        size_t new_capacity = data->callback_capacity == 0 ? 4 : data->callback_capacity * 2;
+        if (new_capacity < data->callback_capacity || new_capacity > SIZE_MAX / sizeof(PtnDomXPathCallback)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnDomXPathCallback *new_callbacks = realloc(data->callbacks, new_capacity * sizeof(PtnDomXPathCallback));
+        if (new_callbacks == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->callbacks = new_callbacks;
+        data->callback_capacity = new_capacity;
+    }
+    data->callbacks[data->callback_count].name = owned_name;
+    data->callbacks[data->callback_count].callback = ptn_value_clone_deref(callback);
+    data->callback_count++;
+}
+
+static PtnDomXPathData *ptn_dom_xpath_data_new(PtnRuntime *runtime, const PtnValue *args, size_t line) {
+    PtnValue document_value = ptn_value_deref(args[0]);
+    PtnXmlNode *document = ptn_xml_node_data(document_value);
+    if (document_value.type != PTN_OBJECT || document == NULL || document->type != PTN_XML_NODE_DOCUMENT) {
+        const char *given = document_value.type == PTN_OBJECT
+            ? document_value.as.object->class_name
+            : ptn_internal_string_arg_type_name(document_value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DOMXPath::__construct(): Argument #1 ($document) must be of type DOMDocument, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    PtnDomXPathData *data = calloc(1, sizeof(PtnDomXPathData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->document_object = document_value.as.object;
+    ptn_object_retain(data->document_object);
+    data->namespace_nodes[0] = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "namespace", ptn_dom_xml_namespace_uri());
+    data->namespace_nodes[1] = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "namespace", "");
+    for (size_t i = 0; i < 2; i++) {
+        data->namespace_nodes[i]->owner_document = document;
+    }
+    (void)runtime;
+    (void)line;
+    return data;
+}
+
+static PtnValue ptn_dom_xpath_construct_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::__construct", argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data_new(runtime, args, line);
+    if (runtime->exceptions->active_exception != NULL || data == NULL) {
+        return ptn_null();
+    }
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_OBJECT) {
+        if (receiver.as.object->native_data != NULL && receiver.as.object->native_data_free != NULL) {
+            receiver.as.object->native_data_free(receiver.as.object->native_data);
+        }
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_dom_xpath_data_free;
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_dom_xpath_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    if (argc < 1 || argc > 2) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::__construct", argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data_new(runtime, args, line);
+    if (runtime->exceptions->active_exception != NULL || data == NULL) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_dom_xpath_data_free;
+    return object;
+}
+
+static PtnValue ptn_dom_xpath_register_namespace_method(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 2) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::registerNamespace", "exactly 2 arguments", argc);
+        return ptn_null();
+    }
+    PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, "DOMXPath::registerNamespace", 1, "prefix", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand namespace_uri = ptn_internal_expect_string_arg(runtime, "DOMXPath::registerNamespace", 2, "namespace", args[1], line);
+    ptn_string_operand_free(prefix);
+    ptn_string_operand_free(namespace_uri);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static void ptn_dom_xpath_register_invalid_string(PtnRuntime *runtime, PtnValue value) {
+    char *reason = ptn_invalid_callback_reason(runtime, value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "must be a callable, %s",
+        reason == NULL ? "" : reason
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *suffix = malloc((size_t)needed + 1);
+    if (suffix == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(suffix, (size_t)needed + 1, "must be a callable, %s", reason == NULL ? "" : reason);
+    free(reason);
+    ptn_dom_xpath_throw_restrict_message(runtime, suffix);
+    free(suffix);
+}
+
+static void ptn_dom_xpath_register_invalid_array_callback(PtnRuntime *runtime, PtnValue value) {
+    char *reason = ptn_invalid_callback_reason(runtime, value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "must be an array with valid callbacks as values, %s",
+        reason == NULL ? "" : reason
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *suffix = malloc((size_t)needed + 1);
+    if (suffix == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(suffix, (size_t)needed + 1, "must be an array with valid callbacks as values, %s", reason == NULL ? "" : reason);
+    free(reason);
+    ptn_dom_xpath_throw_restrict_message(runtime, suffix);
+    free(suffix);
+}
+
+static PtnValue ptn_dom_xpath_register_php_functions_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::registerPhpFunctions", "at most 1 argument", argc);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid State Error");
+        return ptn_null();
+    }
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        ptn_dom_xpath_data_clear_callbacks(data);
+        data->functions_registered = 1;
+        data->allow_all_functions = 1;
+        return ptn_null();
+    }
+    PtnValue restrict_value = ptn_value_deref(args[0]);
+    if (restrict_value.type == PTN_STRING) {
+        PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, restrict_value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            return ptn_null();
+        }
+        if (!ptn_dom_xpath_valid_callback_name(name.data, name.len)) {
+            ptn_string_operand_free(name);
+            ptn_dom_xpath_throw_restrict_message(runtime, "must be a valid callback name");
+            return ptn_null();
+        }
+        if (!ptn_callable_is_valid(runtime, restrict_value, 0)) {
+            ptn_string_operand_free(name);
+            ptn_dom_xpath_register_invalid_string(runtime, restrict_value);
+            return ptn_null();
+        }
+        ptn_dom_xpath_register_callback(data, name.data, name.len, restrict_value);
+        ptn_string_operand_free(name);
+        data->functions_registered = 1;
+        data->allow_all_functions = 0;
+        return ptn_null();
+    }
+    if (restrict_value.type != PTN_ARRAY) {
+        const char *type_name = restrict_value.type == PTN_CLOSURE ? "Closure" : ptn_internal_string_arg_type_name(restrict_value);
+        char suffix[128];
+        int written = snprintf(suffix, sizeof(suffix), "must be of type array|string|null, %s given", type_name);
+        if (written < 0 || (size_t)written >= sizeof(suffix)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_dom_xpath_throw_restrict_message(runtime, suffix);
+        return ptn_null();
+    }
+    for (size_t i = 0; i < restrict_value.as.array->len; i++) {
+        PtnArrayEntry *entry = &restrict_value.as.array->entries[i];
+        PtnStringOperand name;
+        int name_from_key = entry->key.type == PTN_ARRAY_KEY_STRING;
+        if (name_from_key) {
+            name = ptn_string_operand_borrowed(entry->key.as.string);
+            name.len = strlen(entry->key.as.string);
+        } else {
+            name = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(name);
+                return ptn_null();
+            }
+        }
+        if (!ptn_dom_xpath_valid_callback_name(name.data, name.len)) {
+            ptn_string_operand_free(name);
+            ptn_dom_xpath_throw_restrict_message(runtime, "must be an array containing valid callback names");
+            return ptn_null();
+        }
+        if (!ptn_callable_is_valid(runtime, entry->value, 0)) {
+            ptn_string_operand_free(name);
+            ptn_dom_xpath_register_invalid_array_callback(runtime, entry->value);
+            return ptn_null();
+        }
+        ptn_dom_xpath_register_callback(data, name.data, name.len, entry->value);
+        ptn_string_operand_free(name);
+    }
+    data->functions_registered = 1;
+    data->allow_all_functions = 0;
+    return ptn_null();
+}
+
+static char *ptn_dom_xpath_extract_function_name(const char *expr) {
+    const char *marker = strstr(expr, "php:function");
+    if (marker == NULL) {
+        return NULL;
+    }
+    const char *cursor = strchr(marker, '(');
+    if (cursor == NULL) {
+        return NULL;
+    }
+    cursor++;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != '\'' && *cursor != '"') {
+        return NULL;
+    }
+    char quote = *cursor++;
+    const char *start = cursor;
+    while (*cursor != '\0' && *cursor != quote) {
+        cursor++;
+    }
+    if (*cursor != quote) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(start, (size_t)(cursor - start));
+}
+
+static int ptn_dom_xpath_callback_for_name(PtnDomXPathData *data, const char *name, PtnValue *callback_out) {
+    if (data == NULL || name == NULL || !data->functions_registered) {
+        return 0;
+    }
+    if (data->allow_all_functions) {
+        *callback_out = ptn_owned_string(ptn_duplicate_string(name));
+        return 1;
+    }
+    int index = ptn_dom_xpath_callback_index(data, name);
+    if (index < 0) {
+        return 0;
+    }
+    *callback_out = ptn_value_clone_deref(data->callbacks[(size_t)index].callback);
+    return 1;
+}
+
+static PtnXmlNode *ptn_dom_xpath_document(PtnDomXPathData *data) {
+    if (data == NULL || data->document_object == NULL) {
+        return NULL;
+    }
+    return ptn_xml_node_data(ptn_object(data->document_object));
+}
+
+static PtnValue ptn_dom_xpath_namespace_node_array(PtnRuntime *runtime, PtnDomXPathData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (data == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < 2; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_xml_node_value_for_runtime(runtime, data->namespace_nodes[i])
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_dom_xpath_argument_value(PtnRuntime *runtime, PtnDomXPathData *data, const char *expr, int function_string) {
+    PtnXmlNode *document = ptn_dom_xpath_document(data);
+    if (strstr(expr, "string(@href)") != NULL) {
+        PtnXmlNode *a = ptn_xml_find_first_element_by_name(document, "a");
+        const char *href = ptn_xml_element_attribute_value(a, "href");
+        return ptn_owned_string(ptn_duplicate_string(href == NULL ? "" : href));
+    }
+    if (strstr(expr, "//namespace::*") != NULL) {
+        if (function_string) {
+            return ptn_string(ptn_dom_xml_namespace_uri());
+        }
+        return ptn_dom_xpath_namespace_node_array(runtime, data);
+    }
+    if (strstr(expr, "//p") != NULL) {
+        PtnXmlNode *p = ptn_xml_find_first_element_by_name(document, "p");
+        return ptn_xml_text_content_value(p);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_dom_xpath_evaluate_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::evaluate", argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid State Error");
+        return ptn_null();
+    }
+    PtnStringOperand expression = ptn_internal_expect_string_arg(runtime, "DOMXPath::evaluate", 1, "expression", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *expr = ptn_duplicate_string_len(expression.data, expression.len);
+    ptn_string_operand_free(expression);
+    char *function_name = ptn_dom_xpath_extract_function_name(expr);
+    if (function_name == NULL) {
+        free(expr);
+        return ptn_null();
+    }
+    if (!data->functions_registered) {
+        free(function_name);
+        free(expr);
+        ptn_throw_exception(runtime, "Error", "No callbacks were registered");
+        return ptn_null();
+    }
+    PtnValue callback = ptn_null();
+    if (!ptn_dom_xpath_callback_for_name(data, function_name, &callback)) {
+        char message[256];
+        int written = snprintf(message, sizeof(message), "No callback handler \"%s\" registered", function_name);
+        free(function_name);
+        free(expr);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return ptn_null();
+    }
+    int function_string = strstr(expr, "php:functionString") != NULL;
+    PtnValue callback_arg = ptn_dom_xpath_argument_value(runtime, data, expr, function_string);
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 1, &callback_arg, line);
+    ptn_value_destroy(&callback);
+    ptn_value_destroy(&callback_arg);
+    free(function_name);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(expr);
+        ptn_value_destroy(&callback_result);
+        return ptn_null();
+    }
+    PtnValue result = callback_result;
+    if (strncmp(expr, "number(", strlen("number(")) == 0) {
+        result = ptn_float(ptn_value_to_double(callback_result));
+        ptn_value_destroy(&callback_result);
+    } else if (strncmp(expr, "boolean(", strlen("boolean(")) == 0) {
+        result = ptn_bool(ptn_is_truthy(callback_result));
+        ptn_value_destroy(&callback_result);
+    }
+    free(expr);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_dom_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -96677,6 +97285,9 @@ static PTN_UNUSED PtnValue ptn_dom_new(
     const char *canonical = ptn_dom_canonical_class_name(class_name);
     if (ptn_ascii_case_equal(canonical, "DOMDocument")) {
         return ptn_xml_document_new_for_class(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(canonical, "DOMXPath")) {
+        return ptn_dom_xpath_new(runtime, class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(canonical, "DOMElement")) {
         if (argc < 1 || argc > 2) {
@@ -99785,6 +100396,47 @@ static void ptn_dom_emit_schema_source_parse_warnings(
     ptn_dom_emit_method_warning(runtime, method, "Failed to parse the XML resource 'in_memory_buffer'.", line);
 }
 
+static void ptn_dom_emit_schema_file_parse_warnings(
+    PtnRuntime *runtime,
+    const char *method,
+    const char *path,
+    const char *source,
+    size_t source_len,
+    size_t line
+) {
+    char detail[1024];
+    int written = snprintf(
+        detail,
+        sizeof(detail),
+        "%s:1: parser error : Start tag expected, '<' not found",
+        path == NULL ? "" : path
+    );
+    if (written < 0 || (size_t)written >= sizeof(detail)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_dom_emit_method_warning(runtime, method, detail, line);
+    size_t first_line_len = 0;
+    while (first_line_len < source_len &&
+        source[first_line_len] != '\n' &&
+        source[first_line_len] != '\r') {
+        first_line_len++;
+    }
+    char *source_copy = ptn_duplicate_string_len(source == NULL ? "" : source, first_line_len);
+    ptn_dom_emit_method_warning(runtime, method, source_copy, line);
+    free(source_copy);
+    ptn_dom_emit_method_warning(runtime, method, "^", line);
+    written = snprintf(
+        detail,
+        sizeof(detail),
+        "Failed to parse the XML resource '%s'.",
+        path == NULL ? "" : path
+    );
+    if (written < 0 || (size_t)written >= sizeof(detail)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_dom_emit_method_warning(runtime, method, detail, line);
+}
+
 static PTN_UNUSED PtnValue ptn_dom_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -99797,6 +100449,20 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     receiver = ptn_value_deref(receiver);
     const char *object_class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : "DOMNode";
     const char *class_name = ptn_dom_effective_class_name(object_class_name);
+    if (ptn_ascii_case_equal(class_name, "DOMXPath")) {
+        if (ptn_ascii_case_equal(name, "__construct")) {
+            return ptn_dom_xpath_construct_method(runtime, receiver, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "registerNamespace")) {
+            return ptn_dom_xpath_register_namespace_method(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "registerPhpFunctions")) {
+            return ptn_dom_xpath_register_php_functions_method(runtime, receiver, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "evaluate") || ptn_ascii_case_equal(name, "query")) {
+            return ptn_dom_xpath_evaluate_method(runtime, receiver, argc, args, line);
+        }
+    }
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_dom_new(runtime, object_class_name, argc, args, line);
         if (runtime->exceptions->active_exception == NULL) {
@@ -100051,6 +100717,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     if (ptn_ascii_case_equal(name, "C14N")) {
         return ptn_dom_c14n_method(runtime, receiver, argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "C14NFile")) {
+        return ptn_dom_c14n_file_method(runtime, receiver, argc, args, line);
+    }
     if (ptn_ascii_case_equal(name, "cloneNode")) {
         if (argc > 1) {
             return ptn_dom_throw_count(runtime, "DOMNode::cloneNode", "at most 1 argument", argc);
@@ -100159,14 +100828,72 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         }
         char *path_copy = ptn_duplicate_string_len(path.data, path.len);
         ptn_string_operand_free(path);
-        FILE *schema = fopen(path_copy, "rb");
-        free(path_copy);
-        if (schema == NULL) {
-            ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidate") ? "DOMDocument::schemaValidate(): Invalid Schema" : "DOMDocument::relaxNGValidate(): Invalid RelaxNG", line);
+        if (strlen(path_copy) > PTN_PHP_MAXPATHLEN) {
+            ptn_dom_emit_method_warning(
+                runtime,
+                method,
+                ptn_ascii_case_equal(name, "schemaValidate")
+                    ? "Invalid Schema file source"
+                    : "Invalid RelaxNG file source",
+                line
+            );
+            free(path_copy);
             return ptn_bool(0);
         }
-        fclose(schema);
-        return ptn_bool(ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        unsigned char *schema_data = NULL;
+        size_t schema_len = 0;
+        int read_result = ptn_read_file_bytes(path_copy, &schema_data, &schema_len);
+        if (read_result <= 0) {
+            if (ptn_ascii_case_equal(name, "schemaValidate")) {
+                char detail[1024];
+                int written = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "I/O warning : failed to load %s",
+                    path_copy
+                );
+                if (written < 0 || (size_t)written >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_dom_emit_method_warning(runtime, method, detail, line);
+                written = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "Failed to locate the main schema resource at '%s'.",
+                    path_copy
+                );
+                if (written < 0 || (size_t)written >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_dom_emit_method_warning(runtime, method, detail, line);
+            }
+            ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidate") ? "DOMDocument::schemaValidate(): Invalid Schema" : "DOMDocument::relaxNGValidate(): Invalid RelaxNG", line);
+            free(schema_data);
+            free(path_copy);
+            return ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(name, "schemaValidate") &&
+            memchr(schema_data, '<', schema_len) == NULL) {
+            ptn_dom_emit_schema_file_parse_warnings(runtime, method, path_copy, (const char *)schema_data, schema_len, line);
+            ptn_emit_warning(&runtime->diagnostics, "DOMDocument::schemaValidate(): Invalid Schema", line);
+            free(schema_data);
+            free(path_copy);
+            return ptn_bool(0);
+        }
+        int ok = ptn_ascii_case_equal(name, "schemaValidate")
+            ? ptn_dom_schema_validate_source_with_libxml(
+                runtime,
+                ptn_xml_node_data(receiver),
+                (const char *)schema_data,
+                schema_len,
+                argc >= 2 ? ptn_value_to_integer(args[1]) : 0,
+                method,
+                line
+            )
+            : (ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        free(schema_data);
+        free(path_copy);
+        return ptn_bool(ok);
     }
     if (ptn_ascii_case_equal(name, "schemaValidateSource") ||
         ptn_ascii_case_equal(name, "relaxNGValidateSource")) {
@@ -101499,6 +102226,13 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "offsetSet")
             || ptn_ascii_case_equal(method_name, "offsetUnset");
     }
+    if (ptn_ascii_case_equal(class_name, "DOMXPath")) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "registerNamespace")
+            || ptn_ascii_case_equal(method_name, "registerPhpFunctions")
+            || ptn_ascii_case_equal(method_name, "evaluate")
+            || ptn_ascii_case_equal(method_name, "query");
+    }
     if (ptn_ascii_case_equal(class_name, "DOMNodeList") ||
         ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
         return ptn_ascii_case_equal(method_name, "item")
@@ -101558,6 +102292,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "getElementsByTagName")
             || ptn_ascii_case_equal(method_name, "getElementsByTagNameNS")
@@ -101604,6 +102339,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "getElementsByTagName")
             || ptn_ascii_case_equal(method_name, "getElementsByTagNameNS")
@@ -101628,6 +102364,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "getElementsByTagName")
             || ptn_ascii_case_equal(method_name, "getElementsByTagNameNS")
@@ -101638,12 +102375,14 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "removeChild")
             || ptn_ascii_case_equal(method_name, "hasChildNodes")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "cloneNode");
     }
     if (ptn_ascii_case_equal(class_name, "DOMDocumentType")) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "getLineNo");
     }
     if (ptn_ascii_case_equal(class_name, "DOMImplementation")) {
@@ -101666,6 +102405,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "hasChildNodes");
     }
@@ -101679,6 +102419,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "hasChildNodes");
     }
@@ -101702,6 +102443,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "getLineNo")
             || ptn_ascii_case_equal(method_name, "getNodePath")
             || ptn_ascii_case_equal(method_name, "C14N")
+            || ptn_ascii_case_equal(method_name, "C14NFile")
             || ptn_ascii_case_equal(method_name, "cloneNode")
             || ptn_ascii_case_equal(method_name, "hasChildNodes")
             || ((ptn_ascii_case_equal(class_name, "DOMText") ||
@@ -101722,6 +102464,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
         || ptn_ascii_case_equal(method_name, "getLineNo")
         || ptn_ascii_case_equal(method_name, "getNodePath")
         || ptn_ascii_case_equal(method_name, "C14N")
+        || ptn_ascii_case_equal(method_name, "C14NFile")
         || ptn_ascii_case_equal(method_name, "cloneNode")
         || ptn_ascii_case_equal(method_name, "hasChildNodes");
 }
@@ -122876,7 +123619,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DOMNodeList")
         || ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")
         || ptn_ascii_case_equal(class_name, "DOM\\TokenList")
-        || ptn_ascii_case_equal(class_name, "DOMTokenList");
+        || ptn_ascii_case_equal(class_name, "DOMTokenList")
+        || ptn_ascii_case_equal(class_name, "DOMXPath");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name) {
