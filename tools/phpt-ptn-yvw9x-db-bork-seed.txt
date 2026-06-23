@@ -1,0 +1,22 @@
+# Seed DB BORK rows from ptn-yvw9x snapshot 20260623T220439Z.
+# Snapshot source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260623T220439Z.tsv
+ext/pdo_mysql/tests/pdo_mysql_prepare_native_column.phpt
+ext/mysqli/tests/046.phpt
+ext/mysqli/tests/bug71863.phpt
+ext/pdo_mysql/tests/bug_61411.phpt
+ext/pdo_mysql/tests/pdo_mysql_prepare_native.phpt
+ext/mysqli/tests/bug32405.phpt
+ext/pdo_mysql/tests/bug53782.phpt
+ext/mysqli/tests/mysqli_options_int_and_float_native.phpt
+ext/mysqli/tests/bug35103.phpt
+ext/pdo_mysql/tests/bug70862.phpt
+ext/pdo_mysql/tests/pdo_mysql_stmt_rowcount.phpt
+ext/mysqli/tests/mysqli_ping.phpt
+ext/pdo_mysql/tests/pdo_mysql_exec_load_data.phpt
+ext/mysqli/tests/mysqli_fetch_field_direct_oo.phpt
+ext/pdo_mysql/tests/pdo_mysql_exec_select.phpt
+ext/pdo_mysql/tests/bug41125.phpt
+ext/pdo_pgsql/tests/bug71885.phpt
+ext/pgsql/tests/80_bug32223b.phpt
+ext/pgsql/tests/02connection.phpt
+ext/odbc/tests/odbc_fetch_row_001.phpt
