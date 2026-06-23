@@ -28285,6 +28285,113 @@ namespace UsingNS {
 }
 
 #[test]
+fn compile_anonymous_class_declares_at_expression_time_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-declared-at-expression-time");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-declared-at-expression-time.php");
+    let output = root.join("anonymous-class-declared-at-expression-time-bin");
+    fs::write(
+        &input,
+        "<?php
+class X {
+    public static function main() {
+        return new class() extends Base {};
+    }
+}
+class Base {}
+
+$check = function () {
+    foreach (get_declared_classes() as $class) {
+        if (strpos($class, '@anonymous') === false) {
+            continue;
+        }
+        echo \"anon:$class\\n\";
+    }
+};
+
+$check();
+echo \"after first\\n\";
+X::main();
+$check();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "after first\nanon:Base@anonymous\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.declared_user_classes["));
+}
+
+#[test]
+fn compile_anonymous_class_self_display_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-self-display-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-self-display-metadata.php");
+    let output = root.join("anonymous-class-self-display-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new class {
+    public self $value;
+
+    public function accepts(self $value) {
+    }
+
+    public function returns(): self {
+        return new stdClass;
+    }
+};
+
+try {
+    $object->accepts(null);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $object->value = 0;
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+echo (new ReflectionClass($object))->getMethod('returns')->getReturnType()->getName(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "class@anonymous(): Argument #1 ($value) must be of type class@anonymous, null given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign int to property class@anonymous::$value of type self"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("self\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_user_parameter_class_type_error"));
+    assert!(c_source.contains("*type_name = \"self\""));
+}
+
+#[test]
 fn compile_compact_var_dump_anonymous_class_to_native_binary() {
     let root = temp_dir("ptn-native-compact-var-dump-anonymous-class");
     fs::create_dir_all(&root).unwrap();

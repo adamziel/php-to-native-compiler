@@ -2573,6 +2573,8 @@ fn emit_user_functions(
                 || effective_return_type.is_some_and(return_type_needs_runtime_context));
         let tracks_return_value_was_set = !function.is_generator
             && effective_return_type.is_some_and(return_type_needs_return_value_was_set);
+        let parameter_type_error_display_name =
+            function_parameter_type_error_display_name(function, classes);
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         if tracks_return_value_was_set {
             out.push_str("    int ptn_return_value_was_set = 0;\n");
@@ -2644,7 +2646,13 @@ fn emit_user_functions(
                 out.push_str("])) {\n");
             }
             if parameter.is_variadic {
-                emit_variadic_parameter_binding(out, function, parameter_index, parameter);
+                emit_variadic_parameter_binding(
+                    out,
+                    function,
+                    parameter_index,
+                    parameter,
+                    &parameter_type_error_display_name,
+                );
                 if required_parameter_count > 0 && parameter_index + 1 == required_parameter_count {
                     emit_user_argument_count_check(
                         out,
@@ -2760,7 +2768,7 @@ fn emit_user_functions(
                         out.push_str("        if (!");
                         out.push_str(coercion_helper);
                         out.push_str("(&runtime, \"");
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2798,7 +2806,7 @@ fn emit_user_functions(
                         out.push_str(
                             "            if (!ptn_coerce_user_parameter_float(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2818,7 +2826,7 @@ fn emit_user_functions(
                         out.push_str(
                             "            ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2847,7 +2855,7 @@ fn emit_user_functions(
                         out.push_str(
                             "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2871,7 +2879,7 @@ fn emit_user_functions(
                         out.push_str(
                             "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2899,7 +2907,7 @@ fn emit_user_functions(
                         out.push_str(
                             "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2929,7 +2937,7 @@ fn emit_user_functions(
                         out.push_str(
                             "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
-                        out.push_str(&c_string(&function.display_name));
+                        out.push_str(&c_string(&parameter_type_error_display_name));
                         out.push_str("\", ");
                         out.push_str(&(parameter_index + 1).to_string());
                         out.push_str(", \"");
@@ -2962,7 +2970,7 @@ fn emit_user_functions(
                             out.push_str("        if (!");
                             out.push_str(coercion_helper);
                             out.push_str("(&runtime, \"");
-                            out.push_str(&c_string(&function.display_name));
+                            out.push_str(&c_string(&parameter_type_error_display_name));
                             out.push_str("\", ");
                             out.push_str(&(parameter_index + 1).to_string());
                             out.push_str(", \"");
@@ -2985,7 +2993,7 @@ fn emit_user_functions(
                             out.push_str("    if (!");
                             out.push_str(coercion_helper);
                             out.push_str("(&runtime, \"");
-                            out.push_str(&c_string(&function.display_name));
+                            out.push_str(&c_string(&parameter_type_error_display_name));
                             out.push_str("\", ");
                             out.push_str(&(parameter_index + 1).to_string());
                             out.push_str(", \"");
@@ -3208,6 +3216,23 @@ fn emit_user_argument_count_check(
 
 fn function_required_parameter_count(function: &FunctionDecl) -> usize {
     required_parameter_count(&function.parameters)
+}
+
+fn function_parameter_type_error_display_name(
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> String {
+    let Some(class_name) = function.class_name.as_deref() else {
+        return function.display_name.clone();
+    };
+    if function.method_name.is_none()
+        || !classes
+            .iter()
+            .any(|class| class.is_anonymous && class.name.eq_ignore_ascii_case(class_name))
+    {
+        return function.display_name.clone();
+    }
+    class_name.to_string()
 }
 
 fn required_parameter_count(parameters: &[FunctionParameter]) -> usize {
@@ -3458,6 +3483,7 @@ fn emit_variadic_parameter_binding(
     function: &FunctionDecl,
     parameter_index: usize,
     parameter: &FunctionParameter,
+    parameter_type_error_display_name: &str,
 ) {
     let array_temp = format!("ptn_variadic_{}", parameter_index);
     let index_temp = format!("ptn_variadic_i_{}", parameter_index);
@@ -3531,7 +3557,7 @@ fn emit_variadic_parameter_binding(
             out.push_str(&array_temp);
             out.push_str(");\n");
             out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
-            out.push_str(&c_string(&function.name));
+            out.push_str(&c_string(parameter_type_error_display_name));
             out.push_str("\", ");
             out.push_str(&index_temp);
             out.push_str(" + 1, NULL, \"");
@@ -3552,7 +3578,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(&array_temp);
         out.push_str(");\n");
         out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
-        out.push_str(&c_string(&function.display_name));
+        out.push_str(&c_string(parameter_type_error_display_name));
         out.push_str("\", ");
         out.push_str(&index_temp);
         out.push_str(" + 1, NULL, \"");
@@ -3579,7 +3605,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(&array_temp);
         out.push_str(");\n");
         out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
-        out.push_str(&c_string(&function.display_name));
+        out.push_str(&c_string(parameter_type_error_display_name));
         out.push_str("\", ");
         out.push_str(&index_temp);
         out.push_str(" + 1, NULL, \"");
@@ -3608,7 +3634,7 @@ fn emit_variadic_parameter_binding(
         out.push_str(&array_temp);
         out.push_str(");\n");
         out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
-        out.push_str(&c_string(&function.name));
+        out.push_str(&c_string(parameter_type_error_display_name));
         out.push_str("\", ");
         out.push_str(&index_temp);
         out.push_str(" + 1, NULL, \"");
@@ -5333,6 +5359,54 @@ fn emit_reflection_type_metadata_arguments(out: &mut String, type_hint: Option<&
     }
 }
 
+fn emit_reflection_type_metadata_arguments_for_function(
+    out: &mut String,
+    type_hint: Option<&TypeHint>,
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) {
+    out.push_str(", ");
+    if let Some(type_metadata) = type_hint
+        .and_then(|type_hint| reflection_type_metadata_for_function(type_hint, function, classes))
+    {
+        emit_reflection_type_metadata_fields(out, &type_metadata);
+    } else {
+        out.push_str("NULL, NULL, 0, 0");
+    }
+}
+
+fn reflection_type_metadata_for_function(
+    type_hint: &TypeHint,
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> Option<ReflectionTypeMetadata> {
+    let mut metadata = reflection_type_metadata(type_hint)?;
+    let Some(class_name) = function.class_name.as_deref() else {
+        return Some(metadata);
+    };
+    if function.method_name.is_none()
+        || !classes
+            .iter()
+            .any(|class| class.is_anonymous && class.name.eq_ignore_ascii_case(class_name))
+    {
+        return Some(metadata);
+    }
+    let Some(TypeHint::Class(named_type)) = reflection_nullable_named_type(type_hint) else {
+        return Some(metadata);
+    };
+    if !named_type.eq_ignore_ascii_case(class_name) {
+        return Some(metadata);
+    }
+    metadata.name = Some("self".to_string());
+    metadata.display_name = if metadata.allows_null {
+        "?self".to_string()
+    } else {
+        "self".to_string()
+    };
+    metadata.is_builtin = false;
+    Some(metadata)
+}
+
 fn emit_reflection_type_metadata_fields(out: &mut String, type_metadata: &ReflectionTypeMetadata) {
     if let Some(name) = &type_metadata.name {
         out.push('"');
@@ -5380,7 +5454,15 @@ fn reflection_property_named_type_metadata(
     type_hint: &PropertyTypeHint,
 ) -> Option<ReflectionTypeMetadata> {
     if let Some(semantic_type) = &type_hint.semantic_type {
-        return reflection_type_metadata(semantic_type);
+        let mut metadata = reflection_type_metadata(semantic_type)?;
+        if type_hint.text.eq_ignore_ascii_case("self") {
+            metadata.name = Some("self".to_string());
+            metadata.display_name = "self".to_string();
+            metadata.is_builtin = false;
+        } else {
+            metadata.display_name = type_hint.text.clone();
+        }
+        return Some(metadata);
     }
     let name = match &type_hint.kind {
         PropertyTypeKind::Null => "null",
@@ -6291,7 +6373,12 @@ fn emit_user_function_dispatch(
         out.push_str(&parameters);
         out.push_str(", ");
         out.push_str(if function.return_by_ref { "1" } else { "0" });
-        emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+        emit_reflection_type_metadata_arguments_for_function(
+            out,
+            function.return_type.as_ref(),
+            function,
+            classes,
+        );
         emit_function_metadata_source_suffix(out, function, function_index);
         out.push_str(";\n");
         out.push_str("    }\n");
@@ -6332,7 +6419,12 @@ fn emit_user_function_dispatch(
             out.push_str(&parameters);
             out.push_str(", ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
-            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            emit_reflection_type_metadata_arguments_for_function(
+                out,
+                function.return_type.as_ref(),
+                function,
+                classes,
+            );
             emit_function_metadata_source_suffix(out, function, method.function_index);
             out.push_str(";\n");
             out.push_str("    }\n");
@@ -6411,7 +6503,12 @@ fn emit_user_function_dispatch(
             out.push_str(&parameters);
             out.push_str(", ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
-            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            emit_reflection_type_metadata_arguments_for_function(
+                out,
+                function.return_type.as_ref(),
+                function,
+                classes,
+            );
             emit_function_metadata_source_suffix(out, function, method.function_index);
             out.push_str(";\n");
             out.push_str("    }\n");
@@ -9326,7 +9423,12 @@ fn emit_class_metadata_helpers(
             out.push_str(&parameters);
             out.push_str(", ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
-            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            emit_reflection_type_metadata_arguments_for_function(
+                out,
+                function.return_type.as_ref(),
+                function,
+                classes,
+            );
             out.push_str("), ");
             out.push_str(if function.is_generator { "1" } else { "0" });
             out.push_str(", ");
@@ -38962,7 +39064,12 @@ impl ValueEmitter {
         out.push_str(&parameters);
         out.push_str(", ");
         out.push_str(if function.return_by_ref { "1" } else { "0" });
-        emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+        emit_reflection_type_metadata_arguments_for_function(
+            out,
+            function.return_type.as_ref(),
+            function,
+            &self.classes,
+        );
         emit_function_metadata_source_suffix(out, function, function_index);
         out.push_str(", ");
         out.push_str(if function.is_static { "1" } else { "0" });
@@ -39129,6 +39236,11 @@ impl ValueEmitter {
                     line,
                     &self.source_file,
                 );
+                out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
+                out.push_str("        runtime.declared_user_classes[");
+                out.push_str(&declared_class_index.to_string());
+                out.push_str("] = 1;\n");
+                out.push_str("    }\n");
             }
             self.emit_declared_new_object(
                 out,

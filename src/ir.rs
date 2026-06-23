@@ -1864,7 +1864,10 @@ impl<'a> LoweringContext<'a> {
                     .clone()
                     .map(lower_type_hint),
                 hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
-                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                type_hint: property
+                    .type_hint
+                    .as_ref()
+                    .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
                     &class.name,
@@ -1884,7 +1887,10 @@ impl<'a> LoweringContext<'a> {
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
-                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                type_hint: property
+                    .type_hint
+                    .as_ref()
+                    .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
                     &class.name,
@@ -2056,7 +2062,7 @@ impl<'a> LoweringContext<'a> {
             doc_comment: class.doc_comment.clone(),
             line: class.span.line,
             end_line: class.span.end_line,
-            initially_declared: !class.is_conditionally_declared,
+            initially_declared: !class.is_conditionally_declared && !class.is_anonymous,
             is_anonymous: class.is_anonymous,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
@@ -3403,6 +3409,24 @@ fn lower_property_type_hint(type_hint: &crate::ast::PropertyTypeHint) -> Propert
         allows_null: type_hint.allows_null,
         semantic_type: type_hint.semantic_type.clone().map(lower_type_hint),
     }
+}
+
+fn lower_class_property_type_hint(
+    class: &AstClassDecl,
+    type_hint: &crate::ast::PropertyTypeHint,
+) -> PropertyTypeHint {
+    let mut lowered = lower_property_type_hint(type_hint);
+    if class.is_anonymous
+        && matches!(
+            &lowered.kind,
+            PropertyTypeKind::Class(class_name)
+                if class_name.eq_ignore_ascii_case(&class.name)
+                    && lowered.text.eq_ignore_ascii_case(&class.name)
+        )
+    {
+        lowered.text = "self".to_string();
+    }
+    lowered
 }
 
 fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
