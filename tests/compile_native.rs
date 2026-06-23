@@ -16507,6 +16507,69 @@ var_dump($_SESSION);
 }
 
 #[test]
+fn compile_session_decode_keyed_payload_replaces_entries_as_parsed_to_native_binary() {
+    let root = temp_dir("ptn-native-session-decode-keyed-replace-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-decode-keyed-replace-order.php");
+    let output = root.join("session-decode-keyed-replace-order-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+ini_set('session.cache_limiter', '');
+ini_set('session.serialize_handler', 'php');
+
+class foo {{
+    public $yes = 1;
+}}
+
+session_id('ptnkeyeddecode');
+session_start();
+$_SESSION['baz'] = new foo;
+$_SESSION['arr'] = [3 => new foo];
+session_decode('baz|O:3:"foo":1:{{s:3:"yes";i:2;}}arr|a:1:{{i:3;O:3:"foo":1:{{s:3:"yes";i:2;}}}}');
+echo spl_object_id($_SESSION['baz']), ':', spl_object_id($_SESSION['arr'][3]), "\n";
+var_dump($_SESSION['baz'], $_SESSION['arr']);
+session_destroy();
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "3:1\n",
+            "object(foo)#3 (1) {\n",
+            "  [\"yes\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [3]=>\n",
+            "  object(foo)#1 (1) {\n",
+            "    [\"yes\"]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_php_codec_references_and_start_options_to_native_binary() {
     let root = temp_dir("ptn-native-session-php-codec-references-start-options");
     fs::create_dir_all(&root).unwrap();
@@ -16900,6 +16963,61 @@ session_write_close();
             "}\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_user_save_handler_repeated_start_releases_previous_values_to_native_binary() {
+    let root = temp_dir("ptn-native-session-user-save-handler-repeated-start");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-user-save-handler-repeated-start.php");
+    let output = root.join("session-user-save-handler-repeated-start-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ini_set('session.use_cookies', '0');
+ini_set('session.cache_limiter', '');
+
+class Handler implements SessionHandlerInterface {
+    public string $data = 'x|O:1:"F":0:{}y|a:1:{i:0;O:1:"F":0:{}}';
+    public function open($path, $name): bool { return true; }
+    public function close(): bool { return true; }
+    public function read($id): string|false { return $this->data; }
+    public function write($id, $data): bool { $this->data = $data; return true; }
+    public function destroy($id): bool { return true; }
+    public function gc($max_lifetime): int { return 1; }
+}
+
+class F {}
+
+$handler = new Handler();
+session_set_save_handler($handler);
+session_id('ptnrepeatedstart');
+session_start();
+$first = spl_object_id($_SESSION['x']) . ':' . spl_object_id($_SESSION['y'][0]);
+session_write_close();
+
+session_set_save_handler($handler);
+session_start();
+$second = spl_object_id($_SESSION['x']) . ':' . spl_object_id($_SESSION['y'][0]);
+session_destroy();
+
+echo $first, "\n", $second, "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2:3\n3:2\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

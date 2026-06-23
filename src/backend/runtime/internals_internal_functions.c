@@ -81576,6 +81576,90 @@ static int ptn_session_decode_php_binary_payload(PtnRuntime *runtime, const char
     return 1;
 }
 
+static int ptn_session_decode_keyed_payload_into_array(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    PtnArray *target,
+    int php_binary,
+    size_t line
+) {
+    if (target == NULL) {
+        return 0;
+    }
+    PtnUnserializeState state;
+    ptn_unserialize_state_init(&state, data, len, line);
+    void *previous_active_state = runtime == NULL ? NULL : runtime->active_unserialize_state;
+    if (runtime != NULL) {
+        runtime->active_unserialize_state = &state;
+    }
+
+    int ok = 1;
+    int caught_exception = 0;
+    PtnTryFrame parse_frame;
+    if (runtime != NULL) {
+        ptn_try_frame_push(runtime, &parse_frame);
+        if (setjmp(parse_frame.jump) != 0) {
+            caught_exception = 1;
+        }
+    }
+
+    if (!caught_exception) {
+        while (state.pos < state.len) {
+            char *key_name = NULL;
+            size_t key_len = 0;
+            if (php_binary) {
+                key_len = (size_t)(unsigned char)state.data[state.pos++];
+                if (key_len > state.len - state.pos) {
+                    ok = 0;
+                    break;
+                }
+                key_name = ptn_duplicate_string_len(state.data + state.pos, key_len);
+                state.pos += key_len;
+            } else {
+                size_t key_start = state.pos;
+                while (state.pos < state.len && state.data[state.pos] != '|') {
+                    state.pos++;
+                }
+                if (state.pos == state.len) {
+                    ok = 0;
+                    break;
+                }
+                key_len = state.pos - key_start;
+                key_name = ptn_duplicate_string_len(state.data + key_start, key_len);
+                state.pos++;
+            }
+            PtnArrayKey key = ptn_array_string_key_len(key_name, key_len);
+            free(key_name);
+
+            PtnUnserializeValue parsed = ptn_unserialize_parse_value(&state, runtime);
+            if (state.failed || !ptn_unserialize_store_entry(runtime, &state, target, key, parsed)) {
+                ok = 0;
+                break;
+            }
+        }
+    }
+
+    if (runtime != NULL) {
+        ptn_try_frame_pop(runtime, &parse_frame);
+        runtime->active_unserialize_state = previous_active_state;
+    }
+    if (caught_exception) {
+        ptn_unserialize_disable_failed_object_destructors(&state, 0, 0);
+        ptn_unserialize_state_free(&state);
+        ptn_rethrow_exception(runtime);
+        return 0;
+    }
+    if (!ok || state.failed) {
+        ptn_unserialize_disable_failed_object_destructors(&state, 0, 0);
+        ptn_unserialize_state_free(&state);
+        return 0;
+    }
+    ptn_unserialize_flush_pending_callbacks(runtime, &state, 0);
+    ptn_unserialize_state_free(&state);
+    return 1;
+}
+
 static int ptn_session_decode_payload(PtnRuntime *runtime, const char *data, size_t len, PtnValue *out, size_t line) {
     const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
     if (ptn_ascii_case_equal(handler, "php_serialize")) {
@@ -81971,6 +82055,9 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
         ptn_session_set_last_data(runtime, file_data == NULL ? "" : file_data, file_data == NULL ? 0 : file_len);
     }
     if (file_data != NULL) {
+        PtnValue empty_session = ptn_array_from_literal_entries(0, NULL);
+        ptn_runtime_write_global_variable(runtime, "_SESSION", empty_session);
+        ptn_value_destroy(&empty_session);
         PtnValue decoded;
         if (ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line)) {
             ptn_value_destroy(&session_data);
@@ -82037,41 +82124,40 @@ static PtnValue ptn_internal_session_decode(PtnRuntime *runtime, size_t argc, co
         return ptn_bool(0);
     }
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "session_decode", 1, "data", args[0], line);
-    PtnValue decoded;
-    int ok = ptn_session_decode_payload(runtime, data.data, data.len, &decoded, line);
-    ptn_string_operand_free(data);
-    if (!ok) {
+    const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
+    if (ptn_ascii_case_equal(handler, "php_serialize")) {
+        PtnValue decoded;
+        int ok = ptn_session_decode_payload(runtime, data.data, data.len, &decoded, line);
+        ptn_string_operand_free(data);
+        if (!ok) {
+            ptn_emit_runtime_warning(runtime, "session_decode(): Failed to decode session object. Session has been destroyed", line);
+            PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+            ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+            ptn_value_destroy(&empty);
+            ptn_session_mark_uninitialized(runtime);
+            return ptn_bool(0);
+        }
+        ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
+        ptn_value_destroy(&decoded);
+        return ptn_bool(1);
+    }
+
+    PtnArray *target = ptn_session_ensure_global_array(runtime);
+    int live_decode_ok = ptn_ascii_case_equal(handler, "php_binary")
+        ? ptn_session_decode_keyed_payload_into_array(runtime, data.data, data.len, target, 1, line)
+        : ptn_session_decode_keyed_payload_into_array(runtime, data.data, data.len, target, 0, line);
+    if (!live_decode_ok) {
         ptn_emit_runtime_warning(runtime, "session_decode(): Failed to decode session object. Session has been destroyed", line);
         PtnValue empty = ptn_array_from_literal_entries(0, NULL);
         ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
         ptn_value_destroy(&empty);
         ptn_session_mark_uninitialized(runtime);
-        return ptn_bool(0);
-    }
-    const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
-    if (ptn_ascii_case_equal(handler, "php_serialize")) {
-        ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
     } else {
-        PtnValue target_value = ptn_session_current_array_value(runtime);
-        PtnValue target = ptn_value_deref(target_value);
-        if (target.type == PTN_ARRAY && ptn_value_deref(decoded).type == PTN_ARRAY) {
-            PtnArray *decoded_array = ptn_value_deref(decoded).as.array;
-            for (size_t i = 0; i < decoded_array->len; i++) {
-                PtnArrayEntry *entry = &decoded_array->entries[i];
-                ptn_array_set_entry(
-                    target.as.array,
-                    ptn_array_key_clone(entry->key),
-                    ptn_value_clone(entry->value)
-                );
-            }
-            ptn_runtime_write_global_variable(runtime, "_SESSION", target_value);
-        } else {
-            ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
-        }
-        ptn_value_destroy(&target_value);
+        ptn_string_operand_free(data);
+        return ptn_bool(1);
     }
-    ptn_value_destroy(&decoded);
-    return ptn_bool(1);
+    ptn_string_operand_free(data);
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
