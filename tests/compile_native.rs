@@ -1007,6 +1007,59 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_file_object_wrapped_diagnostics_and_debug_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fileobject-wrapped-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let data_path = root.join("source.php");
+    fs::write(&data_path, "<?php\npayload\n").unwrap();
+    let input = root.join("spl-fileobject-wrapped-diagnostics.php");
+    let output = root.join("spl-fileobject-wrapped-diagnostics-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$path = {};\n\
+$file = new SplFileObject($path, \"r\", false, null);\n\
+ob_start();\n\
+var_dump($file);\n\
+$dump = ob_get_clean();\n\
+var_dump(str_contains($dump, '[\"openMode\":\"SplFileObject\":private]=>'));\n\
+var_dump(str_contains($dump, '[\"delimiter\":\"SplFileObject\":private]=>'));\n\
+var_dump(str_contains($dump, '[\"enclosure\":\"SplFileObject\":private]=>'));\n\
+try {{ new SplFileObject($path, []); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ (new SplFileInfo(dirname($path)))->openFile(); }} catch (LogicException $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+try {{ $file->fread(0); }} catch (ValueError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+echo $file->fread(5), \"\\n\";\n",
+            php_string_literal(&data_path)
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "SplFileObject::__construct(): Argument #2 ($mode) must be of type string, array given\n",
+            "Cannot use SplFileObject with directories\n",
+            "SplFileObject::fread(): Argument #1 ($length) must be greater than 0\n",
+            "<?php\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_dllist_iterator_modes_and_queue_aliases_to_native_binary() {
     let root = temp_dir("ptn-native-spl-dllist-iterator-modes");
     fs::create_dir_all(&root).unwrap();

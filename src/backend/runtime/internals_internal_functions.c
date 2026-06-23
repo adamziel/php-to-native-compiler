@@ -145571,6 +145571,38 @@ static void ptn_spl_file_info_sync_properties(
     ptn_value_destroy(&filename_value);
 }
 
+static void ptn_spl_file_object_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplFileObjectData *data,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->info.path, line);
+
+    PtnValue resolved_stream = ptn_value_deref(data->stream);
+    const char *open_mode = resolved_stream.type == PTN_RESOURCE &&
+        resolved_stream.as.resource != NULL &&
+        resolved_stream.as.resource->stream_mode != NULL
+        ? resolved_stream.as.resource->stream_mode
+        : "";
+    PtnValue open_mode_value = ptn_owned_string(ptn_duplicate_string(open_mode));
+    PtnValue delimiter_value =
+        ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1);
+    PtnValue enclosure_value =
+        ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1);
+
+    ptn_spl_declare_private_value_property(runtime, object, "openMode", "SplFileObject", open_mode_value, line);
+    ptn_spl_declare_private_value_property(runtime, object, "delimiter", "SplFileObject", delimiter_value, line);
+    ptn_spl_declare_private_value_property(runtime, object, "enclosure", "SplFileObject", enclosure_value, line);
+
+    ptn_value_destroy(&open_mode_value);
+    ptn_value_destroy(&delimiter_value);
+    ptn_value_destroy(&enclosure_value);
+}
+
 static void ptn_spl_dllist_sync_properties(
     PtnRuntime *runtime,
     PtnValue object,
@@ -151087,7 +151119,36 @@ static PtnValue ptn_spl_file_object_new_for_class(
                 path = resolved_path;
             }
         }
-        PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
+        PtnValue mode = ptn_string("r");
+        if (argc >= 2) {
+            PtnStringOperand mode_operand = ptn_internal_expect_string_arg(
+                runtime,
+                "SplFileObject::__construct",
+                2,
+                "mode",
+                args[1],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(mode_operand);
+                free(path);
+                return ptn_null();
+            }
+            mode = ptn_owned_string_len(
+                ptn_duplicate_string_len(mode_operand.data, mode_operand.len),
+                mode_operand.len
+            );
+            ptn_string_operand_free(mode_operand);
+        }
+        struct stat path_info;
+        if (strncmp(path, "phar://", 7) != 0 &&
+            ptn_stat_path(path, &path_info) == 0 &&
+            S_ISDIR(path_info.st_mode)) {
+            ptn_value_destroy(&mode);
+            free(path);
+            ptn_throw_exception(runtime, "LogicException", "Cannot use SplFileObject with directories");
+            return ptn_null();
+        }
         PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
         stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
         ptn_value_destroy(&fopen_args[0]);
@@ -151148,7 +151209,7 @@ static PtnValue ptn_spl_file_object_new_for_class(
     }
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_spl_file_object_data_free;
-    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->info.path, line);
+    ptn_spl_file_object_sync_properties(runtime, object, data, line);
     return object;
 }
 
@@ -151286,7 +151347,7 @@ static PtnValue ptn_spl_file_object_call_method(
             ptn_spl_file_object_data_free(resolved_receiver.as.object->native_data);
             resolved_receiver.as.object->native_data = new_data;
             resolved_receiver.as.object->native_data_free = ptn_spl_file_object_data_free;
-            ptn_spl_file_info_sync_properties(runtime, resolved_receiver, "SplFileInfo", new_data->info.path, line);
+            ptn_spl_file_object_sync_properties(runtime, resolved_receiver, new_data, line);
         }
         ptn_value_destroy(&replacement);
         return ptn_null();
@@ -151337,6 +151398,7 @@ static PtnValue ptn_spl_file_object_call_method(
                 line
             );
         }
+        ptn_spl_file_object_sync_properties(runtime, receiver, data, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getCsvControl")) {
@@ -151480,7 +151542,21 @@ static PtnValue ptn_spl_file_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fread() expects exactly 1 argument");
             return ptn_null();
         }
-        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fread, argc, args, line);
+        int64_t length = ptn_internal_positive_length_arg(
+            runtime,
+            "SplFileObject::fread",
+            1,
+            "length",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue length_arg = ptn_int(length);
+        PtnValue result = ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fread, 1, &length_arg, line);
+        ptn_value_destroy(&length_arg);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "fgetc")) {
         ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
