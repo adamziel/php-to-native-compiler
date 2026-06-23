@@ -884,6 +884,16 @@ static PtnValue ptn_declared_class_new_instance(
     size_t line
 );
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED PtnValue ptn_date_period_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+#endif
+
 static PTN_UNUSED PtnValue ptn_new_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1172,7 +1182,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_class_name_is_datetime(lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        return ptn_datetime_new(runtime, "DateTime", argc, args, line);
+        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line);
 #else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
@@ -1183,7 +1193,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_class_name_is_datetime_immutable(lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line);
+        return ptn_datetime_new(runtime, lookup_class_name, argc, args, line);
 #else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTimeImmutable constructor expects at most 1 argument");
@@ -1194,10 +1204,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_class_name_is_datetime_zone(lookup_class_name)) {
-        return ptn_datetime_zone_new(runtime, "DateTimeZone", argc, args, line);
+        return ptn_datetime_zone_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_class_name_is_date_interval(lookup_class_name)) {
         return ptn_date_interval_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_date_period(lookup_class_name)) {
+        return ptn_date_period_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_bcmath_number(lookup_class_name)) {
         return ptn_bcmath_number_new(runtime, argc, args, line);

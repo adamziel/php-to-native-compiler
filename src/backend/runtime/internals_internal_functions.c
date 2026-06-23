@@ -2382,6 +2382,12 @@ static PTN_UNUSED int ptn_direct_var_dump_dom_token_list_object(
 );
 #endif
 
+static int ptn_date_object_dumps_dynamic_before_internal(PtnObject *object) {
+    return object != NULL &&
+        (ptn_declared_class_is_same_or_descendant(object->class_name, "DateTime") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable"));
+}
+
 static PTN_UNUSED size_t ptn_direct_object_initialized_property_dump_count(PtnObject *object) {
     if (object == NULL || object->properties == NULL) {
         return ptn_xml_reader_var_dump_virtual_property_count(object) +
@@ -2483,21 +2489,24 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
         return;
     }
     if (object->properties != NULL) {
-        for (size_t i = 0; i < object->property_metadata_len; i++) {
-            PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-            if (ptn_object_metadata_is_array_object_storage(metadata)) {
-                continue;
-            }
-            PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry != NULL &&
-                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
-                ptn_direct_value_var_dump_indent(runtime, indent + 1);
-                ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
-                ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
-                continue;
-            }
-            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
-                ptn_direct_value_var_dump_object_uninitialized_metadata(runtime, metadata, indent);
+        int date_dynamic_first = ptn_date_object_dumps_dynamic_before_internal(object);
+        if (!date_dynamic_first) {
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+                if (ptn_object_metadata_is_array_object_storage(metadata)) {
+                    continue;
+                }
+                PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+                if (entry != NULL &&
+                    !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                    ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+                    ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
+                    continue;
+                }
+                if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                    ptn_direct_value_var_dump_object_uninitialized_metadata(runtime, metadata, indent);
+                }
             }
         }
         for (size_t i = 0; i < object->properties->len; i++) {
@@ -2515,6 +2524,25 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
             ptn_direct_value_var_dump_indent(runtime, indent + 1);
             ptn_direct_value_var_dump_object_key(runtime, object, entry->key);
             ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
+        }
+        if (date_dynamic_first) {
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+                if (ptn_object_metadata_is_array_object_storage(metadata)) {
+                    continue;
+                }
+                PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+                if (entry != NULL &&
+                    !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                    ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+                    ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
+                    continue;
+                }
+                if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                    ptn_direct_value_var_dump_object_uninitialized_metadata(runtime, metadata, indent);
+                }
+            }
         }
         for (size_t i = 0; i < object->property_metadata_len; i++) {
             PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
@@ -6700,21 +6728,24 @@ static void ptn_var_dump_object_initialized_properties(
         return;
     }
     if (object->properties != NULL) {
-        for (size_t i = 0; i < object->property_metadata_len; i++) {
-            PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-            if (ptn_object_metadata_is_array_object_storage(metadata)) {
-                continue;
-            }
-            PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
-            if (entry != NULL &&
-                !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
-                ptn_var_dump_indent(indent + 1);
-                ptn_var_dump_object_property_metadata_key(metadata);
-                ptn_var_dump_value_indented(entry->value, indent + 1, seen);
-                continue;
-            }
-            if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
-                ptn_var_dump_object_uninitialized_metadata(metadata, indent);
+        int date_dynamic_first = ptn_date_object_dumps_dynamic_before_internal(object);
+        if (!date_dynamic_first) {
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+                if (ptn_object_metadata_is_array_object_storage(metadata)) {
+                    continue;
+                }
+                PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+                if (entry != NULL &&
+                    !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                    ptn_var_dump_indent(indent + 1);
+                    ptn_var_dump_object_property_metadata_key(metadata);
+                    ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+                    continue;
+                }
+                if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                    ptn_var_dump_object_uninitialized_metadata(metadata, indent);
+                }
             }
         }
         for (size_t i = 0; i < object->properties->len; i++) {
@@ -6731,6 +6762,25 @@ static void ptn_var_dump_object_initialized_properties(
             ptn_var_dump_indent(indent + 1);
             ptn_var_dump_object_property_key(object, entry->key);
             ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+        }
+        if (date_dynamic_first) {
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+                if (ptn_object_metadata_is_array_object_storage(metadata)) {
+                    continue;
+                }
+                PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+                if (entry != NULL &&
+                    !(object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip)) {
+                    ptn_var_dump_indent(indent + 1);
+                    ptn_var_dump_object_property_metadata_key(metadata);
+                    ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+                    continue;
+                }
+                if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                    ptn_var_dump_object_uninitialized_metadata(metadata, indent);
+                }
+            }
         }
         for (size_t i = 0; i < object->property_metadata_len; i++) {
             PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
@@ -8423,6 +8473,9 @@ typedef struct {
     int serializable_payload_depth;
 } PtnSerializeState;
 
+static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
+static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnValue value, const char *ancestor);
+
 static void ptn_serialize_state_init(PtnSerializeState *state, PtnRuntime *runtime, size_t line) {
     ptn_dump_seen_arrays_init(&state->seen);
     state->runtime = runtime;
@@ -9841,6 +9894,24 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     if (ptn_serialize_append_incomplete_class_object(buffer, object, state)) {
         return 1;
+    }
+    if (object != NULL && state != NULL && state->runtime != NULL) {
+        PtnValue value = ptn_value_borrow(ptn_object(object));
+        if (ptn_date_value_is_uninitialized_descendant(value, "DateTimeZone")) {
+            ptn_date_throw_uninitialized_object_error(state->runtime, value, "DateTimeZone");
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
+        if (ptn_date_value_is_uninitialized_descendant(value, "DateTimeImmutable")) {
+            ptn_date_throw_uninitialized_object_error(state->runtime, value, "DateTimeImmutable");
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
+        if (ptn_date_value_is_uninitialized_descendant(value, "DateTime")) {
+            ptn_date_throw_uninitialized_object_error(state->runtime, value, "DateTime");
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
     }
     if (ptn_serialize_object_is_plain_root_user_class(state, object)) {
         ptn_serialize_append_regular_object(buffer, object, state);
@@ -78496,6 +78567,7 @@ typedef struct {
 typedef struct {
     PtnValue dates;
     PtnValue start;
+    PtnValue current;
     PtnValue end;
     PtnValue interval;
     int64_t recurrences;
@@ -78627,6 +78699,7 @@ static void ptn_date_period_data_free(void *data) {
     }
     ptn_value_destroy(&period->dates);
     ptn_value_destroy(&period->start);
+    ptn_value_destroy(&period->current);
     ptn_value_destroy(&period->end);
     ptn_value_destroy(&period->interval);
     free(period);
@@ -79147,6 +79220,72 @@ static PtnDateIntervalData *ptn_date_interval_data_from_value(PtnValue value) {
     return (PtnDateIntervalData *)value.as.object->native_data;
 }
 
+static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        value.as.object->native_data == NULL &&
+        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, ancestor);
+}
+
+static const char *ptn_date_datetime_ancestor_for_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DateTimeImmutable")) {
+        return "DateTimeImmutable";
+    }
+    return "DateTime";
+}
+
+static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnValue value, const char *ancestor) {
+    PtnValue object = ptn_value_deref(value);
+    const char *source_class = object.type == PTN_OBJECT && object.as.object != NULL
+        ? object.as.object->class_name
+        : ancestor;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+        source_class,
+        ancestor
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "DateObjectError", message);
+}
+
+static int ptn_date_throw_uninitialized_argument_if_needed(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *expected_type
+) {
+    if (strcmp(expected_type, "DateTimeInterface") == 0 &&
+        (ptn_date_value_is_uninitialized_descendant(value, "DateTime") ||
+         ptn_date_value_is_uninitialized_descendant(value, "DateTimeImmutable"))) {
+        ptn_date_throw_uninitialized_object_error(runtime, value, ptn_date_datetime_ancestor_for_value(value));
+        return 1;
+    }
+    if ((strcmp(expected_type, "DateTime") == 0 || strcmp(expected_type, "?DateTime") == 0) &&
+        ptn_date_value_is_uninitialized_descendant(value, "DateTime")) {
+        ptn_date_throw_uninitialized_object_error(runtime, value, "DateTime");
+        return 1;
+    }
+    if ((strcmp(expected_type, "DateTimeImmutable") == 0 || strcmp(expected_type, "?DateTimeImmutable") == 0) &&
+        ptn_date_value_is_uninitialized_descendant(value, "DateTimeImmutable")) {
+        ptn_date_throw_uninitialized_object_error(runtime, value, "DateTimeImmutable");
+        return 1;
+    }
+    if ((strcmp(expected_type, "DateTimeZone") == 0 || strcmp(expected_type, "?DateTimeZone") == 0) &&
+        ptn_date_value_is_uninitialized_descendant(value, "DateTimeZone")) {
+        ptn_date_throw_uninitialized_object_error(runtime, value, "DateTimeZone");
+        return 1;
+    }
+    return 0;
+}
+
 static PtnArrayEntry *ptn_object_public_property_entry(PtnObject *object, const char *name) {
     if (object == NULL || object->properties == NULL) {
         return NULL;
@@ -79248,6 +79387,9 @@ static void ptn_date_throw_type_error(
     const char *expected_type,
     PtnValue value
 ) {
+    if (ptn_date_throw_uninitialized_argument_if_needed(runtime, value, expected_type)) {
+        return;
+    }
     char message[256];
     int written = snprintf(
         message,
@@ -79972,6 +80114,97 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     return result;
 }
 
+static void ptn_datetime_zone_throw_invalid_serialization(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "Error", "Invalid serialization data for DateTimeZone object");
+}
+
+static int ptn_datetime_zone_state_int(PtnArray *state, const char *name, int *out) {
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(state, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_INT) {
+        return 0;
+    }
+    *out = (int)value.as.integer;
+    return 1;
+}
+
+static char *ptn_datetime_zone_state_string(PtnArray *state, const char *name) {
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(state, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_STRING || memchr(value.as.string.data, '\0', value.as.string.len) != NULL) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+}
+
+static int ptn_datetime_zone_state_is_valid(int timezone_type, const char *timezone) {
+    if (timezone == NULL) {
+        return 0;
+    }
+    if (timezone_type == 1) {
+        return ptn_timezone_parse_offset_literal(timezone, NULL);
+    }
+    if (timezone_type == 2) {
+        return ptn_timezone_identifier_is_known(timezone) && ptn_timezone_name_type(timezone) == 2;
+    }
+    if (timezone_type == 3) {
+        return ptn_timezone_identifier_is_known(timezone) && ptn_timezone_name_type(timezone) == 3;
+    }
+    return 0;
+}
+
+static void ptn_datetime_zone_replace_native_data(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *timezone,
+    int timezone_type,
+    size_t line
+);
+
+static PtnValue ptn_datetime_zone_from_state(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DateTimeZone::__set_state() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue state = ptn_value_deref(args[0]);
+    if (state.type != PTN_ARRAY) {
+        ptn_date_throw_type_error(runtime, "DateTimeZone::__set_state", 1, "array", "array", args[0]);
+        return ptn_null();
+    }
+    int timezone_type = 0;
+    char *timezone = ptn_datetime_zone_state_string(state.as.array, "timezone");
+    if (!ptn_datetime_zone_state_int(state.as.array, "timezone_type", &timezone_type) ||
+        !ptn_datetime_zone_state_is_valid(timezone_type, timezone)) {
+        free(timezone);
+        ptn_datetime_zone_throw_invalid_serialization(runtime);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell(runtime, "DateTimeZone");
+    ptn_datetime_zone_replace_native_data(runtime, object, timezone, timezone_type, line);
+    free(timezone);
+    return object;
+}
+
 static void ptn_date_interval_declare_int_property(
     PtnRuntime *runtime,
     PtnValue object,
@@ -80283,6 +80516,125 @@ static int ptn_date_interval_parse_relative_spec(const char *spec, PtnDateInterv
     }
 
     return 0;
+}
+
+static int ptn_date_interval_set_state_date_string_is_valid(const char *spec) {
+    if (spec == NULL) {
+        return 0;
+    }
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    int consumed = 0;
+    if (sscanf(spec, " %d-%d-%d %d:%d:%d%n", &year, &month, &day, &hour, &minute, &second, &consumed) == 6 &&
+        ptn_date_interval_tail_is_space(spec, consumed)) {
+        time_t ignored_timestamp = 0;
+        int ignored_microsecond = 0;
+        char *ignored_timezone = NULL;
+        int ok = ptn_datetime_parse_date_string(
+            spec,
+            ptn_current_timezone_name(),
+            &ignored_timestamp,
+            &ignored_microsecond,
+            &ignored_timezone
+        );
+        free(ignored_timezone);
+        return ok;
+    }
+    PtnDateIntervalData ignored;
+    return ptn_date_interval_parse_relative_spec(spec, &ignored);
+}
+
+static PtnValue ptn_date_interval_unserialize_array(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnArray *array,
+    size_t line
+);
+
+static PtnValue ptn_date_interval_from_state(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DateInterval::__set_state() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue state = ptn_value_deref(args[0]);
+    if (state.type != PTN_ARRAY) {
+        ptn_date_throw_type_error(runtime, "DateInterval::__set_state", 1, "array", "array", args[0]);
+        return ptn_null();
+    }
+    PtnArrayKey key = ptn_array_string_key("date_string");
+    PtnArrayEntry *entry = ptn_array_entry_for_key(state.as.array, key);
+    ptn_array_key_free(key);
+    if (entry != NULL) {
+        PtnValue date_string_value = ptn_value_deref(entry->value);
+        if (date_string_value.type != PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "Invalid serialization data for DateInterval object");
+            return ptn_null();
+        }
+        char *date_string = ptn_duplicate_string_len(
+            (const char *)date_string_value.as.string.data,
+            date_string_value.as.string.len
+        );
+        if (!ptn_date_interval_set_state_date_string_is_valid(date_string)) {
+            size_t position = strlen(date_string) > 10 ? 10 : 0;
+            char unexpected = date_string[position] == '\0' ? ' ' : date_string[position];
+            char message[320];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Unknown or bad format (%s) at position %zu (%c) while unserializing: Unexpected character",
+                date_string,
+                position,
+                unexpected
+            );
+            free(date_string);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "Error", message);
+            return ptn_null();
+        }
+        PtnDateIntervalData *data = malloc(sizeof(PtnDateIntervalData));
+        if (data == NULL) {
+            free(date_string);
+            ptn_abort_out_of_memory();
+        }
+        memset(data, 0, sizeof(*data));
+        data->from_string = 1;
+        data->date_string = date_string;
+        PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
+        object.as.object->native_data = data;
+        object.as.object->native_data_free = ptn_date_interval_data_free;
+        ptn_date_interval_sync_properties(runtime, object, line);
+        return object;
+    }
+    PtnDateIntervalData *data = malloc(sizeof(PtnDateIntervalData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_date_interval_data_init_unserialized(data);
+    PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_date_interval_data_free;
+    ptn_date_interval_unserialize_array(runtime, object, state.as.array, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    return object;
 }
 
 static PtnValue ptn_date_interval_create_from_date_string(
@@ -80823,23 +81175,7 @@ static PtnValue ptn_datetime_clone_as_class(
 ) {
     PtnDateTimeData *data = ptn_datetime_data_from_value(source);
     if (data == NULL) {
-        PtnValue source_object = ptn_value_deref(source);
-        const char *source_class = source_object.type == PTN_OBJECT ? source_object.as.object->class_name : "DateTime";
-        const char *ancestor = ptn_declared_class_is_same_or_descendant(source_class, "DateTimeImmutable")
-            ? "DateTimeImmutable"
-            : "DateTime";
-        char message[256];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
-            source_class,
-            ancestor
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "DateObjectError", message);
+        ptn_date_throw_uninitialized_object_error(runtime, source, ptn_date_datetime_ancestor_for_value(source));
         return ptn_null();
     }
     return ptn_datetime_create_object(runtime, class_name, data->timestamp, data->microsecond, data->timezone, line);
@@ -81158,11 +81494,30 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
                 return immutable ? target : ptn_value_clone(target);
             }
         }
-        free(modifier_string);
-        ptn_string_operand_free(modifier);
         if (immutable) {
             ptn_value_destroy(&target);
+            char message[256];
+            size_t modifier_len = strlen(modifier_string);
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::modify(): Failed to parse time string (%.*s) at position 0 (%c): %s",
+                class_name,
+                (int)modifier_len,
+                modifier_string,
+                modifier_len == 0 ? ' ' : modifier_string[0],
+                modifier_len == 0 ? "Empty string" : "Unexpected character"
+            );
+            free(modifier_string);
+            ptn_string_operand_free(modifier);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "DateMalformedStringException", message);
+            return ptn_null();
         }
+        free(modifier_string);
+        ptn_string_operand_free(modifier);
         return ptn_bool(0);
     }
     if (ptn_ascii_case_equal(name, "__serialize")) {
@@ -82035,12 +82390,53 @@ static void ptn_date_period_sync_properties(PtnRuntime *runtime, PtnValue object
         return;
     }
     ptn_date_period_declare_value_property(runtime, object, "start", ptn_value_clone_deref(data->start), line);
-    ptn_date_period_declare_value_property(runtime, object, "current", ptn_value_clone_deref(data->start), line);
+    ptn_date_period_declare_value_property(runtime, object, "current", ptn_value_clone_deref(data->current), line);
     ptn_date_period_declare_value_property(runtime, object, "end", ptn_value_clone_deref(data->end), line);
     ptn_date_period_declare_value_property(runtime, object, "interval", ptn_value_clone_deref(data->interval), line);
     ptn_date_period_declare_value_property(runtime, object, "recurrences", ptn_int(data->recurrences), line);
     ptn_date_period_declare_value_property(runtime, object, "include_start_date", ptn_bool(data->include_start_date), line);
     ptn_date_period_declare_value_property(runtime, object, "include_end_date", ptn_bool(data->include_end_date), line);
+}
+
+static PtnValue ptn_date_period_create_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue start,
+    PtnValue current,
+    PtnValue end,
+    PtnValue interval,
+    int64_t recurrences,
+    int include_start_date,
+    int include_end_date,
+    size_t line
+) {
+    PtnDatePeriodData *data = malloc(sizeof(PtnDatePeriodData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->start = ptn_value_clone_deref(start);
+    data->current = ptn_value_clone_deref(current);
+    data->end = ptn_value_clone_deref(end);
+    data->interval = ptn_value_clone_deref(interval);
+    data->recurrences = recurrences;
+    data->include_start_date = include_start_date;
+    data->include_end_date = include_end_date;
+    data->dates = ptn_date_period_build_dates(
+        runtime,
+        start,
+        end,
+        interval,
+        recurrences,
+        include_start_date,
+        include_end_date,
+        line
+    );
+
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_date_period_data_free;
+    ptn_date_period_sync_properties(runtime, object, data, line);
+    return object;
 }
 
 static PtnValue ptn_date_period_from_state(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -82065,25 +82461,18 @@ static PtnValue ptn_date_period_from_state(PtnRuntime *runtime, size_t argc, con
     }
 
     PtnValue start = ptn_date_period_state_value(state.as.array, "start");
+    PtnValue current = ptn_date_period_state_value(state.as.array, "current");
     PtnValue end = ptn_date_period_state_value(state.as.array, "end");
     PtnValue interval = ptn_date_period_state_value(state.as.array, "interval");
     int64_t recurrences = ptn_date_period_state_integer(state.as.array, "recurrences", 0);
     int include_start_date = ptn_date_period_state_bool(state.as.array, "include_start_date", 1);
     int include_end_date = ptn_date_period_state_bool(state.as.array, "include_end_date", 0);
 
-    PtnDatePeriodData *data = malloc(sizeof(PtnDatePeriodData));
-    if (data == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    data->start = ptn_value_clone_deref(start);
-    data->end = ptn_value_clone_deref(end);
-    data->interval = ptn_value_clone_deref(interval);
-    data->recurrences = recurrences;
-    data->include_start_date = include_start_date;
-    data->include_end_date = include_end_date;
-    data->dates = ptn_date_period_build_dates(
+    return ptn_date_period_create_object(
         runtime,
+        "DatePeriod",
         start,
+        current,
         end,
         interval,
         recurrences,
@@ -82091,12 +82480,216 @@ static PtnValue ptn_date_period_from_state(PtnRuntime *runtime, size_t argc, con
         include_end_date,
         line
     );
+}
 
-    PtnValue object = ptn_object_new_shell(runtime, "DatePeriod");
-    object.as.object->native_data = data;
-    object.as.object->native_data_free = ptn_date_period_data_free;
-    ptn_date_period_sync_properties(runtime, object, data, line);
+static void ptn_date_period_throw_constructor_arguments(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "TypeError",
+        "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments"
+    );
+}
+
+static char *ptn_date_period_normalized_iso_start(const char *start, int *zulu_out) {
+    *zulu_out = 0;
+    size_t len = strlen(start);
+    char *normalized = malloc(len + 1);
+    if (normalized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(normalized, start, len + 1);
+    for (size_t i = 0; i < len; i++) {
+        if (normalized[i] == 'T') {
+            normalized[i] = ' ';
+        }
+    }
+    if (len > 0 && normalized[len - 1] == 'Z') {
+        normalized[len - 1] = '\0';
+        *zulu_out = 1;
+    }
+    return normalized;
+}
+
+static PtnValue ptn_date_interval_object_from_data(PtnRuntime *runtime, PtnDateIntervalData data, size_t line) {
+    PtnDateIntervalData *owned = malloc(sizeof(PtnDateIntervalData));
+    if (owned == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    *owned = data;
+    PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
+    object.as.object->native_data = owned;
+    object.as.object->native_data_free = ptn_date_interval_data_free;
+    ptn_date_interval_sync_properties(runtime, object, line);
     return object;
+}
+
+static PtnValue ptn_date_period_from_iso8601_string(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *isostr,
+    int64_t options,
+    size_t line
+) {
+    if (isostr == NULL || isostr[0] != 'R') {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    const char *repeat_start = isostr + 1;
+    char *end = NULL;
+    long repetitions = strtol(repeat_start, &end, 10);
+    if (end == repeat_start || *end != '/' || repetitions < 0) {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    const char *start_token = end + 1;
+    const char *interval_token = strchr(start_token, '/');
+    if (interval_token == NULL || interval_token == start_token || interval_token[1] == '\0') {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    char *start = ptn_duplicate_string_len(start_token, (size_t)(interval_token - start_token));
+    char *interval_spec = ptn_duplicate_string(interval_token + 1);
+    int zulu = 0;
+    char *normalized_start = ptn_date_period_normalized_iso_start(start, &zulu);
+
+    time_t timestamp = 0;
+    int microsecond = 0;
+    char *parsed_timezone = NULL;
+    const char *default_timezone = zulu ? "UTC" : ptn_current_timezone_name();
+    if (!ptn_datetime_parse_date_string(normalized_start, default_timezone, &timestamp, &microsecond, &parsed_timezone)) {
+        free(start);
+        free(interval_spec);
+        free(normalized_start);
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+
+    PtnDateIntervalData interval_data;
+    if (!ptn_date_interval_parse_iso_spec(interval_spec, &interval_data)) {
+        free(start);
+        free(interval_spec);
+        free(normalized_start);
+        free(parsed_timezone);
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    interval_data.date_string = NULL;
+    const char *timezone = parsed_timezone != NULL ? parsed_timezone : default_timezone;
+    PtnValue start_object = ptn_datetime_create_object(runtime, "DateTimeImmutable", timestamp, microsecond, timezone, line);
+    PtnValue interval_object = ptn_date_interval_object_from_data(runtime, interval_data, line);
+    PtnValue object = ptn_date_period_create_object(
+        runtime,
+        class_name,
+        start_object,
+        ptn_null(),
+        ptn_null(),
+        interval_object,
+        repetitions,
+        (options & 1) == 0,
+        (options & 2) != 0,
+        line
+    );
+    ptn_value_destroy(&start_object);
+    ptn_value_destroy(&interval_object);
+    free(start);
+    free(interval_spec);
+    free(normalized_start);
+    free(parsed_timezone);
+    return object;
+}
+
+static PtnValue ptn_date_period_create_from_iso8601_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DatePeriod::createFromISO8601String() expects between 1 and 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand isostr = ptn_internal_expect_string_arg(
+        runtime,
+        "DatePeriod::createFromISO8601String",
+        1,
+        "isostr",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *isostr_string = ptn_duplicate_string_len(isostr.data, isostr.len);
+    int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    PtnValue result = ptn_date_period_from_iso8601_string(runtime, "DatePeriod", isostr_string, options, line);
+    free(isostr_string);
+    ptn_string_operand_free(isostr);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_date_period_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc >= 1 && argc <= 2 && ptn_value_deref(args[0]).type == PTN_STRING) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling DatePeriod::__construct(string $isostr, int $options = 0) is deprecated, use DatePeriod::createFromISO8601String() instead",
+            line
+        );
+        PtnStringOperand isostr = ptn_internal_expect_string_arg(runtime, "DatePeriod::__construct", 1, "isostr", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        char *isostr_string = ptn_duplicate_string_len(isostr.data, isostr.len);
+        int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+        PtnValue result = ptn_date_period_from_iso8601_string(runtime, class_name, isostr_string, options, line);
+        free(isostr_string);
+        ptn_string_operand_free(isostr);
+        return result;
+    }
+    if (argc != 3 && argc != 4) {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    PtnValue start = ptn_value_deref(args[0]);
+    PtnValue interval = ptn_value_deref(args[1]);
+    if (ptn_datetime_data_from_value(start) == NULL || ptn_date_interval_data_from_value(interval) == NULL) {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    int64_t options = argc == 4 ? ptn_value_to_integer(args[3]) : 0;
+    PtnValue end = ptn_null();
+    int64_t recurrences = 0;
+    PtnValue third = ptn_value_deref(args[2]);
+    if (third.type == PTN_INT) {
+        recurrences = third.as.integer;
+    } else if (ptn_datetime_data_from_value(third) != NULL) {
+        end = third;
+    } else {
+        ptn_date_period_throw_constructor_arguments(runtime);
+        return ptn_null();
+    }
+    return ptn_date_period_create_object(
+        runtime,
+        class_name,
+        start,
+        ptn_null(),
+        end,
+        interval,
+        recurrences,
+        (options & 1) == 0,
+        (options & 2) != 0,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_date_period_call_method(
@@ -82189,7 +82782,7 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
         return ptn_null();
     }
     if (zone == NULL) {
-        ptn_throw_exception(runtime, "Error", "The DateTimeZone object has not been correctly initialized by its constructor");
+        ptn_date_throw_uninitialized_object_error(runtime, receiver, "DateTimeZone");
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__serialize")) {
@@ -82826,6 +83419,19 @@ static PtnValue ptn_internal_timezone_offset_get(PtnRuntime *runtime, size_t arg
         return ptn_null();
     }
     return ptn_int(ptn_timezone_offset_for_name(zone->name, datetime->timestamp));
+}
+
+static PtnValue ptn_internal_timezone_transitions_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "timezone_transitions_get() expects at least 1 argument, 0 given");
+        return ptn_null();
+    }
+    return ptn_datetime_zone_call_method(runtime, args[0], "getTransitions", argc - 1, &args[1], line);
+}
+
+static PtnValue ptn_internal_timezone_location_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_datetime_zone_call_method(runtime, args[0], "getLocation", 0, NULL, line);
 }
 
 static PtnValue ptn_internal_timezone_identifiers_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -105344,6 +105950,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
     }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
+        if (ptn_ascii_case_equal(name, "__set_state")) {
+            return ptn_datetime_zone_from_state(runtime, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "listIdentifiers")) {
             int64_t group = 2047;
             if (argc >= 1) {
@@ -105368,6 +105977,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
     }
     if (ptn_internal_class_name_is_date_interval(class_name)) {
+        if (ptn_ascii_case_equal(name, "__set_state")) {
+            return ptn_date_interval_from_state(runtime, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "createFromDateString")) {
             return ptn_date_interval_create_from_date_string(runtime, argc, args, line);
         }
@@ -105375,6 +105987,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_internal_class_name_is_date_period(class_name)) {
         if (ptn_ascii_case_equal(name, "__set_state")) {
             return ptn_date_period_from_state(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "createFromISO8601String")) {
+            return ptn_date_period_create_from_iso8601_string(runtime, argc, args, line);
         }
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name) ||
@@ -111037,9 +111652,11 @@ static PtnValue ptn_internal_strtotime(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_abbreviations_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_identifiers_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_timezone_location_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_name_from_abbr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_name_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_offset_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_timezone_transitions_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_open(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_timezone_version_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -111921,10 +112538,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "token_name", 1, 1, ptn_internal_token_name },
         { "timezone_abbreviations_list", 0, 0, ptn_internal_timezone_abbreviations_list },
         { "timezone_identifiers_list", 0, 2, ptn_internal_timezone_identifiers_list },
+        { "timezone_location_get", 1, 1, ptn_internal_timezone_location_get },
         { "timezone_name_from_abbr", 1, 3, ptn_internal_timezone_name_from_abbr },
         { "timezone_name_get", 1, 1, ptn_internal_timezone_name_get },
         { "timezone_offset_get", 2, 2, ptn_internal_timezone_offset_get },
         { "timezone_open", 1, 1, ptn_internal_timezone_open },
+        { "timezone_transitions_get", 1, 3, ptn_internal_timezone_transitions_get },
         { "timezone_version_get", 0, 0, ptn_internal_timezone_version_get },
         { "tmpfile", 0, 0, ptn_internal_tmpfile },
         { "touch", 1, 3, ptn_internal_touch },
@@ -115486,6 +116105,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__set_state")
             || ptn_ascii_case_equal(method_name, "__unserialize")
             || ptn_ascii_case_equal(method_name, "getLocation")
             || ptn_ascii_case_equal(method_name, "getName")
@@ -115497,13 +116117,16 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_date_interval(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__set_state")
             || ptn_ascii_case_equal(method_name, "__unserialize")
             || ptn_ascii_case_equal(method_name, "createFromDateString")
             || ptn_ascii_case_equal(method_name, "format");
     }
     if (ptn_internal_class_name_is_date_period(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__serialize")
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__serialize")
             || ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "createFromISO8601String")
             || ptn_ascii_case_equal(method_name, "getDateInterval")
             || ptn_ascii_case_equal(method_name, "getEndDate")
             || ptn_ascii_case_equal(method_name, "getIterator")
@@ -115723,14 +116346,17 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             ptn_ascii_case_equal(method_name, "createFromString");
     }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
-        return ptn_ascii_case_equal(method_name, "listAbbreviations")
+        return ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "listAbbreviations")
             || ptn_ascii_case_equal(method_name, "listIdentifiers");
     }
     if (ptn_internal_class_name_is_date_interval(class_name)) {
-        return ptn_ascii_case_equal(method_name, "createFromDateString");
+        return ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "createFromDateString");
     }
     if (ptn_internal_class_name_is_date_period(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__set_state");
+        return ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "createFromISO8601String");
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "DateTimeImmutable")) {
@@ -116922,6 +117548,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "__serialize");
+        ptn_append_method_name(result, &index, "__set_state");
         ptn_append_method_name(result, &index, "__unserialize");
         ptn_append_method_name(result, &index, "getLocation");
         ptn_append_method_name(result, &index, "getName");
@@ -116934,14 +117561,17 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_date_interval(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "__serialize");
+        ptn_append_method_name(result, &index, "__set_state");
         ptn_append_method_name(result, &index, "__unserialize");
         ptn_append_method_name(result, &index, "createFromDateString");
         ptn_append_method_name(result, &index, "format");
         return result;
     }
     if (ptn_internal_class_name_is_date_period(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "__serialize");
         ptn_append_method_name(result, &index, "__set_state");
+        ptn_append_method_name(result, &index, "createFromISO8601String");
         ptn_append_method_name(result, &index, "getDateInterval");
         ptn_append_method_name(result, &index, "getEndDate");
         ptn_append_method_name(result, &index, "getIterator");
@@ -132973,6 +133603,48 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
         return;
     }
 
+    if (parent.as.object->native_data != NULL) {
+        if ((ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateTime") ||
+             ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateTimeImmutable")) &&
+            (ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateTime") ||
+             ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateTimeImmutable"))) {
+            PtnDateTimeData *data = (PtnDateTimeData *)parent.as.object->native_data;
+            ptn_datetime_replace_native_data(
+                NULL,
+                target,
+                data->timestamp,
+                data->microsecond,
+                data->timezone,
+                data->timezone_type,
+                0
+            );
+            return;
+        }
+        if (ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateTimeZone") &&
+            ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateTimeZone")) {
+            PtnDateTimeZoneData *data = (PtnDateTimeZoneData *)parent.as.object->native_data;
+            ptn_datetime_zone_replace_native_data(NULL, target, data->name, data->type, 0);
+            return;
+        }
+        if (ptn_declared_class_is_same_or_descendant(parent.as.object->class_name, "DateInterval") &&
+            ptn_declared_class_is_same_or_descendant(target.as.object->class_name, "DateInterval")) {
+            PtnDateIntervalData *source = (PtnDateIntervalData *)parent.as.object->native_data;
+            PtnDateIntervalData *data = malloc(sizeof(PtnDateIntervalData));
+            if (data == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            *data = *source;
+            data->date_string = source->date_string == NULL ? NULL : ptn_duplicate_string(source->date_string);
+            if (target.as.object->native_data_free != NULL) {
+                target.as.object->native_data_free(target.as.object->native_data);
+            }
+            target.as.object->native_data = data;
+            target.as.object->native_data_free = ptn_date_interval_data_free;
+            ptn_date_interval_sync_properties(NULL, target, 0);
+            return;
+        }
+    }
+
     if (target.as.object->native_data != NULL && target.as.object->native_data_free != NULL) {
         target.as.object->native_data_free(target.as.object->native_data);
     }
@@ -145860,15 +146532,126 @@ static int ptn_eval_parse_array_literal(
     PtnValue *out
 ) {
     size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-    if (cursor >= len || code[cursor] != '[') {
+    char close = ']';
+    if (cursor < len && code[cursor] == '[') {
+        cursor++;
+    } else if (ptn_eval_keyword_at(code, len, cursor, "array")) {
+        cursor = ptn_eval_skip_ws(code, len, cursor + strlen("array"));
+        if (cursor >= len || code[cursor] != '(') {
+            return 0;
+        }
+        close = ')';
+        cursor++;
+    } else {
         return 0;
     }
-    cursor = ptn_eval_skip_ws(code, len, cursor + 1);
-    if (cursor >= len || code[cursor] != ']') {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t next_key = 0;
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor < len && code[cursor] == close) {
+        *out = result;
+        *pos = cursor + 1;
+        return 1;
+    }
+    while (cursor < len) {
+        PtnValue first = ptn_null();
+        if (!ptn_eval_parse_expression(NULL, code, len, &cursor, 0, &first)) {
+            ptn_value_destroy(&result);
+            return 0;
+        }
+        cursor = ptn_eval_skip_ws(code, len, cursor);
+        if (cursor + 1 < len && code[cursor] == '=' && code[cursor + 1] == '>') {
+            cursor += 2;
+            PtnValue value = ptn_null();
+            if (!ptn_eval_parse_expression(NULL, code, len, &cursor, 0, &value)) {
+                ptn_value_destroy(&first);
+                ptn_value_destroy(&result);
+                return 0;
+            }
+            PtnValue key_value = ptn_value_deref(first);
+            if (key_value.type == PTN_STRING) {
+                ptn_array_set_entry(
+                    result.as.array,
+                    ptn_array_string_key_len((const char *)key_value.as.string.data, key_value.as.string.len),
+                    value
+                );
+            } else {
+                ptn_array_set_entry(result.as.array, ptn_array_int_key(ptn_value_to_integer(key_value)), value);
+            }
+            ptn_value_destroy(&first);
+        } else {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(next_key++), first);
+        }
+        cursor = ptn_eval_skip_ws(code, len, cursor);
+        if (cursor < len && code[cursor] == ',') {
+            cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+            if (cursor < len && code[cursor] == close) {
+                *out = result;
+                *pos = cursor + 1;
+                return 1;
+            }
+            continue;
+        }
+        if (cursor < len && code[cursor] == close) {
+            *out = result;
+            *pos = cursor + 1;
+            return 1;
+        }
+        ptn_value_destroy(&result);
         return 0;
     }
-    *out = ptn_array_from_literal_entries(0, NULL);
-    *pos = cursor + 1;
+    ptn_value_destroy(&result);
+    return 0;
+}
+
+static int ptn_eval_parse_static_set_state_call(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line,
+    PtnValue *out
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor < len && code[cursor] == '\\') {
+        cursor++;
+    }
+    char *class_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &class_name)) {
+        return 0;
+    }
+    if (!ptn_eval_consume_double_colon(code, len, &cursor)) {
+        free(class_name);
+        return 0;
+    }
+    char *method_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &method_name)) {
+        free(class_name);
+        return 0;
+    }
+    if (!ptn_ascii_case_equal(method_name, "__set_state") ||
+        !ptn_eval_consume_char(code, len, &cursor, '(')) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    PtnValue state = ptn_null();
+    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &state)) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')')) {
+        ptn_value_destroy(&state);
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    *out = ptn_internal_class_static_call_method(runtime, class_name, method_name, 1, &state, line);
+    ptn_value_destroy(&state);
+    free(method_name);
+    free(class_name);
+    *pos = cursor;
     return 1;
 }
 
@@ -146051,6 +146834,9 @@ static int ptn_eval_parse_primary_expression(
         return 0;
     }
     if (ptn_eval_parse_dynamic_class_constant_fetch(runtime, code, len, pos, line, out)) {
+        return 1;
+    }
+    if (ptn_eval_parse_static_set_state_call(runtime, code, len, pos, line, out)) {
         return 1;
     }
     if (ptn_eval_parse_string_case_call(runtime, code, len, pos, line, out)) {

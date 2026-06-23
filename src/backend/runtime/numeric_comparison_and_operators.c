@@ -230,6 +230,8 @@ static PTN_UNUSED int ptn_compare_arrays_identical(
     return result;
 }
 
+static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared);
+
 static PTN_UNUSED int ptn_compare_objects_equal(
     PtnRuntime *runtime,
     PtnObject *left,
@@ -251,6 +253,10 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     }
     if (left == right) {
         return 1;
+    }
+    int datetime_compared = PTN_COMPARE_UNORDERED;
+    if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
+        return datetime_compared == PTN_COMPARE_EQUAL;
     }
     if (strcmp(left->class_name, right->class_name) != 0) {
         return 0;
@@ -274,6 +280,46 @@ static int ptn_compare_value_strings_case_equal(PtnString left, PtnString right)
             return 0;
         }
     }
+    return 1;
+}
+
+static int ptn_compare_object_is_datetime(PtnObject *object) {
+    return object != NULL &&
+        (ptn_declared_class_is_same_or_descendant(object->class_name, "DateTime") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeImmutable"));
+}
+
+static PtnArrayEntry *ptn_compare_object_string_property_entry(PtnObject *object, const char *name) {
+    if (object == NULL || object->properties == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return NULL;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    return value.type == PTN_STRING ? entry : NULL;
+}
+
+static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared) {
+    if (!ptn_compare_object_is_datetime(left) || !ptn_compare_object_is_datetime(right)) {
+        return 0;
+    }
+    PtnArrayEntry *left_date_entry = ptn_compare_object_string_property_entry(left, "date");
+    PtnArrayEntry *right_date_entry = ptn_compare_object_string_property_entry(right, "date");
+    if (left_date_entry == NULL || right_date_entry == NULL) {
+        return 0;
+    }
+    PtnValue left_date = ptn_value_deref(left_date_entry->value);
+    PtnValue right_date = ptn_value_deref(right_date_entry->value);
+    *compared = ptn_compare_string_bytes(
+        left_date.as.string.data,
+        left_date.as.string.len,
+        right_date.as.string.data,
+        right_date.as.string.len
+    );
     return 1;
 }
 
@@ -484,6 +530,10 @@ static PTN_UNUSED int ptn_compare_objects_order(
     }
     if (left == right) {
         return PTN_COMPARE_EQUAL;
+    }
+    int datetime_compared = PTN_COMPARE_UNORDERED;
+    if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
+        return datetime_compared;
     }
     if (left->enum_case_name != NULL || right->enum_case_name != NULL) {
         if (
