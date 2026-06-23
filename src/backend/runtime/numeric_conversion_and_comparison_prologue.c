@@ -3449,10 +3449,15 @@ static PTN_UNUSED PtnValue ptn_throw_value(
         runtime,
         resolved.as.exception->previous
     );
+    PtnValue chained_previous_resolved = ptn_value_deref(chained_previous);
     if (
         resolved.as.exception != runtime->exceptions->active_exception &&
         resolved.as.exception->previous.type == PTN_NULL &&
-        ptn_value_deref(chained_previous).type == PTN_EXCEPTION
+        chained_previous_resolved.type == PTN_EXCEPTION &&
+        !ptn_exception_previous_chain_would_recurse(
+            chained_previous_resolved.as.exception,
+            resolved.as.exception
+        )
     ) {
         ptn_value_destroy(&resolved.as.exception->previous);
         resolved.as.exception->previous = ptn_value_clone_deref(chained_previous);
@@ -7354,9 +7359,12 @@ static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
 }
 
 static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
-    ptn_exception_free(runtime->exceptions->active_exception);
+    PtnException *exception = runtime->exceptions->active_exception;
     runtime->exceptions->active_exception = NULL;
-    runtime->generator_chained_exception_during_unwind = 0;
+    ptn_exception_free(exception);
+    if (runtime->exceptions->active_exception == NULL) {
+        runtime->generator_chained_exception_during_unwind = 0;
+    }
 }
 
 static PTN_UNUSED int ptn_runtime_bind_catch_variable(PtnRuntime *runtime, const char *name, size_t line) {

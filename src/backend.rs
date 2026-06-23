@@ -26495,8 +26495,33 @@ fn emit_try(
         );
         out.push_str("            } else {\n");
     }
-    if catch_active_temp.is_some() {
-        out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
+    if let Some(catch_active_temp) = &catch_active_temp {
+        if catches.iter().any(|catch| catch.variable.is_none()) {
+            out.push_str("                if (");
+            let mut first_type = true;
+            for catch in catches.iter().filter(|catch| catch.variable.is_none()) {
+                for type_name in &catch.type_names {
+                    if !first_type {
+                        out.push_str(" || ");
+                    }
+                    first_type = false;
+                    out.push_str("ptn_exception_matches(&runtime, \"");
+                    out.push_str(&c_string(type_name));
+                    out.push_str("\")");
+                }
+            }
+            out.push_str(") {\n");
+            out.push_str("                    ");
+            out.push_str(catch_active_temp);
+            out.push_str(" = 1;\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
+            out.push_str("                ");
+            out.push_str(catch_active_temp);
+            out.push_str(" = 0;\n");
+        } else {
+            out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
+        }
     } else {
         out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
     }
@@ -26548,10 +26573,8 @@ fn emit_try(
             out.push_str("            }\n");
         }
     }
-    let catch_binding_failed_label = catches
-        .iter()
-        .any(|catch| catch.variable.is_some())
-        .then(|| values.next_label("ptn_try_catch_binding_failed"));
+    let catch_binding_failed_label =
+        (!catches.is_empty()).then(|| values.next_label("ptn_try_catch_binding_failed"));
     for catch in catches {
         let catch_body_label = values.next_label("ptn_try_catch_body");
         let catch_after_label = values.next_label("ptn_try_catch_after");
@@ -26599,6 +26622,23 @@ fn emit_try(
             out.push_str("                }\n");
         } else {
             out.push_str("                ptn_clear_exception(&runtime);\n");
+            out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
+            out.push_str("                    ");
+            out.push_str(&caught_temp);
+            out.push_str(" = 0;\n");
+            if let Some(catch_active_temp) = &catch_active_temp {
+                out.push_str("                    ");
+                out.push_str(catch_active_temp);
+                out.push_str(" = 0;\n");
+            }
+            out.push_str("                    goto ");
+            out.push_str(
+                catch_binding_failed_label
+                    .as_ref()
+                    .expect("catch binding failure label exists"),
+            );
+            out.push_str(";\n");
+            out.push_str("                }\n");
         }
         out.push_str("                goto ");
         out.push_str(&catch_body_label);

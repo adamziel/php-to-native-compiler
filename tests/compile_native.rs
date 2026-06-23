@@ -20300,6 +20300,41 @@ try {
 }
 
 #[test]
+fn compile_finally_rethrow_skips_recursive_previous_chain_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-recursive-previous");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-recursive-previous.php");
+    let output = root.join("finally-recursive-previous-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    $e = new Exception("M1");
+    try {
+        throw new Exception("M2", 0, $e);
+    } finally {
+        throw $e;
+    }
+} finally {}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: M1 in "),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Next Exception"), "{stderr}");
+    assert!(stderr.contains("#0 {main}"), "{stderr}");
+}
+
+#[test]
 fn compile_generator_abort_through_nested_finally_to_native_binary() {
     let root = temp_dir("ptn-native-generator-abort-nested-finally");
     fs::create_dir_all(&root).unwrap();

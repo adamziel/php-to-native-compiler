@@ -100,12 +100,41 @@ typedef struct PtnFiberData {
     int resume_credit;
 } PtnFiberData;
 
+static PtnException *ptn_exception_previous_exception(PtnException *exception) {
+    if (exception == NULL) {
+        return NULL;
+    }
+    PtnValue previous = ptn_value_deref(exception->previous);
+    return previous.type == PTN_EXCEPTION ? previous.as.exception : NULL;
+}
+
+static int ptn_exception_previous_chain_would_recurse(PtnException *previous, PtnException *exception) {
+    PtnException *cursor = previous;
+    PtnException *slow = previous;
+    PtnException *fast = previous;
+    while (cursor != NULL) {
+        if (cursor == exception) {
+            return 1;
+        }
+        cursor = ptn_exception_previous_exception(cursor);
+        slow = ptn_exception_previous_exception(slow);
+        fast = ptn_exception_previous_exception(ptn_exception_previous_exception(fast));
+        if (slow != NULL && slow == fast) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_exception_chain_previous_if_missing(PtnException *exception, PtnException *previous) {
     if (exception == NULL || previous == NULL || exception == previous) {
         return;
     }
     PtnValue existing = ptn_value_deref(exception->previous);
     if (existing.type != PTN_NULL) {
+        return;
+    }
+    if (ptn_exception_previous_chain_would_recurse(previous, exception)) {
         return;
     }
     ptn_value_destroy(&exception->previous);
