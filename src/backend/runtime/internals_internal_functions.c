@@ -5145,10 +5145,14 @@ static int ptn_internal_call_callback_capturing_exception_impl(
     const char *const *arg_names,
     size_t line,
     int include_user_call_site,
+    int hide_current_trace_frame,
     PtnValue *result_out
 ) {
     PtnTryFrame callback_frame;
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    if (hide_current_trace_frame && runtime->trace_frame != NULL) {
+        runtime->trace_frame = runtime->trace_frame->previous;
+    }
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
     int previous_suppress_user_call_frame_location =
@@ -5203,6 +5207,7 @@ static PtnValue ptn_internal_call_callback_impl(
             NULL,
             line,
             include_user_call_site,
+            0,
             &result
         )) {
         ptn_rethrow_exception(runtime);
@@ -5708,7 +5713,8 @@ static PtnValue ptn_internal_call_callback_impl_named(
     const PtnValue *args,
     const char *const *arg_names,
     size_t line,
-    int include_user_call_site
+    int include_user_call_site,
+    int hide_current_trace_frame
 ) {
     PtnValue result = ptn_null();
     if (!ptn_internal_call_callback_capturing_exception_impl(
@@ -5719,6 +5725,7 @@ static PtnValue ptn_internal_call_callback_impl_named(
             arg_names,
             line,
             include_user_call_site,
+            hide_current_trace_frame,
             &result
         )) {
         ptn_rethrow_exception(runtime);
@@ -5734,7 +5741,18 @@ static PtnValue ptn_internal_call_user_callback_named(
     const char *const *arg_names,
     size_t line
 ) {
-    return ptn_internal_call_callback_impl_named(runtime, callback, argc, args, arg_names, line, 1);
+    return ptn_internal_call_callback_impl_named(runtime, callback, argc, args, arg_names, line, 1, 0);
+}
+
+static PtnValue ptn_internal_call_user_callback_named_hidden_frame(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    const char *const *arg_names,
+    size_t line
+) {
+    return ptn_internal_call_callback_impl_named(runtime, callback, argc, args, arg_names, line, 1, 1);
 }
 
 static int ptn_internal_call_callback_capturing_exception(
@@ -5752,6 +5770,7 @@ static int ptn_internal_call_callback_capturing_exception(
         args,
         NULL,
         line,
+        0,
         0,
         result_out
     );
@@ -78436,6 +78455,7 @@ static PtnValue ptn_session_call_user_handler(
         NULL,
         line,
         0,
+        0,
         &result
     );
     if (root != NULL && root->session_save_handler_in_callback > 0) {
@@ -85081,7 +85101,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
 
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_internal_call_user_callback_named(
+    PtnValue result = ptn_internal_call_user_callback_named_hidden_frame(
         runtime,
         callback,
         expanded.len,
@@ -85134,6 +85154,7 @@ static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t arg
         NULL,
         line,
         1,
+        0,
         &result
     );
 
@@ -85214,6 +85235,7 @@ static PtnValue ptn_internal_forward_static_call_array(PtnRuntime *runtime, size
         (const char *const *)expanded.names,
         line,
         1,
+        0,
         &result
     );
 

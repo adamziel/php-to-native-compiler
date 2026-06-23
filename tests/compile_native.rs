@@ -50615,6 +50615,36 @@ var_dump($referenced);",
 }
 
 #[test]
+fn compile_call_user_func_array_multisort_uncaught_trace_hides_forwarder_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-multisort-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-multisort-trace.php");
+    let output = root.join("call-user-func-array-multisort-trace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$args = [\"\" => 1];\n\
+call_user_func_array('array_multisort', $args);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("array_multisort() expects at least 1 argument, 0 given"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("#0 "), "{stderr}");
+    assert!(stderr.contains(": array_multisort(: 1)"), "{stderr}");
+    assert!(stderr.contains("#1 {main}"), "{stderr}");
+    assert!(!stderr.contains("call_user_func_array("), "{stderr}");
+}
+
+#[test]
 fn compile_named_callback_and_reflection_arguments_to_native_binary() {
     let root = temp_dir("ptn-native-named-callback-reflection-arguments");
     fs::create_dir_all(&root).unwrap();
