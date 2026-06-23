@@ -16404,6 +16404,64 @@ var_dump(session_destroy());
 }
 
 #[test]
+fn compile_session_regenerate_and_cookie_param_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-session-regenerate-cookie-guards");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("session-regenerate-cookie-guards.php");
+    let output = root.join("session-regenerate-cookie-guards-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(session_id());
+var_dump(session_regenerate_id());
+var_dump(session_id());
+var_dump(session_start());
+var_dump(session_regenerate_id());
+var_dump(strlen(session_id()) > 0);
+var_dump(session_destroy());
+var_dump(session_regenerate_id());
+var_dump(session_id());
+ini_set('session.use_cookies', '0');
+var_dump(session_set_cookie_params(3600, '/foo'));
+var_dump(session_get_cookie_params()['path']);
+"#,
+    )
+    .unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", root.as_os_str())
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_regenerate_id(): Session ID cannot be regenerated when there is no active session"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(0) \"\"\nbool(true)\nbool(true)\nbool(true)\nbool(true)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_set_cookie_params(): Session cookies cannot be used when session.use_cookies is disabled"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(false)\nstring(1) \"/\"\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_user_save_handler_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-session-user-save-handler");
     fs::create_dir_all(&root).unwrap();

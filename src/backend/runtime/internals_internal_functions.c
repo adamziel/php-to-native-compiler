@@ -81202,7 +81202,10 @@ static PtnValue ptn_internal_session_unset(PtnRuntime *runtime, size_t argc, con
 }
 
 static PtnValue ptn_internal_session_regenerate_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
+    if (!ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_regenerate_id(): Session ID cannot be regenerated when there is no active session", line);
+        return ptn_bool(0);
+    }
     int delete_old = argc >= 1 && ptn_is_truthy(args[0]);
     char *old_id = ptn_duplicate_string(ptn_session_id_current(runtime));
     if (delete_old) {
@@ -81275,6 +81278,10 @@ static void ptn_session_set_cookie_param_from_value(PtnRuntime *runtime, const c
 static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_session_is_active(runtime)) {
         ptn_emit_runtime_warning(runtime, "session_set_cookie_params(): Session cookie parameters cannot be changed when a session is active (started from ptn on line 0)", line);
+        return ptn_bool(0);
+    }
+    if (!ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_cookies"), 1)) {
+        ptn_emit_runtime_warning(runtime, "session_set_cookie_params(): Session cookies cannot be used when session.use_cookies is disabled", line);
         return ptn_bool(0);
     }
     if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_ARRAY) {
