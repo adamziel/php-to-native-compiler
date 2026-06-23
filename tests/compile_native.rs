@@ -71070,6 +71070,81 @@ var_dump($mark->a);
 }
 
 #[test]
+fn compile_lazy_skipped_hooked_properties_read_backing_slot_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-skipped-hooked-backing-slot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-skipped-hooked-backing-slot.php");
+    let output = root.join("lazy-skipped-hooked-backing-slot-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazySkippedHookedBox {
+    public $a {
+        get {
+            echo \"hook get\\n\";
+            return $this->a;
+        }
+        set($value) {
+            echo \"hook set\\n\";
+            $this->a = strtoupper($value);
+        }
+    }
+    public int $b;
+}
+
+$reflector = new ReflectionClass(LazySkippedHookedBox::class);
+$property = $reflector->getProperty('a');
+
+$raw = $reflector->newLazyGhost(function ($obj) {
+    echo \"raw init\\n\";
+    throw new Exception('raw init');
+});
+$property->setRawValueWithoutLazyInitialization($raw, 'raw');
+var_dump($raw->a);
+var_dump(isset($raw->a));
+var_dump($reflector->isUninitializedLazyObject($raw));
+
+$skipped = $reflector->newLazyGhost(function ($obj) {
+    echo \"skip init\\n\";
+    throw new Exception('skip init');
+});
+$property->skipLazyInitialization($skipped);
+var_dump($skipped->a);
+var_dump(isset($skipped->a));
+var_dump($reflector->isUninitializedLazyObject($skipped));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"raw\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "NULL\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("lazy_skip"));
+    assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
+    assert!(c_source.contains("skipLazyInitialization"));
+}
+
+#[test]
 fn compile_lazy_reference_source_unset_cleanup_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-reference-source-unset-cleanup");
     fs::create_dir_all(&root).unwrap();

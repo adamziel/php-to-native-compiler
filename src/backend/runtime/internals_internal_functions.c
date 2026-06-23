@@ -132508,6 +132508,118 @@ static void ptn_lazy_object_realize_if_all_properties_skipped(PtnValue target) {
     object->lazy_proxy_instance = ptn_null();
 }
 
+static int ptn_reflection_property_write_raw_storage_value(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *property_name,
+    const char *property_owner,
+    PtnValue value,
+    size_t line
+) {
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT || target.as.object == NULL) {
+        return 0;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_reflection_property_object_metadata(target, property_name, property_owner);
+    if (metadata == NULL) {
+        PtnValue written = ptn_reflection_property_set_raw_object_value(
+            runtime,
+            target,
+            property_name,
+            property_owner,
+            value,
+            line
+        );
+        ptn_value_destroy(&written);
+        return !ptn_runtime_has_active_exception(runtime);
+    }
+    if (metadata->is_virtual) {
+        ptn_reflection_property_throw_raw_virtual_error(
+            runtime,
+            "write to",
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return 0;
+    }
+
+    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(target.as.object->properties, key);
+    PtnObjectPropertyMetadata *mutable_metadata =
+        ptn_object_mutable_property_metadata(target.as.object, metadata->storage_name);
+    if (metadata->is_readonly && entry != NULL) {
+        ptn_array_key_free(key);
+        ptn_throw_readonly_property_error(
+            runtime,
+            target.as.object->class_name,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        return 0;
+    }
+
+    PtnValue stored = ptn_null();
+    PtnObject *assignment_receiver = target.as.object;
+    size_t refcount_before_coercion = assignment_receiver->refcount;
+    ptn_object_retain(assignment_receiver);
+    int coerced = ptn_property_type_coerce_assignment(
+        runtime,
+        metadata->type_kind,
+        metadata->type_class_name,
+        metadata->type_text,
+        metadata->type_allows_null,
+        metadata->declaring_class,
+        metadata->display_name,
+        value,
+        0,
+        line,
+        &stored
+    );
+    int receiver_invalidated = assignment_receiver->refcount <= refcount_before_coercion;
+    int active_exception = ptn_runtime_has_active_exception(runtime);
+    if (receiver_invalidated && !active_exception) {
+        ptn_throw_object_released_while_assigning_property(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            line
+        );
+        active_exception = 1;
+    }
+    ptn_object_release(assignment_receiver);
+    if (!coerced || receiver_invalidated || active_exception) {
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+        return 0;
+    }
+
+    if (mutable_metadata != NULL) {
+        mutable_metadata->is_unset = 0;
+        mutable_metadata->lazy_skip = 1;
+        ptn_object_metadata_remember_value_type(mutable_metadata, stored);
+    }
+    ptn_object_retain(target.as.object);
+    if (entry != NULL && entry->value.type == PTN_REFERENCE) {
+        ptn_array_update_next_auto_key(target.as.object->properties, key);
+        int assigned =
+            ptn_reference_assign_publish_first(runtime, entry->value.as.reference, stored);
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+        if (!assigned) {
+            ptn_object_release(target.as.object);
+            return 0;
+        }
+    } else {
+        ptn_array_set_entry_publish_first(target.as.object->properties, key, stored);
+    }
+    ptn_lazy_object_sync_proxy_instance_properties(target.as.object);
+    ptn_object_release(target.as.object);
+    return !ptn_runtime_has_active_exception(runtime);
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -133372,32 +133484,17 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         PtnValue value = skip_property
             ? ptn_reflection_property_default_value(runtime, data->class_name, data->name)
             : ptn_value_clone_deref(args[1]);
-        int previous_lazy_initializing = target.as.object->lazy_initializing;
-        if (target.as.object->lazy_uninitialized) {
-            target.as.object->lazy_initializing = 1;
-        }
-        PtnValue written = ptn_object_write_property(
+        ptn_reflection_property_write_raw_storage_value(
             runtime,
             target,
             data->name,
-            data->class_name,
+            property_owner,
             value,
             line
         );
-        target.as.object->lazy_initializing = previous_lazy_initializing;
         if (runtime->exceptions->active_exception == NULL) {
-            const PtnObjectPropertyMetadata *metadata =
-                ptn_reflection_property_object_metadata(target, data->name, property_owner);
-            if (metadata != NULL) {
-                PtnObjectPropertyMetadata *mutable_metadata =
-                    ptn_object_mutable_property_metadata(target.as.object, metadata->storage_name);
-                if (mutable_metadata != NULL) {
-                    mutable_metadata->lazy_skip = 1;
-                }
-            }
             ptn_lazy_object_realize_if_all_properties_skipped(target);
         }
-        ptn_value_destroy(&written);
         ptn_value_destroy(&value);
         return ptn_null();
     }
