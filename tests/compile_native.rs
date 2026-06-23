@@ -24724,6 +24724,140 @@ if (strcmp(bin2hex($md5_raw), $md5) == 0 ) {\n\
 }
 
 #[test]
+fn compile_hash_context_file_and_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-hash-context-file-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hash-context-file-diagnostics.php");
+    let output = root.join("hash-context-file-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+$ctx = hash_init('md5');
+hash_update($ctx, 'abc');
+$copy = hash_copy($ctx);
+hash_update($copy, 'def');
+echo hash_final($ctx), \"\\n\";
+echo hash_final($copy), \"\\n\";
+try {
+    hash_update($ctx, 'x');
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$file = __DIR__ . '/hash-context-data.txt';
+file_put_contents($file, 'The quick brown fox jumped over the lazy dog.');
+echo hash_file('md5', $file), \"\\n\";
+$fileCtx = hash_init('md5');
+var_dump(hash_update_file($fileCtx, $file));
+echo hash_final($fileCtx), \"\\n\";
+
+$stream = fopen($file, 'r');
+$streamCtx = hash_init('md5');
+var_dump(hash_update_stream($streamCtx, $stream, 0));
+echo hash_final($streamCtx), \"\\n\";
+
+try {
+    new HashContext;
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    hash_file('missing', $file);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    hash_hmac('crc32', 'data', 'secret');
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    hash_pbkdf2('md5', 'password', 'salt', 0);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump(hash_equals('foo', null));
+} catch (Throwable $e) {
+    echo $e;
+}
+try {
+    var_dump(hash_hmac('foo', 'bar', 'baz'));
+} catch (Throwable $e) {
+    echo $e;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("900150983cd24fb0d6963f7d28e17f72\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("e80b5017098950fc58aad83c8c14978e\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "hash_update(): Argument #1 ($context) must be a valid, non-finalized HashContext\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("5c6ffbdd40d9556b73a21e63c3e0e904\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\n5c6ffbdd40d9556b73a21e63c3e0e904\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(0)\nd41d8cd98f00b204e9800998ecf8427e\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Call to private HashContext::__construct() from global scope\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("hash_file(): Argument #1 ($algo) must be a valid hashing algorithm\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("hash_pbkdf2(): Argument #4 ($iterations) must be greater than 0\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "hash_equals(Object(SensitiveParameterValue), Object(SensitiveParameterValue))"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("hash_hmac('foo', 'bar', Object(SensitiveParameterValue))"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sha1_basic_and_raw_output_to_native_binary() {
     let root = temp_dir("ptn-native-sha1-basic-and-raw-output");
     fs::create_dir_all(&root).unwrap();

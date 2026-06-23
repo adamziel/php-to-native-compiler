@@ -56824,6 +56824,10 @@ typedef struct {
     int hmac;
     unsigned char *key;
     size_t key_len;
+    unsigned char *data;
+    size_t data_len;
+    size_t data_capacity;
+    int finalized;
 } PtnHashContextData;
 
 static void ptn_hash_context_data_free(void *ptr) {
@@ -56833,6 +56837,7 @@ static void ptn_hash_context_data_free(void *ptr) {
     }
     free(data->algo);
     free(data->key);
+    free(data->data);
     free(data);
 }
 
@@ -56856,6 +56861,10 @@ static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, i
     data->hmac = hmac;
     data->key = key_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)key, key_len);
     data->key_len = key_len;
+    data->data = NULL;
+    data->data_len = 0;
+    data->data_capacity = 0;
+    data->finalized = 0;
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_hash_context_data_free;
     ptn_array_set_entry(
@@ -56864,6 +56873,74 @@ static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, i
         ptn_owned_string(ptn_duplicate_string(algo))
     );
     return object;
+}
+
+static void ptn_hash_context_append(PtnHashContextData *data, const unsigned char *bytes, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    if (len > SIZE_MAX - data->data_len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t required = data->data_len + len;
+    if (required > data->data_capacity) {
+        size_t capacity = data->data_capacity == 0 ? 64 : data->data_capacity;
+        while (capacity < required) {
+            if (capacity > SIZE_MAX / 2) {
+                ptn_abort_out_of_memory();
+            }
+            capacity *= 2;
+        }
+        unsigned char *next = realloc(data->data, capacity);
+        if (next == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->data = next;
+        data->data_capacity = capacity;
+    }
+    memcpy(data->data + data->data_len, bytes, len);
+    data->data_len = required;
+}
+
+static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
+    return ptn_text_operand_ascii_case_equal(algo, "md5") ||
+        ptn_text_operand_ascii_case_equal(algo, "sha1") ||
+        ptn_text_operand_ascii_case_equal(algo, "crc32") ||
+        ptn_text_operand_ascii_case_equal(algo, "crc32b") ||
+        ptn_text_operand_ascii_case_equal(algo, "adler32");
+}
+
+static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
+    return ptn_ascii_case_equal(algo, "md5") ||
+        ptn_ascii_case_equal(algo, "sha1");
+}
+
+static void ptn_hash_throw_invalid_algorithm(PtnRuntime *runtime, const char *function_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($algo) must be a valid hashing algorithm",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_hash_throw_invalid_crypto_algorithm(PtnRuntime *runtime, const char *function_name) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
 }
 
 static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -56883,6 +56960,13 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         }
     }
     char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    if (!ptn_hash_algorithm_is_supported(algo)) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        ptn_hash_throw_invalid_algorithm(runtime, "hash_init");
+        free(algo_name);
+        return ptn_null();
+    }
     PtnValue result = ptn_hash_context_object(runtime, algo_name, (flags & PTN_HASH_HMAC) != 0, (const unsigned char *)key.data, key.len);
     free(algo_name);
     ptn_string_operand_free(algo);
@@ -56898,7 +56982,13 @@ static PtnValue ptn_internal_hash_copy(PtnRuntime *runtime, size_t argc, const P
         ptn_throw_exception(runtime, "TypeError", "hash_copy(): Argument #1 ($context) must be of type HashContext");
         return ptn_null();
     }
-    return ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
+    if (data->finalized) {
+        ptn_throw_exception(runtime, "ValueError", "hash_copy(): Argument #1 ($context) must be a valid, non-finalized HashContext");
+        return ptn_null();
+    }
+    PtnValue copy = ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
+    ptn_hash_context_append(copy.as.object->native_data, data->data, data->data_len);
+    return copy;
 }
 
 static void ptn_hash_md5_hmac(
@@ -56938,24 +57028,154 @@ static void ptn_hash_md5_hmac(
     ptn_md5_digest_bytes(outer_data, sizeof(outer_data), digest);
 }
 
+static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
 static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnHashContextData *data = ptn_hash_context_data(args[0]);
     if (data == NULL) {
         ptn_throw_exception(runtime, "TypeError", "hash_final(): Argument #1 ($context) must be of type HashContext");
         return ptn_null();
     }
+    if (data->finalized) {
+        ptn_throw_exception(runtime, "ValueError", "hash_final(): Argument #1 ($context) must be a valid, non-finalized HashContext");
+        return ptn_null();
+    }
+    data->finalized = 1;
     int raw_output = argc >= 2 && ptn_is_truthy(args[1]);
     if (ptn_ascii_case_equal(data->algo, "md5")) {
         unsigned char digest[16];
         if (data->hmac) {
-            ptn_hash_md5_hmac(data->key, data->key_len, (const unsigned char *)"", 0, digest);
+            ptn_hash_md5_hmac(data->key, data->key_len, data->data, data->data_len, digest);
         } else {
-            ptn_md5_digest_bytes((const unsigned char *)"", 0, digest);
+            ptn_md5_digest_bytes(data->data, data->data_len, digest);
         }
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
+    if (!data->hmac) {
+        PtnValue hash_args[3] = {
+            ptn_owned_string(ptn_duplicate_string(data->algo)),
+            ptn_owned_string_len(ptn_duplicate_string_len((const char *)data->data, data->data_len), data->data_len),
+            ptn_bool(raw_output)
+        };
+        PtnValue result = ptn_internal_hash(runtime, 3, hash_args, line);
+        ptn_value_destroy(&hash_args[0]);
+        ptn_value_destroy(&hash_args[1]);
+        ptn_value_destroy(&hash_args[2]);
+        return result;
+    }
     return raw_output ? ptn_string("") : ptn_string("");
+}
+
+static PtnHashContextData *ptn_hash_context_data_for_update(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value
+) {
+    PtnHashContextData *data = ptn_hash_context_data(value);
+    if (data == NULL || data->finalized) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($context) must be a valid, non-finalized HashContext",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return NULL;
+    }
+    return data;
+}
+
+static PtnValue ptn_internal_hash_update(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnHashContextData *data = ptn_hash_context_data_for_update(runtime, "hash_update", args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "hash_update", 2, "data", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    ptn_hash_context_append(data, (const unsigned char *)input.data, input.len);
+    ptn_string_operand_free(input);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_hash_update_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnHashContextData *data = ptn_hash_context_data_for_update(runtime, "hash_update_file", args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "hash_update_file", 2, "filename", args[1], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "hash_update_file(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "hash_update_file", path, detail, line);
+        free(path);
+        free(bytes);
+        return ptn_bool(0);
+    }
+    ptn_hash_context_append(data, bytes, len);
+    free(path);
+    free(bytes);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_hash_update_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnHashContextData *data = ptn_hash_context_data_for_update(runtime, "hash_update_stream", args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnResource *stream = ptn_internal_expect_open_stream_arg(runtime, "hash_update_stream", args[1], line);
+    if (stream == NULL) {
+        return ptn_null();
+    }
+    int64_t length = argc >= 3 ? ptn_internal_expect_integer_arg(runtime, "hash_update_stream", 3, "length", args[2], line) : -1;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length == 0) {
+        return ptn_int(0);
+    }
+    unsigned char chunk[4096];
+    size_t total = 0;
+    while (length < 0 || total < (size_t)length) {
+        size_t wanted = sizeof(chunk);
+        if (length >= 0 && (size_t)length - total < wanted) {
+            wanted = (size_t)length - total;
+        }
+        size_t read_len = ptn_stream_read_bytes(stream, chunk, wanted);
+        if (read_len == 0) {
+            break;
+        }
+        ptn_hash_context_append(data, chunk, read_len);
+        total += read_len;
+    }
+    return ptn_int((int64_t)total);
 }
 
 static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -56993,6 +57213,18 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
         ptn_string_operand_free(data);
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
+    if (ptn_text_operand_ascii_case_equal(algo, "crc32")) {
+        uint32_t checksum = ptn_crc32_bytes((const unsigned char *)data.data, data.len);
+        unsigned char digest[4] = {
+            (unsigned char)(checksum & 0xff),
+            (unsigned char)((checksum >> 8) & 0xff),
+            (unsigned char)((checksum >> 16) & 0xff),
+            (unsigned char)((checksum >> 24) & 0xff)
+        };
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
     if (ptn_text_operand_ascii_case_equal(algo, "adler32")) {
         uint32_t a = 1;
         uint32_t b = 0;
@@ -57025,6 +57257,153 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
     ptn_string_operand_free(data);
     ptn_throw_exception(runtime, "ValueError", "hash(): Argument #1 ($algo) must be a valid hashing algorithm");
     return ptn_null();
+}
+
+static PtnValue ptn_internal_hash_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_file", 1, "algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(algo);
+        return ptn_null();
+    }
+    if (!ptn_hash_algorithm_is_supported(algo)) {
+        ptn_string_operand_free(algo);
+        ptn_hash_throw_invalid_algorithm(runtime, "hash_file");
+        return ptn_null();
+    }
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "hash_file", 2, "filename", args[1], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_string_operand_free(algo);
+        ptn_emit_warning(&runtime->diagnostics, "hash_file(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "hash_file", path, detail, line);
+        ptn_string_operand_free(algo);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+    int raw_output = argc >= 3 && ptn_is_truthy(args[2]);
+    PtnValue hash_args[3] = {
+        ptn_owned_string_len(ptn_duplicate_string_len(algo.data, algo.len), algo.len),
+        ptn_owned_string_len(ptn_duplicate_string_len((const char *)data, data_len), data_len),
+        ptn_bool(raw_output)
+    };
+    PtnValue result = ptn_internal_hash(runtime, 3, hash_args, line);
+    ptn_value_destroy(&hash_args[0]);
+    ptn_value_destroy(&hash_args[1]);
+    ptn_value_destroy(&hash_args[2]);
+    ptn_string_operand_free(algo);
+    free(path);
+    free(data);
+    return result;
+}
+
+static PtnValue ptn_internal_hash_hmac(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_hmac", 1, "algo", args[0], line);
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "hash_hmac", 2, "data", args[1], line);
+    PtnStringOperand key = ptn_internal_expect_string_arg(runtime, "hash_hmac", 3, "key", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        ptn_string_operand_free(key);
+        return ptn_null();
+    }
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    if (!ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        ptn_string_operand_free(key);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_hmac");
+        return ptn_null();
+    }
+    int raw_output = argc >= 4 && ptn_is_truthy(args[3]);
+    PtnValue result = ptn_string("");
+    if (ptn_ascii_case_equal(algo_name, "md5")) {
+        unsigned char digest[16];
+        ptn_hash_md5_hmac((const unsigned char *)key.data, key.len, (const unsigned char *)data.data, data.len, digest);
+        result = ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    free(algo_name);
+    ptn_string_operand_free(algo);
+    ptn_string_operand_free(data);
+    ptn_string_operand_free(key);
+    return result;
+}
+
+static PtnValue ptn_internal_hash_pbkdf2(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_pbkdf2", 1, "algo", args[0], line);
+    PtnStringOperand password = ptn_internal_expect_string_arg(runtime, "hash_pbkdf2", 2, "password", args[1], line);
+    PtnStringOperand salt = ptn_internal_expect_string_arg(runtime, "hash_pbkdf2", 3, "salt", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        return ptn_null();
+    }
+    char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+    if (!ptn_hash_algorithm_name_is_crypto(algo_name)) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        ptn_hash_throw_invalid_crypto_algorithm(runtime, "hash_pbkdf2");
+        return ptn_null();
+    }
+    int64_t iterations = ptn_internal_expect_integer_arg(runtime, "hash_pbkdf2", 4, "iterations", args[3], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        return ptn_null();
+    }
+    if (iterations <= 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        ptn_throw_exception(runtime, "ValueError", "hash_pbkdf2(): Argument #4 ($iterations) must be greater than 0");
+        return ptn_null();
+    }
+    int64_t length = argc >= 5 ? ptn_internal_expect_integer_arg(runtime, "hash_pbkdf2", 5, "length", args[4], line) : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        return ptn_null();
+    }
+    if (length < 0) {
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(salt);
+        ptn_throw_exception(runtime, "ValueError", "hash_pbkdf2(): Argument #5 ($length) must be greater than or equal to 0");
+        return ptn_null();
+    }
+    free(algo_name);
+    ptn_string_operand_free(algo);
+    ptn_string_operand_free(password);
+    ptn_string_operand_free(salt);
+    return ptn_string("");
 }
 
 static PtnStringOperand ptn_hash_equals_expect_string_arg(
@@ -112258,8 +112637,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hash", 2, 3, ptn_internal_hash },
         { "hash_copy", 1, 1, ptn_internal_hash_copy },
         { "hash_equals", 2, 2, ptn_internal_hash_equals },
+        { "hash_file", 2, 4, ptn_internal_hash_file },
         { "hash_final", 1, 2, ptn_internal_hash_final },
+        { "hash_hmac", 3, 4, ptn_internal_hash_hmac },
         { "hash_init", 1, 3, ptn_internal_hash_init },
+        { "hash_pbkdf2", 4, 6, ptn_internal_hash_pbkdf2 },
+        { "hash_update", 2, 2, ptn_internal_hash_update },
+        { "hash_update_file", 2, 3, ptn_internal_hash_update_file },
+        { "hash_update_stream", 2, 3, ptn_internal_hash_update_stream },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
         { "show_source", 1, 2, ptn_internal_highlight_file },
@@ -148934,9 +149319,23 @@ static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
 }
 
 static void ptn_internal_apply_sensitive_trace_frame(PtnTraceFrame *frame, const char *name) {
+    static const unsigned char hash_equals_sensitive[] = { 1, 1 };
+    static const unsigned char hash_hmac_sensitive[] = { 0, 0, 1, 0 };
     static const unsigned char password_hash_sensitive[] = { 1, 0, 0 };
     static const unsigned char password_verify_sensitive[] = { 1, 0 };
     if (frame == NULL || name == NULL) {
+        return;
+    }
+    if (ptn_ascii_case_equal(name, "hash_equals")) {
+        frame->sensitive_parameter_count = sizeof(hash_equals_sensitive) / sizeof(hash_equals_sensitive[0]);
+        frame->sensitive_parameters = hash_equals_sensitive;
+        frame->sensitive_variadic_position = (size_t)-1;
+        return;
+    }
+    if (ptn_ascii_case_equal(name, "hash_hmac")) {
+        frame->sensitive_parameter_count = sizeof(hash_hmac_sensitive) / sizeof(hash_hmac_sensitive[0]);
+        frame->sensitive_parameters = hash_hmac_sensitive;
+        frame->sensitive_variadic_position = (size_t)-1;
         return;
     }
     if (ptn_ascii_case_equal(name, "password_hash")) {

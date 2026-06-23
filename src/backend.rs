@@ -18433,6 +18433,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "datetimeimmutable" => Some("DateTimeImmutable"),
                 "datetimezone" => Some("DateTimeZone"),
                 "dateinterval" => Some("DateInterval"),
+                "hashcontext" => Some("HashContext"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
@@ -27175,6 +27176,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionProperty")
                 || class_name.eq_ignore_ascii_case("SensitiveParameter")
                 || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
+                || class_name.eq_ignore_ascii_case("HashContext")
                 || class_name.eq_ignore_ascii_case("WeakMap")
                 || class_name.eq_ignore_ascii_case("WeakReference")
                 || class_name.eq_ignore_ascii_case("Attribute")
@@ -38833,6 +38835,18 @@ impl ValueEmitter {
         } else {
             Some(self.class_name_fetch_name(class_name))
         };
+        if compile_time_class_name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("HashContext"))
+        {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Call to private HashContext::__construct() from global scope\", runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
         if let Some((declared_class_index, declared_class)) =
             compile_time_class_name.as_deref().and_then(|name| {
                 self.classes
