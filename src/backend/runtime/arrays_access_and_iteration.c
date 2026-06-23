@@ -6453,7 +6453,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         return array_object_value;
     }
 #endif
-    if (!ptn_object_preflight_dynamic_property_creation(
+    int overloaded_property_read =
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property);
+    if (!overloaded_property_read &&
+        !ptn_object_preflight_dynamic_property_creation(
             runtime,
             receiver,
             property,
