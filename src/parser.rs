@@ -572,6 +572,8 @@ impl Parser<'_> {
                 break;
             }
             let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
+            let attribute_start_span =
+                matches!(self.peek().kind, TokenKind::AttributeStart).then_some(self.peek().span);
             let attributes = self.parse_attribute_groups()?;
             let item_doc_comment = self
                 .doc_comment_before(self.peek().span.byte_start)
@@ -630,13 +632,20 @@ impl Parser<'_> {
                 self.register_declared_class_name(&class)?;
                 let name = class.name.clone();
                 let span = class.span;
+                let source_span = attribute_start_span
+                    .map(|start| combine_spans(start, span))
+                    .unwrap_or(span);
                 let source = self
                     .source
-                    .get(span.byte_start..span.byte_end)
+                    .get(source_span.byte_start..source_span.byte_end)
                     .unwrap_or("")
                     .to_string();
                 classes.push(class);
-                statements.push(Statement::ClassDeclaration { name, source, span });
+                statements.push(Statement::ClassDeclaration {
+                    name,
+                    source,
+                    span: source_span,
+                });
             } else if self.peek_starts_class_decl() {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
@@ -644,17 +653,25 @@ impl Parser<'_> {
                 self.register_declared_class_name(&class)?;
                 let name = class.name.clone();
                 let span = class.span;
+                let source_span = attribute_start_span
+                    .map(|start| combine_spans(start, span))
+                    .unwrap_or(span);
                 let source = self
                     .source
-                    .get(span.byte_start..span.byte_end)
+                    .get(source_span.byte_start..source_span.byte_end)
                     .unwrap_or("")
                     .to_string();
                 classes.push(class);
-                statements.push(Statement::ClassDeclaration { name, source, span });
+                statements.push(Statement::ClassDeclaration {
+                    name,
+                    source,
+                    span: source_span,
+                });
             } else {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                let statement = self.parse_statement_with_attributes(attributes)?;
+                let statement =
+                    self.parse_statement_with_attributes(attributes, attribute_start_span)?;
                 self.note_runtime_class_alias_statement(&statement);
                 statements.push(statement);
             }
@@ -4070,6 +4087,8 @@ impl Parser<'_> {
 
     fn parse_statement(&mut self) -> Result<Statement> {
         let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
+        let attribute_start_span =
+            matches!(self.peek().kind, TokenKind::AttributeStart).then_some(self.peek().span);
         let attributes = self.parse_attribute_groups()?;
         let statement_doc_comment = self
             .doc_comment_before(self.peek().span.byte_start)
@@ -4078,7 +4097,7 @@ impl Parser<'_> {
             &mut self.current_statement_doc_comment,
             statement_doc_comment,
         );
-        let statement = self.parse_statement_with_attributes(attributes);
+        let statement = self.parse_statement_with_attributes(attributes, attribute_start_span);
         self.current_statement_doc_comment = previous_doc_comment;
         statement
     }
@@ -4086,6 +4105,7 @@ impl Parser<'_> {
     fn parse_statement_with_attributes(
         &mut self,
         attributes: ParsedAttributes,
+        attribute_start_span: Option<SourceSpan>,
     ) -> Result<Statement> {
         match self.peek().kind {
             TokenKind::Semicolon => self.parse_empty_statement(),
@@ -4129,9 +4149,11 @@ impl Parser<'_> {
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("enum") => {
-                self.parse_local_enum_decl_statement(attributes)
+                self.parse_local_enum_decl_statement(attributes, attribute_start_span)
             }
-            _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(attributes),
+            _ if self.peek_starts_class_decl() => {
+                self.parse_local_class_decl_statement(attributes, attribute_start_span)
+            }
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
                 self.reject_unsupported_class_like_declaration()
             }
@@ -4195,6 +4217,7 @@ impl Parser<'_> {
     fn parse_local_class_decl_statement(
         &mut self,
         attributes: ParsedAttributes,
+        attribute_start_span: Option<SourceSpan>,
     ) -> Result<Statement> {
         if self.method_depth != 0 {
             return Err(Diagnostic::new(
@@ -4206,18 +4229,26 @@ impl Parser<'_> {
         class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
         let name = class.name.clone();
         let span = class.span;
+        let source_span = attribute_start_span
+            .map(|start| combine_spans(start, span))
+            .unwrap_or(span);
         let source = self
             .source
-            .get(span.byte_start..span.byte_end)
+            .get(source_span.byte_start..source_span.byte_end)
             .unwrap_or("")
             .to_string();
         self.anonymous_classes.push(class);
-        Ok(Statement::ClassDeclaration { name, source, span })
+        Ok(Statement::ClassDeclaration {
+            name,
+            source,
+            span: source_span,
+        })
     }
 
     fn parse_local_enum_decl_statement(
         &mut self,
         attributes: ParsedAttributes,
+        attribute_start_span: Option<SourceSpan>,
     ) -> Result<Statement> {
         if self.method_depth != 0 {
             return Err(Diagnostic::new(
@@ -4229,13 +4260,20 @@ impl Parser<'_> {
         class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
         let name = class.name.clone();
         let span = class.span;
+        let source_span = attribute_start_span
+            .map(|start| combine_spans(start, span))
+            .unwrap_or(span);
         let source = self
             .source
-            .get(span.byte_start..span.byte_end)
+            .get(source_span.byte_start..source_span.byte_end)
             .unwrap_or("")
             .to_string();
         self.anonymous_classes.push(class);
-        Ok(Statement::ClassDeclaration { name, source, span })
+        Ok(Statement::ClassDeclaration {
+            name,
+            source,
+            span: source_span,
+        })
     }
 
     fn parse_nested_function_decl_statement(
@@ -18134,6 +18172,12 @@ fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
         else {
             continue;
         };
+        if parent.is_enum {
+            return Err(Diagnostic::new(
+                format!("Class {} cannot extend enum {parent_name}", class.name),
+                Some(class.span),
+            ));
+        }
         if parent.is_final {
             return Err(Diagnostic::new(
                 format!(

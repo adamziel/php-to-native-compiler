@@ -1697,7 +1697,16 @@ static void ptn_trace_append_arg(PtnStringBuffer *buffer, PtnValue value, size_t
             ptn_string_buffer_append(buffer, "Array");
             break;
         case PTN_OBJECT:
-            ptn_string_buffer_append_format(buffer, "Object(%s)", value.as.object->class_name);
+            if (value.as.object->enum_case_name != NULL) {
+                ptn_string_buffer_append_format(
+                    buffer,
+                    "%s::%s",
+                    value.as.object->class_name,
+                    value.as.object->enum_case_name
+                );
+            } else {
+                ptn_string_buffer_append_format(buffer, "Object(%s)", value.as.object->class_name);
+            }
             break;
         case PTN_CLOSURE:
             ptn_string_buffer_append(buffer, "Object(Closure)");

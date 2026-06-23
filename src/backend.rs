@@ -18186,6 +18186,171 @@ fn class_property_initialization_chain(
     properties
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EnumCaseConstantRead {
+    class_name: String,
+    case_name: String,
+    line: usize,
+}
+
+fn property_default_enum_case_constant_reads(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<EnumCaseConstantRead> {
+    let mut reads = Vec::new();
+    let mut seen = HashSet::new();
+    for (declaring_class_name, property, hook_get_value) in
+        class_property_initialization_chain(class, classes)
+    {
+        let Some(value) = hook_get_value.as_ref().or(property.value.as_ref()) else {
+            continue;
+        };
+        collect_enum_case_constant_reads(
+            value,
+            classes,
+            &declaring_class_name,
+            &mut reads,
+            &mut seen,
+        );
+    }
+    reads
+}
+
+fn collect_enum_case_constant_reads(
+    value: &ValueExpr,
+    classes: &[ClassDecl],
+    declaring_class_name: &str,
+    reads: &mut Vec<EnumCaseConstantRead>,
+    seen: &mut HashSet<(String, String, usize)>,
+) {
+    match value {
+        ValueExpr::ClassConstantFetch {
+            class_name,
+            name,
+            line,
+        } => {
+            if let Some(enum_class_name) = property_default_enum_case_class_name(
+                class_name,
+                name,
+                declaring_class_name,
+                classes,
+            ) {
+                if seen.insert((enum_class_name.to_string(), name.clone(), *line)) {
+                    reads.push(EnumCaseConstantRead {
+                        class_name: enum_class_name.to_string(),
+                        case_name: name.clone(),
+                        line: *line,
+                    });
+                }
+            }
+        }
+        ValueExpr::Array(elements) => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    collect_enum_case_constant_reads(
+                        key,
+                        classes,
+                        declaring_class_name,
+                        reads,
+                        seen,
+                    );
+                }
+                match &element.value {
+                    IrArrayElementValue::Value(value)
+                    | IrArrayElementValue::Unpack { value, .. } => {
+                        collect_enum_case_constant_reads(
+                            value,
+                            classes,
+                            declaring_class_name,
+                            reads,
+                            seen,
+                        );
+                    }
+                    IrArrayElementValue::Reference(_) => {}
+                }
+            }
+        }
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => {
+            collect_enum_case_constant_reads(expr, classes, declaring_class_name, reads, seen);
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            collect_enum_case_constant_reads(left, classes, declaring_class_name, reads, seen);
+            collect_enum_case_constant_reads(right, classes, declaring_class_name, reads, seen);
+        }
+        ValueExpr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_enum_case_constant_reads(condition, classes, declaring_class_name, reads, seen);
+            if let Some(if_true) = if_true {
+                collect_enum_case_constant_reads(
+                    if_true,
+                    classes,
+                    declaring_class_name,
+                    reads,
+                    seen,
+                );
+            }
+            collect_enum_case_constant_reads(if_false, classes, declaring_class_name, reads, seen);
+        }
+        ValueExpr::Match { subject, arms, .. } => {
+            collect_enum_case_constant_reads(subject, classes, declaring_class_name, reads, seen);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_enum_case_constant_reads(
+                        condition,
+                        classes,
+                        declaring_class_name,
+                        reads,
+                        seen,
+                    );
+                }
+                collect_enum_case_constant_reads(
+                    &arm.value,
+                    classes,
+                    declaring_class_name,
+                    reads,
+                    seen,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn property_default_enum_case_class_name<'a>(
+    class_name: &str,
+    constant_name: &str,
+    declaring_class_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<&'a str> {
+    let target_name = match class_name
+        .trim_start_matches('\\')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "self" | "static" => declaring_class_name,
+        "parent" => class_by_name(classes, declaring_class_name)?
+            .parent_name
+            .as_deref()?,
+        _ => class_name.trim_start_matches('\\'),
+    };
+    let target_class = class_by_name(classes, target_name)?;
+    let constant = target_class
+        .constants
+        .iter()
+        .find(|constant| constant.name.eq_ignore_ascii_case(constant_name))?;
+    if target_class.is_enum && constant.is_enum_case {
+        Some(target_class.name.as_str())
+    } else {
+        None
+    }
+}
+
 struct ClassConstantLookupEntry<'a> {
     declaring_class: &'a str,
     constant: &'a crate::ir::ClassConstantDecl,
@@ -21760,7 +21925,9 @@ fn emit_class_declaration_validation(
             source_path,
             line,
         );
-        out.push_str("        if (ptn_declared_class_is_final(");
+        out.push_str("        if (!ptn_declared_runtime_class_is_enum(&runtime, ");
+        out.push_str(&parent_temp);
+        out.push_str(") && ptn_declared_class_is_final(");
         out.push_str(&parent_temp);
         out.push_str(")) {\n");
         if let Some(canonical_parent_name) = modeled_internal_class_name(parent_name) {
@@ -25373,11 +25540,10 @@ fn enum_class_declaration_fatal_message(
                 class.name
             ));
         }
-        if class
-            .parent_name
-            .as_deref()
-            .is_some_and(is_builtin_enum_class_name)
-        {
+        if class.parent_name.as_deref().is_some_and(|parent_name| {
+            is_builtin_enum_class_name(parent_name)
+                || class_by_name(classes, parent_name).is_some_and(|parent| parent.is_enum)
+        }) {
             let parent_name = class.parent_name.as_deref().unwrap_or_default();
             return Some(format!(
                 "Class {} cannot extend enum {}",
@@ -39400,13 +39566,19 @@ impl ValueEmitter {
         let instantiation_classes = self.classes.clone();
         let initializes_class_constants =
             !class_constant_lookup_chain(declared_class, &instantiation_classes).is_empty();
-        if initializes_class_constants {
+        let property_enum_case_constant_reads =
+            property_default_enum_case_constant_reads(declared_class, &instantiation_classes);
+        let guards_object_initialization =
+            initializes_class_constants || !property_enum_case_constant_reads.is_empty();
+        if guards_object_initialization {
             out.push_str("    ");
             if declare_result {
                 out.push_str("PtnValue ");
             }
             out.push_str(result_temp);
             out.push_str(" = ptn_null();\n");
+        }
+        if initializes_class_constants {
             emit_class_constant_instantiation_reads(
                 out,
                 self,
@@ -39415,6 +39587,25 @@ impl ValueEmitter {
                 &line.to_string(),
                 "    ",
             );
+        }
+        for read in &property_enum_case_constant_reads {
+            let temp = self.next_temp();
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        PtnValue ");
+            out.push_str(&temp);
+            out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(&runtime, \"");
+            out.push_str(&c_string(&read.class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&read.case_name));
+            out.push_str("\", ");
+            out.push_str(&read.line.to_string());
+            out.push_str(");\n");
+            out.push_str("        ptn_value_destroy(&");
+            out.push_str(&temp);
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        }
+        if guards_object_initialization {
             out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
         }
         self.emit_declared_object_shell_with_properties(
@@ -39422,7 +39613,7 @@ impl ValueEmitter {
             result_temp,
             declared_class,
             line,
-            declare_result && !initializes_class_constants,
+            declare_result && !guards_object_initialization,
         );
         if let Some((
             constructor_declaring_class,
@@ -39659,7 +39850,7 @@ impl ValueEmitter {
                 }
             }
         }
-        if initializes_class_constants {
+        if guards_object_initialization {
             out.push_str("    }\n");
         }
     }

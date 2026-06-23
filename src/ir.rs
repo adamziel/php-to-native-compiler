@@ -5583,6 +5583,10 @@ fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<Strin
         Statement::Expression { expression, .. } => {
             Some(assertion_expression_statement_text(expression, indent))
         }
+        Statement::Return { value, .. } => Some(match value {
+            Some(value) => format!("{indent}return {};", assertion_expr_text(value)),
+            None => format!("{indent}return;"),
+        }),
         Statement::Empty { .. } => None,
         _ => None,
     }
@@ -5618,7 +5622,7 @@ fn assertion_match_expression_statement_text(
 
 fn assertion_source_block_text(source: &str, source_column: usize, indent: &str) -> String {
     let source_indent = source_column.saturating_sub(1);
-    source
+    let lines = source
         .lines()
         .enumerate()
         .map(|(index, line)| {
@@ -5627,10 +5631,71 @@ fn assertion_source_block_text(source: &str, source_column: usize, indent: &str)
             } else {
                 line.get(source_indent..).unwrap_or(line)
             };
-            format!("{indent}{line}")
+            line.to_string()
+        })
+        .collect::<Vec<_>>();
+    assertion_normalize_class_like_source_lines(lines)
+        .into_iter()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{indent}{line}")
+            }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn assertion_normalize_class_like_source_lines(lines: Vec<String>) -> Vec<String> {
+    if !lines
+        .iter()
+        .any(|line| assertion_line_starts_method_declaration(line.trim_start()))
+    {
+        return lines;
+    }
+
+    let mut normalized = Vec::with_capacity(lines.len() + 1);
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim().is_empty()
+            && lines
+                .get(index + 1)
+                .is_some_and(|next| assertion_line_starts_method_declaration(next.trim_start()))
+        {
+            continue;
+        }
+        if line == "}"
+            && normalized
+                .last()
+                .is_some_and(|previous: &String| previous.trim() == "}")
+            && !normalized
+                .last()
+                .is_some_and(|previous: &String| previous.is_empty())
+        {
+            normalized.push(String::new());
+        }
+        normalized.push(line.clone());
+    }
+    normalized
+}
+
+fn assertion_line_starts_method_declaration(line: &str) -> bool {
+    let mut words = line.split_whitespace();
+    let mut saw_function = false;
+    for word in &mut words {
+        let word = word.trim_start_matches('&');
+        if word == "function" {
+            saw_function = true;
+            break;
+        }
+        if !matches!(
+            word,
+            "public" | "protected" | "private" | "static" | "final" | "abstract" | "readonly"
+        ) {
+            break;
+        }
+    }
+    saw_function
 }
 
 fn assertion_anonymous_class_source_text(source: &str) -> String {

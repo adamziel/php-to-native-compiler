@@ -6290,6 +6290,11 @@ fn parser_models_final_class_and_modifier_diagnostics() {
         .message
         .contains("Class Child cannot extend final class Base"));
 
+    let err = parser::parse("<?php enum MyEnum {} class Child extends MyEnum {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Class Child cannot extend enum MyEnum"));
+
     let err = parser::parse("<?php final final class Bad {}").unwrap_err();
     assert!(err
         .message
@@ -33364,6 +33369,110 @@ try {
     assert!(c_source.contains("ptn_declared_class_enum_backing_type_name"));
     assert!(c_source.contains("ptn_declared_class_reflection_enum_cases"));
     assert!(c_source.contains("ptn_reflection_enum_call_method"));
+}
+
+#[test]
+fn compile_enum_trace_and_property_default_handles_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-trace-property-default");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-trace-property-default.php");
+    let output = root.join("enum-trace-property-default-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo {
+    case Bar;
+}
+
+function test($enum) {
+    throw new Exception();
+}
+
+class AClass {
+    public $prop = Foo::Bar;
+}
+
+var_dump(new AClass);
+
+try {
+    test(Foo::Bar);
+} catch (Exception $e) {
+    echo $e->getTraceAsString(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("test(Foo::Bar)"), "{stdout}");
+    assert!(stdout.contains("object(AClass)#2 (1)"), "{stdout}");
+    assert!(stdout.contains("enum(Foo::Bar)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant_suppress_deprecation"));
+    assert!(c_source.contains("enum_case_name"));
+}
+
+#[test]
+fn compile_assertion_text_keeps_enum_declaration_attributes_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-enum-declaration-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-enum-declaration-text.php");
+    let output = root.join("assert-enum-declaration-text-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    assert((function () {
+        #[EnumAttr]
+        enum IntFoo: int {
+            #[CaseAttr]
+            case Bar = 1 << 0;
+            case Baz = 1 << 1;
+
+            public function self() {
+                return $this;
+            }
+        }
+
+        return false;
+    })());
+} catch (AssertionError $e) {
+    echo $e->getMessage();
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert((function () {\n",
+            "    #[EnumAttr]\n",
+            "    enum IntFoo: int {\n",
+            "        #[CaseAttr]\n",
+            "        case Bar = 1 << 0;\n",
+            "        case Baz = 1 << 1;\n",
+            "        public function self() {\n",
+            "            return $this;\n",
+            "        }\n",
+            "\n",
+            "    }\n",
+            "\n",
+            "    return false;\n",
+            "})())"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
