@@ -717,6 +717,11 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicStaticPropertyNameFetch {
+        class_name: String,
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     ParentPropertyHookCall {
         property_name: String,
         hook_name: String,
@@ -3695,6 +3700,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _)
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
         Expr::ParentPropertyHookCall { arguments, .. } => arguments.iter().any(expr_contains_yield),
         Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
@@ -4711,6 +4717,15 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::DynamicStaticPropertyNameFetch {
+                class_name,
+                name,
+                span,
+            } => ValueExpr::DynamicStaticPropertyNameFetch {
+                class_name: class_name.clone(),
+                name: Box::new(self.lower_expr(name)),
+                line: span.line,
+            },
             Expr::ParentPropertyHookCall {
                 property_name,
                 hook_name,
@@ -5272,6 +5287,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::StaticPropertyFetch {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        Expr::DynamicStaticPropertyNameFetch {
+            class_name, name, ..
+        } => format!("{class_name}::${{{}}}", assertion_expr_text(name)),
         Expr::ParentPropertyHookCall {
             property_name,
             hook_name,

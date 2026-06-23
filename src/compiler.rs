@@ -1118,6 +1118,9 @@ impl IncludeCollector {
                 self.collect_expr(receiver, source_file, source_dir)?;
                 self.collect_expr(name, source_file, source_dir)
             }
+            Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
+            }
             Expr::DynamicStaticPropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }

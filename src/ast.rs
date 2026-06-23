@@ -1059,6 +1059,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicStaticPropertyNameFetch {
+        class_name: String,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     ParentPropertyHookCall {
         property_name: String,
         hook_name: String,
@@ -1331,6 +1336,7 @@ impl Expr {
             | Expr::NullsafePropertyFetch { span, .. }
             | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
+            | Expr::DynamicStaticPropertyNameFetch { span, .. }
             | Expr::ParentPropertyHookCall { span, .. }
             | Expr::DynamicStaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }

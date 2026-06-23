@@ -25693,6 +25693,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::NullsafePropertyFetch { .. }
         | ValueExpr::DynamicPropertyFetch { .. }
         | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::DynamicStaticPropertyNameFetch { .. }
         | ValueExpr::DynamicStaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
         | ValueExpr::DynamicClassConstantFetch { .. }
@@ -26805,6 +26806,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -27865,6 +27869,9 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
@@ -31327,6 +31334,10 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
+        ValueExpr::DynamicStaticPropertyNameFetch {
+            name: property_name,
+            ..
+        } => value_mentions_variable(property_name, name),
         ValueExpr::DynamicClassConstantFetch {
             receiver,
             name: constant_name,
@@ -31523,6 +31534,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::NullsafePropertyFetch { line, .. }
         | ValueExpr::DynamicPropertyFetch { line, .. }
         | ValueExpr::StaticPropertyFetch { line, .. }
+        | ValueExpr::DynamicStaticPropertyNameFetch { line, .. }
         | ValueExpr::DynamicStaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
         | ValueExpr::DynamicClassConstantFetch { line, .. }
@@ -32187,6 +32199,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => false,
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => value_expr_uses_this(name),
         ValueExpr::LegacyDollarBraceStringVariable { .. } => false,
         ValueExpr::LegacyDollarBraceExpressionVariable { name, .. }
         | ValueExpr::DynamicVariable { name, .. }
@@ -37678,6 +37691,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_dynamic_static_property_fetch(out, receiver, name, *line),
+            ValueExpr::DynamicStaticPropertyNameFetch {
+                class_name,
+                name,
+                line,
+            } => self.emit_dynamic_static_property_name_fetch(out, class_name, name, *line),
             ValueExpr::ClassConstantFetch {
                 class_name,
                 name,
@@ -41250,6 +41268,33 @@ impl ValueEmitter {
         self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_name_fetch(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
         out.push_str(");\n");
         result_temp
     }

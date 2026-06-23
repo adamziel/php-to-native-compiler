@@ -4967,6 +4967,7 @@ impl Parser<'_> {
                         Some(parsed.span),
                     ));
                 }
+                validate_fully_qualified_type_name_not_relative_keyword(&parsed)?;
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
@@ -8749,6 +8750,35 @@ impl Parser<'_> {
         ))
     }
 
+    fn parse_dynamic_static_property_name_expr(
+        &mut self,
+        dollar_span: SourceSpan,
+    ) -> Result<(Expr, SourceSpan)> {
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.advance();
+            let name = self.parse_expr()?;
+            let right_span = self.expect_right_brace()?;
+            return Ok((name, combine_spans(dollar_span, right_span)));
+        }
+
+        if let TokenKind::Variable(name) = self.peek().kind.clone() {
+            let span = self.advance().span;
+            return Ok((Expr::Variable(name, span), combine_spans(dollar_span, span)));
+        }
+
+        if matches!(self.peek().kind, TokenKind::Dollar) {
+            let nested_dollar_span = self.advance().span;
+            let name = self.parse_dynamic_variable_expr(nested_dollar_span)?;
+            let span = combine_spans(dollar_span, name.span());
+            return Ok((name, span));
+        }
+
+        Err(Diagnostic::new(
+            "expected variable name or braced expression after `$`",
+            Some(self.peek().span),
+        ))
+    }
+
     fn parse_static_member_expr(
         &mut self,
         class_name: String,
@@ -8776,8 +8806,8 @@ impl Parser<'_> {
             });
         }
         if let TokenKind::Dollar = member.kind {
-            let name_expr = self.parse_dynamic_variable_expr(member.span)?;
-            let member_span = combine_spans(member.span, name_expr.span());
+            let (name_expr, member_span) =
+                self.parse_dynamic_static_property_name_expr(member.span)?;
             if !matches!(self.peek().kind, TokenKind::LeftParen) {
                 if let Some(name) = literal_member_name_from_expr(&name_expr) {
                     return Ok(Expr::StaticPropertyFetch {
@@ -8786,9 +8816,8 @@ impl Parser<'_> {
                         span: combine_spans(class_span, member_span),
                     });
                 }
-                return Ok(Expr::DynamicClassConstantFetch {
-                    class_name: Some(class_name),
-                    receiver: None,
+                return Ok(Expr::DynamicStaticPropertyNameFetch {
+                    class_name,
                     name: Box::new(name_expr),
                     span: combine_spans(class_span, member_span),
                 });
@@ -10613,11 +10642,31 @@ fn validate_qualified_type_name_not_reserved(parsed: &ParsedName) -> Result<()> 
     if !is_reserved_namespace_qualified_type_name(last_segment) {
         return Ok(());
     }
+    if is_unqualified_only_builtin_type_hint_name(last_segment) {
+        return Err(Diagnostic::new(
+            format!("Type declaration '{last_segment}' must be unqualified"),
+            Some(parsed.span),
+        ));
+    }
     Err(Diagnostic::new(
         format!(
             "Cannot use \"{}\" as a type name as it is reserved",
             parsed.name
         ),
+        Some(parsed.span),
+    ))
+}
+
+fn validate_fully_qualified_type_name_not_relative_keyword(parsed: &ParsedName) -> Result<()> {
+    if parsed.resolution != NameResolution::FullyQualified {
+        return Ok(());
+    }
+    let lowered = parsed.name.to_ascii_lowercase();
+    if !matches!(lowered.as_str(), "self" | "parent" | "static") {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!("'\\{}' is an invalid class name", parsed.name),
         Some(parsed.span),
     ))
 }
@@ -11634,6 +11683,9 @@ fn collect_arrow_captures_from_expr(
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
             collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
@@ -20119,6 +20171,9 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_expr(name)?;
         }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
         Expr::Array { elements, .. } => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -20556,6 +20611,9 @@ fn expr_array_literal_reference_to_variable(
                     .and_then(|value| expr_array_literal_reference_to_variable(value, variable))
             }),
         Expr::DynamicVariable { name, .. } => {
+            expr_array_literal_reference_to_variable(name, variable)
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
             expr_array_literal_reference_to_variable(name, variable)
         }
         Expr::String(_, _)
@@ -21160,6 +21218,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::Yield { .. } | Expr::YieldFrom { .. } => true,
         Expr::AnonymousFunction(_) => false,
         Expr::DynamicVariable { name, .. }
+        | Expr::DynamicStaticPropertyNameFetch { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::DynamicClassNameFetch { receiver: name, .. }
         | Expr::Print {
@@ -21706,6 +21765,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+            validate_anonymous_functions_in_expr(name, functions)?;
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
             validate_anonymous_functions_in_expr(name, functions)?;
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
@@ -24163,6 +24225,15 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             span,
         }),
+        Expr::DynamicStaticPropertyNameFetch {
+            class_name,
+            name,
+            span,
+        } => Ok(AssignmentTarget::DynamicStaticPropertyName {
+            class_name,
+            name,
+            span,
+        }),
         Expr::DynamicClassConstantFetch {
             class_name: Some(class_name),
             receiver: None,
@@ -25084,6 +25155,7 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         | Expr::NullsafePropertyFetch { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. }
         | Expr::DynamicClassNameFetch { receiver, .. } => reject_standalone_list_expr(receiver)?,
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => reject_standalone_list_expr(name)?,
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 reject_standalone_list_expr(receiver)?;
@@ -25270,6 +25342,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
             reject_append_array_read(name)?;
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
@@ -25965,6 +26040,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
@@ -26471,6 +26547,9 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             expr_uses_this_property(receiver, property_name)
                 || expr_uses_this_property(name, property_name)
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            expr_uses_this_property(name, property_name)
         }
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             receiver
@@ -27173,6 +27252,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
@@ -27316,6 +27396,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }

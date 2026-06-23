@@ -4177,6 +4177,23 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_rejects_qualified_builtin_type_names_with_php_diagnostic() {
+    let error = parser::parse("<?php function test(namespace\\int $value) {}").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Type declaration 'int' must be unqualified");
+}
+
+#[test]
+fn parser_rejects_fully_qualified_relative_type_keywords() {
+    let error = parser::parse(
+        "<?php namespace Foobar; class Foo { public function bar(\\self $value) {} }",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "'\\self' is an invalid class name");
+}
+
+#[test]
 fn parser_accepts_iterable_object_union_intersection_and_dnf_type_hints() {
     let program = parser::parse(
         "<?php function test(object $object, iterable $iterable, (A&B)|array $value): object|iterable {}",
@@ -7923,6 +7940,38 @@ echo Counter::$value;",
             name,
             ..
         } if class_name == "Counter" && name == "value"
+    ));
+}
+
+#[test]
+fn parser_accepts_dynamic_static_property_name_reads() {
+    let program = parser::parse(
+        "<?php
+class Counter { public static $value = 1; }
+$name = 'value';
+echo Counter::$$name;",
+    )
+    .unwrap();
+
+    let expressions = program
+        .statements
+        .iter()
+        .find_map(|statement| match statement {
+            Statement::Echo { expressions, .. } => Some(expressions),
+            _ => None,
+        })
+        .expect("expected dynamic static property echo statement");
+    assert!(matches!(
+        &expressions[0],
+        Expr::DynamicStaticPropertyNameFetch {
+            class_name,
+            name,
+            ..
+        } if class_name == "Counter"
+            && matches!(
+                name.as_ref(),
+                Expr::Variable(variable, _) if variable == "name"
+            )
     ));
 }
 
@@ -68981,6 +69030,58 @@ echo Counter::$value, \"\\n\";
     assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property_direct(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_static_property_name_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-property-name-read");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-property-name-read.php");
+    let output = root.join("dynamic-static-property-name-read-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public static $b = 0;
+    public static $c = [0, 1];
+    public static $A_str = 'A';
+}
+
+$A_str = 'A';
+$A_obj = new A;
+$b_str = 'b';
+$c_str = 'c';
+
+var_dump(A::$b);
+var_dump($A_str::$b);
+var_dump($A_obj::$b);
+var_dump(('A' . '')::$b);
+var_dump('A'::$b);
+var_dump('\\A'::$b);
+var_dump('A'[0]::$b);
+var_dump(A::$$b_str);
+var_dump(A::$$c_str[1]);
+var_dump(A::$A_str::$b);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n", "int(0)\n", "int(0)\n", "int(0)\n", "int(0)\n", "int(0)\n", "int(0)\n",
+            "int(0)\n", "int(1)\n", "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_property_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
 }
 
 #[test]
