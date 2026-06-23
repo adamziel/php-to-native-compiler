@@ -10558,6 +10558,16 @@ static void ptn_unserialize_id_entry_retain_value(
     );
 }
 
+static void ptn_unserialize_id_entry_unhide_retained_array_before_overwrite(
+    PtnUnserializeIdEntry *entry
+) {
+    if (entry->has_retained_value &&
+        entry->slot == &entry->retained_value &&
+        entry->retained_value.type == PTN_ARRAY) {
+        ptn_value_debug_unhide_ref(entry->retained_value);
+    }
+}
+
 static PtnStringOperand ptn_internal_expect_string_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -11202,6 +11212,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
     ptn_reference_adopt_property_type(reference, entry->property_metadata);
+    ptn_unserialize_id_entry_unhide_retained_array_before_overwrite(entry);
     ptn_value_destroy(entry->slot);
     *entry->slot = ptn_reference_value(reference);
     entry->reference = reference;
