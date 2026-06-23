@@ -496,7 +496,7 @@ impl Parser<'_> {
             validate_final_class_inheritance(&validation_classes)?;
             validate_readonly_class_inheritance(&validation_classes)?;
             validate_property_override_set_visibility(&validation_classes)?;
-            validate_property_type_invariance(&validation_classes)?;
+            validate_property_type_invariance(&validation_classes, &self.runtime_class_aliases)?;
             validate_class_constant_overrides(&validation_classes)?;
             validate_class_scoped_constant_exprs(&validation_classes)?;
         }
@@ -15072,6 +15072,13 @@ fn method_signature_type_validation_classes(
     classes
         .iter()
         .take(class_index + 1)
+        .chain(
+            classes
+                .iter()
+                .take(local_class_count)
+                .skip(class_index + 1)
+                .filter(|class| class.is_conditionally_declared),
+        )
         .chain(classes.iter().skip(local_class_count))
         .cloned()
         .collect()
@@ -16486,6 +16493,7 @@ fn method_return_type_is_subtype(
         classes,
         runtime_class_aliases,
         TypeCompatibilityContext {
+            current_class_name: Some(class.name.as_str()),
             final_class_static_name: class.is_final.then_some(class.name.as_str()),
         },
     )
@@ -16493,6 +16501,7 @@ fn method_return_type_is_subtype(
 
 #[derive(Clone, Copy, Default)]
 struct TypeCompatibilityContext<'a> {
+    current_class_name: Option<&'a str>,
     final_class_static_name: Option<&'a str>,
 }
 
@@ -16633,6 +16642,11 @@ fn type_atom_is_subtype(
     match (candidate, target) {
         (TypeAtom::True | TypeAtom::False, TypeAtom::Bool) => true,
         (TypeAtom::Static, TypeAtom::Object) => true,
+        (TypeAtom::Static, TypeAtom::Class(target)) => {
+            context.current_class_name.is_some_and(|class_name| {
+                class_type_name_is_subtype(class_name, target, classes, runtime_class_aliases)
+            })
+        }
         (TypeAtom::Class(candidate), TypeAtom::Static) => {
             context.final_class_static_name.is_some_and(|class_name| {
                 let candidate_name =
@@ -19198,8 +19212,10 @@ fn find_final_interface_constant<'a>(
     None
 }
 
-fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
-    let runtime_class_aliases = HashMap::new();
+fn validate_property_type_invariance(
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
     for class in classes {
         for property in &class.properties {
             let Some((parent_class, parent_property)) =
