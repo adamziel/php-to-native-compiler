@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,6 +39,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/statvfs.h>
+#include <sys/un.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <utime.h>
@@ -617,6 +619,7 @@ typedef enum {
     PTN_STREAM_FILTER_STRING_ROT13,
     PTN_STREAM_FILTER_STRING_TOUPPER,
     PTN_STREAM_FILTER_STRING_TOLOWER,
+    PTN_STREAM_FILTER_CONVERT_BASE64_DECODE,
     PTN_STREAM_FILTER_ZLIB_DEFLATE,
     PTN_STREAM_FILTER_ZLIB_INFLATE
 } PtnStreamFilterKind;
@@ -1150,6 +1153,8 @@ struct PtnResource {
 struct PtnStreamFilter {
     PtnStreamFilterKind kind;
     char *name;
+    int base64_values[4];
+    size_t base64_value_count;
     PtnStreamFilter *next;
 };
 

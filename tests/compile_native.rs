@@ -23047,6 +23047,121 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_stream_select_base64_and_socket_server_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-select-base64-socket-server");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-select-base64-socket-server.php");
+    let output = root.join("stream-select-base64-socket-server-bin");
+    let socket_prefix = format!("/tmp/ptn-native-socket-{}-", std::process::id());
+    let php = r#"<?php
+$file = fopen('php://temp', 'r+');
+fwrite($file, 'SGVsbG8gV29ybGQ=');
+stream_filter_append($file, 'convert.base64-decode');
+rewind($file);
+$read = [$file];
+$write = null;
+$except = null;
+echo 'select=', stream_select($read, $write, $except, 0), "\n";
+echo fread($file, 1024), "\n";
+fclose($file);
+
+$pipes = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+[$read_pipe, $write_pipe] = $pipes;
+stream_set_blocking($read_pipe, false);
+stream_filter_append($read_pipe, 'convert.base64-decode', STREAM_FILTER_READ);
+fwrite($write_pipe, 'SGVs');
+fflush($write_pipe);
+echo fread($read_pipe, 1024), "\n";
+$read = [$read_pipe];
+$write = null;
+$except = null;
+echo 'pending=', stream_select($read, $write, $except, 0, 1000), ':', count($read), "\n";
+fwrite($write_pipe, 'bG8=');
+fflush($write_pipe);
+$read = [$read_pipe];
+$write = null;
+$except = null;
+echo 'ready=', stream_select($read, $write, $except, 0, 1000), ':', count($read), "\n";
+echo fread($read_pipe, 1024), "\n";
+fclose($read_pipe);
+fclose($write_pipe);
+
+$socket_file = '__SOCKET_PREFIX__' . str_repeat('p', 512);
+function ptn_capture_socket_notice($errno, $errmsg, $file, $line) {
+    global $socket_file;
+    echo $errmsg, "\n";
+    preg_match('#maximum allowed length of (\d+) bytes#', $errmsg, $matches);
+    $socket_file = substr($socket_file, 0, intval($matches[1]));
+}
+set_error_handler('ptn_capture_socket_notice', E_NOTICE);
+$server = stream_socket_server('unix://' . $socket_file);
+var_dump(is_resource($server));
+if (is_resource($server)) {
+    fclose($server);
+}
+@unlink($socket_file);
+"#
+    .replace("__SOCKET_PREFIX__", &socket_prefix);
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("select=1\nHello World\nHel\npending=0:0\nready=1:1\nlo\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "stream_socket_server(): socket path exceeded the maximum allowed length of "
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bytes and was truncated\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_DECODE"));
+    assert!(c_source.contains("ptn_internal_stream_socket_server"));
+    assert!(c_source.contains("ptn_stream_select_selected_array"));
+}
+
+#[test]
+fn compile_stream_select_null_microseconds_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-select-null-usec");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-select-null-usec.php");
+    let output = root.join("stream-select-null-usec-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$read = [fopen(__FILE__, 'r')];\n\
+$write = null;\n\
+$except = null;\n\
+stream_select($read, $write, $except, null, 0);\n\
+stream_select($read, $write, $except, null, 1);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught ValueError: stream_select(): Argument #5 ($microseconds) must be null when argument #4 ($seconds) is null"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_file_metadata_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-file-metadata-diagnostics");
     fs::create_dir_all(&root).unwrap();
