@@ -24525,6 +24525,77 @@ echo mb_convert_encoding(\"\\x00\\x01\\x02\", 'UTF-8', 'UCS-4BE'), \"\\n\";\n",
 }
 
 #[test]
+fn phpc_iconv_conversion_mime_and_translit_edges() {
+    let root = temp_dir("ptn-phpc-iconv-conversion-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iconv-conversion-edges.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$text = \"aa\\xC3\\xC3\\xC3\\xB8aa\";\n\
+var_dump(iconv('UTF-8', 'UTF-8', $text));\n\
+var_dump(urlencode(iconv('UTF-8', 'UTF-8//IGNORE', $text)));\n\
+var_dump(urlencode(iconv('UTF-8', 'UTF-8//IGNORE', \"\\xC3\")));\n\
+var_dump(urlencode(iconv('UTF-8', 'UTF-8//IGNORE', \"\\xC3\\xC3\\xC3\\xB8aa\")));\n\
+var_dump(urlencode(iconv('UTF-8', 'UTF-8//IGNORE', \"aa\\xC3\\xC3\\xC3\")));\n\
+$pathological = \"PATHOLOGIES M\\xC3\\x89DICO-CHIRUR. ADUL. PL\";\n\
+var_dump(iconv('CP850', 'ISO-8859-1', $pathological));\n\
+$long = str_repeat('/', 65);\n\
+var_dump(iconv($long, 'b', 'test'));\n\
+var_dump(iconv('x', $long, 'test'));\n\
+var_dump(iconv_mime_decode('=?windows-1258?Q?test=20test?=', 0, 'UTF-8'));\n\
+var_dump(iconv_strlen('test test', 'WINDOWS-1258'));\n\
+var_dump(iconv_strpos('test test', 'test test', 0, 'WINDOWS-1258'));\n\
+var_dump(iconv_substr('test test', 0, 9, 'WINDOWS-1258'));\n\
+var_dump(iconv_mime_encode('', ''));\n\
+var_dump(iconv_mime_encode('', '', ['line-break-chars' => 1]));\n\
+$utf = \"\\xE2\\x80\\x9CHello\\xE2\\x80\\x9D\\n\\xE2\\x80\\x98Hello\\xE2\\x80\\x99\\n\\xE2\\x80\\x9EHello\\xE2\\x80\\x9D\\n\\xE2\\x80\\x9AHello\\xE2\\x80\\x99\";\n\
+echo bin2hex(iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $utf)), \"\\n\";\n\
+echo bin2hex(iconv('UTF-8', 'ASCII//TRANSLIT', $utf)), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("error_reporting=32767")
+        .arg("-d")
+        .arg("internal_encoding=ISO-8859-1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Detected an illegal character in input string")
+            .count(),
+        2
+    );
+    assert_eq!(
+        stdout
+            .matches("Detected an incomplete multibyte character in input string")
+            .count(),
+        2
+    );
+    assert_eq!(
+        stdout
+            .matches("Encoding parameter exceeds the maximum allowed length of 64 characters")
+            .count(),
+        2
+    );
+    assert!(stdout.contains("bool(false)\nstring(10) \"aa%C3%B8aa\""));
+    assert!(stdout.contains("string(8) \"%C3%B8aa\""));
+    assert!(stdout.contains("string(9) \"test test\"\nint(9)\nint(0)\nstring(9) \"test test\""));
+    assert!(
+        stdout.contains("string(19) \": =?ISO-8859-1?B??=\"\nstring(19) \": =?ISO-8859-1?B??=\"")
+    );
+    assert!(stdout.contains("2248656c6c6f220a6048656c6c6fb40a2248656c6c6f220a6048656c6c6fb4\n"));
+    assert!(stdout.contains("2248656c6c6f220a2748656c6c6f270a2248656c6c6f220a2748656c6c6f27\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
     let root = temp_dir("ptn-native-mb-strimwidth-marker");
     fs::create_dir_all(&root).unwrap();
