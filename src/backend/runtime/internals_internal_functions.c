@@ -109740,6 +109740,14 @@ static void ptn_soap_append_scalar_value(
         ptn_string_buffer_append_format(buffer, "%lld", (long long)ptn_value_to_integer(backing));
         return;
     }
+    if (ptn_soap_type_name_is(type, "boolean")) {
+        PtnValue backing = ptn_null();
+        if (!ptn_soap_enum_backing_value(runtime, value, &backing)) {
+            return;
+        }
+        ptn_string_buffer_append(buffer, ptn_is_truthy(backing) ? "true" : "false");
+        return;
+    }
     PtnStringOperand string = ptn_soap_scalar_string_operand(runtime, value, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(string);
@@ -111380,13 +111388,6 @@ static void ptn_soap_emit_response(
         free(buffer.data);
         return;
     }
-    PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, result, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(payload);
-        return;
-    }
-    char *payload_c = ptn_duplicate_string_len(payload.data, payload.len);
-    ptn_string_operand_free(payload);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     ptn_string_buffer_append(&buffer, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -111398,13 +111399,16 @@ static void ptn_soap_emit_response(
     ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
     const char *xsd_type = ptn_soap_xsd_type_for_value(result);
     ptn_string_buffer_append_format(&buffer, " xsi:type=\"xsd:%s\">", xsd_type);
-    ptn_xml_append_escaped_ex(&buffer, payload_c, 0, 0);
+    ptn_soap_append_scalar_value(runtime, &buffer, result, xsd_type, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(buffer.data);
+        return;
+    }
     ptn_string_buffer_append(&buffer, "</");
     ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
     ptn_string_buffer_append(&buffer, "></ns1:");
     ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
     ptn_string_buffer_append(&buffer, "Response></SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
-    free(payload_c);
     ptn_output_write(runtime, buffer.data, buffer.len);
     free(buffer.data);
 }
@@ -112264,20 +112268,15 @@ static void ptn_soap_append_request_value_element(
         ptn_string_buffer_append_char(buffer, '>');
         return;
     }
-    PtnStringOperand text = ptn_value_to_string_operand_with_runtime(runtime, value, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(text);
-        return;
-    }
     ptn_string_buffer_append_char(buffer, '<');
     ptn_string_buffer_append(buffer, element_name == NULL ? "param" : element_name);
     const char *xsd_type = ptn_soap_xsd_type_for_value(value);
     ptn_string_buffer_append_format(buffer, " xsi:type=\"xsd:%s\"", xsd_type);
     ptn_string_buffer_append_char(buffer, '>');
-    char *text_copy = ptn_duplicate_string_len(text.data, text.len);
-    ptn_string_operand_free(text);
-    ptn_xml_append_escaped_ex(buffer, text_copy, 0, 0);
-    free(text_copy);
+    ptn_soap_append_scalar_value(runtime, buffer, value, xsd_type, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return;
+    }
     ptn_string_buffer_append(buffer, "</");
     ptn_string_buffer_append(buffer, element_name == NULL ? "param" : element_name);
     ptn_string_buffer_append_char(buffer, '>');

@@ -39459,6 +39459,63 @@ echo $result['inline.txt']->getContent(), "\n";
 }
 
 #[test]
+fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-round2-boolean-lexical.php");
+    let output = root.join("soap-round2-boolean-lexical-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function echoBoolean($inputBoolean) {
+    return $inputBoolean;
+}
+
+$client = new SoapClient(NULL, [
+    'location' => 'test://',
+    'uri' => 'http://soapinterop.org/',
+    'trace' => 1,
+    'exceptions' => 0,
+]);
+$client->__soapCall(
+    'echoBoolean',
+    [new SoapParam(new SoapVar(0, XSD_BOOLEAN), 'inputBoolean')],
+    ['soapaction' => 'http://soapinterop.org/', 'uri' => 'http://soapinterop.org/']
+);
+echo $client->__getLastRequest();
+
+$server = new SoapServer(NULL, ['uri' => 'http://soapinterop.org/']);
+$server->addFunction('echoBoolean');
+$server->handle($client->__getLastRequest());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<inputBoolean xsi:type=\"xsd:boolean\">false</inputBoolean>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<return xsi:type=\"xsd:boolean\">false</return>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_scalar_value"));
+}
+
+#[test]
 fn compile_soap_client_invalid_headers_fatal_to_native_binary() {
     let root = temp_dir("ptn-native-soap-client-invalid-headers-fatal");
     fs::create_dir_all(&root).unwrap();
