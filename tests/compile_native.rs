@@ -43389,6 +43389,16 @@ $plain->removeChild($plain->firstChild);
 var_dump($plain->value);
 echo $html->saveHtml($container), "\n";
 
+$defaultXmlns = $html->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns');
+$container->setAttributeNodeNS($defaultXmlns);
+$prefixedXmlns = $html->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:f');
+$container->setAttributeNodeNS($prefixedXmlns);
+echo $html->saveHtml($container), "\n";
+
+$xml = Dom\XMLDocument::createFromString('<container xmlns="some:ns" xmlns:bar="another:ns"><test xmlns="x:y"/></container>');
+$imported = $html->importNode($xml->documentElement, true);
+echo $html->saveHtml($imported), "\n";
+
 try {
     $container->prefix = 'x';
 } catch (Error $e) {
@@ -43428,6 +43438,8 @@ try {
             "string(5) \"&amp;\"\n",
             "string(0) \"\"\n",
             "<container my-attribute=\"\" a:my-attribute=\"2\" a:my-attribute=\"3\"></container>\n",
+            "<container my-attribute=\"\" a:my-attribute=\"2\" a:my-attribute=\"3\" xmlns=\"\" xmlns:f=\"\"></container>\n",
+            "<container xmlns=\"some:ns\" xmlns:bar=\"another:ns\"><test xmlns=\"x:y\"></test></container>\n",
             "Cannot modify private(set) property Dom\\Element::$prefix from global scope\n",
             "string(7) \"foo:baz\"\n",
             "string(5) \"urn:x\"\n",
@@ -43440,6 +43452,7 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dom_element_rename_method"));
     assert!(c_source.contains("ptn_xml_attribute_ensure_text_child"));
+    assert!(c_source.contains("ptn_xml_attribute_is_synthetic_namespace_declaration"));
     assert!(c_source.contains("Cannot append to %s"));
 }
 
