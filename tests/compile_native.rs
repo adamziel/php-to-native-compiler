@@ -34090,6 +34090,55 @@ echo str_contains($arrayDefaults, 'array $a = [[], [1], [2, 3]]') ? "array-a:str
 }
 
 #[test]
+fn compile_reflection_parameter_default_values_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-default-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-default-values.php");
+    let output = root.join("reflection-parameter-default-values-bin");
+    fs::write(
+        &input,
+        "<?php
+class OtherDefaultBox {
+    const B = 3;
+}
+
+class ParentDefaultBox {
+    const P = 20;
+}
+
+class DefaultBox extends ParentDefaultBox {
+    const X = 12;
+
+    public function method($literal = [123], $selfArray = [self::X], $self = self::X, $other = OtherDefaultBox::B, $parent = parent::P) {}
+}
+
+$method = new ReflectionMethod(DefaultBox::class, 'method');
+foreach ($method->getParameters() as $parameter) {
+    $value = $parameter->getDefaultValue();
+    echo $parameter->getName(), ':', is_array($value) ? implode(',', $value) : $value, \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "literal:123\n",
+            "selfArray:12\n",
+            "self:12\n",
+            "other:3\n",
+            "parent:20\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_method_invoke_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-method-invoke");
     fs::create_dir_all(&root).unwrap();
@@ -34123,6 +34172,18 @@ class ReflectInvokeSubject extends ReflectInvokeBase {
     }
 }
 
+class ReflectInvokeLateBase {
+    const WHAT = \"A\";
+
+    public static function late() {
+        return static::WHAT;
+    }
+}
+
+class ReflectInvokeLateChild extends ReflectInvokeLateBase {
+    const WHAT = \"B\";
+}
+
 $subject = new ReflectInvokeSubject();
 
 $read = new ReflectionMethod(\"ReflectInvokeSubject\", \"read\");
@@ -34136,6 +34197,12 @@ var_dump($inherited->invoke($subject, \"b\"));
 
 $static = ReflectionMethod::createFromMethodName(\"ReflectInvokeSubject::stat\");
 var_dump($static->invoke(null, \"s\"));
+
+$late = ReflectionMethod::createFromMethodName(\"ReflectInvokeLateChild::late\");
+echo $late->invoke(null), $late->invokeArgs(null, array()), \"\\n\";
+
+$lateBase = ReflectionMethod::createFromMethodName(\"ReflectInvokeLateBase::late\");
+echo $lateBase->invoke(null), $lateBase->invokeArgs(null, array()), \"\\n\";
 
 try {
     $read->invoke(new stdClass());
@@ -34169,6 +34236,8 @@ var_dump(method_exists(\"ReflectionMethod\", \"invokeArgs\"));
             "string(4) \"base\"\n",
             "stat:s\n",
             "string(8) \"stat-ret\"\n",
+            "BB\n",
+            "AA\n",
             "Given object is not an instance of the class this method was declared in\n",
             "ReflectionMethod::invoke(): Argument #1 ($object) must be of type ?object, true given\n",
             "bool(true)\n",
