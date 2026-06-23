@@ -1,0 +1,4 @@
+ext/dom/tests/modern/spec/clone_conflicting_namespace_prefix.phpt
+ext/dom/tests/clone_attribute_namespace_01.phpt
+ext/dom/tests/clone_attribute_namespace_02.phpt
+ext/dom/tests/modern/spec/HTMLDocument_importNode_01.phpt
