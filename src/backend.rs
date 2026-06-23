@@ -17691,6 +17691,622 @@ fn find_runtime_visible_parent_method<'a>(
     None
 }
 
+fn emit_class_method_signature_compatibility_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    class_index: usize,
+    source_path: &str,
+) {
+    let mut type_temp_counter = 0usize;
+    for (method_index, method) in class.methods.iter().enumerate() {
+        if method.visibility == PropertyVisibility::Private {
+            continue;
+        }
+        let Some((parent_class, parent_method)) =
+            find_runtime_visible_parent_method(class, &method.name, classes)
+        else {
+            continue;
+        };
+        if !runtime_method_requires_parent_signature_compatibility(method, parent_method) {
+            continue;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            continue;
+        };
+        let Some(parent_function) = functions.get(parent_method.function_index) else {
+            continue;
+        };
+
+        emit_runtime_parameter_signature_compatibility_validation(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            classes,
+            class_index,
+            method_index,
+            source_path,
+            &mut type_temp_counter,
+        );
+        emit_runtime_return_signature_compatibility_validation(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            classes,
+            class_index,
+            method_index,
+            source_path,
+            &mut type_temp_counter,
+        );
+    }
+}
+
+fn runtime_method_requires_parent_signature_compatibility(
+    method: &crate::ir::MethodDecl,
+    parent_method: &crate::ir::MethodDecl,
+) -> bool {
+    !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_parameter_signature_compatibility_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    classes: &[ClassDecl],
+    class_index: usize,
+    method_index: usize,
+    source_path: &str,
+    type_temp_counter: &mut usize,
+) {
+    if parent_function.return_by_ref && !function.return_by_ref {
+        emit_runtime_method_signature_compatibility_fatal(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            source_path,
+        );
+        return;
+    }
+
+    for (parameter_index, parent_parameter) in parent_function.parameters.iter().enumerate() {
+        let Some(parameter) = function.parameters.get(parameter_index) else {
+            emit_runtime_method_signature_compatibility_fatal(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+            );
+            return;
+        };
+        if parameter.by_ref != parent_parameter.by_ref {
+            emit_runtime_method_signature_compatibility_fatal(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+            );
+            return;
+        }
+        match (&parameter.type_hint, &parent_parameter.type_hint) {
+            (None, _) | (Some(TypeHint::Mixed), None) => {}
+            (Some(_), None) => {
+                emit_runtime_method_signature_compatibility_fatal(
+                    out,
+                    class,
+                    method,
+                    function,
+                    parent_class,
+                    parent_method,
+                    parent_function,
+                    source_path,
+                );
+                return;
+            }
+            (Some(type_hint), Some(parent_type_hint))
+                if runtime_type_hint_static_subtype(parent_type_hint, type_hint, classes) => {}
+            (Some(type_hint), Some(parent_type_hint)) => {
+                if let Some(unavailable_name) =
+                    runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
+                {
+                    emit_runtime_method_signature_unresolved_fatal_after_autoload(
+                        out,
+                        class,
+                        method,
+                        function,
+                        parent_class,
+                        parent_method,
+                        parent_function,
+                        &unavailable_name,
+                        class_index,
+                        method_index,
+                        source_path,
+                        type_temp_counter,
+                    );
+                } else {
+                    emit_runtime_method_signature_compatibility_fatal(
+                        out,
+                        class,
+                        method,
+                        function,
+                        parent_class,
+                        parent_method,
+                        parent_function,
+                        source_path,
+                    );
+                }
+                return;
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_return_signature_compatibility_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    classes: &[ClassDecl],
+    class_index: usize,
+    method_index: usize,
+    source_path: &str,
+    type_temp_counter: &mut usize,
+) {
+    let Some(parent_return_type) = &parent_function.return_type else {
+        return;
+    };
+    let Some(return_type) = &function.return_type else {
+        emit_runtime_method_signature_compatibility_fatal(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            source_path,
+        );
+        return;
+    };
+
+    if runtime_type_hint_static_subtype(return_type, parent_return_type, classes) {
+        if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
+            (return_type, parent_return_type)
+        {
+            if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
+                emit_runtime_signature_type_autoload(
+                    out,
+                    candidate_name,
+                    method.line,
+                    class_index,
+                    method_index,
+                    type_temp_counter,
+                );
+            }
+        }
+        return;
+    }
+
+    if let Some(unavailable_name) =
+        runtime_unavailable_class_name(return_type, parent_return_type, classes)
+    {
+        emit_runtime_method_signature_unresolved_fatal_after_autoload(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            &unavailable_name,
+            class_index,
+            method_index,
+            source_path,
+            type_temp_counter,
+        );
+        return;
+    }
+
+    if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
+        (return_type, parent_return_type)
+    {
+        if runtime_return_candidate_should_autoload(candidate_name, target_name, classes) {
+            emit_runtime_signature_type_autoload(
+                out,
+                candidate_name,
+                method.line,
+                class_index,
+                method_index,
+                type_temp_counter,
+            );
+        }
+    }
+    emit_runtime_method_signature_compatibility_fatal(
+        out,
+        class,
+        method,
+        function,
+        parent_class,
+        parent_method,
+        parent_function,
+        source_path,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_method_signature_unresolved_fatal_after_autoload(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    unavailable_name: &str,
+    class_index: usize,
+    method_index: usize,
+    source_path: &str,
+    type_temp_counter: &mut usize,
+) {
+    let resolved_temp = emit_runtime_signature_type_autoload(
+        out,
+        unavailable_name,
+        method.line,
+        class_index,
+        method_index,
+        type_temp_counter,
+    );
+    out.push_str("        if (!");
+    out.push_str(&runtime_type_name_available_condition(&resolved_temp));
+    out.push_str(") {\n");
+    emit_runtime_method_signature_unresolved_fatal(
+        out,
+        class,
+        method,
+        function,
+        parent_class,
+        parent_method,
+        parent_function,
+        unavailable_name,
+        source_path,
+        "            ",
+    );
+    out.push_str("        }\n");
+}
+
+fn emit_runtime_signature_type_autoload(
+    out: &mut String,
+    class_name: &str,
+    line: usize,
+    class_index: usize,
+    method_index: usize,
+    type_temp_counter: &mut usize,
+) -> String {
+    let resolved_temp = format!(
+        "ptn_variance_type_{}_{}_{}",
+        class_index, method_index, *type_temp_counter
+    );
+    *type_temp_counter += 1;
+    out.push_str("        const char *");
+    out.push_str(&resolved_temp);
+    out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+    out.push_str(&c_string(class_name));
+    out.push_str("\");\n");
+    out.push_str("        if (!");
+    out.push_str(&runtime_type_name_available_condition(&resolved_temp));
+    out.push_str(" && ptn_class_name_should_autoload(");
+    out.push_str(&resolved_temp);
+    out.push_str(")) {\n");
+    out.push_str("            ptn_runtime_autoload_class(&runtime, ");
+    out.push_str(&resolved_temp);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str("            if (runtime.exceptions->active_exception != NULL) {\n");
+    out.push_str("                ptn_rethrow_exception(&runtime);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    resolved_temp
+}
+
+fn runtime_type_name_available_condition(resolved_temp: &str) -> String {
+    format!(
+        "(ptn_runtime_autoloading_class(&runtime, {0}) || ptn_declared_runtime_class_exists(&runtime, {0}) || ptn_declared_runtime_interface_exists(&runtime, {0}) || ptn_internal_class_exists_name({0}) || ptn_internal_interface_exists_name({0}))",
+        resolved_temp
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_method_signature_compatibility_fatal(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    source_path: &str,
+) {
+    let message = format!(
+        "Declaration of {}::{} must be compatible with {}::{}",
+        class.name,
+        runtime_method_signature_display(method, function),
+        parent_class.name,
+        runtime_method_signature_display(parent_method, parent_function)
+    );
+    emit_runtime_signature_fatal(out, &message, source_path, method.line, "        ");
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_method_signature_unresolved_fatal(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    unavailable_name: &str,
+    source_path: &str,
+    indent: &str,
+) {
+    let message = format!(
+        "Could not check compatibility between {}::{} and {}::{}, because class {} is not available",
+        class.name,
+        runtime_method_signature_display(method, function),
+        parent_class.name,
+        runtime_method_signature_display(parent_method, parent_function),
+        unavailable_name
+    );
+    emit_runtime_signature_fatal(out, &message, source_path, method.line, indent);
+}
+
+fn emit_runtime_signature_fatal(
+    out: &mut String,
+    message: &str,
+    source_path: &str,
+    line: usize,
+    indent: &str,
+) {
+    out.push_str(indent);
+    out.push_str("ptn_emit_fatal_error_at(&runtime, \"");
+    out.push_str(&c_string(message));
+    out.push_str("\", \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
+fn runtime_return_candidate_should_autoload(
+    candidate_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    !runtime_class_type_static_subtype(candidate_name, target_name, classes)
+        || class_type_has_runtime_signature_validation(candidate_name, classes)
+}
+
+fn class_type_has_runtime_signature_validation(class_name: &str, classes: &[ClassDecl]) -> bool {
+    let Some(class) = class_by_name(classes, class_name) else {
+        return true;
+    };
+    class.methods.iter().any(|method| {
+        method.visibility != PropertyVisibility::Private
+            && find_runtime_visible_parent_method(class, &method.name, classes).is_some()
+    })
+}
+
+fn runtime_unavailable_class_name(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    runtime_first_unavailable_class_name(candidate, classes)
+        .or_else(|| runtime_first_unavailable_class_name(target, classes))
+}
+
+fn runtime_first_unavailable_class_name(
+    type_hint: &TypeHint,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    match type_hint {
+        TypeHint::Class(name) if !runtime_class_type_name_is_known(name, classes) => {
+            Some(name.clone())
+        }
+        TypeHint::Nullable(inner) => runtime_first_unavailable_class_name(inner, classes),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => types
+            .iter()
+            .find_map(|member| runtime_first_unavailable_class_name(member, classes)),
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Callable
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Class(_) => None,
+    }
+}
+
+fn runtime_class_type_name_is_known(name: &str, classes: &[ClassDecl]) -> bool {
+    class_by_name(classes, name).is_some()
+        || modeled_internal_class_name(name).is_some()
+        || runtime_modeled_builtin_interface_name(name)
+}
+
+fn runtime_modeled_builtin_interface_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "arrayaccess"
+            | "iterator"
+            | "iteratoraggregate"
+            | "outeriterator"
+            | "recursiveiterator"
+            | "seekableiterator"
+            | "splobserver"
+            | "splsubject"
+            | "traversable"
+            | "stringable"
+            | "throwable"
+            | "unitenum"
+            | "backedenum"
+            | "datetimeinterface"
+            | "random\\engine"
+            | "sessionhandlerinterface"
+            | "sessionupdatetimestamphandlerinterface"
+            | "countable"
+            | "serializable"
+    )
+}
+
+fn runtime_type_hint_static_subtype(
+    candidate: &TypeHint,
+    target: &TypeHint,
+    classes: &[ClassDecl],
+) -> bool {
+    if candidate == target
+        || matches!(target, TypeHint::Mixed)
+        || matches!(candidate, TypeHint::Never)
+    {
+        return true;
+    }
+    match (candidate, target) {
+        (TypeHint::Nullable(inner), _) => {
+            runtime_type_hint_static_subtype(inner, target, classes)
+                && runtime_type_hint_static_subtype(&TypeHint::Null, target, classes)
+        }
+        (_, TypeHint::Nullable(inner)) => {
+            runtime_type_hint_static_subtype(candidate, inner, classes)
+                || runtime_type_hint_static_subtype(candidate, &TypeHint::Null, classes)
+        }
+        (TypeHint::Union(types), _) => types
+            .iter()
+            .all(|member| runtime_type_hint_static_subtype(member, target, classes)),
+        (_, TypeHint::Union(types)) => types
+            .iter()
+            .any(|member| runtime_type_hint_static_subtype(candidate, member, classes)),
+        (TypeHint::True | TypeHint::False, TypeHint::Bool) => true,
+        (TypeHint::Class(_), TypeHint::Object) | (TypeHint::Static, TypeHint::Object) => true,
+        (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) => {
+            runtime_class_type_static_subtype(candidate_name, target_name, classes)
+        }
+        _ => false,
+    }
+}
+
+fn runtime_class_type_static_subtype(
+    candidate_name: &str,
+    target_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    if candidate_name.eq_ignore_ascii_case(target_name) {
+        return true;
+    }
+    let Some(candidate) = class_by_name(classes, candidate_name) else {
+        return false;
+    };
+    if class_transitive_interfaces(candidate, classes)
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case(target_name))
+    {
+        return true;
+    }
+    let mut parent_name = candidate.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if name.eq_ignore_ascii_case(target_name) {
+            return true;
+        }
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
+}
+
+fn runtime_method_signature_display(
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+) -> String {
+    let mut signature = String::new();
+    if function.return_by_ref {
+        signature.push('&');
+    }
+    signature.push_str(&method.name);
+    signature.push('(');
+    for (index, parameter) in function.parameters.iter().enumerate() {
+        if index > 0 {
+            signature.push_str(", ");
+        }
+        signature.push_str(&runtime_parameter_signature_display(parameter));
+    }
+    signature.push(')');
+    if let Some(return_type) = &function.return_type {
+        signature.push_str(": ");
+        signature.push_str(&type_hint_label(return_type));
+    }
+    signature
+}
+
+fn runtime_parameter_signature_display(parameter: &FunctionParameter) -> String {
+    let mut display = String::new();
+    if let Some(type_hint) = &parameter.type_hint {
+        display.push_str(&type_hint_label(type_hint));
+        display.push(' ');
+    }
+    if parameter.by_ref {
+        display.push('&');
+    }
+    if parameter.is_variadic {
+        display.push_str("...");
+    }
+    display.push('$');
+    display.push_str(&parameter.name);
+    display
+}
+
 fn collect_parent_runtime_abstract_methods(
     class: &ClassDecl,
     classes: &[ClassDecl],
@@ -22635,6 +23251,14 @@ fn emit_class_declaration_validation(
             line,
         );
     }
+    emit_class_method_signature_compatibility_validation(
+        out,
+        class,
+        classes,
+        functions,
+        class_index,
+        source_path,
+    );
     for conflict in class_inherited_property_conflicts(class, classes) {
         out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
         out.push_str(&c_string(&conflict.message));
@@ -23327,6 +23951,9 @@ fn emit_instruction(
                 out.push_str(");\n");
             }
             out.push_str("        } else {\n");
+            out.push_str("        runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 1;\n");
             emit_class_declaration_validation(
                 out,
                 &values.classes,
@@ -23335,9 +23962,6 @@ fn emit_instruction(
                 *line,
                 source_path,
             );
-            out.push_str("        runtime.declared_user_classes[");
-            out.push_str(&class_index.to_string());
-            out.push_str("] = 1;\n");
             out.push_str("        }\n");
             out.push_str("    }\n");
         }

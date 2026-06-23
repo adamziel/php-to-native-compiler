@@ -2090,10 +2090,6 @@ impl<'a> LoweringContext<'a> {
                 Statement::Empty { .. } => {}
                 Statement::ClassDeclaration { name, span, .. } => {
                     if let Some(class_index) = self.class_index_by_name(name) {
-                        instructions.push(Instruction::ValidateClass {
-                            class_index,
-                            line: span.line,
-                        });
                         let declaration_key =
                             class_runtime_declaration_key(&self.source_file, name);
                         if self.runtime_class_names.contains(&declaration_key) {
@@ -2103,6 +2099,11 @@ impl<'a> LoweringContext<'a> {
                                 class_index,
                                 line: span.line,
                                 allow_predeclared,
+                            });
+                        } else {
+                            instructions.push(Instruction::ValidateClass {
+                                class_index,
+                                line: span.line,
                             });
                         }
                     }

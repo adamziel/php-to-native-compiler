@@ -483,6 +483,7 @@ impl Parser<'_> {
                 &validation_classes,
                 &validation_traits,
                 &self.runtime_class_aliases,
+                local_class_count,
                 &mut self.compile_warnings,
             )?;
             validate_property_interface_set_visibility(&validation_classes)?;
@@ -14728,9 +14729,16 @@ fn validate_method_signature_compatibility(
     classes: &[ClassDecl],
     traits: &[TraitDecl],
     runtime_class_aliases: &HashMap<String, String>,
+    local_class_count: usize,
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
+        if class.is_conditionally_declared {
+            continue;
+        }
+        let type_validation_classes =
+            method_signature_type_validation_classes(classes, class_index, local_class_count);
+        let type_classes = type_validation_classes.as_slice();
         for method in &class.methods {
             if method.name.eq_ignore_ascii_case("__construct") {
                 if let Some((parent_class, parent_method)) =
@@ -14830,7 +14838,7 @@ fn validate_method_signature_compatibility(
                         method,
                         parent_class,
                         parent_method,
-                        classes,
+                        type_classes,
                         runtime_class_aliases,
                     )?;
                 } else if let Some((signature_class, signature_method)) =
@@ -14846,7 +14854,7 @@ fn validate_method_signature_compatibility(
                         method,
                         signature_class,
                         signature_method,
-                        classes,
+                        type_classes,
                         runtime_class_aliases,
                     )?;
                 }
@@ -14872,7 +14880,7 @@ fn validate_method_signature_compatibility(
                             method,
                             prototype_class,
                             prototype_method,
-                            classes,
+                            type_classes,
                             runtime_class_aliases,
                         )?;
                     }
@@ -14910,7 +14918,7 @@ fn validate_method_signature_compatibility(
                     method,
                     &trait_decl.name,
                     &normalized_trait_method,
-                    classes,
+                    type_classes,
                     runtime_class_aliases,
                 )?;
             }
@@ -14927,7 +14935,7 @@ fn validate_method_signature_compatibility(
                         class,
                         method,
                         &tentative_method,
-                        classes,
+                        type_classes,
                         runtime_class_aliases,
                         compile_warnings,
                     )?;
@@ -14941,7 +14949,7 @@ fn validate_method_signature_compatibility(
                     class,
                     method,
                     &tentative_method,
-                    classes,
+                    type_classes,
                     runtime_class_aliases,
                     compile_warnings,
                 )?;
@@ -14968,7 +14976,7 @@ fn validate_method_signature_compatibility(
                     method,
                     interface,
                     interface_method,
-                    classes,
+                    type_classes,
                     runtime_class_aliases,
                 )?;
             }
@@ -14998,12 +15006,28 @@ fn validate_method_signature_compatibility(
                 parent_method,
                 trait_name,
                 &normalized_trait_method,
-                classes,
+                type_classes,
                 runtime_class_aliases,
             )?;
         }
     }
     Ok(())
+}
+
+fn method_signature_type_validation_classes(
+    classes: &[ClassDecl],
+    class_index: usize,
+    local_class_count: usize,
+) -> Vec<ClassDecl> {
+    if class_index >= local_class_count {
+        return classes.to_vec();
+    }
+    classes
+        .iter()
+        .take(class_index + 1)
+        .chain(classes.iter().skip(local_class_count))
+        .cloned()
+        .collect()
 }
 
 fn collect_final_private_method_warnings(
