@@ -9267,6 +9267,10 @@ impl Parser<'_> {
                             Some(method.span),
                         ));
                     }
+                    if method.name.eq_ignore_ascii_case("__construct") {
+                        properties
+                            .extend(promoted_properties_from_constructor(&method, is_readonly));
+                    }
                     methods.push(method);
                 }
                 ParsedClassMember::Properties(parsed_properties) => {

@@ -7172,6 +7172,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
+    out.push_str("static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_enum_cases(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_non_public_debug_info(const char *name);\n");
@@ -16843,6 +16844,10 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     }
     out.push_str(" $");
     out.push_str(property.reflection_name());
+    if property.reflection_has_default() {
+        out.push_str(" = ");
+        out.push_str(&reflection_default_repr(property.reflection_value()));
+    }
     if property.reflection_has_hooks() {
         out.push_str(" {");
         if property.reflection_hook_has_get() {
@@ -16860,9 +16865,6 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
         let _ = property.reflection_hook_get_is_abstract();
         let _ = property.reflection_hook_set_is_abstract();
         out.push_str(" }");
-    } else if property.reflection_has_default() {
-        out.push_str(" = ");
-        out.push_str(&reflection_default_repr(property.reflection_value()));
     }
     out.push_str(" ]\n");
     out
@@ -18865,7 +18867,7 @@ fn trait_property_exists_entries<'a>(
             doc_comment: property.doc_comment.as_deref(),
             value: property.value.as_ref(),
             has_default: property.value.is_some()
-                || (!property.has_hooks && property.type_hint.is_none()),
+                || (!property.is_virtual && property.type_hint.is_none()),
         };
     let mut properties = Vec::new();
     properties.extend(
@@ -19171,7 +19173,7 @@ fn class_property_exists_chain<'a>(
                 doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some()
-                    || (!property.has_hooks && property.type_hint.is_none()),
+                    || (!property.is_virtual && property.type_hint.is_none()),
             }
         };
         let mut class_properties = Vec::new();

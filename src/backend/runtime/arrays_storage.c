@@ -2273,17 +2273,24 @@ static int ptn_lazy_object_reset_should_remove_property(
     if (metadata == NULL) {
         return 1;
     }
-    return class_name != NULL && ptn_ascii_case_equal(metadata->declaring_class, class_name);
+    if (class_name == NULL) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(metadata->declaring_class, class_name)) {
+        return 1;
+    }
+    return metadata->read_visibility != PTN_PROPERTY_PRIVATE &&
+        ptn_declared_class_property_exists(class_name, metadata->display_name);
 }
 
 static void ptn_lazy_object_mark_property_uninitialized(
     const PtnObjectPropertyMetadata *metadata
 ) {
-    if (metadata == NULL || metadata->type_kind == PTN_PROPERTY_TYPE_NONE) {
+    if (metadata == NULL) {
         return;
     }
     PtnObjectPropertyMetadata *mutable_metadata = (PtnObjectPropertyMetadata *)metadata;
-    mutable_metadata->is_unset = 1;
+    mutable_metadata->is_unset = metadata->type_kind == PTN_PROPERTY_TYPE_NONE ? 0 : 1;
     mutable_metadata->lazy_skip = 0;
     mutable_metadata->readonly_clone_reinitialized = 0;
     free(mutable_metadata->last_type_name);
@@ -2313,6 +2320,14 @@ static PTN_UNUSED void ptn_lazy_object_reset_property_storage(
     if (object == NULL || object->properties == NULL) {
         return;
     }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (ptn_lazy_object_reset_should_remove_property(metadata, class_name)) {
+            ptn_lazy_object_mark_property_uninitialized(metadata);
+        } else {
+            metadata->lazy_skip = 1;
+        }
+    }
     for (size_t i = 0; i < object->properties->len;) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         if (entry->key.type != PTN_ARRAY_KEY_STRING) {
@@ -2328,14 +2343,24 @@ static PTN_UNUSED void ptn_lazy_object_reset_property_storage(
         if (entry->value.type == PTN_REFERENCE) {
             ptn_reference_forget_property_type(entry->value.as.reference, metadata);
         }
-        if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_NONE) {
-            i++;
-            continue;
-        }
-        ptn_lazy_object_mark_property_uninitialized(metadata);
         PtnArrayKey key = ptn_array_string_key_len(entry->key.as.string, entry->key.string_len);
         ptn_array_unset_entry(object->properties, key);
     }
+}
+
+static PTN_UNUSED PtnValue ptn_lazy_object_detach_initialized_proxy_for_reset(
+    PtnObject *object
+) {
+    if (object == NULL || !object->lazy_is_proxy || object->lazy_uninitialized) {
+        return ptn_null();
+    }
+    PtnValue real = ptn_value_clone_deref(object->lazy_proxy_instance);
+    ptn_value_destroy(&object->lazy_proxy_instance);
+    object->lazy_proxy_instance = ptn_null();
+    object->lazy_is_proxy = 0;
+    object->lazy_options = 0;
+    object->lazy_initializing = 0;
+    return real;
 }
 
 static PTN_UNUSED void ptn_lazy_object_copy_properties_from_instance(

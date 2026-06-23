@@ -5150,7 +5150,9 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 ptn_throw_property_visibility_error(
                     runtime,
                     visibility,
-                    shared_property->declaring_class,
+                    visibility == PTN_PROPERTY_PROTECTED
+                        ? object->class_name
+                        : shared_property->declaring_class,
                     property,
                     line
                 );
@@ -5925,6 +5927,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
                     line
                 );
             }
+            return ptn_null();
+        }
+        if (metadata != NULL &&
+            metadata->type_kind == PTN_PROPERTY_TYPE_NONE &&
+            !metadata->is_unset) {
+            ptn_array_set_entry(
+                receiver.as.object->properties,
+                ptn_array_string_key(metadata->storage_name),
+                ptn_null()
+            );
             return ptn_null();
         }
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {

@@ -134859,6 +134859,8 @@ static int ptn_reflection_property_write_raw_storage_value(
     PtnArrayEntry *entry = ptn_array_entry_for_key(target.as.object->properties, key);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(target.as.object, metadata->storage_name);
+    int was_uninitialized_lazy_proxy =
+        target.as.object->lazy_uninitialized && target.as.object->lazy_is_proxy;
     if (metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         ptn_throw_readonly_property_error(
@@ -134906,6 +134908,15 @@ static int ptn_reflection_property_write_raw_storage_value(
         return 0;
     }
 
+    int initialized_proxy_during_coercion =
+        was_uninitialized_lazy_proxy &&
+        target.as.object->lazy_is_proxy &&
+        !target.as.object->lazy_uninitialized;
+    if (initialized_proxy_during_coercion) {
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+        return !ptn_runtime_has_active_exception(runtime);
+    }
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 0;
         mutable_metadata->lazy_skip = 1;
@@ -134925,7 +134936,9 @@ static int ptn_reflection_property_write_raw_storage_value(
     } else {
         ptn_array_set_entry_publish_first(target.as.object->properties, key, stored);
     }
-    ptn_lazy_object_sync_proxy_instance_properties(target.as.object);
+    if (!initialized_proxy_during_coercion) {
+        ptn_lazy_object_sync_proxy_instance_properties(target.as.object);
+    }
     ptn_object_release(target.as.object);
     return !ptn_runtime_has_active_exception(runtime);
 }
@@ -137009,9 +137022,21 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
         ptn_throw_exception(runtime, "ReflectionException", "Object is already lazy");
         return ptn_null();
     }
-    if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
-        ptn_object_run_destructor(object.as.object);
+    PtnValue detached_proxy_instance =
+        ptn_lazy_object_detach_initialized_proxy_for_reset(object.as.object);
+    PtnValue destructor_target = ptn_value_deref(detached_proxy_instance);
+    if (destructor_target.type != PTN_OBJECT ||
+        destructor_target.as.object == NULL ||
+        destructor_target.as.object == object.as.object) {
+        destructor_target = ptn_value_borrow(object);
     }
+    if (destructor_target.as.object != object.as.object) {
+        ptn_lazy_object_reset_property_storage(object.as.object, class_name);
+    }
+    if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
+        ptn_object_run_destructor(destructor_target.as.object);
+    }
+    ptn_value_destroy(&detached_proxy_instance);
     ptn_lazy_object_reset_property_storage(object.as.object, class_name);
     ptn_lazy_object_mark(object, initializer, is_proxy, options);
     return ptn_null();

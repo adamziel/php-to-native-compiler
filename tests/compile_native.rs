@@ -72522,6 +72522,186 @@ var_dump($outer->name);
 }
 
 #[test]
+fn compile_lazy_reset_preserves_additional_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reset-additional-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reset-additional-slots.php");
+    let output = root.join("lazy-reset-additional-slots-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetBaseSlot {
+    public $a;
+}
+class LazyResetChildSlot extends LazyResetBaseSlot {
+    public $b;
+}
+
+$reflector = new ReflectionClass(LazyResetBaseSlot::class);
+$obj = new LazyResetChildSlot();
+$obj->a = 1;
+$obj->b = 2;
+$reflector->resetAsLazyGhost($obj, function () {
+    echo \"init\\n\";
+});
+var_dump($obj->b);
+var_dump($reflector->isUninitializedLazyObject($obj));
+var_dump($obj->a);
+var_dump($reflector->isUninitializedLazyObject($obj));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nbool(true)\ninit\nNULL\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_reset_property_storage"));
+}
+
+#[test]
+fn compile_lazy_proxy_reset_and_raw_side_effect_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-reset-raw-side-effect");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-reset-raw-side-effect.php");
+    let output = root.join("lazy-proxy-reset-raw-side-effect-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetProxyEdge {
+    public function __construct(public $a, public $proxy = null) {}
+    public function __destruct() {
+        ob_start();
+        var_dump($this->proxy);
+        $dump = ob_get_clean();
+        echo strpos($dump, 'lazy proxy object') === false ? \"plain-proxy\\n\" : \"lazy-proxy\\n\";
+        echo strpos($dump, '[\"instance\"]=>') === false ? \"no-instance\\n\" : \"has-instance\\n\";
+    }
+}
+
+$resetRc = new ReflectionClass(LazyResetProxyEdge::class);
+$proxy = $resetRc->newLazyProxy(function ($proxy) {
+    return new LazyResetProxyEdge(1, $proxy);
+});
+$resetRc->initializeLazyObject($proxy);
+$resetRc->resetAsLazyProxy($proxy, function () {
+    return new LazyResetProxyEdge(2);
+});
+
+class LazyRawProxyEdge {
+    public string $a;
+    public string $b;
+    public function __construct() {
+        echo \"ctor\\n\";
+        $this->a = 'a';
+        $this->b = 'b';
+    }
+}
+
+$rawRc = new ReflectionClass(LazyRawProxyEdge::class);
+$rawProxy = $rawRc->newLazyProxy(function () {
+    return new LazyRawProxyEdge();
+});
+$value = new class($rawProxy) {
+    public function __construct(public object $obj) {}
+    public function __toString() {
+        return $this->obj->b;
+    }
+};
+$rawRc->getProperty('a')->setRawValueWithoutLazyInitialization($rawProxy, $value);
+$real = $rawRc->initializeLazyObject($rawProxy);
+var_dump($real->a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "plain-proxy\nno-instance\nctor\nstring(1) \"a\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_detach_initialized_proxy_for_reset"));
+}
+
+#[test]
+fn compile_lazy_reflection_property_metadata_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reflection-property-metadata-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reflection-property-metadata-edges.php");
+    let output = root.join("lazy-reflection-property-metadata-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazySkipMetadataBase {
+    protected $prot = 'prot';
+    public $hooked {
+        get { return $this->hooked; }
+        set($value) { $this->hooked = $value; }
+    }
+}
+class LazySkipMetadataChild extends LazySkipMetadataBase {}
+
+$obj = new LazySkipMetadataChild();
+try {
+    $name = 'prot';
+    var_dump($obj->$name);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$reflector = new ReflectionClass(LazySkipMetadataChild::class);
+foreach ($reflector->getProperties() as $property) {
+    if ($property->getName() === 'hooked') {
+        echo $property;
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot access protected property LazySkipMetadataChild::$prot\nProperty [ public $hooked = NULL { get; set; } ]\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ReflectionProperty"));
+}
+
+#[test]
 fn compile_lazy_proxy_magic_get_reference_fetch_uses_effective_instance_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-proxy-magic-get-reference-fetch");
     fs::create_dir_all(&root).unwrap();
