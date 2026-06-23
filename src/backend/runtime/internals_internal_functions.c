@@ -7563,6 +7563,16 @@ static const char *ptn_function_metadata_parameter_doc_comment(
     return NULL;
 }
 
+static PtnParameterDefaultProvider ptn_function_metadata_parameter_default_provider(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    if (metadata.parameters != NULL && index < metadata.parameter_count) {
+        return metadata.parameters[index].default_value_provider;
+    }
+    return NULL;
+}
+
 static int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, size_t index) {
     if (metadata.parameters != NULL && index < metadata.parameter_count) {
         return metadata.parameters[index].by_ref;
@@ -155958,6 +155968,14 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     if (ptn_ascii_case_equal(name, "getDefaultValue")) {
         if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
             return ptn_reflection_parameter_throw_default_unavailable(runtime);
+        }
+        PtnParameterDefaultProvider default_provider =
+            ptn_function_metadata_parameter_default_provider(metadata, index);
+        if (default_provider != NULL) {
+            char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+            PtnValue value = default_provider(runtime, scope_class_name, line);
+            free(scope_class_name);
+            return value;
         }
         const char *constant_name =
             ptn_function_metadata_parameter_default_constant_name(metadata, index);
