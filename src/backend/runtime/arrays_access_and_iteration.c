@@ -1115,6 +1115,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_array_iterator(lookup_class_name)) {
         return ptn_array_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_empty_iterator(lookup_class_name)) {
+        return ptn_empty_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_array_object(lookup_class_name)) {
         return ptn_array_object_new(runtime, argc, args, line);
     }
@@ -11387,6 +11390,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
         ptn_internal_class_method_exists("ArrayIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "EmptyIterator") &&
+        ptn_internal_class_method_exists("EmptyIterator", method_name)) {
         return 1;
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray") &&

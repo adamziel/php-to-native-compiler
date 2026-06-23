@@ -2037,6 +2037,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_constant(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_empty_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_append_iterator(const char *class_name);
@@ -2578,6 +2579,20 @@ static PTN_UNUSED PtnValue ptn_array_iterator_clone(
 );
 static PTN_UNUSED PtnValue ptn_recursive_array_iterator_new(
     PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_empty_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_empty_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
     size_t argc,
     const PtnValue *args,
     size_t line

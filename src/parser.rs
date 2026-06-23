@@ -12762,6 +12762,9 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "jsonexception"
             | "soapfault"
             | "uri\\whatwg\\invalidurlexception"
+            | "logicexception"
+            | "badfunctioncallexception"
+            | "badmethodcallexception"
             | "runtimeexception"
             | "invalidargumentexception"
             | "unexpectedvalueexception"
@@ -16205,6 +16208,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("stdClass")
         || name.eq_ignore_ascii_case("Closure")
         || name.eq_ignore_ascii_case("ArrayIterator")
+        || name.eq_ignore_ascii_case("EmptyIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
         || name.eq_ignore_ascii_case("DirectoryIterator")
@@ -16749,6 +16753,8 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
     }
     let implemented = if candidate_name.eq_ignore_ascii_case("ArrayIterator") {
         &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("EmptyIterator") {
+        &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("IteratorIterator") {
         &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("ArrayObject") {

@@ -69,6 +69,9 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("RequestParseBodyException", "Exception"),
     ("Filter\\FilterException", "Exception"),
     ("Filter\\FilterFailedException", "Filter\\FilterException"),
+    ("LogicException", "Exception"),
+    ("BadFunctionCallException", "LogicException"),
+    ("BadMethodCallException", "BadFunctionCallException"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),
@@ -1498,6 +1501,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"EmptyIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
@@ -2003,15 +2010,32 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED void ptn_throw_user_return_type_error(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line) {\n",
     );
     out.push_str("    const char *given = value_was_returned ? ptn_user_type_hint_given_name(value) : \"none\";\n");
-    out.push_str("    int needed = snprintf(NULL, 0, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
+    out.push_str("    const char *display_function_name = function_name;\n");
+    out.push_str("    char *display_function_name_owned = NULL;\n");
+    out.push_str("    if (runtime != NULL && function_name != NULL && strncmp(function_name, \"{closure:\", 9) == 0 && runtime->current_class_name != NULL) {\n");
+    out.push_str("        int display_needed = snprintf(NULL, 0, \"%s::%s\", runtime->current_class_name, function_name);\n");
+    out.push_str("        if (display_needed < 0) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        display_function_name_owned = malloc((size_t)display_needed + 1);\n");
+    out.push_str("        if (display_function_name_owned == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        snprintf(display_function_name_owned, (size_t)display_needed + 1, \"%s::%s\", runtime->current_class_name, function_name);\n");
+    out.push_str("        display_function_name = display_function_name_owned;\n");
+    out.push_str("    }\n");
+    out.push_str("    int needed = snprintf(NULL, 0, \"%s(): Return value must be of type %s, %s returned\", display_function_name, expected_type_name, given);\n");
     out.push_str("    if (needed < 0) {\n");
+    out.push_str("        free(display_function_name_owned);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
     out.push_str("    char *message = malloc((size_t)needed + 1);\n");
     out.push_str("    if (message == NULL) {\n");
+    out.push_str("        free(display_function_name_owned);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    snprintf(message, (size_t)needed + 1, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
+    out.push_str("    snprintf(message, (size_t)needed + 1, \"%s(): Return value must be of type %s, %s returned\", display_function_name, expected_type_name, given);\n");
+    out.push_str("    free(display_function_name_owned);\n");
     out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime != NULL ? runtime->source_path : NULL, line);\n");
     out.push_str("}\n");
 
@@ -2591,7 +2615,7 @@ fn emit_user_functions(
             out.push_str("    if (receiver.type == PTN_CLOSURE && receiver.as.closure->scope_class_name != NULL) {\n");
             out.push_str("        const char *ptn_closure_trace_scope = receiver.as.closure->scope_class_name;\n");
             out.push_str("        PtnValue ptn_closure_bound_this;\n");
-            out.push_str("        const char *ptn_closure_trace_separator = (ptn_ascii_case_equal(ptn_closure_trace_scope, \"Closure\") && ptn_symbols_get(&receiver.as.closure->captures, \"this\", &ptn_closure_bound_this)) ? \"->\" : \"::\";\n");
+            out.push_str("        const char *ptn_closure_trace_separator = ptn_symbols_get(&receiver.as.closure->captures, \"this\", &ptn_closure_bound_this) ? \"->\" : \"::\";\n");
             out.push_str("        int ptn_closure_trace_needed = snprintf(NULL, 0, \"%s%s");
             out.push_str(&c_string(&function.display_name));
             out.push_str("\", ptn_closure_trace_scope, ptn_closure_trace_separator);\n");
@@ -7334,6 +7358,7 @@ fn emit_class_metadata_helpers(
         "WeakReference",
         "ArrayObject",
         "ArrayIterator",
+        "EmptyIterator",
         "RecursiveArrayIterator",
         "SplFixedArray",
         "SplObjectStorage",
@@ -8109,6 +8134,7 @@ fn emit_class_metadata_helpers(
         "WeakMap",
         "WeakReference",
         "ArrayIterator",
+        "EmptyIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
         "SplObjectStorage",
@@ -19994,6 +20020,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "cachingiterator" => Some("CachingIterator"),
         "callbackfilteriterator" => Some("CallbackFilterIterator"),
         "directoryiterator" => Some("DirectoryIterator"),
+        "emptyiterator" => Some("EmptyIterator"),
         "filesystemiterator" => Some("FilesystemIterator"),
         "globiterator" => Some("GlobIterator"),
         "recursivedirectoryiterator" => Some("RecursiveDirectoryIterator"),
@@ -29598,6 +29625,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("CachingIterator")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("DirectoryIterator")
+                || class_name.eq_ignore_ascii_case("EmptyIterator")
                 || class_name.eq_ignore_ascii_case("FilesystemIterator")
                 || class_name.eq_ignore_ascii_case("GlobIterator")
                 || class_name.eq_ignore_ascii_case("FilterIterator")

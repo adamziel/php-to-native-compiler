@@ -475,6 +475,125 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_empty_iterator_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-empty-iterator-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("empty-iterator-surface.php");
+    let output = root.join("empty-iterator-surface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function make_iterator(): Iterator {
+    return new EmptyIterator();
+}
+class EmptyIteratorEx extends EmptyIterator {}
+
+$it = make_iterator();
+var_dump($it);
+var_dump($it instanceof Iterator, $it instanceof Traversable, class_exists("EmptyIterator"));
+var_dump($it->valid());
+$count = 0;
+foreach ($it as $key => $value) {
+    $count++;
+}
+var_dump($count);
+$child = new EmptyIteratorEx();
+var_dump(method_exists($child, "valid"), $child->valid());
+foreach ($child as $value) {
+    $count++;
+}
+var_dump($count);
+try {
+    $it->current();
+} catch (BadMethodCallException $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    $it->key();
+} catch (LogicException $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(EmptyIterator)#1 (0) {\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(0)\n",
+            "BadMethodCallException: Accessing the value of an EmptyIterator\n",
+            "BadMethodCallException: Accessing the key of an EmptyIterator\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scoped_closure_return_type_error_uses_trace_name() {
+    let root = temp_dir("ptn-native-scoped-closure-return-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scoped-closure-return-type-error.php");
+    let output = root.join("scoped-closure-return-type-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public function bar() {
+        return function (): array {
+            return null;
+        };
+    }
+}
+
+(new Foo)->bar()();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        !execution.status.success(),
+        "native unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8(execution.stdout).unwrap(),
+        String::from_utf8(execution.stderr).unwrap()
+    );
+    assert!(
+        combined.contains("Fatal error: Uncaught TypeError: Foo::{closure:Foo::bar():4}(): Return value must be of type array, null returned"),
+        "{combined}"
+    );
+    assert!(
+        combined.contains("): Foo->{closure:Foo::bar():4}()"),
+        "{combined}"
+    );
+}
+
+#[test]
 fn compile_spl_fixed_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-surface");
     fs::create_dir_all(&root).unwrap();

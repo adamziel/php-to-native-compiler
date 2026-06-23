@@ -2239,6 +2239,15 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "RequestParseBodyException")) {
         return "RequestParseBodyException";
     }
+    if (ptn_exception_name_equal(class_name, "LogicException")) {
+        return "LogicException";
+    }
+    if (ptn_exception_name_equal(class_name, "BadFunctionCallException")) {
+        return "BadFunctionCallException";
+    }
+    if (ptn_exception_name_equal(class_name, "BadMethodCallException")) {
+        return "BadMethodCallException";
+    }
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
@@ -2368,11 +2377,21 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "DateMalformedStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException") ||
             ptn_exception_name_equal(class_name, "DateMalformedPeriodStringException") ||
+            ptn_exception_name_equal(class_name, "LogicException") ||
+            ptn_exception_name_equal(class_name, "BadFunctionCallException") ||
+            ptn_exception_name_equal(class_name, "BadMethodCallException") ||
             ptn_exception_name_equal(class_name, "RuntimeException") ||
             ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
             ptn_exception_name_equal(class_name, "UnexpectedValueException") ||
             ptn_exception_name_equal(class_name, "OutOfBoundsException") ||
             ptn_exception_name_equal(class_name, "OutOfRangeException");
+    }
+    if (ptn_exception_name_equal(type_name, "LogicException")) {
+        return ptn_exception_name_equal(class_name, "BadFunctionCallException") ||
+            ptn_exception_name_equal(class_name, "BadMethodCallException");
+    }
+    if (ptn_exception_name_equal(type_name, "BadFunctionCallException")) {
+        return ptn_exception_name_equal(class_name, "BadMethodCallException");
     }
     if (ptn_exception_name_equal(type_name, "RuntimeException")) {
         return ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
@@ -7766,6 +7785,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("AppendIterator", name)
     ) {
         return ptn_append_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "EmptyIterator")
+        && ptn_internal_class_method_exists("EmptyIterator", name)
+    ) {
+        return ptn_empty_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

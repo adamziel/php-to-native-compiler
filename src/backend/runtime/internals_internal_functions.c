@@ -128706,6 +128706,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *clas
     return ptn_ascii_case_equal(class_name, "ArrayIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_empty_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "EmptyIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "RecursiveArrayIterator");
 }
@@ -129174,6 +129178,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
         || ptn_internal_class_name_is_array_iterator(class_name)
+        || ptn_internal_class_name_is_empty_iterator(class_name)
         || ptn_internal_class_name_is_recursive_array_iterator(class_name)
         || ptn_internal_class_name_is_array_object(class_name)
         || ptn_internal_class_name_is_spl_fixed_array(class_name)
@@ -130308,6 +130313,14 @@ static int ptn_array_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_empty_iterator_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
 static int ptn_array_object_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__serialize")
@@ -130915,6 +130928,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
         return ptn_array_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_empty_iterator(class_name)) {
+        return ptn_empty_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_intl_break_iterator(class_name) ||
         ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name) ||
@@ -132032,6 +132048,17 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "append",
             "current",
             "getIteratorIndex",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_empty_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
             "key",
             "next",
             "rewind",
@@ -134896,6 +134923,7 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_deprecated(class_name)
             || ptn_internal_class_name_is_no_discard(class_name)
             || ptn_internal_class_name_is_array_iterator(class_name)
+            || ptn_internal_class_name_is_empty_iterator(class_name)
             || ptn_internal_class_name_is_recursive_array_iterator(class_name)
             || ptn_internal_class_name_is_array_object(class_name)
             || ptn_internal_class_name_is_callback_filter_iterator(class_name)
@@ -139998,6 +140026,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         return "uri";
     }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
+        ptn_internal_class_name_is_empty_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name) ||
         ptn_internal_class_name_is_array_object(class_name) ||
         ptn_internal_class_name_is_callback_filter_iterator(class_name) ||
@@ -152417,6 +152446,73 @@ static PTN_UNUSED PtnValue ptn_recursive_array_iterator_new(
     size_t line
 ) {
     return ptn_array_iterator_new_for_class(runtime, "RecursiveArrayIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_empty_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_object_new_shell(runtime, "EmptyIterator");
+}
+
+static PTN_UNUSED PtnValue ptn_empty_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)receiver;
+    (void)args;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "EmptyIterator::%s() expects exactly 0 arguments, %zu given",
+            name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "rewind") || ptn_ascii_case_equal(name, "next")) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_throw_exception_at(
+            runtime,
+            "BadMethodCallException",
+            "Accessing the value of an EmptyIterator",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_throw_exception_at(
+            runtime,
+            "BadMethodCallException",
+            "Accessing the key of an EmptyIterator",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PtnArrayObjectData *ptn_array_object_data_create(
@@ -166931,6 +167027,16 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
     }
     if (!exists) {
         exists = ptn_internal_class_method_exists(resolved_class_name, method_name);
+    }
+    if (!exists && ptn_declared_user_class_or_interface_exists(resolved_class_name)) {
+        const char *parent_class_name = ptn_declared_class_parent_name(resolved_class_name);
+        while (parent_class_name != NULL) {
+            if (ptn_internal_class_method_exists(parent_class_name, method_name)) {
+                exists = 1;
+                break;
+            }
+            parent_class_name = ptn_declared_class_parent_name(parent_class_name);
+        }
     }
     free(method_name);
     free(class_name);
