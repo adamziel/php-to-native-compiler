@@ -30081,6 +30081,19 @@ echo get_class($ref->getExecutingGenerator()), \"\\n\";
 echo $ref->getFunction()->getName(), \"\\n\";
 echo get_class($ref->getThis()), \"\\n\";
 
+$anonGen = (new class {
+    public function a() {
+        yield from foo();
+    }
+})->a();
+$anonGen->valid();
+$anonRef = new ReflectionGenerator($anonGen);
+$anonMethod = $anonRef->getFunction();
+echo substr($anonMethod->class, 0, 16), \"\\n\";
+echo $anonMethod->getName(), \"\\n\";
+$anonTrace = $anonRef->getTrace();
+echo substr($anonTrace[1]['class'], 0, 16), \"\\n\";
+
 $closureGen = (function() {
     yield;
 })();
@@ -30101,7 +30114,7 @@ echo $ref->getFunction()->getName(), \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Generator\na\nC\n{closure:\nNULL\na\n"
+        "Generator\na\nC\nclass@anonymous#\na\nclass@anonymous#\n{closure:\nNULL\na\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

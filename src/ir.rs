@@ -1944,11 +1944,12 @@ impl<'a> LoweringContext<'a> {
                 }
             })
             .collect();
+        let class_display_name = class_display_name(class);
         let methods = class
             .methods
             .iter()
             .map(|method| {
-                let method_display_name = format!("{}::{}", class.name, method.name);
+                let method_display_name = format!("{class_display_name}::{}", method.name);
                 let previous_function_display_name = std::mem::replace(
                     &mut self.current_function_display_name,
                     Some(method_display_name.clone()),
@@ -1986,7 +1987,7 @@ impl<'a> LoweringContext<'a> {
                 let function_index = self.functions.len();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
-                    display_name: format!("{}::{}", class.name, method.name),
+                    display_name: method_display_name.clone(),
                     source_file: self.source_file.clone(),
                     strict_types: self.strict_types,
                     doc_comment: method.doc_comment.clone(),
@@ -3427,6 +3428,14 @@ fn lower_class_property_type_hint(
         lowered.text = "self".to_string();
     }
     lowered
+}
+
+fn class_display_name(class: &AstClassDecl) -> String {
+    if class.is_anonymous && !class.name.contains("@anonymous#") {
+        format!("{}#ptn", class.name)
+    } else {
+        class.name.clone()
+    }
 }
 
 fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
