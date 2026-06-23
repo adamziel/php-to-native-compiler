@@ -77165,7 +77165,6 @@ static int ptn_session_user_read(PtnRuntime *runtime, char **data_out, size_t *l
     PtnValue resolved = ptn_value_deref(result);
     if (resolved.type != PTN_STRING) {
         ptn_value_destroy(&result);
-        ptn_emit_runtime_warning(runtime, "session_start(): Failed to read session data: user (path: )", line);
         return 0;
     }
     *data_out = ptn_duplicate_string_len((const char *)resolved.as.string.data, resolved.as.string.len);
@@ -78035,6 +78034,14 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
         if (!ptn_session_user_read(runtime, &file_data, &file_len, line)) {
             ptn_value_destroy(&session_data);
             (void)ptn_session_user_close(runtime, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+            ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+            ptn_value_destroy(&empty);
+            ptn_session_id_set(runtime, "");
+            ptn_emit_runtime_warning(runtime, "session_start(): Failed to read session data: user (path: )", line);
             return ptn_bool(0);
         }
         ptn_session_set_last_data(runtime, file_data, file_len);
@@ -78398,7 +78405,7 @@ static PtnValue ptn_internal_session_set_save_handler(PtnRuntime *runtime, size_
                 line
             );
         }
-        ptn_emit_runtime_warning(
+        ptn_session_reject_active_change(
             runtime,
             "session_set_save_handler(): Session save handler cannot be changed when a session is active (started from ptn on line 0)",
             line
