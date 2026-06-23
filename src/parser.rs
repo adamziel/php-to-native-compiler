@@ -3199,7 +3199,7 @@ impl Parser<'_> {
                 ));
             }
             let mut hooks = self.parse_property_hook_block(class_name, &name, visibility)?;
-            if value.is_some() {
+            if value.is_some() && !(hooks.has_get && hooks.has_set) {
                 hooks.is_virtual = false;
             }
             reject_asymmetric_virtual_property_hook_metadata(

@@ -10704,6 +10704,32 @@ fn parser_rejects_asymmetric_virtual_property_hooks() {
 }
 
 #[test]
+fn parser_rejects_default_on_explicit_virtual_property_hooks() {
+    let error =
+        parser::parse("<?php class Test { public $prop = 0 { get {} set {} } }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot specify default value for virtual hooked property Test::$prop"
+    );
+
+    let error = parser::parse(
+        "<?php
+class A { public $prop { get {} set {} } }
+class B extends A { public $prop = 0 { get {} set {} } }
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot specify default value for virtual hooked property B::$prop"
+    );
+
+    parser::parse("<?php class Test { public $prop = 0 { get { return $this->prop; } set {} } }")
+        .unwrap();
+    parser::parse("<?php class Test { public $prop = 0 { get { return 42; } } }").unwrap();
+}
+
+#[test]
 fn parser_accepts_local_class_declaration_before_nested_parse_errors() {
     let error = parser::parse(
         "<?php
