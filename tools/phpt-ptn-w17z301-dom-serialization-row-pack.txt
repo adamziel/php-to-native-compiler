@@ -1,0 +1,20 @@
+# ptn-w17z.301 exact DOM XML/HTML serialization row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260622T215348Z/resume-statuses.tsv
+
+ext/dom/tests/modern/spec/xml_serialize_LIBXML_NOEMPTYTAG.phpt
+ext/dom/tests/modern/spec/serialize_xml_ns_decl.phpt
+ext/dom/tests/modern/spec/serialize_element_unqualified.phpt
+ext/dom/tests/modern/spec/serialize_non_default_empty_xmlns.phpt
+ext/dom/tests/modern/spec/serialize_xml_attribute.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_ns_imported_02.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_ns_imported_04.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_ns_imported_06.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_text_02.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_attribute_ns.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_processing_instruction.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_doctype.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_roots.phpt
+ext/dom/tests/modern/html/serializer/Element_outerHTML.phpt
+ext/dom/tests/modern/html/serializer/Element_outerHTML_invalid_tree.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_escape_attribute.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_serialize_text_01.phpt
