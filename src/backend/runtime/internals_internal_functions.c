@@ -93719,6 +93719,7 @@ static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node);
 static void ptn_dom_element_attach_attribute(PtnRuntime *runtime, PtnXmlNode *element, PtnXmlNode *attr, PtnXmlNode *replace, int preserve_replaced_name);
 static void ptn_xml_invalidate_entity_reference_declarations(PtnXmlNode *node);
 static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node, int preserve_root_declaration_children);
+static void ptn_xml_mark_detached_doctype_declarations(PtnXmlNode *node);
 static void ptn_xml_mark_detached_transient_parents(PtnXmlNode *node);
 static void ptn_xml_clear_detached_parent_hidden_recursive(PtnXmlNode *node);
 static void ptn_xml_skip_ws(const char *data, size_t len, size_t *pos);
@@ -94007,6 +94008,9 @@ static void ptn_xml_detach_child(PtnXmlNode *node) {
     if (!found) {
         node->parent = NULL;
         ptn_xml_mark_detached_entity_references(node, node->type == PTN_XML_NODE_ENTITY_REFERENCE);
+        if (removed_doctype) {
+            ptn_xml_mark_detached_doctype_declarations(node);
+        }
         ptn_xml_mark_detached_transient_parents(node);
         return;
     }
@@ -94016,6 +94020,9 @@ static void ptn_xml_detach_child(PtnXmlNode *node) {
     parent->child_count--;
     node->parent = NULL;
     ptn_xml_mark_detached_entity_references(node, node->type == PTN_XML_NODE_ENTITY_REFERENCE);
+    if (removed_doctype) {
+        ptn_xml_mark_detached_doctype_declarations(node);
+    }
     ptn_xml_mark_detached_transient_parents(node);
     if (removed_doctype) {
         ptn_xml_invalidate_entity_reference_declarations(document);
@@ -94530,6 +94537,22 @@ static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node, int preser
     }
     for (size_t i = 0; i < node->child_count; i++) {
         ptn_xml_mark_detached_entity_references(node->children[i], 0);
+    }
+}
+
+static void ptn_xml_mark_detached_doctype_declarations(PtnXmlNode *node) {
+    if (node == NULL) {
+        return;
+    }
+    int doctype_parent = node->type == PTN_XML_NODE_DOCUMENT_TYPE;
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (doctype_parent &&
+            child != NULL &&
+            (child->type == PTN_XML_NODE_ENTITY || child->type == PTN_XML_NODE_NOTATION)) {
+            child->detached_parent_hidden = 1;
+        }
+        ptn_xml_mark_detached_doctype_declarations(child);
     }
 }
 
@@ -97396,6 +97419,22 @@ static void ptn_html_append_escaped_text(PtnStringBuffer *buffer, PtnXmlNode *no
     }
 }
 
+static int ptn_html_attribute_name_uses_prefix(const char *name, const char *prefix, size_t prefix_len) {
+    name = name == NULL ? "" : name;
+    return strncmp(name, prefix, prefix_len) == 0 && name[prefix_len] == ':';
+}
+
+static int ptn_html_attribute_uses_prefix(PtnXmlNode *attr, const char *prefix, size_t prefix_len) {
+    if (attr == NULL) {
+        return 0;
+    }
+    if (ptn_html_attribute_name_uses_prefix(attr->name, prefix, prefix_len)) {
+        return 1;
+    }
+    return attr->serialized_name != NULL &&
+        ptn_html_attribute_name_uses_prefix(attr->serialized_name, prefix, prefix_len);
+}
+
 static int ptn_html_namespace_declaration_supports_attribute(PtnXmlNode *element, PtnXmlNode *attr) {
     if (element == NULL || attr == NULL || !ptn_xml_attribute_is_namespace_declaration(attr)) {
         return 0;
@@ -97408,11 +97447,10 @@ static int ptn_html_namespace_declaration_supports_attribute(PtnXmlNode *element
     size_t prefix_len = strlen(prefix);
     for (size_t i = 0; i < element->attribute_count; i++) {
         PtnXmlNode *candidate = element->attributes[i];
-        const char *candidate_name = candidate == NULL || candidate->name == NULL ? "" : candidate->name;
         if (candidate == attr || ptn_xml_attribute_is_namespace_declaration(candidate)) {
             continue;
         }
-        if (strncmp(candidate_name, prefix, prefix_len) == 0 && candidate_name[prefix_len] == ':') {
+        if (ptn_html_attribute_uses_prefix(candidate, prefix, prefix_len)) {
             return 1;
         }
     }

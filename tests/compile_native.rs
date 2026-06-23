@@ -41067,6 +41067,28 @@ $entityRef->parentNode->remove();
 unset($doc);
 var_dump($entityRef->nodeName);
 var_dump($entityRef->textContent);
+
+$doc = new DOMDocument;
+$doc->loadXML(<<<'XML'
+<?xml version="1.0"?>
+<!DOCTYPE books [
+<!ENTITY test "entity is only for test purposes">
+<!ENTITY myimage PUBLIC "-" "mypicture.gif" NDATA GIF>
+]>
+<container/>
+XML);
+$ref1 = $doc->createEntityReference("test");
+$ref2 = $doc->createEntityReference("myimage");
+$entity1 = $doc->doctype->entities[0];
+$entity2 = $doc->doctype->entities[1];
+if (strcmp($entity1->nodeName, $entity2->nodeName) < 0) {
+    [$entity1, $entity2] = [$entity2, $entity1];
+}
+var_dump($entity1->nodeName, $entity1->parentNode->nodeName);
+var_dump($entity2->nodeName, $entity2->parentNode->nodeName);
+$doc->removeChild($doc->doctype);
+var_dump($entity1->nodeName, $entity1->parentNode);
+var_dump($entity2->nodeName, $entity2->parentNode);
 "#,
     )
     .unwrap();
@@ -41104,6 +41126,14 @@ var_dump($entityRef->textContent);
             "\n",
             "string(4) \"test\"\n",
             "string(0) \"\"\n",
+            "string(4) \"test\"\n",
+            "string(5) \"books\"\n",
+            "string(7) \"myimage\"\n",
+            "string(5) \"books\"\n",
+            "string(4) \"test\"\n",
+            "NULL\n",
+            "string(7) \"myimage\"\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(delayed_execution.stderr).unwrap(), "");
