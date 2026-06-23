@@ -66838,13 +66838,112 @@ static uint32_t ptn_mb_windows_1254_decode_byte(unsigned char byte) {
 }
 
 static int ptn_mb_windows_1254_encode_codepoint(uint32_t cp, unsigned char *byte_out) {
-    for (unsigned int byte = 0; byte <= 0xff; byte++) {
-        if (ptn_mb_windows_1254_decode_byte((unsigned char)byte) == cp) {
-            *byte_out = (unsigned char)byte;
-            return 1;
-        }
+    if (cp <= 0x7f) {
+        *byte_out = (unsigned char)cp;
+        return 1;
     }
-    return 0;
+    if (cp >= 0xa0 && cp <= 0xff &&
+        cp != 0xd0 && cp != 0xdd && cp != 0xde && cp != 0xf0 && cp != 0xfd && cp != 0xfe) {
+        *byte_out = (unsigned char)cp;
+        return 1;
+    }
+    switch (cp) {
+        case 0x20ac:
+            *byte_out = 0x80;
+            return 1;
+        case 0x201a:
+            *byte_out = 0x82;
+            return 1;
+        case 0x0192:
+            *byte_out = 0x83;
+            return 1;
+        case 0x201e:
+            *byte_out = 0x84;
+            return 1;
+        case 0x2026:
+            *byte_out = 0x85;
+            return 1;
+        case 0x2020:
+            *byte_out = 0x86;
+            return 1;
+        case 0x2021:
+            *byte_out = 0x87;
+            return 1;
+        case 0x02c6:
+            *byte_out = 0x88;
+            return 1;
+        case 0x2030:
+            *byte_out = 0x89;
+            return 1;
+        case 0x0160:
+            *byte_out = 0x8a;
+            return 1;
+        case 0x2039:
+            *byte_out = 0x8b;
+            return 1;
+        case 0x0152:
+            *byte_out = 0x8c;
+            return 1;
+        case 0x2018:
+            *byte_out = 0x91;
+            return 1;
+        case 0x2019:
+            *byte_out = 0x92;
+            return 1;
+        case 0x201c:
+            *byte_out = 0x93;
+            return 1;
+        case 0x201d:
+            *byte_out = 0x94;
+            return 1;
+        case 0x2022:
+            *byte_out = 0x95;
+            return 1;
+        case 0x2013:
+            *byte_out = 0x96;
+            return 1;
+        case 0x2014:
+            *byte_out = 0x97;
+            return 1;
+        case 0x02dc:
+            *byte_out = 0x98;
+            return 1;
+        case 0x2122:
+            *byte_out = 0x99;
+            return 1;
+        case 0x0161:
+            *byte_out = 0x9a;
+            return 1;
+        case 0x203a:
+            *byte_out = 0x9b;
+            return 1;
+        case 0x0153:
+            *byte_out = 0x9c;
+            return 1;
+        case 0x0178:
+            *byte_out = 0x9f;
+            return 1;
+        case 0x011e:
+            *byte_out = 0xd0;
+            return 1;
+        case 0x0130:
+            *byte_out = 0xdd;
+            return 1;
+        case 0x015e:
+            *byte_out = 0xde;
+            return 1;
+        case 0x011f:
+            *byte_out = 0xf0;
+            return 1;
+        case 0x0131:
+            *byte_out = 0xfd;
+            return 1;
+        case 0x015f:
+            *byte_out = 0xfe;
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 static int ptn_mb_windows_1254_validate_bytes(const char *data, size_t len) {
@@ -66921,15 +67020,25 @@ static char *ptn_mb_windows_1254_encode_from_utf16_alloc(
     int64_t *illegal_chars,
     size_t *output_len
 ) {
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
+    size_t units = (input_len + 1) / 2;
+    size_t max_unit_len = replacement_len > 1 ? replacement_len : 1;
+    if (units > (SIZE_MAX - 1) / max_unit_len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out_cap = units * max_unit_len + 1;
+    char *output = malloc(out_cap);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out_len = 0;
     size_t offset = 0;
     while (offset < input_len) {
         if (offset + 1 >= input_len) {
             if (illegal_chars != NULL) {
                 (*illegal_chars)++;
             }
-            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+            memcpy(output + out_len, replacement, replacement_len);
+            out_len += replacement_len;
             break;
         }
         unsigned char first = (unsigned char)input[offset];
@@ -66938,16 +67047,18 @@ static char *ptn_mb_windows_1254_encode_from_utf16_alloc(
         offset += 2;
         unsigned char byte = 0;
         if ((cp < 0xd800 || cp > 0xdfff) && ptn_mb_windows_1254_encode_codepoint(cp, &byte)) {
-            ptn_string_buffer_append_char(&output, (char)byte);
+            output[out_len++] = (char)byte;
             continue;
         }
         if (illegal_chars != NULL) {
             (*illegal_chars)++;
         }
-        ptn_string_buffer_append_len(&output, replacement, replacement_len);
+        memcpy(output + out_len, replacement, replacement_len);
+        out_len += replacement_len;
     }
-    *output_len = output.len;
-    return output.data;
+    output[out_len] = '\0';
+    *output_len = out_len;
+    return output;
 }
 
 static char *ptn_mb_windows_1254_decode_to_utf16_alloc(
@@ -70318,6 +70429,39 @@ static PtnValue ptn_internal_mb_regex_set_options(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
+    if (argc >= 1) {
+        PtnStringOperand key = ptn_value_to_string_operand(args[0]);
+        PtnValue value = ptn_bool(0);
+        if (ptn_string_operand_ascii_case_equal(key, "internal_encoding")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "http_output")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_http_output(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "http_input")) {
+            value = ptn_string("pass");
+        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload")) {
+            value = ptn_int(0);
+        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload_list")) {
+            value = ptn_string("no overload");
+        } else if (ptn_string_operand_ascii_case_equal(key, "mail_charset")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "mail_header_encoding")) {
+            value = ptn_string("BASE64");
+        } else if (ptn_string_operand_ascii_case_equal(key, "mail_body_encoding")) {
+            value = ptn_string("BASE64");
+        } else if (ptn_string_operand_ascii_case_equal(key, "illegal_chars")) {
+            value = ptn_int(ptn_mb_illegal_chars);
+        } else if (ptn_string_operand_ascii_case_equal(key, "encoding_translation")) {
+            value = ptn_string("Off");
+        } else if (ptn_string_operand_ascii_case_equal(key, "language")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language()));
+        } else if (ptn_string_operand_ascii_case_equal(key, "detect_order")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order()));
+        } else if (ptn_string_operand_ascii_case_equal(key, "substitute_character")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_substitute_character()));
+        }
+        ptn_string_operand_free(key);
+        return value;
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_string_key("internal_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime))));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("http_output"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_http_output(runtime))));
@@ -70332,16 +70476,6 @@ static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const
     ptn_array_set_entry(result.as.array, ptn_array_string_key("language"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language())));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("detect_order"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order())));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("substitute_character"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_substitute_character())));
-    if (argc >= 1) {
-        PtnStringOperand key = ptn_value_to_string_operand(args[0]);
-        PtnArrayKey lookup_key = ptn_array_string_key_len(key.data, key.len);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(result.as.array, lookup_key);
-        ptn_array_key_free(lookup_key);
-        PtnValue value = entry == NULL ? ptn_bool(0) : ptn_value_clone(entry->value);
-        ptn_string_operand_free(key);
-        ptn_value_destroy(&result);
-        return value;
-    }
     return result;
 }
 
