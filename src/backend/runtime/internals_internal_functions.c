@@ -92742,7 +92742,7 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         }
     }
     if (node->child_count == 0) {
-        if (ptn_xml_serialize_no_empty_tag) {
+        if (ptn_xml_serialize_no_empty_tag || html_document_xhtml_element) {
             ptn_string_buffer_append_char(buffer, '>');
             ptn_string_buffer_append(buffer, "</");
             ptn_string_buffer_append(buffer, serialized_name);
@@ -93350,8 +93350,7 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
     ptn_string_buffer_append(buffer, name);
     for (size_t i = 0; i < node->attribute_count; i++) {
         PtnXmlNode *attr = node->attributes[i];
-        if (ptn_xml_attribute_is_namespace_declaration(attr) ||
-            ptn_html_namespace_declaration_supports_attribute(node, attr)) {
+        if (ptn_html_namespace_declaration_supports_attribute(node, attr)) {
             continue;
         }
         ptn_string_buffer_append_char(buffer, ' ');
