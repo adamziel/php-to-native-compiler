@@ -56494,11 +56494,6 @@ static PtnValue ptn_hash_context_call_method(
             ptn_throw_exception(runtime, "Exception", "HashContext with HASH_HMAC option cannot be serialized");
             return ptn_null();
         }
-        if (flags_value.as.integer != 0) {
-            free(algo_name);
-            ptn_hash_throw_bad_serialization(runtime);
-            return ptn_null();
-        }
         PtnHashContextData *data = ptn_hash_context_data_new(ops, 0, NULL, 0);
         if (magic_value.as.integer != PHP_HASH_SERIALIZE_MAGIC_SPEC) {
             ptn_hash_context_data_free(data);
