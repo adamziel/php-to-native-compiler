@@ -30541,6 +30541,86 @@ foreach ([\"plain\", \"gen\", \"old\"] as $name) {
 }
 
 #[test]
+fn compile_reflection_closure_invoke_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-closure-invoke-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-closure-invoke-metadata.php");
+    let output = root.join("reflection-closure-invoke-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+$plain = function($value) {
+    return \"plain:$value\";
+};
+$static = static function() {};
+
+$function = new ReflectionFunction($plain);
+var_dump(method_exists($function, 'isStatic'));
+var_dump($function->isStatic());
+$fromFunction = $function->getClosure();
+echo $fromFunction(\"ok\"), \"\\n\";
+
+$staticFunction = new ReflectionFunction($static);
+var_dump($staticFunction->isStatic());
+
+$method = new ReflectionMethod($plain, '__invoke');
+echo $method->invoke($plain, \"one\"), \"\\n\";
+echo $method->invokeArgs($plain, ['value' => \"two\"]), \"\\n\";
+$fromMethod = $method->getClosure($plain);
+echo $fromMethod(\"three\"), \"\\n\";
+
+$mismatch = function($other) {
+    return \"other:$other\";
+};
+try {
+    $method->invoke($mismatch, \"bad\");
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$class = new ReflectionClass('closure');
+$classMethod = $class->getMethod('__invoke');
+foreach ($class->getMethods() as $candidate) {
+    if ($candidate->name === '__invoke') {
+        echo $candidate->invoke($plain, \"four\"), \"\\n\";
+    }
+}
+var_dump($class->getName());
+var_dump($classMethod->class);
+var_dump($classMethod->getDeclaringClass()->getName());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "plain:ok\n",
+            "bool(true)\n",
+            "plain:one\n",
+            "plain:two\n",
+            "plain:three\n",
+            "Given Closure is not the same as the reflected Closure\n",
+            "plain:four\n",
+            "string(7) \"Closure\"\n",
+            "string(7) \"Closure\"\n",
+            "string(7) \"Closure\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_method_closure_target_matches"));
+    assert!(c_source.contains("ptn_reflection_canonical_internal_class_name"));
+}
+
+#[test]
 fn compile_reflection_function_is_disabled_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-function-is-disabled");
     fs::create_dir_all(&root).unwrap();
