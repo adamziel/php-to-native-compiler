@@ -1153,7 +1153,8 @@ impl Parser<'_> {
         {
             return Err(Diagnostic::new(
                 format!(
-                    "Cannot redeclare class {local_name} (previously declared as local import)"
+                    "Cannot redeclare class {} (previously declared as local import)",
+                    class.name
                 ),
                 Some(class.span),
             ));
@@ -1170,7 +1171,7 @@ impl Parser<'_> {
         let local_key = local_name.to_ascii_lowercase();
         if self.function_aliases.contains_key(&local_key) {
             return Err(Diagnostic::new(
-                format!("Cannot redeclare function {local_name}() (previously declared as local import)"),
+                format!("Cannot redeclare function {name}() (previously declared as local import)"),
                 Some(span),
             ));
         }
@@ -1184,7 +1185,7 @@ impl Parser<'_> {
         let local_name = name.rsplit('\\').next().unwrap_or(name);
         if self.constant_aliases.contains_key(local_name) {
             return Err(Diagnostic::new(
-                format!("Cannot declare const {local_name} because the name is already in use"),
+                format!("Cannot declare const {name} because the name is already in use"),
                 Some(span),
             ));
         }
@@ -14423,7 +14424,30 @@ fn validate_class_names(
     traits: &[TraitDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
-    let mut names: HashMap<String, bool> = HashMap::new();
+    #[derive(Clone, Copy)]
+    enum ClassLikeKind {
+        Class,
+        Interface,
+        Trait,
+        Enum,
+    }
+    impl ClassLikeKind {
+        fn as_php_label(self) -> &'static str {
+            match self {
+                ClassLikeKind::Class => "class",
+                ClassLikeKind::Interface => "interface",
+                ClassLikeKind::Trait => "trait",
+                ClassLikeKind::Enum => "enum",
+            }
+        }
+    }
+    struct ClassLikeSymbol<'a> {
+        kind: ClassLikeKind,
+        name: &'a str,
+        span: SourceSpan,
+        unconditionally_declared: bool,
+    }
+    let mut names: HashMap<String, ClassLikeSymbol<'_>> = HashMap::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
         if lookup_name == "stdclass" {
@@ -14447,26 +14471,76 @@ fn validate_class_names(
             });
         }
         let unconditionally_declared = !class.is_conditionally_declared;
-        if unconditionally_declared && names.get(&lookup_name).copied().unwrap_or(false) {
-            return Err(Diagnostic::new(
-                format!("Cannot declare class {lookup_name}, because the name is already in use"),
-                Some(class.span),
-            ));
+        if unconditionally_declared {
+            if let Some(previous) = names.get(&lookup_name) {
+                if previous.unconditionally_declared {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot redeclare {} {} (previously declared in Unknown:{})",
+                            previous.kind.as_php_label(),
+                            previous.name,
+                            previous.span.line
+                        ),
+                        Some(class.span),
+                    ));
+                }
+            }
         }
         names
             .entry(lookup_name)
-            .and_modify(|previous| *previous |= unconditionally_declared)
-            .or_insert(unconditionally_declared);
+            .and_modify(|previous| {
+                if unconditionally_declared && !previous.unconditionally_declared {
+                    *previous = ClassLikeSymbol {
+                        kind: if class.is_enum {
+                            ClassLikeKind::Enum
+                        } else if class.is_interface {
+                            ClassLikeKind::Interface
+                        } else {
+                            ClassLikeKind::Class
+                        },
+                        name: &class.name,
+                        span: class.span,
+                        unconditionally_declared,
+                    };
+                }
+            })
+            .or_insert(ClassLikeSymbol {
+                kind: if class.is_enum {
+                    ClassLikeKind::Enum
+                } else if class.is_interface {
+                    ClassLikeKind::Interface
+                } else {
+                    ClassLikeKind::Class
+                },
+                name: &class.name,
+                span: class.span,
+                unconditionally_declared,
+            });
     }
     for trait_decl in traits {
         let lookup_name = trait_decl.name.to_ascii_lowercase();
-        if names.get(&lookup_name).copied().unwrap_or(false) {
-            return Err(Diagnostic::new(
-                format!("Cannot declare trait {lookup_name}, because the name is already in use"),
-                Some(trait_decl.span),
-            ));
+        if let Some(previous) = names.get(&lookup_name) {
+            if previous.unconditionally_declared {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot redeclare {} {} (previously declared in Unknown:{})",
+                        previous.kind.as_php_label(),
+                        previous.name,
+                        previous.span.line
+                    ),
+                    Some(trait_decl.span),
+                ));
+            }
         }
-        names.insert(lookup_name, true);
+        names.insert(
+            lookup_name,
+            ClassLikeSymbol {
+                kind: ClassLikeKind::Trait,
+                name: &trait_decl.name,
+                span: trait_decl.span,
+                unconditionally_declared: true,
+            },
+        );
     }
     Ok(())
 }
@@ -14526,7 +14600,7 @@ fn validate_trait_names(
     traits: &[TraitDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
-    let mut names = HashSet::new();
+    let mut names: HashMap<String, &TraitDecl> = HashMap::new();
     for trait_decl in traits {
         let lookup_name = trait_decl.name.to_ascii_lowercase();
         if declaration_name_segment(&lookup_name) == "_" {
@@ -14536,12 +14610,16 @@ fn validate_trait_names(
                 kind: CompileWarningKind::Deprecation,
             });
         }
-        if !names.insert(lookup_name.clone()) {
+        if let Some(previous) = names.get(&lookup_name) {
             return Err(Diagnostic::new(
-                format!("Cannot declare trait {lookup_name}, because the name is already in use"),
+                format!(
+                    "Cannot redeclare trait {} (previously declared in Unknown:{})",
+                    previous.name, previous.span.line
+                ),
                 Some(trait_decl.span),
             ));
         }
+        names.insert(lookup_name, trait_decl);
     }
     Ok(())
 }
