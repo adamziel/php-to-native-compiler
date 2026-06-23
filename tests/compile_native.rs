@@ -24313,6 +24313,13 @@ var_dump(false === mb_eregi('.', $str, $matches));\n\
 var_dump($matches);\n\
 var_dump(NULL === mb_ereg_replace('.', \"\\\\0\", $str));\n\
 mb_regex_encoding('UTF-8');\n\
+var_dump(mb_ereg('a', 'a'));\n\
+mb_ereg('(?<wsp>\\s*)(?<word>\\w+)', 'x', $emptyCapture);\n\
+var_dump($emptyCapture);\n\
+echo mb_ereg_replace('123', 'def\\\\1ghi', 'abc123'), \"\\n\";\n\
+mb_ereg_search_init('');\n\
+var_dump(mb_ereg_search(''));\n\
+var_dump(mb_ereg_search_getregs());\n\
 $pattern = '\\\\w+((?<punct>？)|(?<punct>！))';\n\
 mb_ereg($pattern, '中？', $m);\n\
 var_dump($m);\n\
@@ -24342,6 +24349,25 @@ var_dump(mb_ereg_search_getregs());\n",
             "array(0) {\n",
             "}\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  bool(false)\n",
+            "  [2]=>\n",
+            "  string(1) \"x\"\n",
+            "  [\"wsp\"]=>\n",
+            "  bool(false)\n",
+            "  [\"word\"]=>\n",
+            "  string(1) \"x\"\n",
+            "}\n",
+            "abcdef\\1ghi\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
             "array(4) {\n",
             "  [0]=>\n",
             "  string(6) \"中？\"\n",

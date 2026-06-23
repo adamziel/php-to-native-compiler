@@ -67106,6 +67106,9 @@ static PtnValue ptn_mb_regex_capture_value(
     }
     size_t start = matches[match_index].start;
     size_t len = matches[match_index].end - matches[match_index].start;
+    if (match_index > 0 && len == 0) {
+        return ptn_bool(0);
+    }
     return ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
 }
 
@@ -67256,7 +67259,7 @@ static PtnValue ptn_internal_mb_ereg_named(PtnRuntime *runtime, const char *func
     char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
     PtnPregProgram program;
     if (!ptn_mb_compile_regex_program(runtime, function_name, pattern, case_insensitive, &program, line)) {
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
         if (argc >= 3) {
@@ -67268,7 +67271,7 @@ static PtnValue ptn_internal_mb_ereg_named(PtnRuntime *runtime, const char *func
     PtnPregMatch *matches = calloc(program.match_count, sizeof(PtnPregMatch));
     if (matches == NULL) {
         ptn_preg_program_free(&program);
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
         ptn_abort_out_of_memory();
@@ -67293,10 +67296,10 @@ static PtnValue ptn_internal_mb_ereg_named(PtnRuntime *runtime, const char *func
     }
     ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
-    free(subject_c);
+    ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
-    return matched ? ptn_int(1) : ptn_bool(0);
+    return ptn_bool(matched);
 }
 
 static PtnValue ptn_internal_mb_ereg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -67320,7 +67323,7 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
     char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
     PtnPregProgram program;
     if (!ptn_mb_compile_regex_program(runtime, function_name, pattern, case_insensitive, &program, line)) {
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         char *copy = ptn_duplicate_string_len(subject.data, subject.len);
         size_t copy_len = subject.len;
         ptn_string_operand_free(pattern);
@@ -67332,7 +67335,7 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
     PtnPregMatch *matches = calloc(program.match_count, sizeof(PtnPregMatch));
     if (matches == NULL) {
         ptn_preg_program_free(&program);
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(replacement);
         ptn_string_operand_free(subject);
@@ -67369,6 +67372,9 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
                         size_t capture_start = matches[capture_index].start;
                         size_t capture_len = matches[capture_index].end - matches[capture_index].start;
                         ptn_string_buffer_append_len(&output, subject.data + capture_start, capture_len);
+                    } else {
+                        ptn_string_buffer_append_char(&output, '\\');
+                        ptn_string_buffer_append_char(&output, (char)next);
                     }
                     continue;
                 }
@@ -67392,7 +67398,7 @@ static PtnValue ptn_internal_mb_ereg_replace_named(PtnRuntime *runtime, const ch
     }
     ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
-    free(subject_c);
+    ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(replacement);
     ptn_string_operand_free(subject);
@@ -67437,7 +67443,7 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
     char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
     PtnPregProgram program;
     if (!ptn_mb_compile_regex_program(runtime, "mb_split", pattern, 0, &program, line)) {
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         ptn_value_destroy(&result);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
@@ -67446,7 +67452,7 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
     PtnPregMatch *matches = calloc(program.match_count, sizeof(PtnPregMatch));
     if (matches == NULL) {
         ptn_preg_program_free(&program);
-        free(subject_c);
+        ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
         ptn_abort_out_of_memory();
@@ -67487,7 +67493,7 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
     );
     ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
-    free(subject_c);
+    ptn_preg_free_subject_copy(runtime, subject_c, subject.len);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
     return result;
@@ -67497,7 +67503,7 @@ static PtnValue ptn_internal_mb_ereg_search_init(PtnRuntime *runtime, size_t arg
     ptn_mb_emit_regex_deprecation(runtime, "mb_ereg_search_init", line);
     PtnStringOperand subject = ptn_value_to_string_operand(args[0]);
     if (ptn_mb_regex_uses_utf8(runtime) && !ptn_mb_utf8_is_valid(subject.data, subject.len)) {
-        free(ptn_mb_ereg_search_subject);
+        ptn_preg_free_subject_copy(runtime, ptn_mb_ereg_search_subject, ptn_mb_ereg_search_subject_len);
         ptn_mb_ereg_search_subject = NULL;
         ptn_mb_ereg_search_subject_len = 0;
         free(ptn_mb_ereg_search_pattern);
@@ -67506,7 +67512,7 @@ static PtnValue ptn_internal_mb_ereg_search_init(PtnRuntime *runtime, size_t arg
         ptn_string_operand_free(subject);
         return ptn_bool(0);
     }
-    free(ptn_mb_ereg_search_subject);
+    ptn_preg_free_subject_copy(runtime, ptn_mb_ereg_search_subject, ptn_mb_ereg_search_subject_len);
     ptn_mb_ereg_search_subject = ptn_duplicate_string_len(subject.data, subject.len);
     ptn_mb_ereg_search_subject_len = subject.len;
     ptn_string_operand_free(subject);
@@ -67547,21 +67553,6 @@ static PtnValue ptn_mb_ereg_search_pos_impl(PtnRuntime *runtime, const char *fun
     const char *pattern = NULL;
     if (argc >= 1) {
         PtnStringOperand operand = ptn_value_to_string_operand(args[0]);
-        if (operand.len == 0) {
-            ptn_string_operand_free(operand);
-            char message[128];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "%s(): Argument #1 ($pattern) must not be empty",
-                function_name
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "ValueError", message);
-            return ptn_null();
-        }
         free(ptn_mb_ereg_search_pattern);
         ptn_mb_ereg_search_pattern = ptn_duplicate_string_len(operand.data, operand.len);
         ptn_string_operand_free(operand);
@@ -67578,6 +67569,7 @@ static PtnValue ptn_mb_ereg_search_pos_impl(PtnRuntime *runtime, const char *fun
     PtnStringOperand pattern_operand = ptn_string_operand_borrowed(pattern);
     PtnPregProgram program;
     if (!ptn_mb_compile_regex_program(runtime, function_name, pattern_operand, 0, &program, line)) {
+        ptn_mb_clear_last_regs();
         return ptn_bool(0);
     }
     PtnPregMatch *matches = calloc(program.match_count, sizeof(PtnPregMatch));
