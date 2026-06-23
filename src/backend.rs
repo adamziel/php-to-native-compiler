@@ -1115,6 +1115,10 @@ fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
 }
 
 fn emit_include_runtime_helpers(out: &mut String) {
+    out.push_str("static PTN_UNUSED int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
+    out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
     out.push_str("    if (path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) {\n");
     out.push_str("        return 1;\n");
@@ -2320,6 +2324,26 @@ fn emit_declared_class_new_instance_without_constructor(
             out.push_str("            result.as.object->destructor_enabled = 1;\n");
             out.push_str("        }\n");
             out.push_str("        ptn_value_destroy(&constructor_result);\n");
+        } else if let Some(parent_class_name) =
+            inherited_modeled_internal_class_name(declared_class, classes)
+        {
+            if parent_class_name.eq_ignore_ascii_case("ArrayObject") {
+                out.push_str("        if (runtime->exceptions->active_exception == NULL) {\n");
+                out.push_str(
+                    "            ptn_array_object_initialize(runtime, result, argc, args, line);\n",
+                );
+                out.push_str("        }\n");
+            } else {
+                out.push_str("        PtnValue parent = ptn_new_object(runtime, \"");
+                out.push_str(&c_string(parent_class_name));
+                out.push_str("\", argc, args, line);\n");
+                out.push_str("        if (runtime->exceptions->active_exception == NULL && parent.type == PTN_OBJECT) {\n");
+                out.push_str(
+                    "            ptn_adopt_internal_parent_object_state(result, parent);\n",
+                );
+                out.push_str("        }\n");
+                out.push_str("        ptn_value_destroy(&parent);\n");
+            }
         } else {
             out.push_str("        if (argc != 0) {\n");
             out.push_str("            ptn_value_destroy(&result);\n");
@@ -37768,6 +37792,17 @@ impl ValueEmitter {
         out.push_str(&resolved_temp);
         out.push_str(", \"phar://\", 7) == 0 && ptn_include_phar_plain_entry(&runtime, ");
         out.push_str(&resolved_temp);
+        out.push_str(", &");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("#endif\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("    } else if (ptn_dynamic_include_php_file(&runtime, ");
+        out.push_str(&resolved_temp);
+        out.push_str(", ");
+        out.push_str(&display_path_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
         out.push_str(", &");
         out.push_str(&result_temp);
         out.push_str(")) {\n");
