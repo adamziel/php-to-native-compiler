@@ -3853,6 +3853,7 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
         return Some("currency");
     }
     if (name.eq_ignore_ascii_case("collator_sort")
+        || name.eq_ignore_ascii_case("collator_asort")
         || name.eq_ignore_ascii_case("collator_sort_with_sort_keys"))
         && argument_index == 1
     {

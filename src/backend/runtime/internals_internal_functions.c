@@ -7113,11 +7113,13 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     }
     if (index == 1 &&
         (ptn_ascii_case_equal(name, "collator_sort") ||
+            ptn_ascii_case_equal(name, "collator_asort") ||
             ptn_ascii_case_equal(name, "collator_sort_with_sort_keys"))) {
         return 1;
     }
     if (index == 0 &&
         (ptn_ascii_case_equal(name, "Collator::sort") ||
+            ptn_ascii_case_equal(name, "Collator::asort") ||
             ptn_ascii_case_equal(name, "Collator::sortWithSortKeys"))) {
         return 1;
     }
@@ -58313,6 +58315,460 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
     return ptn_null();
 }
 
+typedef struct {
+    char *locale;
+} PtnIntlCollatorData;
+
+typedef struct {
+    PtnArrayEntry entry;
+    size_t original_index;
+} PtnIntlCollatorSortItem;
+
+typedef struct {
+    PtnRuntime *runtime;
+    const char *locale;
+    int64_t flags;
+    size_t line;
+} PtnIntlCollatorSortContext;
+
+static void ptn_intl_collator_data_free(void *data) {
+    PtnIntlCollatorData *collator_data = (PtnIntlCollatorData *)data;
+    if (collator_data == NULL) {
+        return;
+    }
+    free(collator_data->locale);
+    free(collator_data);
+}
+
+static const char *ptn_intl_collator_locale(PtnValue collator) {
+    collator = ptn_value_deref(collator);
+    if (collator.type != PTN_OBJECT ||
+        collator.as.object == NULL ||
+        !ptn_internal_class_name_is_collator(collator.as.object->class_name) ||
+        collator.as.object->native_data == NULL) {
+        return "";
+    }
+    PtnIntlCollatorData *data = (PtnIntlCollatorData *)collator.as.object->native_data;
+    return data->locale == NULL ? "" : data->locale;
+}
+
+static int ptn_intl_locale_starts_with(const char *locale, const char *prefix) {
+    if (locale == NULL || prefix == NULL) {
+        return 0;
+    }
+    while (*prefix != '\0') {
+        if (*locale == '\0' || ptn_ascii_lower_char(*locale) != ptn_ascii_lower_char(*prefix)) {
+            return 0;
+        }
+        locale++;
+        prefix++;
+    }
+    return 1;
+}
+
+static uint32_t ptn_intl_utf8_next_codepoint(const unsigned char *bytes, size_t len, size_t *offset) {
+    if (*offset >= len) {
+        return 0;
+    }
+    unsigned char first = bytes[*offset];
+    if (first < 0x80) {
+        (*offset)++;
+        return (uint32_t)first;
+    }
+    if ((first & 0xe0) == 0xc0 && *offset + 1 < len && (bytes[*offset + 1] & 0xc0) == 0x80) {
+        uint32_t codepoint = ((uint32_t)(first & 0x1f) << 6) | (uint32_t)(bytes[*offset + 1] & 0x3f);
+        *offset += 2;
+        return codepoint;
+    }
+    if ((first & 0xf0) == 0xe0 &&
+        *offset + 2 < len &&
+        (bytes[*offset + 1] & 0xc0) == 0x80 &&
+        (bytes[*offset + 2] & 0xc0) == 0x80) {
+        uint32_t codepoint = ((uint32_t)(first & 0x0f) << 12) |
+            ((uint32_t)(bytes[*offset + 1] & 0x3f) << 6) |
+            (uint32_t)(bytes[*offset + 2] & 0x3f);
+        *offset += 3;
+        return codepoint;
+    }
+    if ((first & 0xf8) == 0xf0 &&
+        *offset + 3 < len &&
+        (bytes[*offset + 1] & 0xc0) == 0x80 &&
+        (bytes[*offset + 2] & 0xc0) == 0x80 &&
+        (bytes[*offset + 3] & 0xc0) == 0x80) {
+        uint32_t codepoint = ((uint32_t)(first & 0x07) << 18) |
+            ((uint32_t)(bytes[*offset + 1] & 0x3f) << 12) |
+            ((uint32_t)(bytes[*offset + 2] & 0x3f) << 6) |
+            (uint32_t)(bytes[*offset + 3] & 0x3f);
+        *offset += 4;
+        return codepoint;
+    }
+    (*offset)++;
+    return (uint32_t)first;
+}
+
+static uint32_t ptn_intl_ascii_lower_codepoint(uint32_t codepoint) {
+    if (codepoint >= (uint32_t)'A' && codepoint <= (uint32_t)'Z') {
+        return codepoint + ((uint32_t)'a' - (uint32_t)'A');
+    }
+    return codepoint;
+}
+
+static int ptn_intl_collator_cyrillic_letter_index(uint32_t codepoint) {
+    switch (codepoint) {
+        case 0x0410:
+        case 0x0430:
+            return 1;
+        case 0x0411:
+        case 0x0431:
+            return 2;
+        case 0x0412:
+        case 0x0432:
+            return 3;
+        case 0x0413:
+        case 0x0433:
+            return 4;
+        case 0x0414:
+        case 0x0434:
+            return 5;
+        case 0x0415:
+        case 0x0435:
+            return 6;
+        case 0x0401:
+        case 0x0451:
+            return 7;
+        case 0x0416:
+        case 0x0436:
+            return 8;
+        case 0x0417:
+        case 0x0437:
+            return 9;
+        case 0x0418:
+        case 0x0438:
+            return 10;
+        case 0x0419:
+        case 0x0439:
+            return 11;
+        case 0x041a:
+        case 0x043a:
+            return 12;
+        case 0x041b:
+        case 0x043b:
+            return 13;
+        case 0x041c:
+        case 0x043c:
+            return 14;
+        case 0x041d:
+        case 0x043d:
+            return 15;
+        case 0x041e:
+        case 0x043e:
+            return 16;
+        case 0x041f:
+        case 0x043f:
+            return 17;
+        case 0x0420:
+        case 0x0440:
+            return 18;
+        case 0x0421:
+        case 0x0441:
+            return 19;
+        case 0x0422:
+        case 0x0442:
+            return 20;
+        case 0x0423:
+        case 0x0443:
+            return 21;
+        case 0x0424:
+        case 0x0444:
+            return 22;
+        case 0x0425:
+        case 0x0445:
+            return 23;
+        case 0x0426:
+        case 0x0446:
+            return 24;
+        case 0x0427:
+        case 0x0447:
+            return 25;
+        case 0x0428:
+        case 0x0448:
+            return 26;
+        case 0x0429:
+        case 0x0449:
+            return 27;
+        case 0x042a:
+        case 0x044a:
+            return 28;
+        case 0x042b:
+        case 0x044b:
+            return 29;
+        case 0x042c:
+        case 0x044c:
+            return 30;
+        case 0x042d:
+        case 0x044d:
+            return 31;
+        case 0x042e:
+        case 0x044e:
+            return 32;
+        case 0x042f:
+        case 0x044f:
+            return 33;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_intl_collator_lithuanian_ascii_letter_index(uint32_t codepoint) {
+    switch (ptn_intl_ascii_lower_codepoint(codepoint)) {
+        case (uint32_t)'a':
+            return 1;
+        case (uint32_t)'b':
+            return 3;
+        case (uint32_t)'c':
+            return 4;
+        case (uint32_t)'d':
+            return 6;
+        case (uint32_t)'e':
+            return 7;
+        case (uint32_t)'f':
+            return 10;
+        case (uint32_t)'g':
+            return 11;
+        case (uint32_t)'h':
+            return 12;
+        case (uint32_t)'i':
+            return 13;
+        case (uint32_t)'y':
+            return 15;
+        case (uint32_t)'j':
+            return 16;
+        case (uint32_t)'k':
+            return 17;
+        case (uint32_t)'l':
+            return 18;
+        case (uint32_t)'m':
+            return 19;
+        case (uint32_t)'n':
+            return 20;
+        case (uint32_t)'o':
+            return 21;
+        case (uint32_t)'p':
+            return 23;
+        case (uint32_t)'r':
+            return 24;
+        case (uint32_t)'s':
+            return 25;
+        case (uint32_t)'t':
+            return 27;
+        case (uint32_t)'u':
+            return 28;
+        case (uint32_t)'v':
+            return 30;
+        case (uint32_t)'z':
+            return 31;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_intl_collator_codepoint_rank(const char *locale, uint32_t codepoint) {
+    if (ptn_intl_locale_starts_with(locale, "ru")) {
+        int cyrillic = ptn_intl_collator_cyrillic_letter_index(codepoint);
+        if (cyrillic != 0) {
+            return 3000 + cyrillic;
+        }
+        codepoint = ptn_intl_ascii_lower_codepoint(codepoint);
+        if (codepoint >= (uint32_t)'a' && codepoint <= (uint32_t)'z') {
+            return 6000 + (int)(codepoint - (uint32_t)'a');
+        }
+    }
+    if (ptn_intl_locale_starts_with(locale, "lt")) {
+        int lithuanian = ptn_intl_collator_lithuanian_ascii_letter_index(codepoint);
+        if (lithuanian != 0) {
+            return 3000 + lithuanian;
+        }
+    }
+
+    codepoint = ptn_intl_ascii_lower_codepoint(codepoint);
+    if (codepoint < 0x80 && !isalnum((unsigned char)codepoint)) {
+        return 1000 + (int)codepoint;
+    }
+    if (codepoint >= (uint32_t)'0' && codepoint <= (uint32_t)'9') {
+        return 2000 + (int)(codepoint - (uint32_t)'0');
+    }
+    if (codepoint >= (uint32_t)'a' && codepoint <= (uint32_t)'z') {
+        return 3000 + (int)(codepoint - (uint32_t)'a');
+    }
+    return 9000 + (int)(codepoint & 0xfff);
+}
+
+static int ptn_intl_collator_compare_string_operands(
+    const char *locale,
+    PtnStringOperand left,
+    PtnStringOperand right
+) {
+    const unsigned char *left_bytes = (const unsigned char *)left.data;
+    const unsigned char *right_bytes = (const unsigned char *)right.data;
+    size_t left_offset = 0;
+    size_t right_offset = 0;
+    while (left_offset < left.len && right_offset < right.len) {
+        uint32_t left_codepoint = ptn_intl_utf8_next_codepoint(left_bytes, left.len, &left_offset);
+        uint32_t right_codepoint = ptn_intl_utf8_next_codepoint(right_bytes, right.len, &right_offset);
+        int left_rank = ptn_intl_collator_codepoint_rank(locale, left_codepoint);
+        int right_rank = ptn_intl_collator_codepoint_rank(locale, right_codepoint);
+        if (left_rank < right_rank) {
+            return -1;
+        }
+        if (left_rank > right_rank) {
+            return 1;
+        }
+        if (left_codepoint < right_codepoint) {
+            return -1;
+        }
+        if (left_codepoint > right_codepoint) {
+            return 1;
+        }
+    }
+    if (left_offset < left.len) {
+        return 1;
+    }
+    if (right_offset < right.len) {
+        return -1;
+    }
+    return 0;
+}
+
+static int ptn_intl_string_operand_is_numeric(PtnStringOperand operand) {
+    if (operand.len == 0 || memchr(operand.data, '\0', operand.len) != NULL) {
+        return 0;
+    }
+    char *copy = ptn_duplicate_string_len(operand.data, operand.len);
+    double number = 0.0;
+    int numeric = ptn_is_numeric_string(copy, &number);
+    free(copy);
+    return numeric;
+}
+
+static int ptn_intl_collator_compare_values(
+    PtnRuntime *runtime,
+    const char *locale,
+    int64_t flags,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    if (flags == PTN_SORT_NUMERIC) {
+        return ptn_array_value_compare_numeric(left, right);
+    }
+
+    if (flags == PTN_SORT_STRING) {
+        PtnStringOperand left_string = ptn_array_sort_string_operand(runtime, left, line);
+        PtnStringOperand right_string = ptn_array_sort_string_operand(runtime, right, line);
+        int compared = ptn_intl_collator_compare_string_operands(locale, left_string, right_string);
+        ptn_string_operand_free(left_string);
+        ptn_string_operand_free(right_string);
+        return compared;
+    }
+
+    PtnValue left_deref = ptn_value_deref(left);
+    PtnValue right_deref = ptn_value_deref(right);
+    if (left_deref.type == PTN_STRING && right_deref.type == PTN_STRING) {
+        PtnStringOperand left_string = ptn_string_operand_borrowed_len(
+            (const char *)left_deref.as.string.data,
+            left_deref.as.string.len
+        );
+        PtnStringOperand right_string = ptn_string_operand_borrowed_len(
+            (const char *)right_deref.as.string.data,
+            right_deref.as.string.len
+        );
+        int left_numeric = ptn_intl_string_operand_is_numeric(left_string);
+        int right_numeric = ptn_intl_string_operand_is_numeric(right_string);
+        if (!left_numeric || !right_numeric) {
+            return ptn_intl_collator_compare_string_operands(locale, left_string, right_string);
+        }
+    }
+    return ptn_array_value_compare_ascending_with_context(runtime, left, right, line);
+}
+
+static int ptn_intl_collator_sort_item_compare(
+    const PtnIntlCollatorSortItem *left,
+    const PtnIntlCollatorSortItem *right,
+    const PtnIntlCollatorSortContext *context
+) {
+    int compared = ptn_intl_collator_compare_values(
+        context->runtime,
+        context->locale,
+        context->flags,
+        left->entry.value,
+        right->entry.value,
+        context->line
+    );
+    if (compared != 0) {
+        return compared;
+    }
+    if (left->original_index < right->original_index) {
+        return -1;
+    }
+    if (left->original_index > right->original_index) {
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_intl_collator_sort_array_in_place(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const char *locale,
+    int64_t flags,
+    int preserve_keys,
+    size_t line
+) {
+    if (array->len > 1) {
+        size_t original_len = array->len;
+        uint64_t mutation_epoch_before_compare = array->mutation_epoch;
+        PtnIntlCollatorSortItem *items = malloc(sizeof(PtnIntlCollatorSortItem) * original_len);
+        if (items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < original_len; i++) {
+            items[i].entry = ptn_array_sort_entry_clone(array->entries[i]);
+            items[i].original_index = i;
+        }
+        PtnIntlCollatorSortContext context = { runtime, locale, flags, line };
+        for (size_t i = 1; i < original_len; i++) {
+            PtnIntlCollatorSortItem moving = items[i];
+            size_t j = i;
+            while (j > 0 && ptn_intl_collator_sort_item_compare(&items[j - 1], &moving, &context) > 0) {
+                items[j] = items[j - 1];
+                j--;
+            }
+            items[j] = moving;
+        }
+        if (array->mutation_epoch != mutation_epoch_before_compare) {
+            for (size_t i = 0; i < original_len; i++) {
+                ptn_array_sort_entry_destroy(&items[i].entry);
+            }
+            free(items);
+            array->current_index = 0;
+            ptn_array_rebuild_index(array);
+            return;
+        }
+        ptn_array_destroy_entries(array->entries, original_len);
+        for (size_t i = 0; i < original_len; i++) {
+            array->entries[i] = items[i].entry;
+        }
+        free(items);
+    }
+    if (!preserve_keys) {
+        ptn_array_reindex_after_sort(array);
+    } else {
+        ptn_array_recompute_next_auto_key(array);
+    }
+    array->current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
 static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand locale =
@@ -58320,48 +58776,120 @@ static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, c
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    PtnIntlCollatorData *data = malloc(sizeof(PtnIntlCollatorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = ptn_duplicate_string_len(locale.data, locale.len);
     ptn_string_operand_free(locale);
-    return ptn_object_new_shell(runtime, "Collator");
+    PtnValue collator = ptn_object_new_shell(runtime, "Collator");
+    collator.as.object->native_data = data;
+    collator.as.object->native_data_free = ptn_intl_collator_data_free;
+    return collator;
 }
 
 static PtnValue ptn_intl_collator_sort_array(
     PtnRuntime *runtime,
     const char *function_name,
     size_t position,
+    const char *locale,
     PtnValue array_value,
     int64_t flags,
+    int preserve_keys,
     size_t line
 ) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, function_name, position, "array", array_value);
     if (array == NULL) {
         return ptn_bool(0);
     }
+
+    if (array_value.type == PTN_REFERENCE) {
+        PtnValue *target = &array_value.as.reference->value;
+        while (target->type == PTN_REFERENCE) {
+            target = &target->as.reference->value;
+        }
+        if (target->type == PTN_ARRAY) {
+            PtnArray *mutable_array = ptn_array_detach_value(target);
+            if (mutable_array == NULL) {
+                mutable_array = target->as.array;
+            }
+            ptn_intl_collator_sort_array_in_place(runtime, mutable_array, locale, flags, preserve_keys, line);
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(1);
+        }
+    }
+
     PtnArray *sorted = ptn_array_clone(array);
-    ptn_array_sort_values_with_flags_context(runtime, sorted, flags, line);
+    ptn_intl_collator_sort_array_in_place(runtime, sorted, locale, flags, preserve_keys, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_array_free(sorted);
         return ptn_null();
     }
-    if (array_value.type == PTN_REFERENCE) {
-        ptn_array_commit_sorted_snapshot_to_slot(&array_value.as.reference->value, sorted);
-    } else {
-        ptn_array_adopt_storage(array, sorted);
-        free(sorted);
-    }
+    ptn_array_adopt_storage(array, sorted);
+    free(sorted);
     return ptn_bool(1);
 }
 
+static int64_t ptn_internal_collator_sort_flags_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    PtnValue flags_value,
+    size_t line
+) {
+    int64_t flags = ptn_internal_expect_integer_arg(runtime, function_name, position, "flags", flags_value, line);
+    if (flags == 0) {
+        return PTN_SORT_REGULAR;
+    }
+    if (flags == 1) {
+        return PTN_SORT_STRING;
+    }
+    if (flags == 2) {
+        return PTN_SORT_NUMERIC;
+    }
+
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($flags) must be a valid collator sort flag",
+        function_name,
+        position
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return PTN_SORT_REGULAR;
+}
+
 static PtnValue ptn_internal_collator_sort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    int64_t flags = argc >= 3 ? ptn_internal_sort_flags_arg(runtime, "collator_sort", args[2], line) : PTN_SORT_REGULAR;
+    int64_t flags = argc >= 3 ? ptn_internal_collator_sort_flags_arg(runtime, "collator_sort", 3, args[2], line) : PTN_SORT_REGULAR;
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    return ptn_intl_collator_sort_array(runtime, "collator_sort", 2, args[1], flags, line);
+    return ptn_intl_collator_sort_array(runtime, "collator_sort", 2, ptn_intl_collator_locale(args[0]), args[1], flags, 0, line);
+}
+
+static PtnValue ptn_internal_collator_asort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t flags = argc >= 3 ? ptn_internal_collator_sort_flags_arg(runtime, "collator_asort", 3, args[2], line) : PTN_SORT_REGULAR;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_intl_collator_sort_array(runtime, "collator_asort", 2, ptn_intl_collator_locale(args[0]), args[1], flags, 1, line);
 }
 
 static PtnValue ptn_internal_collator_sort_with_sort_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    return ptn_intl_collator_sort_array(runtime, "collator_sort_with_sort_keys", 2, args[1], PTN_SORT_REGULAR, line);
+    return ptn_intl_collator_sort_array(
+        runtime,
+        "collator_sort_with_sort_keys",
+        2,
+        ptn_intl_collator_locale(args[0]),
+        args[1],
+        PTN_SORT_REGULAR,
+        0,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
@@ -58372,19 +58900,34 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)receiver;
     if (ptn_ascii_case_equal(name, "__construct")) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "sort")) {
-        int64_t flags = argc >= 2 ? ptn_internal_sort_flags_arg(runtime, "Collator::sort", args[1], line) : PTN_SORT_REGULAR;
+        int64_t flags = argc >= 2 ? ptn_internal_collator_sort_flags_arg(runtime, "Collator::sort", 2, args[1], line) : PTN_SORT_REGULAR;
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        return ptn_intl_collator_sort_array(runtime, "Collator::sort", 1, args[0], flags, line);
+        return ptn_intl_collator_sort_array(runtime, "Collator::sort", 1, ptn_intl_collator_locale(receiver), args[0], flags, 0, line);
+    }
+    if (ptn_ascii_case_equal(name, "asort")) {
+        int64_t flags = argc >= 2 ? ptn_internal_collator_sort_flags_arg(runtime, "Collator::asort", 2, args[1], line) : PTN_SORT_REGULAR;
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_intl_collator_sort_array(runtime, "Collator::asort", 1, ptn_intl_collator_locale(receiver), args[0], flags, 1, line);
     }
     if (ptn_ascii_case_equal(name, "sortWithSortKeys")) {
-        return ptn_intl_collator_sort_array(runtime, "Collator::sortWithSortKeys", 1, args[0], PTN_SORT_REGULAR, line);
+        return ptn_intl_collator_sort_array(
+            runtime,
+            "Collator::sortWithSortKeys",
+            1,
+            ptn_intl_collator_locale(receiver),
+            args[0],
+            PTN_SORT_REGULAR,
+            0,
+            line
+        );
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -105596,6 +106139,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
         { "Collator::create", 1, 1, ptn_internal_collator_create },
+        { "collator_asort", 2, 3, ptn_internal_collator_asort },
         { "collator_create", 1, 1, ptn_internal_collator_create },
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
         { "collator_sort_with_sort_keys", 2, 2, ptn_internal_collator_sort_with_sort_keys },
@@ -109577,6 +110121,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_collator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "asort")
             || ptn_ascii_case_equal(method_name, "sort")
             || ptn_ascii_case_equal(method_name, "sortWithSortKeys")
             || ptn_ascii_case_equal(method_name, "create");
@@ -110595,6 +111140,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "__construct",
             "create",
+            "asort",
             "sort",
             "sortWithSortKeys",
         };
@@ -118220,6 +118766,8 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     }
     if (ptn_internal_class_name_is_collator(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("SORT_REGULAR"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SORT_STRING"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SORT_NUMERIC"), ptn_int(2));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {

@@ -35894,6 +35894,89 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_collator_sort_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-collator-sort-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-collator-sort-surface.php");
+    let output = root.join("intl-collator-sort-surface-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$coll = collator_create('en_US');\n\
+var_dump(Collator::SORT_REGULAR, Collator::SORT_STRING, Collator::SORT_NUMERIC);\n\
+\n\
+$items = ['1' => '100', '2' => '25', '3' => '36'];\n\
+var_dump(collator_sort($coll, $items, Collator::SORT_STRING));\n\
+var_export($items);\n\
+echo \"\\n\";\n\
+\n\
+$assoc = ['d' => 'y', 'c' => 'i', 'a' => 'k'];\n\
+var_dump(collator_asort($coll, $assoc, Collator::SORT_REGULAR));\n\
+var_export($assoc);\n\
+echo \"\\n\";\n\
+\n\
+$method = ['1' => 5, '2' => '30', '3' => 2];\n\
+var_dump($coll->asort($method, Collator::SORT_STRING));\n\
+var_export($method);\n\
+echo \"\\n\";\n\
+\n\
+$source = ['z' => 'z', 'a' => 'a'];\n\
+$copy = $source;\n\
+var_dump(collator_asort($coll, $source, Collator::SORT_REGULAR));\n\
+var_export($source);\n\
+echo \"\\n\";\n\
+var_export($copy);\n\
+echo \"\\n\";\n\
+\n\
+var_dump(method_exists($coll, 'asort'), function_exists('collator_asort'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "array (\n",
+            "  0 => '100',\n",
+            "  1 => '25',\n",
+            "  2 => '36',\n",
+            ")\n",
+            "bool(true)\n",
+            "array (\n",
+            "  'c' => 'i',\n",
+            "  'a' => 'k',\n",
+            "  'd' => 'y',\n",
+            ")\n",
+            "bool(true)\n",
+            "array (\n",
+            "  3 => 2,\n",
+            "  2 => '30',\n",
+            "  1 => 5,\n",
+            ")\n",
+            "bool(true)\n",
+            "array (\n",
+            "  'a' => 'a',\n",
+            "  'z' => 'z',\n",
+            ")\n",
+            "array (\n",
+            "  'z' => 'z',\n",
+            "  'a' => 'a',\n",
+            ")\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_xmlwriter_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-xmlwriter-extension-surface");
     fs::create_dir_all(&root).unwrap();
