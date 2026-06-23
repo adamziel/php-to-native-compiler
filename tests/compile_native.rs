@@ -23578,6 +23578,95 @@ var_dump(mb_split(\"b\", \"abc\"));\n",
 }
 
 #[test]
+fn compile_mb_ereg_pcre2_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-ereg-pcre2-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-ereg-pcre2-semantics.php");
+    let output = root.join("mb-ereg-pcre2-semantics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+try {\n\
+    mb_ereg_search_regs();\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$str = \"\\x80\";\n\
+var_dump(false === mb_eregi('.', $str, $matches));\n\
+var_dump($matches);\n\
+var_dump(NULL === mb_ereg_replace('.', \"\\\\0\", $str));\n\
+mb_regex_encoding('UTF-8');\n\
+$pattern = '\\\\w+((?<punct>？)|(?<punct>！))';\n\
+mb_ereg($pattern, '中？', $m);\n\
+var_dump($m);\n\
+mb_ereg($pattern, '中！', $m);\n\
+var_dump($m);\n\
+echo mb_ereg_replace('1(2*)3', '\\\\1def\\\\1', 'abc122222222223'), \"\\n\";\n\
+$subject = 'foo';\n\
+mb_ereg_search_init($subject);\n\
+mb_ereg_search('\\\\A');\n\
+var_dump(mb_ereg_search_getpos());\n\
+var_dump(mb_ereg_search_getregs());\n\
+mb_ereg_search('\\\\w+');\n\
+var_dump(mb_ereg_search_getpos());\n\
+var_dump(mb_ereg_search_getregs());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "No pattern was provided\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "bool(true)\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(6) \"中？\"\n",
+            "  [1]=>\n",
+            "  string(3) \"？\"\n",
+            "  [2]=>\n",
+            "  bool(false)\n",
+            "  [\"punct\"]=>\n",
+            "  string(3) \"？\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(6) \"中！\"\n",
+            "  [1]=>\n",
+            "  bool(false)\n",
+            "  [2]=>\n",
+            "  string(3) \"！\"\n",
+            "  [\"punct\"]=>\n",
+            "  string(3) \"！\"\n",
+            "}\n",
+            "abc2222222222def2222222222\n",
+            "int(0)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "int(3)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_mb_compile_regex_program"));
+    assert!(c_source.contains("PTN_PCRE2_DUPNAMES"));
+}
+
+#[test]
 fn compile_mbstring_embedded_nul_encoding_lists_to_native_binary() {
     let root = temp_dir("ptn-native-mb-embedded-nul-encodings");
     fs::create_dir_all(&root).unwrap();
