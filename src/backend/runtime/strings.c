@@ -2866,6 +2866,38 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_COUNT_RECURSIVE);
         return 1;
     }
+    if (strcmp(name, "INFO_GENERAL") == 0) {
+        *out = ptn_int(PTN_INFO_GENERAL);
+        return 1;
+    }
+    if (strcmp(name, "INFO_CREDITS") == 0) {
+        *out = ptn_int(PTN_INFO_CREDITS);
+        return 1;
+    }
+    if (strcmp(name, "INFO_CONFIGURATION") == 0) {
+        *out = ptn_int(PTN_INFO_CONFIGURATION);
+        return 1;
+    }
+    if (strcmp(name, "INFO_MODULES") == 0) {
+        *out = ptn_int(PTN_INFO_MODULES);
+        return 1;
+    }
+    if (strcmp(name, "INFO_ENVIRONMENT") == 0) {
+        *out = ptn_int(PTN_INFO_ENVIRONMENT);
+        return 1;
+    }
+    if (strcmp(name, "INFO_VARIABLES") == 0) {
+        *out = ptn_int(PTN_INFO_VARIABLES);
+        return 1;
+    }
+    if (strcmp(name, "INFO_LICENSE") == 0) {
+        *out = ptn_int(PTN_INFO_LICENSE);
+        return 1;
+    }
+    if (strcmp(name, "INFO_ALL") == 0) {
+        *out = ptn_int(PTN_INFO_ALL);
+        return 1;
+    }
     if (strcmp(name, "PATHINFO_DIRNAME") == 0) {
         *out = ptn_int(PTN_PATHINFO_DIRNAME);
         return 1;

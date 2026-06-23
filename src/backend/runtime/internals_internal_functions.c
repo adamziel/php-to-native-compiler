@@ -79985,14 +79985,22 @@ static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, con
 }
 
 static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t flags = PTN_INFO_ALL;
     if (argc >= 1) {
-        (void)ptn_internal_expect_integer_arg(runtime, "phpinfo", 1, "flags", args[0], line);
+        flags = ptn_internal_expect_integer_arg(runtime, "phpinfo", 1, "flags", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
     }
-    ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n");
-    ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+    ptn_output_write_cstr(runtime, "phpinfo()\n");
+    if ((flags & PTN_INFO_GENERAL) != 0) {
+        ptn_output_write_cstr(runtime, "\nPHP Version => " PTN_PHP_VERSION "\n");
+        ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+    }
+    if ((flags & PTN_INFO_VARIABLES) != 0) {
+        ptn_output_write_cstr(runtime, "\nPHP Variables\n\n");
+        ptn_output_write_cstr(runtime, "Variable => Value\n");
+    }
     return ptn_bool(1);
 }
 
@@ -83515,6 +83523,14 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SUNFUNCS_RET_DOUBLE", PTN_SUNFUNCS_RET_DOUBLE);
     ptn_get_defined_constants_add_int(table, "COUNT_NORMAL", PTN_COUNT_NORMAL);
     ptn_get_defined_constants_add_int(table, "COUNT_RECURSIVE", PTN_COUNT_RECURSIVE);
+    ptn_get_defined_constants_add_int(table, "INFO_GENERAL", PTN_INFO_GENERAL);
+    ptn_get_defined_constants_add_int(table, "INFO_CREDITS", PTN_INFO_CREDITS);
+    ptn_get_defined_constants_add_int(table, "INFO_CONFIGURATION", PTN_INFO_CONFIGURATION);
+    ptn_get_defined_constants_add_int(table, "INFO_MODULES", PTN_INFO_MODULES);
+    ptn_get_defined_constants_add_int(table, "INFO_ENVIRONMENT", PTN_INFO_ENVIRONMENT);
+    ptn_get_defined_constants_add_int(table, "INFO_VARIABLES", PTN_INFO_VARIABLES);
+    ptn_get_defined_constants_add_int(table, "INFO_LICENSE", PTN_INFO_LICENSE);
+    ptn_get_defined_constants_add_int(table, "INFO_ALL", PTN_INFO_ALL);
     ptn_get_defined_constants_add_int(table, "PATHINFO_DIRNAME", PTN_PATHINFO_DIRNAME);
     ptn_get_defined_constants_add_int(table, "PATHINFO_BASENAME", PTN_PATHINFO_BASENAME);
     ptn_get_defined_constants_add_int(table, "PATHINFO_EXTENSION", PTN_PATHINFO_EXTENSION);
@@ -83987,6 +84003,14 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "SUNFUNCS_RET_DOUBLE",
         "COUNT_NORMAL",
         "COUNT_RECURSIVE",
+        "INFO_GENERAL",
+        "INFO_CREDITS",
+        "INFO_CONFIGURATION",
+        "INFO_MODULES",
+        "INFO_ENVIRONMENT",
+        "INFO_VARIABLES",
+        "INFO_LICENSE",
+        "INFO_ALL",
         "PATHINFO_DIRNAME",
         "PATHINFO_BASENAME",
         "PATHINFO_EXTENSION",
