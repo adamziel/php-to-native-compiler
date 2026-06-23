@@ -85,6 +85,19 @@ static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntim
 static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors_for_unwind(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 
+typedef struct PtnFiberData {
+    PtnObject *object;
+    PtnValue callback;
+    PtnValue return_value;
+    PtnValue suspension_trace;
+    char *executing_file;
+    size_t executing_line;
+    int started;
+    int running;
+    int completed;
+    int resume_credit;
+} PtnFiberData;
+
 static void ptn_exception_chain_previous_if_missing(PtnException *exception, PtnException *previous) {
     if (exception == NULL || previous == NULL || exception == previous) {
         return;
@@ -1393,6 +1406,19 @@ static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index) {
 
 static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth);
 
+static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *target, size_t depth) {
+    if (object == NULL || target == NULL || object->native_data == NULL || depth > 1024) {
+        return 0;
+    }
+    if (!ptn_ascii_case_equal(object->class_name, "Fiber")) {
+        return 0;
+    }
+    PtnFiberData *data = (PtnFiberData *)object->native_data;
+    return ptn_value_reaches_object(data->callback, target, depth + 1) ||
+        ptn_value_reaches_object(data->return_value, target, depth + 1) ||
+        ptn_value_reaches_object(data->suspension_trace, target, depth + 1);
+}
+
 static int ptn_array_reaches_object(PtnArray *array, PtnObject *target, size_t depth) {
     if (array == NULL || target == NULL || depth > 1024) {
         return 0;
@@ -1419,7 +1445,10 @@ static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t de
             return 1;
         }
         return value.as.object != NULL &&
-            ptn_array_reaches_object(value.as.object->properties, target, depth + 1);
+            (
+                ptn_array_reaches_object(value.as.object->properties, target, depth + 1) ||
+                ptn_object_native_values_reach_object(value.as.object, target, depth + 1)
+            );
     }
     if (value.type == PTN_ARRAY) {
         return ptn_array_reaches_object(value.as.array, target, depth + 1);

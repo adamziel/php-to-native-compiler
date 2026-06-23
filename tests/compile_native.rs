@@ -2031,11 +2031,9 @@ fn compile_fiber_by_ref_callback_return_to_native_binary() {
         &input,
         r#"<?php
 $fiber = new Fiber(function &() {
-    Fiber::suspend();
     return $var;
 });
 $fiber->start();
-$fiber->resume();
 var_dump($fiber->getReturn());
 "#,
     )
@@ -2054,6 +2052,122 @@ var_dump($fiber->getReturn());
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_completed_lifecycle_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-completed-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-completed-lifecycle.php");
+    let output = root.join("fiber-completed-lifecycle-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(fn() => 'test');
+var_dump($fiber->isStarted());
+var_dump($fiber->start());
+var_dump($fiber->getReturn());
+var_dump($fiber->isTerminated());
+
+$fresh = new Fiber(fn() => null);
+$finished = new Fiber(fn() => null);
+$finished->start();
+foreach ([$fresh, $finished] as $candidate) {
+    try {
+        $candidate->resume();
+    } catch (FiberError $e) {
+        echo get_class($e), ': ', $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot resume a fiber that is not suspended"));
+    assert!(c_source.contains("ptn_throw_exception_at"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "NULL\n",
+            "string(4) \"test\"\n",
+            "bool(true)\n",
+            "FiberError: Cannot resume a fiber that is not suspended\n",
+            "FiberError: Cannot resume a fiber that is not suspended\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-return-gc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-return-gc.php");
+    let output = root.join("fiber-return-gc-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function() use (&$fiber) {
+    return new class($fiber) {
+        private $fiber;
+
+        public function __construct($fiber) {
+            $this->fiber = $fiber;
+        }
+
+        public function __destruct() {
+            var_dump("DTOR");
+        }
+    };
+});
+$fiber->start();
+var_dump("COLLECT CYCLES");
+gc_collect_cycles();
+var_dump("DONE");
+var_dump($fiber->isTerminated());
+unset($fiber);
+var_dump("COLLECT CYCLES");
+gc_collect_cycles();
+var_dump("DONE");
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_gc_mark_object_native_values"));
+    assert!(c_source.contains("ptn_value_clone_deref(result)"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(14) \"COLLECT CYCLES\"\n",
+            "string(4) \"DONE\"\n",
+            "bool(true)\n",
+            "string(14) \"COLLECT CYCLES\"\n",
+            "string(4) \"DTOR\"\n",
+            "string(4) \"DONE\"\n",
+        )
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

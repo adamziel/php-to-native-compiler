@@ -69566,6 +69566,18 @@ static size_t ptn_runtime_next_gc_mark_epoch(PtnRuntime *root) {
 
 static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object);
 
+static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *object) {
+    if (stack == NULL || object == NULL || object->native_data == NULL) {
+        return;
+    }
+    if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        ptn_gc_mark_stack_push(stack, data->callback);
+        ptn_gc_mark_stack_push(stack, data->return_value);
+        ptn_gc_mark_stack_push(stack, data->suspension_trace);
+    }
+}
+
 static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
     if (stack == NULL || epoch == 0) {
         return;
@@ -69603,6 +69615,7 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
             ptn_gc_mark_stack_push(stack, object->lazy_initializer);
             ptn_gc_mark_stack_push(stack, object->lazy_proxy_instance);
             ptn_gc_mark_weak_map_values(stack, object);
+            ptn_gc_mark_object_native_values(stack, object);
             continue;
         }
         if (value.type == PTN_CLOSURE) {
@@ -69621,6 +69634,9 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
 
 static int ptn_gc_object_has_opaque_native_data(PtnObject *object) {
     if (object == NULL || object->native_data == NULL) {
+        return 0;
+    }
+    if (ptn_internal_class_name_is_fiber(object->class_name)) {
         return 0;
     }
     return object->native_data_free != ptn_spl_object_storage_data_free;
@@ -69643,6 +69659,12 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
     PtnObject *object,
     size_t root_epoch,
     size_t counted_epoch
+);
+static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
+    PtnObject *object,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth
 );
 
 static size_t ptn_gc_count_unreachable_contained_values_in_symbol_table(
@@ -69756,7 +69778,17 @@ static size_t ptn_gc_count_unreachable_contained_values_in_value_ex(
         if (count > SIZE_MAX - properties) {
             ptn_abort_out_of_memory();
         }
-        return count + properties;
+        count += properties;
+        size_t native_values = ptn_gc_count_unreachable_contained_values_in_object_native_values(
+            object,
+            root_epoch,
+            counted_epoch,
+            depth + 1
+        );
+        if (count > SIZE_MAX - native_values) {
+            ptn_abort_out_of_memory();
+        }
+        return count + native_values;
     }
     if (value.type != PTN_CLOSURE || value.as.closure == NULL) {
         return 0;
@@ -69835,6 +69867,41 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_properties(
             counted_epoch,
             0,
             skip_array_count_depth
+        );
+        if (count > SIZE_MAX - nested) {
+            ptn_abort_out_of_memory();
+        }
+        count += nested;
+    }
+    return count;
+}
+
+static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
+    PtnObject *object,
+    size_t root_epoch,
+    size_t counted_epoch,
+    size_t depth
+) {
+    if (object == NULL || object->native_data == NULL || depth > 1024) {
+        return 0;
+    }
+    if (!ptn_internal_class_name_is_fiber(object->class_name)) {
+        return 0;
+    }
+    PtnFiberData *data = (PtnFiberData *)object->native_data;
+    PtnValue values[3] = {
+        data->callback,
+        data->return_value,
+        data->suspension_trace,
+    };
+    size_t count = 0;
+    for (size_t i = 0; i < 3; i++) {
+        size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
+            values[i],
+            root_epoch,
+            counted_epoch,
+            depth + 1,
+            0
         );
         if (count > SIZE_MAX - nested) {
             ptn_abort_out_of_memory();
@@ -69985,6 +70052,43 @@ static void ptn_gc_mark_unreachable_destructor_component_symbol_table(
     }
 }
 
+static void ptn_gc_mark_unreachable_destructor_component_object_native_values(
+    PtnGcObjectComponent *component,
+    PtnObject *object,
+    size_t root_epoch,
+    size_t component_epoch,
+    size_t depth
+) {
+    if (object == NULL || object->native_data == NULL || depth > 1024) {
+        return;
+    }
+    if (!ptn_internal_class_name_is_fiber(object->class_name)) {
+        return;
+    }
+    PtnFiberData *data = (PtnFiberData *)object->native_data;
+    ptn_gc_mark_unreachable_destructor_component_value(
+        component,
+        data->callback,
+        root_epoch,
+        component_epoch,
+        depth + 1
+    );
+    ptn_gc_mark_unreachable_destructor_component_value(
+        component,
+        data->return_value,
+        root_epoch,
+        component_epoch,
+        depth + 1
+    );
+    ptn_gc_mark_unreachable_destructor_component_value(
+        component,
+        data->suspension_trace,
+        root_epoch,
+        component_epoch,
+        depth + 1
+    );
+}
+
 static void ptn_gc_mark_unreachable_destructor_component_object(
     PtnGcObjectComponent *component,
     PtnObject *object,
@@ -70027,6 +70131,13 @@ static void ptn_gc_mark_unreachable_destructor_component_object(
     ptn_gc_mark_unreachable_destructor_component_value(
         component,
         object->lazy_proxy_instance,
+        root_epoch,
+        component_epoch,
+        depth + 1
+    );
+    ptn_gc_mark_unreachable_destructor_component_object_native_values(
+        component,
+        object,
         root_epoch,
         component_epoch,
         depth + 1
@@ -70196,6 +70307,7 @@ static void ptn_gc_mark_destructor_component_contained_values(
         ptn_gc_mark_stack_push(&stack, ptn_gc_borrowed_array_value(object->properties));
         ptn_gc_mark_stack_push(&stack, object->lazy_initializer);
         ptn_gc_mark_stack_push(&stack, object->lazy_proxy_instance);
+        ptn_gc_mark_object_native_values(&stack, object);
     }
 
     ptn_gc_mark_reachable_values(&stack, counted_epoch);
@@ -112879,19 +112991,6 @@ static PtnValue ptn_internal_reflection_get_modifier_names(
     return ptn_internal_class_static_call_method(runtime, "Reflection", "getModifierNames", argc, args, line);
 }
 
-typedef struct PtnFiberData {
-    PtnObject *object;
-    PtnValue callback;
-    PtnValue return_value;
-    PtnValue suspension_trace;
-    char *executing_file;
-    size_t executing_line;
-    int started;
-    int running;
-    int completed;
-    int resume_credit;
-} PtnFiberData;
-
 static void ptn_fiber_data_free(void *opaque) {
     PtnFiberData *data = (PtnFiberData *)opaque;
     if (data == NULL) {
@@ -113108,7 +113207,7 @@ static PtnValue ptn_fiber_start(
     ptn_value_destroy(&data->return_value);
     data->return_value = copied_result;
     data->completed = 1;
-    data->resume_credit = 1;
+    data->resume_credit = 0;
     return ptn_null();
 }
 
@@ -113116,7 +113215,8 @@ static PtnValue ptn_fiber_resume(
     PtnRuntime *runtime,
     PtnFiberData *data,
     size_t argc,
-    const PtnValue *args
+    const PtnValue *args,
+    size_t line
 ) {
     if (argc > 1) {
         char message[128];
@@ -113133,18 +113233,22 @@ static PtnValue ptn_fiber_resume(
         return ptn_null();
     }
     (void)args;
-    if (!data->started) {
-        ptn_throw_exception(runtime, "Error", "Cannot resume a fiber that has not been started");
-        return ptn_null();
-    }
     if (data->resume_credit) {
         data->resume_credit = 0;
         return ptn_null();
     }
-    if (data->completed) {
-        ptn_throw_exception(runtime, "Error", "Cannot resume a fiber that has already terminated");
-        return ptn_null();
-    }
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "FiberError",
+        ptn_duplicate_string("Cannot resume a fiber that is not suspended"),
+        runtime->source_path,
+        line,
+        "Fiber->resume",
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
     return ptn_null();
 }
 
@@ -113174,7 +113278,7 @@ static PTN_UNUSED PtnValue ptn_fiber_call_method(
         return ptn_fiber_start(runtime, data, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "resume")) {
-        return ptn_fiber_resume(runtime, data, argc, args);
+        return ptn_fiber_resume(runtime, data, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "getReturn")) {
         if (!ptn_fiber_check_exact_arguments(runtime, "getReturn", argc, 0)) {
