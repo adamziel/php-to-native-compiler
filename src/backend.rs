@@ -26346,14 +26346,8 @@ fn emit_try(
         );
         out.push_str("            } else {\n");
     }
-    if let Some(catch_active_temp) = &catch_active_temp {
-        out.push_str("                ");
-        out.push_str(catch_active_temp);
-        out.push_str(" = 1;\n");
+    if catch_active_temp.is_some() {
         out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
-        out.push_str("                ");
-        out.push_str(catch_active_temp);
-        out.push_str(" = 0;\n");
     } else {
         out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
     }

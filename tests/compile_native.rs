@@ -61203,6 +61203,44 @@ after\n"
 }
 
 #[test]
+fn compile_catches_destructor_exception_from_try_temporary_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-try-temporary-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("try-temporary-destructor-exception.php");
+    let output = root.join("try-temporary-destructor-exception-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class ThrowingTemporary\n\
+{\n\
+    public function __destruct()\n\
+    {\n\
+        throw new Exception('from destructor');\n\
+    }\n\
+}\n\
+\n\
+try {\n\
+    new ThrowingTemporary + new ThrowingTemporary;\n\
+    echo \"unreached\\n\";\n\
+} catch (Exception $e) {\n\
+    echo get_class($e), ':', $e->getMessage(), \"\\n\";\n\
+}\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception:from destructor\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_power_operator_to_native_binary() {
     let root = temp_dir("ptn-native-power-operator");
     fs::create_dir_all(&root).unwrap();
