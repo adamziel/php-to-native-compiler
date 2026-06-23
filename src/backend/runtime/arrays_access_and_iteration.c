@@ -9026,6 +9026,7 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->send_call_lines != NULL) {
         ptn_array_free(generator->send_call_lines);
     }
+    ptn_value_destroy(&generator->pending_exception);
     free(generator->pending_output.data);
     ptn_value_destroy(&generator->closure_owner);
     ptn_value_destroy(&generator->receiver);
@@ -9076,6 +9077,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->send_call_arguments = send_call_arguments.as.array;
     generator->send_call_yield_indexes = send_call_yield_indexes.as.array;
     generator->send_call_lines = send_call_lines.as.array;
+    generator->pending_exception = ptn_null();
+    generator->pending_exception_position = 0;
+    generator->has_pending_exception = 0;
     ptn_string_buffer_init(&generator->pending_output);
     generator->closure_owner = ptn_null();
     generator->has_receiver = 0;
@@ -9428,6 +9432,53 @@ static PTN_UNUSED int ptn_generator_position_valid(PtnGenerator *generator) {
         generator->position < generator->keys->len;
 }
 
+static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtime, PtnGenerator *generator) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL ||
+        generator == NULL ||
+        generator->values == NULL ||
+        generator->values->len == 0
+    ) {
+        return 0;
+    }
+    ptn_value_destroy(&generator->pending_exception);
+    generator->pending_exception = ptn_value_clone(ptn_exception_borrow(runtime->exceptions->active_exception));
+    generator->pending_exception_position = generator->values->len - 1;
+    generator->has_pending_exception = 1;
+    ptn_clear_exception(runtime);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_generator_throw_pending_exception_at_position(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    size_t position
+) {
+    if (
+        generator == NULL ||
+        !generator->has_pending_exception ||
+        generator->pending_exception_position != position
+    ) {
+        return 0;
+    }
+    PtnValue pending = ptn_value_clone_deref(generator->pending_exception);
+    ptn_value_destroy(&generator->pending_exception);
+    generator->pending_exception = ptn_null();
+    generator->has_pending_exception = 0;
+    if (generator->values != NULL) {
+        generator->position = generator->values->len;
+    }
+    ptn_throw_value(
+        runtime,
+        pending,
+        runtime != NULL ? runtime->source_path : NULL,
+        generator->source_line
+    );
+    return 1;
+}
+
 static PTN_UNUSED void ptn_generator_emit_pending_reference_notice(
     PtnRuntime *runtime,
     PtnGenerator *generator,
@@ -9628,6 +9679,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
             if (source_still_valid) {
                 return ptn_null();
             }
+        }
+        if (ptn_generator_throw_pending_exception_at_position(runtime, generator, generator->position)) {
+            return ptn_null();
         }
         ptn_generator_release_consumed_reference(generator, generator->position);
         generator->position++;

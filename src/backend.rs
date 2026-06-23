@@ -3265,6 +3265,19 @@ fn emit_user_functions(
         out.push_str(";\n");
         out.push_str("    }\n");
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
+        if function.is_generator {
+            out.push_str("    if (ptn_generator_capture_pending_exception(&runtime, runtime.current_generator)) {\n");
+            out.push_str("        runtime.current_generator = NULL;\n");
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+            out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+            out.push_str("        ptn_runtime_drop_call_frame_arguments(&runtime);\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            if function.is_anonymous {
+                out.push_str("        free(ptn_closure_trace_name);\n");
+            }
+            out.push_str("        return ptn_generator_value;\n");
+            out.push_str("    }\n");
+        }
         out.push_str("    ptn_runtime_clear_temporary_roots(&runtime);\n");
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
         out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
