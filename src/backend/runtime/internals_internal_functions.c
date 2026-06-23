@@ -96310,6 +96310,16 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
             ptn_string_buffer_append(buffer, node->value == NULL ? "" : node->value);
             ptn_string_buffer_append(buffer, "-->");
             return;
+        case PTN_XML_NODE_ATTRIBUTE: {
+            const char *attr_name = node->serialized_name != NULL
+                ? node->serialized_name
+                : (node->name == NULL ? "" : node->name);
+            ptn_string_buffer_append(buffer, attr_name);
+            ptn_string_buffer_append(buffer, "=\"");
+            ptn_xml_append_escaped_attribute_value(buffer, node->value == NULL ? "" : node->value, document, ascii_only);
+            ptn_string_buffer_append_char(buffer, '"');
+            return;
+        }
         default:
             break;
     }
@@ -102291,7 +102301,9 @@ static PtnValue ptn_dom_named_node_map_get_named_item_method(PtnRuntime *runtime
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        char *name_copy = ptn_duplicate_string_len(name.data, name.len);
+        char *name_copy = list->attributes
+            ? ptn_dom_attribute_name_copy_for_element(element, name.data, name.len)
+            : ptn_duplicate_string_len(name.data, name.len);
         ptn_string_operand_free(name);
         PtnXmlNode *attr = list->attributes
             ? ptn_dom_find_attribute(element, name_copy)
@@ -102663,16 +102675,16 @@ static PtnXmlNode *ptn_dom_named_node_map_offset_node(PtnXmlNodeListData *list, 
                 : ptn_xml_node_list_item(list, (size_t)index);
         }
         if (list->attributes) {
+            char *name_copy = ptn_dom_attribute_name_copy_for_element(list->parent, name, name_len);
             for (size_t i = 0; list->parent != NULL && i < list->parent->attribute_count; i++) {
                 PtnXmlNode *attr = list->parent->attributes[i];
-                if (ptn_xml_attribute_is_namespace_declaration(attr)) {
-                    continue;
-                }
                 const char *attr_name = attr->name == NULL ? "" : attr->name;
-                if (strlen(attr_name) == name_len && memcmp(attr_name, name, name_len) == 0) {
+                if (strcmp(attr_name, name_copy) == 0) {
+                    free(name_copy);
                     return attr;
                 }
             }
+            free(name_copy);
         } else {
             for (size_t i = 0; i < ptn_xml_node_list_length(list); i++) {
                 PtnXmlNode *node = ptn_xml_node_list_item(list, i);

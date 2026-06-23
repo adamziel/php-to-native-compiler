@@ -41428,6 +41428,74 @@ var_dump($detachedAttr->ownerElement);
 }
 
 #[test]
+fn compile_dom_named_node_map_html_lookup_and_lone_attribute_import_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-named-node-map-html-lookup-lone-attr-import");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-named-node-map-html-lookup-lone-attr-import.php");
+    let output = root.join("dom-named-node-map-html-lookup-lone-attr-import-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$html = Dom\HTMLDocument::createFromString(<<<HTML
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body foo:bar="baz"></body>
+</html>
+HTML);
+$body = $html->getElementsByTagName('body')[0];
+$body->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:foo', 'http://example.com/foo');
+$attributes = $body->attributes;
+
+var_dump($attributes->getNamedItem('FOO:BAR')->value);
+var_dump($attributes->getNamedItem('foo:BAR')->value);
+var_dump($attributes->getNamedItem('XmLnS:foo')->value);
+var_dump($attributes['FOO:BAR']->value);
+var_dump($attributes['XmLnS:foo']->value);
+
+$xml = Dom\XMLDocument::createEmpty();
+$root = $xml->appendChild($xml->createElement('root'));
+$root->setAttributeNS('urn:a', 'a:foo', 'bar');
+$attr = $root->getAttributeNodeNS('urn:a', 'foo');
+
+$importer = Dom\XMLDocument::createEmpty();
+$copy = $importer->importNode($attr, true);
+echo $importer->saveXml($copy), "\n";
+var_dump($copy->prefix, $copy->namespaceURI);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"baz\"\n",
+            "string(3) \"baz\"\n",
+            "string(22) \"http://example.com/foo\"\n",
+            "string(3) \"baz\"\n",
+            "string(22) \"http://example.com/foo\"\n",
+            "a:foo=\"bar\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"urn:a\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_named_node_map_get_named_item_method"));
+    assert!(c_source.contains("PTN_XML_NODE_ATTRIBUTE"));
+}
+
+#[test]
 fn compile_dom_html_document_parser_interactions_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-document-parser-interactions");
     fs::create_dir_all(&root).unwrap();
