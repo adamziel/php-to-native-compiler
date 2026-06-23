@@ -74822,6 +74822,12 @@ static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const Ptn
         }
     }
     ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n");
+    ptn_output_write_cstr(runtime, "libXML support => active\n");
+    ptn_output_write_cstr(runtime, "XML Support => active\n");
+    ptn_output_write_cstr(runtime, "XML Namespace Support => active\n");
+    ptn_output_write_cstr(runtime, "libxml2 Version => ");
+    ptn_output_write_cstr(runtime, ptn_libxml_version_info_load()->loaded);
+    ptn_output_write_cstr(runtime, "\n");
     ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
     return ptn_bool(1);
 }
@@ -76600,6 +76606,7 @@ static PtnValue ptn_defined_constants_zlib_table(void) {
 }
 
 static void ptn_defined_constants_add_xml(PtnValue table) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("XML_SAX_IMPL"), ptn_string("libxml"));
     ptn_get_defined_constants_add_int(table, "XML_OPTION_CASE_FOLDING", 1);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_TARGET_ENCODING", 2);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_SKIP_TAGSTART", 3);
@@ -76799,6 +76806,7 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CONNECTION_TIMEOUT", 2);
     ptn_get_defined_constants_add_int(table, "CASE_LOWER", 0);
     ptn_get_defined_constants_add_int(table, "CASE_UPPER", 1);
+    ptn_get_defined_constants_add_int(table, "INFO_MODULES", 8);
     ptn_get_defined_constants_add_int(table, "SORT_REGULAR", PTN_SORT_REGULAR);
     ptn_get_defined_constants_add_int(table, "SORT_NUMERIC", PTN_SORT_NUMERIC);
     ptn_get_defined_constants_add_int(table, "SORT_STRING", PTN_SORT_STRING);
@@ -77211,6 +77219,7 @@ static int ptn_reflection_constant_is_zlib(const char *name) {
 
 static int ptn_reflection_constant_is_xml(const char *name) {
     static const char *const names[] = {
+        "XML_SAX_IMPL",
         "XML_OPTION_CASE_FOLDING",
         "XML_OPTION_TARGET_ENCODING",
         "XML_OPTION_SKIP_TAGSTART",
@@ -77274,6 +77283,7 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "CONNECTION_TIMEOUT",
         "CASE_LOWER",
         "CASE_UPPER",
+        "INFO_MODULES",
         "SORT_REGULAR",
         "SORT_NUMERIC",
         "SORT_STRING",

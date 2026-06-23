@@ -38078,6 +38078,11 @@ fn compile_libxml_xml_dom_boundary_to_native_binary() {
 var_dump(LIBXML_NOENT, LIBXML_DTDLOAD, LIBXML_ERR_FATAL, defined('LIBXML_LOADED_VERSION'));
 $constants = get_defined_constants(true);
 var_dump(isset($constants['libxml']['LIBXML_PARSEHUGE']), isset($constants['xml']['XML_OPTION_PARSE_HUGE']));
+var_dump(XML_SAX_IMPL, defined('INFO_MODULES'));
+ob_start();
+phpinfo(INFO_MODULES);
+$info = ob_get_clean();
+var_dump(str_contains($info, 'XML Support => active'), str_contains($info, 'EXPAT'));
 
 var_dump(libxml_use_internal_errors(false));
 var_dump(libxml_use_internal_errors(true));
@@ -38170,6 +38175,10 @@ echo $writer->flush();
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "string(6) \"libxml\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
             "bool(false)\n",
             "bool(false)\n",
             "bool(true)\n",
