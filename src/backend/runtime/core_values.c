@@ -950,6 +950,7 @@ typedef struct {
     int object_property_iterator;
     int valid;
     int live;
+    int owns_array;
 } PtnArrayIterator;
 
 struct PtnGenerator {

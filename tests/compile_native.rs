@@ -13810,6 +13810,36 @@ echo 2;
 }
 
 #[test]
+fn compile_foreach_snapshot_survives_gc_collect_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-snapshot-gc-collect");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-snapshot-gc-collect.php");
+    let output = root.join("foreach-snapshot-gc-collect-bin");
+    fs::write(
+        &input,
+        "<?php
+$classes = ['stdClass', 'InternalIterator', 'BcMath\\\\Number'];
+foreach ($classes as $class) {
+    echo $class, \"\\n\";
+    gc_collect_cycles();
+}
+echo \"DONE\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "stdClass\nInternalIterator\nBcMath\\Number\nDONE\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_collects_object_closure_cycles_to_native_binary() {
     let root = temp_dir("ptn-native-gc-object-closure-cycles");
     fs::create_dir_all(&root).unwrap();
