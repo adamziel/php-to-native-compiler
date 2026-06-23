@@ -23467,6 +23467,72 @@ var_dump(preg_split('/(?<=\\\\p{L})(?=\\\\d)/u', 'é2 a3'));\n",
 }
 
 #[test]
+fn compile_preg_pcre2_version_and_utf8_offset_cache_to_native_binary() {
+    let Some(pcre2_library) = discover_pcre2_library() else {
+        eprintln!("skipping PCRE2 UTF-8 cache test: libpcre2-8 was not found");
+        return;
+    };
+
+    let root = temp_dir("ptn-native-preg-pcre2-version-utf8-cache");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-pcre2-version-utf8-cache.php");
+    let output = root.join("preg-pcre2-version-utf8-cache-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$constants = get_defined_constants(true);\n\
+var_dump(PCRE_VERSION_MAJOR === 10);\n\
+var_dump(PCRE_VERSION_MINOR >= 38);\n\
+var_dump(isset($constants['pcre']['PCRE_VERSION']));\n\
+var_dump($constants['pcre']['PCRE_VERSION_MAJOR'] === PCRE_VERSION_MAJOR);\n\
+$input_size = 64 * 1024;\n\
+$str = str_repeat('a', $input_size);\n\
+$start = microtime(true);\n\
+$pos = 0;\n\
+while (preg_match('/\\G\\w/u', $str, $m, 0, $pos)) ++$pos;\n\
+$elapsed = microtime(true) - $start;\n\
+var_dump($pos === $input_size);\n\
+var_dump($elapsed < 0.5);\n\
+var_dump(preg_match('/./u', \"a\\xFF\", $bad, 0, 1));\n\
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PCRE2_LIBRARY", &pcre2_library)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_PCRE2_NO_UTF_CHECK"));
+    assert!(c_source.contains("pcre_utf8_cache_data"));
+    assert!(c_source.contains("ptn_direct_preg_match_contiguous_word_variable_matches"));
+}
+
+#[test]
 fn compile_mb_split_empty_pattern_to_native_binary() {
     let root = temp_dir("ptn-native-mb-split-empty-pattern");
     fs::create_dir_all(&root).unwrap();

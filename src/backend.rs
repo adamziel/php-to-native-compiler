@@ -44579,6 +44579,90 @@ impl ValueEmitter {
         result_temp.to_string()
     }
 
+    fn emit_direct_preg_match_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        if let [ValueExpr::String(pattern), subject, ValueExpr::Load {
+            name: matches_name, ..
+        }, ValueExpr::Int(0), offset] = arguments
+        {
+            if pattern == "/\\G\\w/u" && matches_name != "GLOBALS" {
+                let subject_temp = self.emit_call_argument(out, "preg_match", 1, subject);
+                let offset_temp = self.emit_call_argument(out, "preg_match", 4, offset);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(
+                    " = ptn_direct_preg_match_contiguous_word_variable_matches(&runtime, ",
+                );
+                out.push_str(&subject_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(matches_name));
+                out.push_str("\", ");
+                out.push_str(&offset_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &subject_temp);
+                emit_value_cleanup(out, "    ", &offset_temp);
+                return result_temp;
+            }
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if argument_index == 2 {
+                temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    "preg_match",
+                    argument_index,
+                    "matches",
+                    line,
+                    true,
+                    true,
+                ));
+            } else {
+                temps.push(self.emit_call_argument(out, "preg_match", argument_index, argument));
+            }
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_internal_preg_match(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_direct_debug_zval_dump_call(
         &mut self,
         out: &mut String,
@@ -45003,6 +45087,14 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &string_temp);
             emit_value_cleanup(out, "    ", &times_temp);
             return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("preg_match")
+            && (2..=5).contains(&arguments.len())
+        {
+            return self.emit_direct_preg_match_call(out, arguments, line);
         }
 
         if !has_named_arguments

@@ -1207,6 +1207,93 @@ static const PtnLibxmlVersionInfo *ptn_libxml_version_info_load(void) {
     return &ptn_libxml_version_info;
 }
 
+#define PTN_PCRE2_CONFIG_VERSION 11
+
+typedef struct {
+    int attempted;
+    char version[64];
+    int major;
+    int minor;
+} PtnPcre2VersionInfo;
+
+static PtnPcre2VersionInfo ptn_pcre2_version_info;
+
+static void ptn_pcre2_version_info_set_fallback(PtnPcre2VersionInfo *info) {
+    snprintf(info->version, sizeof(info->version), "10.44");
+    info->major = 10;
+    info->minor = 44;
+}
+
+static int ptn_pcre2_parse_version(PtnPcre2VersionInfo *info) {
+    char *major_end = NULL;
+    errno = 0;
+    long major = strtol(info->version, &major_end, 10);
+    if (errno == ERANGE || major_end == info->version || major_end == NULL || *major_end != '.') {
+        return 0;
+    }
+    char *minor_end = NULL;
+    errno = 0;
+    long minor = strtol(major_end + 1, &minor_end, 10);
+    if (errno == ERANGE || minor_end == major_end + 1 || major < 0 || minor < 0) {
+        return 0;
+    }
+    info->major = (int)major;
+    info->minor = (int)minor;
+    return 1;
+}
+
+#if !defined(_WIN32)
+static void *ptn_pcre2_version_open_known_name(void) {
+    const char *env_library = getenv("PTN_PCRE2_LIBRARY");
+    const char *candidates[] = {
+        env_library == NULL ? "" : env_library,
+#ifdef PTN_PCRE2_DEFAULT_LIBRARY
+        PTN_PCRE2_DEFAULT_LIBRARY,
+#endif
+        "libpcre2-8.so.0",
+        "libpcre2-8.so",
+        NULL
+    };
+    for (size_t i = 0; candidates[i] != NULL; i++) {
+        if (candidates[i][0] == '\0') {
+            continue;
+        }
+        void *handle = dlopen(candidates[i], RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+}
+#endif
+
+static const PtnPcre2VersionInfo *ptn_pcre2_version_info_load(void) {
+    if (ptn_pcre2_version_info.attempted) {
+        return &ptn_pcre2_version_info;
+    }
+    ptn_pcre2_version_info.attempted = 1;
+    ptn_pcre2_version_info_set_fallback(&ptn_pcre2_version_info);
+#if !defined(_WIN32)
+    void *handle = ptn_pcre2_version_open_known_name();
+    if (handle != NULL) {
+        int (*config)(uint32_t, void *) = NULL;
+        void *symbol = dlsym(handle, "pcre2_config_8");
+        if (symbol != NULL) {
+            memcpy(&config, &symbol, sizeof(config));
+            char version[sizeof(ptn_pcre2_version_info.version)] = { 0 };
+            if (config(PTN_PCRE2_CONFIG_VERSION, version) >= 0 && version[0] != '\0') {
+                memcpy(ptn_pcre2_version_info.version, version, sizeof(ptn_pcre2_version_info.version));
+                ptn_pcre2_version_info.version[sizeof(ptn_pcre2_version_info.version) - 1] = '\0';
+                if (!ptn_pcre2_parse_version(&ptn_pcre2_version_info)) {
+                    ptn_pcre2_version_info_set_fallback(&ptn_pcre2_version_info);
+                }
+            }
+        }
+    }
+#endif
+    return &ptn_pcre2_version_info;
+}
+
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
 #define PTN_BUILTIN_INT_CONSTANT(constant_name, value) \
     if (strcmp(name, constant_name) == 0) { \
@@ -2365,6 +2452,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     }
     if (strcmp(name, "PREG_JIT_STACKLIMIT_ERROR") == 0) {
         *out = ptn_int(PTN_PREG_JIT_STACKLIMIT_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PCRE_VERSION") == 0) {
+        *out = ptn_string(ptn_pcre2_version_info_load()->version);
+        return 1;
+    }
+    if (strcmp(name, "PCRE_VERSION_MAJOR") == 0) {
+        *out = ptn_int(ptn_pcre2_version_info_load()->major);
+        return 1;
+    }
+    if (strcmp(name, "PCRE_VERSION_MINOR") == 0) {
+        *out = ptn_int(ptn_pcre2_version_info_load()->minor);
         return 1;
     }
     if (strcmp(name, "FILTER_VALIDATE_INT") == 0) {

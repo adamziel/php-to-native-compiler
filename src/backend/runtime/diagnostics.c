@@ -2505,5 +2505,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->json_last_error_line = 0;
     runtime->json_last_error_column = 0;
     runtime->pcre_last_error = PTN_PREG_NO_ERROR;
+    runtime->pcre_utf8_cache_data = NULL;
+    runtime->pcre_utf8_cache_len = 0;
+    runtime->pcre_utf8_cache_known = 0;
+    runtime->pcre_utf8_cache_valid = 0;
     runtime->intl_last_error_message = ptn_duplicate_string("U_ZERO_ERROR");
 }

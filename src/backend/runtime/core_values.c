@@ -1580,6 +1580,10 @@ struct PtnRuntime {
     size_t json_last_error_line;
     size_t json_last_error_column;
     int pcre_last_error;
+    const char *pcre_utf8_cache_data;
+    size_t pcre_utf8_cache_len;
+    int pcre_utf8_cache_known;
+    int pcre_utf8_cache_valid;
     char *intl_last_error_message;
 };
 
