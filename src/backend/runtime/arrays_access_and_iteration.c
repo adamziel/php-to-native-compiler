@@ -906,6 +906,15 @@ static PTN_UNUSED PtnValue ptn_date_period_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_php_token_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
 #endif
@@ -1018,6 +1027,16 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_reflection_attribute(lookup_class_name)) {
         ptn_throw_exception(runtime, "Error", "Cannot directly instantiate ReflectionAttribute");
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_closure(lookup_class_name)) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Instantiation of class Closure is not allowed",
+            runtime->source_path,
+            line
+        );
         return ptn_null();
     }
     if (ptn_internal_class_name_is_sensitive_parameter(lookup_class_name)) {
@@ -1184,11 +1203,24 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_directory_iterator(lookup_class_name)) {
         return ptn_directory_iterator_new_for_class(runtime, lookup_class_name, argc, args, line);
     }
+    if (ptn_internal_class_name_is_directory(lookup_class_name)) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot directly construct Directory, use dir() instead",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
     }
     if (ptn_internal_class_name_is_session_handler(lookup_class_name)) {
         return ptn_session_handler_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_php_token(lookup_class_name)) {
+        return ptn_php_token_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_dom(lookup_class_name)) {
         return ptn_dom_new(runtime, lookup_class_name, argc, args, line);

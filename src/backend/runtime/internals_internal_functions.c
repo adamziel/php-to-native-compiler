@@ -59995,6 +59995,14 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
     return result;
 }
 
+static void ptn_php_token_set_properties(
+    PtnValue object,
+    int64_t id,
+    PtnValue text,
+    int64_t token_line,
+    int64_t pos
+);
+
 static PtnValue ptn_php_token_object(
     PtnRuntime *runtime,
     int64_t id,
@@ -60003,6 +60011,21 @@ static PtnValue ptn_php_token_object(
     int64_t pos
 ) {
     PtnValue object = ptn_object_new_shell(runtime, "PhpToken");
+    ptn_php_token_set_properties(object, id, text, token_line, pos);
+    return object;
+}
+
+static void ptn_php_token_set_properties(
+    PtnValue object,
+    int64_t id,
+    PtnValue text,
+    int64_t token_line,
+    int64_t pos
+) {
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT || object.as.object == NULL) {
+        return;
+    }
     ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("id"), ptn_int(id));
     ptn_array_set_entry(
         object.as.object->properties,
@@ -60011,6 +60034,121 @@ static PtnValue ptn_php_token_object(
     );
     ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("line"), ptn_int(token_line));
     ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("pos"), ptn_int(pos));
+}
+
+static int ptn_php_token_constructor_values(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int64_t *id_out,
+    PtnValue *text_out,
+    int64_t *token_line_out,
+    int64_t *pos_out
+) {
+    if (argc < 2 || argc > 4) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "PhpToken::__construct() expects between 2 and 4 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return 0;
+    }
+
+    int64_t id = ptn_internal_expect_integer_arg(
+        runtime,
+        "PhpToken::__construct",
+        1,
+        "id",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    PtnStringOperand text = ptn_internal_expect_string_arg(
+        runtime,
+        "PhpToken::__construct",
+        2,
+        "text",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    int64_t token_line = -1;
+    if (argc >= 3) {
+        token_line = ptn_internal_expect_integer_arg(
+            runtime,
+            "PhpToken::__construct",
+            3,
+            "line",
+            args[2],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return 0;
+        }
+    }
+    int64_t pos = -1;
+    if (argc >= 4) {
+        pos = ptn_internal_expect_integer_arg(
+            runtime,
+            "PhpToken::__construct",
+            4,
+            "pos",
+            args[3],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return 0;
+        }
+    }
+
+    *id_out = id;
+    *text_out = ptn_owned_string_len(
+        ptn_duplicate_string_len(text.data, text.len),
+        text.len
+    );
+    *token_line_out = token_line;
+    *pos_out = pos;
+    ptn_string_operand_free(text);
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_php_token_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    int64_t id = 0;
+    PtnValue text_value = ptn_null();
+    int64_t token_line = -1;
+    int64_t pos = -1;
+    if (!ptn_php_token_constructor_values(
+            runtime,
+            argc,
+            args,
+            line,
+            &id,
+            &text_value,
+            &token_line,
+            &pos
+        )) {
+        return ptn_null();
+    }
+    PtnValue object = ptn_php_token_object(runtime, id, text_value, token_line, pos);
+    ptn_value_destroy(&text_value);
     return object;
 }
 
@@ -60085,9 +60223,28 @@ static PTN_UNUSED PtnValue ptn_php_token_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    (void)line;
     receiver = ptn_value_deref(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        int64_t id = 0;
+        PtnValue text_value = ptn_null();
+        int64_t token_line = -1;
+        int64_t pos = -1;
+        if (!ptn_php_token_constructor_values(
+                runtime,
+                argc,
+                args,
+                line,
+                &id,
+                &text_value,
+                &token_line,
+                &pos
+            )) {
+            return ptn_null();
+        }
+        ptn_php_token_set_properties(receiver, id, text_value, token_line, pos);
+        ptn_value_destroy(&text_value);
+        return ptn_null();
+    }
     if (!ptn_ascii_case_equal(name, "getTokenName")) {
         ptn_throw_exception(runtime, "Error", "Call to undefined method");
         return ptn_null();
@@ -90376,6 +90533,28 @@ static PtnValue ptn_datetime_create_object(
     return object;
 }
 
+static int ptn_datetime_static_factory_class_is_instantiable(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    if (!ptn_declared_class_is_abstract(class_name)) {
+        return 1;
+    }
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot instantiate abstract class %s",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_datetime_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -93795,7 +93974,13 @@ static PtnValue ptn_date_period_from_iso8601_string(
     return object;
 }
 
-static PtnValue ptn_date_period_create_from_iso8601_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_date_period_create_from_iso8601_string(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
     if (argc < 1 || argc > 2) {
         char message[160];
         int written = snprintf(
@@ -93808,6 +93993,9 @@ static PtnValue ptn_date_period_create_from_iso8601_string(PtnRuntime *runtime, 
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (!ptn_datetime_static_factory_class_is_instantiable(runtime, class_name, line)) {
         return ptn_null();
     }
     PtnStringOperand isostr = ptn_internal_expect_string_arg(
@@ -93823,7 +94011,7 @@ static PtnValue ptn_date_period_create_from_iso8601_string(PtnRuntime *runtime, 
     }
     char *isostr_string = ptn_duplicate_string_len(isostr.data, isostr.len);
     int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
-    PtnValue result = ptn_date_period_from_iso8601_string(runtime, "DatePeriod", isostr_string, options, line);
+    PtnValue result = ptn_date_period_from_iso8601_string(runtime, class_name, isostr_string, options, line);
     free(isostr_string);
     ptn_string_operand_free(isostr);
     return result;
@@ -94955,6 +95143,9 @@ static PtnValue ptn_datetime_create_from_timestamp(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
+    if (!ptn_datetime_static_factory_class_is_instantiable(runtime, class_name, line)) {
+        return ptn_null();
+    }
     double timestamp = ptn_value_to_double(args[0]);
     if (!isfinite(timestamp) || timestamp > 9007199254740991.0 || timestamp < -9007199254740991.0) {
         char *value = ptn_value_to_string(args[0]);
@@ -94979,6 +95170,100 @@ static PtnValue ptn_datetime_create_from_timestamp(
     int microsecond = 0;
     ptn_datetime_split_timestamp(timestamp, &seconds, &microsecond);
     return ptn_datetime_create_object(runtime, class_name, seconds, microsecond, "+00:00", line);
+}
+
+static PtnValue ptn_datetime_create_from_format(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 3) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s() expects between 2 and 3 arguments, %zu given",
+            method_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (!ptn_datetime_static_factory_class_is_instantiable(runtime, class_name, line)) {
+        return ptn_null();
+    }
+
+    PtnStringOperand format = ptn_internal_expect_string_arg(
+        runtime,
+        method_name,
+        1,
+        "format",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand datetime = ptn_internal_expect_string_arg(
+        runtime,
+        method_name,
+        2,
+        "datetime",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(format);
+        return ptn_null();
+    }
+
+    const char *timezone = ptn_current_timezone_name();
+    if (argc >= 3) {
+        PtnValue timezone_arg = ptn_value_deref(args[2]);
+        if (timezone_arg.type != PTN_NULL) {
+            PtnDateTimeZoneData *zone = ptn_datetime_zone_data_from_value(timezone_arg);
+            if (zone == NULL) {
+                ptn_string_operand_free(format);
+                ptn_string_operand_free(datetime);
+                ptn_date_throw_type_error(runtime, method_name, 3, "timezone", "?DateTimeZone", args[2]);
+                return ptn_null();
+            }
+            timezone = zone->name;
+        }
+    }
+
+    char *datetime_string = ptn_duplicate_string_len(datetime.data, datetime.len);
+    time_t timestamp = 0;
+    int microsecond = 0;
+    char *parsed_timezone = NULL;
+    PtnValue result = ptn_bool(0);
+    if (ptn_datetime_parse_date_string(
+            datetime_string,
+            timezone,
+            &timestamp,
+            &microsecond,
+            &parsed_timezone
+        )) {
+        result = ptn_datetime_create_object(
+            runtime,
+            class_name,
+            timestamp,
+            microsecond,
+            parsed_timezone == NULL ? timezone : parsed_timezone,
+            line
+        );
+    }
+    free(parsed_timezone);
+    free(datetime_string);
+    ptn_string_operand_free(format);
+    ptn_string_operand_free(datetime);
+    return result;
 }
 
 static PtnValue ptn_internal_date_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -119728,18 +120013,29 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_date_interval_create_from_date_string(runtime, argc, args, line);
         }
     }
-    if (ptn_internal_class_name_is_date_period(class_name)) {
+    if (ptn_internal_class_name_is_date_period(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DatePeriod")) {
         if (ptn_ascii_case_equal(name, "__set_state")) {
             return ptn_date_period_from_state(runtime, argc, args, line);
         }
         if (ptn_ascii_case_equal(name, "createFromISO8601String")) {
-            return ptn_date_period_create_from_iso8601_string(runtime, argc, args, line);
+            return ptn_date_period_create_from_iso8601_string(runtime, class_name, argc, args, line);
         }
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "DateTimeImmutable")) {
         if (ptn_ascii_case_equal(name, "__set_state")) {
             return ptn_datetime_from_state(runtime, class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "createFromFormat")) {
+            return ptn_datetime_create_from_format(
+                runtime,
+                class_name,
+                "DateTimeImmutable::createFromFormat",
+                argc,
+                args,
+                line
+            );
         }
         if (ptn_ascii_case_equal(name, "createFromTimestamp")) {
             return ptn_datetime_create_from_timestamp(
@@ -119783,6 +120079,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 );
                 return ptn_null();
             }
+            if (!ptn_datetime_static_factory_class_is_instantiable(runtime, class_name, line)) {
+                return ptn_null();
+            }
             return ptn_datetime_clone_as_class(runtime, args[0], class_name, line);
         }
     }
@@ -119790,6 +120089,16 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_declared_class_is_same_or_descendant(class_name, "DateTime")) {
         if (ptn_ascii_case_equal(name, "__set_state")) {
             return ptn_datetime_from_state(runtime, class_name, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "createFromFormat")) {
+            return ptn_datetime_create_from_format(
+                runtime,
+                class_name,
+                "DateTime::createFromFormat",
+                argc,
+                args,
+                line
+            );
         }
         if (ptn_ascii_case_equal(name, "createFromTimestamp")) {
             return ptn_datetime_create_from_timestamp(
@@ -119831,6 +120140,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                     ptn_ascii_case_equal(name, "createFromImmutable") ? "DateTimeImmutable" : "DateTimeInterface",
                     args[0]
                 );
+                return ptn_null();
+            }
+            if (!ptn_datetime_static_factory_class_is_instantiable(runtime, class_name, line)) {
                 return ptn_null();
             }
             return ptn_datetime_clone_as_class(runtime, args[0], class_name, line);
@@ -132652,7 +132964,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         return ptn_session_handler_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
-        return ptn_ascii_case_equal(method_name, "getTokenName");
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "getTokenName");
     }
     if (ptn_internal_class_name_is_attribute(class_name) ||
         ptn_internal_class_name_is_deprecated(class_name) ||
@@ -133150,13 +133463,15 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
         return ptn_ascii_case_equal(method_name, "__set_state")
             || ptn_ascii_case_equal(method_name, "createFromDateString");
     }
-    if (ptn_internal_class_name_is_date_period(class_name)) {
+    if (ptn_internal_class_name_is_date_period(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DatePeriod")) {
         return ptn_ascii_case_equal(method_name, "__set_state")
             || ptn_ascii_case_equal(method_name, "createFromISO8601String");
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name) ||
         ptn_declared_class_is_same_or_descendant(class_name, "DateTimeImmutable")) {
         return ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "createFromFormat")
             || ptn_ascii_case_equal(method_name, "createFromInterface")
             || ptn_ascii_case_equal(method_name, "createFromMutable")
             || ptn_ascii_case_equal(method_name, "createFromTimestamp");
@@ -133164,6 +133479,7 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_ascii_case_equal(class_name, "DateTime") ||
         ptn_declared_class_is_same_or_descendant(class_name, "DateTime")) {
         return ptn_ascii_case_equal(method_name, "__set_state")
+            || ptn_ascii_case_equal(method_name, "createFromFormat")
             || ptn_ascii_case_equal(method_name, "createFromImmutable")
             || ptn_ascii_case_equal(method_name, "createFromInterface")
             || ptn_ascii_case_equal(method_name, "createFromTimestamp");
@@ -135187,6 +135503,23 @@ static PtnValue ptn_reflection_class_instantiate(
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(class_name, "Generator")) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(
+                "The \"Generator\" class is reserved for internal use and cannot be manually instantiated"
+            ),
+            runtime->source_path,
+            line,
+            "ReflectionClass->newInstance",
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
         return ptn_null();
     }
     if (ptn_declared_class_exists(class_name)) {

@@ -12844,7 +12844,7 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
 fn is_modeled_builtin_date_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval"
+        "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval" | "dateperiod"
     )
 }
 
@@ -14650,6 +14650,9 @@ fn validate_parent_class_names(classes: &mut [ClassDecl], traits: &[TraitDecl]) 
             || is_modeled_archive_network_class_name(&parent_name)
             || parent_name
                 .trim_start_matches('\\')
+                .eq_ignore_ascii_case("PhpToken")
+            || parent_name
+                .trim_start_matches('\\')
                 .eq_ignore_ascii_case("BcMath\\Number")
             || parent_name.eq_ignore_ascii_case("Generator")
         {
@@ -14886,6 +14889,14 @@ fn validate_method_signature_compatibility(
                             "Cannot override final method {}::{}()",
                             parent_class.name, parent_method.name
                         ),
+                        Some(method.span),
+                    ));
+                }
+                if let Some((parent_class, parent_method)) =
+                    find_final_modeled_internal_parent_method(class, &method.name, classes)
+                {
+                    return Err(Diagnostic::new(
+                        format!("Cannot override final method {parent_class}::{parent_method}()"),
                         Some(method.span),
                     ));
                 }
@@ -15959,6 +15970,31 @@ fn find_final_private_parent_constructor<'a>(
     None
 }
 
+fn find_final_modeled_internal_parent_method(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> Option<(&'static str, &'static str)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        let canonical = name.trim_start_matches('\\');
+        if canonical.eq_ignore_ascii_case("PhpToken")
+            && method_name.eq_ignore_ascii_case("__construct")
+        {
+            return Some(("PhpToken", "__construct"));
+        }
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
 fn find_abstract_parent_constructor<'a>(
     class: &ClassDecl,
     classes: &'a [ClassDecl],
@@ -16285,6 +16321,9 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
     is_modeled_builtin_interface_name(name)
         || name.eq_ignore_ascii_case("stdClass")
         || name.eq_ignore_ascii_case("Closure")
+        || name
+            .trim_start_matches('\\')
+            .eq_ignore_ascii_case("PhpToken")
         || name.eq_ignore_ascii_case("ArrayIterator")
         || name.eq_ignore_ascii_case("EmptyIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")

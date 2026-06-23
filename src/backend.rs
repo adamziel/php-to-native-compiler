@@ -7210,7 +7210,7 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
-    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
     out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_static_call_result;\n");
@@ -20228,6 +20228,8 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
                 "soapheader" => Some("SoapHeader"),
+                "closure" => Some("Closure"),
+                "directory" => Some("Directory"),
                 "phptoken" => Some("PhpToken"),
                 "phar" => Some("Phar"),
                 "phardata" => Some("PharData"),

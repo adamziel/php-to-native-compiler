@@ -1457,7 +1457,8 @@ $arrayChild = $rcArrayChild->newInstanceWithoutConstructor();\n\
 var_dump($arrayChild instanceof ArrayChild);\n\
 var_dump($arrayChild instanceof ArrayObject);\n\
 var_dump($arrayChild->getArrayCopy());\n\
-try { (new ReflectionClass(\"Generator\"))->newInstanceWithoutConstructor(); } catch (ReflectionException $e) { echo \"Generator:\" . $e->getMessage() . \"\\n\"; }\n",
+try { (new ReflectionClass(\"Generator\"))->newInstanceWithoutConstructor(); } catch (ReflectionException $e) { echo \"Generator:\" . $e->getMessage() . \"\\n\"; }\n\
+try { (new ReflectionClass(\"Generator\"))->newInstance(); } catch (Throwable $e) { echo \"GeneratorNew:\" . $e->getMessage() . \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -1486,8 +1487,84 @@ bool(true)\n\
 bool(true)\n\
 array(0) {\n\
 }\n\
-Generator:Class Generator is an internal class marked as final that cannot be instantiated without invoking its constructor\n";
+Generator:Class Generator is an internal class marked as final that cannot be instantiated without invoking its constructor\n\
+GeneratorNew:The \"Generator\" class is reserved for internal use and cannot be manually instantiated\n";
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_internal_constructor_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-constructor-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-constructor-boundaries.php");
+    let output = root.join("internal-constructor-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { new Closure(); } catch (Throwable $e) { echo get_class($e), ': ', $e->getMessage(), \"\\n\"; }\n\
+try { new Directory(); } catch (Throwable $e) { echo get_class($e), ': ', $e->getMessage(), \"\\n\"; }\n\
+$token = new PhpToken(300, 'function');\n\
+echo $token->id, ':', $token->text, ':', $token->line, ':', $token->pos, \"\\n\";\n\
+$token->__construct(301, 'class', 10, 100);\n\
+echo $token->id, ':', $token->text, ':', $token->line, ':', $token->pos, \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: Instantiation of class Closure is not allowed\n\
+Error: Cannot directly construct Directory, use dir() instead\n\
+300:function:-1:-1\n\
+301:class:10:100\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_date_static_factories_reject_abstract_descendants_to_native_binary() {
+    let root = temp_dir("ptn-native-date-static-factory-abstract-descendants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-static-factory-abstract-descendants.php");
+    let output = root.join("date-static-factory-abstract-descendants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+abstract class MyDatePeriod extends DatePeriod { public abstract function foo(); }\n\
+abstract class MyDateTime extends DateTime { public abstract function foo(); }\n\
+abstract class MyDateTimeImmutable extends DateTimeImmutable { public abstract function foo(); }\n\
+try { MyDatePeriod::createFromISO8601String('R5'); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTime::createFromFormat('Y-m-d', '2025-01-01'); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTime::createFromImmutable(new DateTimeImmutable()); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTime::createFromInterface(new DateTimeImmutable()); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTime::createFromTimestamp(0); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTimeImmutable::createFromFormat('Y-m-d', '2025-01-01'); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTimeImmutable::createFromMutable(new DateTime()); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTimeImmutable::createFromInterface(new DateTime()); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { MyDateTimeImmutable::createFromTimestamp(0); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot instantiate abstract class MyDatePeriod\n\
+Cannot instantiate abstract class MyDateTime\n\
+Cannot instantiate abstract class MyDateTime\n\
+Cannot instantiate abstract class MyDateTime\n\
+Cannot instantiate abstract class MyDateTime\n\
+Cannot instantiate abstract class MyDateTimeImmutable\n\
+Cannot instantiate abstract class MyDateTimeImmutable\n\
+Cannot instantiate abstract class MyDateTimeImmutable\n\
+Cannot instantiate abstract class MyDateTimeImmutable\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -11262,6 +11339,18 @@ class Extended extends Base {
     assert_eq!(
         error.message,
         "Cannot override final method Base::__construct()"
+    );
+
+    let error = parser::parse(
+        "<?php
+class MyPhpToken extends PhpToken {
+    public function __construct() {}
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot override final method PhpToken::__construct()"
     );
 
     let program = parser::parse(
