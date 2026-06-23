@@ -1834,7 +1834,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    return isfinite(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED int ptn_userland_string_to_int(PtnString string, int64_t *integer) {\n");
+    out.push_str("\nstatic PTN_UNUSED int ptn_userland_string_to_int(PtnRuntime *runtime, PtnString string, size_t line, int emit_precision_deprecation, int64_t *integer) {\n");
     out.push_str(
         "    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);\n",
     );
@@ -1869,6 +1869,18 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "                        } else if (ptn_userland_double_fits_int(parsed_float)) {\n",
     );
+    out.push_str("                            if (emit_precision_deprecation && ptn_float_to_int_loses_precision(parsed_float)) {\n");
+    out.push_str(
+        "                                ptn_emit_float_string_to_int_precision_deprecation_at(\n",
+    );
+    out.push_str(
+        "                                    runtime == NULL ? NULL : &runtime->diagnostics,\n",
+    );
+    out.push_str("                                    copy,\n");
+    out.push_str("                                    runtime == NULL || runtime->source_path == NULL ? \"ptn\" : runtime->source_path,\n");
+    out.push_str("                                    line\n");
+    out.push_str("                                );\n");
+    out.push_str("                            }\n");
     out.push_str("                            *integer = (int64_t)parsed_float;\n");
     out.push_str("                            accepted = 1;\n");
     out.push_str("                        }\n");
@@ -1893,12 +1905,22 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_FLOAT && ptn_userland_double_fits_int(resolved.as.floating)) {\n");
+    out.push_str("            if (ptn_float_to_int_loses_precision(resolved.as.floating)) {\n");
+    out.push_str("                ptn_emit_float_to_int_precision_deprecation_at(\n");
+    out.push_str("                    &runtime->diagnostics,\n");
+    out.push_str("                    resolved.as.floating,\n");
+    out.push_str(
+        "                    runtime->source_path == NULL ? \"ptn\" : runtime->source_path,\n",
+    );
+    out.push_str("                    line\n");
+    out.push_str("                );\n");
+    out.push_str("            }\n");
     out.push_str("            *out = ptn_cast_int(resolved);\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_STRING) {\n");
     out.push_str("            int64_t integer = 0;\n");
-    out.push_str("            if (ptn_userland_string_to_int(resolved.as.string, &integer)) {\n");
+    out.push_str("            if (ptn_userland_string_to_int(runtime, resolved.as.string, line, 1, &integer)) {\n");
     out.push_str("                *out = ptn_int(integer);\n");
     out.push_str("                return 1;\n");
     out.push_str("            }\n");
@@ -1944,7 +1966,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
-    out.push_str("        *out = ptn_cast_string(resolved);\n");
+    out.push_str("        *out = ptn_cast_string_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
@@ -1958,7 +1980,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_STRING)) {\n");
-    out.push_str("        *out = ptn_bool(ptn_is_truthy(resolved));\n");
+    out.push_str("        *out = ptn_cast_bool_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
@@ -1993,12 +2015,22 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_FLOAT && ptn_userland_double_fits_int(resolved.as.floating)) {\n");
+    out.push_str("            if (ptn_float_to_int_loses_precision(resolved.as.floating)) {\n");
+    out.push_str("                ptn_emit_float_to_int_precision_deprecation_at(\n");
+    out.push_str("                    &runtime->diagnostics,\n");
+    out.push_str("                    resolved.as.floating,\n");
+    out.push_str(
+        "                    runtime->source_path == NULL ? \"ptn\" : runtime->source_path,\n",
+    );
+    out.push_str("                    line\n");
+    out.push_str("                );\n");
+    out.push_str("            }\n");
     out.push_str("            *out = ptn_cast_int(resolved);\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_STRING) {\n");
     out.push_str("            int64_t integer = 0;\n");
-    out.push_str("            if (ptn_userland_string_to_int(resolved.as.string, &integer)) {\n");
+    out.push_str("            if (ptn_userland_string_to_int(runtime, resolved.as.string, line, 1, &integer)) {\n");
     out.push_str("                *out = ptn_int(integer);\n");
     out.push_str("                return 1;\n");
     out.push_str("            }\n");
@@ -2044,7 +2076,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
-    out.push_str("        *out = ptn_cast_string(resolved);\n");
+    out.push_str("        *out = ptn_cast_string_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
@@ -2058,7 +2090,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_STRING)) {\n");
-    out.push_str("        *out = ptn_bool(ptn_is_truthy(resolved));\n");
+    out.push_str("        *out = ptn_cast_bool_with_runtime(runtime, resolved, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
@@ -2838,6 +2870,86 @@ fn emit_user_functions(
                         out.push_str(&temp);
                         out.push_str(")) {\n");
                         out.push_str("                return ptn_null();\n");
+                        out.push_str("            }\n");
+                        out.push_str("        } else {\n");
+                        out.push_str(
+                            "            ptn_throw_user_parameter_class_type_error(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&parameter_type_error_display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
+                        out.push_str("            return ptn_null();\n");
+                        out.push_str("        }\n");
+                        out.push_str("    } else {\n");
+                        out.push_str("        ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str("));\n");
+                        out.push_str("    }\n");
+                        Some(temp)
+                    } else if type_hint_union_allows_int_string(type_hint) {
+                        let temp = format!("ptn_parameter_{}", parameter_index);
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(";\n");
+                        out.push_str("    if (!(");
+                        out.push_str(&condition);
+                        out.push_str(")) {\n");
+                        out.push_str("        PtnValue ptn_union_source = ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str(");\n");
+                        out.push_str("        if (!runtime.strict_types && (ptn_union_source.type == PTN_BOOL || ptn_union_source.type == PTN_FLOAT)) {\n");
+                        out.push_str("            int ptn_union_use_int = ptn_union_source.type == PTN_BOOL || ptn_userland_double_fits_int(ptn_union_source.as.floating);\n");
+                        out.push_str("            if (ptn_union_use_int) {\n");
+                        out.push_str(
+                            "                if (!ptn_coerce_user_parameter_int(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&parameter_type_error_display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(", &");
+                        out.push_str(&temp);
+                        out.push_str(")) {\n");
+                        out.push_str("                    return ptn_null();\n");
+                        out.push_str("                }\n");
+                        out.push_str("            } else {\n");
+                        out.push_str(
+                            "                if (!ptn_coerce_user_parameter_string(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&parameter_type_error_display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(", &");
+                        out.push_str(&temp);
+                        out.push_str(")) {\n");
+                        out.push_str("                    return ptn_null();\n");
+                        out.push_str("                }\n");
                         out.push_str("            }\n");
                         out.push_str("        } else {\n");
                         out.push_str(
@@ -5828,6 +5940,38 @@ fn emit_generic_return_type_boundary(
         out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
         out.push_str("    }\n");
     }
+    if type_hint_union_allows_int_string(return_type) {
+        out.push_str("    if (!(");
+        out.push_str(&condition);
+        out.push_str(") && ptn_return_value_was_set && !runtime.strict_types && (ptn_value_deref(ptn_return_value).type == PTN_BOOL || ptn_value_deref(ptn_return_value).type == PTN_FLOAT)) {\n");
+        out.push_str("        PtnValue ptn_typed_return_value;\n");
+        out.push_str("        PtnValue ptn_union_source = ptn_value_deref(ptn_return_value);\n");
+        out.push_str("        int ptn_union_use_int = ptn_union_source.type == PTN_BOOL || ptn_userland_double_fits_int(ptn_union_source.as.floating);\n");
+        out.push_str("        if (ptn_union_use_int) {\n");
+        out.push_str("            if (!ptn_coerce_user_return_int(&runtime, \"");
+        out.push_str(&c_string(function_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_hint_label(return_type)));
+        out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)) {\n");
+        out.push_str("                ptn_value_destroy(&ptn_return_value);\n");
+        out.push_str("                ptn_runtime_free(&runtime);\n");
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
+        out.push_str("        } else {\n");
+        out.push_str("            if (!ptn_coerce_user_return_string(&runtime, \"");
+        out.push_str(&c_string(function_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_hint_label(return_type)));
+        out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)) {\n");
+        out.push_str("                ptn_value_destroy(&ptn_return_value);\n");
+        out.push_str("                ptn_runtime_free(&runtime);\n");
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_value_drop(&ptn_return_value);\n");
+        out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    if (!ptn_return_value_was_set || !(");
     out.push_str(&condition);
     out.push_str(")) {\n");
@@ -6096,6 +6240,23 @@ fn type_hint_union_allows_int_to_float(type_hint: &TypeHint) -> bool {
         return false;
     };
     types.iter().any(|member| matches!(member, TypeHint::Float))
+}
+
+fn type_hint_union_allows_int_string(type_hint: &TypeHint) -> bool {
+    let TypeHint::Union(types) = type_hint else {
+        return false;
+    };
+    let mut has_int = false;
+    let mut has_string = false;
+    for member in types {
+        match member {
+            TypeHint::Int => has_int = true,
+            TypeHint::String => has_string = true,
+            TypeHint::Null => {}
+            _ => return false,
+        }
+    }
+    has_int && has_string
 }
 
 fn non_nullable_type_hint(type_hint: Option<&TypeHint>) -> Option<&TypeHint> {
@@ -37409,20 +37570,24 @@ impl ValueEmitter {
                             out.push_str(");\n");
                         }
                         CastKind::Object => {
-                            out.push_str("ptn_cast_object(&runtime, ");
+                            out.push_str("ptn_cast_object_with_runtime(&runtime, ");
                             out.push_str(&expr_temp);
+                            out.push_str(", ");
+                            out.push_str(&line.to_string());
                             out.push_str(");\n");
                         }
                         CastKind::Array => {
-                            out.push_str("ptn_cast_array(");
+                            out.push_str("ptn_cast_array_with_runtime(&runtime, ");
                             out.push_str(&expr_temp);
+                            out.push_str(", ");
+                            out.push_str(&line.to_string());
                             out.push_str(");\n");
                         }
                         CastKind::Int | CastKind::Float | CastKind::Bool => {
                             out.push_str(match kind {
                                 CastKind::Int => "ptn_cast_int_with_runtime",
                                 CastKind::Float => "ptn_cast_float_with_runtime",
-                                CastKind::Bool => "ptn_cast_bool",
+                                CastKind::Bool => "ptn_cast_bool_with_runtime",
                                 CastKind::String
                                 | CastKind::Array
                                 | CastKind::Object
@@ -37437,11 +37602,11 @@ impl ValueEmitter {
                                 }
                             });
                             out.push('(');
-                            if matches!(kind, CastKind::Int | CastKind::Float) {
+                            if matches!(kind, CastKind::Int | CastKind::Float | CastKind::Bool) {
                                 out.push_str("&runtime, ");
                             }
                             out.push_str(&expr_temp);
-                            if matches!(kind, CastKind::Int | CastKind::Float) {
+                            if matches!(kind, CastKind::Int | CastKind::Float | CastKind::Bool) {
                                 out.push_str(", ");
                                 out.push_str(&line.to_string());
                             }
@@ -37495,7 +37660,7 @@ impl ValueEmitter {
                 )
             }
             ValueExpr::Int(value) => format!("ptn_int({})", c_i64_literal(*value)),
-            ValueExpr::Float(value) => format!("ptn_float({value:?})"),
+            ValueExpr::Float(value) => format!("ptn_float({})", c_f64_literal(*value)),
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
@@ -43634,6 +43799,65 @@ impl ValueEmitter {
                 result_temp
             }
             ValueExpr::ArrayAccess { array, index, line } => {
+                if let ValueExpr::Load { name, .. } = array.as_ref() {
+                    let index_temp = self.emit_materialized_value(out, index);
+                    let diagnostic_needed_temp = self.next_temp();
+                    out.push_str("        int ");
+                    out.push_str(&diagnostic_needed_temp);
+                    out.push_str(" = 1;\n");
+                    let diagnostic_probe_temp = self.next_temp();
+                    out.push_str("        PtnLookupResult ");
+                    out.push_str(&diagnostic_probe_temp);
+                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\");\n");
+                    out.push_str("        if (");
+                    out.push_str(&diagnostic_probe_temp);
+                    out.push_str(".exists && ptn_value_deref(");
+                    out.push_str(&diagnostic_probe_temp);
+                    out.push_str(".value).type == PTN_ARRAY) {\n");
+                    out.push_str(
+                        "            ptn_emit_array_offset_key_conversion_diagnostic(&runtime, ",
+                    );
+                    out.push_str(&index_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(", 1);\n");
+                    out.push_str("            ");
+                    out.push_str(&diagnostic_needed_temp);
+                    out.push_str(" = 0;\n");
+                    out.push_str("        }\n");
+                    emit_value_cleanup(out, "        ", &format!("{diagnostic_probe_temp}.value"));
+
+                    let container_temp = self.next_temp();
+                    out.push_str("        PtnLookupResult ");
+                    out.push_str(&container_temp);
+                    out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\");\n");
+                    let result_temp = self.next_temp();
+                    out.push_str("        int ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = 0;\n");
+                    out.push_str("        if (");
+                    out.push_str(&container_temp);
+                    out.push_str(".exists) {\n");
+                    out.push_str("            ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_offset_is_set(&runtime, ");
+                    out.push_str(&container_temp);
+                    out.push_str(".value, ");
+                    out.push_str(&index_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(", ");
+                    out.push_str(&diagnostic_needed_temp);
+                    out.push_str(");\n");
+                    out.push_str("        }\n");
+                    emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
+                    emit_value_cleanup(out, "        ", &index_temp);
+                    return result_temp;
+                }
                 let container_temp = self.emit_quiet_lookup(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
                 let result_temp = self.next_temp();
@@ -43651,7 +43875,7 @@ impl ValueEmitter {
                 out.push_str(&index_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
+                out.push_str(", 1);\n");
                 out.push_str("        }\n");
                 emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
                 emit_value_cleanup(out, "        ", &index_temp);
@@ -49256,6 +49480,20 @@ fn c_i64_literal(value: i64) -> String {
     }
 }
 
+fn c_f64_literal(value: f64) -> String {
+    if value.is_nan() {
+        "NAN".to_string()
+    } else if value.is_infinite() {
+        if value.is_sign_negative() {
+            "-INFINITY".to_string()
+        } else {
+            "INFINITY".to_string()
+        }
+    } else {
+        format!("{value:?}")
+    }
+}
+
 fn c_optional_string(value: Option<&str>) -> String {
     match value {
         Some(value) => format!("\"{}\"", c_string(value)),
@@ -49267,7 +49505,7 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
     match value {
         Some(ValueExpr::String(value)) => format!("ptn_string(\"{}\")", c_string(value)),
         Some(ValueExpr::Int(value)) => format!("ptn_int({})", c_i64_literal(*value)),
-        Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
+        Some(ValueExpr::Float(value)) => format!("ptn_float({})", c_f64_literal(*value)),
         Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
         Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
         Some(ValueExpr::Constant { name, line, .. }) => format!(

@@ -5387,11 +5387,15 @@ fn assertion_expr_text(expr: &Expr) -> String {
             )
         }
         Expr::Cast { kind, expr, .. } => {
-            format!(
-                "({}) {}",
-                assertion_cast_kind_text(*kind),
-                assertion_expr_text(expr)
-            )
+            if matches!(kind, AstCastKind::Void) {
+                format!("(void){}", assertion_expr_text(expr))
+            } else {
+                format!(
+                    "({}) {}",
+                    assertion_cast_kind_text(*kind),
+                    assertion_expr_text(expr)
+                )
+            }
         }
         Expr::Binary {
             op, left, right, ..

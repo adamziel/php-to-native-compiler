@@ -8039,9 +8039,26 @@ static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
     size_t line
 );
 
+static PTN_UNUSED void ptn_emit_nan_coercion_warning(PtnRuntime *runtime, const char *type_name, size_t line) {
+    if (runtime == NULL) {
+        return;
+    }
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unexpected NAN value was coerced to %s",
+        type_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
 static PTN_UNUSED int64_t ptn_float_string_to_php_integer(double value) {
     if (!isfinite(value)) {
-        return value < 0.0 ? INT64_MIN : INT64_MAX;
+        return 0;
     }
     if (value >= 9223372036854775808.0) {
         return INT64_MAX;

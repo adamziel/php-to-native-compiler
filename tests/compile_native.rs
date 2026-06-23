@@ -3091,6 +3091,50 @@ fn parser_accepts_general_for_clause_expressions() {
 }
 
 #[test]
+fn parser_accepts_void_casts_in_for_clause_lists() {
+    let program = parser::parse("<?php for ((void)mark(); false; (void)tick()) {}").unwrap();
+    let Statement::For {
+        initializers,
+        conditions,
+        updates,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected for statement");
+    };
+    assert_eq!(initializers.len(), 1);
+    assert_eq!(conditions.len(), 1);
+    assert_eq!(updates.len(), 1);
+    assert!(matches!(
+        &initializers[0],
+        Statement::Expression {
+            expression: Expr::Cast {
+                kind: CastKind::Void,
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        &updates[0],
+        Statement::Expression {
+            expression: Expr::Cast {
+                kind: CastKind::Void,
+                ..
+            },
+            ..
+        }
+    ));
+
+    let error = parser::parse("<?php for (;(void)true;);").unwrap_err();
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \";\", expecting \",\""
+    );
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+}
+
+#[test]
 fn parser_accepts_comma_separated_for_conditions() {
     let program = parser::parse("<?php for ($i = 0; mark($i), $i < 3; $i++) { echo $i; }").unwrap();
     let Statement::For {
@@ -37581,6 +37625,86 @@ fn compile_finite_infinite_nan_internal_functions_to_native_binary() {
         "bool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_float_to_int_type_coercion_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-float-to-int-type-coercion-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("float-to-int-type-coercion-edges.php");
+    let output = root.join("float-to-int-type-coercion-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+function take_int(int $value) { var_dump($value); }
+function take_string(string $value) { var_dump($value); }
+function take_union(int|string $value): void { var_dump($value); }
+function return_int_float(): int { return 3.5; }
+function return_int_string(): int { return \"4.5\"; }
+
+take_int(1.5);
+take_int(\"2.5\");
+take_string(fdiv(0, 0));
+take_union(1.5);
+take_union(fdiv(0, 0));
+take_union(10e500);
+var_dump(return_int_float());
+var_dump(return_int_string());
+
+$nan = fdiv(0, 0);
+var_dump((bool)$nan);
+var_dump((string)$nan);
+var_dump((array)$nan);
+var_dump((object)$nan);
+
+$value = 0.10;
+settype($value, \"int\");
+var_dump($value);
+
+class Test {
+    public int $a;
+}
+$test = new Test();
+$test->a = \"1.5\";
+var_dump($test->a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    for needle in [
+        "Deprecated: Implicit conversion from float 1.5 to int loses precision",
+        "Deprecated: Implicit conversion from float-string \"2.5\" to int loses precision",
+        "Warning: unexpected NAN value was coerced to string",
+        "string(3) \"INF\"",
+        "Deprecated: Implicit conversion from float 3.5 to int loses precision",
+        "Deprecated: Implicit conversion from float-string \"4.5\" to int loses precision",
+        "Warning: unexpected NAN value was coerced to bool",
+        "Warning: unexpected NAN value was coerced to array",
+        "Warning: unexpected NAN value was coerced to object",
+        "Deprecated: Implicit conversion from float-string \"1.5\" to int loses precision",
+        "int(0)",
+    ] {
+        assert!(stdout.contains(needle), "missing {needle:?} in:\n{stdout}");
+    }
+    assert!(
+        !stdout.contains("Implicit conversion from float 0.1 to int loses precision"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_float(INFINITY)"));
 }
 
 #[test]

@@ -274,6 +274,12 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     const char *path,
     size_t line
 );
+static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation_at(
+    PtnDiagnosticSink *diagnostics,
+    const char *value,
+    const char *path,
+    size_t line
+);
 static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
     PtnDiagnosticSink *diagnostics,
     double value,
@@ -1783,6 +1789,14 @@ static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) 
     return object_value;
 }
 
+static PTN_UNUSED PtnValue ptn_cast_object_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_FLOAT && isnan(resolved.as.floating)) {
+        ptn_emit_nan_coercion_warning(runtime, "object", line);
+    }
+    return ptn_cast_object(runtime, resolved);
+}
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 #endif
@@ -1926,6 +1940,14 @@ static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
 
     ptn_array_set_entry(array, ptn_array_int_key(0), ptn_value_clone(value));
     return array_value;
+}
+
+static PTN_UNUSED PtnValue ptn_cast_array_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_FLOAT && isnan(resolved.as.floating)) {
+        ptn_emit_nan_coercion_warning(runtime, "array", line);
+    }
+    return ptn_cast_array(resolved);
 }
 
 static PTN_UNUSED const char *ptn_property_non_object_receiver_name(PtnValue receiver) {
@@ -2673,6 +2695,32 @@ static PTN_UNUSED int ptn_property_double_fits_int(double value) {
     return isfinite(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0;
 }
 
+static PTN_UNUSED int ptn_property_string_to_int_for_assignment(
+    PtnRuntime *runtime,
+    PtnString string,
+    size_t line,
+    int emit_precision_deprecation,
+    int64_t *integer
+) {
+    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);
+    double number = 0.0;
+    int accepted = 0;
+    if (ptn_is_numeric_string(copy, &number) && ptn_property_double_fits_int(number)) {
+        if (emit_precision_deprecation && ptn_float_to_int_loses_precision(number)) {
+            ptn_emit_float_string_to_int_precision_deprecation_at(
+                runtime == NULL ? NULL : &runtime->diagnostics,
+                copy,
+                runtime == NULL || runtime->source_path == NULL ? "ptn" : runtime->source_path,
+                line
+            );
+        }
+        *integer = (int64_t)number;
+        accepted = 1;
+    }
+    free(copy);
+    return accepted;
+}
+
 static PTN_UNUSED void ptn_property_trim_type_span(
     const char **start,
     size_t *len
@@ -3200,10 +3248,15 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 return 1;
             }
             if (weak_scalar_coercion && resolved.type == PTN_STRING) {
-                double number = 0.0;
-                if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
-                    ptn_property_double_fits_int(number)) {
-                    *out = ptn_int((int64_t)number);
+                int64_t integer = 0;
+                if (ptn_property_string_to_int_for_assignment(
+                        runtime,
+                        resolved.as.string,
+                        line,
+                        1,
+                        &integer
+                    )) {
+                    *out = ptn_int(integer);
                     return 1;
                 }
             }
@@ -3343,10 +3396,15 @@ static PTN_UNUSED int ptn_property_type_try_coerce_assignment(
                 return 1;
             }
             if (weak_scalar_coercion && resolved.type == PTN_STRING) {
-                double number = 0.0;
-                if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
-                    ptn_property_double_fits_int(number)) {
-                    *out = ptn_int((int64_t)number);
+                int64_t integer = 0;
+                if (ptn_property_string_to_int_for_assignment(
+                        runtime,
+                        resolved.as.string,
+                        0,
+                        0,
+                        &integer
+                    )) {
+                    *out = ptn_int(integer);
                     return 1;
                 }
             }
@@ -13363,7 +13421,13 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     return value;
 }
 
-static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+static PTN_UNUSED int ptn_offset_is_set(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line,
+    int emit_array_key_diagnostic
+) {
     PtnValue stable_container = ptn_value_clone_deref(container);
     PtnValue stable_key = ptn_value_clone_deref(key_value);
     container = stable_container;
@@ -13397,7 +13461,9 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
     if (container.type != PTN_ARRAY) {
         goto done;
     }
-    ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
+    if (emit_array_key_diagnostic) {
+        ptn_emit_array_offset_key_conversion_diagnostic(runtime, key_value, line, 1);
+    }
 
     PtnArrayKey key;
     if (ptn_array_offset_key_is_invalid(key_value)) {

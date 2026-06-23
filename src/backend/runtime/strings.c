@@ -891,6 +891,9 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
 
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_emit_nan_coercion_warning(runtime, "string", line);
+    }
     if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
         if (value.type == PTN_EXCEPTION) {
             PtnStringOperand exception_string =
@@ -950,6 +953,14 @@ static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
 }
 
+static PTN_UNUSED PtnValue ptn_cast_bool_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
+        ptn_emit_nan_coercion_warning(runtime, "bool", line);
+    }
+    return ptn_bool(ptn_is_truthy(value));
+}
+
 typedef enum {
     PTN_CAST_TARGET_INT,
     PTN_CAST_TARGET_FLOAT,
@@ -971,7 +982,7 @@ static PTN_UNUSED PtnValue ptn_cast_target(
         case PTN_CAST_TARGET_STRING:
             return ptn_cast_string_with_runtime(runtime, value, line);
         case PTN_CAST_TARGET_BOOL:
-            return ptn_cast_bool(value);
+            return ptn_cast_bool_with_runtime(runtime, value, line);
     }
     return ptn_null();
 }

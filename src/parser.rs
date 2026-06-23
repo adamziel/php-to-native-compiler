@@ -128,6 +128,7 @@ fn parse_with_options(
         allow_standalone_list_array_element: false,
         active_type_scope: None,
         allow_unscoped_relative_types: 0,
+        allow_void_cast_expression: 0,
         return_by_ref_stack: Vec::new(),
         property_hook_body_depth: 0,
         active_property_hook_scope: None,
@@ -170,6 +171,7 @@ struct Parser<'a> {
     allow_standalone_list_array_element: bool,
     active_type_scope: Option<ActiveTypeScope>,
     allow_unscoped_relative_types: usize,
+    allow_void_cast_expression: usize,
     return_by_ref_stack: Vec<bool>,
     property_hook_body_depth: usize,
     active_property_hook_scope: Option<ActivePropertyHookScope>,
@@ -5906,21 +5908,52 @@ impl Parser<'_> {
     }
 
     fn parse_for_clause_list(&mut self) -> Result<Vec<Statement>> {
-        let mut clauses = vec![self.parse_for_clause()?];
-        while matches!(self.peek().kind, TokenKind::Comma) {
-            self.advance();
-            clauses.push(self.parse_for_clause()?);
-        }
-        Ok(clauses)
+        self.allow_void_cast_expression += 1;
+        let mut clauses = Vec::new();
+        let result = loop {
+            match self.parse_for_clause() {
+                Ok(clause) => clauses.push(clause),
+                Err(error) => break Err(error),
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            break Ok(clauses);
+        };
+        self.allow_void_cast_expression -= 1;
+        result
     }
 
     fn parse_for_condition_list(&mut self) -> Result<Vec<Expr>> {
-        let mut conditions = vec![self.parse_expr()?];
-        while matches!(self.peek().kind, TokenKind::Comma) {
-            self.advance();
-            conditions.push(self.parse_expr()?);
-        }
-        Ok(conditions)
+        self.allow_void_cast_expression += 1;
+        let mut conditions = Vec::new();
+        let result = loop {
+            let condition = self.parse_expr();
+            match condition {
+                Ok(condition) => {
+                    if matches!(
+                        condition,
+                        Expr::Cast {
+                            kind: CastKind::Void,
+                            ..
+                        }
+                    ) && !matches!(self.peek().kind, TokenKind::Comma)
+                    {
+                        break Err(syntax_error_unexpected(self.peek(), Some("\",\"")));
+                    }
+                    conditions.push(condition);
+                }
+                Err(error) => break Err(error),
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            break Ok(conditions);
+        };
+        self.allow_void_cast_expression -= 1;
+        result
     }
 
     fn parse_for_clause(&mut self) -> Result<Statement> {
@@ -8492,6 +8525,7 @@ impl Parser<'_> {
             tokens,
             index: 0,
             block_depth: 0,
+            allow_void_cast_expression: self.allow_void_cast_expression,
             function_depth: self.function_depth,
             method_depth: self.method_depth,
             current_namespace: self.current_namespace.clone(),
@@ -9710,10 +9744,15 @@ impl Parser<'_> {
                 Some(TokenKind::RightParen)
             )
         {
-            return Err(Diagnostic::parse_error(
-                "syntax error, unexpected token \"(void)\"",
-                Some(left.span),
-            ));
+            if self.allow_void_cast_expression == 0 {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"(void)\"",
+                    Some(left.span),
+                ));
+            }
+            self.advance();
+            let right = self.advance().clone();
+            return Ok(Some((CastKind::Void, combine_spans(left.span, right.span))));
         }
         let Some(kind) = self.peek_cast_kind() else {
             self.index = start;

@@ -861,13 +861,17 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     if (key_value.type == PTN_RESOURCE) {
         ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
     }
-    if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
-        ptn_emit_float_to_int_precision_deprecation_at(
-            &runtime->diagnostics,
-            key_value.as.floating,
-            runtime->source_path == NULL ? "ptn" : runtime->source_path,
-            line
-        );
+    if (key_value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_out_of_range(key_value.as.floating)) {
+            ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, key_value.as.floating, line);
+        } else if (ptn_float_to_int_loses_precision(key_value.as.floating)) {
+            ptn_emit_float_to_int_precision_deprecation_at(
+                &runtime->diagnostics,
+                key_value.as.floating,
+                runtime->source_path == NULL ? "ptn" : runtime->source_path,
+                line
+            );
+        }
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
@@ -57116,62 +57120,24 @@ static PtnValue ptn_internal_get_current_user(PtnRuntime *runtime, size_t argc, 
 #endif
 }
 
-static void ptn_internal_settype_emit_nan_warning(PtnRuntime *runtime, const char *type_name, size_t line) {
-    char message[96];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "unexpected NAN value was coerced to %s",
-        type_name
-    );
-    if (written < 0 || (size_t)written >= sizeof(message)) {
-        ptn_abort_out_of_memory();
-    }
-    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
-}
-
 static PtnValue ptn_internal_settype_cast_int(PtnRuntime *runtime, PtnValue value, size_t line) {
-    value = ptn_value_deref(value);
-    if (value.type == PTN_FLOAT) {
-        if (ptn_float_to_int_out_of_range(value.as.floating)) {
-            ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, value.as.floating, line);
-            return ptn_int(ptn_float_to_php_integer(value.as.floating));
-        }
-        if (ptn_float_to_int_loses_precision(value.as.floating)) {
-            ptn_emit_float_to_int_precision_deprecation(&runtime->diagnostics, value.as.floating);
-        }
-        return ptn_int((int64_t)value.as.floating);
-    }
     return ptn_cast_int_with_runtime(runtime, value, line);
 }
 
 static PtnValue ptn_internal_settype_cast_bool(PtnRuntime *runtime, PtnValue value, size_t line) {
-    value = ptn_value_deref(value);
-    if (value.type == PTN_FLOAT) {
-        int boolean = value.as.floating != 0.0;
-        if (isnan(value.as.floating)) {
-            ptn_internal_settype_emit_nan_warning(runtime, "bool", line);
-        }
-        return ptn_bool(boolean);
-    }
-    return ptn_bool(ptn_is_truthy(value));
+    return ptn_cast_bool_with_runtime(runtime, value, line);
 }
 
 static PtnValue ptn_internal_settype_cast_null(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
-        ptn_internal_settype_emit_nan_warning(runtime, "null", line);
+        ptn_emit_nan_coercion_warning(runtime, "null", line);
     }
     return ptn_null();
 }
 
 static PtnValue ptn_internal_settype_cast_string(PtnRuntime *runtime, PtnValue value, size_t line) {
-    value = ptn_value_deref(value);
-    PtnValue converted = ptn_cast_string_with_runtime(runtime, value, line);
-    if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
-        ptn_internal_settype_emit_nan_warning(runtime, "string", line);
-    }
-    return converted;
+    return ptn_cast_string_with_runtime(runtime, value, line);
 }
 
 static PtnValue ptn_internal_settype_scalar_array(PtnValue value) {
@@ -57187,7 +57153,7 @@ static PtnValue ptn_internal_settype_scalar_array(PtnValue value) {
 static PtnValue ptn_internal_settype_cast_array(PtnRuntime *runtime, PtnReference *reference, size_t line) {
     PtnValue value = ptn_value_deref(reference->value);
     if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
-        ptn_internal_settype_emit_nan_warning(runtime, "array", line);
+        ptn_emit_nan_coercion_warning(runtime, "array", line);
         return ptn_internal_settype_scalar_array(reference->value);
     }
     return ptn_cast_array(value);
@@ -57206,7 +57172,7 @@ static PtnValue ptn_internal_settype_scalar_object(PtnRuntime *runtime, PtnValue
 static PtnValue ptn_internal_settype_cast_object(PtnRuntime *runtime, PtnReference *reference, size_t line) {
     PtnValue value = ptn_value_deref(reference->value);
     if (value.type == PTN_FLOAT && isnan(value.as.floating)) {
-        ptn_internal_settype_emit_nan_warning(runtime, "object", line);
+        ptn_emit_nan_coercion_warning(runtime, "object", line);
         return ptn_internal_settype_scalar_object(runtime, reference->value);
     }
     return ptn_cast_object(runtime, value);
@@ -159628,7 +159594,7 @@ static int ptn_eval_array_path_is_set_or_empty(
         : (
             is_empty
                 ? ptn_offset_is_empty(runtime, container, leaf->value, line)
-                : ptn_offset_is_set(runtime, container, leaf->value, line)
+                : ptn_offset_is_set(runtime, container, leaf->value, line, 1)
         );
     if (has_owned_container) {
         ptn_value_destroy(&owned_container);
