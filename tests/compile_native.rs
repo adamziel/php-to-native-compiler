@@ -41725,6 +41725,63 @@ $server->handle($client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_non_wsdl_iso_8859_1_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-non-wsdl-iso-8859-1-response");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-non-wsdl-iso-8859-1-response.php");
+    let output = root.join("soap-non-wsdl-iso-8859-1-response-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test() {
+    return "\xA6\xE8\xA5";
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('test');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false) {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        return $response;
+    }
+}
+
+$client = new LocalSoapClient(NULL, [
+    'location' => 'test://',
+    'uri' => 'http://testuri.org',
+    'encoding' => 'ISO-8859-1',
+]);
+var_dump($client->test());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(execution.stdout, b"string(3) \"\xA6\xE8\xA5\"\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_append_options_xml_declaration"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
     fs::create_dir_all(&root).unwrap();
