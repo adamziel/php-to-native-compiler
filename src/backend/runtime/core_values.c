@@ -2792,6 +2792,12 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_date_period_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_bcmath_number_new(
     PtnRuntime *runtime,
     size_t argc,
