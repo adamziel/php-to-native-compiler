@@ -61107,6 +61107,38 @@ try {\n\
 }
 
 #[test]
+fn compile_required_file_fatal_trace_omits_include_args_without_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-required-file-fatal-trace-include-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("required-file-fatal-trace-include-args.php");
+    let child = root.join("child.php");
+    let output = root.join("required-file-fatal-trace-include-args-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+require __DIR__ . '/child.php';\n",
+    )
+    .unwrap();
+    fs::write(&child, "<?php\nclass Child extends MissingParent {}\n").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(!stderr.contains("args element is not an array"));
+    assert!(stderr.contains("Fatal error: Uncaught Error: Class \"MissingParent\" not found"));
+    assert!(stderr.contains(&format!(
+        "#0 {}(2): require()\n#1 {{main}}",
+        input.display()
+    )));
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("} else if (!omit_args && args_slot != NULL) {"));
+}
+
+#[test]
 fn compile_exception_reflection_trace_mutation_to_native_binary() {
     let root = temp_dir("ptn-native-exception-reflection-trace-mutation");
     fs::create_dir_all(&root).unwrap();

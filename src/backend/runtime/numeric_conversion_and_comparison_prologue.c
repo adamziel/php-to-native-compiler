@@ -1926,7 +1926,7 @@ static int ptn_exception_append_trace_frame(
             }
             ptn_trace_append_arg(buffer, entry->value, max_string_len);
         }
-    } else if (args_slot != NULL) {
+    } else if (!omit_args && args_slot != NULL) {
         ptn_exception_trace_warning(runtime, "args element is not an array", line);
     }
     ptn_string_buffer_append_char(buffer, ')');
