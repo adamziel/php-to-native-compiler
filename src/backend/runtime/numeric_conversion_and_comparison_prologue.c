@@ -186,6 +186,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
+    runtime->generator_aborted_after_yield = 0;
     runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
@@ -1944,26 +1945,39 @@ static PTN_UNUSED PtnStringOperand ptn_exception_trace_as_string_operand(
     return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
 }
 
-static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
+static PTN_UNUSED void ptn_exception_append_to_string_chain(
     PtnRuntime *runtime,
-    PtnException *exception
+    PtnStringBuffer *buffer,
+    PtnException *exception,
+    int *first
 ) {
-    PtnStringBuffer buffer;
-    ptn_string_buffer_init(&buffer);
     if (exception == NULL) {
-        return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+        return;
     }
-    ptn_string_buffer_append(&buffer, exception->class_name);
+    if (exception->previous.type == PTN_EXCEPTION) {
+        ptn_exception_append_to_string_chain(
+            runtime,
+            buffer,
+            exception->previous.as.exception,
+            first
+        );
+    }
+    if (*first) {
+        *first = 0;
+    } else {
+        ptn_string_buffer_append(buffer, "\n\nNext ");
+    }
+    ptn_string_buffer_append(buffer, exception->class_name);
     if (exception->message_len != 0) {
-        ptn_string_buffer_append(&buffer, ": ");
-        ptn_string_buffer_append_len(&buffer, exception->message, exception->message_len);
+        ptn_string_buffer_append(buffer, ": ");
+        ptn_string_buffer_append_len(buffer, exception->message, exception->message_len);
         if (
             exception->message_defined_at_location &&
             exception->path != NULL &&
             exception->line != 0
         ) {
             ptn_string_buffer_append_format(
-                &buffer,
+                buffer,
                 " and defined in %s:%zu",
                 exception->path,
                 exception->line
@@ -1971,14 +1985,24 @@ static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
         }
     }
     if (!exception->message_defined_at_location) {
-        ptn_string_buffer_append(&buffer, " in ");
-        ptn_string_buffer_append(&buffer, exception->path == NULL ? "ptn" : exception->path);
-        ptn_string_buffer_append_format(&buffer, ":%zu", exception->line);
+        ptn_string_buffer_append(buffer, " in ");
+        ptn_string_buffer_append(buffer, exception->path == NULL ? "ptn" : exception->path);
+        ptn_string_buffer_append_format(buffer, ":%zu", exception->line);
     }
-    ptn_string_buffer_append(&buffer, "\nStack trace:\n");
+    ptn_string_buffer_append(buffer, "\nStack trace:\n");
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
-    ptn_string_buffer_append_len(&buffer, trace.data, trace.len);
+    ptn_string_buffer_append_len(buffer, trace.data, trace.len);
     free(trace.owned);
+}
+
+static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    int first = 1;
+    ptn_exception_append_to_string_chain(runtime, &buffer, exception, &first);
     return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
 }
 
@@ -2000,6 +2024,62 @@ static PTN_UNUSED void ptn_exception_trace_append_frame(
 
 static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    if (
+        runtime != NULL &&
+        runtime->current_generator != NULL &&
+        !runtime->generator_aborted_after_yield
+    ) {
+        PtnValue generator_frame = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            generator_frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(runtime->current_function_name == NULL ? "" : runtime->current_function_name))
+        );
+        ptn_array_set_entry(
+            generator_frame.as.array,
+            ptn_array_string_key("args"),
+            ptn_array_from_literal_entries(0, NULL)
+        );
+        ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);
+
+        PtnValue method_frame = ptn_array_from_literal_entries(0, NULL);
+        if (runtime->source_path != NULL) {
+            ptn_array_set_entry(
+                method_frame.as.array,
+                ptn_array_string_key("file"),
+                ptn_owned_string(ptn_duplicate_string(runtime->source_path))
+            );
+        }
+        if (runtime->call_site_line <= (size_t)INT64_MAX) {
+            ptn_array_set_entry(
+                method_frame.as.array,
+                ptn_array_string_key("line"),
+                ptn_int((int64_t)runtime->call_site_line)
+            );
+        }
+        ptn_array_set_entry(
+            method_frame.as.array,
+            ptn_array_string_key("class"),
+            ptn_string("Generator")
+        );
+        ptn_array_set_entry(
+            method_frame.as.array,
+            ptn_array_string_key("type"),
+            ptn_string("->")
+        );
+        ptn_array_set_entry(
+            method_frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_string("rewind")
+        );
+        ptn_array_set_entry(
+            method_frame.as.array,
+            ptn_array_string_key("args"),
+            ptn_array_from_literal_entries(0, NULL)
+        );
+        ptn_array_set_entry(trace.as.array, ptn_array_int_key(1), method_frame);
+        return trace;
+    }
     size_t index = 0;
     PtnTraceFrame *frame = runtime != NULL ? runtime->trace_frame : NULL;
     while (frame != NULL) {

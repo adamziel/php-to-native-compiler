@@ -1482,6 +1482,7 @@ struct PtnRuntime {
     const char *destructor_access_scope;
     int destructor_shutdown_phase;
     PtnGenerator *current_generator;
+    int generator_aborted_after_yield;
     PtnObject *current_fiber;
     int has_current_receiver;
     PtnValue current_receiver;

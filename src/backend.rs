@@ -22931,11 +22931,23 @@ fn emit_instruction(
             emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Expression(value) => {
+            let generator_yield_abort_target = if values.current_function_is_generator
+                && matches!(value, ValueExpr::Yield { .. })
+            {
+                values.generator_yield_abort_target.clone()
+            } else {
+                None
+            };
             let emitted_value = values.emit_discarded_value(out, value);
             out.push_str("    (void)");
             out.push_str(&emitted_value);
             out.push_str(";\n");
             emit_value_cleanup(out, "    ", &emitted_value);
+            if let Some(target) = generator_yield_abort_target {
+                out.push_str("    runtime.generator_aborted_after_yield = 1;\n");
+                let context_indices = return_cleanup_context_indices(finally_stack);
+                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
+            }
         }
         Instruction::Echo(value) => {
             let emitted_value = values.emit_materialized_value(out, value);
@@ -24240,13 +24252,25 @@ fn emit_try(
         || catches
             .iter()
             .any(|catch| instructions_contain_return(&catch.body));
-    let return_label =
-        if return_target.is_some() && !finally_body.is_empty() && try_or_catch_can_return {
-            Some(values.next_label("ptn_try_return"))
-        } else {
-            None
-        };
+    let try_or_catch_has_generator_statement_yield = values.current_function_is_generator
+        && (instructions_contain_generator_statement_yield(body)
+            || catches
+                .iter()
+                .any(|catch| instructions_contain_generator_statement_yield(&catch.body)));
+    let return_label = if return_target.is_some()
+        && !finally_body.is_empty()
+        && (try_or_catch_can_return || try_or_catch_has_generator_statement_yield)
+    {
+        Some(values.next_label("ptn_try_return"))
+    } else {
+        None
+    };
     let body_return_target = return_label.as_deref().or(return_target);
+    let body_generator_yield_abort_target = if try_or_catch_has_generator_statement_yield {
+        body_return_target.map(str::to_string)
+    } else {
+        values.generator_yield_abort_target.clone()
+    };
     let frame_active_temp = if !finally_body.is_empty() || needs_cleanup_context {
         Some(values.next_temp())
     } else {
@@ -24415,18 +24439,17 @@ fn emit_try(
         out.push_str("                }\n");
         out.push_str("            }\n");
     }
-    for body_instruction in body {
-        emit_instruction(
-            out,
-            values,
-            body_instruction,
-            control_targets,
-            finally_stack,
-            source_path,
-            body_return_target,
-            active_label_scope,
-        );
-    }
+    emit_instruction_sequence_with_generator_yield_abort_target(
+        out,
+        values,
+        body,
+        control_targets,
+        finally_stack,
+        source_path,
+        body_return_target,
+        active_label_scope,
+        body_generator_yield_abort_target.as_deref(),
+    );
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);
     out.push_str(");\n");
@@ -24435,6 +24458,9 @@ fn emit_try(
         out.push_str(frame_active_temp);
         out.push_str(" = 0;\n");
     }
+    let finally_generator_yield_abort_target =
+        generator_yield_abort_target_for_finally(values, finally_body, return_target)
+            .map(str::to_string);
     emit_finally_instructions_excluding_current(
         out,
         values,
@@ -24444,6 +24470,7 @@ fn emit_try(
         source_path,
         return_target,
         control_dispatch_label.is_some(),
+        finally_generator_yield_abort_target.as_deref(),
     );
     out.push_str("        } else {\n");
     out.push_str("            ptn_runtime_clear_temporary_roots(&runtime);\n");
@@ -24568,18 +24595,17 @@ fn emit_try(
         out.push_str(&catch_body_label);
         out.push_str(":\n");
         out.push_str("            ;\n");
-        for body_instruction in &catch.body {
-            emit_instruction(
-                out,
-                values,
-                body_instruction,
-                control_targets,
-                finally_stack,
-                source_path,
-                body_return_target,
-                active_label_scope,
-            );
-        }
+        emit_instruction_sequence_with_generator_yield_abort_target(
+            out,
+            values,
+            &catch.body,
+            control_targets,
+            finally_stack,
+            source_path,
+            body_return_target,
+            active_label_scope,
+            body_generator_yield_abort_target.as_deref(),
+        );
         if let Some(catch_active_temp) = &catch_active_temp {
             out.push_str("                ");
             out.push_str(catch_active_temp);
@@ -24617,6 +24643,9 @@ fn emit_try(
         out.push_str("            if (");
         out.push_str(&caught_temp);
         out.push_str(") {\n");
+        let finally_generator_yield_abort_target =
+            generator_yield_abort_target_for_finally(values, finally_body, return_target)
+                .map(str::to_string);
         emit_finally_instructions_excluding_current(
             out,
             values,
@@ -24626,6 +24655,7 @@ fn emit_try(
             source_path,
             return_target,
             control_dispatch_label.is_some(),
+            finally_generator_yield_abort_target.as_deref(),
         );
         out.push_str("            }\n");
     }
@@ -24657,6 +24687,9 @@ fn emit_try(
                 out.push_str(" = 0;\n");
                 out.push_str("        }\n");
             }
+            let finally_generator_yield_abort_target =
+                generator_yield_abort_target_for_finally(values, finally_body, return_target)
+                    .map(str::to_string);
             emit_finally_instructions(
                 out,
                 values,
@@ -24665,6 +24698,7 @@ fn emit_try(
                 finally_stack,
                 source_path,
                 return_target,
+                finally_generator_yield_abort_target.as_deref(),
             );
             out.push_str("        switch (");
             out.push_str(&context.target_temp);
@@ -24696,6 +24730,9 @@ fn emit_try(
             out.push_str(" = 0;\n");
             out.push_str("        }\n");
         }
+        let finally_generator_yield_abort_target =
+            generator_yield_abort_target_for_finally(values, finally_body, Some(return_target))
+                .map(str::to_string);
         emit_finally_instructions(
             out,
             values,
@@ -24704,6 +24741,7 @@ fn emit_try(
             finally_stack,
             source_path,
             Some(return_target),
+            finally_generator_yield_abort_target.as_deref(),
         );
         let context_indices = return_cleanup_context_indices(finally_stack);
         emit_jump_through_finally_contexts(out, finally_stack, &context_indices, return_target);
@@ -24724,6 +24762,7 @@ fn emit_finally_instructions_excluding_current(
     source_path: &str,
     return_target: Option<&str>,
     has_current_context: bool,
+    generator_yield_abort_target: Option<&str>,
 ) {
     let current_context =
         has_current_context.then(|| finally_stack.pop().expect("try finally context is active"));
@@ -24735,6 +24774,7 @@ fn emit_finally_instructions_excluding_current(
         finally_stack,
         source_path,
         return_target,
+        generator_yield_abort_target,
     );
     if let Some(context) = current_context {
         finally_stack.push(context);
@@ -24767,6 +24807,13 @@ fn emit_exceptional_finally_and_rethrow(
     out.push_str(");\n");
     out.push_str(indent);
     out.push_str("}\n");
+    let generator_yield_resume_label = if values.current_function_is_generator
+        && instructions_contain_generator_statement_yield(finally_body)
+    {
+        Some(values.next_label("ptn_exceptional_finally_generator_yield"))
+    } else {
+        None
+    };
     emit_finally_instructions_excluding_current(
         out,
         values,
@@ -24774,9 +24821,17 @@ fn emit_exceptional_finally_and_rethrow(
         control_targets,
         finally_stack,
         source_path,
-        return_target,
+        generator_yield_resume_label.as_deref().or(return_target),
         has_current_context,
+        generator_yield_resume_label.as_deref(),
     );
+    if let Some(label) = &generator_yield_resume_label {
+        out.push_str(indent);
+        out.push_str(label);
+        out.push_str(":\n");
+        out.push_str(indent);
+        out.push_str(";\n");
+    }
     out.push_str(indent);
     out.push_str("if (runtime.exceptions->active_exception == NULL && ");
     out.push_str(&saved_exception_temp);
@@ -24805,6 +24860,7 @@ fn emit_finally_instructions(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
+    generator_yield_abort_target: Option<&str>,
 ) {
     let label_prefix = values.next_label("ptn_finally_labels");
     let labels = instruction_labels(finally_body);
@@ -24812,22 +24868,108 @@ fn emit_finally_instructions(
         prefix: &label_prefix,
         labels: &labels,
     };
-    for finally_instruction in finally_body {
+    emit_instruction_sequence_with_generator_yield_abort_target(
+        out,
+        values,
+        finally_body,
+        control_targets,
+        finally_stack,
+        source_path,
+        return_target,
+        Some(&label_scope),
+        generator_yield_abort_target,
+    );
+}
+
+fn emit_instruction_sequence_with_generator_yield_abort_target(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    instructions: &[Instruction],
+    control_targets: &mut Vec<ControlTarget>,
+    finally_stack: &mut Vec<FinallyContext>,
+    source_path: &str,
+    return_target: Option<&str>,
+    label_scope: Option<&LabelScope<'_>>,
+    generator_yield_abort_target: Option<&str>,
+) {
+    let previous_target = values.generator_yield_abort_target.clone();
+    values.generator_yield_abort_target = generator_yield_abort_target.map(str::to_string);
+    for instruction in instructions {
         emit_instruction(
             out,
             values,
-            finally_instruction,
+            instruction,
             control_targets,
             finally_stack,
             source_path,
             return_target,
-            Some(&label_scope),
+            label_scope,
         );
     }
+    values.generator_yield_abort_target = previous_target;
+}
+
+fn generator_yield_abort_target_for_finally<'a>(
+    values: &ValueEmitter,
+    finally_body: &[Instruction],
+    return_target: Option<&'a str>,
+) -> Option<&'a str> {
+    (values.current_function_is_generator
+        && instructions_contain_generator_statement_yield(finally_body))
+    .then_some(return_target)
+    .flatten()
 }
 
 fn instructions_contain_return(instructions: &[Instruction]) -> bool {
     instructions.iter().any(instruction_contains_return)
+}
+
+fn instructions_contain_generator_statement_yield(instructions: &[Instruction]) -> bool {
+    instructions
+        .iter()
+        .any(instruction_contains_generator_statement_yield)
+}
+
+fn instruction_contains_generator_statement_yield(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::Expression(ValueExpr::Yield { .. }) => true,
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
+            instructions_contain_generator_statement_yield(body)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_contain_generator_statement_yield(&catch.body))
+                || instructions_contain_generator_statement_yield(finally_body)
+        }
+        Instruction::Branch {
+            then_body,
+            else_body,
+            ..
+        } => {
+            instructions_contain_generator_statement_yield(then_body)
+                || instructions_contain_generator_statement_yield(else_body)
+        }
+        Instruction::While { body, .. }
+        | Instruction::DoWhile { body, .. }
+        | Instruction::Foreach { body, .. } => instructions_contain_generator_statement_yield(body),
+        Instruction::For {
+            initializers,
+            updates,
+            body,
+            ..
+        } => {
+            instructions_contain_generator_statement_yield(initializers)
+                || instructions_contain_generator_statement_yield(updates)
+                || instructions_contain_generator_statement_yield(body)
+        }
+        Instruction::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| instructions_contain_generator_statement_yield(&case.body)),
+        _ => false,
+    }
 }
 
 fn instruction_contains_return(instruction: &Instruction) -> bool {
@@ -31052,6 +31194,7 @@ struct ValueEmitter {
     current_function_tracks_return_value_was_set: bool,
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
+    generator_yield_abort_target: Option<String>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -32716,6 +32859,7 @@ impl ValueEmitter {
             current_function_tracks_return_value_was_set,
             current_function_is_anonymous,
             current_function_index,
+            generator_yield_abort_target: None,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),

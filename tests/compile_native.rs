@@ -19057,6 +19057,95 @@ try {
 }
 
 #[test]
+fn compile_generator_abort_through_nested_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-abort-nested-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-abort-nested-finally.php");
+    let output = root.join("generator-abort-nested-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen_one() {
+    try {
+        try {
+            yield;
+        } finally {
+            print "INNER\n";
+        }
+    } catch (Exception $e) {
+        print "EX\n";
+    } finally {
+        print "OUTER\n";
+    }
+    print "NOTREACHED\n";
+}
+
+function gen_two() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            throw new Exception(2);
+        } finally {
+            try {
+                yield;
+            } finally {
+            }
+        }
+    }
+}
+
+function gen_three() {
+    try {
+        throw new Exception(1);
+    } finally {
+        try {
+            yield;
+        } finally {
+            try {
+                throw new Exception(2);
+            } finally {
+            }
+        }
+    }
+}
+
+gen_one()->current();
+echo "--\n";
+try {
+    gen_two()->rewind();
+} catch (Exception $e) {
+    echo $e, "\n";
+}
+echo "--\n";
+try {
+    gen_three()->rewind();
+} catch (Exception $e) {
+    echo $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let path = input.display().to_string();
+    assert!(!stdout.contains("NOTREACHED"));
+    assert!(stdout.starts_with("INNER\nOUTER\n--\n"));
+    assert!(stdout.contains("Exception: 1 in "));
+    assert!(stdout.contains("\n\nNext Exception: 2 in "));
+    assert!(stdout.contains("Stack trace:\n#0 [internal function]: gen_two()\n#1 "));
+    assert!(stdout.contains(": Generator->rewind()\n#2 {main}\n\nNext Exception: 2"));
+    assert!(stdout.contains("Stack trace:\n#0 [internal function]: gen_three()\n#1 "));
+    assert!(stdout.contains(&format!("#0 {path}(")));
+    assert!(stdout.contains(": gen_three()\n#1 {main}\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_yield_from_exception_releases_protocol_iterator_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from-exception-release");
     fs::create_dir_all(&root).unwrap();

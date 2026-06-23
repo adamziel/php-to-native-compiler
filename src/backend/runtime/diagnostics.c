@@ -2159,6 +2159,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
+    runtime->generator_aborted_after_yield = 0;
     runtime->current_fiber = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
