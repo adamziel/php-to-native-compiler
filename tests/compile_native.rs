@@ -15676,6 +15676,122 @@ var_dump($_SESSION);
 }
 
 #[test]
+fn compile_session_user_save_handler_lifecycle_to_native_binary() {
+    let root = temp_dir("ptn-native-session-user-save-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-user-save-handler.php");
+    let output = root.join("session-user-save-handler-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+
+class Handler implements SessionHandlerInterface {{
+    public string $data = '';
+
+    public function open($path, $name): bool {{
+        echo "open:$name\n";
+        return true;
+    }}
+
+    public function close(): bool {{
+        echo "close\n";
+        return true;
+    }}
+
+    public function read($id): string|false {{
+        echo "read:$id\n";
+        return $this->data;
+    }}
+
+    public function write($id, $data): bool {{
+        echo "write:$id:$data\n";
+        $this->data = $data;
+        return true;
+    }}
+
+    public function destroy($id): bool {{
+        echo "destroy:$id\n";
+        return true;
+    }}
+
+    public function gc($max_lifetime): int|false {{
+        return 1;
+    }}
+}}
+
+$handler = new Handler();
+session_set_save_handler($handler);
+session_id('ptn_custom_handler');
+session_start();
+$_SESSION['x'] = 'one';
+session_write_close();
+
+session_set_save_handler($handler);
+session_start();
+var_dump($_SESSION);
+session_destroy();
+
+class ParentHandler extends SessionHandler {{
+    public function read($id): string|false {{
+        echo "parent-read:$id\n";
+        return parent::read($id);
+    }}
+}}
+
+session_set_save_handler(new ParentHandler());
+session_id('ptn_parent_handler');
+session_start();
+$_SESSION['y'] = 'two';
+session_write_close();
+session_start();
+var_dump($_SESSION);
+session_write_close();
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "open:PHPSESSID\n",
+            "read:ptn_custom_handler\n",
+            "write:ptn_custom_handler:x|s:3:\"one\";\n",
+            "close\n",
+            "open:PHPSESSID\n",
+            "read:ptn_custom_handler\n",
+            "array(1) {\n",
+            "  [\"x\"]=>\n",
+            "  string(3) \"one\"\n",
+            "}\n",
+            "destroy:ptn_custom_handler\n",
+            "close\n",
+            "parent-read:ptn_parent_handler\n",
+            "parent-read:ptn_parent_handler\n",
+            "array(1) {\n",
+            "  [\"y\"]=>\n",
+            "  string(3) \"two\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_callback_dynamic_serializable_subclasses_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-callback-dynamic-serializable");
     fs::create_dir_all(&root).unwrap();

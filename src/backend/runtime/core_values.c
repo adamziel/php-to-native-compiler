@@ -1555,6 +1555,15 @@ struct PtnRuntime {
     PtnSymbolTable session_ini;
     char *session_id;
     int session_active;
+    int session_save_handler_kind;
+    PtnValue session_save_handler_object;
+    PtnValue session_save_handler_callbacks[9];
+    int session_save_handler_register_shutdown;
+    int session_save_handler_in_callback;
+    int session_lazy_write;
+    char *session_last_data;
+    size_t session_last_data_len;
+    int session_last_data_valid;
     int precision;
     int serialize_precision;
     int initial_precision;
@@ -2039,6 +2048,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_soap_header(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_var(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_param(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_session_handler(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_timezone(const char *class_name);
@@ -2449,6 +2459,20 @@ static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_session_handler_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_session_handler_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

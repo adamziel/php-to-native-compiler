@@ -1463,6 +1463,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SessionHandler\")) {\n");
+    out.push_str(
+        "        return ptn_ascii_case_equal(interface_name, \"SessionHandlerInterface\");\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
@@ -18800,6 +18805,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "datetimezone" => Some("DateTimeZone"),
                 "dateinterval" => Some("DateInterval"),
                 "hashcontext" => Some("HashContext"),
+                "sessionhandler" => Some("SessionHandler"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),

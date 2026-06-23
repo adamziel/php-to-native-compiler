@@ -2403,6 +2403,17 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->session_ini);
     runtime->session_id = ptn_duplicate_string("");
     runtime->session_active = 0;
+    runtime->session_save_handler_kind = 0;
+    runtime->session_save_handler_object = ptn_null();
+    for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {
+        runtime->session_save_handler_callbacks[i] = ptn_null();
+    }
+    runtime->session_save_handler_register_shutdown = 1;
+    runtime->session_save_handler_in_callback = 0;
+    runtime->session_lazy_write = 1;
+    runtime->session_last_data = NULL;
+    runtime->session_last_data_len = 0;
+    runtime->session_last_data_valid = 0;
     runtime->precision = ptn_ini_precision_value(
         getenv("PTN_PHP_PRECISION"),
         PTN_DEFAULT_PRECISION,

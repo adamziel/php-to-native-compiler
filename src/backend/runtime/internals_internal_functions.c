@@ -75166,6 +75166,18 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (session_ini != NULL) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, session_ini->name)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        if (ptn_ascii_case_equal(session_ini->name, "session.save_handler") &&
+            ptn_string_operand_ascii_case_equal(value, "user")) {
+            ptn_emit_runtime_warning(
+                runtime,
+                "ini_set(): Session save handler \"user\" cannot be set by ini_set()",
+                line
+            );
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_session_ini(runtime, session_ini->name, next);
         free(next);
@@ -75979,6 +75991,299 @@ static void ptn_session_delete_file(PtnRuntime *runtime, const char *id) {
     }
 }
 
+enum {
+    PTN_SESSION_HANDLER_NONE = 0,
+    PTN_SESSION_HANDLER_OBJECT = 1,
+    PTN_SESSION_HANDLER_CALLBACKS = 2
+};
+
+enum {
+    PTN_SESSION_CB_OPEN = 0,
+    PTN_SESSION_CB_CLOSE = 1,
+    PTN_SESSION_CB_READ = 2,
+    PTN_SESSION_CB_WRITE = 3,
+    PTN_SESSION_CB_DESTROY = 4,
+    PTN_SESSION_CB_GC = 5,
+    PTN_SESSION_CB_CREATE_SID = 6,
+    PTN_SESSION_CB_VALIDATE_SID = 7,
+    PTN_SESSION_CB_UPDATE_TIMESTAMP = 8,
+    PTN_SESSION_CB_COUNT = 9
+};
+
+static void ptn_session_clear_user_handler(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    ptn_value_destroy(&root->session_save_handler_object);
+    root->session_save_handler_object = ptn_null();
+    for (size_t i = 0; i < PTN_SESSION_CB_COUNT; i++) {
+        ptn_value_destroy(&root->session_save_handler_callbacks[i]);
+        root->session_save_handler_callbacks[i] = ptn_null();
+    }
+    root->session_save_handler_kind = PTN_SESSION_HANDLER_NONE;
+    root->session_save_handler_register_shutdown = 1;
+    root->session_save_handler_in_callback = 0;
+    free(root->session_last_data);
+    root->session_last_data = NULL;
+    root->session_last_data_len = 0;
+    root->session_last_data_valid = 0;
+    root->session_lazy_write = 1;
+}
+
+static int ptn_session_has_user_handler(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    return root != NULL && root->session_save_handler_kind != PTN_SESSION_HANDLER_NONE;
+}
+
+static void ptn_session_set_last_data(PtnRuntime *runtime, const char *data, size_t len) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    free(root->session_last_data);
+    root->session_last_data = NULL;
+    root->session_last_data_len = 0;
+    root->session_last_data_valid = 0;
+    if (data == NULL) {
+        return;
+    }
+    root->session_last_data = ptn_duplicate_string_len(data, len);
+    root->session_last_data_len = len;
+    root->session_last_data_valid = 1;
+}
+
+static int ptn_session_handler_object_method_exists(PtnRuntime *runtime, PtnValue object, const char *method_name) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (resolved.type != PTN_OBJECT || resolved.as.object == NULL) {
+        return 0;
+    }
+    const char *class_name = resolved.as.object->class_name;
+    if (runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        runtime->declared_method_exists(class_name, method_name)) {
+        return 1;
+    }
+    if (ptn_internal_class_method_exists(class_name, method_name)) {
+        return 1;
+    }
+    return ptn_declared_class_is_same_or_descendant(class_name, "SessionHandler") &&
+        ptn_internal_class_method_exists("SessionHandler", method_name);
+}
+
+static PtnValue ptn_session_object_method_callback(PtnValue object, const char *method_name) {
+    PtnValue callback = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(callback.as.array, ptn_array_int_key(0), ptn_value_clone_deref(object));
+    ptn_array_set_entry(callback.as.array, ptn_array_int_key(1), ptn_owned_string(ptn_duplicate_string(method_name)));
+    return callback;
+}
+
+static PtnValue ptn_session_handler_callback(PtnRuntime *runtime, int index) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL || root->session_save_handler_kind == PTN_SESSION_HANDLER_NONE) {
+        return ptn_null();
+    }
+    if (root->session_save_handler_kind == PTN_SESSION_HANDLER_CALLBACKS) {
+        return ptn_value_clone_deref(root->session_save_handler_callbacks[index]);
+    }
+    PtnValue handler = ptn_value_deref(root->session_save_handler_object);
+    if (handler.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    const char *method_name = NULL;
+    switch (index) {
+        case PTN_SESSION_CB_OPEN:
+            method_name = "open";
+            break;
+        case PTN_SESSION_CB_CLOSE:
+            method_name = "close";
+            break;
+        case PTN_SESSION_CB_READ:
+            method_name = "read";
+            break;
+        case PTN_SESSION_CB_WRITE:
+            method_name = "write";
+            break;
+        case PTN_SESSION_CB_DESTROY:
+            method_name = "destroy";
+            break;
+        case PTN_SESSION_CB_GC:
+            method_name = "gc";
+            break;
+        case PTN_SESSION_CB_CREATE_SID:
+            if (ptn_session_handler_object_method_exists(runtime, handler, "create_sid")) {
+                method_name = "create_sid";
+            } else if (ptn_session_handler_object_method_exists(runtime, handler, "createSid")) {
+                method_name = "createSid";
+            }
+            break;
+        case PTN_SESSION_CB_VALIDATE_SID:
+            method_name = ptn_session_handler_object_method_exists(runtime, handler, "validateId")
+                ? "validateId"
+                : NULL;
+            break;
+        case PTN_SESSION_CB_UPDATE_TIMESTAMP:
+            method_name = ptn_session_handler_object_method_exists(runtime, handler, "updateTimestamp")
+                ? "updateTimestamp"
+                : NULL;
+            break;
+    }
+    if (method_name == NULL ||
+        !ptn_session_handler_object_method_exists(runtime, handler, method_name)) {
+        return ptn_null();
+    }
+    return ptn_session_object_method_callback(handler, method_name);
+}
+
+static PtnValue ptn_session_call_user_handler(
+    PtnRuntime *runtime,
+    int index,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue callback = ptn_session_handler_callback(runtime, index);
+    if (ptn_value_deref(callback).type == PTN_NULL) {
+        return ptn_null();
+    }
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root != NULL) {
+        root->session_save_handler_in_callback++;
+    }
+    PtnValue result = ptn_null();
+    int completed = ptn_internal_call_callback_capturing_exception_impl(
+        runtime,
+        callback,
+        argc,
+        args,
+        NULL,
+        line,
+        0,
+        &result
+    );
+    if (root != NULL && root->session_save_handler_in_callback > 0) {
+        root->session_save_handler_in_callback--;
+    }
+    ptn_value_destroy(&callback);
+    if (!completed) {
+        ptn_rethrow_exception(runtime);
+    }
+    return result;
+}
+
+static int ptn_session_user_handler_bool(PtnRuntime *runtime, int index, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue result = ptn_session_call_user_handler(runtime, index, argc, args, line);
+    int ok = ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    return ok;
+}
+
+static int ptn_session_user_open(PtnRuntime *runtime, size_t line) {
+    PtnValue args[2] = {
+        ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_path"))),
+        ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.name")))
+    };
+    int ok = ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_OPEN, 2, args, line);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    return ok;
+}
+
+static int ptn_session_user_close(PtnRuntime *runtime, size_t line) {
+    return ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_CLOSE, 0, NULL, line);
+}
+
+static int ptn_session_user_write(PtnRuntime *runtime, const char *id, const char *data, size_t len, size_t line) {
+    PtnValue args[2] = {
+        ptn_owned_string(ptn_duplicate_string(id == NULL ? "" : id)),
+        ptn_owned_string_len(ptn_duplicate_string_len(data == NULL ? "" : data, len), len)
+    };
+    int ok = ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_WRITE, 2, args, line);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    return ok;
+}
+
+static int ptn_session_user_update_timestamp(PtnRuntime *runtime, const char *id, const char *data, size_t len, size_t line) {
+    PtnValue callback = ptn_session_handler_callback(runtime, PTN_SESSION_CB_UPDATE_TIMESTAMP);
+    int has_callback = ptn_value_deref(callback).type != PTN_NULL;
+    ptn_value_destroy(&callback);
+    if (!has_callback) {
+        return ptn_session_user_write(runtime, id, data, len, line);
+    }
+    PtnValue args[2] = {
+        ptn_owned_string(ptn_duplicate_string(id == NULL ? "" : id)),
+        ptn_owned_string_len(ptn_duplicate_string_len(data == NULL ? "" : data, len), len)
+    };
+    int ok = ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_UPDATE_TIMESTAMP, 2, args, line);
+    ptn_value_destroy(&args[0]);
+    ptn_value_destroy(&args[1]);
+    return ok;
+}
+
+static int ptn_session_user_destroy(PtnRuntime *runtime, const char *id, size_t line) {
+    PtnValue arg = ptn_owned_string(ptn_duplicate_string(id == NULL ? "" : id));
+    int ok = ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_DESTROY, 1, &arg, line);
+    ptn_value_destroy(&arg);
+    return ok;
+}
+
+static int64_t ptn_session_user_gc(PtnRuntime *runtime, int64_t max_lifetime, size_t line) {
+    PtnValue arg = ptn_int(max_lifetime);
+    PtnValue result = ptn_session_call_user_handler(runtime, PTN_SESSION_CB_GC, 1, &arg, line);
+    int64_t removed = ptn_value_to_integer(result);
+    ptn_value_destroy(&result);
+    return removed;
+}
+
+static char *ptn_session_user_create_sid(PtnRuntime *runtime, size_t line) {
+    PtnValue callback = ptn_session_handler_callback(runtime, PTN_SESSION_CB_CREATE_SID);
+    if (ptn_value_deref(callback).type == PTN_NULL) {
+        ptn_value_destroy(&callback);
+        return ptn_session_create_id_string(runtime, "");
+    }
+    ptn_value_destroy(&callback);
+    PtnValue result = ptn_session_call_user_handler(runtime, PTN_SESSION_CB_CREATE_SID, 0, NULL, line);
+    PtnValue resolved = ptn_value_deref(result);
+    char *id = NULL;
+    if (resolved.type == PTN_STRING) {
+        id = ptn_duplicate_string_len((const char *)resolved.as.string.data, resolved.as.string.len);
+    }
+    ptn_value_destroy(&result);
+    return id == NULL ? ptn_session_create_id_string(runtime, "") : id;
+}
+
+static int ptn_session_user_validate_sid(PtnRuntime *runtime, const char *id, size_t line) {
+    PtnValue callback = ptn_session_handler_callback(runtime, PTN_SESSION_CB_VALIDATE_SID);
+    if (ptn_value_deref(callback).type == PTN_NULL) {
+        ptn_value_destroy(&callback);
+        return 1;
+    }
+    ptn_value_destroy(&callback);
+    PtnValue arg = ptn_owned_string(ptn_duplicate_string(id == NULL ? "" : id));
+    int ok = ptn_session_user_handler_bool(runtime, PTN_SESSION_CB_VALIDATE_SID, 1, &arg, line);
+    ptn_value_destroy(&arg);
+    return ok;
+}
+
+static int ptn_session_user_read(PtnRuntime *runtime, char **data_out, size_t *len_out, size_t line) {
+    *data_out = NULL;
+    *len_out = 0;
+    PtnValue arg = ptn_owned_string(ptn_duplicate_string(ptn_session_id_current(runtime)));
+    PtnValue result = ptn_session_call_user_handler(runtime, PTN_SESSION_CB_READ, 1, &arg, line);
+    ptn_value_destroy(&arg);
+    PtnValue resolved = ptn_value_deref(result);
+    if (resolved.type != PTN_STRING) {
+        ptn_value_destroy(&result);
+        ptn_emit_runtime_warning(runtime, "session_start(): Failed to read session data: user (path: )", line);
+        return 0;
+    }
+    *data_out = ptn_duplicate_string_len((const char *)resolved.as.string.data, resolved.as.string.len);
+    *len_out = resolved.as.string.len;
+    ptn_value_destroy(&result);
+    return 1;
+}
+
 static int ptn_session_save_path_dirdepth(PtnRuntime *runtime) {
     const char *configured = ptn_runtime_session_ini(runtime, "session.save_path");
     if (configured == NULL || configured[0] == '\0') {
@@ -76499,7 +76804,7 @@ static PtnValue ptn_internal_session_status(PtnRuntime *runtime, size_t argc, co
     return ptn_int(ptn_session_is_active(runtime) ? PTN_PHP_SESSION_ACTIVE : PTN_PHP_SESSION_NONE);
 }
 
-static void ptn_session_choose_start_id(PtnRuntime *runtime) {
+static void ptn_session_choose_start_id(PtnRuntime *runtime, size_t line) {
     const char *current = ptn_session_id_current(runtime);
     if (current[0] == '\0' && ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_cookies"), 1)) {
         PtnValue *cookie_slot = ptn_runtime_global_variable_slot(runtime, "_COOKIE");
@@ -76516,6 +76821,22 @@ static void ptn_session_choose_start_id(PtnRuntime *runtime) {
             }
         }
         current = ptn_session_id_current(runtime);
+    }
+    if (ptn_session_has_user_handler(runtime)) {
+        if (current[0] != '\0' &&
+            ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 0) &&
+            !ptn_session_user_validate_sid(runtime, current, line)) {
+            char *generated = ptn_session_user_create_sid(runtime, line);
+            ptn_session_id_set(runtime, generated);
+            free(generated);
+            return;
+        }
+        if (current[0] == '\0') {
+            char *generated = ptn_session_user_create_sid(runtime, line);
+            ptn_session_id_set(runtime, generated);
+            free(generated);
+        }
+        return;
     }
     if (current[0] != '\0' &&
         ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 0) &&
@@ -76539,10 +76860,31 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     if (ptn_session_is_active(runtime)) {
         return ptn_bool(1);
     }
-    ptn_session_choose_start_id(runtime);
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root != NULL) {
+        root->session_lazy_write = argc >= 1 && ptn_session_array_bool_option(args[0], "lazy_write")
+            ? 1
+            : (argc >= 1 ? 0 : 1);
+    }
+    if (ptn_session_has_user_handler(runtime) && !ptn_session_user_open(runtime, line)) {
+        ptn_emit_runtime_warning(runtime, "session_start(): Failed to initialize storage module: user (path: )", line);
+        return ptn_bool(0);
+    }
+    ptn_session_choose_start_id(runtime, line);
     PtnValue session_data = ptn_array_from_literal_entries(0, NULL);
     size_t file_len = 0;
-    char *file_data = ptn_session_read_file(runtime, ptn_session_id_current(runtime), &file_len);
+    char *file_data = NULL;
+    if (ptn_session_has_user_handler(runtime)) {
+        if (!ptn_session_user_read(runtime, &file_data, &file_len, line)) {
+            ptn_value_destroy(&session_data);
+            (void)ptn_session_user_close(runtime, line);
+            return ptn_bool(0);
+        }
+        ptn_session_set_last_data(runtime, file_data, file_len);
+    } else {
+        file_data = ptn_session_read_file(runtime, ptn_session_id_current(runtime), &file_len);
+        ptn_session_set_last_data(runtime, file_data == NULL ? "" : file_data, file_data == NULL ? 0 : file_len);
+    }
     if (file_data != NULL) {
         PtnValue decoded;
         if (ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line)) {
@@ -76554,9 +76896,21 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     ptn_runtime_write_global_variable(runtime, "_SESSION", session_data);
     ptn_value_destroy(&session_data);
     ptn_session_set_active(runtime, 1);
-    PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
-    ptn_value_destroy(&create_file_result);
-    ptn_session_set_active(runtime, 1);
+    if (!ptn_session_has_user_handler(runtime)) {
+        PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
+        ptn_value_destroy(&create_file_result);
+        ptn_session_set_active(runtime, 1);
+    } else {
+        int64_t gc_probability = ptn_session_ini_integer(runtime, "session.gc_probability", 1);
+        int64_t gc_divisor = ptn_session_ini_integer(runtime, "session.gc_divisor", 100);
+        if (gc_probability > 0 && gc_divisor > 0 && gc_probability >= gc_divisor) {
+            (void)ptn_session_user_gc(
+                runtime,
+                ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440),
+                line
+            );
+        }
+    }
     if (read_and_close) {
         PtnValue close_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
         ptn_value_destroy(&close_result);
@@ -76608,12 +76962,46 @@ static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t arg
     int ok = 1;
     PtnValue encoded = ptn_value_deref(encoded_result);
     if (encoded.type == PTN_STRING) {
-        ok = ptn_session_write_file(
-            runtime,
-            ptn_session_id_current(runtime),
-            (const char *)encoded.as.string.data,
-            encoded.as.string.len
-        );
+        if (ptn_session_has_user_handler(runtime)) {
+            PtnRuntime *root = ptn_session_root(runtime);
+            int unchanged = root != NULL &&
+                root->session_lazy_write &&
+                root->session_last_data_valid &&
+                root->session_last_data_len == encoded.as.string.len &&
+                memcmp(root->session_last_data, encoded.as.string.data, encoded.as.string.len) == 0;
+            if (unchanged) {
+                ok = ptn_session_user_update_timestamp(
+                    runtime,
+                    ptn_session_id_current(runtime),
+                    (const char *)encoded.as.string.data,
+                    encoded.as.string.len,
+                    line
+                );
+            } else {
+                ok = ptn_session_user_write(
+                    runtime,
+                    ptn_session_id_current(runtime),
+                    (const char *)encoded.as.string.data,
+                    encoded.as.string.len,
+                    line
+                );
+            }
+            if (ok) {
+                ptn_session_set_last_data(
+                    runtime,
+                    (const char *)encoded.as.string.data,
+                    encoded.as.string.len
+                );
+            }
+            ok = ptn_session_user_close(runtime, line) && ok;
+        } else {
+            ok = ptn_session_write_file(
+                runtime,
+                ptn_session_id_current(runtime),
+                (const char *)encoded.as.string.data,
+                encoded.as.string.len
+            );
+        }
     }
     ptn_value_destroy(&encoded_result);
     ptn_session_set_active(runtime, 0);
@@ -76624,10 +77012,16 @@ static PtnValue ptn_internal_session_destroy(PtnRuntime *runtime, size_t argc, c
     (void)argc;
     (void)args;
     (void)line;
-    ptn_session_delete_file(runtime, ptn_session_id_current(runtime));
+    int ok = 1;
+    if (ptn_session_has_user_handler(runtime)) {
+        ok = ptn_session_user_destroy(runtime, ptn_session_id_current(runtime), line);
+        ok = ptn_session_user_close(runtime, line) && ok;
+    } else {
+        ptn_session_delete_file(runtime, ptn_session_id_current(runtime));
+    }
     ptn_session_set_active(runtime, 0);
     ptn_session_id_set(runtime, "");
-    return ptn_bool(1);
+    return ptn_bool(ok);
 }
 
 static PtnValue ptn_internal_session_abort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -76705,9 +77099,12 @@ static PtnValue ptn_internal_session_gc(PtnRuntime *runtime, size_t argc, const 
         ptn_emit_runtime_warning(runtime, "session_gc(): Session cannot be garbage collected when there is no active session", line);
         return ptn_bool(0);
     }
+    int64_t max_lifetime = ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440);
+    if (ptn_session_has_user_handler(runtime)) {
+        return ptn_int(ptn_session_user_gc(runtime, max_lifetime, line));
+    }
     char *dir = ptn_session_storage_dir(runtime);
     int depth = ptn_session_save_path_dirdepth(runtime);
-    int64_t max_lifetime = ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440);
     time_t now = time(NULL);
     time_t cutoff = now - (time_t)(max_lifetime < 0 ? 0 : max_lifetime);
     int64_t removed = ptn_session_gc_directory(dir, depth, cutoff);
@@ -76791,11 +77188,233 @@ static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size
 }
 
 static PtnValue ptn_internal_session_set_save_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)args;
-    (void)line;
+    if (ptn_session_is_active(runtime)) {
+        if (argc != 1 || ptn_value_deref(args[0]).type != PTN_OBJECT) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "session_set_save_handler(): Providing individual callbacks instead of an object implementing SessionHandlerInterface is deprecated",
+                line
+            );
+        }
+        ptn_emit_runtime_warning(
+            runtime,
+            "session_set_save_handler(): Session save handler cannot be changed when a session is active (started from ptn on line 0)",
+            line
+        );
+        return ptn_bool(0);
+    }
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+    if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_OBJECT && (argc == 1 || argc == 2)) {
+        PtnValue handler = ptn_value_deref(args[0]);
+        int implements_interface =
+            ptn_builtin_class_implements_interface(handler.as.object->class_name, "SessionHandlerInterface") ||
+            ptn_declared_class_implements_interface(handler.as.object->class_name, "SessionHandlerInterface");
+        if (!implements_interface) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "session_set_save_handler(): Argument #1 ($open) must be of type SessionHandlerInterface, %s given",
+                handler.as.object->class_name
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "session_set_save_handler(): Argument #1 ($open) must be of type SessionHandlerInterface, %s given",
+                handler.as.object->class_name
+            );
+            ptn_throw_exception_owned_message(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        ptn_session_clear_user_handler(runtime);
+        root->session_save_handler_kind = PTN_SESSION_HANDLER_OBJECT;
+        root->session_save_handler_object = ptn_value_clone_deref(handler);
+        root->session_save_handler_register_shutdown = argc >= 2 ? ptn_is_truthy(args[1]) : 1;
+        ptn_runtime_set_session_ini(runtime, "session.save_handler", "user");
+        return ptn_bool(1);
+    }
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "session_set_save_handler(): Providing individual callbacks instead of an object implementing SessionHandlerInterface is deprecated",
+        line
+    );
+    if (argc < 6) {
+        ptn_throw_exception(
+            runtime,
+            "ArgumentCountError",
+            "session_set_save_handler() expects at least 6 arguments when individual callbacks are provided"
+        );
+        return ptn_null();
+    }
+    static const char *const parameter_names[PTN_SESSION_CB_COUNT] = {
+        "open",
+        "close",
+        "read",
+        "write",
+        "destroy",
+        "gc",
+        "create_sid",
+        "validate_sid",
+        "update_timestamp"
+    };
+    PtnValue callbacks[PTN_SESSION_CB_COUNT];
+    for (size_t i = 0; i < PTN_SESSION_CB_COUNT; i++) {
+        callbacks[i] = ptn_null();
+    }
+    size_t callback_count = argc < PTN_SESSION_CB_COUNT ? argc : PTN_SESSION_CB_COUNT;
+    for (size_t i = 0; i < callback_count; i++) {
+        callbacks[i] = ptn_internal_expect_callback_arg(
+            runtime,
+            "session_set_save_handler",
+            i + 1,
+            parameter_names[i],
+            args[i]
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            for (size_t j = 0; j < PTN_SESSION_CB_COUNT; j++) {
+                ptn_value_destroy(&callbacks[j]);
+            }
+            return ptn_null();
+        }
+    }
+    ptn_session_clear_user_handler(runtime);
+    root->session_save_handler_kind = PTN_SESSION_HANDLER_CALLBACKS;
+    for (size_t i = 0; i < PTN_SESSION_CB_COUNT; i++) {
+        root->session_save_handler_callbacks[i] = callbacks[i];
+        callbacks[i] = ptn_null();
+    }
+    root->session_save_handler_register_shutdown = 1;
     ptn_runtime_set_session_ini(runtime, "session.save_handler", "user");
     return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_session_handler_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SessionHandler::__construct() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_object_new_shell(runtime, "SessionHandler");
+}
+
+static PTN_UNUSED PtnValue ptn_session_handler_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)receiver;
+    if (ptn_ascii_case_equal(name, "open")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::open() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "close")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::close() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "read")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::read() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand id = ptn_value_to_string_operand(args[0]);
+        char *owned_id = ptn_duplicate_string_len(id.data, id.len);
+        ptn_string_operand_free(id);
+        size_t len = 0;
+        char *data = ptn_session_read_file(runtime, owned_id, &len);
+        free(owned_id);
+        if (data == NULL) {
+            return ptn_string("");
+        }
+        return ptn_owned_string_len(data, len);
+    }
+    if (ptn_ascii_case_equal(name, "write")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::write() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnStringOperand id = ptn_value_to_string_operand(args[0]);
+        PtnStringOperand data = ptn_value_to_string_operand(args[1]);
+        char *owned_id = ptn_duplicate_string_len(id.data, id.len);
+        int ok = ptn_session_write_file(runtime, owned_id, data.data, data.len);
+        free(owned_id);
+        ptn_string_operand_free(id);
+        ptn_string_operand_free(data);
+        return ptn_bool(ok);
+    }
+    if (ptn_ascii_case_equal(name, "destroy")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::destroy() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand id = ptn_value_to_string_operand(args[0]);
+        char *owned_id = ptn_duplicate_string_len(id.data, id.len);
+        ptn_string_operand_free(id);
+        ptn_session_delete_file(runtime, owned_id);
+        free(owned_id);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "gc")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::gc() expects exactly 1 argument");
+            return ptn_null();
+        }
+        if (!ptn_session_is_active(runtime)) {
+            ptn_throw_exception(runtime, "Error", "Session is not active");
+            return ptn_null();
+        }
+        int64_t max_lifetime = ptn_value_to_integer(args[0]);
+        char *dir = ptn_session_storage_dir(runtime);
+        int depth = ptn_session_save_path_dirdepth(runtime);
+        time_t now = time(NULL);
+        time_t cutoff = now - (time_t)(max_lifetime < 0 ? 0 : max_lifetime);
+        int64_t removed = ptn_session_gc_directory(dir, depth, cutoff);
+        free(dir);
+        return ptn_int(removed);
+    }
+    if (ptn_ascii_case_equal(name, "create_sid") || ptn_ascii_case_equal(name, "createSid")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::create_sid() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        char *id = ptn_session_create_id_string(runtime, "");
+        return ptn_owned_string(id);
+    }
+    ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
+    return ptn_null();
 }
 
 static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
@@ -119565,6 +120184,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_
     return ptn_ascii_case_equal(class_name, "HashContext");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_session_handler(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SessionHandler");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "PhpToken");
 }
@@ -119734,6 +120357,8 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "DOM\\ChildNode")
         || ptn_ascii_case_equal(name, "Countable")
         || ptn_ascii_case_equal(name, "JsonSerializable")
+        || ptn_ascii_case_equal(name, "SessionHandlerInterface")
+        || ptn_ascii_case_equal(name, "SessionUpdateTimestampHandlerInterface")
         || ptn_ascii_case_equal(name, "Serializable");
 }
 
@@ -119803,6 +120428,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_soap_var(class_name)
         || ptn_internal_class_name_is_soap_param(class_name)
         || ptn_internal_class_name_is_hash_context(class_name)
+        || ptn_internal_class_name_is_session_handler(class_name)
         || ptn_internal_class_name_is_php_token(class_name)
         || ptn_internal_class_name_is_intl_break_iterator(class_name)
         || ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name)
@@ -121161,6 +121787,17 @@ static int ptn_directory_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "rewind");
 }
 
+static int ptn_session_handler_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "open")
+        || ptn_ascii_case_equal(method_name, "close")
+        || ptn_ascii_case_equal(method_name, "read")
+        || ptn_ascii_case_equal(method_name, "write")
+        || ptn_ascii_case_equal(method_name, "destroy")
+        || ptn_ascii_case_equal(method_name, "gc")
+        || ptn_ascii_case_equal(method_name, "create_sid")
+        || ptn_ascii_case_equal(method_name, "createSid");
+}
+
 static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
@@ -121434,6 +122071,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "floor")
             || ptn_ascii_case_equal(method_name, "round")
             || ptn_ascii_case_equal(method_name, "compare");
+    }
+    if (ptn_internal_class_name_is_session_handler(class_name)) {
+        return ptn_session_handler_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return ptn_ascii_case_equal(method_name, "getTokenName");
@@ -130095,6 +130735,11 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     }
     if (ptn_internal_class_name_is_hash_context(class_name)) {
         return "hash";
+    }
+    if (ptn_internal_class_name_is_session_handler(class_name) ||
+        ptn_ascii_case_equal(class_name, "SessionHandlerInterface") ||
+        ptn_ascii_case_equal(class_name, "SessionUpdateTimestampHandlerInterface")) {
+        return "session";
     }
     if (ptn_internal_class_name_is_php_token(class_name)) {
         return "tokenizer";

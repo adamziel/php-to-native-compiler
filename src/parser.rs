@@ -12639,6 +12639,8 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "backedenum"
             | "datetimeinterface"
             | "random\\engine"
+            | "sessionhandlerinterface"
+            | "sessionupdatetimestamphandlerinterface"
             | "countable"
             | "serializable"
     )
@@ -12671,6 +12673,7 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
             | "splpriorityqueue"
             | "splqueue"
             | "splstack"
+            | "sessionhandler"
     )
 }
 
@@ -16936,6 +16939,14 @@ fn modeled_builtin_interface_method_exists(interface_name: &str, method_name: &s
             | ("serializable", "serialize")
             | ("seekableiterator", "seek")
             | ("serializable", "unserialize")
+            | ("sessionhandlerinterface", "open")
+            | ("sessionhandlerinterface", "close")
+            | ("sessionhandlerinterface", "read")
+            | ("sessionhandlerinterface", "write")
+            | ("sessionhandlerinterface", "destroy")
+            | ("sessionhandlerinterface", "gc")
+            | ("sessionupdatetimestamphandlerinterface", "validateid")
+            | ("sessionupdatetimestamphandlerinterface", "updatetimestamp")
             | ("stringable", "__tostring")
     )
 }

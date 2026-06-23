@@ -236,6 +236,17 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_symbols_init(&runtime->session_ini);
     runtime->session_id = NULL;
     runtime->session_active = caller_runtime->session_active;
+    runtime->session_save_handler_kind = 0;
+    runtime->session_save_handler_object = ptn_null();
+    for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {
+        runtime->session_save_handler_callbacks[i] = ptn_null();
+    }
+    runtime->session_save_handler_register_shutdown = caller_runtime->session_save_handler_register_shutdown;
+    runtime->session_save_handler_in_callback = 0;
+    runtime->session_lazy_write = caller_runtime->session_lazy_write;
+    runtime->session_last_data = NULL;
+    runtime->session_last_data_len = 0;
+    runtime->session_last_data_valid = 0;
     runtime->precision = caller_runtime->precision;
     runtime->serialize_precision = caller_runtime->serialize_precision;
     runtime->initial_precision = caller_runtime->initial_precision;
@@ -715,6 +726,20 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         free(runtime->session_id);
         runtime->session_id = NULL;
         runtime->session_active = 0;
+        ptn_value_destroy(&runtime->session_save_handler_object);
+        runtime->session_save_handler_object = ptn_null();
+        for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {
+            ptn_value_destroy(&runtime->session_save_handler_callbacks[i]);
+            runtime->session_save_handler_callbacks[i] = ptn_null();
+        }
+        runtime->session_save_handler_kind = 0;
+        runtime->session_save_handler_register_shutdown = 1;
+        runtime->session_save_handler_in_callback = 0;
+        runtime->session_lazy_write = 1;
+        free(runtime->session_last_data);
+        runtime->session_last_data = NULL;
+        runtime->session_last_data_len = 0;
+        runtime->session_last_data_valid = 0;
         free(runtime->live_objects);
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
@@ -7442,6 +7467,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("Directory", name)
     ) {
         return ptn_directory_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SessionHandler")
+        && ptn_internal_class_method_exists("SessionHandler", name)
+    ) {
+        return ptn_session_handler_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

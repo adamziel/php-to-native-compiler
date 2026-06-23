@@ -1168,6 +1168,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
     }
+    if (ptn_internal_class_name_is_session_handler(lookup_class_name)) {
+        return ptn_session_handler_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_dom(lookup_class_name)) {
         return ptn_dom_new(runtime, lookup_class_name, argc, args, line);
     }
