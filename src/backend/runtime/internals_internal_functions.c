@@ -62351,6 +62351,12 @@ typedef struct {
 } PtnIntlMessageFormatterData;
 
 typedef struct {
+    char *locale;
+    int error_code;
+    char *error_message;
+} PtnIntlListFormatterData;
+
+typedef struct {
     char *skeleton;
     char *locale;
     int collapse;
@@ -62414,6 +62420,16 @@ static void ptn_intl_message_formatter_data_free(void *ptr) {
     }
     free(data->locale);
     free(data->pattern);
+    free(data);
+}
+
+static void ptn_intl_list_formatter_data_free(void *ptr) {
+    PtnIntlListFormatterData *data = (PtnIntlListFormatterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->error_message);
     free(data);
 }
 
@@ -62529,6 +62545,7 @@ static PtnValue ptn_intl_collator_new(PtnRuntime *runtime, const char *class_nam
 static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_message_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_number_range_formatter_new(PtnRuntime *runtime, const char *skeleton, const char *locale, int collapse, int identity_fallback);
 
 static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
@@ -62547,6 +62564,9 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     }
     if (ptn_ascii_case_equal(class_name, "MessageFormatter")) {
         return ptn_intl_message_formatter_new(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlListFormatter")) {
+        return ptn_intl_list_formatter_new(runtime, class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter")) {
         (void)argc;
@@ -62934,8 +62954,8 @@ static int ptn_intl_weekday_gregorian(int year, int month, int day) {
     return (h + 6) % 7;
 }
 
-static const char *ptn_intl_timezone_display_name(PtnIntlDateFormatterData *data, int month) {
-    const char *timezone = data == NULL || data->timezone == NULL ? "" : data->timezone;
+static const char *ptn_intl_timezone_display_name_for_id(const char *timezone, int month) {
+    timezone = timezone == NULL ? "" : timezone;
     if (strstr(timezone, "America/New_York") != NULL) {
         return month >= 3 && month <= 10 ? "Eastern Daylight Time" : "Eastern Standard Time";
     }
@@ -62946,6 +62966,11 @@ static const char *ptn_intl_timezone_display_name(PtnIntlDateFormatterData *data
         return month >= 3 && month <= 10 ? "Central European Summer Time" : "Central European Standard Time";
     }
     return timezone[0] == '\0' ? "UTC" : timezone;
+}
+
+static const char *ptn_intl_timezone_display_name(PtnIntlDateFormatterData *data, int month) {
+    const char *timezone = data == NULL || data->timezone == NULL ? "" : data->timezone;
+    return ptn_intl_timezone_display_name_for_id(timezone, month);
 }
 
 static const char *ptn_intl_month_name(int month, int abbreviated) {
@@ -63059,7 +63084,7 @@ static PtnValue ptn_intl_format_en_us(
             needed = snprintf(
                 NULL, 0, "%s, %s %d, %d at %d:%02d:%02d %s %s",
                 ptn_intl_weekday_name(weekday), ptn_intl_month_name(month, 0), day, year,
-                display_hour, minute, second, ampm, timezone == NULL || timezone[0] == '\0' ? "UTC" : timezone
+                display_hour, minute, second, ampm, ptn_intl_timezone_display_name_for_id(timezone, month)
             );
             break;
         case 1:
@@ -63101,7 +63126,7 @@ static PtnValue ptn_intl_format_en_us(
             snprintf(
                 formatted, (size_t)needed + 1, "%s, %s %d, %d at %d:%02d:%02d %s %s",
                 ptn_intl_weekday_name(weekday), ptn_intl_month_name(month, 0), day, year,
-                display_hour, minute, second, ampm, timezone == NULL || timezone[0] == '\0' ? "UTC" : timezone
+                display_hour, minute, second, ampm, ptn_intl_timezone_display_name_for_id(timezone, month)
             );
             break;
         case 1:
@@ -63847,9 +63872,371 @@ static PtnValue ptn_intl_message_formatter_new(PtnRuntime *runtime, const char *
     return object;
 }
 
-static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
+static PtnIntlMessageFormatterData *ptn_intl_message_formatter_data(PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT || resolved.as.object->native_data == NULL ||
+        !ptn_internal_class_name_is_message_formatter(resolved.as.object->class_name)) {
+        return NULL;
+    }
+    return (PtnIntlMessageFormatterData *)resolved.as.object->native_data;
+}
+
+static char *ptn_intl_message_trim_token(char *token) {
+    while (*token != '\0' && isspace((unsigned char)*token)) {
+        token++;
+    }
+    char *end = token + strlen(token);
+    while (end > token && isspace((unsigned char)end[-1])) {
+        end--;
+    }
+    *end = '\0';
+    return token;
+}
+
+static PtnArrayEntry *ptn_intl_message_arg_entry(PtnArray *array, const char *name) {
+    if (array == NULL || name == NULL) {
+        return NULL;
+    }
+    PtnArrayKey string_key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, string_key);
+    ptn_array_key_free(string_key);
+    if (entry != NULL) {
+        return entry;
+    }
+
+    char *end = NULL;
+    long long integer = strtoll(name, &end, 10);
+    if (end != NULL && *name != '\0' && *end == '\0') {
+        PtnArrayKey int_key = ptn_array_int_key(integer);
+        return ptn_array_entry_for_key(array, int_key);
+    }
+    return NULL;
+}
+
+static double ptn_intl_message_numeric_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT || value.type == PTN_FLOAT) {
+        return ptn_value_to_double(value);
+    }
+    if (value.type == PTN_STRING) {
+        char *copy = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+        char *start = copy;
+        while (*start != '\0' && isspace((unsigned char)*start)) {
+            start++;
+        }
+        char *end = NULL;
+        double parsed = strtod(start, &end);
+        free(copy);
+        return end == start ? 0.0 : parsed;
+    }
+    return ptn_value_to_double(value);
+}
+
+static void ptn_intl_message_append_string_value(PtnStringBuffer *output, PtnValue value) {
+    PtnStringOperand string = ptn_value_to_string_operand(value);
+    ptn_string_buffer_append_len(output, string.data, string.len);
+    ptn_string_operand_free(string);
+}
+
+static void ptn_intl_message_append_grouped_int(PtnStringBuffer *output, int64_t value) {
+    uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1u : (uint64_t)value;
+    char digits[32];
+    int written = snprintf(digits, sizeof(digits), "%llu", (unsigned long long)magnitude);
+    if (written < 0 || (size_t)written >= sizeof(digits)) {
+        ptn_abort_out_of_memory();
+    }
+    if (value < 0) {
+        ptn_string_buffer_append_char(output, '-');
+    }
+    ptn_number_format_append_grouped_integer(
+        output,
+        digits,
+        ptn_string_operand_borrowed(",")
+    );
+}
+
+static void ptn_intl_message_append_number(PtnStringBuffer *output, double number, int precision) {
+    PtnValue formatted = ptn_number_format_high_precision(
+        number,
+        precision,
+        ptn_string_operand_borrowed("."),
+        ptn_string_operand_borrowed(",")
+    );
+    ptn_intl_message_append_string_value(output, formatted);
+    ptn_value_destroy(&formatted);
+}
+
+static void ptn_intl_message_append_word(PtnStringBuffer *output, const char *word, int *emitted) {
+    if (*emitted) {
+        ptn_string_buffer_append_char(output, ' ');
+    }
+    ptn_string_buffer_append(output, word);
+    *emitted = 1;
+}
+
+static void ptn_intl_message_append_under_1000_words(PtnStringBuffer *output, int number, int *emitted) {
+    static const char *const small[] = {
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen"
+    };
+    static const char *const tens[] = {
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+    };
+    if (number >= 100) {
+        ptn_intl_message_append_word(output, small[number / 100], emitted);
+        ptn_intl_message_append_word(output, "hundred", emitted);
+        number %= 100;
+    }
+    if (number >= 20) {
+        int ten = number / 10;
+        int one = number % 10;
+        if (one == 0) {
+            ptn_intl_message_append_word(output, tens[ten], emitted);
+        } else {
+            char compound[32];
+            int written = snprintf(compound, sizeof(compound), "%s-%s", tens[ten], small[one]);
+            if (written < 0 || (size_t)written >= sizeof(compound)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_intl_message_append_word(output, compound, emitted);
+        }
+    } else if (number > 0 || !*emitted) {
+        ptn_intl_message_append_word(output, small[number], emitted);
+    }
+}
+
+static void ptn_intl_message_append_spellout(PtnStringBuffer *output, double number) {
+    static const int64_t scales[] = { 1000000000LL, 1000000LL, 1000LL };
+    static const char *const scale_names[] = { "billion", "million", "thousand" };
+    if (number < 0) {
+        ptn_string_buffer_append(output, "minus ");
+        number = -number;
+    }
+    int64_t whole = (int64_t)floor(number);
+    int emitted = 0;
+    for (size_t i = 0; i < sizeof(scales) / sizeof(scales[0]); i++) {
+        if (whole >= scales[i]) {
+            int chunk = (int)(whole / scales[i]);
+            ptn_intl_message_append_under_1000_words(output, chunk, &emitted);
+            ptn_intl_message_append_word(output, scale_names[i], &emitted);
+            whole %= scales[i];
+        }
+    }
+    if (whole > 0 || !emitted) {
+        ptn_intl_message_append_under_1000_words(output, (int)whole, &emitted);
+    }
+    double fraction = fabs(number) - floor(fabs(number));
+    int first_digit = (int)floor(fraction * 10.0 + 0.5);
+    if (first_digit > 0 && first_digit < 10) {
+        int fraction_emitted = 0;
+        ptn_string_buffer_append(output, " point ");
+        ptn_intl_message_append_under_1000_words(output, first_digit, &fraction_emitted);
+    }
+}
+
+static void ptn_intl_message_append_ordinal(PtnStringBuffer *output, double number) {
+    int64_t rounded = (int64_t)floor(number + 0.5);
+    ptn_intl_message_append_grouped_int(output, rounded);
+    int64_t mod100 = llabs(rounded) % 100;
+    int64_t mod10 = llabs(rounded) % 10;
+    const char *suffix = "th";
+    if (mod100 < 11 || mod100 > 13) {
+        if (mod10 == 1) suffix = "st";
+        else if (mod10 == 2) suffix = "nd";
+        else if (mod10 == 3) suffix = "rd";
+    }
+    ptn_string_buffer_append(output, suffix);
+}
+
+static void ptn_intl_message_append_duration(PtnStringBuffer *output, double number) {
+    int64_t total = (int64_t)floor(number + 0.5);
+    int64_t hours = total / 3600;
+    int64_t minutes = (total / 60) % 60;
+    int64_t seconds = total % 60;
+    ptn_intl_message_append_grouped_int(output, hours);
+    ptn_string_buffer_append_format(output, ":%02lld:%02lld", (long long)minutes, (long long)seconds);
+}
+
+static void ptn_intl_message_append_date_or_time(
+    PtnStringBuffer *output,
+    double number,
+    const char *type,
+    const char *style
+) {
+    int64_t millis = (int64_t)floor(number * 1000.0 + 0.5);
+    time_t seconds_value = (time_t)(millis / 1000);
+    int millisecond = (int)(millis % 1000);
+    if (millisecond < 0) {
+        millisecond += 1000;
+        seconds_value -= 1;
+    }
+    struct tm *parts = gmtime(&seconds_value);
+    if (parts == NULL) {
+        return;
+    }
+    int year = parts->tm_year + 1900;
+    int month = parts->tm_mon + 1;
+    int day = parts->tm_mday;
+    int hour = parts->tm_hour;
+    int minute = parts->tm_min;
+    int second = parts->tm_sec;
+    if (style != NULL && strstr(style, "yyyy-MM-dd") != NULL) {
+        ptn_string_buffer_append_format(
+            output,
+            "%04d-%02d-%02d AD at %02d:%02d:%02d.%03d GMT",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond
+        );
+        return;
+    }
+    if (ptn_ascii_case_equal(type, "date")) {
+        ptn_string_buffer_append_format(output, "%s %d, %d", ptn_intl_month_name(month, 0), day, year);
+        return;
+    }
+    int display_hour = hour % 12;
+    if (display_hour == 0) {
+        display_hour = 12;
+    }
+    ptn_string_buffer_append_format(
+        output,
+        "%d:%02d:%02d\xE2\x80\xAF%s",
+        display_hour,
+        minute,
+        second,
+        hour >= 12 ? "PM" : "AM"
+    );
+}
+
+static void ptn_intl_message_append_placeholder(
+    PtnStringBuffer *output,
+    PtnArray *values,
+    char *placeholder
+) {
+    char *type = NULL;
+    char *style = NULL;
+    char *comma = strchr(placeholder, ',');
+    if (comma != NULL) {
+        *comma = '\0';
+        type = comma + 1;
+        char *second_comma = strchr(type, ',');
+        if (second_comma != NULL) {
+            *second_comma = '\0';
+            style = second_comma + 1;
+        }
+    }
+    char *name = ptn_intl_message_trim_token(placeholder);
+    type = type == NULL ? NULL : ptn_intl_message_trim_token(type);
+    style = style == NULL ? NULL : ptn_intl_message_trim_token(style);
+    PtnArrayEntry *entry = ptn_intl_message_arg_entry(values, name);
+    if (entry == NULL) {
+        return;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (type == NULL || *type == '\0') {
+        ptn_intl_message_append_string_value(output, value);
+        return;
+    }
+    double number = ptn_intl_message_numeric_value(value);
+    if (ptn_ascii_case_equal(type, "number")) {
+        if (style != NULL && ptn_ascii_case_equal(style, "integer")) {
+            ptn_intl_message_append_number(output, floor(number), 0);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "currency")) {
+            ptn_string_buffer_append_char(output, '$');
+            ptn_intl_message_append_number(output, number, 2);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "percent")) {
+            ptn_intl_message_append_number(output, number * 100.0, 0);
+            ptn_string_buffer_append_char(output, '%');
+        } else {
+            ptn_intl_message_append_number(output, number, fabs(number - floor(number)) > 0.000001 ? 1 : 0);
+        }
+    } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
+        ptn_intl_message_append_date_or_time(output, number, type, style);
+    } else if (ptn_ascii_case_equal(type, "spellout")) {
+        ptn_intl_message_append_spellout(output, number);
+    } else if (ptn_ascii_case_equal(type, "ordinal")) {
+        ptn_intl_message_append_ordinal(output, number);
+    } else if (ptn_ascii_case_equal(type, "duration")) {
+        ptn_intl_message_append_duration(output, number);
+    } else {
+        ptn_intl_message_append_string_value(output, value);
+    }
+}
+
+static PtnValue ptn_intl_message_format_array(PtnIntlMessageFormatterData *data, PtnArray *values) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
+    size_t pattern_len = strlen(pattern);
+    for (size_t i = 0; i < pattern_len; i++) {
+        if (pattern[i] != '{') {
+            ptn_string_buffer_append_char(&output, pattern[i]);
+            continue;
+        }
+        const char *close = strchr(pattern + i + 1, '}');
+        if (close == NULL) {
+            ptn_string_buffer_append_char(&output, pattern[i]);
+            continue;
+        }
+        size_t placeholder_len = (size_t)(close - (pattern + i + 1));
+        char *placeholder = ptn_duplicate_string_len(pattern + i + 1, placeholder_len);
+        ptn_intl_message_append_placeholder(&output, values, placeholder);
+        free(placeholder);
+        i += placeholder_len + 1;
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_intl_message_parse(PtnRuntime *runtime, PtnValue input_value) {
+    PtnStringOperand input = ptn_value_to_string_operand(input_value);
+    char *copy = ptn_duplicate_string_len(input.data, input.len);
+    ptn_string_operand_free(input);
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    int millisecond = 0;
+    char sign = '+';
+    int offset_hour = 0;
+    int offset_minute = 0;
+    int matched = sscanf(
+        copy,
+        "On %d-%d-%d AD at %d:%d:%d.%d GMT%c%d:%d something odd happened",
+        &year,
+        &month,
+        &day,
+        &hour,
+        &minute,
+        &second,
+        &millisecond,
+        &sign,
+        &offset_hour,
+        &offset_minute
+    );
+    free(copy);
+    if (matched != 10 || (sign != '+' && sign != '-')) {
+        return ptn_bool(0);
+    }
+    int offset = (offset_hour * 3600) + (offset_minute * 60);
+    if (sign == '-') {
+        offset = -offset;
+    }
+    time_t wall = ptn_datetime_utc_timestamp_for_parts(year, month, day, hour, minute, second);
+    double timestamp = (double)(wall - offset) + ((double)millisecond / 1000.0);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_float(timestamp));
     (void)runtime;
-    (void)line;
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_intl_message_formatter_new(runtime, "MessageFormatter", argc, args, line);
         if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
@@ -63858,6 +64245,7 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
         ptn_value_destroy(&replacement);
         return ptn_null();
     }
+    PtnIntlMessageFormatterData *data = ptn_intl_message_formatter_data(receiver);
     if (ptn_ascii_case_equal(name, "format")) {
         PtnValue values = argc >= 1 ? ptn_value_deref(args[0]) : ptn_null();
         if (values.type == PTN_ARRAY && values.as.array->len > 0) {
@@ -63906,8 +64294,138 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
                 );
                 return ptn_owned_string(formatted);
             }
+            return ptn_intl_message_format_array(data, values.as.array);
         }
         return ptn_string("");
+    }
+    if (ptn_ascii_case_equal(name, "parse")) {
+        return argc >= 1 ? ptn_intl_message_parse(runtime, args[0]) : ptn_bool(0);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnIntlListFormatterData *data = malloc(sizeof(PtnIntlListFormatterData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = argc >= 1 ? ptn_intl_value_string_copy(args[0]) : ptn_duplicate_string("");
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_intl_list_formatter_data_free;
+    return object;
+}
+
+static PtnIntlListFormatterData *ptn_intl_list_formatter_data(PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT || resolved.as.object->native_data == NULL ||
+        !ptn_internal_class_name_is_intl_list_formatter(resolved.as.object->class_name)) {
+        return NULL;
+    }
+    return (PtnIntlListFormatterData *)resolved.as.object->native_data;
+}
+
+static void ptn_intl_list_formatter_set_error(
+    PtnRuntime *runtime,
+    PtnIntlListFormatterData *data,
+    int code,
+    const char *message
+) {
+    if (data == NULL) {
+        return;
+    }
+    data->error_code = code;
+    free(data->error_message);
+    data->error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+    ptn_intl_set_error_message(runtime, data->error_message);
+}
+
+static int ptn_intl_utf8_is_valid(const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte <= 0x7f) {
+            continue;
+        }
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (!ptn_json_utf8_decode((const unsigned char *)data + i, len - i, &codepoint, &consumed)) {
+            return 0;
+        }
+        i += consumed - 1;
+    }
+    return 1;
+}
+
+static PtnValue ptn_intl_list_formatter_format(
+    PtnRuntime *runtime,
+    PtnIntlListFormatterData *data,
+    PtnValue values
+) {
+    values = ptn_value_deref(values);
+    if (values.type != PTN_ARRAY) {
+        return ptn_bool(0);
+    }
+    for (size_t i = 0; i < values.as.array->len; i++) {
+        PtnStringOperand item = ptn_value_to_string_operand(values.as.array->entries[i].value);
+        int valid = ptn_intl_utf8_is_valid(item.data, item.len);
+        ptn_string_operand_free(item);
+        if (!valid) {
+            ptn_intl_list_formatter_set_error(
+                runtime,
+                data,
+                10,
+                "IntlListFormatter::format(): Failed to convert string to UTF-16: U_INVALID_CHAR_FOUND"
+            );
+            return ptn_bool(0);
+        }
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t count = values.as.array->len;
+    for (size_t i = 0; i < count; i++) {
+        if (i > 0) {
+            if (count == 2) {
+                ptn_string_buffer_append(&output, " and ");
+            } else if (i + 1 == count) {
+                ptn_string_buffer_append(&output, ", and ");
+            } else {
+                ptn_string_buffer_append(&output, ", ");
+            }
+        }
+        ptn_intl_message_append_string_value(&output, values.as.array->entries[i].value);
+    }
+    ptn_intl_list_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PTN_UNUSED PtnValue ptn_intl_list_formatter_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_intl_list_formatter_new(runtime, "IntlListFormatter", argc, args, line);
+        if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnIntlListFormatterData *data = ptn_intl_list_formatter_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed IntlListFormatter");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "format")) {
+        return argc >= 1 ? ptn_intl_list_formatter_format(runtime, data, args[0]) : ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorCode")) {
+        return ptn_int(data->error_code);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+        return ptn_owned_string(ptn_duplicate_string(data->error_message));
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -130227,6 +130745,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *c
     return ptn_ascii_case_equal(class_name, "MessageFormatter");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_list_formatter(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlListFormatter");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Locale");
 }
@@ -130459,6 +130981,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_timezone(class_name)
         || ptn_internal_class_name_is_intl_iterator(class_name)
         || ptn_internal_class_name_is_message_formatter(class_name)
+        || ptn_internal_class_name_is_intl_list_formatter(class_name)
         || ptn_internal_class_name_is_locale(class_name)
         || ptn_internal_class_name_is_number_formatter(class_name)
         || ptn_internal_class_name_is_intl_number_range_formatter(class_name)
@@ -132199,7 +132722,14 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_message_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
-            || ptn_ascii_case_equal(method_name, "format");
+            || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "parse");
+    }
+    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "getErrorCode")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage");
     }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -133331,6 +133861,16 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
+    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "format",
+            "getErrorCode",
+            "getErrorMessage",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
     if (ptn_internal_class_name_is_intl_timezone(class_name)) {
         static const char *const names[] = {
             "countEquivalentIDs",
@@ -133425,6 +133965,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "__construct",
             "format",
+            "parse",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -141216,6 +141757,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_timezone(class_name) ||
         ptn_internal_class_name_is_intl_iterator(class_name) ||
         ptn_internal_class_name_is_message_formatter(class_name) ||
+        ptn_internal_class_name_is_intl_list_formatter(class_name) ||
         ptn_internal_class_name_is_locale(class_name) ||
         ptn_internal_class_name_is_number_formatter(class_name) ||
         ptn_internal_class_name_is_collator(class_name) ||
@@ -149329,6 +149871,7 @@ static PtnValue ptn_reflection_extension_classes(
             "IntlTimeZone",
             "IntlIterator",
             "MessageFormatter",
+            "IntlListFormatter",
             "Locale",
             "NumberFormatter",
             "Collator",
