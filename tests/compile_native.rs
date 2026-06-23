@@ -59283,6 +59283,43 @@ fn phpc_run_alias_executes_compiled_native_binary() {
 }
 
 #[test]
+fn phpc_inline_mode_forwards_post_separator_arguments() {
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-r")
+        .arg("var_export(array_slice($argv, 1));")
+        .arg("--")
+        .arg("Simple")
+        .arg("White space\ttab\nnewline")
+        .arg("\"Quoted\"")
+        .output()
+        .unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array (\n  0 => 'Simple',\n  1 => 'White space\ttab\nnewline',\n  2 => '\"Quoted\"',\n)"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_stdin_mode_executes_piped_inline_html_source() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-n")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(b"yay!\n").unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "yay!\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_preserves_script_dir_for_directory_separator_require_once() {
     let root = temp_dir("ptn-phpc-script-dir-require-once");
     fs::create_dir_all(&root).unwrap();

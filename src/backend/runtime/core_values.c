@@ -4135,6 +4135,19 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
     return len;
 }
 
+static PTN_UNUSED int ptn_stream_errno_would_block(int error) {
+#if defined(EWOULDBLOCK) && defined(EAGAIN)
+    return error == EWOULDBLOCK || error == EAGAIN;
+#elif defined(EWOULDBLOCK)
+    return error == EWOULDBLOCK;
+#elif defined(EAGAIN)
+    return error == EAGAIN;
+#else
+    (void)error;
+    return 0;
+#endif
+}
+
 static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buffer, size_t len) {
     if (resource == NULL) {
         return 0;
@@ -4144,7 +4157,11 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
             errno = EBADF;
             return 0;
         }
-        return fread(buffer, 1, len, resource->stream);
+        size_t read_len = fread(buffer, 1, len, resource->stream);
+        if (read_len == 0 && ferror(resource->stream) && ptn_stream_errno_would_block(errno)) {
+            clearerr(resource->stream);
+        }
+        return read_len;
     }
 
     PtnMemoryStream *stream = resource->memory_stream;
@@ -4173,7 +4190,11 @@ static PTN_UNUSED int ptn_stream_get_byte(PtnResource *resource) {
             errno = EBADF;
             return EOF;
         }
-        return fgetc(resource->stream);
+        int byte = fgetc(resource->stream);
+        if (byte == EOF && ferror(resource->stream) && ptn_stream_errno_would_block(errno)) {
+            clearerr(resource->stream);
+        }
+        return byte;
     }
     unsigned char byte = 0;
     return ptn_stream_read_bytes(resource, &byte, 1) == 1 ? (int)byte : EOF;

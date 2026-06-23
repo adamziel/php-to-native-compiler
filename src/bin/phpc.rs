@@ -1,5 +1,5 @@
 use std::fs;
-use std::io;
+use std::io::{self, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -35,7 +35,7 @@ fn run() -> Result<i32, PhpcError> {
             Ok(0)
         }
         Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
-        Mode::Inline { source } => {
+        Mode::Inline { source, args } => {
             let temp = TempPath::new("ptn-phpc-inline", "php");
             let source = if source.trim_start().starts_with("<?") {
                 source
@@ -44,6 +44,19 @@ fn run() -> Result<i32, PhpcError> {
             };
             fs::write(temp.path(), source)
                 .map_err(|error| format!("failed to write inline source: {error}"))?;
+            compile_and_run(temp.path(), &args, &ini, sapi)
+        }
+        Mode::Stdin => {
+            if io::stdin().is_terminal() {
+                return Err(usage().into());
+            }
+            let mut source = String::new();
+            io::stdin()
+                .read_to_string(&mut source)
+                .map_err(|error| format!("failed to read stdin source: {error}"))?;
+            let temp = TempPath::new("ptn-phpc-stdin", "php");
+            fs::write(temp.path(), source)
+                .map_err(|error| format!("failed to write stdin source: {error}"))?;
             compile_and_run(temp.path(), &[], &ini, sapi)
         }
     }
@@ -192,7 +205,8 @@ enum Mode {
     Version,
     Modules,
     Script { script: PathBuf, args: Vec<String> },
-    Inline { source: String },
+    Inline { source: String, args: Vec<String> },
+    Stdin,
 }
 
 #[derive(Debug, Default)]
@@ -318,8 +332,14 @@ impl Invocation {
                     let source = args
                         .next()
                         .ok_or_else(|| "missing inline source for -r".to_string())?;
+                    if matches!(args.peek().map(String::as_str), Some("--")) {
+                        args.next();
+                    }
                     return Ok(Self {
-                        mode: Mode::Inline { source },
+                        mode: Mode::Inline {
+                            source,
+                            args: args.collect(),
+                        },
                         ini,
                         sapi,
                     });
@@ -352,15 +372,14 @@ impl Invocation {
             }
         }
 
-        let script = script.ok_or_else(usage)?;
-        Ok(Self {
-            mode: Mode::Script {
+        let mode = match script {
+            Some(script) => Mode::Script {
                 script,
                 args: script_args,
             },
-            ini,
-            sapi,
-        })
+            None => Mode::Stdin,
+        };
+        Ok(Self { mode, ini, sapi })
     }
 }
 
