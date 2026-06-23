@@ -3772,6 +3772,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
         return Some("result");
     }
+    if name.eq_ignore_ascii_case("curl_multi_exec") && argument_index == 1 {
+        return Some("still_running");
+    }
+    if name.eq_ignore_ascii_case("curl_multi_info_read") && argument_index == 1 {
+        return Some("queued_messages");
+    }
     if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") && argument_index == 2 {
         return Some("errors");
     }

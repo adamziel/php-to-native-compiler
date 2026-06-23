@@ -1139,6 +1139,8 @@ struct PtnResource {
     PtnResource *registry_prev;
     PtnResource *registry_next;
     int manual_close_forbidden;
+    size_t object_id;
+    PtnRuntime *object_id_runtime;
 };
 
 struct PtnStreamFilter {
@@ -3767,6 +3769,44 @@ static PTN_UNUSED const char *ptn_resource_display_type(PtnResource *resource) {
     return ptn_resource_is_open(resource) ? resource->type_name : "Unknown";
 }
 
+static PTN_UNUSED const char *ptn_resource_curl_class_name(PtnResource *resource) {
+    if (resource == NULL || !ptn_resource_is_open(resource) || resource->type_name == NULL) {
+        return NULL;
+    }
+    if (strcmp(resource->type_name, "curl") == 0) {
+        return "CurlHandle";
+    }
+    if (strcmp(resource->type_name, "curl_multi") == 0) {
+        return "CurlMultiHandle";
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_resource_is_curl_handle(PtnResource *resource) {
+    return ptn_resource_curl_class_name(resource) != NULL;
+}
+
+static PTN_UNUSED size_t ptn_resource_object_id(PtnResource *resource) {
+    if (resource == NULL) {
+        return 0;
+    }
+    if (resource->object_id != 0) {
+        return resource->object_id;
+    }
+    if (resource->id <= 0) {
+        return 0;
+    }
+    return (size_t)resource->id;
+}
+
+static PTN_UNUSED void ptn_resource_assign_object_id(PtnRuntime *runtime, PtnResource *resource) {
+    if (resource == NULL || resource->object_id != 0) {
+        return;
+    }
+    resource->object_id = ptn_runtime_alloc_object_id(runtime);
+    resource->object_id_runtime = runtime;
+}
+
 static PTN_UNUSED int ptn_stream_resource_is_open(PtnResource *resource) {
     if (resource == NULL || resource->closed) {
         return 0;
@@ -3807,6 +3847,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->context_options = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
+    resource->manual_close_forbidden = 0;
+    resource->object_id = 0;
+    resource->object_id_runtime = NULL;
     return resource;
 }
 
@@ -3845,6 +3888,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->context_options = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
+    resource->manual_close_forbidden = 0;
+    resource->object_id = 0;
+    resource->object_id_runtime = NULL;
     return resource;
 }
 
@@ -3880,6 +3926,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->context_options = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
+    resource->manual_close_forbidden = 0;
+    resource->object_id = 0;
+    resource->object_id_runtime = NULL;
     return resource;
 }
 
@@ -3909,6 +3958,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->closed = 0;
     resource->context_options = ptn_null();
     resource->curl_options = ptn_null();
+    resource->manual_close_forbidden = 0;
+    resource->object_id = 0;
+    resource->object_id_runtime = NULL;
     ptn_resource_register(resource);
     return resource;
 }
@@ -4311,6 +4363,11 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     free(resource->stream_mode);
     ptn_value_destroy(&resource->context_options);
     ptn_value_destroy(&resource->curl_options);
+    if (resource->object_id != 0) {
+        ptn_runtime_release_object_id(resource->object_id_runtime, resource->object_id);
+        resource->object_id = 0;
+        resource->object_id_runtime = NULL;
+    }
     free(resource);
 }
 

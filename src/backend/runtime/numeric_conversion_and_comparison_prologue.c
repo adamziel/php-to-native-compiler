@@ -1714,13 +1714,15 @@ static void ptn_trace_append_arg(PtnStringBuffer *buffer, PtnValue value, size_t
         case PTN_EXCEPTION:
             ptn_string_buffer_append_format(buffer, "Object(%s)", value.as.exception->class_name);
             break;
-        case PTN_RESOURCE:
-            ptn_string_buffer_append_format(
-                buffer,
-                "Resource id #%lld",
-                (long long)value.as.resource->id
-            );
+        case PTN_RESOURCE: {
+            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
+            if (curl_class_name != NULL) {
+                ptn_string_buffer_append_format(buffer, "Object(%s)", curl_class_name);
+                break;
+            }
+            ptn_string_buffer_append_format(buffer, "Resource id #%lld", (long long)value.as.resource->id);
             break;
+        }
         case PTN_REFERENCE:
             ptn_string_buffer_append(buffer, "NULL");
             break;

@@ -2806,7 +2806,19 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
         case PTN_EXCEPTION:
             ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
             break;
-        case PTN_RESOURCE:
+        case PTN_RESOURCE: {
+            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
+            if (curl_class_name != NULL) {
+                ptn_direct_dump_printf(
+                    runtime,
+                    "object(%s)#%zu (0) {\n",
+                    curl_class_name,
+                    ptn_resource_object_id(value.as.resource)
+                );
+                ptn_direct_value_var_dump_indent(runtime, indent);
+                ptn_direct_dump_write_cstr(runtime, "}\n");
+                break;
+            }
             ptn_direct_dump_printf(
                 runtime,
                 "resource(%lld) of type (%s)\n",
@@ -2814,6 +2826,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
                 ptn_resource_display_type(value.as.resource)
             );
             break;
+        }
         case PTN_REFERENCE:
             ptn_direct_dump_write_cstr(runtime, "NULL\n");
             break;
@@ -4110,7 +4123,19 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
         case PTN_EXCEPTION:
             ptn_direct_var_dump_exception_indented(runtime, value.as.exception, indent, seen);
             break;
-        case PTN_RESOURCE:
+        case PTN_RESOURCE: {
+            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
+            if (curl_class_name != NULL) {
+                ptn_direct_var_dump_writef(
+                    runtime,
+                    "object(%s)#%zu (0) {\n",
+                    curl_class_name,
+                    ptn_resource_object_id(value.as.resource)
+                );
+                ptn_direct_var_dump_indent(runtime, indent);
+                ptn_output_write_cstr(runtime, "}\n");
+                break;
+            }
             ptn_direct_var_dump_writef(
                 runtime,
                 "resource(%lld) of type (%s)\n",
@@ -4118,6 +4143,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                 ptn_resource_display_type(value.as.resource)
             );
             break;
+        }
         case PTN_REFERENCE:
             ptn_output_write_cstr(runtime, "NULL\n");
             break;
@@ -7210,6 +7236,11 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
         return 1;
     }
+    if (index == 1 &&
+        (ptn_ascii_case_equal(name, "curl_multi_exec") ||
+            ptn_ascii_case_equal(name, "curl_multi_info_read"))) {
+        return 1;
+    }
     if (index == 2 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::parse")) {
         return 1;
     }
@@ -7800,9 +7831,21 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         case PTN_EXCEPTION:
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
-        case PTN_RESOURCE:
+        case PTN_RESOURCE: {
+            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
+            if (curl_class_name != NULL) {
+                printf(
+                    "object(%s)#%zu (0) {\n",
+                    curl_class_name,
+                    ptn_resource_object_id(value.as.resource)
+                );
+                ptn_var_dump_indent(indent);
+                fputs("}\n", stdout);
+                break;
+            }
             printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, ptn_resource_display_type(value.as.resource));
             break;
+        }
         case PTN_REFERENCE:
             fputs("NULL\n", stdout);
             break;
@@ -8003,7 +8046,19 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
         case PTN_EXCEPTION:
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
-        case PTN_RESOURCE:
+        case PTN_RESOURCE: {
+            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
+            if (curl_class_name != NULL) {
+                printf(
+                    "object(%s)#%zu (0) refcount(%zu){\n",
+                    curl_class_name,
+                    ptn_resource_object_id(value.as.resource),
+                    value.as.resource->refcount
+                );
+                ptn_var_dump_indent(indent);
+                fputs("}\n", stdout);
+                break;
+            }
             printf(
                 "resource(%lld) of type (%s) refcount(%zu)\n",
                 (long long)value.as.resource->id,
@@ -8011,6 +8066,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 value.as.resource->refcount
             );
             break;
+        }
     }
 }
 
@@ -54693,6 +54749,9 @@ static PtnValue ptn_internal_get_debug_type(PtnRuntime *runtime, size_t argc, co
         case PTN_EXCEPTION:
             return ptn_runtime_debug_class_name_string(value.as.exception->class_name);
         case PTN_RESOURCE:
+            if (ptn_resource_curl_class_name(value.as.resource) != NULL) {
+                return ptn_string(ptn_resource_curl_class_name(value.as.resource));
+            }
             if (ptn_resource_is_open(value.as.resource)) {
                 int needed = snprintf(NULL, 0, "resource (%s)", value.as.resource->type_name);
                 if (needed < 0) {
@@ -55479,7 +55538,26 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 
 #define PTN_CURLOPT_URL 10002
 #define PTN_CURLOPT_HEADER 42
+#define PTN_CURLOPT_POSTFIELDS 10015
+#define PTN_CURLOPT_WRITEFUNCTION 20011
+#define PTN_CURLOPT_RETURNTRANSFER 19913
+#define PTN_CURLOPT_HEADERFUNCTION 20079
 #define PTN_CURLINFO_EFFECTIVE_URL 1048577
+#define PTN_CURLM_OK 0
+#define PTN_CURLMSG_DONE 1
+#define PTN_CURLE_OK 0
+
+static int ptn_curl_runtime_has_active_exception(PtnRuntime *runtime) {
+    return runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL;
+}
+
+static PtnResource *ptn_curl_new_resource(PtnRuntime *runtime, const char *type_name) {
+    PtnResource *resource = ptn_resource_new_named(type_name);
+    ptn_resource_assign_object_id(runtime, resource);
+    return resource;
+}
 
 static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
     PtnValue options = ptn_value_deref(handle->curl_options);
@@ -55491,6 +55569,14 @@ static PtnValue *ptn_curl_option_value(PtnResource *handle, int64_t option) {
         return NULL;
     }
     return &options.as.array->entries[index].value;
+}
+
+static void ptn_curl_store_option(PtnResource *handle, int64_t option, PtnValue value) {
+    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
+        ptn_value_destroy(&handle->curl_options);
+        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    }
+    ptn_array_set_entry(handle->curl_options.as.array, ptn_array_int_key(option), value);
 }
 
 static PtnValue ptn_curl_info_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
@@ -55513,6 +55599,81 @@ static PtnValue ptn_curl_options_copy(PtnValue options) {
         return ptn_array(ptn_array_clone(resolved.as.array));
     }
     return ptn_value_clone(options);
+}
+
+static char *ptn_curl_file_url_path(PtnStringOperand url) {
+    if (memchr(url.data, '\0', url.len) != NULL) {
+        return NULL;
+    }
+    if (url.len >= 17 && strncmp(url.data, "file://localhost/", 17) == 0) {
+        return ptn_duplicate_string_len(url.data + 16, url.len - 16);
+    }
+    if (url.len >= 7 && strncmp(url.data, "file://", 7) == 0) {
+        return ptn_duplicate_string_len(url.data + 7, url.len - 7);
+    }
+    return NULL;
+}
+
+static PtnValue ptn_curl_read_url(PtnRuntime *runtime, PtnResource *handle, size_t line) {
+    PtnValue *url_value = ptn_curl_option_value(handle, PTN_CURLOPT_URL);
+    if (url_value == NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand url = ptn_value_to_string_operand_with_runtime(runtime, *url_value, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_string_operand_free(url);
+        return ptn_null();
+    }
+    char *path = ptn_curl_file_url_path(url);
+    ptn_string_operand_free(url);
+    if (path == NULL) {
+        return ptn_bool(0);
+    }
+    unsigned char *data = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &len);
+    free(path);
+    if (read_result != 1) {
+        free(data);
+        return ptn_bool(0);
+    }
+    if (data == NULL) {
+        data = (unsigned char *)ptn_duplicate_string("");
+    }
+    return ptn_owned_string_len((char *)data, len);
+}
+
+static int ptn_curl_invoke_write_callback(
+    PtnRuntime *runtime,
+    PtnResource *handle,
+    PtnValue callback,
+    PtnValue payload,
+    size_t line
+) {
+    PtnValue handle_value = ptn_resource(handle);
+    handle_value.owned = 0;
+    PtnValue callback_args[2] = {
+        handle_value,
+        ptn_value_clone(payload)
+    };
+    PtnValue result = ptn_call_callable(runtime, callback, 2, callback_args, line, 0);
+    ptn_value_destroy(&callback_args[1]);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    int64_t written = ptn_value_to_integer(result);
+    ptn_value_destroy(&result);
+    PtnValue resolved = ptn_value_deref(payload);
+    return resolved.type == PTN_STRING && written == (int64_t)resolved.as.string.len;
+}
+
+static int ptn_curl_deliver_payload(PtnRuntime *runtime, PtnResource *handle, PtnValue payload, size_t line) {
+    PtnValue *write_callback = ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION);
+    if (write_callback == NULL) {
+        return 1;
+    }
+    return ptn_curl_invoke_write_callback(runtime, handle, *write_callback, payload, line);
 }
 
 static void ptn_curl_getinfo_set_string(PtnValue table, const char *key, const char *value) {
@@ -55575,12 +55736,25 @@ static PtnValue ptn_curl_getinfo_array(PtnRuntime *runtime, PtnResource *handle,
 }
 
 static PtnValue ptn_internal_curl_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)args;
-    (void)line;
     if (argc > 1) {
         return ptn_dom_throw_count(runtime, "curl_init", "at most 1 argument", argc);
     }
-    return ptn_resource(ptn_resource_new_named("curl"));
+    PtnResource *handle = ptn_curl_new_resource(runtime, "curl");
+    if (argc == 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand url = ptn_internal_expect_string_arg(runtime, "curl_init", 1, "url", args[0], line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_resource_release(handle);
+            ptn_string_operand_free(url);
+            return ptn_null();
+        }
+        ptn_curl_store_option(
+            handle,
+            PTN_CURLOPT_URL,
+            ptn_owned_string_len(ptn_duplicate_string_len(url.data, url.len), url.len)
+        );
+        ptn_string_operand_free(url);
+    }
+    return ptn_resource(handle);
 }
 
 static PtnValue ptn_internal_curl_copy_handle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55599,7 +55773,7 @@ static PtnValue ptn_internal_curl_copy_handle(PtnRuntime *runtime, size_t argc, 
     if (handle == NULL) {
         return ptn_null();
     }
-    PtnResource *copy = ptn_resource_new_named("curl");
+    PtnResource *copy = ptn_curl_new_resource(runtime, "curl");
     copy->curl_options = ptn_curl_options_copy(handle->curl_options);
     return ptn_resource(copy);
 }
@@ -55663,16 +55837,180 @@ static PtnValue ptn_internal_curl_setopt(PtnRuntime *runtime, size_t argc, const
     if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (ptn_value_deref(handle->curl_options).type != PTN_ARRAY) {
-        ptn_value_destroy(&handle->curl_options);
-        handle->curl_options = ptn_array_from_literal_entries(0, NULL);
+    PtnValue stored = ptn_null();
+    if (option == PTN_CURLOPT_WRITEFUNCTION || option == PTN_CURLOPT_HEADERFUNCTION) {
+        stored = ptn_internal_expect_callback_arg(runtime, "curl_setopt", 3, "value", args[2]);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_value_destroy(&stored);
+            return ptn_null();
+        }
+    } else if (option == PTN_CURLOPT_POSTFIELDS) {
+        PtnStringOperand payload = ptn_value_to_string_operand_with_runtime(runtime, args[2], line);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            ptn_string_operand_free(payload);
+            return ptn_null();
+        }
+        stored = ptn_owned_string_len(ptn_duplicate_string_len(payload.data, payload.len), payload.len);
+        ptn_string_operand_free(payload);
+    } else {
+        stored = ptn_value_clone(args[2]);
+    }
+    ptn_curl_store_option(handle, option, stored);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *handle = ptn_internal_expect_resource_of_type(
+        runtime,
+        "curl_exec",
+        1,
+        "handle",
+        args[0],
+        "curl"
+    );
+    if (handle == NULL) {
+        return ptn_null();
+    }
+    PtnValue payload = ptn_curl_read_url(runtime, handle, line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        ptn_value_destroy(&payload);
+        return ptn_null();
+    }
+    if (ptn_value_deref(payload).type != PTN_STRING) {
+        return payload;
+    }
+    if (!ptn_curl_deliver_payload(runtime, handle, payload, line)) {
+        ptn_value_destroy(&payload);
+        if (ptn_curl_runtime_has_active_exception(runtime)) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
+    PtnValue *return_transfer = ptn_curl_option_value(handle, PTN_CURLOPT_RETURNTRANSFER);
+    if (return_transfer != NULL && ptn_is_truthy(*return_transfer)) {
+        return payload;
+    }
+    PtnValue payload_value = ptn_value_deref(payload);
+    ptn_output_write(runtime, (const char *)payload_value.as.string.data, payload_value.as.string.len);
+    ptn_value_destroy(&payload);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_curl_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    if (ptn_internal_expect_resource_of_type(runtime, "curl_close", 1, "handle", args[0], "curl") == NULL) {
+        return ptn_null();
+    }
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Function curl_close() is deprecated since 8.5, as it has no effect since PHP 8.0",
+        line
+    );
+    return ptn_null();
+}
+
+static PtnArray *ptn_curl_multi_state(PtnResource *multi) {
+    if (ptn_value_deref(multi->curl_options).type != PTN_ARRAY) {
+        ptn_value_destroy(&multi->curl_options);
+        multi->curl_options = ptn_array_from_literal_entries(0, NULL);
+    }
+    return multi->curl_options.as.array;
+}
+
+static PtnValue *ptn_curl_multi_state_value(PtnResource *multi, const char *key_name) {
+    PtnArray *state = ptn_curl_multi_state(multi);
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    size_t index = ptn_array_find_key(state, key);
+    ptn_array_key_free(key);
+    if (index >= state->len) {
+        return NULL;
+    }
+    return &state->entries[index].value;
+}
+
+static PtnArray *ptn_curl_multi_state_array(PtnResource *multi, const char *key_name) {
+    PtnValue *slot = ptn_curl_multi_state_value(multi, key_name);
+    if (slot != NULL && ptn_value_deref(*slot).type == PTN_ARRAY) {
+        return ptn_value_deref(*slot).as.array;
+    }
+    PtnArray *state = ptn_curl_multi_state(multi);
+    ptn_array_set_entry(state, ptn_array_string_key(key_name), ptn_array_from_literal_entries(0, NULL));
+    slot = ptn_curl_multi_state_value(multi, key_name);
+    return ptn_value_deref(*slot).as.array;
+}
+
+static PtnValue ptn_curl_multi_handles_snapshot(PtnResource *multi) {
+    PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < handles->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone(handles->entries[i].value)
+        );
+    }
+    return result;
+}
+
+static void ptn_curl_multi_append_handle(PtnResource *multi, PtnValue handle) {
+    PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
+    if (handles->len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
     }
     ptn_array_set_entry(
-        handle->curl_options.as.array,
-        ptn_array_int_key(option),
-        ptn_value_clone(args[2])
+        handles,
+        ptn_array_int_key((int64_t)handles->len),
+        ptn_value_clone(handle)
     );
-    return ptn_bool(1);
+    PtnArray *state = ptn_curl_multi_state(multi);
+    ptn_array_unset_entry(state, ptn_array_string_key("completed_prepared"));
+    ptn_array_set_entry(state, ptn_array_string_key("completed"), ptn_array_from_literal_entries(0, NULL));
+}
+
+static int ptn_curl_value_is_resource(PtnValue value, PtnResource *resource, const char *type_name) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_RESOURCE &&
+        value.as.resource == resource &&
+        ptn_resource_is_open(value.as.resource) &&
+        strcmp(value.as.resource->type_name, type_name) == 0;
+}
+
+static void ptn_curl_multi_remove_attached_handle(PtnResource *multi, PtnResource *handle) {
+    PtnArray *handles = ptn_curl_multi_state_array(multi, "handles");
+    PtnValue replacement = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < handles->len; i++) {
+        if (ptn_curl_value_is_resource(handles->entries[i].value, handle, "curl")) {
+            continue;
+        }
+        if (replacement.as.array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            replacement.as.array,
+            ptn_array_int_key((int64_t)replacement.as.array->len),
+            ptn_value_clone(handles->entries[i].value)
+        );
+    }
+    ptn_array_set_entry(ptn_curl_multi_state(multi), ptn_array_string_key("handles"), replacement);
+}
+
+static int ptn_curl_multi_completed_prepared(PtnResource *multi) {
+    PtnValue *prepared = ptn_curl_multi_state_value(multi, "completed_prepared");
+    return prepared != NULL && ptn_is_truthy(*prepared);
+}
+
+static void ptn_curl_multi_prepare_completed(PtnResource *multi) {
+    if (ptn_curl_multi_completed_prepared(multi)) {
+        return;
+    }
+    PtnValue completed = ptn_curl_multi_handles_snapshot(multi);
+    PtnArray *state = ptn_curl_multi_state(multi);
+    ptn_array_set_entry(state, ptn_array_string_key("completed"), completed);
+    ptn_array_set_entry(state, ptn_array_string_key("completed_prepared"), ptn_bool(1));
 }
 
 static PtnValue ptn_internal_curl_multi_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55681,7 +56019,7 @@ static PtnValue ptn_internal_curl_multi_init(PtnRuntime *runtime, size_t argc, c
     if (argc != 0) {
         return ptn_dom_throw_count(runtime, "curl_multi_init", "exactly 0 arguments", argc);
     }
-    return ptn_resource(ptn_resource_new_named("curl_multi"));
+    return ptn_resource(ptn_curl_new_resource(runtime, "curl_multi"));
 }
 
 static PtnValue ptn_internal_curl_multi_add_handle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55689,11 +56027,110 @@ static PtnValue ptn_internal_curl_multi_add_handle(PtnRuntime *runtime, size_t a
     if (argc != 2) {
         return ptn_dom_throw_count(runtime, "curl_multi_add_handle", "exactly 2 arguments", argc);
     }
-    if (ptn_internal_expect_resource_of_type(runtime, "curl_multi_add_handle", 1, "multi_handle", args[0], "curl_multi") == NULL ||
-        ptn_internal_expect_resource_of_type(runtime, "curl_multi_add_handle", 2, "handle", args[1], "curl") == NULL) {
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_add_handle", 1, "multi_handle", args[0], "curl_multi");
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_multi_add_handle", 2, "handle", args[1], "curl");
+    (void)handle;
+    if (multi == NULL || handle == NULL) {
+        return ptn_null();
+    }
+    ptn_curl_multi_append_handle(multi, args[1]);
+    return ptn_int(PTN_CURLM_OK);
+}
+
+static PtnValue ptn_internal_curl_multi_get_handles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_get_handles", 1, "multi_handle", args[0], "curl_multi");
+    if (multi == NULL) {
+        return ptn_null();
+    }
+    return ptn_curl_multi_handles_snapshot(multi);
+}
+
+static PtnValue ptn_internal_curl_multi_exec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_exec", 1, "multi_handle", args[0], "curl_multi");
+    if (multi == NULL) {
+        return ptn_null();
+    }
+    if (args[1].type != PTN_REFERENCE) {
+        if (runtime->warn_by_ref_argument_mismatch) {
+            ptn_emit_by_reference_argument_warning(runtime, "curl_multi_exec", 2, "still_running", line);
+            return ptn_int(PTN_CURLM_OK);
+        }
+        ptn_throw_by_reference_argument_error(runtime, "curl_multi_exec", 2, "still_running", line);
+        return ptn_null();
+    }
+    ptn_curl_multi_prepare_completed(multi);
+    ptn_reference_assign(runtime, args[1].as.reference, ptn_int(0));
+    return ptn_int(PTN_CURLM_OK);
+}
+
+static PtnValue ptn_internal_curl_multi_select(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    if (ptn_internal_expect_resource_of_type(runtime, "curl_multi_select", 1, "multi_handle", args[0], "curl_multi") == NULL) {
         return ptn_null();
     }
     return ptn_int(0);
+}
+
+static PtnValue ptn_internal_curl_multi_info_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_info_read", 1, "multi_handle", args[0], "curl_multi");
+    if (multi == NULL) {
+        return ptn_null();
+    }
+    PtnArray *completed = ptn_curl_multi_state_array(multi, "completed");
+    if (completed->len == 0) {
+        if (argc >= 2 && args[1].type == PTN_REFERENCE) {
+            ptn_reference_assign(runtime, args[1].as.reference, ptn_int(0));
+        }
+        return ptn_bool(0);
+    }
+    PtnValue handle = ptn_value_clone(completed->entries[0].value);
+    PtnArrayKey remove_key = ptn_array_key_clone(completed->entries[0].key);
+    ptn_array_unset_entry(completed, remove_key);
+    if (argc >= 2 && args[1].type == PTN_REFERENCE) {
+        if (completed->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_reference_assign(runtime, args[1].as.reference, ptn_int((int64_t)completed->len));
+    }
+    PtnValue info = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(info.as.array, ptn_array_string_key("msg"), ptn_int(PTN_CURLMSG_DONE));
+    ptn_array_set_entry(info.as.array, ptn_array_string_key("result"), ptn_int(PTN_CURLE_OK));
+    ptn_array_set_entry(info.as.array, ptn_array_string_key("handle"), handle);
+    return info;
+}
+
+static PtnValue ptn_internal_curl_multi_remove_handle(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *multi = ptn_internal_expect_resource_of_type(runtime, "curl_multi_remove_handle", 1, "multi_handle", args[0], "curl_multi");
+    PtnResource *handle = ptn_internal_expect_resource_of_type(runtime, "curl_multi_remove_handle", 2, "handle", args[1], "curl");
+    if (multi == NULL || handle == NULL) {
+        return ptn_null();
+    }
+    ptn_curl_multi_remove_attached_handle(multi, handle);
+    return ptn_int(PTN_CURLM_OK);
+}
+
+static PtnValue ptn_internal_curl_multi_errno(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    if (ptn_internal_expect_resource_of_type(runtime, "curl_multi_errno", 1, "multi_handle", args[0], "curl_multi") == NULL) {
+        return ptn_null();
+    }
+    return ptn_int(PTN_CURLM_OK);
+}
+
+static PtnValue ptn_internal_curl_multi_strerror(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t code = ptn_internal_expect_integer_arg(runtime, "curl_multi_strerror", 1, "error_code", args[0], line);
+    if (ptn_curl_runtime_has_active_exception(runtime)) {
+        return ptn_null();
+    }
+    return ptn_string(code == PTN_CURLM_OK ? "No error" : "Unknown error");
 }
 
 static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -74974,8 +75411,14 @@ static PtnValue ptn_defined_constants_sockets_table(void) {
 static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_URL", PTN_CURLOPT_URL);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADER", PTN_CURLOPT_HEADER);
-    ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", 20079);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_POSTFIELDS", PTN_CURLOPT_POSTFIELDS);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_WRITEFUNCTION", PTN_CURLOPT_WRITEFUNCTION);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_RETURNTRANSFER", PTN_CURLOPT_RETURNTRANSFER);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_HEADERFUNCTION", PTN_CURLOPT_HEADERFUNCTION);
     ptn_get_defined_constants_add_int(table, "CURLINFO_EFFECTIVE_URL", PTN_CURLINFO_EFFECTIVE_URL);
+    ptn_get_defined_constants_add_int(table, "CURLM_OK", PTN_CURLM_OK);
+    ptn_get_defined_constants_add_int(table, "CURLMSG_DONE", PTN_CURLMSG_DONE);
+    ptn_get_defined_constants_add_int(table, "CURLE_OK", PTN_CURLE_OK);
 }
 
 static PtnValue ptn_defined_constants_curl_table(void) {
@@ -75431,8 +75874,14 @@ static int ptn_reflection_constant_is_curl(const char *name) {
     static const char *const names[] = {
         "CURLOPT_URL",
         "CURLOPT_HEADER",
+        "CURLOPT_POSTFIELDS",
+        "CURLOPT_WRITEFUNCTION",
+        "CURLOPT_RETURNTRANSFER",
         "CURLOPT_HEADERFUNCTION",
         "CURLINFO_EFFECTIVE_URL",
+        "CURLM_OK",
+        "CURLMSG_DONE",
+        "CURLE_OK",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -109421,6 +109870,7 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
 typedef struct PtnWeakMapData {
     PtnRuntime *runtime;
     PtnObject **objects;
+    PtnResource **resources;
     size_t *object_ids;
     PtnValue *values;
     unsigned char *value_reference_visible;
@@ -109455,9 +109905,13 @@ static void ptn_weak_map_data_free(void *data) {
         root->live_weak_maps_len--;
     }
     for (size_t i = 0; i < map->len; i++) {
+        if (map->resources != NULL && map->resources[i] != NULL) {
+            ptn_resource_release(map->resources[i]);
+        }
         ptn_value_destroy(&map->values[i]);
     }
     free(map->objects);
+    free(map->resources);
     free(map->object_ids);
     free(map->values);
     free(map->value_reference_visible);
@@ -109483,6 +109937,13 @@ static PtnObject *ptn_weak_map_live_object(PtnWeakMapData *map, PtnObject *candi
     return NULL;
 }
 
+static int ptn_weak_map_resource_is_live(PtnResource *resource, size_t object_id) {
+    return resource != NULL &&
+        resource->refcount != 0 &&
+        ptn_resource_is_curl_handle(resource) &&
+        ptn_resource_object_id(resource) == object_id;
+}
+
 static PtnWeakMapData *ptn_weak_map_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (
@@ -109503,22 +109964,39 @@ static void ptn_weak_map_prune(PtnWeakMapData *map) {
     size_t write = 0;
     size_t adjusted_index = map->index;
     for (size_t read = 0; read < map->len; read++) {
-        PtnObject *live = ptn_weak_map_live_object(map, map->objects[read], map->object_ids[read]);
-        if (live == NULL) {
+        PtnObject *live_object = NULL;
+        PtnResource *live_resource = NULL;
+        if (map->resources != NULL && map->resources[read] != NULL) {
+            if (ptn_weak_map_resource_is_live(map->resources[read], map->object_ids[read])) {
+                live_resource = map->resources[read];
+            }
+        } else {
+            live_object = ptn_weak_map_live_object(map, map->objects[read], map->object_ids[read]);
+        }
+        if (live_object == NULL && live_resource == NULL) {
             if (read < adjusted_index && adjusted_index > 0) {
                 adjusted_index--;
+            }
+            if (map->resources != NULL && map->resources[read] != NULL) {
+                ptn_resource_release(map->resources[read]);
             }
             ptn_value_destroy(&map->values[read]);
             continue;
         }
         if (write != read) {
-            map->objects[write] = live;
-            map->object_ids[write] = live->object_id;
+            map->objects[write] = live_object;
+            map->resources[write] = live_resource;
+            map->object_ids[write] = live_resource != NULL
+                ? ptn_resource_object_id(live_resource)
+                : live_object->object_id;
             map->values[write] = map->values[read];
             map->value_reference_visible[write] = map->value_reference_visible[read];
         } else {
-            map->objects[write] = live;
-            map->object_ids[write] = live->object_id;
+            map->objects[write] = live_object;
+            map->resources[write] = live_resource;
+            map->object_ids[write] = live_resource != NULL
+                ? ptn_resource_object_id(live_resource)
+                : live_object->object_id;
         }
         write++;
     }
@@ -109577,17 +110055,20 @@ static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
         new_capacity *= 2;
     }
     if (new_capacity > SIZE_MAX / sizeof(PtnObject *) ||
+        new_capacity > SIZE_MAX / sizeof(PtnResource *) ||
         new_capacity > SIZE_MAX / sizeof(size_t) ||
         new_capacity > SIZE_MAX / sizeof(PtnValue) ||
         new_capacity > SIZE_MAX / sizeof(unsigned char)) {
         ptn_abort_out_of_memory();
     }
     PtnObject **objects = malloc(new_capacity * sizeof(PtnObject *));
+    PtnResource **resources = malloc(new_capacity * sizeof(PtnResource *));
     size_t *object_ids = malloc(new_capacity * sizeof(size_t));
     PtnValue *values = malloc(new_capacity * sizeof(PtnValue));
     unsigned char *value_reference_visible = malloc(new_capacity * sizeof(unsigned char));
-    if (objects == NULL || object_ids == NULL || values == NULL || value_reference_visible == NULL) {
+    if (objects == NULL || resources == NULL || object_ids == NULL || values == NULL || value_reference_visible == NULL) {
         free(objects);
+        free(resources);
         free(object_ids);
         free(values);
         free(value_reference_visible);
@@ -109595,15 +110076,18 @@ static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
     }
     if (map->len != 0) {
         memcpy(objects, map->objects, map->len * sizeof(PtnObject *));
+        memcpy(resources, map->resources, map->len * sizeof(PtnResource *));
         memcpy(object_ids, map->object_ids, map->len * sizeof(size_t));
         memcpy(values, map->values, map->len * sizeof(PtnValue));
         memcpy(value_reference_visible, map->value_reference_visible, map->len * sizeof(unsigned char));
     }
     free(map->objects);
+    free(map->resources);
     free(map->object_ids);
     free(map->values);
     free(map->value_reference_visible);
     map->objects = objects;
+    map->resources = resources;
     map->object_ids = object_ids;
     map->values = values;
     map->value_reference_visible = value_reference_visible;
@@ -109620,6 +110104,7 @@ static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime) {
         map->runtime->live_weak_maps_len++;
     }
     map->objects = NULL;
+    map->resources = NULL;
     map->object_ids = NULL;
     map->values = NULL;
     map->value_reference_visible = NULL;
@@ -109629,25 +110114,42 @@ static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime) {
     return map;
 }
 
-static int ptn_weak_map_key_object(
+static int ptn_weak_map_key(
     PtnRuntime *runtime,
     const char *method_name,
     PtnValue value,
-    PtnObject **object_out
+    PtnObject **object_out,
+    PtnResource **resource_out
 ) {
     (void)method_name;
-    PtnValue object = ptn_value_deref(value);
-    if (object.type == PTN_OBJECT && object.as.object != NULL) {
-        *object_out = object.as.object;
+    PtnValue key = ptn_value_deref(value);
+    *object_out = NULL;
+    *resource_out = NULL;
+    if (key.type == PTN_OBJECT && key.as.object != NULL) {
+        *object_out = key.as.object;
+        return 1;
+    }
+    if (key.type == PTN_RESOURCE && ptn_resource_is_curl_handle(key.as.resource)) {
+        *resource_out = key.as.resource;
         return 1;
     }
     ptn_throw_exception(runtime, "TypeError", "WeakMap key must be an object");
     return 0;
 }
 
-static void ptn_weak_map_throw_not_contained(PtnRuntime *runtime, PtnObject *object) {
-    const char *class_name = object == NULL ? "Object" : object->class_name;
-    size_t object_id = object == NULL ? 0 : object->object_id;
+static void ptn_weak_map_throw_not_contained(PtnRuntime *runtime, PtnObject *object, PtnResource *resource) {
+    const char *class_name = "Object";
+    size_t object_id = 0;
+    if (resource != NULL) {
+        class_name = ptn_resource_curl_class_name(resource);
+        if (class_name == NULL) {
+            class_name = "Object";
+        }
+        object_id = ptn_resource_object_id(resource);
+    } else if (object != NULL) {
+        class_name = object->class_name;
+        object_id = object->object_id;
+    }
     char message[256];
     int written = snprintf(
         message,
@@ -109662,13 +110164,22 @@ static void ptn_weak_map_throw_not_contained(PtnRuntime *runtime, PtnObject *obj
     ptn_throw_exception(runtime, "Error", message);
 }
 
-static int ptn_weak_map_find_index(PtnWeakMapData *map, PtnObject *object, size_t *index_out) {
-    if (map == NULL || object == NULL) {
+static int ptn_weak_map_find_index(PtnWeakMapData *map, PtnObject *object, PtnResource *resource, size_t *index_out) {
+    if (map == NULL || (object == NULL && resource == NULL)) {
         return 0;
     }
     ptn_weak_map_prune(map);
     for (size_t i = 0; i < map->len; i++) {
-        if (map->objects[i] == object && map->object_ids[i] == object->object_id) {
+        if (resource != NULL) {
+            if (map->resources[i] != resource || map->object_ids[i] != ptn_resource_object_id(resource)) {
+                continue;
+            }
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+        if (map->resources[i] == NULL && map->objects[i] == object && map->object_ids[i] == object->object_id) {
             if (index_out != NULL) {
                 *index_out = i;
             }
@@ -109683,26 +110194,32 @@ static void ptn_weak_map_remove_at(PtnWeakMapData *map, size_t index) {
         return;
     }
     PtnValue removed = map->values[index];
+    PtnResource *removed_resource = map->resources[index];
     for (size_t i = index + 1; i < map->len; i++) {
         map->objects[i - 1] = map->objects[i];
+        map->resources[i - 1] = map->resources[i];
         map->object_ids[i - 1] = map->object_ids[i];
         map->values[i - 1] = map->values[i];
         map->value_reference_visible[i - 1] = map->value_reference_visible[i];
     }
     map->len--;
     map->objects[map->len] = NULL;
+    map->resources[map->len] = NULL;
     map->object_ids[map->len] = 0;
     map->values[map->len] = ptn_null();
     map->value_reference_visible[map->len] = 0;
     if (map->index > map->len) {
         map->index = map->len;
     }
+    if (removed_resource != NULL) {
+        ptn_resource_release(removed_resource);
+    }
     ptn_value_destroy(&removed);
 }
 
-static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnValue value) {
+static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnResource *resource, PtnValue value) {
     size_t index = 0;
-    if (ptn_weak_map_find_index(map, object, &index)) {
+    if (ptn_weak_map_find_index(map, object, resource, &index)) {
         PtnValue old = map->values[index];
         map->values[index] = ptn_value_clone(value);
         map->value_reference_visible[index] = 0;
@@ -109711,13 +110228,22 @@ static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnValue va
     }
     ptn_weak_map_reserve(map, map->len + 1);
     map->objects[map->len] = object;
-    map->object_ids[map->len] = object->object_id;
+    map->resources[map->len] = resource;
+    map->object_ids[map->len] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
+    if (resource != NULL) {
+        ptn_resource_retain(resource);
+    }
     map->values[map->len] = ptn_value_clone(value);
     map->value_reference_visible[map->len] = 0;
     map->len++;
 }
 
-static PtnValue ptn_weak_map_object_value(PtnObject *object) {
+static PtnValue ptn_weak_map_key_value(PtnObject *object, PtnResource *resource) {
+    if (resource != NULL) {
+        PtnValue value = ptn_resource(resource);
+        value.owned = 0;
+        return value;
+    }
     PtnValue value = ptn_object(object);
     value.owned = 0;
     return value;
@@ -109752,7 +110278,7 @@ static PtnValue ptn_weak_map_debug_info(PtnWeakMapData *map) {
         ptn_array_set_entry(
             row.as.array,
             ptn_array_string_key("key"),
-            ptn_value_clone(ptn_weak_map_object_value(map->objects[i]))
+            ptn_value_clone(ptn_weak_map_key_value(map->objects[i], map->resources[i]))
         );
         ptn_array_set_entry(
             row.as.array,
@@ -109836,6 +110362,10 @@ static PTN_UNUSED PtnValue ptn_weak_map_clone(
     ptn_weak_map_reserve(clone, source_map->len);
     for (size_t i = 0; i < source_map->len; i++) {
         clone->objects[i] = source_map->objects[i];
+        clone->resources[i] = source_map->resources[i];
+        if (clone->resources[i] != NULL) {
+            ptn_resource_retain(clone->resources[i]);
+        }
         clone->object_ids[i] = source_map->object_ids[i];
         clone->values[i] = ptn_value_clone(source_map->values[i]);
         clone->value_reference_visible[i] = source_map->value_reference_visible[i];
@@ -109863,11 +110393,12 @@ static PTN_UNUSED int ptn_weak_map_bind_reference(
         return 1;
     }
     PtnObject *object = NULL;
-    if (!ptn_weak_map_key_object(runtime, "offsetSet", key_value, &object)) {
+    PtnResource *resource = NULL;
+    if (!ptn_weak_map_key(runtime, "offsetSet", key_value, &object, &resource)) {
         return 1;
     }
     size_t index = 0;
-    if (ptn_weak_map_find_index(map, object, &index)) {
+    if (ptn_weak_map_find_index(map, object, resource, &index)) {
         PtnValue old = map->values[index];
         map->values[index] = ptn_value_clone(reference);
         map->value_reference_visible[index] = 1;
@@ -109876,7 +110407,11 @@ static PTN_UNUSED int ptn_weak_map_bind_reference(
     }
     ptn_weak_map_reserve(map, map->len + 1);
     map->objects[map->len] = object;
-    map->object_ids[map->len] = object->object_id;
+    map->resources[map->len] = resource;
+    map->object_ids[map->len] = resource != NULL ? ptn_resource_object_id(resource) : object->object_id;
+    if (resource != NULL) {
+        ptn_resource_retain(resource);
+    }
     map->values[map->len] = ptn_value_clone(reference);
     map->value_reference_visible[map->len] = 1;
     map->len++;
@@ -109895,11 +110430,12 @@ static PTN_UNUSED int ptn_weak_map_offset_isset(
         return 0;
     }
     PtnObject *object = NULL;
-    if (!ptn_weak_map_key_object(runtime, "offsetExists", key_value, &object)) {
+    PtnResource *resource = NULL;
+    if (!ptn_weak_map_key(runtime, "offsetExists", key_value, &object, &resource)) {
         return 0;
     }
     size_t index = 0;
-    if (!ptn_weak_map_find_index(map, object, &index)) {
+    if (!ptn_weak_map_find_index(map, object, resource, &index)) {
         return 0;
     }
     return ptn_value_deref(map->values[index]).type != PTN_NULL;
@@ -114515,11 +115051,20 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "count_chars", 1, 2, ptn_internal_count_chars },
         { "crypt", 2, 2, ptn_internal_crypt },
         { "crc32", 1, 1, ptn_internal_crc32 },
+        { "curl_close", 1, 1, ptn_internal_curl_close },
         { "curl_copy_handle", 1, 1, ptn_internal_curl_copy_handle },
+        { "curl_exec", 1, 1, ptn_internal_curl_exec },
         { "curl_getinfo", 1, 2, ptn_internal_curl_getinfo },
         { "curl_init", 0, 1, ptn_internal_curl_init },
         { "curl_multi_add_handle", 2, 2, ptn_internal_curl_multi_add_handle },
+        { "curl_multi_errno", 1, 1, ptn_internal_curl_multi_errno },
+        { "curl_multi_exec", 2, 2, ptn_internal_curl_multi_exec },
+        { "curl_multi_get_handles", 1, 1, ptn_internal_curl_multi_get_handles },
+        { "curl_multi_info_read", 1, 2, ptn_internal_curl_multi_info_read },
         { "curl_multi_init", 0, 0, ptn_internal_curl_multi_init },
+        { "curl_multi_remove_handle", 2, 2, ptn_internal_curl_multi_remove_handle },
+        { "curl_multi_select", 1, 2, ptn_internal_curl_multi_select },
+        { "curl_multi_strerror", 1, 1, ptn_internal_curl_multi_strerror },
         { "curl_setopt", 3, 3, ptn_internal_curl_setopt },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
@@ -137656,13 +138201,14 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
             return 1;
         }
         PtnObject *object = NULL;
-        if (!ptn_weak_map_key_object(runtime, "offsetGet", *offset_value, &object)) {
+        PtnResource *resource = NULL;
+        if (!ptn_weak_map_key(runtime, "offsetGet", *offset_value, &object, &resource)) {
             *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
             return 1;
         }
         size_t index = 0;
-        if (!ptn_weak_map_find_index(map, object, &index)) {
-            ptn_weak_map_throw_not_contained(runtime, object);
+        if (!ptn_weak_map_find_index(map, object, resource, &index)) {
+            ptn_weak_map_throw_not_contained(runtime, object, resource);
             *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
             return 1;
         }
@@ -146084,10 +146630,11 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
             return ptn_null();
         }
         PtnObject *object = NULL;
-        if (!ptn_weak_map_key_object(runtime, "offsetExists", args[0], &object)) {
+        PtnResource *resource = NULL;
+        if (!ptn_weak_map_key(runtime, "offsetExists", args[0], &object, &resource)) {
             return ptn_null();
         }
-        return ptn_bool(ptn_weak_map_find_index(map, object, NULL));
+        return ptn_bool(ptn_weak_map_find_index(map, object, resource, NULL));
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         if (argc != 1) {
@@ -146095,12 +146642,13 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
             return ptn_null();
         }
         PtnObject *object = NULL;
-        if (!ptn_weak_map_key_object(runtime, "offsetGet", args[0], &object)) {
+        PtnResource *resource = NULL;
+        if (!ptn_weak_map_key(runtime, "offsetGet", args[0], &object, &resource)) {
             return ptn_null();
         }
         size_t index = 0;
-        if (!ptn_weak_map_find_index(map, object, &index)) {
-            ptn_weak_map_throw_not_contained(runtime, object);
+        if (!ptn_weak_map_find_index(map, object, resource, &index)) {
+            ptn_weak_map_throw_not_contained(runtime, object, resource);
             return ptn_null();
         }
         PtnValue reference = ptn_weak_map_entry_reference(map, index, 0);
@@ -146114,10 +146662,11 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
             return ptn_null();
         }
         PtnObject *object = NULL;
-        if (!ptn_weak_map_key_object(runtime, "offsetSet", args[0], &object)) {
+        PtnResource *resource = NULL;
+        if (!ptn_weak_map_key(runtime, "offsetSet", args[0], &object, &resource)) {
             return ptn_null();
         }
-        ptn_weak_map_set(map, object, args[1]);
+        ptn_weak_map_set(map, object, resource, args[1]);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "offsetUnset")) {
@@ -146126,11 +146675,12 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
             return ptn_null();
         }
         PtnObject *object = NULL;
-        if (!ptn_weak_map_key_object(runtime, "offsetUnset", args[0], &object)) {
+        PtnResource *resource = NULL;
+        if (!ptn_weak_map_key(runtime, "offsetUnset", args[0], &object, &resource)) {
             return ptn_null();
         }
         size_t index = 0;
-        if (ptn_weak_map_find_index(map, object, &index)) {
+        if (ptn_weak_map_find_index(map, object, resource, &index)) {
             ptn_weak_map_remove_at(map, index);
         }
         return ptn_null();
@@ -146154,7 +146704,7 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
         if (map->index >= map->len) {
             return ptn_null();
         }
-        return ptn_value_clone(ptn_weak_map_object_value(map->objects[map->index]));
+        return ptn_value_clone(ptn_weak_map_key_value(map->objects[map->index], map->resources[map->index]));
     }
     if (ptn_ascii_case_equal(name, "current")) {
         ptn_weak_map_prune(map);

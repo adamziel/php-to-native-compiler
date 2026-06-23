@@ -39608,6 +39608,68 @@ var_dump(isset($extension->getFunctions()['curl_copy_handle']));\n",
 }
 
 #[test]
+fn compile_curl_file_exec_multi_and_handle_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-file-exec-multi-handle");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("curl-payload.txt"), "native").unwrap();
+    let input = root.join("curl-file-exec-multi-handle.php");
+    let output = root.join("curl-file-exec-multi-handle-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/curl-payload.txt';\n\
+$ch = curl_init('file://' . $path);\n\
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);\n\
+echo curl_exec($ch), \"\\n\";\n\
+var_dump(get_debug_type($ch));\n\
+var_dump($ch);\n\
+$mh = curl_multi_init();\n\
+$map = new WeakMap();\n\
+$map[$ch] = 'done';\n\
+curl_multi_add_handle($mh, $ch);\n\
+var_dump(count(curl_multi_get_handles($mh)));\n\
+curl_multi_exec($mh, $active);\n\
+while (($info = curl_multi_info_read($mh)) !== false) {\n\
+    echo $map[$info['handle']], \"\\n\";\n\
+    var_dump($info['msg'] === CURLMSG_DONE);\n\
+    var_dump($info['result'] === CURLE_OK);\n\
+    curl_multi_remove_handle($mh, $info['handle']);\n\
+}\n\
+var_dump($active);\n\
+var_dump(count(curl_multi_get_handles($mh)));\n\
+class CurlBody { public function __toString() { return 'body'; } }\n\
+var_dump(curl_setopt($ch, CURLOPT_POSTFIELDS, new CurlBody()));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "native\n",
+            "string(10) \"CurlHandle\"\n",
+            "object(CurlHandle)#1 (0) {\n",
+            "}\n",
+            "int(1)\n",
+            "done\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "int(0)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_curl_exec"));
+    assert!(c_source.contains("CURLOPT_RETURNTRANSFER"));
+    assert!(c_source.contains("CURLMSG_DONE"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();
