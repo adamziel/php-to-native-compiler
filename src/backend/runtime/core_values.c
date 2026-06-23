@@ -1388,6 +1388,7 @@ struct PtnRuntime {
     PtnSymbolTable owned_class_constant_initializing;
     PtnSymbolTable *class_constant_initializing;
     const char *current_class_constant_initializing_class_name;
+    const char *current_class_constant_initializing_key_class_name;
     const char *current_class_constant_initializing_constant_name;
     const char *class_constant_deprecation_suppress_class;
     const char *class_constant_deprecation_suppress_constant;

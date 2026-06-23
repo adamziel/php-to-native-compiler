@@ -48182,7 +48182,7 @@ var_dump(A::FOO);
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "\nFatal error: Uncaught Error: Cannot declare self-referencing constant A::BAR in {}:4\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 4\n",
+            "\nFatal error: Uncaught Error: Cannot declare self-referencing constant self::BAR in {}:4\nStack trace:\n#0 {}(4): [constant expression]()\n#1 {{main}}\n  thrown in {} on line 4\n",
             input.display(),
             input.display(),
             input.display()

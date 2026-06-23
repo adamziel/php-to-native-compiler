@@ -4564,6 +4564,7 @@ fn emit_class_constant_initializer_helper(
             let initializing_trace_frame_temp = values.next_temp();
             let suppressed_constant_trace_frame_temp = values.next_temp();
             let previous_initializing_class_temp = values.next_temp();
+            let previous_initializing_key_class_temp = values.next_temp();
             let previous_initializing_constant_temp = values.next_temp();
             out.push_str("            char *");
             out.push_str(&initializing_key_temp);
@@ -4579,6 +4580,9 @@ fn emit_class_constant_initializer_helper(
             out.push_str(&previous_initializing_class_temp);
             out.push_str(" = runtime.current_class_constant_initializing_class_name;\n");
             out.push_str("            const char *");
+            out.push_str(&previous_initializing_key_class_temp);
+            out.push_str(" = runtime.current_class_constant_initializing_key_class_name;\n");
+            out.push_str("            const char *");
             out.push_str(&previous_initializing_constant_temp);
             out.push_str(" = runtime.current_class_constant_initializing_constant_name;\n");
             out.push_str("            ptn_symbols_set(");
@@ -4586,9 +4590,16 @@ fn emit_class_constant_initializer_helper(
             out.push_str(", ");
             out.push_str(&initializing_key_temp);
             out.push_str(", ptn_bool(1));\n");
-            out.push_str("            runtime.current_class_constant_initializing_class_name = \"");
+            out.push_str(
+                "            runtime.current_class_constant_initializing_key_class_name = \"",
+            );
             out.push_str(&c_string(&class.name));
             out.push_str("\";\n");
+            out.push_str("            if (runtime.current_class_constant_initializing_class_name == NULL) {\n");
+            out.push_str(
+                "                runtime.current_class_constant_initializing_class_name = \"self\";\n",
+            );
+            out.push_str("            }\n");
             out.push_str(
                 "            runtime.current_class_constant_initializing_constant_name = \"",
             );
@@ -4646,6 +4657,11 @@ fn emit_class_constant_initializer_helper(
                 "                runtime.current_class_constant_initializing_class_name = ",
             );
             out.push_str(&previous_initializing_class_temp);
+            out.push_str(";\n");
+            out.push_str(
+                "                runtime.current_class_constant_initializing_key_class_name = ",
+            );
+            out.push_str(&previous_initializing_key_class_temp);
             out.push_str(";\n");
             out.push_str(
                 "                runtime.current_class_constant_initializing_constant_name = ",
@@ -4814,6 +4830,11 @@ fn emit_class_constant_initializer_helper(
             out.push_str(");\n");
             out.push_str("            runtime.current_class_constant_initializing_class_name = ");
             out.push_str(&previous_initializing_class_temp);
+            out.push_str(";\n");
+            out.push_str(
+                "            runtime.current_class_constant_initializing_key_class_name = ",
+            );
+            out.push_str(&previous_initializing_key_class_temp);
             out.push_str(";\n");
             out.push_str(
                 "            runtime.current_class_constant_initializing_constant_name = ",

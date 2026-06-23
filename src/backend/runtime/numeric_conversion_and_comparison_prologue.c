@@ -20,6 +20,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_constant_initializing = caller_runtime->class_constant_initializing;
     runtime->current_class_constant_initializing_class_name =
         caller_runtime->current_class_constant_initializing_class_name;
+    runtime->current_class_constant_initializing_key_class_name =
+        caller_runtime->current_class_constant_initializing_key_class_name;
     runtime->current_class_constant_initializing_constant_name =
         caller_runtime->current_class_constant_initializing_constant_name;
     runtime->class_constant_deprecation_suppress_class =
@@ -5166,11 +5168,11 @@ static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
         char *suspended_constant_key = NULL;
         int restore_suspended_constant = 0;
         if (
-            runtime->current_class_constant_initializing_class_name != NULL &&
+            runtime->current_class_constant_initializing_key_class_name != NULL &&
             runtime->current_class_constant_initializing_constant_name != NULL
         ) {
             suspended_constant_key = ptn_class_constant_key(
-                runtime->current_class_constant_initializing_class_name,
+                runtime->current_class_constant_initializing_key_class_name,
                 runtime->current_class_constant_initializing_constant_name
             );
             PtnValue initializing;
@@ -5847,7 +5849,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             ptn_is_truthy(initializing)
         ) {
             const char *message_class = runtime->current_class_constant_initializing_class_name == NULL
-                ? lookup_class_name
+                ? (message_class_name == NULL ? lookup_class_name : message_class_name)
                 : runtime->current_class_constant_initializing_class_name;
             const char *message_constant = runtime->current_class_constant_initializing_constant_name == NULL
                 ? constant
@@ -5874,8 +5876,28 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             );
             return ptn_null();
         }
-        if (runtime->class_constant_initializer != NULL &&
-            runtime->class_constant_initializer(runtime, metadata_declaring_class, constant)) {
+        if (runtime->class_constant_initializer != NULL) {
+            const char *previous_initializing_class =
+                runtime->current_class_constant_initializing_class_name;
+            const char *previous_initializing_key_class =
+                runtime->current_class_constant_initializing_key_class_name;
+            const char *previous_initializing_constant =
+                runtime->current_class_constant_initializing_constant_name;
+            runtime->current_class_constant_initializing_class_name =
+                message_class_name == NULL ? lookup_class_name : message_class_name;
+            runtime->current_class_constant_initializing_key_class_name =
+                metadata_declaring_class;
+            runtime->current_class_constant_initializing_constant_name =
+                constant;
+            int initialized =
+                runtime->class_constant_initializer(runtime, metadata_declaring_class, constant);
+            runtime->current_class_constant_initializing_class_name =
+                previous_initializing_class;
+            runtime->current_class_constant_initializing_key_class_name =
+                previous_initializing_key_class;
+            runtime->current_class_constant_initializing_constant_name =
+                previous_initializing_constant;
+            if (initialized) {
             if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
                 free(key);
                 return ptn_null();
@@ -5917,6 +5939,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
                 );
                 free(key);
                 return ptn_value_clone_deref(value);
+            }
             }
         }
         free(key);
