@@ -744,6 +744,7 @@ impl IncludeCollector {
             }
             Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
+            | Statement::TraitDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
             | Statement::Exit { value: None, .. }
             | Statement::Break { .. }

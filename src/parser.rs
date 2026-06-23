@@ -122,6 +122,7 @@ fn parse_with_options(
         declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
         anonymous_classes: Vec::new(),
+        anonymous_traits: Vec::new(),
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
@@ -165,6 +166,7 @@ struct Parser<'a> {
     declared_constants: HashSet<String>,
     declared_class_names: HashMap<String, SourceSpan>,
     anonymous_classes: Vec<ClassDecl>,
+    anonymous_traits: Vec<TraitDecl>,
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
@@ -447,6 +449,7 @@ impl Parser<'_> {
         )?;
         functions.append(&mut self.nested_functions);
         classes.append(&mut self.anonymous_classes);
+        traits.append(&mut self.anonymous_traits);
         let global_constant_values = collect_global_const_expr_static_values(&statements);
         compose_traits(&mut traits, &global_constant_values)?;
         let mut trait_lookup = traits.clone();
@@ -4154,6 +4157,9 @@ impl Parser<'_> {
             TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("enum") => {
                 self.parse_local_enum_decl_statement(attributes, attribute_start_span)
             }
+            TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("trait") => {
+                self.parse_local_trait_decl_statement(attributes, attribute_start_span)
+            }
             _ if self.peek_starts_class_decl() => {
                 self.parse_local_class_decl_statement(attributes, attribute_start_span)
             }
@@ -4242,6 +4248,36 @@ impl Parser<'_> {
             .to_string();
         self.anonymous_classes.push(class);
         Ok(Statement::ClassDeclaration {
+            name,
+            source,
+            span: source_span,
+        })
+    }
+
+    fn parse_local_trait_decl_statement(
+        &mut self,
+        attributes: ParsedAttributes,
+        attribute_start_span: Option<SourceSpan>,
+    ) -> Result<Statement> {
+        if self.method_depth != 0 {
+            return Err(Diagnostic::new(
+                "Class declarations may not be nested",
+                Some(self.peek().span),
+            ));
+        }
+        let trait_decl = self.parse_trait_decl(attributes)?;
+        let name = trait_decl.name.clone();
+        let span = trait_decl.span;
+        let source_span = attribute_start_span
+            .map(|start| combine_spans(start, span))
+            .unwrap_or(span);
+        let source = self
+            .source
+            .get(source_span.byte_start..source_span.byte_end)
+            .unwrap_or("")
+            .to_string();
+        self.anonymous_traits.push(trait_decl);
+        Ok(Statement::TraitDeclaration {
             name,
             source,
             span: source_span,
@@ -8545,6 +8581,7 @@ impl Parser<'_> {
             declared_constants: self.declared_constants.clone(),
             declared_class_names: self.declared_class_names.clone(),
             anonymous_classes: Vec::new(),
+            anonymous_traits: Vec::new(),
             nested_functions: Vec::new(),
             anonymous_class_name_counts: self.anonymous_class_name_counts.clone(),
             allow_append_array_read: self.allow_append_array_read,
@@ -20087,6 +20124,7 @@ fn validate_control_transfers_in_statements_inner(
             | Statement::Exit { value: None, .. }
             | Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
+            | Statement::TraitDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
             | Statement::Global { .. }
             | Statement::Label { .. }
@@ -21283,6 +21321,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         }
         Statement::Empty { .. }
         | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
         | Statement::FunctionDeclaration { .. }
         | Statement::Global { .. }
         | Statement::Break { .. }
@@ -21684,6 +21723,7 @@ fn validate_anonymous_functions_in_statements(
             | Statement::Exit { value: None, .. }
             | Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
+            | Statement::TraitDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
             | Statement::Unset { .. }
             | Statement::Global { .. }
@@ -26841,6 +26881,7 @@ fn statement_uses_this_property(statement: &Statement, property_name: &str) -> b
     match statement {
         Statement::Empty { .. }
         | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
         | Statement::FunctionDeclaration { .. }
         | Statement::Break { .. }
         | Statement::Continue { .. }

@@ -5056,6 +5056,34 @@ fn parser_accepts_function_local_enum_declarations() {
 }
 
 #[test]
+fn parser_accepts_function_local_trait_declarations() {
+    let program = parser::parse(
+        "<?php function outer() { trait FunctionLocalTrait { public function f() {} } } \
+         $closure = function () { trait ClosureLocalTrait { public function g() {} } };",
+    )
+    .unwrap();
+
+    assert_eq!(program.traits.len(), 2);
+    assert_eq!(program.traits[0].name, "FunctionLocalTrait");
+    assert_eq!(program.traits[1].name, "ClosureLocalTrait");
+    assert!(matches!(
+        &program.functions[0].body[0],
+        Statement::TraitDeclaration { name, .. } if name == "FunctionLocalTrait"
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert!(matches!(
+        &closure.body[0],
+        Statement::TraitDeclaration { name, .. } if name == "ClosureLocalTrait"
+    ));
+}
+
+#[test]
 fn parser_accepts_void_return_type_but_not_void_parameters() {
     let program = parser::parse("<?php function test(): void { return; } test();").unwrap();
     assert_eq!(program.functions[0].return_type, Some(TypeHint::Void));
@@ -10988,6 +11016,47 @@ class NotAbstract {
         error.message,
         "Class NotAbstract declares abstract method directAbstract() and must therefore be declared abstract"
     );
+}
+
+#[test]
+fn compile_autoload_local_trait_delayed_self_obligation_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-local-trait-delayed-self");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-local-trait-delayed-self.php");
+    let output = root.join("autoload-local-trait-delayed-self-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($class) {
+    if ($class == T::class) {
+        trait T {
+            abstract private function method($x): self;
+        }
+    } else if ($class == C::class) {
+        class C {
+            use T;
+
+            private function method($x): D {
+                return new D;
+            }
+        }
+    } else if ($class == D::class) {
+        class D extends C {}
+    }
+});
+
+new C;
+echo "===DONE===\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

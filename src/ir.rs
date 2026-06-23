@@ -2103,6 +2103,7 @@ impl<'a> LoweringContext<'a> {
         for statement in statements {
             match statement {
                 Statement::Empty { .. } => {}
+                Statement::TraitDeclaration { .. } => {}
                 Statement::ClassDeclaration { name, span, .. } => {
                     if let Some(class_index) = self.class_index_by_declaration(name, span.line) {
                         let declaration_key =
@@ -3561,6 +3562,7 @@ fn statement_contains_label(statement: &Statement) -> bool {
         }
         Statement::Empty { .. }
         | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
         | Statement::FunctionDeclaration { .. }
         | Statement::Assign { .. }
         | Statement::AssignRef { .. }
@@ -3671,6 +3673,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         }
         Statement::Empty { .. }
         | Statement::ClassDeclaration { .. }
+        | Statement::TraitDeclaration { .. }
         | Statement::FunctionDeclaration { .. }
         | Statement::Return { value: None, .. }
         | Statement::Exit { value: None, .. }
@@ -5663,7 +5666,8 @@ fn assertion_attribute_argument_expression_text(
 
 fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {
     match statement {
-        Statement::ClassDeclaration { source, span, .. } => Some(format!(
+        Statement::ClassDeclaration { source, span, .. }
+        | Statement::TraitDeclaration { source, span, .. } => Some(format!(
             "{}\n",
             assertion_source_block_text(source, span.column, indent)
         )),

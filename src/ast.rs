@@ -477,6 +477,11 @@ pub enum Statement {
         source: String,
         span: SourceSpan,
     },
+    TraitDeclaration {
+        name: String,
+        source: String,
+        span: SourceSpan,
+    },
     FunctionDeclaration {
         name: String,
         span: SourceSpan,
