@@ -2497,6 +2497,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let simplexml_extension = classify(
+        "--TEST--\nsimplexml extension\n--EXTENSIONS--\nsimplexml\n--FILE--\n<?php\n$sxe = simplexml_load_string('<root><item>value</item></root>');\nvar_dump((string) $sxe->item);\n--EXPECT--\nstring(5) \"value\"\n",
+    );
+    assert_eq!(
+        simplexml_extension.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let serialize_precision = classify(
         "--TEST--\nserialize precision ini\n--INI--\nserialize_precision=-1\n--FILE--\n<?php\necho ini_get('serialize_precision'), \"\\n\";\n--EXPECT--\n-1\n",
     );

@@ -38330,6 +38330,9 @@ var_dump($sxe->elem3);
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("string(36) \"This is text included from an entity\"\n"));
     assert!(stdout.contains("[\"included-entity\"]=>"));
+    assert!(stdout.contains(
+        "[\"included-entity\"]=>\n    string(36) \"This is text included from an entity\"\n"
+    ));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
