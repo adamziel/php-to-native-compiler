@@ -30020,6 +30020,50 @@ try {
 }
 
 #[test]
+fn compile_catch_entry_destructor_exception_bypasses_current_catch_to_native_binary() {
+    let root = temp_dir("ptn-native-catch-entry-destructor-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("catch-entry-destructor-exception.php");
+    let output = root.join("catch-entry-destructor-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+class ThrowsOnDestruct extends Exception {
+    public function __destruct() {
+        echo \"Throwing\\n\";
+        throw new RuntimeException(__METHOD__);
+    }
+}
+
+try {
+    throw new ThrowsOnDestruct();
+} catch (Exception) {
+    echo \"Unreachable catch\\n\";
+}
+echo \"Unreachable fallthrough\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Throwing\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught RuntimeException: ThrowsOnDestruct::__destruct"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("ThrowsOnDestruct->__destruct()"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Unreachable catch"), "{stderr}");
+    assert!(!stderr.contains("Unreachable fallthrough"), "{stderr}");
+}
+
+#[test]
 fn compile_shutdown_destructs_global_roots_before_contained_children_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-root-before-children");
     fs::create_dir_all(&root).unwrap();
