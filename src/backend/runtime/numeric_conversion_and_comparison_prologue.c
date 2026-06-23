@@ -248,6 +248,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     }
     runtime->session_save_handler_register_shutdown = caller_runtime->session_save_handler_register_shutdown;
     runtime->session_save_handler_in_callback = 0;
+    runtime->session_save_handler_shutdown_warning_pending = 0;
     runtime->session_parent_handler_open = caller_runtime->session_parent_handler_open;
     runtime->session_parent_save_handler = caller_runtime->session_parent_save_handler == NULL
         ? NULL
@@ -757,6 +758,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->session_save_handler_kind = 0;
         runtime->session_save_handler_register_shutdown = 1;
         runtime->session_save_handler_in_callback = 0;
+        runtime->session_save_handler_shutdown_warning_pending = 0;
         runtime->session_parent_handler_open = 0;
         free(runtime->session_parent_save_handler);
         runtime->session_parent_save_handler = NULL;
@@ -7232,7 +7234,18 @@ static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
+    ptn_output_buffer_flush_all(runtime);
     ptn_emit_uncaught_exception(runtime, exception);
+    PtnRuntime *root = runtime->lifecycle_root != NULL ? runtime->lifecycle_root : runtime;
+    if (root->session_save_handler_shutdown_warning_pending) {
+        root->session_save_handler_shutdown_warning_pending = 0;
+        if (runtime->diagnostics.display_errors) {
+            fputs(
+                "\nWarning: PHP Request Shutdown: Cannot call session save handler in a recursive manner in Unknown on line 0\n",
+                stderr
+            );
+        }
+    }
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }

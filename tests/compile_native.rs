@@ -16401,6 +16401,7 @@ fn compile_session_user_save_handler_edge_lifecycle_to_native_binary() {
             r#"<?php
 ini_set('session.save_path', '{}');
 ini_set('session.use_cookies', '0');
+ob_start();
 
 function edge_open($path, $name) {{ return true; }}
 function edge_close() {{ return true; }}
@@ -16428,6 +16429,7 @@ try {{
 }} catch (Error $e) {{
     echo $e->getMessage(), "\n";
 }}
+ob_end_flush();
 "#,
             root.display()
         ),
@@ -16535,6 +16537,7 @@ fn compile_session_optional_callbacks_persist_to_native_binary() {
 ini_set('session.use_cookies', '0');
 ini_set('session.use_strict_mode', '1');
 ini_set('session.serialize_handler', 'php_serialize');
+ob_start();
 
 $data = [];
 
@@ -16558,6 +16561,7 @@ session_set_save_handler('open', 'close', 'read', 'write', 'destroy', 'gc');
 session_start();
 var_dump($_SESSION);
 session_write_close();
+ob_end_flush();
 "#,
     )
     .unwrap();

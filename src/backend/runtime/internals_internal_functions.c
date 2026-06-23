@@ -78058,6 +78058,40 @@ static int ptn_session_reject_active_change(PtnRuntime *runtime, const char *mes
     return 1;
 }
 
+static int ptn_session_reject_output_started_change(PtnRuntime *runtime, const char *function_name, size_t line) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL || !root->output_has_started) {
+        return 0;
+    }
+    const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Session save handler cannot be changed after headers have already been sent (sent from %s on line %zu)",
+        function_name,
+        path,
+        line
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Session save handler cannot be changed after headers have already been sent (sent from %s on line %zu)",
+        function_name,
+        path,
+        line
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+    return 1;
+}
+
 static void ptn_session_set_active(PtnRuntime *runtime, int active) {
     PtnRuntime *root = ptn_session_root(runtime);
     if (root != NULL) {
@@ -78474,6 +78508,9 @@ static PtnValue ptn_session_call_user_handler(
     }
     ptn_value_destroy(&callback);
     if (!completed) {
+        if (root != NULL && root->shutdown_in_progress) {
+            root->session_save_handler_shutdown_warning_pending = 1;
+        }
         ptn_rethrow_exception(runtime);
     }
     return result;
@@ -79897,6 +79934,7 @@ static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t arg
     if (encoded.type == PTN_STRING) {
         if (ptn_session_has_user_handler(runtime)) {
             PtnRuntime *root = ptn_session_root(runtime);
+            ptn_session_set_active(runtime, 0);
             int unchanged = root != NULL &&
                 root->session_lazy_write &&
                 root->session_last_data_valid &&
@@ -79937,7 +79975,9 @@ static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t arg
         }
     }
     ptn_value_destroy(&encoded_result);
-    ptn_session_set_active(runtime, 0);
+    if (ptn_session_is_active(runtime)) {
+        ptn_session_set_active(runtime, 0);
+    }
     return ptn_bool(ok);
 }
 
@@ -80189,6 +80229,9 @@ static PtnValue ptn_internal_session_set_save_handler(PtnRuntime *runtime, size_
         "session_set_save_handler(): Providing individual callbacks instead of an object implementing SessionHandlerInterface is deprecated",
         line
     );
+    if (ptn_session_reject_output_started_change(runtime, "session_set_save_handler", line)) {
+        return ptn_bool(0);
+    }
     if (argc < 6) {
         ptn_throw_exception(
             runtime,
@@ -80385,6 +80428,12 @@ static PTN_UNUSED PtnValue ptn_session_handler_call_method(
     if (ptn_ascii_case_equal(name, "create_sid") || ptn_ascii_case_equal(name, "createSid")) {
         if (argc != 0) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::create_sid() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        PtnRuntime *root = ptn_session_root(runtime);
+        if (!ptn_session_is_active(runtime) &&
+            (root == NULL || root->session_save_handler_in_callback == 0)) {
+            ptn_throw_exception(runtime, "Error", "Session is not active");
             return ptn_null();
         }
         char *id = ptn_session_create_id_string(runtime, "");

@@ -2415,6 +2415,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     }
     runtime->session_save_handler_register_shutdown = 1;
     runtime->session_save_handler_in_callback = 0;
+    runtime->session_save_handler_shutdown_warning_pending = 0;
     runtime->session_parent_handler_open = 0;
     runtime->session_parent_save_handler = NULL;
     runtime->session_lazy_write = 1;

@@ -1581,6 +1581,7 @@ struct PtnRuntime {
     PtnValue session_save_handler_callbacks[9];
     int session_save_handler_register_shutdown;
     int session_save_handler_in_callback;
+    int session_save_handler_shutdown_warning_pending;
     int session_parent_handler_open;
     char *session_parent_save_handler;
     int session_lazy_write;
