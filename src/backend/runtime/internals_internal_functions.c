@@ -76978,12 +76978,22 @@ static int ptn_session_user_destroy(PtnRuntime *runtime, const char *id, size_t 
     return ok;
 }
 
-static int64_t ptn_session_user_gc(PtnRuntime *runtime, int64_t max_lifetime, size_t line) {
+static PtnValue ptn_session_user_gc_result(PtnRuntime *runtime, int64_t max_lifetime, size_t line) {
     PtnValue arg = ptn_int(max_lifetime);
     PtnValue result = ptn_session_call_user_handler(runtime, PTN_SESSION_CB_GC, 1, &arg, line);
-    int64_t removed = ptn_value_to_integer(result);
+    PtnValue resolved = ptn_value_deref(result);
+    if (resolved.type == PTN_INT) {
+        int64_t removed = resolved.as.integer;
+        ptn_value_destroy(&result);
+        return ptn_int(removed);
+    }
+    if (resolved.type == PTN_BOOL) {
+        int ok = resolved.as.boolean;
+        ptn_value_destroy(&result);
+        return ok ? ptn_int(1) : ptn_bool(0);
+    }
     ptn_value_destroy(&result);
-    return removed;
+    return ptn_bool(0);
 }
 
 static char *ptn_session_user_create_sid(PtnRuntime *runtime, size_t line) {
@@ -77871,11 +77881,12 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
         int64_t gc_probability = ptn_session_ini_integer(runtime, "session.gc_probability", 1);
         int64_t gc_divisor = ptn_session_ini_integer(runtime, "session.gc_divisor", 100);
         if (gc_probability > 0 && gc_divisor > 0 && gc_probability >= gc_divisor) {
-            (void)ptn_session_user_gc(
+            PtnValue gc_result = ptn_session_user_gc_result(
                 runtime,
                 ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440),
                 line
             );
+            ptn_value_destroy(&gc_result);
         }
     }
     if (read_and_close) {
@@ -78065,6 +78076,9 @@ static PtnValue ptn_internal_session_unset(PtnRuntime *runtime, size_t argc, con
     (void)argc;
     (void)args;
     (void)line;
+    if (!ptn_session_is_active(runtime)) {
+        return ptn_bool(1);
+    }
     PtnValue empty = ptn_array_from_literal_entries(0, NULL);
     ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
     ptn_value_destroy(&empty);
@@ -78108,7 +78122,7 @@ static PtnValue ptn_internal_session_gc(PtnRuntime *runtime, size_t argc, const 
     }
     int64_t max_lifetime = ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440);
     if (ptn_session_has_user_handler(runtime)) {
-        return ptn_int(ptn_session_user_gc(runtime, max_lifetime, line));
+        return ptn_session_user_gc_result(runtime, max_lifetime, line);
     }
     char *dir = ptn_session_storage_dir(runtime);
     int depth = ptn_session_save_path_dirdepth(runtime);
@@ -78341,6 +78355,12 @@ static PTN_UNUSED PtnValue ptn_session_handler_call_method(
     if (ptn_ascii_case_equal(name, "open")) {
         if (argc != 2) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SessionHandler::open() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnRuntime *root = ptn_session_root(runtime);
+        if (!ptn_session_is_active(runtime) &&
+            (root == NULL || root->session_save_handler_in_callback == 0)) {
+            ptn_throw_exception(runtime, "Error", "Session is not active");
             return ptn_null();
         }
         return ptn_bool(1);

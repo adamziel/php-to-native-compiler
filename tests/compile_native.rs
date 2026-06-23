@@ -16098,6 +16098,71 @@ session_write_close();
 }
 
 #[test]
+fn compile_session_user_save_handler_edge_lifecycle_to_native_binary() {
+    let root = temp_dir("ptn-native-session-user-save-handler-edge-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-user-save-handler-edge-lifecycle.php");
+    let output = root.join("session-user-save-handler-edge-lifecycle-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+
+function edge_open($path, $name) {{ return true; }}
+function edge_close() {{ return true; }}
+function edge_read($id): string|false {{ return ''; }}
+function edge_write($id, $data) {{ return true; }}
+function edge_destroy($id) {{ return true; }}
+function edge_gc($max_lifetime) {{ return 'invalid'; }}
+
+session_set_save_handler('edge_open', 'edge_close', 'edge_read', 'edge_write', 'edge_destroy', 'edge_gc');
+session_id('ptn_session_edge_lifecycle');
+session_start();
+$_SESSION['keep'] = 'yes';
+session_write_close();
+session_unset();
+var_dump($_SESSION);
+
+session_set_save_handler('edge_open', 'edge_close', 'edge_read', 'edge_write', 'edge_destroy', 'edge_gc');
+session_start();
+var_dump(session_gc());
+session_write_close();
+
+$handler = new SessionHandler();
+try {{
+    $handler->open('', '');
+}} catch (Error $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("array(1) {\n  [\"keep\"]=>\n  string(3) \"yes\"\n}\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("Session is not active\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_callback_dynamic_serializable_subclasses_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-callback-dynamic-serializable");
     fs::create_dir_all(&root).unwrap();
