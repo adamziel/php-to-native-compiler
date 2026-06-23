@@ -40134,6 +40134,106 @@ echo $xml->saveXML();
 }
 
 #[test]
+fn compile_dom_token_list_dtd_entities_and_live_iterators_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-token-list-dtd-entities-iterators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-token-list-dtd-entities-iterators.php");
+    let output = root.join("dom-token-list-dtd-entities-iterators-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createFromString(<<<'XML'
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE root [
+<!ELEMENT root ANY>
+<!ATTLIST child class CDATA "first second">
+<!ENTITY ent "foo">
+]>
+<root class="x&ent;x"><child/></root>
+XML, LIBXML_DTDATTR);
+$root = $dom->documentElement;
+$child = $root->firstChild;
+$childList = $child->classList;
+echo $child->getAttribute('class'), "\n";
+var_dump($childList->length, $childList->contains('first'));
+$childList->remove('first');
+echo $child->getAttribute('class'), "\n";
+
+$rootList = $root->classList;
+var_dump($rootList->value, $rootList->contains('xfoox'));
+$rootList->add('test');
+echo $dom->saveXML(), "\n";
+
+$removeDom = Dom\XMLDocument::createFromString('<root class="A B C D E F"/>');
+$removeList = $removeDom->documentElement->classList;
+foreach ($removeList as $key => $token) {
+    echo "remove:$key:$token\n";
+    $removeList->remove('A', 'D');
+}
+
+$replaceDom = Dom\XMLDocument::createFromString('<root class="A B C D"/>');
+$replaceList = $replaceDom->documentElement->classList;
+$counter = 0;
+foreach ($replaceList as $key => $token) {
+    echo "replace:$key:$token\n";
+    if (++$counter === 2) {
+        $replaceList->value = 'E F G';
+    }
+}
+
+try {
+    $replaceList[][0] = 1;
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "first second\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "second\n",
+            "string(5) \"xfoox\"\n",
+            "bool(true)\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<!DOCTYPE root [\n",
+            "<!ELEMENT root ANY>\n",
+            "<!ATTLIST child class CDATA \"first second\">\n",
+            "<!ENTITY ent \"foo\">\n",
+            "]>\n",
+            "<root class=\"xfoox test\"><child class=\"second\"/></root>\n",
+            "remove:0:A\n",
+            "remove:0:B\n",
+            "remove:1:C\n",
+            "remove:2:E\n",
+            "remove:3:F\n",
+            "replace:0:A\n",
+            "replace:1:B\n",
+            "replace:2:G\n",
+            "Cannot append to Dom\\TokenList\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_document_apply_internal_default_attributes"));
+    assert!(c_source.contains("ptn_dom_token_list_mutation_version"));
+}
+
+#[test]
 fn compile_dom_current_red_schema_and_reconstructed_element_to_native_binary() {
     let root = temp_dir("ptn-native-dom-current-red-schema-reconstructed-element");
     fs::create_dir_all(&root).unwrap();

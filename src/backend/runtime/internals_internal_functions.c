@@ -83911,6 +83911,9 @@ typedef struct {
     PtnValue values;
     PtnValue live_dom_token_list;
     size_t index;
+    uint64_t live_dom_token_list_seen_version;
+    char *live_dom_token_list_current_token;
+    int live_dom_token_list_has_current;
 } PtnInternalIteratorData;
 
 typedef struct {
@@ -84039,6 +84042,7 @@ static void ptn_internal_iterator_data_free(void *data) {
     }
     ptn_value_destroy(&iterator->values);
     ptn_value_destroy(&iterator->live_dom_token_list);
+    free(iterator->live_dom_token_list_current_token);
     free(iterator);
 }
 
@@ -87627,6 +87631,9 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
 
 static PtnDomTokenListData *ptn_dom_token_list_data(PtnValue value);
 static PtnValue ptn_dom_token_list_tokens_value(PtnDomTokenListData *data);
+static uint64_t ptn_dom_token_list_mutation_version(PtnDomTokenListData *data);
+static int ptn_dom_token_list_mutation_resume_same_index(PtnDomTokenListData *data);
+static int ptn_dom_token_list_index_of_cstr(PtnDomTokenListData *data, const char *token, size_t *index_out);
 static size_t ptn_dom_token_list_length(PtnDomTokenListData *data);
 static PtnValue ptn_dom_token_list_item_value(PtnDomTokenListData *data, size_t index);
 
@@ -87655,7 +87662,20 @@ static size_t ptn_internal_iterator_entry_count(PtnInternalIteratorData *data) {
 static PtnValue ptn_internal_iterator_current_value(PtnInternalIteratorData *data) {
     PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
     if (token_list != NULL) {
-        return ptn_dom_token_list_item_value(token_list, data->index);
+        PtnValue current = ptn_dom_token_list_item_value(token_list, data->index);
+        free(data->live_dom_token_list_current_token);
+        data->live_dom_token_list_current_token = NULL;
+        data->live_dom_token_list_has_current = 0;
+        data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(token_list);
+        PtnValue resolved = ptn_value_deref(current);
+        if (resolved.type == PTN_STRING) {
+            data->live_dom_token_list_current_token = ptn_duplicate_string_len(
+                (const char *)resolved.as.string.data,
+                resolved.as.string.len
+            );
+            data->live_dom_token_list_has_current = 1;
+        }
+        return current;
     }
     PtnArray *array = ptn_internal_iterator_values(data);
     if (array == NULL || data->index >= array->len) {
@@ -87683,6 +87703,9 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
         : ptn_array_from_literal_entries(0, NULL);
     data->live_dom_token_list = ptn_null();
     data->index = 0;
+    data->live_dom_token_list_seen_version = 0;
+    data->live_dom_token_list_current_token = NULL;
+    data->live_dom_token_list_has_current = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -87699,6 +87722,9 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     data->values = ptn_null();
     data->live_dom_token_list = ptn_value_clone_deref(token_list);
     data->index = 0;
+    data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(ptn_dom_token_list_data(token_list));
+    data->live_dom_token_list_current_token = NULL;
+    data->live_dom_token_list_has_current = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -87754,6 +87780,11 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->index = 0;
+        PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
+        data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(token_list);
+        data->live_dom_token_list_has_current = 0;
+        free(data->live_dom_token_list_current_token);
+        data->live_dom_token_list_current_token = NULL;
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
@@ -87772,6 +87803,31 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         return ptn_internal_iterator_key_value(array->entries[data->index].key);
     }
     if (ptn_ascii_case_equal(name, "next")) {
+        PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
+        if (token_list != NULL) {
+            uint64_t version = ptn_dom_token_list_mutation_version(token_list);
+            if (version != data->live_dom_token_list_seen_version &&
+                data->live_dom_token_list_has_current) {
+                size_t current_index = 0;
+                if (ptn_dom_token_list_index_of_cstr(
+                        token_list,
+                        data->live_dom_token_list_current_token,
+                        &current_index
+                    )) {
+                    data->index = current_index + 1;
+                } else if (!ptn_dom_token_list_mutation_resume_same_index(token_list) &&
+                           data->index < count) {
+                    data->index++;
+                }
+                data->live_dom_token_list_seen_version = version;
+            } else if (data->index < count) {
+                data->index++;
+            }
+            data->live_dom_token_list_has_current = 0;
+            free(data->live_dom_token_list_current_token);
+            data->live_dom_token_list_current_token = NULL;
+            return ptn_null();
+        }
         if (data->index < count) {
             data->index++;
         }
@@ -89449,6 +89505,9 @@ struct PtnXmlNode {
     size_t attribute_capacity;
     PtnObject *object;
     PtnObject *class_list;
+    uint64_t class_list_mutation_version;
+    int class_list_next_mutation_resume_same_index;
+    int class_list_mutation_resume_same_index;
     int uninitialized;
     int modern_dom;
     int html_document;
@@ -89474,6 +89533,10 @@ typedef struct {
 typedef struct PtnDomTokenListData {
     PtnXmlNode *element;
     PtnObject *self;
+    int cached_float_offset_valid;
+    double cached_float_offset;
+    size_t cached_float_offset_line;
+    int64_t cached_float_offset_index;
 } PtnDomTokenListData;
 
 typedef struct {
@@ -89797,9 +89860,13 @@ static int ptn_simplexml_property_write(PtnRuntime *runtime, PtnValue receiver, 
 static int ptn_simplexml_materialize_pending_property(PtnRuntime *runtime, PtnSimpleXmlData *data);
 static int ptn_simplexml_method_exists(const char *method_name);
 static const char *ptn_xml_element_attribute_value(PtnXmlNode *element, const char *name);
+static PtnXmlNode *ptn_xml_element_find_attribute(PtnXmlNode *element, const char *name);
 static char *ptn_dom_attribute_name_copy_for_element(PtnXmlNode *element, const char *data, size_t len);
 static void ptn_xml_reader_apply_default_attributes(PtnRuntime *runtime, PtnXmlReaderData *data);
+static void ptn_xml_reader_apply_default_attributes_to_node(PtnRuntime *runtime, PtnXmlNode *node, PtnXmlParserData *defaults);
+static void ptn_xml_parser_default_attributes_free(PtnXmlParserData *data);
 static void ptn_xml_parser_collect_attlist_defaults(PtnXmlParserData *parser, const char *data, size_t len);
+static int ptn_xml_parser_collect_dtd_declarations(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *data, size_t len, size_t line);
 static const char *ptn_dom_xmlns_namespace_uri(void) {
     return "http://www.w3.org/2000/xmlns/";
 }
@@ -91099,6 +91166,10 @@ static PtnValue ptn_dom_token_list_object(PtnRuntime *runtime, PtnXmlNode *eleme
     }
     data->element = element;
     data->self = NULL;
+    data->cached_float_offset_valid = 0;
+    data->cached_float_offset = 0.0;
+    data->cached_float_offset_line = 0;
+    data->cached_float_offset_index = 0;
     const char *class_name = element != NULL && ptn_xml_document_for_node(element) != NULL && ptn_xml_document_for_node(element)->modern_dom
         ? "Dom\\TokenList"
         : "DOMTokenList";
@@ -91146,6 +91217,47 @@ static PtnValue ptn_dom_token_list_tokens_value(PtnDomTokenListData *data) {
         }
     }
     return result;
+}
+
+static uint64_t ptn_dom_token_list_mutation_version(PtnDomTokenListData *data) {
+    return data == NULL || data->element == NULL ? 0 : data->element->class_list_mutation_version;
+}
+
+static int ptn_dom_token_list_mutation_resume_same_index(PtnDomTokenListData *data) {
+    return data != NULL && data->element != NULL && data->element->class_list_mutation_resume_same_index;
+}
+
+static void ptn_dom_token_list_materialize_backing_attribute(PtnRuntime *runtime, PtnDomTokenListData *data) {
+    if (data == NULL || data->element == NULL) {
+        return;
+    }
+    PtnXmlNode *class_attr = ptn_xml_element_find_attribute(data->element, "class");
+    if (class_attr != NULL) {
+        ptn_xml_node_ensure_object(runtime, class_attr);
+    }
+}
+
+static int ptn_dom_token_list_index_of_cstr(PtnDomTokenListData *data, const char *token, size_t *index_out) {
+    if (token == NULL) {
+        return 0;
+    }
+    size_t token_len = strlen(token);
+    PtnValue tokens = ptn_dom_token_list_tokens_value(data);
+    PtnArray *array = ptn_value_deref(tokens).type == PTN_ARRAY ? tokens.as.array : NULL;
+    for (size_t i = 0; array != NULL && i < array->len; i++) {
+        PtnValue value = ptn_value_deref(array->entries[i].value);
+        if (value.type == PTN_STRING &&
+            value.as.string.len == token_len &&
+            memcmp(value.as.string.data, token, token_len) == 0) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            ptn_value_destroy(&tokens);
+            return 1;
+        }
+    }
+    ptn_value_destroy(&tokens);
+    return 0;
 }
 
 static const char *ptn_dom_token_list_value_cstr(PtnDomTokenListData *data) {
@@ -91238,6 +91350,7 @@ static void ptn_dom_token_list_write_tokens(PtnRuntime *runtime, PtnDomTokenList
         cursor += value.as.string.len;
     }
     joined[cursor] = '\0';
+    data->element->class_list_next_mutation_resume_same_index = 1;
     ptn_xml_element_set_attribute_string(runtime, data->element, "class", joined);
     free(joined);
 }
@@ -91838,7 +91951,18 @@ static PtnValue ptn_dom_token_list_offset_get(
         return ptn_dom_throw_count(runtime, "Dom\\TokenList::offsetGet", "exactly 1 argument", argc);
     }
     int64_t index = 0;
-    if (!ptn_dom_token_list_offset_index(runtime, args[0], line, 0, &index) || index < 0) {
+    PtnValue offset = ptn_value_deref(args[0]);
+    if (list != NULL &&
+        offset.type == PTN_FLOAT &&
+        list->cached_float_offset_valid &&
+        list->cached_float_offset_line == line &&
+        list->cached_float_offset == offset.as.floating) {
+        index = list->cached_float_offset_index;
+        list->cached_float_offset_valid = 0;
+    } else if (!ptn_dom_token_list_offset_index(runtime, args[0], line, 0, &index) || index < 0) {
+        if (list != NULL) {
+            list->cached_float_offset_valid = 0;
+        }
         return ptn_null();
     }
     return ptn_dom_token_list_item_value(list, (size_t)index);
@@ -91855,8 +91979,20 @@ static PtnValue ptn_dom_token_list_offset_exists(
         return ptn_dom_throw_count(runtime, "Dom\\TokenList::offsetExists", "exactly 1 argument", argc);
     }
     int64_t index = 0;
+    PtnValue offset = ptn_value_deref(args[0]);
     if (!ptn_dom_token_list_offset_index(runtime, args[0], line, 1, &index) || index < 0) {
+        if (list != NULL) {
+            list->cached_float_offset_valid = 0;
+        }
         return ptn_bool(0);
+    }
+    if (list != NULL && offset.type == PTN_FLOAT) {
+        list->cached_float_offset_valid = 1;
+        list->cached_float_offset = offset.as.floating;
+        list->cached_float_offset_line = line;
+        list->cached_float_offset_index = index;
+    } else if (list != NULL) {
+        list->cached_float_offset_valid = 0;
     }
     return ptn_bool((size_t)index < ptn_dom_token_list_length(list));
 }
@@ -94791,6 +94927,12 @@ static void ptn_xml_attribute_sync_value_from_children(PtnXmlNode *attr) {
 
 static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode *element, const char *name, const char *value) {
     PtnXmlNode *attr = ptn_xml_element_find_attribute(element, name);
+    const char *new_value = value == NULL ? "" : value;
+    int class_attribute_changed = 0;
+    if (element != NULL && name != NULL && strcmp(name, "class") == 0) {
+        const char *old_value = attr == NULL || attr->value == NULL ? NULL : attr->value;
+        class_attribute_changed = old_value == NULL || strcmp(old_value, new_value) != 0;
+    }
     if (attr == NULL) {
         attr = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, name, "");
         attr->owner_document = ptn_xml_document_for_node(element);
@@ -94806,7 +94948,14 @@ static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode
         free(attr->namespace_uri);
             attr->namespace_uri = ptn_duplicate_string(ptn_dom_xmlns_namespace_uri());
     }
-    ptn_xml_attribute_set_value(runtime, attr, value == NULL ? "" : value, strlen(value == NULL ? "" : value));
+    ptn_xml_attribute_set_value(runtime, attr, new_value, strlen(new_value));
+    if (class_attribute_changed) {
+        element->class_list_mutation_resume_same_index = element->class_list_next_mutation_resume_same_index;
+        element->class_list_next_mutation_resume_same_index = 0;
+        element->class_list_mutation_version++;
+    } else if (element != NULL && name != NULL && strcmp(name, "class") == 0) {
+        element->class_list_next_mutation_resume_same_index = 0;
+    }
 }
 
 static void ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *name) {
@@ -95301,7 +95450,15 @@ static void ptn_xml_emit_invalid_namespace_uri_warning(PtnRuntime *runtime, cons
     free(message);
 }
 
-static int ptn_xml_parse_attributes(PtnRuntime *runtime, PtnXmlNode *element, const char *data, size_t len, size_t *pos, int html_mode) {
+static int ptn_xml_parse_attributes(
+    PtnRuntime *runtime,
+    PtnXmlNode *element,
+    PtnXmlParserData *parser,
+    const char *data,
+    size_t len,
+    size_t *pos,
+    int html_mode
+) {
     int well_formed = 1;
     while (*pos < len) {
         ptn_xml_skip_ws(data, len, pos);
@@ -95314,7 +95471,15 @@ static int ptn_xml_parse_attributes(PtnRuntime *runtime, PtnXmlNode *element, co
         if (*pos < len && data[*pos] == '=') {
             (*pos)++;
             free(value);
-            value = ptn_xml_read_quoted(data, len, pos);
+            char *raw_value = ptn_xml_read_quoted(data, len, pos);
+            if (parser != NULL) {
+                size_t decoded_len = 0;
+                value = ptn_xml_parser_decode_entities(parser, raw_value, strlen(raw_value), &decoded_len);
+                (void)decoded_len;
+                free(raw_value);
+            } else {
+                value = raw_value;
+            }
         } else {
             well_formed = 0;
         }
@@ -95337,6 +95502,24 @@ static int ptn_xml_parse_attributes(PtnRuntime *runtime, PtnXmlNode *element, co
         ptn_xml_element_add_attribute(element, attr);
     }
     return well_formed;
+}
+
+static void ptn_xml_parser_dtd_state_free(PtnXmlParserData *data) {
+    if (data == NULL) {
+        return;
+    }
+    ptn_xml_parser_default_attributes_free(data);
+    for (size_t i = 0; i < data->entity_declaration_count; i++) {
+        free(data->entity_declarations[i].name);
+        free(data->entity_declarations[i].value);
+        free(data->entity_declarations[i].public_id);
+        free(data->entity_declarations[i].system_id);
+        free(data->entity_declarations[i].notation_name);
+    }
+    free(data->entity_declarations);
+    data->entity_declarations = NULL;
+    data->entity_declaration_count = 0;
+    data->entity_declaration_capacity = 0;
 }
 
 static size_t ptn_dom_doctype_declaration_end(const char *data, size_t len, size_t pos) {
@@ -95522,13 +95705,21 @@ static void ptn_dom_doctype_collect_notation_declaration(
 }
 
 static char *ptn_dom_doctype_collect_declarations(PtnRuntime *runtime, PtnXmlNode *doctype, const char *data, size_t len) {
-    PtnStringBuffer entity_subset;
-    ptn_string_buffer_init(&entity_subset);
+    PtnStringBuffer internal_subset;
+    ptn_string_buffer_init(&internal_subset);
     size_t pos = 0;
     while (pos + 8 <= len) {
+        if (pos + 9 <= len &&
+            (memcmp(data + pos, "<!ELEMENT", 9) == 0 ||
+                memcmp(data + pos, "<!ATTLIST", 9) == 0)) {
+            size_t end = ptn_dom_doctype_declaration_end(data, len, pos);
+            ptn_dom_doctype_append_entity_subset(&internal_subset, data, pos, end);
+            pos = end;
+            continue;
+        }
         if (pos + 8 <= len && memcmp(data + pos, "<!ENTITY", 8) == 0) {
             size_t end = ptn_dom_doctype_declaration_end(data, len, pos);
-            ptn_dom_doctype_collect_entity_declaration(runtime, doctype, data, pos, end, &entity_subset);
+            ptn_dom_doctype_collect_entity_declaration(runtime, doctype, data, pos, end, &internal_subset);
             pos = end;
             continue;
         }
@@ -95540,7 +95731,7 @@ static char *ptn_dom_doctype_collect_declarations(PtnRuntime *runtime, PtnXmlNod
         }
         pos++;
     }
-    return entity_subset.data == NULL ? ptn_duplicate_string("") : entity_subset.data;
+    return internal_subset.data == NULL ? ptn_duplicate_string("") : internal_subset.data;
 }
 
 static void ptn_xml_parse_doctype_into(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len, size_t start, size_t end) {
@@ -95756,6 +95947,8 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
     size_t stack_len = 0;
     size_t stack_capacity = 0;
     int well_formed = 1;
+    PtnXmlParserData dtd_parser;
+    memset(&dtd_parser, 0, sizeof(dtd_parser));
     ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, document);
     size_t pos = 0;
     while (pos < len) {
@@ -95861,6 +96054,16 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
                     bracket_depth--;
                 } else if (ch == '>' && bracket_depth == 0) {
                     ptn_xml_parse_doctype_into(runtime, document, data, len, start, pos);
+                    if (!html_mode) {
+                        (void)ptn_xml_parser_collect_dtd_declarations(
+                            runtime,
+                            ptn_null(),
+                            &dtd_parser,
+                            data + start,
+                            pos - start,
+                            ptn_xml_line_map_line_for_offset(&line_map, start)
+                        );
+                    }
                     pos++;
                     break;
                 }
@@ -95912,7 +96115,7 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
         int html_void = html_mode && ptn_xml_html_void_element_name(name);
         element->line_no = element_line;
         free(name);
-        if (!ptn_xml_parse_attributes(runtime, element, data, len, &pos, html_mode)) {
+        if (!ptn_xml_parse_attributes(runtime, element, html_mode ? NULL : &dtd_parser, data, len, &pos, html_mode)) {
             well_formed = 0;
         }
         int self_closing = 0;
@@ -95941,12 +96144,27 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
         ptn_dom_html_normalize_root_whitespace(document);
     }
     free(stack);
+    ptn_xml_parser_dtd_state_free(&dtd_parser);
     ptn_xml_line_map_free(&line_map);
     return complete;
 }
 
 static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len) {
     return ptn_xml_parse_document_into_mode(runtime, document, data, len, 0);
+}
+
+static void ptn_xml_document_apply_internal_default_attributes(PtnRuntime *runtime, PtnXmlNode *document) {
+    PtnXmlNode *doctype = ptn_xml_document_doctype(document);
+    if (doctype == NULL || doctype->internal_subset == NULL || doctype->internal_subset[0] == '\0') {
+        return;
+    }
+    PtnXmlParserData defaults;
+    memset(&defaults, 0, sizeof(defaults));
+    ptn_xml_parser_collect_attlist_defaults(&defaults, doctype->internal_subset, strlen(doctype->internal_subset));
+    for (size_t i = 0; i < document->child_count; i++) {
+        ptn_xml_reader_apply_default_attributes_to_node(runtime, document->children[i], &defaults);
+    }
+    ptn_xml_parser_default_attributes_free(&defaults);
 }
 
 static PtnValue ptn_xml_document_new_for_class(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
@@ -98462,6 +98680,9 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     int ok = ptn_xml_parse_document_into(runtime, document, source.data, source.len);
     ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
     ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
+    if (ok && (options & PTN_LIBXML_DTDATTR) != 0) {
+        ptn_xml_document_apply_internal_default_attributes(runtime, document);
+    }
     ptn_string_operand_free(source);
     return ptn_bool(ok);
 }
@@ -98687,6 +98908,9 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
         ptn_value_destroy(&document_value);
         ptn_throw_exception(runtime, "ValueError", "Failed to parse document source");
         return ptn_null();
+    }
+    if (!html_document && (options & PTN_LIBXML_DTDATTR) != 0) {
+        ptn_xml_document_apply_internal_default_attributes(runtime, document);
     }
     if (html_document && (options & PTN_LIBXML_HTML_NOIMPLIED) == 0) {
         ptn_xml_document_wrap_implied_html_body(document);
@@ -100168,6 +100392,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             if (argc != 0) {
                 return ptn_dom_throw_count(runtime, "DOM\\TokenList::getIterator", "exactly 0 arguments", argc);
             }
+            ptn_dom_token_list_materialize_backing_attribute(runtime, list);
             return ptn_internal_iterator_from_dom_token_list(runtime, receiver, line);
         }
     }
