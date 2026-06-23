@@ -22452,6 +22452,125 @@ line two\"\n"
 }
 
 #[test]
+fn compile_zlib_functions_filters_and_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-functions-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-functions-filters.php");
+    let output = root.join("zlib-functions-filters-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data = "alpha beta gamma";
+$path = __DIR__ . "/zlib-surface.gz";
+$filtered = __DIR__ . "/zlib-filter.gz";
+$truncated = __DIR__ . "/zlib-truncate.gz";
+
+$constants = get_defined_constants(true);
+var_dump(ZLIB_ENCODING_DEFLATE, FORCE_GZIP, $constants["zlib"]["ZLIB_ENCODING_GZIP"]);
+var_dump(bin2hex(substr(gzencode("abc"), 0, 2)));
+
+$h = gzopen($path, "w");
+var_dump(gzwrite($h, "ignored", 0));
+var_dump(gzwrite($h, "ignored", -1));
+var_dump(gzwrite($h, $data));
+gzclose($h);
+
+$write_only = gzopen(__DIR__ . "/zlib-write-only.gz", "w");
+var_dump(gzread($write_only, 1));
+gzclose($write_only);
+
+$h = gzopen($path, "r");
+var_dump(gzread($h, 5));
+var_dump(gzseek($h, 6));
+var_dump(gzread($h, 4));
+gzrewind($h);
+var_dump(gzread($h, 5));
+gzclose($h);
+
+$h = gzopen($path, "r");
+$count = gzpassthru($h);
+echo "\n";
+var_dump($count);
+gzclose($h);
+
+$count = readgzfile($path);
+echo "\n";
+var_dump($count);
+
+$stream = fopen($filtered, "w+");
+$filter = stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE, ["window" => FORCE_GZIP]);
+var_dump($filter !== false);
+var_dump(fwrite($stream, $data));
+stream_filter_remove($filter);
+fflush($stream);
+fseek($stream, 0, SEEK_SET);
+var_dump(bin2hex(fread($stream, 2)));
+fclose($stream);
+
+$z = fopen("compress.zlib://$truncated", "w");
+var_dump(ftruncate($z, 0));
+fclose($z);
+
+try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
+try { gzdeflate("x", 99); } catch (ValueError $e) { echo "level-error\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
+
+@unlink($path);
+@unlink($filtered);
+@unlink($truncated);
+@unlink(__DIR__ . "/zlib-write-only.gz");
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: ftruncate(): Can't truncate this stream!"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: ftruncate()"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "int(15)\n\
+int(31)\n\
+int(31)\n\
+string(4) \"1f8b\"\n\
+int(0)\n\
+int(0)\n\
+int(16)\n\
+bool(false)\n\
+string(5) \"alpha\"\n\
+int(0)\n\
+string(4) \"beta\"\n\
+string(5) \"alpha\"\n\
+alpha beta gamma\n\
+int(16)\n\
+alpha beta gamma\n\
+int(16)\n\
+bool(true)\n\
+int(16)\n\
+string(4) \"1f8b\"\n\
+bool(false)\n\
+inflate-error\n\
+level-error\n\
+option-error\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_gzwrite"));
+    assert!(c_source.contains("ptn_internal_gzseek"));
+    assert!(c_source.contains("ptn_internal_stream_filter_remove"));
+    assert!(c_source.contains("ptn_defined_constants_zlib_table"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();

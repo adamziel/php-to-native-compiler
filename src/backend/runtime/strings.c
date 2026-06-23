@@ -2910,6 +2910,26 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_FILTER_ALL);
         return 1;
     }
+    if (strcmp(name, "ZLIB_ENCODING_RAW") == 0) {
+        *out = ptn_int(PTN_ZLIB_ENCODING_RAW);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_ENCODING_GZIP") == 0) {
+        *out = ptn_int(PTN_ZLIB_ENCODING_GZIP);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_ENCODING_DEFLATE") == 0) {
+        *out = ptn_int(PTN_ZLIB_ENCODING_DEFLATE);
+        return 1;
+    }
+    if (strcmp(name, "FORCE_GZIP") == 0) {
+        *out = ptn_int(PTN_FORCE_GZIP);
+        return 1;
+    }
+    if (strcmp(name, "FORCE_DEFLATE") == 0) {
+        *out = ptn_int(PTN_FORCE_DEFLATE);
+        return 1;
+    }
     if (strcmp(name, "STREAM_PF_UNIX") == 0) {
         *out = ptn_int(PTN_STREAM_PF_UNIX);
         return 1;
