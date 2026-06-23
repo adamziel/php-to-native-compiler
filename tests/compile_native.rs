@@ -18333,6 +18333,12 @@ try {
 } catch (Exception $e) {
     echo "Serialization failed: ", $e->getMessage(), "\n";
 }
+try {
+    $heap->top();
+    echo "FAIL: Top should have thrown\n";
+} catch (Exception $e) {
+    echo "Top failed: ", $e->getMessage(), "\n";
+}
 
 class ThrowingPQ extends SplPriorityQueue {
     public function compare($priority1, $priority2): int {
@@ -18398,11 +18404,46 @@ try {
         concat!(
             "Heap is corrupted: YES\n",
             "Serialization failed: Heap is corrupted, heap properties are no longer ensured.\n",
+            "Top failed: Heap is corrupted, heap properties are no longer ensured.\n",
             "PriorityQueue is corrupted: YES\n",
             "PQ Serialization failed: Heap is corrupted, heap properties are no longer ensured.\n",
             "Heap cannot be changed when it is already being modified.\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_append_iterator_preserves_inner_cursor_to_native_binary() {
+    let root = temp_dir("ptn-native-append-iterator-inner-cursor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("append-iterator-inner-cursor.php");
+    let output = root.join("append-iterator-inner-cursor-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$iterator = new AppendIterator();
+$events = new ArrayIterator([1, 2, 3, 4, 5]);
+$iterator->append($events);
+$events->next();
+while ($iterator->valid()) {
+    echo $iterator->current(), "\n";
+    $iterator->next();
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2\n3\n4\n5\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -30956,6 +30997,49 @@ spl_autoload_call('OtherClass');
     assert!(c_source.contains("ptn_internal_spl_autoload_call"));
     assert!(c_source.contains("ptn_internal_spl_autoload_functions"));
     assert!(c_source.contains("ptn_internal_spl_autoload_unregister"));
+}
+
+#[test]
+fn compile_spl_autoload_register_invalid_callback_mentions_null_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-invalid-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-autoload-invalid-callback.php");
+    let output = root.join("spl-autoload-invalid-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+class MyAutoLoader {
+    function dynaLoad($className) {}
+}
+
+foreach (['MyAutoLoader::dynaLoad', ['MyAutoLoader', 'dynaLoad']] as $callback) {
+    try {
+        spl_autoload_register($callback);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "spl_autoload_register(): Argument #1 ($callback) must be a valid callback or null, non-static method MyAutoLoader::dynaLoad() cannot be called statically\n",
+            "spl_autoload_register(): Argument #1 ($callback) must be a valid callback or null, non-static method MyAutoLoader::dynaLoad() cannot be called statically\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

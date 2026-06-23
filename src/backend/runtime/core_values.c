@@ -2816,6 +2816,14 @@ static PTN_UNUSED PtnValue ptn_append_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_append_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_no_rewind_iterator_new(
     PtnRuntime *runtime,
     size_t argc,

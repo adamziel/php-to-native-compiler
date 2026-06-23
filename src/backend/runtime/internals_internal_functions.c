@@ -130581,7 +130581,14 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         return ptn_spl_priority_queue_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_append_iterator(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__construct");
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "append")
+            || ptn_ascii_case_equal(method_name, "current")
+            || ptn_ascii_case_equal(method_name, "getIteratorIndex")
+            || ptn_ascii_case_equal(method_name, "key")
+            || ptn_ascii_case_equal(method_name, "next")
+            || ptn_ascii_case_equal(method_name, "rewind")
+            || ptn_ascii_case_equal(method_name, "valid");
     }
     if (ptn_internal_class_name_is_caching_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name)
@@ -131557,6 +131564,20 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "rewind",
             "seek",
             "setFlags",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_append_iterator(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "append",
+            "current",
+            "getIteratorIndex",
+            "key",
+            "next",
+            "rewind",
             "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
@@ -144196,6 +144217,11 @@ typedef struct {
 } PtnIteratorIteratorData;
 
 typedef struct {
+    PtnValue iterators;
+    size_t index;
+} PtnAppendIteratorData;
+
+typedef struct {
     PtnValue inner;
     char *pattern;
     int64_t mode;
@@ -144526,6 +144552,15 @@ static void ptn_iterator_iterator_data_free(void *data) {
     free(iterator_data);
 }
 
+static void ptn_append_iterator_data_free(void *data) {
+    PtnAppendIteratorData *iterator_data = (PtnAppendIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->iterators);
+    free(iterator_data);
+}
+
 static void ptn_regex_iterator_data_free(void *data) {
     PtnRegexIteratorData *iterator_data = (PtnRegexIteratorData *)data;
     if (iterator_data == NULL) {
@@ -144838,6 +144873,28 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
         return NULL;
     }
     return (PtnIteratorIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnAppendIteratorData *ptn_append_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "AppendIterator")
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid AppendIterator object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnAppendIteratorData *data = malloc(sizeof(PtnAppendIteratorData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->iterators = ptn_array_from_literal_entries(0, NULL);
+        data->index = 0;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_append_iterator_data_free;
+    }
+    return (PtnAppendIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnDirectoryIteratorData *ptn_directory_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -155257,6 +155314,10 @@ static PtnValue ptn_spl_heap_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        if (data->is_corrupted) {
+            ptn_spl_heap_throw_corrupted(runtime);
+            return ptn_null();
+        }
         size_t best = 0;
         if (!ptn_spl_heap_best_index(runtime, receiver, data, line, &best)) {
             if (runtime->exceptions->active_exception == NULL) {
@@ -155372,6 +155433,10 @@ static PtnValue ptn_spl_heap_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        if (data->is_corrupted) {
+            ptn_spl_heap_throw_corrupted(runtime);
+            return ptn_null();
+        }
         size_t best = 0;
         if (!ptn_spl_heap_best_index(runtime, receiver, data, line, &best)) {
             return ptn_null();
@@ -155381,6 +155446,10 @@ static PtnValue ptn_spl_heap_call_method(
     if (ptn_ascii_case_equal(name, "next")) {
         ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->is_corrupted) {
+            ptn_spl_heap_throw_corrupted(runtime);
             return ptn_null();
         }
         size_t best = 0;
@@ -157714,7 +157783,211 @@ static PTN_UNUSED PtnValue ptn_append_iterator_new(
         );
         return ptn_null();
     }
-    return ptn_object_new_shell(runtime, "AppendIterator");
+    PtnAppendIteratorData *data = malloc(sizeof(PtnAppendIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->iterators = ptn_array_from_literal_entries(0, NULL);
+    data->index = 0;
+    PtnValue object = ptn_object_new_shell(runtime, "AppendIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_append_iterator_data_free;
+    return object;
+}
+
+static size_t ptn_append_iterator_count(PtnAppendIteratorData *data) {
+    PtnValue iterators = data == NULL ? ptn_null() : ptn_value_deref(data->iterators);
+    return iterators.type == PTN_ARRAY ? iterators.as.array->len : 0;
+}
+
+static PtnArrayEntry *ptn_append_iterator_entry(PtnAppendIteratorData *data, size_t index) {
+    PtnValue iterators = data == NULL ? ptn_null() : ptn_value_deref(data->iterators);
+    if (iterators.type != PTN_ARRAY || index >= iterators.as.array->len) {
+        return NULL;
+    }
+    return &iterators.as.array->entries[index];
+}
+
+static int ptn_append_iterator_has_active_inner(
+    PtnRuntime *runtime,
+    PtnAppendIteratorData *data,
+    size_t line
+) {
+    PtnArrayEntry *entry = ptn_append_iterator_entry(data, data == NULL ? 0 : data->index);
+    if (entry == NULL) {
+        return 0;
+    }
+    return ptn_iterator_inner_valid(runtime, entry->value, line);
+}
+
+static void ptn_append_iterator_move_to_next_iterator(
+    PtnRuntime *runtime,
+    PtnAppendIteratorData *data,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    size_t count = ptn_append_iterator_count(data);
+    if (data->index < count) {
+        data->index++;
+    }
+    while (data->index < count) {
+        PtnArrayEntry *entry = ptn_append_iterator_entry(data, data->index);
+        if (entry == NULL) {
+            return;
+        }
+        PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, entry->value, "rewind", line);
+        ptn_value_destroy(&rewind);
+        if (runtime->exceptions->active_exception != NULL) {
+            return;
+        }
+        if (ptn_iterator_inner_valid(runtime, entry->value, line)) {
+            return;
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return;
+        }
+        data->index++;
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_append_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnAppendIteratorData *data = ptn_append_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_append_iterator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnAppendIteratorData *new_data =
+                (PtnAppendIteratorData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_append_iterator_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_append_iterator_data_free;
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "append")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "AppendIterator::append() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnValue iterator = ptn_value_deref(args[0]);
+        if (!ptn_value_is_iterator_object(iterator)) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "AppendIterator::append(): Argument #1 ($iterator) must be of type Iterator, %s given",
+                ptn_internal_string_arg_type_name(iterator)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        PtnArray *array = ptn_value_deref(data->iterators).as.array;
+        if (!ptn_array_append_key_available(runtime, array)) {
+            return ptn_null();
+        }
+        ptn_array_set_entry(
+            array,
+            ptn_array_int_key(array->next_auto_key),
+            ptn_value_clone_deref(iterator)
+        );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "AppendIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        data->index = 0;
+        PtnArrayEntry *entry = ptn_append_iterator_entry(data, data->index);
+        if (entry != NULL) {
+            PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, entry->value, "rewind", line);
+            ptn_value_destroy(&rewind);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "AppendIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_append_iterator_has_active_inner(runtime, data, line));
+    }
+    if (ptn_ascii_case_equal(name, "current") ||
+        ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "AppendIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_append_iterator_entry(data, data->index);
+        if (entry == NULL || !ptn_iterator_inner_valid(runtime, entry->value, line)) {
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            return ptn_null();
+        }
+        return ptn_iterator_inner_call_no_args(runtime, entry->value, name, line);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "AppendIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_append_iterator_entry(data, data->index);
+        if (entry != NULL) {
+            PtnValue next = ptn_iterator_inner_call_no_args(runtime, entry->value, "next", line);
+            ptn_value_destroy(&next);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            int is_valid = ptn_iterator_inner_valid(runtime, entry->value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            if (!is_valid) {
+                ptn_append_iterator_move_to_next_iterator(runtime, data, line);
+            }
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getIteratorIndex")) {
+        ptn_reflection_check_no_arguments(runtime, "AppendIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int((int64_t)data->index);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PtnMultipleIteratorData *ptn_multiple_iterator_data_new(void) {
@@ -165061,7 +165334,7 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
 
     PtnValue callback = argc == 0
         ? ptn_string("spl_autoload")
-        : ptn_internal_expect_callback_arg(runtime, "spl_autoload_register", 1, "callback", args[0]);
+        : ptn_internal_expect_nullable_callback_arg(runtime, "spl_autoload_register", 1, "callback", args[0]);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }

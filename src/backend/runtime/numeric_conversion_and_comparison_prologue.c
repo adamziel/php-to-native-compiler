@@ -7705,6 +7705,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "AppendIterator")
+        && ptn_internal_class_method_exists("AppendIterator", name)
+    ) {
+        return ptn_append_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "ArrayObject")
         && ptn_internal_class_method_exists("ArrayObject", name)
     ) {
