@@ -22767,6 +22767,75 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_standard_uri_stream_wrappers_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-uri-stream-wrappers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-uri-stream-wrappers.php");
+    let output = root.join("standard-uri-stream-wrappers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$rfc = fopen("data://text/plain;foo=bar;base64,aGVsbG8=", "r");
+var_dump(fread($rfc, 2));
+fseek($rfc, 2, SEEK_SET);
+var_dump(fgetc($rfc));
+$meta = stream_get_meta_data($rfc);
+var_dump(
+    $meta["mediatype"],
+    $meta["foo"],
+    $meta["base64"],
+    $meta["wrapper_type"],
+    $meta["stream_type"],
+    $meta["seekable"],
+    $meta["uri"]
+);
+var_dump(@file_get_contents("data://;charset=UTF-8,Hello"));
+var_dump(file_get_contents("data://,a,b"));
+
+$fd = fopen("php://fd/1", "rkkk");
+fwrite($fd, "fd-out\n");
+fclose($fd);
+
+$errno = 99;
+$errstr = "old";
+$client = @stream_socket_client("[", $errno, $errstr);
+var_dump($client, $errno, $errstr);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "fd-out\n\
+string(2) \"he\"\n\
+string(1) \"l\"\n\
+string(10) \"text/plain\"\n\
+string(3) \"bar\"\n\
+bool(true)\n\
+string(7) \"RFC2397\"\n\
+string(7) \"RFC2397\"\n\
+bool(true)\n\
+string(41) \"data://text/plain;foo=bar;base64,aGVsbG8=\"\n\
+bool(false)\n\
+string(3) \"a,b\"\n\
+bool(false)\n\
+int(0)\n\
+string(27) \"Failed to parse address \"[\"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_open_data_url_stream"));
+    assert!(c_source.contains("PTN_STREAM_BACKEND_RFC2397"));
+    assert!(c_source.contains("ptn_try_open_php_fd_stream"));
+    assert!(c_source.contains("ptn_internal_stream_socket_client"));
+}
+
+#[test]
 fn compile_stream_string_filters_to_native_binary() {
     let root = temp_dir("ptn-native-stream-string-filters");
     fs::create_dir_all(&root).unwrap();

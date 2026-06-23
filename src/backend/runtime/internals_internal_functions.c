@@ -283,6 +283,24 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
     if (name == NULL) {
         return NULL;
     }
+    if (ptn_ascii_case_equal(name, "stream_socket_client")) {
+        switch (index) {
+            case 0:
+                return "address";
+            case 1:
+                return "error_code";
+            case 2:
+                return "error_message";
+            case 3:
+                return "timeout";
+            case 4:
+                return "flags";
+            case 5:
+                return "context";
+            default:
+                return NULL;
+        }
+    }
     if (index == 0) {
         if (ptn_ascii_case_equal(name, "clone")) {
             return "object";
@@ -7322,6 +7340,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
         return 1;
     }
     if ((index == 0 || index == 1) && ptn_ascii_case_equal(name, "headers_sent")) {
+        return 1;
+    }
+    if ((index == 1 || index == 2) && ptn_ascii_case_equal(name, "stream_socket_client")) {
         return 1;
     }
     return 0;
@@ -48413,7 +48434,7 @@ static void ptn_emit_file_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+    ptn_emit_runtime_warning(runtime, message, line);
     free(message);
 }
 
@@ -48459,6 +48480,10 @@ static void ptn_emit_function_warning(
     const char *detail,
     size_t line
 );
+static int ptn_try_open_data_url_stream(const char *path, const char *mode, PtnValue *out, char **detail_out);
+static int ptn_try_open_php_fd_stream(const char *path, PtnValue *out, char **detail_out);
+static int ptn_data_url_is_stream(PtnResource *resource);
+static PtnValue ptn_data_url_stream_metadata(PtnResource *resource);
 
 static int ptn_ascii_case_has_prefix(const char *value, const char *prefix) {
     size_t prefix_len = strlen(prefix);
@@ -49211,6 +49236,108 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
     return 1;
 }
 
+static char *ptn_duplicate_open_stream_detail(const char *detail) {
+    int needed = snprintf(NULL, 0, "Failed to open stream: %s", detail);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "Failed to open stream: %s", detail);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static int ptn_try_open_php_fd_stream(const char *path, PtnValue *out, char **detail_out) {
+    const char *prefix = "php://fd/";
+    size_t prefix_len = strlen(prefix);
+    if (path == NULL || !ptn_ascii_case_has_prefix(path, prefix)) {
+        return 0;
+    }
+    const char *digits = path + prefix_len;
+    if (*digits == '\0') {
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+        }
+        return -1;
+    }
+    int64_t parsed = 0;
+    for (const char *cursor = digits; *cursor != '\0'; cursor++) {
+        unsigned char byte = (unsigned char)*cursor;
+        if (byte < '0' || byte > '9') {
+            if (detail_out != NULL) {
+                *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+            }
+            return -1;
+        }
+        int64_t digit = (int64_t)(byte - '0');
+        if (parsed > (INT_MAX - digit) / 10) {
+            if (detail_out != NULL) {
+                *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+            }
+            return -1;
+        }
+        parsed = parsed * 10 + digit;
+    }
+
+#if defined(_WIN32)
+    (void)out;
+    char detail[160];
+    int needed = snprintf(detail, sizeof(detail), "php://fd is not supported on this platform");
+    if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+        ptn_abort_out_of_memory();
+    }
+    if (detail_out != NULL) {
+        *detail_out = ptn_duplicate_open_stream_detail(detail);
+    }
+    return -1;
+#else
+    int fd = (int)parsed;
+    int duplicate = dup(fd);
+    if (duplicate < 0) {
+        int saved_errno = errno;
+        char detail[256];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "Error duping file descriptor %d; possibly it doesn't exist: [%d]: %s",
+            fd,
+            saved_errno,
+            strerror(saved_errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail(detail);
+        }
+        return -1;
+    }
+    const char *fd_mode = fd == STDIN_FILENO ? "r" : "w";
+    FILE *stream = fdopen(duplicate, fd_mode);
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(duplicate);
+        char detail[160];
+        int needed = snprintf(detail, sizeof(detail), "%s", strerror(saved_errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail(detail);
+        }
+        return -1;
+    }
+    *out = ptn_resource(ptn_resource_new_stream(stream, path, fd_mode));
+    return 1;
+#endif
+}
+
 static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
     if (ptn_ascii_case_equal(path, "php://stdin")) {
         PtnResource *resource = ptn_resource_new_stream(stdin, path, "r");
@@ -49304,6 +49431,20 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return php_stream;
     }
+    char *wrapper_detail = NULL;
+    int php_fd_result = ptn_try_open_php_fd_stream(path, &php_stream, &wrapper_detail);
+    if (php_fd_result > 0) {
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (php_fd_result < 0) {
+        ptn_emit_file_warning(runtime, "fopen", path, wrapper_detail, line);
+        free(wrapper_detail);
+        free(mode);
+        free(path);
+        return ptn_bool(0);
+    }
     if (ptn_try_open_php_standard_stream(path, &php_stream)) {
         free(mode);
         free(path);
@@ -49313,6 +49454,19 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(mode);
         free(path);
         return php_stream;
+    }
+    int data_url_result = ptn_try_open_data_url_stream(path, mode, &php_stream, &wrapper_detail);
+    if (data_url_result > 0) {
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (data_url_result < 0) {
+        ptn_emit_file_warning(runtime, "fopen", path, wrapper_detail, line);
+        free(wrapper_detail);
+        free(mode);
+        free(path);
+        return ptn_bool(0);
     }
     if (ptn_try_open_compress_zlib_stream(path, mode, &php_stream)) {
         free(mode);
@@ -50128,6 +50282,9 @@ static void ptn_emit_stream_read_notice(
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
+    }
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+        return;
     }
     fputc('\n', stdout);
     ptn_emit_notice(&runtime->diagnostics, message, line);
@@ -51257,6 +51414,9 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 
     PtnResource *resource = value.as.resource;
     int is_directory = resource->directory != NULL;
+    if (ptn_data_url_is_stream(resource)) {
+        return ptn_data_url_stream_metadata(resource);
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (resource->memory_stream != NULL && resource->stream_backend == PTN_STREAM_BACKEND_TEMP) {
         ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("PHP"));
@@ -51931,24 +52091,6 @@ static int ptn_data_url_has_scheme(const char *path) {
         ptn_data_url_ascii_ci_equal(path, 5, "data:");
 }
 
-static int ptn_data_url_metadata_has_base64(const char *metadata, size_t metadata_len) {
-    size_t start = 0;
-    while (start <= metadata_len) {
-        size_t end = start;
-        while (end < metadata_len && metadata[end] != ';') {
-            end++;
-        }
-        if (ptn_data_url_ascii_ci_equal(metadata + start, end - start, "base64")) {
-            return 1;
-        }
-        if (end == metadata_len) {
-            break;
-        }
-        start = end + 1;
-    }
-    return 0;
-}
-
 static int ptn_data_url_decode_base64(
     const char *input,
     size_t input_len,
@@ -52034,30 +52176,311 @@ static int ptn_data_url_decode_base64(
     return 1;
 }
 
-static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+typedef struct {
+    char *name;
+    char *value;
+} PtnDataUrlParameter;
+
+typedef struct {
+    char *uri;
+    unsigned char *data;
+    size_t data_len;
+    int base64;
+    char *mediatype;
+    PtnDataUrlParameter *parameters;
+    size_t parameter_count;
+} PtnDataUrlInfo;
+
+static void ptn_data_url_info_init(PtnDataUrlInfo *info) {
+    memset(info, 0, sizeof(*info));
+}
+
+static void ptn_data_url_info_free(PtnDataUrlInfo *info) {
+    if (info == NULL) {
+        return;
+    }
+    free(info->uri);
+    free(info->data);
+    free(info->mediatype);
+    for (size_t i = 0; i < info->parameter_count; i++) {
+        free(info->parameters[i].name);
+        free(info->parameters[i].value);
+    }
+    free(info->parameters);
+    ptn_data_url_info_init(info);
+}
+
+static const char *ptn_data_url_metadata_start(const char *path) {
     if (!ptn_data_url_has_scheme(path)) {
+        return NULL;
+    }
+    if (strlen(path) >= 7 && ptn_data_url_ascii_ci_equal(path, 7, "data://")) {
+        return path + 7;
+    }
+    return path + 5;
+}
+
+static int ptn_data_url_token_char(unsigned char byte) {
+    return isalnum(byte) ||
+        byte == '!' || byte == '#' || byte == '$' || byte == '&' ||
+        byte == '-' || byte == '^' || byte == '_' || byte == '.' ||
+        byte == '+';
+}
+
+static int ptn_data_url_valid_token(const char *value, size_t len) {
+    if (len == 0) {
         return 0;
     }
-    const char *metadata = path + 5;
+    for (size_t i = 0; i < len; i++) {
+        if (!ptn_data_url_token_char((unsigned char)value[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_data_url_valid_mediatype(const char *value, size_t len) {
+    const char *slash = memchr(value, '/', len);
+    if (slash == NULL) {
+        return 0;
+    }
+    size_t type_len = (size_t)(slash - value);
+    size_t subtype_len = len - type_len - 1;
+    return ptn_data_url_valid_token(value, type_len) &&
+        ptn_data_url_valid_token(slash + 1, subtype_len);
+}
+
+static int ptn_data_url_append_parameter(
+    PtnDataUrlInfo *info,
+    const char *name,
+    size_t name_len,
+    const char *value,
+    size_t value_len
+) {
+    if (info->parameter_count == SIZE_MAX / sizeof(PtnDataUrlParameter)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnDataUrlParameter *parameters = realloc(
+        info->parameters,
+        (info->parameter_count + 1) * sizeof(PtnDataUrlParameter)
+    );
+    if (parameters == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    info->parameters = parameters;
+    info->parameters[info->parameter_count].name = ptn_duplicate_string_len(name, name_len);
+    info->parameters[info->parameter_count].value = ptn_duplicate_string_len(value, value_len);
+    info->parameter_count++;
+    return 1;
+}
+
+static int ptn_data_url_parse_parameter(PtnDataUrlInfo *info, const char *segment, size_t segment_len) {
+    const char *equals = memchr(segment, '=', segment_len);
+    if (equals == NULL) {
+        return 0;
+    }
+    size_t name_len = (size_t)(equals - segment);
+    size_t value_len = segment_len - name_len - 1;
+    if (!ptn_data_url_valid_token(segment, name_len) ||
+        !ptn_data_url_valid_token(equals + 1, value_len)) {
+        return 0;
+    }
+    return ptn_data_url_append_parameter(info, segment, name_len, equals + 1, value_len);
+}
+
+static int ptn_data_url_parse_metadata(
+    const char *metadata,
+    size_t metadata_len,
+    PtnDataUrlInfo *info,
+    const char **error_out
+) {
+    if (metadata_len == 0) {
+        return 1;
+    }
+
+    size_t start = 0;
+    size_t end = 0;
+    while (end < metadata_len && metadata[end] != ';') {
+        end++;
+    }
+    size_t first_len = end - start;
+    int has_mediatype = 0;
+    if (first_len != 0) {
+        if (ptn_data_url_ascii_ci_equal(metadata + start, first_len, "base64")) {
+            info->base64 = 1;
+        } else if (ptn_data_url_valid_mediatype(metadata + start, first_len)) {
+            info->mediatype = ptn_duplicate_string_len(metadata + start, first_len);
+            has_mediatype = 1;
+        } else {
+            *error_out = "rfc2397: illegal media type";
+            return 0;
+        }
+    }
+    if (end == metadata_len) {
+        return 1;
+    }
+    start = end + 1;
+
+    while (start <= metadata_len) {
+        end = start;
+        while (end < metadata_len && metadata[end] != ';') {
+            end++;
+        }
+        size_t segment_len = end - start;
+        if (ptn_data_url_ascii_ci_equal(metadata + start, segment_len, "base64")) {
+            info->base64 = 1;
+        } else if (!has_mediatype || !ptn_data_url_parse_parameter(info, metadata + start, segment_len)) {
+            *error_out = "rfc2397: illegal parameter";
+            return 0;
+        }
+        if (end == metadata_len) {
+            break;
+        }
+        start = end + 1;
+    }
+    return 1;
+}
+
+static int ptn_data_url_parse(const char *path, PtnDataUrlInfo *info, char **detail_out) {
+    ptn_data_url_info_init(info);
+    const char *metadata = ptn_data_url_metadata_start(path);
+    if (metadata == NULL) {
+        return 0;
+    }
     const char *comma = strchr(metadata, ',');
     if (comma == NULL) {
         errno = EINVAL;
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail("rfc2397: no comma in URL");
+        }
         return -1;
     }
 
-    size_t metadata_len = (size_t)(comma - metadata);
+    info->uri = ptn_duplicate_string(path);
+    const char *error = NULL;
+    if (!ptn_data_url_parse_metadata(metadata, (size_t)(comma - metadata), info, &error)) {
+        errno = EINVAL;
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail(error);
+        }
+        ptn_data_url_info_free(info);
+        return -1;
+    }
+
     const char *payload = comma + 1;
     size_t payload_len = strlen(payload);
     size_t decoded_len = 0;
     char *decoded = ptn_url_decode_bytes(payload, payload_len, 0, &decoded_len);
-    if (!ptn_data_url_metadata_has_base64(metadata, metadata_len)) {
-        *data_out = (unsigned char *)decoded;
-        *len_out = decoded_len;
+    if (!info->base64) {
+        info->data = (unsigned char *)decoded;
+        info->data_len = decoded_len;
         return 1;
     }
 
-    int result = ptn_data_url_decode_base64(decoded, decoded_len, data_out, len_out);
+    int result = ptn_data_url_decode_base64(decoded, decoded_len, &info->data, &info->data_len);
     free(decoded);
+    if (result <= 0) {
+        errno = EINVAL;
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail("rfc2397: unable to decode");
+        }
+        ptn_data_url_info_free(info);
+        return -1;
+    }
+    return 1;
+}
+
+static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    PtnDataUrlInfo info;
+    int result = ptn_data_url_parse(path, &info, NULL);
+    if (result <= 0) {
+        return result;
+    }
+    *data_out = info.data;
+    *len_out = info.data_len;
+    info.data = NULL;
+    ptn_data_url_info_free(&info);
+    return 1;
+}
+
+static int ptn_try_open_data_url_stream(const char *path, const char *mode, PtnValue *out, char **detail_out) {
+    PtnDataUrlInfo info;
+    int result = ptn_data_url_parse(path, &info, detail_out);
+    if (result <= 0) {
+        return result;
+    }
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        info.uri,
+        mode == NULL ? "r" : mode,
+        PTN_STREAM_BACKEND_RFC2397,
+        SIZE_MAX,
+        1,
+        0
+    );
+    if (info.data_len != 0) {
+        size_t written = ptn_stream_write_bytes(resource, info.data, info.data_len);
+        if (written != info.data_len) {
+            ptn_data_url_info_free(&info);
+            ptn_resource_close(resource);
+            ptn_resource_release(resource);
+            errno = EIO;
+            if (detail_out != NULL) {
+                *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+            }
+            return -1;
+        }
+    }
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    resource->memory_stream->writable = 0;
+    resource->memory_stream->append = 0;
+    *out = ptn_resource(resource);
+    ptn_data_url_info_free(&info);
+    return 1;
+}
+
+static int ptn_data_url_is_stream(PtnResource *resource) {
+    return resource != NULL &&
+        resource->stream_backend == PTN_STREAM_BACKEND_RFC2397 &&
+        resource->stream_uri != NULL;
+}
+
+static PtnValue ptn_data_url_stream_metadata(PtnResource *resource) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnDataUrlInfo info;
+    int parsed = ptn_data_url_parse(resource == NULL ? NULL : resource->stream_uri, &info, NULL);
+    if (parsed <= 0) {
+        return result;
+    }
+    if (info.mediatype != NULL) {
+        ptn_stream_meta_set(
+            result.as.array,
+            "mediatype",
+            ptn_owned_string(ptn_duplicate_string(info.mediatype))
+        );
+    }
+    for (size_t i = 0; i < info.parameter_count; i++) {
+        ptn_stream_meta_set(
+            result.as.array,
+            info.parameters[i].name,
+            ptn_owned_string(ptn_duplicate_string(info.parameters[i].value))
+        );
+    }
+    ptn_stream_meta_set(result.as.array, "base64", ptn_bool(info.base64));
+    ptn_stream_meta_set(result.as.array, "wrapper_type", ptn_string("RFC2397"));
+    ptn_stream_meta_set(result.as.array, "stream_type", ptn_string("RFC2397"));
+    ptn_stream_meta_set(
+        result.as.array,
+        "mode",
+        ptn_owned_string(ptn_duplicate_string(resource->stream_mode == NULL ? "" : resource->stream_mode))
+    );
+    ptn_stream_meta_set(result.as.array, "unread_bytes", ptn_int(0));
+    ptn_stream_meta_set(result.as.array, "seekable", ptn_bool(1));
+    ptn_stream_meta_set(
+        result.as.array,
+        "uri",
+        ptn_owned_string(ptn_duplicate_string(resource->stream_uri == NULL ? "" : resource->stream_uri))
+    );
+    ptn_data_url_info_free(&info);
     return result;
 }
 
@@ -103550,6 +103973,92 @@ static PtnValue ptn_internal_socket_strerror(PtnRuntime *runtime, size_t argc, c
     return ptn_string(message == NULL ? "" : message);
 }
 
+static void ptn_stream_socket_client_assign_reference(PtnRuntime *runtime, PtnValue arg, PtnValue value) {
+    if (arg.type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, arg.as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "stream_socket_client", 1, "address", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int message_needed = snprintf(
+        NULL,
+        0,
+        "Failed to parse address \"%.*s\"",
+        (int)address.len,
+        address.data
+    );
+    if (message_needed < 0) {
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    char *parse_message = malloc((size_t)message_needed + 1);
+    if (parse_message == NULL) {
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    int message_written = snprintf(
+        parse_message,
+        (size_t)message_needed + 1,
+        "Failed to parse address \"%.*s\"",
+        (int)address.len,
+        address.data
+    );
+    if (message_written < 0 || message_written != message_needed) {
+        free(parse_message);
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    int warning_needed = snprintf(
+        NULL,
+        0,
+        "stream_socket_client(): Unable to connect to %.*s (%s)",
+        (int)address.len,
+        address.data,
+        parse_message
+    );
+    if (warning_needed < 0) {
+        free(parse_message);
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    char *warning = malloc((size_t)warning_needed + 1);
+    if (warning == NULL) {
+        free(parse_message);
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    int warning_written = snprintf(
+        warning,
+        (size_t)warning_needed + 1,
+        "stream_socket_client(): Unable to connect to %.*s (%s)",
+        (int)address.len,
+        address.data,
+        parse_message
+    );
+    if (warning_written < 0 || warning_written != warning_needed) {
+        free(warning);
+        free(parse_message);
+        ptn_string_operand_free(address);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+    free(warning);
+    if (argc >= 2) {
+        ptn_stream_socket_client_assign_reference(runtime, args[1], ptn_int(0));
+    }
+    if (argc >= 3) {
+        ptn_stream_socket_client_assign_reference(runtime, args[2], ptn_owned_string(ptn_duplicate_string(parse_message)));
+    }
+    free(parse_message);
+    ptn_string_operand_free(address);
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_stream_socket_pair(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     int64_t domain = ptn_internal_expect_integer_arg(runtime, "stream_socket_pair", 1, "domain", args[0], line);
@@ -116753,6 +117262,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "stream_select", 4, 5, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
+        { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
         { "strip_tags", 1, 2, ptn_internal_strip_tags },
