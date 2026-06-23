@@ -925,6 +925,7 @@ struct PtnGenerator {
     PtnArray *keys;
     PtnValue return_value;
     PtnArray *reference_notice_lines;
+    PtnArray *yield_lines;
     PtnArray *delegate_sources;
     PtnArray *output_chunks;
     PtnArray *send_call_positions;
@@ -934,12 +935,15 @@ struct PtnGenerator {
     PtnArray *send_call_lines;
     PtnStringBuffer pending_output;
     PtnValue closure_owner;
+    int has_receiver;
+    PtnValue receiver;
     char *function_name;
     char *source_file;
     size_t source_line;
     size_t position;
     int64_t next_auto_key;
     int completed;
+    int started;
     int yields_by_ref;
 };
 

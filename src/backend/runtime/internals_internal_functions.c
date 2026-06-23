@@ -110633,7 +110633,13 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
 
 static int ptn_reflection_generator_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
-        || ptn_ascii_case_equal(method_name, "getTrace");
+        || ptn_ascii_case_equal(method_name, "getExecutingFile")
+        || ptn_ascii_case_equal(method_name, "getExecutingGenerator")
+        || ptn_ascii_case_equal(method_name, "getExecutingLine")
+        || ptn_ascii_case_equal(method_name, "getFunction")
+        || ptn_ascii_case_equal(method_name, "getThis")
+        || ptn_ascii_case_equal(method_name, "getTrace")
+        || ptn_ascii_case_equal(method_name, "isClosed");
 }
 
 static int ptn_reflection_function_abstract_method_exists(const char *method_name) {
@@ -112138,7 +112144,16 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_reflection_generator(class_name)) {
-        static const char *const names[] = { "__construct", "getTrace" };
+        static const char *const names[] = {
+            "__construct",
+            "getExecutingFile",
+            "getExecutingGenerator",
+            "getExecutingLine",
+            "getFunction",
+            "getThis",
+            "getTrace",
+            "isClosed",
+        };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -137637,18 +137652,44 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     return ptn_null();
 }
 
-static PtnValue ptn_reflection_generator_trace_frame(
-    PtnGenerator *generator,
-    int include_file_line
-) {
+static const char *ptn_reflection_generator_method_separator(const char *function_name) {
+    if (function_name == NULL) {
+        return NULL;
+    }
+    const char *object_separator = strstr(function_name, "->");
+    if (object_separator != NULL) {
+        return object_separator;
+    }
+    return strstr(function_name, "::");
+}
+
+static size_t ptn_reflection_generator_executing_line(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return 0;
+    }
+    if (
+        generator->started &&
+        generator->yield_lines != NULL &&
+        generator->position < generator->yield_lines->len
+    ) {
+        PtnValue line_value = ptn_value_deref(generator->yield_lines->entries[generator->position].value);
+        if (line_value.type == PTN_INT && line_value.as.integer > 0) {
+            return (size_t)line_value.as.integer;
+        }
+    }
+    return generator->source_line;
+}
+
+static PtnValue ptn_reflection_generator_trace_frame(PtnGenerator *generator, int include_file_line) {
     PtnValue frame = ptn_array_from_literal_entries(0, NULL);
+    size_t executing_line = ptn_reflection_generator_executing_line(generator);
     if (
         include_file_line &&
         generator != NULL &&
         generator->source_file != NULL &&
-        generator->source_line != 0
+        executing_line != 0
     ) {
-        if (generator->source_line > (size_t)INT64_MAX) {
+        if (executing_line > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
         ptn_array_set_entry(
@@ -137659,18 +137700,45 @@ static PtnValue ptn_reflection_generator_trace_frame(
         ptn_array_set_entry(
             frame.as.array,
             ptn_array_string_key("line"),
-            ptn_int((int64_t)generator->source_line)
+            ptn_int((int64_t)executing_line)
         );
     }
-    ptn_array_set_entry(
-        frame.as.array,
-        ptn_array_string_key("function"),
-        ptn_owned_string(ptn_duplicate_string(
-            generator != NULL && generator->function_name != NULL
-                ? generator->function_name
-                : "{unknown}"
-        ))
-    );
+    const char *function_name = generator != NULL && generator->function_name != NULL
+        ? generator->function_name
+        : "{unknown}";
+    const char *separator = ptn_reflection_generator_method_separator(function_name);
+    if (separator != NULL && separator != function_name && separator[2] != '\0') {
+        size_t class_len = (size_t)(separator - function_name);
+        const char *method_name = separator + 2;
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(method_name))
+        );
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("class"),
+            ptn_owned_string_len(ptn_duplicate_string_len(function_name, class_len), class_len)
+        );
+        if (generator != NULL && generator->has_receiver) {
+            ptn_array_set_entry(
+                frame.as.array,
+                ptn_array_string_key("object"),
+                ptn_value_clone_deref(generator->receiver)
+            );
+        }
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("type"),
+            ptn_string(generator != NULL && generator->has_receiver ? "->" : (separator[0] == '-' ? "->" : "::"))
+        );
+    } else {
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(function_name))
+        );
+    }
     ptn_array_set_entry(
         frame.as.array,
         ptn_array_string_key("args"),
@@ -137703,6 +137771,103 @@ static void ptn_reflection_generator_append_trace(
         ptn_reflection_generator_trace_frame(generator, include_file_line)
     );
     (void)runtime;
+}
+
+static int ptn_reflection_generator_is_closed(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return 1;
+    }
+    return generator->started && !ptn_generator_position_valid(generator);
+}
+
+static int ptn_reflection_generator_require_open(PtnRuntime *runtime, PtnGenerator *generator) {
+    if (!ptn_reflection_generator_is_closed(generator)) {
+        return 1;
+    }
+    ptn_throw_exception(
+        runtime,
+        "ReflectionException",
+        "Cannot fetch information from a closed Generator"
+    );
+    return 0;
+}
+
+static PtnGenerator *ptn_reflection_generator_current_execution(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return NULL;
+    }
+    ptn_generator_skip_exhausted_delegates(generator);
+    PtnGenerator *delegate = ptn_generator_delegate_source(generator, generator->position);
+    if (delegate != NULL) {
+        PtnGenerator *nested = ptn_reflection_generator_current_execution(delegate);
+        return nested == NULL ? delegate : nested;
+    }
+    return generator;
+}
+
+static PtnValue ptn_reflection_generator_current_execution_value(PtnValue generator_value) {
+    PtnGenerator *generator = ptn_generator_from_value(generator_value);
+    if (generator == NULL) {
+        return ptn_null();
+    }
+    ptn_generator_skip_exhausted_delegates(generator);
+    PtnValue *delegate_source = ptn_generator_delegate_source_value(generator, generator->position);
+    if (delegate_source != NULL) {
+        PtnValue nested = ptn_reflection_generator_current_execution_value(*delegate_source);
+        if (ptn_generator_from_value(nested) != NULL) {
+            return nested;
+        }
+        ptn_value_destroy(&nested);
+    }
+    return ptn_value_clone_deref(generator_value);
+}
+
+static PtnValue ptn_reflection_generator_function(PtnRuntime *runtime, PtnGenerator *generator, size_t line) {
+    if (generator == NULL) {
+        return ptn_null();
+    }
+
+    PtnValue closure_owner = ptn_value_deref(generator->closure_owner);
+    if (closure_owner.type == PTN_CLOSURE) {
+        PtnValue arg = ptn_value_clone_deref(closure_owner);
+        PtnValue result = ptn_reflection_function_new(runtime, 1, &arg, line);
+        ptn_value_destroy(&arg);
+        return result;
+    }
+
+    const char *function_name = generator->function_name != NULL
+        ? generator->function_name
+        : "{unknown}";
+    const char *separator = ptn_reflection_generator_method_separator(function_name);
+    if (separator != NULL && separator != function_name && separator[2] != '\0') {
+        size_t class_len = (size_t)(separator - function_name);
+        char *class_name = ptn_duplicate_string_len(function_name, class_len);
+        PtnValue result = ptn_reflection_method_object_from_name(runtime, class_name, separator + 2);
+        free(class_name);
+        return result;
+    }
+
+    PtnValue arg = ptn_owned_string(ptn_duplicate_string(function_name));
+    PtnValue result = ptn_reflection_function_new(runtime, 1, &arg, line);
+    ptn_value_destroy(&arg);
+    return result;
+}
+
+static PtnValue ptn_reflection_generator_this(PtnGenerator *generator) {
+    if (generator == NULL) {
+        return ptn_null();
+    }
+    if (generator->has_receiver) {
+        return ptn_value_clone_deref(generator->receiver);
+    }
+    PtnValue closure_owner = ptn_value_deref(generator->closure_owner);
+    if (closure_owner.type == PTN_CLOSURE) {
+        PtnValue closure_this;
+        if (ptn_symbols_get(&closure_owner.as.closure->captures, "this", &closure_this)) {
+            return ptn_value_clone_deref(closure_this);
+        }
+    }
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
@@ -137742,9 +137907,73 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
     if (data == NULL) {
         return ptn_null();
     }
-    if (ptn_ascii_case_equal(name, "getTrace")) {
+    PtnGenerator *generator = ptn_generator_from_value(data->generator);
+
+    if (ptn_ascii_case_equal(name, "isClosed")) {
         ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_reflection_generator_is_closed(generator));
+    }
+    if (ptn_ascii_case_equal(name, "getExecutingLine")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        if (
+            runtime->exceptions->active_exception != NULL ||
+            !ptn_reflection_generator_require_open(runtime, generator)
+        ) {
+            return ptn_null();
+        }
+        PtnGenerator *executing = ptn_reflection_generator_current_execution(generator);
+        size_t source_line = ptn_reflection_generator_executing_line(executing);
+        if (source_line > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)source_line);
+    }
+    if (ptn_ascii_case_equal(name, "getExecutingFile")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        if (
+            runtime->exceptions->active_exception != NULL ||
+            !ptn_reflection_generator_require_open(runtime, generator)
+        ) {
+            return ptn_null();
+        }
+        PtnGenerator *executing = ptn_reflection_generator_current_execution(generator);
+        return ptn_owned_string(ptn_duplicate_string(
+            executing != NULL && executing->source_file != NULL
+                ? executing->source_file
+                : ""
+        ));
+    }
+    if (ptn_ascii_case_equal(name, "getExecutingGenerator")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        if (
+            runtime->exceptions->active_exception != NULL ||
+            !ptn_reflection_generator_require_open(runtime, generator)
+        ) {
+            return ptn_null();
+        }
+        return ptn_reflection_generator_current_execution_value(data->generator);
+    }
+    if (ptn_ascii_case_equal(name, "getFunction")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_generator_function(runtime, generator, line);
+    }
+    if (ptn_ascii_case_equal(name, "getThis")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_generator_this(generator);
+    }
+    if (ptn_ascii_case_equal(name, "getTrace")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionGenerator", name, argc);
+        if (
+            runtime->exceptions->active_exception != NULL ||
+            !ptn_reflection_generator_require_open(runtime, generator)
+        ) {
             return ptn_null();
         }
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -137752,7 +137981,7 @@ static PTN_UNUSED PtnValue ptn_reflection_generator_call_method(
         ptn_reflection_generator_append_trace(
             runtime,
             result,
-            ptn_generator_from_value(data->generator),
+            generator,
             0,
             &index
         );

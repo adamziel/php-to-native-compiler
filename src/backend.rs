@@ -2548,6 +2548,11 @@ fn emit_user_functions(
             out.push_str(
                 "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
             );
+            out.push_str("    if (runtime.current_generator != NULL) {\n");
+            out.push_str("        runtime.current_generator->source_line = ");
+            out.push_str(&function.line.to_string());
+            out.push_str(";\n");
+            out.push_str("    }\n");
         }
         if function.return_by_ref && !function.is_generator {
             if matches!(function.return_type.as_ref(), Some(TypeHint::Void)) {
@@ -19923,6 +19928,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_reflection_enum_case(class_name)) {\n");
     out.push_str(
         "        return ptn_reflection_enum_case_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_reflection_generator(class_name)) {\n");
+    out.push_str(
+        "        return ptn_reflection_generator_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_fiber(class_name)) {\n");

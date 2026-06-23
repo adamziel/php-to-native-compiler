@@ -28566,6 +28566,106 @@ foreach ($trace as $frame) {
 }
 
 #[test]
+fn compile_reflection_generator_closed_state_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-generator-closed-state");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-generator-closed-state.php");
+    let output = root.join("reflection-generator-closed-state-bin");
+    fs::write(
+        &input,
+        "<?php
+function empty_generator() {
+    return;
+    yield;
+}
+
+$gens = [
+    (function() {
+        yield;
+    })(),
+    empty_generator(),
+];
+
+foreach ($gens as $gen) {
+    $ref = new ReflectionGenerator($gen);
+    echo $ref->isClosed() ? \"closed\\n\" : \"open\\n\";
+    echo $gen->valid() ? \"valid\\n\" : \"invalid\\n\";
+    echo $ref->isClosed() ? \"closed\\n\" : \"open\\n\";
+    try {
+        echo is_int($ref->getExecutingLine()) ? \"line\\n\" : \"not-line\\n\";
+    } catch (Exception $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+    echo \"--\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "open\nvalid\nopen\nline\n--\nopen\ninvalid\nclosed\nCannot fetch information from a closed Generator\n--\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_generator_function_and_this_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-generator-function-this");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-generator-function-this.php");
+    let output = root.join("reflection-generator-function-this-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo() {
+    yield;
+}
+
+class C {
+    public function a() {
+        yield from foo();
+    }
+}
+
+$c = new C();
+$gen = $c->a();
+$gen->valid();
+$ref = new ReflectionGenerator($gen);
+echo get_class($ref->getExecutingGenerator()), \"\\n\";
+echo $ref->getFunction()->getName(), \"\\n\";
+echo get_class($ref->getThis()), \"\\n\";
+
+$closureGen = (function() {
+    yield;
+})();
+$closureRef = new ReflectionGenerator($closureGen);
+echo substr($closureRef->getFunction()->getName(), 0, 9), \"\\n\";
+var_dump($closureRef->getThis());
+
+foreach ($gen as $dummy) {
+}
+echo $ref->getFunction()->getName(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Generator\na\nC\n{closure:\nNULL\na\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_direct_get_class_helper_links_without_internal_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-direct-get-class-helper-link");
     fs::create_dir_all(&root).unwrap();
