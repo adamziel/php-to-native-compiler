@@ -36746,6 +36746,79 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_dom_namespace_mutation_reuses_ancestor_bindings() {
+    let root = temp_dir("ptn-native-dom-namespace-mutation-bindings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-namespace-mutation-bindings.php");
+    let output = root.join("dom-namespace-mutation-bindings-bin");
+    fs::write(
+        &input,
+        "<?php
+function atom_doc() {
+    $doc = new DOMDocument('1.0', 'utf-8');
+    $doc->formatOutput = true;
+    $root = $doc->createElementNS('http://www.w3.org/2005/Atom', 'element');
+    $doc->appendChild($root);
+    $root->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:g', 'http://base.google.com/ns/1.0');
+    return [$doc, $root];
+}
+
+[$doc, $root] = atom_doc();
+$root->append($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'house'));
+echo $doc->saveXML();
+
+[$doc, $root] = atom_doc();
+$root->prepend($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'house'));
+echo $doc->saveXML();
+
+[$doc, $root] = atom_doc();
+$house = $root->appendChild($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'house'));
+$house->before($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'street'));
+echo $doc->saveXML();
+
+[$doc, $root] = atom_doc();
+$house = $root->appendChild($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'house'));
+$house->after($doc->createElementNS('http://base.google.com/ns/1.0', 'g:item_type', 'street'));
+echo $doc->saveXML();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<element xmlns=\"http://www.w3.org/2005/Atom\" xmlns:g=\"http://base.google.com/ns/1.0\">\n",
+            "  <g:item_type>house</g:item_type>\n",
+            "</element>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<element xmlns=\"http://www.w3.org/2005/Atom\" xmlns:g=\"http://base.google.com/ns/1.0\">\n",
+            "  <g:item_type>house</g:item_type>\n",
+            "</element>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<element xmlns=\"http://www.w3.org/2005/Atom\" xmlns:g=\"http://base.google.com/ns/1.0\">\n",
+            "  <g:item_type>street</g:item_type>\n",
+            "  <g:item_type>house</g:item_type>\n",
+            "</element>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<element xmlns=\"http://www.w3.org/2005/Atom\" xmlns:g=\"http://base.google.com/ns/1.0\">\n",
+            "  <g:item_type>house</g:item_type>\n",
+            "  <g:item_type>street</g:item_type>\n",
+            "</element>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_namespace_declaration_should_serialize"));
+    assert!(c_source.contains("ptn_dom_append_like"));
+}
+
+#[test]
 fn compile_libxml_streams_context_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-streams-context");
     fs::create_dir_all(&root).unwrap();

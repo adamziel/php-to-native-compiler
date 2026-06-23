@@ -83037,7 +83037,6 @@ static int ptn_xml_subtree_has_invalid_namespace_serialization(PtnXmlNode *node)
 }
 
 static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, PtnXmlNode *attr) {
-    (void)element;
     if (!ptn_xml_attribute_is_namespace_declaration(attr)) {
         return 1;
     }
@@ -83045,6 +83044,17 @@ static int ptn_xml_namespace_declaration_should_serialize(PtnXmlNode *element, P
     const char *value = attr->value == NULL ? "" : attr->value;
     if (strcmp(name, "xmlns:xml") == 0 && strcmp(value, ptn_dom_xml_namespace_uri()) == 0) {
         return 0;
+    }
+    if (element != NULL && element->parent != NULL && strncmp(name, "xmlns:", 6) == 0) {
+        const char *prefix = name + 6;
+        char *element_prefix = ptn_xml_prefix_dup(element->name == NULL ? "" : element->name);
+        int declares_element_prefix = element_prefix[0] != '\0' && strcmp(element_prefix, prefix) == 0 &&
+                                      element->namespace_uri != NULL && strcmp(element->namespace_uri, value) == 0;
+        const char *in_scope = declares_element_prefix ? ptn_xml_lookup_namespace_uri(element->parent, prefix) : NULL;
+        free(element_prefix);
+        if (in_scope != NULL && strcmp(in_scope, value) == 0) {
+            return 0;
+        }
     }
     return 1;
 }
