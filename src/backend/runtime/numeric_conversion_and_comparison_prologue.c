@@ -247,6 +247,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     }
     runtime->session_save_handler_register_shutdown = caller_runtime->session_save_handler_register_shutdown;
     runtime->session_save_handler_in_callback = 0;
+    runtime->session_parent_handler_open = caller_runtime->session_parent_handler_open;
+    runtime->session_parent_save_handler = caller_runtime->session_parent_save_handler == NULL
+        ? NULL
+        : ptn_duplicate_string(caller_runtime->session_parent_save_handler);
     runtime->session_lazy_write = caller_runtime->session_lazy_write;
     runtime->session_last_data = NULL;
     runtime->session_last_data_len = 0;
@@ -559,7 +563,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     runtime->dynamic_property_deprecation_suppress_property = NULL;
     runtime->dynamic_property_deprecation_suppress_object = NULL;
     if (runtime->lifecycle_root == runtime) {
-        ptn_runtime_session_shutdown(runtime);
+        int session_shutdown_early =
+            !runtime->session_active ||
+            runtime->session_save_handler_kind == 0 ||
+            runtime->session_save_handler_register_shutdown;
+        if (session_shutdown_early) {
+            ptn_runtime_session_shutdown(runtime);
+        }
         ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
@@ -568,6 +578,9 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
         ptn_runtime_run_object_destructors(runtime);
+        if (!session_shutdown_early) {
+            ptn_runtime_session_shutdown(runtime);
+        }
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
@@ -743,6 +756,9 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->session_save_handler_kind = 0;
         runtime->session_save_handler_register_shutdown = 1;
         runtime->session_save_handler_in_callback = 0;
+        runtime->session_parent_handler_open = 0;
+        free(runtime->session_parent_save_handler);
+        runtime->session_parent_save_handler = NULL;
         runtime->session_lazy_write = 1;
         free(runtime->session_last_data);
         runtime->session_last_data = NULL;

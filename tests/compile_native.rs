@@ -16271,6 +16271,136 @@ try {{
 }
 
 #[test]
+fn compile_session_id_interface_save_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-session-id-interface-save-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-id-interface-save-handler.php");
+    let output = root.join("session-id-interface-save-handler-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.use_cookies', '0');
+
+class Handler implements SessionHandlerInterface, SessionIdInterface {{
+    public string $data = '';
+
+    public function open($path, $name): bool {{ return true; }}
+    public function close(): bool {{ return true; }}
+    public function read($id): string|false {{ echo "read:$id\n"; return $this->data; }}
+    public function write($id, $data): bool {{ echo "write:$id:$data\n"; $this->data = $data; return true; }}
+    public function destroy($id): bool {{ return true; }}
+    public function gc($max_lifetime): int|false {{ return 1; }}
+    public function create_sid(): string {{ echo "create_sid\n"; return 'native_sid'; }}
+}}
+
+$handler = new Handler();
+session_set_save_handler($handler);
+session_start();
+echo session_id(), "\n";
+$_SESSION['x'] = 'one';
+session_write_close();
+session_unset();
+session_start();
+var_dump($_SESSION);
+session_write_close();
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "create_sid\n",
+            "read:native_sid\n",
+            "native_sid\n",
+            "write:native_sid:x|s:3:\"one\";\n",
+            "read:native_sid\n",
+            "array(1) {\n",
+            "  [\"x\"]=>\n",
+            "  string(3) \"one\"\n",
+            "}\n",
+            "write:native_sid:x|s:3:\"one\";\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_optional_callbacks_persist_to_native_binary() {
+    let root = temp_dir("ptn-native-session-optional-callbacks-persist");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-optional-callbacks-persist.php");
+    let output = root.join("session-optional-callbacks-persist-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ini_set('session.use_cookies', '0');
+ini_set('session.use_strict_mode', '1');
+ini_set('session.serialize_handler', 'php_serialize');
+
+$data = [];
+
+function open($path, $name): bool { echo "open\n"; return true; }
+function close(): bool { echo "close\n"; return true; }
+function create_sid(): string { echo "create old\n"; return 'OLD_ID'; }
+function read($key): string|false { echo "read:$key\n"; global $data; return serialize($data); }
+function write($key, $value): bool { echo "write:$key\n"; global $data; $data[$key] = $value; return true; }
+function destroy($id): bool { return true; }
+function gc($lifetime): int|false { return 1; }
+function validateId($key): bool { echo "validate:$key\n"; return true; }
+function updateTimestamp($key, $value): bool { echo "update:$key\n"; return true; }
+
+session_set_save_handler('open', 'close', 'read', 'write', 'destroy', 'gc', 'create_sid', 'validateId', 'updateTimestamp');
+session_start();
+$_SESSION['foo'] = 'hello';
+session_write_close();
+session_unset();
+
+session_set_save_handler('open', 'close', 'read', 'write', 'destroy', 'gc');
+session_start();
+var_dump($_SESSION);
+session_write_close();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("create old\n"), "{stdout}");
+    assert!(stdout.contains("validate:OLD_ID\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "array(1) {\n  [\"OLD_ID\"]=>\n  string(28) \"a:1:{s:3:\"foo\";s:5:\"hello\";}\"\n}\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_callback_dynamic_serializable_subclasses_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-callback-dynamic-serializable");
     fs::create_dir_all(&root).unwrap();
