@@ -66740,6 +66740,26 @@ class MagicFccRegression {
     }
 }
 
+class MagicFccMetadataRegression {
+    #[Deprecated]
+    public function __call(string $name, array $params) {
+    }
+
+    #[Deprecated(\"due to some reason\")]
+    public static function __callStatic(string $name, array $params) {
+    }
+}
+
+function show_magic_fcc_metadata(Closure $closure) {
+    $reflection = new ReflectionFunction($closure);
+    $attributes = $reflection->getAttributes();
+    echo count($attributes), \"\\n\";
+    echo $attributes[0]->getName(), \"\\n\";
+    $deprecated = $attributes[0]->newInstance();
+    var_dump($deprecated->message);
+    var_dump($reflection->isDeprecated());
+}
+
 $instance = new MagicFccRegression();
 $instance->missing(...)(first: 11, second: \"ok\");
 MagicFccRegression::missingStatic(...)(third: 33);
@@ -66752,6 +66772,12 @@ var_dump($argument->getName());
 var_dump($argument->isVariadic());
 $type = $argument->getType();
 var_dump($type->getName());
+
+$metadataInstance = new MagicFccMetadataRegression();
+show_magic_fcc_metadata(Closure::fromCallable([$metadataInstance, 'test']));
+show_magic_fcc_metadata($metadataInstance->test(...));
+show_magic_fcc_metadata(Closure::fromCallable('MagicFccMetadataRegression::test'));
+show_magic_fcc_metadata(MagicFccMetadataRegression::test(...));
 ",
     )
     .unwrap();
@@ -66779,12 +66805,29 @@ var_dump($type->getName());
             "string(9) \"arguments\"\n",
             "bool(true)\n",
             "string(5) \"mixed\"\n",
+            "1\n",
+            "Deprecated\n",
+            "NULL\n",
+            "bool(true)\n",
+            "1\n",
+            "Deprecated\n",
+            "NULL\n",
+            "bool(true)\n",
+            "1\n",
+            "Deprecated\n",
+            "string(18) \"due to some reason\"\n",
+            "bool(true)\n",
+            "1\n",
+            "Deprecated\n",
+            "string(18) \"due to some reason\"\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_magic_call_trampoline_metadata"));
+    assert!(c_source.contains("ptn_function_metadata_with_attribute_method"));
     assert!(c_source.contains("ptn_find_callable_metadata"));
 }
 

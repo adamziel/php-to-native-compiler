@@ -735,6 +735,7 @@ typedef struct {
     PtnFunctionStaticVariablesProvider static_variables_provider;
     int has_user_function_index;
     size_t user_function_index;
+    const char *attribute_method_name;
 } PtnFunctionMetadata;
 
 struct PtnClosure {
@@ -1776,6 +1777,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.static_variables_provider = NULL;
     metadata.has_user_function_index = 0;
     metadata.user_function_index = 0;
+    metadata.attribute_method_name = NULL;
     return metadata;
 }
 
@@ -1814,6 +1816,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.static_variables_provider = NULL;
     metadata.has_user_function_index = 0;
     metadata.user_function_index = 0;
+    metadata.attribute_method_name = NULL;
     return metadata;
 }
 
@@ -1849,6 +1852,14 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_user_function_i
 ) {
     metadata.has_user_function_index = 1;
     metadata.user_function_index = user_function_index;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_attribute_method(
+    PtnFunctionMetadata metadata,
+    const char *attribute_method_name
+) {
+    metadata.attribute_method_name = attribute_method_name;
     return metadata;
 }
 
