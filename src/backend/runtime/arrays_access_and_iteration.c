@@ -1004,6 +1004,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_extension(lookup_class_name)) {
         return ptn_reflection_extension_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_zend_extension(lookup_class_name)) {
+        return ptn_reflection_zend_extension_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_reflection_function(lookup_class_name)) {
         return ptn_reflection_function_new(runtime, argc, args, line);
     }
@@ -4445,6 +4448,7 @@ static int ptn_reflection_internal_readonly_property_declaring_class(const char 
         || ptn_ascii_case_equal(declaring_class, "ReflectionClassConstant")
         || ptn_ascii_case_equal(declaring_class, "ReflectionConstant")
         || ptn_ascii_case_equal(declaring_class, "ReflectionExtension")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionZendExtension")
         || ptn_ascii_case_equal(declaring_class, "ReflectionFunction")
         || ptn_ascii_case_equal(declaring_class, "ReflectionFunctionAbstract")
         || ptn_ascii_case_equal(declaring_class, "ReflectionMethod")

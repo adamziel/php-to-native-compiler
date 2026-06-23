@@ -7394,6 +7394,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
+        "ReflectionZendExtension",
         "ReflectionFiber",
         "ReflectionFunction",
         "ReflectionGenerator",
@@ -8110,6 +8111,7 @@ fn emit_class_metadata_helpers(
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionExtension",
+        "ReflectionZendExtension",
         "ReflectionFiber",
         "ReflectionFunction",
         "ReflectionGenerator",
@@ -20114,6 +20116,7 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
         "reflectionenumbackedcase" => Some("ReflectionEnumBackedCase"),
         "reflectionenumunitcase" => Some("ReflectionEnumUnitCase"),
         "reflectionextension" => Some("ReflectionExtension"),
+        "reflectionzendextension" => Some("ReflectionZendExtension"),
         "reflectionfiber" => Some("ReflectionFiber"),
         "reflectionfunction" => Some("ReflectionFunction"),
         "reflectionfunctionabstract" => Some("ReflectionFunctionAbstract"),
@@ -29677,6 +29680,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
+                || class_name.eq_ignore_ascii_case("ReflectionZendExtension")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
                 || class_name.eq_ignore_ascii_case("ReflectionObject")

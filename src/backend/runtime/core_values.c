@@ -2028,6 +2028,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_unit_case(const
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_backed_case(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_case(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_zend_extension(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_generator(const char *class_name);
@@ -2166,6 +2167,12 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_extension_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_zend_extension_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -2447,6 +2454,14 @@ static PTN_UNUSED PtnValue ptn_reflection_fiber_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_zend_extension_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

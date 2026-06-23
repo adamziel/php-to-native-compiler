@@ -34067,6 +34067,65 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
 }
 
 #[test]
+fn compile_reflection_zend_extension_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-zend-extension-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-zend-extension-metadata.php");
+    let output = root.join("reflection-zend-extension-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+$zend = new ReflectionZendExtension(\"Zend OPcache\");
+$reflection = new ReflectionExtension(\"Reflection\");
+var_dump(
+    class_exists(\"ReflectionZendExtension\"),
+    method_exists(\"ReflectionZendExtension\", \"getAuthor\"),
+    in_array(\"ReflectionZendExtension\", $reflection->getClassNames(), true),
+    (new ReflectionClass(\"ReflectionZendExtension\"))->isInstantiable()
+);
+var_dump(
+    $zend->getAuthor(),
+    $zend->getCopyright(),
+    $zend->getName(),
+    $zend->getURL(),
+    $zend->getVersion() === PHP_VERSION
+);
+try {
+    new ReflectionZendExtension(\"zend_opcache\");
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(16) \"Zend by Perforce\"\n",
+            "string(12) \"Copyright \u{00a9}\"\n",
+            "string(12) \"Zend OPcache\"\n",
+            "string(21) \"https://www.zend.com/\"\n",
+            "bool(true)\n",
+            "Zend Extension \"zend_opcache\" does not exist\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_zend_extension_new"));
+    assert!(c_source.contains("ptn_reflection_zend_extension_call_method"));
+}
+
+#[test]
 fn compile_reflection_constant_source_and_deprecated_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-constant-source-deprecated");
     fs::create_dir_all(&root).unwrap();

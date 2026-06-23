@@ -131124,6 +131124,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char
     return ptn_ascii_case_equal(class_name, "ReflectionExtension");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_zend_extension(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionZendExtension");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionFunction");
 }
@@ -132630,6 +132634,16 @@ static int ptn_reflection_extension_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isTemporary");
 }
 
+static int ptn_reflection_zend_extension_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getAuthor")
+        || ptn_ascii_case_equal(method_name, "getCopyright")
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getURL")
+        || ptn_ascii_case_equal(method_name, "getVersion");
+}
+
 static int ptn_reflection_class_constant_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
@@ -133347,6 +133361,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_extension(class_name)) {
         return ptn_reflection_extension_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_reflection_zend_extension(class_name)) {
+        return ptn_reflection_zend_extension_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_reflection_class_constant(class_name)) {
         return ptn_reflection_class_constant_method_exists(method_name);
@@ -134298,6 +134315,19 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "info",
             "isPersistent",
             "isTemporary",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_zend_extension(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getAuthor",
+            "getCopyright",
+            "getName",
+            "getURL",
+            "getVersion",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -137472,6 +137502,8 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_reflection_function(class_name)
             || ptn_internal_class_name_is_reflection_method(class_name)
             || ptn_internal_class_name_is_reflection_property(class_name)
+            || ptn_internal_class_name_is_reflection_extension(class_name)
+            || ptn_internal_class_name_is_reflection_zend_extension(class_name)
             || ptn_internal_class_name_is_attribute(class_name)
             || ptn_internal_class_name_is_deprecated(class_name)
             || ptn_internal_class_name_is_no_discard(class_name)
@@ -147704,6 +147736,19 @@ static PtnReflectionExtensionData *ptn_reflection_extension_data(PtnRuntime *run
     return (PtnReflectionExtensionData *)receiver.as.object->native_data;
 }
 
+static PtnReflectionExtensionData *ptn_reflection_zend_extension_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_zend_extension(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionZendExtension object");
+        return NULL;
+    }
+    return (PtnReflectionExtensionData *)receiver.as.object->native_data;
+}
+
 static PtnReflectionParameterData *ptn_reflection_parameter_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (
@@ -150808,6 +150853,24 @@ static PtnValue ptn_reflection_extension_object_from_name(PtnRuntime *runtime, c
     return object;
 }
 
+static PtnValue ptn_reflection_zend_extension_object_from_name(PtnRuntime *runtime, const char *name) {
+    PtnReflectionExtensionData *data = malloc(sizeof(PtnReflectionExtensionData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->name = ptn_duplicate_string(name);
+
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionZendExtension");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_extension_data_free;
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("name"),
+        ptn_owned_string(ptn_duplicate_string(name))
+    );
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_extension_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -150866,6 +150929,76 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_new(
         return ptn_null();
     }
     PtnValue object = ptn_reflection_extension_object_from_name(runtime, canonical);
+    ptn_string_operand_free(extension);
+    return object;
+}
+
+static const char *ptn_reflection_zend_extension_canonical_name(PtnStringOperand extension) {
+    static const char name[] = "Zend OPcache";
+    return extension.len == sizeof(name) - 1 &&
+            memcmp(extension.data, name, sizeof(name) - 1) == 0
+        ? name
+        : NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_zend_extension_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionZendExtension::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue extension_arg = ptn_value_deref(args[0]);
+    if (extension_arg.type != PTN_STRING) {
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionZendExtension::__construct(): Argument #1 ($name) must be of type string, %s given",
+            ptn_count_operand_type_name(extension_arg)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
+    const char *canonical = ptn_reflection_zend_extension_canonical_name(extension);
+    if (canonical == NULL) {
+        char *name = ptn_duplicate_string_len(extension.data, extension.len);
+        ptn_string_operand_free(extension);
+        int needed = snprintf(NULL, 0, "Zend Extension \"%s\" does not exist", name);
+        if (needed < 0) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Zend Extension \"%s\" does not exist", name);
+        free(name);
+        ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_reflection_zend_extension_object_from_name(runtime, canonical);
     ptn_string_operand_free(extension);
     return object;
 }
@@ -150950,6 +151083,73 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
     }
     if (ptn_ascii_case_equal(name, "info")) {
         return ptn_reflection_extension_info(runtime, data->name);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_zend_extension_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_reflection_zend_extension_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnReflectionExtensionData *new_data = (PtnReflectionExtensionData *)replacement.as.object->native_data;
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (resolved_receiver.type == PTN_OBJECT) {
+            if (resolved_receiver.as.object->native_data != NULL &&
+                resolved_receiver.as.object->native_data_free != NULL) {
+                resolved_receiver.as.object->native_data_free(resolved_receiver.as.object->native_data);
+            }
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_reflection_extension_data_free;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_array_set_entry(
+                resolved_receiver.as.object->properties,
+                ptn_array_string_key("name"),
+                ptn_owned_string(ptn_duplicate_string(new_data->name))
+            );
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+
+    PtnReflectionExtensionData *data = ptn_reflection_zend_extension_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    ptn_reflection_check_no_arguments(runtime, "ReflectionZendExtension", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        ptn_string_buffer_append_format(&buffer, "Zend Extension [ %s version %s ]\n", data->name, PTN_PHP_VERSION);
+        return ptn_owned_string_len(buffer.data, buffer.len);
+    }
+    if (ptn_ascii_case_equal(name, "getAuthor")) {
+        return ptn_string("Zend by Perforce");
+    }
+    if (ptn_ascii_case_equal(name, "getCopyright")) {
+        return ptn_owned_string_len(ptn_duplicate_string_len("Copyright \xC2\xA9", 12), 12);
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getURL")) {
+        return ptn_string("https://www.zend.com/");
+    }
+    if (ptn_ascii_case_equal(name, "getVersion")) {
+        return ptn_string(PTN_PHP_VERSION);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
