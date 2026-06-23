@@ -81758,6 +81758,62 @@ fn parser_rejects_namespace_function_and_const_import_symbol_conflicts() {
 }
 
 #[test]
+fn parser_reports_class_like_redeclarations_with_original_kind_and_line() {
+    let cases = [
+        (
+            "<?php\nclass A {}\nclass A {}",
+            "Cannot redeclare class A (previously declared in Unknown:2)",
+        ),
+        (
+            "<?php\nclass A {}\ninterface A {}",
+            "Cannot redeclare class A (previously declared in Unknown:2)",
+        ),
+        (
+            "<?php\nclass A {}\ntrait A {}",
+            "Cannot redeclare class A (previously declared in Unknown:2)",
+        ),
+        (
+            "<?php\ninterface A {}\ninterface A {}",
+            "Cannot redeclare interface A (previously declared in Unknown:2)",
+        ),
+        (
+            "<?php\ninterface A {}\ntrait A {}",
+            "Cannot redeclare interface A (previously declared in Unknown:2)",
+        ),
+        (
+            "<?php\ntrait A {}\ntrait A {}",
+            "Cannot redeclare trait A (previously declared in Unknown:2)",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn parser_reports_namespace_qualified_declarations_colliding_with_imports() {
+    let cases = [
+        (
+            "<?php namespace Foo { class Bar {} } namespace Bazzle { use Foo\\Bar; class Bar {} }",
+            "Cannot redeclare class Bazzle\\Bar (previously declared as local import)",
+        ),
+        (
+            "<?php namespace Foo { function bar() {} } namespace Bazzle { use function Foo\\bar; function bar() {} }",
+            "Cannot redeclare function Bazzle\\bar() (previously declared as local import)",
+        ),
+        (
+            "<?php namespace Foo { const BAR = 42; } namespace Bazzle { use const Foo\\BAR; const BAR = 24; }",
+            "Cannot declare const Bazzle\\BAR because the name is already in use",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
 fn parser_keeps_namespace_import_symbols_block_local() {
     parser::parse("<?php namespace { class C {} } namespace { use Ns\\C; }").unwrap();
     parser::parse("<?php namespace { function f() {} } namespace { use function Ns\\f; }").unwrap();
