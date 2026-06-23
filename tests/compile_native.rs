@@ -2321,6 +2321,82 @@ foreach ([$fresh, $finished] as $candidate) {
 }
 
 #[test]
+fn compile_fiber_get_return_lifecycle_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-get-return-lifecycle-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-get-return-lifecycle-errors.php");
+    let output = root.join("fiber-get-return-lifecycle-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(fn() => Fiber::suspend(1));
+
+try {
+    $fiber->getReturn();
+} catch (FiberError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+var_dump($fiber->start());
+var_dump($fiber->isSuspended());
+
+try {
+    $fiber->getReturn();
+} catch (FiberError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+var_dump($fiber->resume());
+var_dump($fiber->isSuspended());
+var_dump($fiber->isTerminated());
+var_dump($fiber->getReturn());
+
+$throwing = new Fiber(fn() => throw new Exception("boom"));
+try {
+    $throwing->start();
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $throwing->getReturn();
+} catch (FiberError $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+    assert!(c_source.contains("data->resume_credit = 1"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "FiberError: Cannot get fiber return value: The fiber has not been started\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "FiberError: Cannot get fiber return value: The fiber has not returned\n",
+            "NULL\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "NULL\n",
+            "boom\n",
+            "FiberError: Cannot get fiber return value: The fiber threw an exception\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-return-gc");
     fs::create_dir_all(&root).unwrap();

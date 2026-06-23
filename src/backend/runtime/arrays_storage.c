@@ -96,6 +96,7 @@ typedef struct PtnFiberData {
     int started;
     int running;
     int completed;
+    int threw;
     int resume_credit;
 } PtnFiberData;
 

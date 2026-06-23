@@ -120938,6 +120938,7 @@ static void ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, const
         );
     }
     data->suspension_trace = trace;
+    data->resume_credit = 1;
 }
 
 static int ptn_fiber_check_exact_arguments(
@@ -120998,6 +120999,7 @@ static int ptn_fiber_init_object(
     data->started = 0;
     data->running = 0;
     data->completed = 0;
+    data->threw = 0;
     data->resume_credit = 0;
 
     if (object->native_data_free != NULL) {
@@ -121040,18 +121042,38 @@ static PtnValue ptn_fiber_start(
         return ptn_null();
     }
     data->started = 1;
+    data->threw = 0;
     PtnObject *previous_fiber = runtime->current_fiber;
     runtime->current_fiber = data->object;
     data->running = 1;
-    PtnValue result = ptn_call_callable(runtime, data->callback, argc, args, line, 0);
+    PtnValue result = ptn_null();
+    int callback_succeeded = ptn_internal_call_callback_capturing_exception_impl(
+        runtime,
+        data->callback,
+        argc,
+        args,
+        NULL,
+        line,
+        0,
+        0,
+        &result
+    );
     data->running = 0;
     runtime->current_fiber = previous_fiber;
-    if (runtime->exceptions->active_exception != NULL) {
+    if (!callback_succeeded || runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&result);
+        data->completed = 1;
+        data->threw = 1;
+        data->resume_credit = 0;
+        ptn_rethrow_exception(runtime);
         return ptn_null();
     }
     PtnValue copied_result = ptn_value_clone_deref(result);
     ptn_value_destroy(&result);
+    if (data->resume_credit) {
+        data->completed = 0;
+        return copied_result;
+    }
     ptn_value_destroy(&data->return_value);
     data->return_value = copied_result;
     data->completed = 1;
@@ -121083,6 +121105,7 @@ static PtnValue ptn_fiber_resume(
     (void)args;
     if (data->resume_credit) {
         data->resume_credit = 0;
+        data->completed = 1;
         return ptn_null();
     }
     ptn_throw_exception_owned_message_at_with_trace_frame(
@@ -121132,8 +121155,49 @@ static PTN_UNUSED PtnValue ptn_fiber_call_method(
         if (!ptn_fiber_check_exact_arguments(runtime, "getReturn", argc, 0)) {
             return ptn_null();
         }
+        if (!data->started) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot get fiber return value: The fiber has not been started"),
+                runtime->source_path,
+                line,
+                "Fiber->getReturn",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return ptn_null();
+        }
+        if (data->threw) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot get fiber return value: The fiber threw an exception"),
+                runtime->source_path,
+                line,
+                "Fiber->getReturn",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return ptn_null();
+        }
         if (!data->completed) {
-            ptn_throw_exception(runtime, "Error", "Cannot get fiber return value: The fiber has not returned");
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot get fiber return value: The fiber has not returned"),
+                runtime->source_path,
+                line,
+                "Fiber->getReturn",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
             return ptn_null();
         }
         return ptn_value_clone_deref(data->return_value);
