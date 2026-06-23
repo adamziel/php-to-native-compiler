@@ -24535,7 +24535,29 @@ $long = tempnam($base, str_repeat('x', 300));\n\
 echo strlen(basename($long)), \"\\n\";\n\
 unlink($tmp);\n\
 unlink($long);\n\
+$cfile = $base . '/created-by-c-mode.txt';\n\
+$c = fopen($cfile, 'cb');\n\
+var_dump(is_resource($c));\n\
+var_dump(fwrite($c, 'abc'));\n\
+var_dump(ftruncate($c, 2));\n\
+fclose($c);\n\
+clearstatcache(true, $cfile);\n\
+var_dump(filesize($cfile));\n\
+unlink($cfile);\n\
+$blocked = $base . '/blocked';\n\
+mkdir($blocked);\n\
+chmod($blocked, 0500);\n\
+if (is_writable($blocked)) {\n\
+    echo \"fallback-skip\\n\";\n\
+} else {\n\
+    $fallback = tempnam($blocked, 'fb');\n\
+    echo dirname($fallback) === realpath(sys_get_temp_dir()) ? \"fallback-dir-ok\\n\" : \"fallback-dir-bad\\n\";\n\
+    unlink($fallback);\n\
+}\n\
+chmod($blocked, 0700);\n\
+rmdir($blocked);\n\
 rmdir($base);\n\
+try { linkinfo(''); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(opendir(__DIR__ . '/missing-open'));\n\
 var_dump(scandir(__DIR__ . '/missing-scan'));\n\
 var_dump(mkdir(__DIR__ . '/missing-parent/child'));\n",
@@ -24553,6 +24575,13 @@ var_dump(mkdir(__DIR__ . '/missing-parent/child'));\n",
     assert!(stdout.contains("bool(false)\nbool(true)"));
     assert!(stdout.contains("bool(true)\nint(8)\nint(3)\nonetwo\n"));
     assert!(stdout.contains("temp-dir-ok\nprefix\n82\n"));
+    assert!(stdout.contains("bool(true)\nint(3)\nbool(true)\nint(2)\n"));
+    if stdout.contains("fallback-dir-ok") {
+        assert!(stdout.contains("tempnam(): file created in the system's temporary directory"));
+    } else {
+        assert!(stdout.contains("fallback-skip"));
+    }
+    assert!(stdout.contains("linkinfo(): Argument #1 ($path) must not be empty"));
     assert!(stdout.contains("opendir("));
     assert!(stdout.contains("Failed to open directory:"));
     assert!(stdout.contains("scandir(): (errno "));

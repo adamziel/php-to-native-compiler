@@ -49644,6 +49644,60 @@ static char *ptn_fopen_c_mode(const char *mode) {
     return c_mode;
 }
 
+static int ptn_fopen_mode_has_char(const char *mode, char needle) {
+    for (const char *cursor = mode; cursor != NULL && *cursor != '\0'; cursor++) {
+        if (*cursor == needle || *cursor == (char)toupper((unsigned char)needle)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static FILE *ptn_fopen_create_no_truncate(const char *path, const char *mode) {
+    int update = strchr(mode, '+') != NULL;
+    int binary = ptn_fopen_mode_has_char(mode, 'b');
+#if defined(_WIN32)
+    const char *read_mode = update
+        ? (binary ? "r+b" : "r+")
+        : (binary ? "rb+" : "r+");
+    FILE *stream = fopen(path, read_mode);
+    if (stream != NULL || errno != ENOENT) {
+        return stream;
+    }
+    return fopen(path, update ? (binary ? "w+b" : "w+") : (binary ? "wb+" : "w+"));
+#else
+    int flags = (update ? O_RDWR : O_WRONLY) | O_CREAT;
+#if defined(O_BINARY)
+    if (binary) {
+        flags |= O_BINARY;
+    }
+#else
+    (void)binary;
+#endif
+    int fd = open(path, flags, 0666);
+    if (fd < 0) {
+        return NULL;
+    }
+    FILE *stream = fdopen(fd, update ? "r+" : "w");
+    if (stream == NULL) {
+        int saved_errno = errno;
+        close(fd);
+        errno = saved_errno;
+    }
+    return stream;
+#endif
+}
+
+static FILE *ptn_fopen_php_mode(const char *path, const char *mode) {
+    if (mode[0] == 'c' || mode[0] == 'C') {
+        return ptn_fopen_create_no_truncate(path, mode);
+    }
+    char *c_mode = ptn_fopen_c_mode(mode);
+    FILE *stream = fopen(path, c_mode);
+    free(c_mode);
+    return stream;
+}
+
 static int ptn_stream_mode_is_append(PtnResource *resource) {
     return resource != NULL && resource->stream_mode != NULL && resource->stream_mode[0] == 'a';
 }
@@ -49759,9 +49813,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return php_stream;
     }
 
-    char *c_mode = ptn_fopen_c_mode(mode);
-    FILE *stream = fopen(path, c_mode);
-    free(c_mode);
+    FILE *stream = ptn_fopen_php_mode(path, mode);
     if (stream == NULL) {
         if (ptn_try_open_current_source_snapshot_stream(runtime, path, mode, &php_stream)) {
             free(uri);
@@ -53554,11 +53606,25 @@ static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, 
     return ptn_owned_string(ptn_duplicate_string(ptn_system_temp_dir()));
 }
 
+static int ptn_tempnam_directory_is_usable(const char *directory) {
+    if (directory[0] == '\0') {
+        return 0;
+    }
+    struct stat info;
+    if (stat(directory, &info) != 0 || !S_ISDIR(info.st_mode)) {
+        return 0;
+    }
+#if defined(_WIN32)
+    return _access(directory, 2) == 0;
+#else
+    return access(directory, W_OK | X_OK) == 0;
+#endif
+}
+
 static char *ptn_tempnam_template(const char *directory, const char *prefix, int *used_fallback) {
     *used_fallback = 0;
     const char *selected_dir = directory;
-    struct stat info;
-    if (selected_dir[0] == '\0' || stat(selected_dir, &info) != 0 || !S_ISDIR(info.st_mode)) {
+    if (!ptn_tempnam_directory_is_usable(selected_dir)) {
         selected_dir = ptn_system_temp_dir();
         *used_fallback = directory[0] != '\0';
     }
@@ -54957,6 +55023,11 @@ static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const Pt
     (void)argc;
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "linkinfo", 1, "path", args[0], line);
     if (path == NULL) {
+        return ptn_null();
+    }
+    if (path[0] == '\0') {
+        free(path);
+        ptn_throw_exception(runtime, "ValueError", "linkinfo(): Argument #1 ($path) must not be empty");
         return ptn_null();
     }
     struct stat info;
