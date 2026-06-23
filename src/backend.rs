@@ -40440,6 +40440,7 @@ impl ValueEmitter {
         );
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    } else if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(");
         out.push_str(class_name_expr);
         out.push_str(")) {\n");
@@ -40452,6 +40453,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("#endif\n");
         out.push_str("    } else {\n");
         out.push_str("        ");
         out.push_str(result_temp);

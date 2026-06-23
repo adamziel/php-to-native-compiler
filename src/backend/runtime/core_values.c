@@ -2071,6 +2071,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_comparison_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url_host_type(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url_validation_error(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url_validation_error_type(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -3022,6 +3024,12 @@ static PTN_UNUSED PtnValue ptn_uri_whatwg_url_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_uri_url_validation_error_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_uri_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
@@ -3167,6 +3175,14 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_uri_whatwg_url_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_uri_url_validation_error_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
