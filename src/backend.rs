@@ -84,6 +84,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("DateRangeError", "ValueError"),
     ("DateObjectError", "Error"),
     ("DateMalformedStringException", "Exception"),
+    ("DateMalformedIntervalStringException", "Exception"),
+    ("DateMalformedPeriodStringException", "Exception"),
     ("DateInvalidTimeZoneException", "Exception"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),

@@ -2280,6 +2280,15 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "DateObjectError")) {
         return "DateObjectError";
     }
+    if (ptn_exception_name_equal(class_name, "DateMalformedStringException")) {
+        return "DateMalformedStringException";
+    }
+    if (ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException")) {
+        return "DateMalformedIntervalStringException";
+    }
+    if (ptn_exception_name_equal(class_name, "DateMalformedPeriodStringException")) {
+        return "DateMalformedPeriodStringException";
+    }
     if (ptn_exception_name_equal(class_name, "ArithmeticError")) {
         return "ArithmeticError";
     }
@@ -2352,6 +2361,9 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "SoapFault") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
             ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
+            ptn_exception_name_equal(class_name, "DateMalformedStringException") ||
+            ptn_exception_name_equal(class_name, "DateMalformedIntervalStringException") ||
+            ptn_exception_name_equal(class_name, "DateMalformedPeriodStringException") ||
             ptn_exception_name_equal(class_name, "RuntimeException") ||
             ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
             ptn_exception_name_equal(class_name, "UnexpectedValueException") ||

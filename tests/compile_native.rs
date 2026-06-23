@@ -22048,6 +22048,53 @@ try {\n\
 }
 
 #[test]
+fn compile_date_interval_and_period_malformed_string_exceptions_to_native_binary() {
+    let root = temp_dir("ptn-native-date-interval-period-malformed-exceptions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-interval-period-malformed-exceptions.php");
+    let output = root.join("date-interval-period-malformed-exceptions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    new DateInterval('P3\"D');\n\
+} catch (Exception $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    DatePeriod::createFromISO8601String('P3\"D');\n\
+} catch (Exception $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    DatePeriod::createFromISO8601String('2008-03-01T12:00:00Z1');\n\
+} catch (Exception $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "DateMalformedIntervalStringException: Unknown or bad format (P3\"D)\n",
+            "DateMalformedPeriodStringException: Unknown or bad format (P3\"D)\n",
+            "DateMalformedPeriodStringException: Unknown or bad format (2008-03-01T12:00:00Z1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();

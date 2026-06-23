@@ -89257,7 +89257,7 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
         int written = snprintf(
             message,
             sizeof(message),
-            spec.len == 0 ? "Unknown or bad format (%s)" : "Failed to parse interval (%s)",
+            "Unknown or bad format (%s)",
             spec_string
         );
         free(spec_string);
@@ -89265,7 +89265,7 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "Exception", message);
+        ptn_throw_exception(runtime, "DateMalformedIntervalStringException", message);
         return ptn_null();
     }
     PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
@@ -91539,6 +91539,15 @@ static void ptn_date_period_throw_constructor_arguments(PtnRuntime *runtime) {
     );
 }
 
+static void ptn_date_period_throw_malformed_period(PtnRuntime *runtime, const char *isostr) {
+    char message[256];
+    int written = snprintf(message, sizeof(message), "Unknown or bad format (%s)", isostr);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "DateMalformedPeriodStringException", message);
+}
+
 static char *ptn_date_period_normalized_iso_start(const char *start, int *zulu_out) {
     *zulu_out = 0;
     size_t len = strlen(start);
@@ -91580,20 +91589,20 @@ static PtnValue ptn_date_period_from_iso8601_string(
     size_t line
 ) {
     if (isostr == NULL || isostr[0] != 'R') {
-        ptn_date_period_throw_constructor_arguments(runtime);
+        ptn_date_period_throw_malformed_period(runtime, isostr == NULL ? "" : isostr);
         return ptn_null();
     }
     const char *repeat_start = isostr + 1;
     char *end = NULL;
     long repetitions = strtol(repeat_start, &end, 10);
     if (end == repeat_start || *end != '/' || repetitions < 0) {
-        ptn_date_period_throw_constructor_arguments(runtime);
+        ptn_date_period_throw_malformed_period(runtime, isostr);
         return ptn_null();
     }
     const char *start_token = end + 1;
     const char *interval_token = strchr(start_token, '/');
     if (interval_token == NULL || interval_token == start_token || interval_token[1] == '\0') {
-        ptn_date_period_throw_constructor_arguments(runtime);
+        ptn_date_period_throw_malformed_period(runtime, isostr);
         return ptn_null();
     }
     char *start = ptn_duplicate_string_len(start_token, (size_t)(interval_token - start_token));
@@ -91609,7 +91618,7 @@ static PtnValue ptn_date_period_from_iso8601_string(
         free(start);
         free(interval_spec);
         free(normalized_start);
-        ptn_date_period_throw_constructor_arguments(runtime);
+        ptn_date_period_throw_malformed_period(runtime, isostr);
         return ptn_null();
     }
 
@@ -91619,7 +91628,7 @@ static PtnValue ptn_date_period_from_iso8601_string(
         free(interval_spec);
         free(normalized_start);
         free(parsed_timezone);
-        ptn_date_period_throw_constructor_arguments(runtime);
+        ptn_date_period_throw_malformed_period(runtime, isostr);
         return ptn_null();
     }
     interval_data.date_string = NULL;
