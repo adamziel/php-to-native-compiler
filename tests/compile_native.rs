@@ -41066,6 +41066,113 @@ $server->handle($client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_wsdl_schema_cache_and_simple_type_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-schema-cache-simple-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-schema-cache-simple-type.php");
+    let output = root.join("soap-wsdl-schema-cache-simple-type-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$seen = null;
+function test($input) {
+    global $seen;
+    $seen = $input;
+}
+
+$wsdl = <<<'WSDL'
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <xsd:import namespace="http://schemas.xmlsoap.org/soap/encoding/" />
+      <xsd:import namespace="http://schemas.xmlsoap.org/wsdl/" />
+      <simpleType name="testType2">
+        <restriction base="xsd:int"/>
+      </simpleType>
+      <simpleType name="testType">
+        <restriction base="tns:testType2"/>
+      </simpleType>
+    </schema>
+  </types>
+  <message name="testMessage">
+    <part name="testParam" type="tns:testType"/>
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL;
+
+$path = __DIR__ . '/schema-cache.wsdl';
+file_put_contents($path, $wsdl);
+$client = new SoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+$server = new SoapServer($path);
+$server->addFunction('test');
+unlink($path);
+
+$client->test(123.5);
+$request = $client->__getLastRequest();
+echo $request;
+ob_start();
+$server->handle($request);
+ob_end_clean();
+var_dump($seen);
+var_dump(method_exists('SoapClient', '__doRequest'));
+var_dump(SOAP_USE_XSI_ARRAY_TYPE);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<testParam xsi:type=\"ns1:testType\">123</testParam>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("int(123)\nbool(true)\nint(4)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_cache_wsdl_file"));
+    assert!(c_source.contains("ptn_soap_parse_wsdl_types_from_source"));
+    assert!(c_source.contains("ptn_soap_wsdl_input_part_type_dup"));
+}
+
+#[test]
 fn compile_soap_client_invalid_headers_fatal_to_native_binary() {
     let root = temp_dir("ptn-native-soap-client-invalid-headers-fatal");
     fs::create_dir_all(&root).unwrap();

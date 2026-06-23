@@ -2030,6 +2030,7 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         { "SOAP_COMPRESSION_DEFLATE", 16 },
         { "SOAP_AUTHENTICATION_BASIC", 0 },
         { "SOAP_AUTHENTICATION_DIGEST", 1 },
+        { "SOAP_USE_XSI_ARRAY_TYPE", 4 },
         { "UNKNOWN_TYPE", 999998 },
         { "SOAP_ENC_ARRAY", 300 },
         { "SOAP_ENC_OBJECT", 301 },
