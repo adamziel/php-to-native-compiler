@@ -914,7 +914,11 @@ static PTN_UNUSED PtnValue ptn_php_token_new(
 );
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_driver(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
+static PTN_UNUSED PtnValue ptn_mysqli_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_mysqli_driver_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
 #endif
@@ -1101,6 +1105,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_sqlite3_result(lookup_class_name)) {
         ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
         return ptn_null();
+    }
+    if (ptn_internal_class_name_is_mysqli(lookup_class_name)) {
+        return ptn_mysqli_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_mysqli_driver(lookup_class_name)) {
+        return ptn_mysqli_driver_new(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||

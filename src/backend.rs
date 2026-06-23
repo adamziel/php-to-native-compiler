@@ -54,6 +54,8 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SQLite3",
     "SQLite3Stmt",
     "SQLite3Result",
+    "mysqli",
+    "mysqli_driver",
     "Uri\\Rfc3986\\Uri",
     "Uri\\WhatWg\\Url",
 ];
@@ -20499,6 +20501,8 @@ fn modeled_db_internal_class_name(name: &str) -> Option<&'static str> {
         "sqlite3" => Some("SQLite3"),
         "sqlite3stmt" => Some("SQLite3Stmt"),
         "sqlite3result" => Some("SQLite3Result"),
+        "mysqli" => Some("mysqli"),
+        "mysqli_driver" => Some("mysqli_driver"),
         _ => None,
     }
 }

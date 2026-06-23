@@ -24239,6 +24239,71 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_db_connection_probe_stubs_to_native_binary() {
+    let root = temp_dir("ptn-native-db-connection-probes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("db-connection-probes.php");
+    let output = root.join("db-connection-probes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(extension_loaded('mysqli'), extension_loaded('pgsql'), extension_loaded('odbc'), extension_loaded('pdo_mysql'), extension_loaded('pdo_pgsql'));
+var_dump(class_exists('mysqli'), class_exists('mysqli_driver'));
+var_dump(function_exists('mysqli_connect'), function_exists('mysqli_init'), function_exists('mysqli_real_connect'), function_exists('pg_connect'), function_exists('odbc_connect'));
+
+$driver = new mysqli_driver;
+$driver->report_mode = MYSQLI_REPORT_OFF;
+var_dump($driver->report_mode);
+
+$init = mysqli_init();
+var_dump(is_object($init), $init->connect_errno, $init->connect_error);
+var_dump(mysqli_real_connect($init, '127.0.0.1', 'root', '', 'test', 3306, null));
+var_dump($init->connect_errno > 0, $init->connect_error !== '');
+
+$direct = new mysqli('127.0.0.1', 'root', '', 'test', 3306);
+var_dump($direct->connect_errno > 0, $direct->connect_error !== '');
+
+var_dump(mysqli_connect('127.0.0.1', 'root', '', 'test', 3306, null));
+var_dump(mysqli_connect_errno() > 0, mysqli_connect_error() !== '');
+var_dump(pg_connect('host=localhost dbname=test'));
+var_dump(odbc_connect('myodbc3', 'root', ''));
+
+try {
+    new PDO('mysql:host=localhost;dbname=test', 'root', '');
+} catch (PDOException $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+try {
+    PDO::connect('pgsql:host=localhost port=5432 dbname=test', 'postgres', 'postgres');
+} catch (PDOException $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+
+$db = new PDO('sqlite::memory:');
+echo $db->getAttribute(PDO::ATTR_DRIVER_NAME), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(0)\nbool(true)\nint(0)\nstring(0) \"\"\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nPDOException: could not find driver\nPDOException: could not find driver\nsqlite\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_mysqli_connect"));
+    assert!(c_source.contains("ptn_internal_pg_connect"));
+    assert!(c_source.contains("ptn_internal_odbc_connect"));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
