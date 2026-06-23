@@ -38233,8 +38233,8 @@ echo $dest->saveXML();
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"http://php.net/ns1\" foo:hello=\"2\"/>\n",
             "<?xml version=\"1.0\"?>\n",
-            "<container xmlns:foo=\"http://php.net\" xmlns:default=\"http://php.net/2\" foo:bar=\"yes\" default:bar=\"no2\"/>\n",
-            "string(7) \"default\"\n",
+            "<container xmlns:foo=\"http://php.net\" xmlns:foo1=\"http://php.net/2\" foo:bar=\"yes\" foo1:bar=\"no2\"/>\n",
+            "string(3) \"foo\"\n",
             "string(14) \"http://php.net\"\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns=\"http://php.net\" xmlns:foo=\"http://php.net/2\" xmlns:default=\"http://php.net\" default:bar=\"yes\"/>\n",
@@ -38245,6 +38245,88 @@ echo $dest->saveXML();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dom_set_attribute_node_method"));
     assert!(c_source.contains("ptn_dom_element_attach_attribute"));
+}
+
+#[test]
+fn compile_dom_clone_import_namespace_residual_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-clone-import-namespace-residual-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-clone-import-namespace-residual-pack.php");
+    let output = root.join("dom-clone-import-namespace-residual-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = new DOMDocument();
+$dom->loadXML('<?xml version="1.0"?><container/>');
+$dom->documentElement->setAttributeNS("some:ns", "foo:bar", "value");
+$clone = $dom->documentElement->getAttributeNodeNS("some:ns", "bar")->cloneNode(true);
+var_dump($clone->prefix, $clone->namespaceURI);
+$dom->documentElement->removeAttributeNS("some:ns", "bar");
+$dom->documentElement->removeAttribute("xmlns:foo");
+$child = $dom->documentElement->appendChild($dom->createElement("child"));
+$child->appendChild($clone);
+echo $dom->saveXML();
+
+$dom = new DOMDocument();
+$dom->loadXML('<?xml version="1.0"?><container xmlns:foo="some:ns" foo:bar="1"><child xmlns:foo="some:other"/></container>');
+$clone = $dom->documentElement->getAttributeNodeNS("some:ns", "bar")->cloneNode(true);
+$dom->documentElement->firstElementChild->setAttributeNodeNS($clone);
+echo $dom->saveXML();
+
+$modern = Dom\XMLDocument::createFromString('<?xml version="1.0"?><root><a:item xmlns:a="urn:a"/></root>');
+$item = $modern->documentElement->firstElementChild;
+$item->setAttributeNS("urn:y", "a:foo", "bar");
+$copy = clone $item;
+foreach ($copy->attributes as $attr) {
+    var_dump($attr->name, $attr->namespaceURI);
+}
+echo $modern->saveXml($copy), "\n";
+
+$xml = Dom\XMLDocument::createFromString('<html><body xmlns="http://www.w3.org/1999/xhtml"><br/><default:p xmlns:default="http://www.w3.org/1999/xhtml" id="import">x</default:p></body></html>');
+$html = Dom\HTMLDocument::createEmpty();
+$imported = $html->importNode($xml->documentElement, true);
+$html->appendChild($imported);
+$p = $html->getElementsByTagName("body")[0]->lastElementChild;
+var_dump($p->prefix, $p->namespaceURI);
+echo $html->saveXml();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(3) \"foo\"\nstring(7) \"some:ns\"\n"));
+    assert!(stdout
+        .contains("<container><child xmlns:foo=\"some:ns\" foo:bar=\"value\"/></container>\n"));
+    assert!(
+        stdout.contains("<child xmlns:foo=\"some:other\" xmlns:foo1=\"some:ns\" foo1:bar=\"1\"/>")
+    );
+    assert!(
+        stdout.contains("string(7) \"xmlns:a\"\nstring(29) \"http://www.w3.org/2000/xmlns/\"\n")
+    );
+    assert!(stdout.contains("string(5) \"a:foo\"\nstring(5) \"urn:y\"\n"));
+    assert!(stdout.contains("<a:item xmlns:a=\"urn:a\" xmlns:ns1=\"urn:y\" ns1:foo=\"bar\"/>"));
+    assert!(stdout.contains("string(7) \"default\"\nstring(28) \"http://www.w3.org/1999/xhtml\"\n"));
+    assert!(stdout.contains("<br />"));
+    assert!(
+        stdout.contains("<p xmlns:default=\"http://www.w3.org/1999/xhtml\" id=\"import\">x</p>")
+    );
+    assert!(!stdout.contains("<default:p"));
+    assert!(!stdout.contains("<br></br>"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("serialized_name"));
+    assert!(c_source.contains("ptn_dom_attribute_set_serialized_prefix"));
+    assert!(c_source.contains("ptn_dom_remove_attribute_method"));
 }
 
 #[test]
