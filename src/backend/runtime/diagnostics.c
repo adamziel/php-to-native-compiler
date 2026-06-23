@@ -2403,6 +2403,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->session_ini);
     runtime->session_id = ptn_duplicate_string("");
     runtime->session_active = 0;
+    runtime->session_was_started = 0;
+    runtime->session_auto_started = 0;
+    runtime->session_start_path = NULL;
+    runtime->session_start_line = 0;
     runtime->session_save_handler_kind = 0;
     runtime->session_save_handler_object = ptn_null();
     for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {

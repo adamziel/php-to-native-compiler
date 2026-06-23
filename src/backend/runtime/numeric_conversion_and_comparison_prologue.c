@@ -236,6 +236,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_symbols_init(&runtime->session_ini);
     runtime->session_id = NULL;
     runtime->session_active = caller_runtime->session_active;
+    runtime->session_was_started = caller_runtime->session_was_started;
+    runtime->session_auto_started = caller_runtime->session_auto_started;
+    runtime->session_start_path = caller_runtime->session_start_path;
+    runtime->session_start_line = caller_runtime->session_start_line;
     runtime->session_save_handler_kind = 0;
     runtime->session_save_handler_object = ptn_null();
     for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {
@@ -726,6 +730,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         free(runtime->session_id);
         runtime->session_id = NULL;
         runtime->session_active = 0;
+        runtime->session_was_started = 0;
+        runtime->session_auto_started = 0;
+        runtime->session_start_path = NULL;
+        runtime->session_start_line = 0;
         ptn_value_destroy(&runtime->session_save_handler_object);
         runtime->session_save_handler_object = ptn_null();
         for (size_t i = 0; i < sizeof(runtime->session_save_handler_callbacks) / sizeof(runtime->session_save_handler_callbacks[0]); i++) {

@@ -293,6 +293,9 @@ pub fn emit_c(module: &Module) -> String {
     if opcache_optimizer_dump.is_some() {
         emit_opcache_optimizer_dump_helpers(&mut out);
     }
+    if runtime_requirements.internal_function_dispatch {
+        out.push_str("static void ptn_runtime_auto_start_session(PtnRuntime *runtime);\n");
+    }
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
@@ -424,6 +427,9 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
+    if runtime_requirements.internal_function_dispatch {
+        out.push_str("    ptn_runtime_auto_start_session(&runtime);\n");
+    }
     if let Some(opcache_optimizer_dump) = &opcache_optimizer_dump {
         out.push_str("    if (ptn_opcache_after_optimizer_dump_enabled()) {\n");
         out.push_str("        fputs(\"");

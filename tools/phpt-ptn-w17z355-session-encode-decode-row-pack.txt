@@ -1,0 +1,27 @@
+# ptn-w17z.355 exact ext/session encode/decode lifecycle row pack
+ext/session/tests/session_decode_error2.phpt
+ext/session/tests/session_decode_error3.phpt
+ext/session/tests/session_decode_variation1.phpt
+ext/session/tests/session_decode_variation2.phpt
+ext/session/tests/session_decode_variation3.phpt
+ext/session/tests/session_decode_variation4.phpt
+ext/session/tests/session_encode_error2.phpt
+ext/session/tests/session_encode_partial_data.phpt
+ext/session/tests/session_encode_variation1.phpt
+ext/session/tests/session_encode_variation2.phpt
+ext/session/tests/session_encode_variation4.phpt
+ext/session/tests/session_encode_variation5.phpt
+ext/session/tests/session_encode_variation6.phpt
+ext/session/tests/session_encode_variation8.phpt
+ext/session/tests/session_basic3.phpt
+ext/session/tests/session_basic4.phpt
+ext/session/tests/session_basic5.phpt
+ext/session/tests/session_commit_variation1.phpt
+ext/session/tests/session_commit_variation3.phpt
+ext/session/tests/session_destroy_variation1.phpt
+ext/session/tests/session_write_close_variation1.phpt
+ext/session/tests/session_write_close_variation3.phpt
+ext/session/tests/session_start_read_and_close.phpt
+ext/session/tests/session_start_variation1.phpt
+ext/session/tests/session_start_variation3.phpt
+ext/session/tests/session_start_variation9.phpt

@@ -15816,6 +15816,158 @@ var_dump($_SESSION);
 }
 
 #[test]
+fn compile_session_encode_decode_lifecycle_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-session-encode-decode-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+
+    let lifecycle_input = root.join("session-lifecycle.php");
+    let lifecycle_output = root.join("session-lifecycle-bin");
+    fs::write(
+        &lifecycle_input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+var_dump(session_encode());
+session_id('ptn_session_lifecycle_edges');
+var_dump(session_start());
+$_SESSION[] = 'x';
+var_dump(session_encode());
+var_dump(session_write_close());
+var_dump(session_encode());
+var_dump(session_write_close());
+try {{
+    session_start(['read_and_close' => 'no']);
+}} catch (TypeError $e) {{
+    echo $e::class, ': ', $e->getMessage(), "\n";
+}}
+var_dump(session_status() === PHP_SESSION_ACTIVE);
+var_dump(session_start(['read_and_close' => 1]));
+var_dump(session_status() === PHP_SESSION_NONE);
+var_dump(session_destroy());
+var_dump(session_start());
+$_SESSION['bad|key'] = 'x';
+var_dump(session_encode());
+var_dump(session_destroy());
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+    compile_file(
+        &lifecycle_input,
+        &lifecycle_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let lifecycle = Command::new(&lifecycle_output).output().unwrap();
+    assert!(
+        lifecycle.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        lifecycle.status.code(),
+        String::from_utf8_lossy(&lifecycle.stdout),
+        String::from_utf8_lossy(&lifecycle.stderr)
+    );
+    let stdout = String::from_utf8(lifecycle.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_encode(): Cannot encode non-existent session"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_encode(): Skipping numeric key 0"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(0) \"\"\nbool(false)\nTypeError: session_start(): Option \"read_and_close\" value must be of type compatible with int, \"no\" given\nbool(false)\nbool(true)\nbool(true)"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: session_destroy(): Trying to destroy uninitialized session"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: session_encode(): Failed to write session data. Data contains invalid key \"bad|key\""
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(lifecycle.stderr).unwrap(), "");
+
+    let auto_input = root.join("session-auto-start.php");
+    let auto_output = root.join("session-auto-start-bin");
+    fs::write(
+        &auto_input,
+        r#"<?php
+var_dump($_SESSION);
+var_dump(session_encode());
+var_dump(session_start());
+var_dump(session_destroy());
+"#,
+    )
+    .unwrap();
+    compile_file(&auto_input, &auto_output, CompileOptions { emit_c: false }).unwrap();
+    let auto = Command::new(&auto_output)
+        .env("PTN_SESSION_AUTO_START", "1")
+        .env("PTN_SESSION_SAVE_PATH", root.as_os_str())
+        .output()
+        .unwrap();
+    assert!(
+        auto.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        auto.status.code(),
+        String::from_utf8_lossy(&auto.stdout),
+        String::from_utf8_lossy(&auto.stderr)
+    );
+    let stdout = String::from_utf8(auto.stdout).unwrap();
+    assert!(stdout.contains("array(0) {\n}\nstring(0) \"\""), "{stdout}");
+    assert!(
+        stdout.contains("Notice: session_start(): Ignoring session_start() because a session is already active (session started automatically)"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(auto.stderr).unwrap(), "");
+
+    let invalid_input = root.join("session-invalid-handler.php");
+    let invalid_output = root.join("session-invalid-handler-bin");
+    fs::write(
+        &invalid_input,
+        r#"<?php
+var_dump(session_start());
+var_dump(session_encode());
+var_dump(session_destroy());
+"#,
+    )
+    .unwrap();
+    compile_file(
+        &invalid_input,
+        &invalid_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let invalid = Command::new(&invalid_output)
+        .env("PTN_SESSION_SERIALIZE_HANDLER", "wrong_handler")
+        .output()
+        .unwrap();
+    assert!(
+        invalid.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        invalid.status.code(),
+        String::from_utf8_lossy(&invalid.stdout),
+        String::from_utf8_lossy(&invalid.stderr)
+    );
+    let stdout = String::from_utf8(invalid.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_start(): Cannot find session serialization handler \"wrong_handler\" - session startup failed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_encode(): Cannot encode non-existent session"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_destroy(): Trying to destroy uninitialized session"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(invalid.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_user_save_handler_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-session-user-save-handler");
     fs::create_dir_all(&root).unwrap();

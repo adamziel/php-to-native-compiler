@@ -1560,6 +1560,10 @@ struct PtnRuntime {
     PtnSymbolTable session_ini;
     char *session_id;
     int session_active;
+    int session_was_started;
+    int session_auto_started;
+    const char *session_start_path;
+    size_t session_start_line;
     int session_save_handler_kind;
     PtnValue session_save_handler_object;
     PtnValue session_save_handler_callbacks[9];

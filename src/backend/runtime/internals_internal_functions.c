@@ -74630,6 +74630,8 @@ static void ptn_runtime_set_session_ini(PtnRuntime *runtime, const char *name, c
     ptn_value_destroy(&stored);
 }
 
+static int ptn_session_serialize_handler_operand_is_supported(PtnStringOperand handler);
+
 static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
     if (ptn_string_operand_ascii_case_equal(option, "date.timezone")) {
         *out = ptn_string("UTC");
@@ -75557,6 +75559,44 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
             ptn_value_destroy(&previous);
             return ptn_bool(0);
         }
+        if (ptn_ascii_case_equal(session_ini->name, "session.serialize_handler") &&
+            !ptn_session_serialize_handler_operand_is_supported(value)) {
+            char *handler = ptn_duplicate_string_len(value.data, value.len);
+            int needed = snprintf(
+                NULL,
+                0,
+                "ini_set(): Serialization handler \"%s\" cannot be found",
+                handler
+            );
+            if (needed < 0) {
+                free(handler);
+                ptn_string_operand_free(value);
+                ptn_string_operand_free(option);
+                ptn_value_destroy(&previous);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(handler);
+                ptn_string_operand_free(value);
+                ptn_string_operand_free(option);
+                ptn_value_destroy(&previous);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "ini_set(): Serialization handler \"%s\" cannot be found",
+                handler
+            );
+            ptn_emit_runtime_warning(runtime, message, line);
+            free(message);
+            free(handler);
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_session_ini(runtime, session_ini->name, next);
         free(next);
@@ -76195,6 +76235,11 @@ static int ptn_session_is_active(PtnRuntime *runtime) {
     return root != NULL && root->session_active;
 }
 
+static int ptn_session_was_started(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    return root != NULL && root->session_was_started;
+}
+
 static int ptn_session_reject_active_change(PtnRuntime *runtime, const char *message, size_t line) {
     if (!ptn_session_is_active(runtime)) {
         return 0;
@@ -76208,6 +76253,29 @@ static void ptn_session_set_active(PtnRuntime *runtime, int active) {
     if (root != NULL) {
         root->session_active = active ? 1 : 0;
     }
+}
+
+static void ptn_session_mark_started(PtnRuntime *runtime, size_t line, int auto_started) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    root->session_was_started = 1;
+    root->session_auto_started = auto_started ? 1 : 0;
+    root->session_start_path = runtime->source_path;
+    root->session_start_line = line;
+}
+
+static void ptn_session_mark_uninitialized(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    root->session_active = 0;
+    root->session_was_started = 0;
+    root->session_auto_started = 0;
+    root->session_start_path = NULL;
+    root->session_start_line = 0;
 }
 
 static int64_t ptn_session_ini_integer(PtnRuntime *runtime, const char *name, int64_t fallback) {
@@ -76759,6 +76827,173 @@ static int ptn_session_array_bool_option(PtnValue options, const char *key_name)
     return entry != NULL && ptn_is_truthy(ptn_value_deref(entry->value));
 }
 
+static int ptn_session_serialize_handler_name_is_supported(const char *handler) {
+    return ptn_ascii_case_equal(handler, "php") ||
+        ptn_ascii_case_equal(handler, "php_binary") ||
+        ptn_ascii_case_equal(handler, "php_serialize");
+}
+
+static int ptn_session_serialize_handler_operand_is_supported(PtnStringOperand handler) {
+    return ptn_string_operand_ascii_case_equal(handler, "php") ||
+        ptn_string_operand_ascii_case_equal(handler, "php_binary") ||
+        ptn_string_operand_ascii_case_equal(handler, "php_serialize");
+}
+
+static void ptn_session_emit_unknown_serialize_handler_start_warning(
+    PtnRuntime *runtime,
+    const char *handler,
+    size_t line
+) {
+    const char *name = handler == NULL ? "" : handler;
+    int needed = snprintf(
+        NULL,
+        0,
+        "session_start(): Cannot find session serialization handler \"%s\" - session startup failed",
+        name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "session_start(): Cannot find session serialization handler \"%s\" - session startup failed",
+        name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static void ptn_session_emit_already_active_notice(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root != NULL && root->session_auto_started) {
+        ptn_emit_notice_with_path(
+            &runtime->diagnostics,
+            "session_start(): Ignoring session_start() because a session is already active (session started automatically)",
+            runtime->source_path,
+            line,
+            1
+        );
+        return;
+    }
+
+    const char *start_path = root == NULL || root->session_start_path == NULL
+        ? ptn_runtime_source_path_or(runtime, "ptn")
+        : root->session_start_path;
+    size_t start_line = root == NULL || root->session_start_line == 0 ? line : root->session_start_line;
+    int needed = snprintf(
+        NULL,
+        0,
+        "session_start(): Ignoring session_start() because a session is already active (started from %s on line %zu)",
+        start_path,
+        start_line
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "session_start(): Ignoring session_start() because a session is already active (started from %s on line %zu)",
+        start_path,
+        start_line
+    );
+    ptn_emit_notice_with_path(&runtime->diagnostics, message, runtime->source_path, line, 1);
+    free(message);
+}
+
+static void ptn_session_throw_read_and_close_option_type_error(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_STRING) {
+        char *text = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+        int needed = snprintf(
+            NULL,
+            0,
+            "session_start(): Option \"read_and_close\" value must be of type compatible with int, \"%s\" given",
+            text
+        );
+        if (needed < 0) {
+            free(text);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(text);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "session_start(): Option \"read_and_close\" value must be of type compatible with int, \"%s\" given",
+            text
+        );
+        free(text);
+        ptn_throw_exception_owned_message_at(runtime, "TypeError", message, runtime->source_path, line);
+        return;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "session_start(): Option \"read_and_close\" must be of type string|int|bool, %s given",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+}
+
+static int ptn_session_parse_read_and_close_option(
+    PtnRuntime *runtime,
+    PtnValue options,
+    size_t line,
+    int *read_and_close
+) {
+    *read_and_close = 0;
+    options = ptn_value_deref(options);
+    if (options.type != PTN_ARRAY) {
+        return 1;
+    }
+    PtnArrayEntry *entry = ptn_session_array_string_entry(options.as.array, "read_and_close");
+    if (entry == NULL) {
+        return 1;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type == PTN_BOOL) {
+        *read_and_close = value.as.boolean != 0;
+        return 1;
+    }
+    if (value.type == PTN_INT) {
+        *read_and_close = value.as.integer > 0;
+        return 1;
+    }
+    if (value.type == PTN_STRING) {
+        PtnDecimalIntegerString parsed;
+        if (!ptn_parse_decimal_integer_string(value.as.string, &parsed)) {
+            ptn_session_throw_read_and_close_option_type_error(runtime, value, line);
+            return 0;
+        }
+        *read_and_close = !parsed.negative && parsed.len > 0;
+        return 1;
+    }
+    ptn_session_throw_read_and_close_option_type_error(runtime, value, line);
+    return 0;
+}
+
 static PtnArray *ptn_session_ensure_global_array(PtnRuntime *runtime) {
     PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, "_SESSION");
     PtnValue resolved = ptn_value_deref(*slot);
@@ -77030,6 +77265,18 @@ static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_a
     for (size_t i = 0; i < session_array.as.array->len; i++) {
         PtnArrayEntry *entry = &session_array.as.array->entries[i];
         if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "session_encode(): Skipping numeric key %lld",
+                (long long)entry->key.as.integer
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                free(buffer.data);
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_runtime_warning(runtime, message, line);
             continue;
         }
         if (php_binary && entry->key.string_len > 255) {
@@ -77037,7 +77284,35 @@ static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_a
             return ptn_bool(0);
         }
         if (!php_binary && memchr(entry->key.as.string, '|', entry->key.string_len) != NULL) {
-            continue;
+            char *key_name = ptn_duplicate_string_len(entry->key.as.string, entry->key.string_len);
+            int needed = snprintf(
+                NULL,
+                0,
+                "session_encode(): Failed to write session data. Data contains invalid key \"%s\"",
+                key_name
+            );
+            if (needed < 0) {
+                free(key_name);
+                free(buffer.data);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(key_name);
+                free(buffer.data);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "session_encode(): Failed to write session data. Data contains invalid key \"%s\"",
+                key_name
+            );
+            ptn_emit_runtime_warning(runtime, message, line);
+            free(message);
+            free(key_name);
+            free(buffer.data);
+            return ptn_bool(0);
         }
         PtnValue value_arg = ptn_value_clone_deref(entry->value);
         PtnValue serialized_result = ptn_internal_serialize(runtime, 1, &value_arg, line);
@@ -77249,9 +77524,18 @@ static void ptn_session_choose_start_id(PtnRuntime *runtime, size_t line) {
 static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    int read_and_close = argc >= 1 && ptn_session_array_bool_option(args[0], "read_and_close");
     if (ptn_session_is_active(runtime)) {
+        ptn_session_emit_already_active_notice(runtime, line);
         return ptn_bool(1);
+    }
+    int read_and_close = 0;
+    if (argc >= 1 && !ptn_session_parse_read_and_close_option(runtime, args[0], line, &read_and_close)) {
+        return ptn_null();
+    }
+    const char *serialize_handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
+    if (!ptn_session_serialize_handler_name_is_supported(serialize_handler)) {
+        ptn_session_emit_unknown_serialize_handler_start_warning(runtime, serialize_handler, line);
+        return ptn_bool(0);
     }
     PtnRuntime *root = ptn_session_root(runtime);
     if (root != NULL) {
@@ -77289,6 +77573,7 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     ptn_runtime_write_global_variable(runtime, "_SESSION", session_data);
     ptn_value_destroy(&session_data);
     ptn_session_set_active(runtime, 1);
+    ptn_session_mark_started(runtime, line, 0);
     if (!ptn_session_has_user_handler(runtime)) {
         PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
         ptn_value_destroy(&create_file_result);
@@ -77311,10 +77596,23 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     return ptn_bool(1);
 }
 
+static PTN_UNUSED void ptn_runtime_auto_start_session(PtnRuntime *runtime) {
+    if (!ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.auto_start"), 0)) {
+        return;
+    }
+    PtnValue result = ptn_internal_session_start(runtime, 0, NULL, 0);
+    int started = ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    if (started) {
+        ptn_session_mark_started(runtime, 0, 1);
+    }
+}
+
 static PtnValue ptn_internal_session_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    if (!ptn_session_is_active(runtime)) {
+    if (!ptn_session_is_active(runtime) && !ptn_session_was_started(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_encode(): Cannot encode non-existent session", line);
         return ptn_bool(0);
     }
     PtnValue session_array = ptn_session_current_array_value(runtime);
@@ -77335,10 +77633,34 @@ static PtnValue ptn_internal_session_decode(PtnRuntime *runtime, size_t argc, co
     ptn_string_operand_free(data);
     if (!ok) {
         ptn_emit_runtime_warning(runtime, "session_decode(): Failed to decode session object. Session has been destroyed", line);
-        ptn_session_set_active(runtime, 0);
+        PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+        ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+        ptn_value_destroy(&empty);
+        ptn_session_mark_uninitialized(runtime);
         return ptn_bool(0);
     }
-    ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
+    const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
+    if (ptn_ascii_case_equal(handler, "php_serialize")) {
+        ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
+    } else {
+        PtnValue target_value = ptn_session_current_array_value(runtime);
+        PtnValue target = ptn_value_deref(target_value);
+        if (target.type == PTN_ARRAY && ptn_value_deref(decoded).type == PTN_ARRAY) {
+            PtnArray *decoded_array = ptn_value_deref(decoded).as.array;
+            for (size_t i = 0; i < decoded_array->len; i++) {
+                PtnArrayEntry *entry = &decoded_array->entries[i];
+                ptn_array_set_entry(
+                    target.as.array,
+                    ptn_array_key_clone(entry->key),
+                    ptn_value_clone(entry->value)
+                );
+            }
+            ptn_runtime_write_global_variable(runtime, "_SESSION", target_value);
+        } else {
+            ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
+        }
+        ptn_value_destroy(&target_value);
+    }
     ptn_value_destroy(&decoded);
     return ptn_bool(1);
 }
@@ -77347,7 +77669,7 @@ static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t arg
     (void)argc;
     (void)args;
     if (!ptn_session_is_active(runtime)) {
-        return ptn_bool(1);
+        return ptn_bool(0);
     }
     PtnValue session_array = ptn_session_current_array_value(runtime);
     PtnValue encoded_result = ptn_session_encode_array(runtime, session_array, line);
@@ -77404,7 +77726,10 @@ static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t arg
 static PtnValue ptn_internal_session_destroy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    (void)line;
+    if (!ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_destroy(): Trying to destroy uninitialized session", line);
+        return ptn_bool(0);
+    }
     int ok = 1;
     if (ptn_session_has_user_handler(runtime)) {
         ok = ptn_session_user_destroy(runtime, ptn_session_id_current(runtime), line);
@@ -77412,7 +77737,7 @@ static PtnValue ptn_internal_session_destroy(PtnRuntime *runtime, size_t argc, c
     } else {
         ptn_session_delete_file(runtime, ptn_session_id_current(runtime));
     }
-    ptn_session_set_active(runtime, 0);
+    ptn_session_mark_uninitialized(runtime);
     ptn_session_id_set(runtime, "");
     return ptn_bool(ok);
 }
