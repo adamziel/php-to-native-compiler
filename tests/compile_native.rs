@@ -41635,6 +41635,65 @@ try {
 }
 
 #[test]
+fn compile_dom_html_document_noimplied_and_import_void_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-noimplied-import-void");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-html-noimplied-import-void.php");
+    let output = root.join("dom-html-noimplied-import-void-bin");
+    let noimplied_file = root.join("noimplied-input.html");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+function show_noimplied(string $html, string $file): void {{
+    file_put_contents($file, $html);
+    $fromString = Dom\HTMLDocument::createFromString($html, LIBXML_HTML_NOIMPLIED | LIBXML_NOERROR);
+    $output = $fromString->saveHtml();
+    echo $output, "\n";
+    $fromFile = Dom\HTMLDocument::createFromFile($file, LIBXML_HTML_NOIMPLIED | LIBXML_NOERROR);
+    var_dump($output === $fromFile->saveHtml());
+}}
+
+show_noimplied("", {});
+show_noimplied("<!-- start --><body><head><html>foo</html></head></body><!-- end -->", {});
+
+$xml = Dom\XMLDocument::createFromString('<html><body xmlns="http://www.w3.org/1999/xhtml"><br/><default:p xmlns:default="http://www.w3.org/1999/xhtml" id="import">x</default:p></body></html>');
+$html = Dom\HTMLDocument::createEmpty();
+$html->appendChild($html->importNode($xml->documentElement, true));
+echo $html->saveXml();
+"#,
+            php_string_literal(&noimplied_file),
+            php_string_literal(&noimplied_file)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("\nbool(true)\n"));
+    assert!(stdout.contains("<!-- start --><body>foo</body><!-- end -->\nbool(true)\n"));
+    assert!(stdout.contains("<br />"));
+    assert!(
+        stdout.contains("<p xmlns:default=\"http://www.w3.org/1999/xhtml\" id=\"import\">x</p>")
+    );
+    assert!(!stdout.contains("<html><head></head><body></body></html>"));
+    assert!(!stdout.contains("<br></br>"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_normalize_body_misnested_wrappers"));
+    assert!(c_source.contains("PTN_LIBXML_HTML_NOIMPLIED"));
+}
+
+#[test]
 fn compile_dom_attribute_node_namespace_conflicts_to_native_binary() {
     let root = temp_dir("ptn-native-dom-attribute-node-namespace-conflicts");
     fs::create_dir_all(&root).unwrap();

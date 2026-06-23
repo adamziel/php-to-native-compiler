@@ -96903,7 +96903,8 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         }
     }
     if (node->child_count == 0) {
-        if (ptn_xml_serialize_no_empty_tag || html_document_xhtml_element) {
+        if (ptn_xml_serialize_no_empty_tag ||
+            (html_document_xhtml_element && !ptn_xml_html_void_element_name(serialized_name))) {
             ptn_string_buffer_append_char(buffer, '>');
             ptn_string_buffer_append(buffer, "</");
             ptn_string_buffer_append(buffer, serialized_name);
@@ -96911,14 +96912,7 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
             free(prefixed_name);
             return;
         }
-        if (html_document_xhtml_element && !ptn_xml_html_void_element_name(serialized_name)) {
-            ptn_string_buffer_append_char(buffer, '>');
-            ptn_string_buffer_append(buffer, "</");
-            ptn_string_buffer_append(buffer, serialized_name);
-            ptn_string_buffer_append_char(buffer, '>');
-        } else {
-            ptn_string_buffer_append(buffer, html_document_xhtml_element ? " />" : "/>");
-        }
+        ptn_string_buffer_append(buffer, html_document_xhtml_element ? " />" : "/>");
         free(prefixed_name);
         return;
     }
@@ -100068,6 +100062,32 @@ static void ptn_dom_html_normalize_root_whitespace(PtnXmlNode *document) {
     }
 }
 
+static void ptn_dom_html_normalize_body_misnested_wrappers(PtnXmlNode *node) {
+    if (node == NULL) {
+        return;
+    }
+    if (ptn_dom_html_direct_element_named(node, "body")) {
+        for (size_t i = 0; i < node->child_count;) {
+            PtnXmlNode *child = node->children[i];
+            if (ptn_dom_html_direct_element_named(child, "head") ||
+                ptn_dom_html_direct_element_named(child, "html")) {
+                size_t insert_index = i;
+                while (child->child_count > 0) {
+                    ptn_xml_insert_child_at(node, child->children[0], insert_index++);
+                }
+                ptn_xml_detach_node(child);
+                continue;
+            }
+            ptn_dom_html_normalize_body_misnested_wrappers(child);
+            i++;
+        }
+        return;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_dom_html_normalize_body_misnested_wrappers(node->children[i]);
+    }
+}
+
 static int ptn_xml_html_void_element_name(const char *name) {
     return ptn_ascii_case_equal(name, "area") ||
         ptn_ascii_case_equal(name, "base") ||
@@ -100289,6 +100309,7 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
     int complete = stack_len <= 1 && well_formed;
     if (html_mode) {
         ptn_dom_html_normalize_root_whitespace(document);
+        ptn_dom_html_normalize_body_misnested_wrappers(document);
     }
     free(stack);
     ptn_xml_parser_dtd_state_free(&dtd_parser);
@@ -103516,7 +103537,9 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
     }
     if (source.len == 0 && html_document) {
         ptn_string_operand_free(source);
-        ptn_dom_html_document_ensure_skeleton(runtime, document);
+        if ((options & PTN_LIBXML_HTML_NOIMPLIED) == 0) {
+            ptn_dom_html_document_ensure_skeleton(runtime, document);
+        }
         return document_value;
     }
     if (source.len == 0) {
