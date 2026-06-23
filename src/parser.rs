@@ -15059,8 +15059,7 @@ fn collect_trait_abstract_methods<'a>(
 struct TentativeInternalMethod {
     class_name: &'static str,
     signature: &'static str,
-    return_type: TypeHint,
-    is_static: bool,
+    method: MethodDecl,
 }
 
 fn find_tentative_internal_parent_method(
@@ -15150,40 +15149,197 @@ fn tentative_internal_method(
     method_name: &str,
 ) -> Option<TentativeInternalMethod> {
     match (normalized_class_name, method_name.to_ascii_lowercase().as_str()) {
-        ("countable", "count") => Some(TentativeInternalMethod {
-            class_name: "Countable",
-            signature: "count(): int",
-            return_type: TypeHint::Int,
-            is_static: false,
-        }),
-        ("datetimezone", "listidentifiers") => Some(TentativeInternalMethod {
-            class_name: "DateTimeZone",
-            signature:
-                "listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array",
-            return_type: TypeHint::Array,
-            is_static: true,
-        }),
-        ("datetime", "createfromformat") => Some(TentativeInternalMethod {
-            class_name: "DateTime",
-            signature:
-                "createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false",
-            return_type: TypeHint::Union(vec![
+        ("arrayaccess", "offsetset") => Some(modeled_internal_method(
+            "ArrayAccess",
+            "offsetSet",
+            "offsetSet(mixed $offset, mixed $value): void",
+            false,
+            vec![
+                internal_parameter("offset", Some(TypeHint::Mixed), None),
+                internal_parameter("value", Some(TypeHint::Mixed), None),
+            ],
+            TypeHint::Void,
+        )),
+        ("countable", "count") => Some(modeled_internal_method(
+            "Countable",
+            "count",
+            "count(): int",
+            false,
+            Vec::new(),
+            TypeHint::Int,
+        )),
+        ("datetimeinterface", "diff") => Some(modeled_internal_method(
+            "DateTimeInterface",
+            "diff",
+            "diff(DateTimeInterface $targetObject, bool $absolute = false): DateInterval",
+            false,
+            vec![
+                internal_parameter(
+                    "targetObject",
+                    Some(TypeHint::Class("DateTimeInterface".to_string())),
+                    None,
+                ),
+                internal_parameter(
+                    "absolute",
+                    Some(TypeHint::Bool),
+                    Some(Expr::Bool(false, internal_source_span())),
+                ),
+            ],
+            TypeHint::Class("DateInterval".to_string()),
+        )),
+        ("datetimezone", "gettransitions") => Some(modeled_internal_method(
+            "DateTimeZone",
+            "getTransitions",
+            "getTransitions(int $timestampBegin = PHP_INT_MIN, int $timestampEnd = 2147483647): array|false",
+            false,
+            vec![
+                internal_parameter(
+                    "timestampBegin",
+                    Some(TypeHint::Int),
+                    Some(Expr::Constant(
+                        "PHP_INT_MIN".to_string(),
+                        internal_source_span(),
+                    )),
+                ),
+                internal_parameter(
+                    "timestampEnd",
+                    Some(TypeHint::Int),
+                    Some(Expr::Int(2147483647, internal_source_span())),
+                ),
+            ],
+            TypeHint::Union(vec![TypeHint::Array, TypeHint::False]),
+        )),
+        ("datetimezone", "listidentifiers") => Some(modeled_internal_method(
+            "DateTimeZone",
+            "listIdentifiers",
+            "listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array",
+            true,
+            vec![
+                internal_parameter(
+                    "timezoneGroup",
+                    Some(TypeHint::Int),
+                    Some(Expr::ClassConstantFetch {
+                        class_name: "DateTimeZone".to_string(),
+                        name: "ALL".to_string(),
+                        span: internal_source_span(),
+                    }),
+                ),
+                internal_parameter(
+                    "countryCode",
+                    Some(TypeHint::Nullable(Box::new(TypeHint::String))),
+                    Some(Expr::Null(internal_source_span())),
+                ),
+            ],
+            TypeHint::Array,
+        )),
+        ("datetime", "createfromformat") => Some(modeled_internal_method(
+            "DateTime",
+            "createFromFormat",
+            "createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false",
+            true,
+            vec![
+                internal_parameter("format", Some(TypeHint::String), None),
+                internal_parameter("datetime", Some(TypeHint::String), None),
+                internal_parameter(
+                    "timezone",
+                    Some(TypeHint::Nullable(Box::new(TypeHint::Class(
+                        "DateTimeZone".to_string(),
+                    )))),
+                    Some(Expr::Null(internal_source_span())),
+                ),
+            ],
+            TypeHint::Union(vec![
                 TypeHint::Class("DateTime".to_string()),
                 TypeHint::False,
             ]),
-            is_static: true,
-        }),
-        ("datetime", "modify") => Some(TentativeInternalMethod {
-            class_name: "DateTime",
-            signature: "modify(string $modifier): DateTime|false",
-            return_type: TypeHint::Union(vec![
+        )),
+        ("datetime", "settime") => Some(modeled_internal_method(
+            "DateTime",
+            "setTime",
+            "setTime(int $hour, int $minute, int $second = 0, int $microsecond = 0): DateTime",
+            false,
+            vec![
+                internal_parameter("hour", Some(TypeHint::Int), None),
+                internal_parameter("minute", Some(TypeHint::Int), None),
+                internal_parameter(
+                    "second",
+                    Some(TypeHint::Int),
+                    Some(Expr::Int(0, internal_source_span())),
+                ),
+                internal_parameter(
+                    "microsecond",
+                    Some(TypeHint::Int),
+                    Some(Expr::Int(0, internal_source_span())),
+                ),
+            ],
+            TypeHint::Class("DateTime".to_string()),
+        )),
+        ("datetime", "modify") => Some(modeled_internal_method(
+            "DateTime",
+            "modify",
+            "modify(string $modifier): DateTime|false",
+            false,
+            vec![internal_parameter("modifier", Some(TypeHint::String), None)],
+            TypeHint::Union(vec![
                 TypeHint::Class("DateTime".to_string()),
                 TypeHint::False,
             ]),
-            is_static: false,
-        }),
+        )),
         _ => None,
     }
+}
+
+fn modeled_internal_method(
+    class_name: &'static str,
+    method_name: &str,
+    signature: &'static str,
+    is_static: bool,
+    parameters: Vec<FunctionParameter>,
+    return_type: TypeHint,
+) -> TentativeInternalMethod {
+    TentativeInternalMethod {
+        class_name,
+        signature,
+        method: MethodDecl {
+            name: method_name.to_string(),
+            visibility: PropertyVisibility::Public,
+            trait_name: None,
+            trait_method_name: None,
+            attributes: AttributeMetadata::default(),
+            doc_comment: None,
+            has_override_attribute: false,
+            parameters,
+            return_type: Some(return_type),
+            return_by_ref: false,
+            is_static,
+            is_final: false,
+            is_abstract: false,
+            body: Vec::new(),
+            span: internal_source_span(),
+        },
+    }
+}
+
+fn internal_parameter(
+    name: &str,
+    type_hint: Option<TypeHint>,
+    default_value: Option<Expr>,
+) -> FunctionParameter {
+    FunctionParameter {
+        name: name.to_string(),
+        attributes: AttributeMetadata::default(),
+        doc_comment: None,
+        type_hint,
+        by_ref: false,
+        is_variadic: false,
+        default_value,
+        promoted_property: None,
+        span: internal_source_span(),
+    }
+}
+
+fn internal_source_span() -> SourceSpan {
+    SourceSpan::new(0, 0, 0, 0)
 }
 
 fn validate_tentative_internal_return_signature(
@@ -15194,9 +15350,17 @@ fn validate_tentative_internal_return_signature(
     runtime_class_aliases: &HashMap<String, String>,
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
-    if method.is_static != tentative_method.is_static {
+    if method.is_static != tentative_method.method.is_static {
         return Ok(());
     }
+    validate_method_parameter_signature_pair_named(
+        class,
+        method,
+        tentative_method.class_name,
+        &tentative_method.method,
+        classes,
+        runtime_class_aliases,
+    )?;
     if let Some(unavailable_name) = method
         .parameters
         .iter()
@@ -15216,7 +15380,11 @@ fn validate_tentative_internal_return_signature(
     if method.return_type.as_ref().is_some_and(|return_type| {
         type_hint_is_subtype(
             return_type,
-            &tentative_method.return_type,
+            tentative_method
+                .method
+                .return_type
+                .as_ref()
+                .expect("modeled internal method must have a return type"),
             classes,
             runtime_class_aliases,
         )
@@ -15490,6 +15658,61 @@ fn validate_method_signature_pair_named(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<()> {
+    validate_method_parameter_signature_pair_named(
+        class,
+        method,
+        parent_class_name,
+        parent_method,
+        classes,
+        runtime_class_aliases,
+    )?;
+
+    if let Some(parent_return_type) = &parent_method.return_type {
+        let Some(return_type) = &method.return_type else {
+            return Err(method_signature_compatibility_error_named(
+                class,
+                method,
+                parent_class_name,
+                parent_method,
+            ));
+        };
+        if !type_hint_is_subtype(
+            return_type,
+            parent_return_type,
+            classes,
+            runtime_class_aliases,
+        ) {
+            if let Some(unavailable_name) =
+                unresolved_compatibility_class(return_type, parent_return_type, classes)
+            {
+                return Err(method_signature_unresolved_compatibility_error_named(
+                    class,
+                    method,
+                    parent_class_name,
+                    parent_method,
+                    &unavailable_name,
+                ));
+            }
+            return Err(method_signature_compatibility_error_named(
+                class,
+                method,
+                parent_class_name,
+                parent_method,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_method_parameter_signature_pair_named(
+    class: &ClassDecl,
+    method: &MethodDecl,
+    parent_class_name: &str,
+    parent_method: &MethodDecl,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
     if parent_method.return_by_ref && !method.return_by_ref {
         return Err(method_signature_compatibility_error_named(
             class,
@@ -15572,41 +15795,6 @@ fn validate_method_signature_pair_named(
     }
     for parameter in method.parameters.iter().skip(parameter_index) {
         if parameter.default_value.is_none() && !parameter.is_variadic {
-            return Err(method_signature_compatibility_error_named(
-                class,
-                method,
-                parent_class_name,
-                parent_method,
-            ));
-        }
-    }
-
-    if let Some(parent_return_type) = &parent_method.return_type {
-        let Some(return_type) = &method.return_type else {
-            return Err(method_signature_compatibility_error_named(
-                class,
-                method,
-                parent_class_name,
-                parent_method,
-            ));
-        };
-        if !type_hint_is_subtype(
-            return_type,
-            parent_return_type,
-            classes,
-            runtime_class_aliases,
-        ) {
-            if let Some(unavailable_name) =
-                unresolved_compatibility_class(return_type, parent_return_type, classes)
-            {
-                return Err(method_signature_unresolved_compatibility_error_named(
-                    class,
-                    method,
-                    parent_class_name,
-                    parent_method,
-                    &unavailable_name,
-                ));
-            }
             return Err(method_signature_compatibility_error_named(
                 class,
                 method,
@@ -15873,9 +16061,11 @@ fn parameter_default_display(default_value: &Expr, default_scope: Option<&str>) 
         Expr::Null(_) => "null".to_string(),
         Expr::Bool(value, _) => value.to_string(),
         Expr::Int(value, _) => value.to_string(),
-        Expr::Float(value, _) => value.to_string(),
-        Expr::String(value, _) => format!("'{}'", value.replace('\'', "\\'")),
+        Expr::Float(value, _) => parameter_default_float_display(*value),
+        Expr::String(value, _) => parameter_default_string_display(value),
         Expr::Array { elements, .. } if elements.is_empty() => "[]".to_string(),
+        Expr::Array { .. } => "[...]".to_string(),
+        Expr::Constant(name, _) => name.trim_start_matches('\\').to_string(),
         Expr::ClassConstantFetch {
             class_name, name, ..
         } if name.eq_ignore_ascii_case("class") && class_name.eq_ignore_ascii_case("self") => {
@@ -15888,6 +16078,33 @@ fn parameter_default_display(default_value: &Expr, default_scope: Option<&str>) 
         } => format!("{class_name}::{name}"),
         _ => "<expression>".to_string(),
     }
+}
+
+fn parameter_default_float_display(value: f64) -> String {
+    let mut display = format!("{value:.13}");
+    if display.contains('.') {
+        display = display
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string();
+    }
+    if display == "-0" {
+        "0".to_string()
+    } else {
+        display
+    }
+}
+
+fn parameter_default_string_display(value: &str) -> String {
+    let escaped = value.replace('\'', "\\'");
+    let display = if escaped.chars().count() > 15 {
+        let mut truncated = escaped.chars().take(10).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    } else {
+        escaped
+    };
+    format!("'{display}'")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

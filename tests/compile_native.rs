@@ -4027,6 +4027,129 @@ class ChildDnf extends ParentDnf {
 }
 
 #[test]
+fn parser_validates_internal_method_signature_defaults() {
+    let error = parser::parse(
+        "<?php
+class MyDateTime extends DateTime {
+    public function setTime(int $hour, int $minute, int $second = 0, bool $microsecond = false): DateTime {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of MyDateTime::setTime(int $hour, int $minute, int $second = 0, bool $microsecond = false): DateTime must be compatible with DateTime::setTime(int $hour, int $minute, int $second = 0, int $microsecond = 0): DateTime"
+    );
+
+    let error = parser::parse(
+        "<?php
+class MyDateTimeZone extends DateTimeZone {
+    public function getTransitions(): array|false {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of MyDateTimeZone::getTransitions(): array|false must be compatible with DateTimeZone::getTransitions(int $timestampBegin = PHP_INT_MIN, int $timestampEnd = 2147483647): array|false"
+    );
+
+    let error = parser::parse(
+        "<?php
+interface MyDateTimeInterface extends DateTimeInterface {
+    public function diff(): DateInterval;
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of MyDateTimeInterface::diff(): DateInterval must be compatible with DateTimeInterface::diff(DateTimeInterface $targetObject, bool $absolute = false): DateInterval"
+    );
+
+    let error = parser::parse(
+        "<?php
+class Sub implements ArrayAccess {
+    public function offsetSet(): void {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Sub::offsetSet(): void must be compatible with ArrayAccess::offsetSet(mixed $offset, mixed $value): void"
+    );
+}
+
+#[test]
+fn parser_displays_signature_default_values_canonically() {
+    let error = parser::parse(
+        "<?php
+use const Foo\\CONSTANT;
+class A {
+    public function foo($param1 = \\Foo\\CONSTANT, $param2 = Foo\\CONSTANT, $param3 = CONSTANT) {}
+}
+class B extends A {
+    public function foo() {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of B::foo() must be compatible with A::foo($param1 = Foo\\CONSTANT, $param2 = Foo\\CONSTANT, $param3 = Foo\\CONSTANT)"
+    );
+
+    let error = parser::parse(
+        "<?php
+class Base {
+    public function test($foo, array $bar, $option = null, $extra = \"lllllllllllllllllllllllllllllllllllllllllllllllllll\") {}
+}
+class Sub extends Base {
+    public function test() {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Sub::test() must be compatible with Base::test($foo, array $bar, $option = null, $extra = 'llllllllll...')"
+    );
+
+    let error = parser::parse(
+        "<?php
+abstract class Base {
+    public function test($foo, array &$bar, $option = null, $extra = 3.141592653589793238462643383279502884197169399375105) {}
+}
+class Sub extends Base {
+    public function test($foo, array &$bar) {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Sub::test($foo, array &$bar) must be compatible with Base::test($foo, array &$bar, $option = null, $extra = 3.1415926535898)"
+    );
+
+    let error = parser::parse(
+        "<?php
+abstract class Base {
+    public function test($foo, $extra = array(\"test\")) {}
+}
+class Sub extends Base {
+    public function test($foo, $extra) {}
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Declaration of Sub::test($foo, $extra) must be compatible with Base::test($foo, $extra = [...])"
+    );
+}
+
+#[test]
 fn parser_rejects_static_interface_method_conflict_through_class_alias() {
     let error = parser::parse(
         "<?php
