@@ -164212,16 +164212,8 @@ static void ptn_array_object_throw_unserialize_error(
     PtnRuntime *runtime,
     size_t offset,
     size_t len,
-    size_t line,
-    int emit_unexpected_end_warning
+    size_t line
 ) {
-    if (emit_unexpected_end_warning) {
-        ptn_emit_warning(
-            &runtime->diagnostics,
-            "ArrayObject::unserialize(): Unexpected end of serialized data",
-            line
-        );
-    }
     char message[96];
     int written = snprintf(
         message,
@@ -164432,8 +164424,7 @@ done:
             runtime,
             error_offset,
             payload.len,
-            line,
-            error_offset + 1 < payload.len
+            line
         );
     }
     return 1;

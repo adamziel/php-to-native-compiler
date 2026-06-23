@@ -16170,6 +16170,42 @@ try {
 }
 
 #[test]
+fn compile_array_object_unserialize_error_suppresses_unexpected_end_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-unserialize-error-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-unserialize-error-warning.php");
+    let output = root.join("array-object-unserialize-error-warning-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    unserialize('a:3:{i:0;C:11:"ArrayObject":20:{x:i:0;r:3;;m:a:0:{};}i:1;d:11;i:2;S:31:"AAAAAAAABBBBCCCC\01\00\00\00\04\00\00\00\00\00\00\00\00\00\00";}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+echo "OK\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error at offset 10 of 20 bytes\nOK\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_spl_dllist_legacy_custom_payload_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-spl-dllist-legacy-custom-payload");
     fs::create_dir_all(&root).unwrap();
