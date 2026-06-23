@@ -4851,7 +4851,11 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
         if (strcmp(constant, "SORT_REGULAR") == 0) {
-            *out = ptn_int(0);
+            *out = ptn_int(PTN_SORT_REGULAR);
+            return 1;
+        }
+        if (strcmp(constant, "SORT_STRING") == 0) {
+            *out = ptn_int(PTN_SORT_STRING);
             return 1;
         }
     }

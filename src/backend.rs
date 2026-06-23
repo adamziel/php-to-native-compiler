@@ -7204,7 +7204,24 @@ fn emit_user_function_dispatch(
         "                        runtime->called_class_name_override = ptn_original_class_name;\n",
     );
     out.push_str("                        ptn_static_current_receiver.as.object->class_name = (char *)ptn_static_call_resolved_class;\n");
+    out.push_str("                        PtnTryFrame ptn_internal_static_frame;\n");
+    out.push_str(
+        "                        ptn_try_frame_push(runtime, &ptn_internal_static_frame);\n",
+    );
+    out.push_str("                        if (setjmp(ptn_internal_static_frame.jump) != 0) {\n");
+    out.push_str(
+        "                            ptn_try_frame_pop(runtime, &ptn_internal_static_frame);\n",
+    );
+    out.push_str("                            ptn_static_current_receiver.as.object->class_name = ptn_original_class_name;\n");
+    out.push_str("                            runtime->called_class_name_override = ptn_previous_called_class;\n");
+    out.push_str("                            free(ptn_static_call_class);\n");
+    out.push_str("                            ptn_rethrow_exception(runtime);\n");
+    out.push_str("                            return ptn_null();\n");
+    out.push_str("                        }\n");
     out.push_str("                        ptn_internal_parent_result = ptn_call_method(runtime, ptn_static_current_receiver, ptn_static_call_method, argc, args, line);\n");
+    out.push_str(
+        "                        ptn_try_frame_pop(runtime, &ptn_internal_static_frame);\n",
+    );
     out.push_str("                        ptn_static_current_receiver.as.object->class_name = ptn_original_class_name;\n");
     out.push_str("                        runtime->called_class_name_override = ptn_previous_called_class;\n");
     out.push_str("                    }\n");
@@ -22018,7 +22035,19 @@ fn emit_method_dispatch(
         "                runtime->called_class_name_override = ptn_original_class_name;\n",
     );
     out.push_str("                resolved.as.object->class_name = (char *)ptn_modeled_parent;\n");
+    out.push_str("                PtnTryFrame ptn_internal_parent_frame;\n");
+    out.push_str("                ptn_try_frame_push(runtime, &ptn_internal_parent_frame);\n");
+    out.push_str("                if (setjmp(ptn_internal_parent_frame.jump) != 0) {\n");
+    out.push_str("                    ptn_try_frame_pop(runtime, &ptn_internal_parent_frame);\n");
+    out.push_str("                    resolved.as.object->class_name = ptn_original_class_name;\n");
+    out.push_str(
+        "                    runtime->called_class_name_override = ptn_previous_called_class;\n",
+    );
+    out.push_str("                    ptn_rethrow_exception(runtime);\n");
+    out.push_str("                    return ptn_null();\n");
+    out.push_str("                }\n");
     out.push_str("                PtnValue ptn_internal_parent_result = ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("                ptn_try_frame_pop(runtime, &ptn_internal_parent_frame);\n");
     out.push_str("                resolved.as.object->class_name = ptn_original_class_name;\n");
     out.push_str(
         "                runtime->called_class_name_override = ptn_previous_called_class;\n",
@@ -22347,7 +22376,20 @@ fn emit_method_dispatch(
             out.push_str("                    const char *ptn_scoped_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("                    runtime->called_class_name_override = ptn_scoped_original_class_name;\n");
             out.push_str("                    resolved_receiver.as.object->class_name = (char *)ptn_scoped_modeled_parent;\n");
+            out.push_str("                    PtnTryFrame ptn_scoped_internal_parent_frame;\n");
+            out.push_str("                    ptn_try_frame_push(runtime, &ptn_scoped_internal_parent_frame);\n");
+            out.push_str(
+                "                    if (setjmp(ptn_scoped_internal_parent_frame.jump) != 0) {\n",
+            );
+            out.push_str("                        ptn_try_frame_pop(runtime, &ptn_scoped_internal_parent_frame);\n");
+            out.push_str("                        resolved_receiver.as.object->class_name = ptn_scoped_original_class_name;\n");
+            out.push_str("                        runtime->called_class_name_override = ptn_scoped_previous_called_class;\n");
+            out.push_str("                        *result_out = ptn_null();\n");
+            out.push_str("                        ptn_rethrow_exception(runtime);\n");
+            out.push_str("                        return 1;\n");
+            out.push_str("                    }\n");
             out.push_str("                    PtnValue ptn_scoped_internal_parent_result = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+            out.push_str("                    ptn_try_frame_pop(runtime, &ptn_scoped_internal_parent_frame);\n");
             out.push_str("                    resolved_receiver.as.object->class_name = ptn_scoped_original_class_name;\n");
             out.push_str("                    runtime->called_class_name_override = ptn_scoped_previous_called_class;\n");
             out.push_str("                    *result_out = ptn_scoped_internal_parent_result;\n");
@@ -22412,7 +22454,20 @@ fn emit_method_dispatch(
     );
     out.push_str("        runtime->called_class_name_override = ptn_original_class_name;\n");
     out.push_str("        resolved_receiver.as.object->class_name = (char *)target_class_name;\n");
+    out.push_str("        PtnTryFrame ptn_internal_parent_frame;\n");
+    out.push_str("        ptn_try_frame_push(runtime, &ptn_internal_parent_frame);\n");
+    out.push_str("        if (setjmp(ptn_internal_parent_frame.jump) != 0) {\n");
+    out.push_str("            ptn_try_frame_pop(runtime, &ptn_internal_parent_frame);\n");
+    out.push_str(
+        "            resolved_receiver.as.object->class_name = ptn_original_class_name;\n",
+    );
+    out.push_str("            runtime->called_class_name_override = ptn_previous_called_class;\n");
+    out.push_str("            *result_out = ptn_null();\n");
+    out.push_str("            ptn_rethrow_exception(runtime);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
     out.push_str("        PtnValue ptn_internal_parent_result = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+    out.push_str("        ptn_try_frame_pop(runtime, &ptn_internal_parent_frame);\n");
     out.push_str("        resolved_receiver.as.object->class_name = ptn_original_class_name;\n");
     out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
     out.push_str("        if (runtime->exceptions->active_exception == NULL && ptn_ascii_case_equal(method_name, \"__construct\") && ptn_internal_parent_result.type == PTN_OBJECT) {\n");
