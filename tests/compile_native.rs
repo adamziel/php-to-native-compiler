@@ -22156,6 +22156,10 @@ $newYorkEnd = new DateTimeImmutable(
 $cityDiff = $chicagoStart->diff($newYorkEnd);
 var_dump($cityDiff->y);
 echo $cityDiff->format('%R %Y %M %D (%a) %H %I %S %F'), \"\\n\";
+
+$sydney = new DateTime('2000-01-01 00:00:00.000000', new DateTimeZone('Australia/Sydney'));
+$losAngeles = new DateTime('2000-01-01 00:00:00.000000', new DateTimeZone('America/Los_Angeles'));
+echo $sydney->diff($losAngeles)->h, \"\\n\";
 ",
     )
     .unwrap();
@@ -22175,7 +22179,8 @@ echo $cityDiff->format('%R %Y %M %D (%a) %H %I %S %F'), \"\\n\";
 6M / 0D 0H 0M\n\
 0 1 2 23 0 0 1 33\n\
 int(21)\n\
-+ 21 07 04 (7886) 23 30 37 092394\n"
++ 21 07 04 (7886) 23 30 37 092394\n\
+19\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
