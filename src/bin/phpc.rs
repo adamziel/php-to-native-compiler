@@ -924,6 +924,18 @@ fn invalid_zend_script_encoding_warning(ini: &RuntimeIni) -> Option<String> {
         })
 }
 
+fn session_save_handler_startup_warning(ini: &RuntimeIni) -> Option<String> {
+    ini.session
+        .iter()
+        .rev()
+        .find(|(name, _)| name.eq_ignore_ascii_case("session.save_handler"))
+        .and_then(|(_, value)| {
+            value.eq_ignore_ascii_case("user").then(|| {
+                "Fatal error: PHP Startup: Session save handler \"user\" cannot be set by ini_set() in Unknown on line 0".to_string()
+            })
+        })
+}
+
 fn compile_and_run(
     script: &Path,
     args: &[String],
@@ -1004,6 +1016,7 @@ fn compile_and_run(
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let zend_script_encoding_warning = invalid_zend_script_encoding_warning(&ini);
+    let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
         script_encoding: ini
@@ -1248,6 +1261,7 @@ fn compile_and_run(
     }
     let startup_warning_emitted = memory_limit_warning.is_some()
         || zend_script_encoding_warning.is_some()
+        || session_save_handler_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
@@ -1257,6 +1271,9 @@ fn compile_and_run(
         print!("{warning}");
     }
     if let Some(warning) = zend_script_encoding_warning {
+        println!("{warning}");
+    }
+    if let Some(warning) = session_save_handler_warning {
         println!("{warning}");
     }
     if ini.allow_url_include_deprecated {
