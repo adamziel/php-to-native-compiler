@@ -20008,6 +20008,56 @@ echo "unreached\n";
 }
 
 #[test]
+fn compile_eval_trait_declarations_compose_with_classes_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-trait-composition");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-trait-composition.php");
+    let output = root.join("eval-trait-composition-bin");
+    fs::write(
+        &input,
+        r#"<?php
+trait TraitCompiled {
+    public function make(): self { return new self; }
+}
+
+const EVAL_CLASS_CODE = <<<'CODE'
+class EvalClass {
+    use TraitCompiled;
+}
+CODE;
+
+eval(EVAL_CLASS_CODE);
+$a = new EvalClass();
+echo get_class($a->make()), "\n";
+
+const EVAL_TRAIT_CODE = <<<'CODE'
+trait TraitEval {
+    public function make(): self { return new self; }
+}
+CODE;
+
+eval(EVAL_TRAIT_CODE);
+class UsesEvalTrait {
+    use TraitEval;
+}
+$b = new UsesEvalTrait();
+echo get_class($b->make()), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "EvalClass\nUsesEvalTrait\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_eval_array_mutations_use_current_scope_to_native_binary() {
     let root = temp_dir("ptn-native-eval-array-mutations");
     fs::create_dir_all(&root).unwrap();

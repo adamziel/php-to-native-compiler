@@ -119,6 +119,9 @@ fn parse_with_options(
         runtime_class_aliases: runtime_class_aliases.clone(),
         external_classes: external_classes.to_vec(),
         external_traits: external_traits.to_vec(),
+        eval_string_constants: HashMap::new(),
+        eval_visible_classes: external_classes.to_vec(),
+        eval_visible_traits: external_traits.to_vec(),
         declared_functions: HashSet::new(),
         declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
@@ -165,6 +168,9 @@ struct Parser<'a> {
     runtime_class_aliases: HashMap<String, String>,
     external_classes: Vec<ClassDecl>,
     external_traits: Vec<TraitDecl>,
+    eval_string_constants: HashMap<String, String>,
+    eval_visible_classes: Vec<ClassDecl>,
+    eval_visible_traits: Vec<TraitDecl>,
     declared_functions: HashSet<String>,
     declared_constants: HashSet<String>,
     declared_class_names: HashMap<String, SourceSpan>,
@@ -635,7 +641,9 @@ impl Parser<'_> {
             } else if token_is_identifier_named(self.peek(), "trait") {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                traits.push(self.parse_trait_decl(attributes)?);
+                let trait_decl = self.parse_trait_decl(attributes)?;
+                self.eval_visible_traits.push(trait_decl.clone());
+                traits.push(trait_decl);
             } else if token_is_identifier_named(self.peek(), "enum") {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
@@ -651,6 +659,7 @@ impl Parser<'_> {
                     .get(source_span.byte_start..source_span.byte_end)
                     .unwrap_or("")
                     .to_string();
+                self.eval_visible_classes.push(class.clone());
                 classes.push(class);
                 statements.push(Statement::ClassDeclaration {
                     name,
@@ -672,6 +681,7 @@ impl Parser<'_> {
                     .get(source_span.byte_start..source_span.byte_end)
                     .unwrap_or("")
                     .to_string();
+                self.eval_visible_classes.push(class.clone());
                 classes.push(class);
                 statements.push(Statement::ClassDeclaration {
                     name,
@@ -4252,6 +4262,7 @@ impl Parser<'_> {
             .get(source_span.byte_start..source_span.byte_end)
             .unwrap_or("")
             .to_string();
+        self.eval_visible_classes.push(class.clone());
         self.anonymous_classes.push(class);
         Ok(Statement::ClassDeclaration {
             name,
@@ -4282,6 +4293,7 @@ impl Parser<'_> {
             .get(source_span.byte_start..source_span.byte_end)
             .unwrap_or("")
             .to_string();
+        self.eval_visible_traits.push(trait_decl.clone());
         self.anonymous_traits.push(trait_decl);
         Ok(Statement::TraitDeclaration {
             name,
@@ -4313,6 +4325,7 @@ impl Parser<'_> {
             .get(source_span.byte_start..source_span.byte_end)
             .unwrap_or("")
             .to_string();
+        self.eval_visible_classes.push(class.clone());
         self.anonymous_classes.push(class);
         Ok(Statement::ClassDeclaration {
             name,
@@ -5598,7 +5611,19 @@ impl Parser<'_> {
         }
         validate_builtin_attributes_for_target(&attributes, AttributeTarget::Constant, span)?;
         self.expect_const_statement_terminator()?;
+        self.note_eval_string_constants(&declarations);
         Ok(Statement::Const { declarations, span })
+    }
+
+    fn note_eval_string_constants(&mut self, declarations: &[ConstDeclaration]) {
+        for declaration in declarations {
+            let key = declaration.name.to_ascii_lowercase();
+            if let Expr::String(value, _) = &declaration.value {
+                self.eval_string_constants.insert(key, value.clone());
+            } else {
+                self.eval_string_constants.remove(&key);
+            }
+        }
     }
 
     fn parse_global(&mut self) -> Result<Statement> {
@@ -6341,7 +6366,7 @@ impl Parser<'_> {
             self.index = start_index;
             return self.parse_expression_statement();
         }
-        if let Some(statement) = self.literal_eval_function_declaration_statement(
+        if let Some(statement) = self.literal_eval_declaration_statement(
             &name,
             &arguments,
             &argument_names,
@@ -6362,7 +6387,7 @@ impl Parser<'_> {
         })
     }
 
-    fn literal_eval_function_declaration_statement(
+    fn literal_eval_declaration_statement(
         &mut self,
         name: &str,
         arguments: &[Expr],
@@ -6378,38 +6403,121 @@ impl Parser<'_> {
             return Ok(None);
         }
 
-        let Some(eval_source) = compile_time_string_literal(&arguments[0]) else {
+        let Some(eval_source) = self.compile_time_eval_source(&arguments[0]) else {
             return Ok(None);
         };
         let eval_source = eval_source.trim();
-        if !eval_source.to_ascii_lowercase().starts_with("function") {
+        let lower_source = eval_source.to_ascii_lowercase();
+        let starts_class = lower_source.starts_with("class")
+            || lower_source.starts_with("abstract class")
+            || lower_source.starts_with("final class");
+        if starts_class && !source_contains_ascii_keyword(&lower_source, "use") {
+            return Ok(None);
+        }
+        if !lower_source.starts_with("function")
+            && !lower_source.starts_with("trait")
+            && !starts_class
+        {
             return Ok(None);
         }
 
         let eval_program = parse_with_options(
             &format!("<?php {eval_source}"),
             &self.runtime_class_aliases,
-            &self.external_classes,
-            &self.external_traits,
+            &self.eval_visible_classes,
+            &self.eval_visible_traits,
             self.validate_method_signatures,
         )?;
-        if !eval_program.classes.is_empty()
-            || !eval_program.traits.is_empty()
-            || eval_program.functions.len() != 1
-            || !eval_program.statements.is_empty()
+        if eval_program.functions.len() == 1
+            && eval_program.classes.is_empty()
+            && eval_program.traits.is_empty()
+            && !eval_program
+                .statements
+                .iter()
+                .any(|statement| !matches!(statement, Statement::FunctionDeclaration { .. }))
         {
-            return Ok(None);
+            let mut function = eval_program
+                .functions
+                .into_iter()
+                .next()
+                .expect("checked one eval function");
+            function.is_conditionally_declared = true;
+            let name = function.name.clone();
+            self.nested_functions.push(function);
+            return Ok(Some(Statement::FunctionDeclaration { name, span }));
         }
 
-        let mut function = eval_program
-            .functions
-            .into_iter()
-            .next()
-            .expect("checked one eval function");
-        function.is_conditionally_declared = true;
-        let name = function.name.clone();
-        self.nested_functions.push(function);
-        Ok(Some(Statement::FunctionDeclaration { name, span }))
+        if eval_program.traits.len() == 1
+            && eval_program.classes.is_empty()
+            && eval_program.functions.is_empty()
+            && eval_program
+                .statements
+                .iter()
+                .all(|statement| matches!(statement, Statement::TraitDeclaration { .. }))
+        {
+            let trait_decl = eval_program
+                .traits
+                .into_iter()
+                .next()
+                .expect("checked one eval trait");
+            let source = eval_program
+                .statements
+                .iter()
+                .find_map(|statement| match statement {
+                    Statement::TraitDeclaration { source, .. } => Some(source.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| eval_source.to_string());
+            let name = trait_decl.name.clone();
+            self.eval_visible_traits.push(trait_decl.clone());
+            self.anonymous_traits.push(trait_decl);
+            return Ok(Some(Statement::TraitDeclaration { name, source, span }));
+        }
+
+        if eval_program.classes.len() == 1
+            && eval_program.traits.is_empty()
+            && eval_program.functions.is_empty()
+            && eval_program
+                .statements
+                .iter()
+                .all(|statement| matches!(statement, Statement::ClassDeclaration { .. }))
+        {
+            let mut class = eval_program
+                .classes
+                .into_iter()
+                .next()
+                .expect("checked one eval class");
+            if class.trait_uses.is_empty() {
+                return Ok(None);
+            }
+            let source = eval_program
+                .statements
+                .iter()
+                .find_map(|statement| match statement {
+                    Statement::ClassDeclaration { source, .. } => Some(source.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| eval_source.to_string());
+            class.is_conditionally_declared = true;
+            let name = class.name.clone();
+            self.eval_visible_classes.push(class.clone());
+            self.anonymous_classes.push(class);
+            return Ok(Some(Statement::ClassDeclaration { name, source, span }));
+        }
+
+        Ok(None)
+    }
+
+    fn compile_time_eval_source(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::String(value, _) => Some(value.clone()),
+            Expr::Constant(name, _) => self
+                .eval_string_constants
+                .get(&name.to_ascii_lowercase())
+                .cloned(),
+            Expr::Grouped { expr, .. } => self.compile_time_eval_source(expr),
+            _ => None,
+        }
     }
 
     fn parse_unset_statement(&mut self) -> Result<Statement> {
@@ -8630,6 +8738,9 @@ impl Parser<'_> {
             runtime_class_aliases: self.runtime_class_aliases.clone(),
             external_classes: self.external_classes.clone(),
             external_traits: self.external_traits.clone(),
+            eval_string_constants: self.eval_string_constants.clone(),
+            eval_visible_classes: self.eval_visible_classes.clone(),
+            eval_visible_traits: self.eval_visible_traits.clone(),
             declared_functions: self.declared_functions.clone(),
             declared_constants: self.declared_constants.clone(),
             declared_class_names: self.declared_class_names.clone(),
@@ -13338,12 +13449,10 @@ fn literal_member_name_from_expr(expr: &Expr) -> Option<String> {
     }
 }
 
-fn compile_time_string_literal(expr: &Expr) -> Option<&str> {
-    match expr {
-        Expr::String(value, _) => Some(value),
-        Expr::Grouped { expr, .. } => compile_time_string_literal(expr),
-        _ => None,
-    }
+fn source_contains_ascii_keyword(source: &str, keyword: &str) -> bool {
+    source
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .any(|part| part == keyword)
 }
 
 fn reject_named_language_construct_arguments(
