@@ -44,6 +44,7 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
 const NULLSAFE_WRITE_CONTEXT_MESSAGE: &str = "Can't use nullsafe operator in write context";
 const TEMPORARY_WRITE_CONTEXT_MESSAGE: &str = "Cannot use temporary expression in write context";
 const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe chain";
+const MAX_ARRAY_LITERAL_NESTING: usize = 128;
 
 fn nullsafe_write_context_diagnostic(span: SourceSpan) -> Diagnostic {
     Diagnostic::new(NULLSAFE_WRITE_CONTEXT_MESSAGE, Some(span))
@@ -130,6 +131,7 @@ fn parse_with_options(
         active_type_scope: None,
         allow_unscoped_relative_types: 0,
         allow_void_cast_expression: 0,
+        array_literal_depth: 0,
         return_by_ref_stack: Vec::new(),
         property_hook_body_depth: 0,
         active_property_hook_scope: None,
@@ -174,6 +176,7 @@ struct Parser<'a> {
     active_type_scope: Option<ActiveTypeScope>,
     allow_unscoped_relative_types: usize,
     allow_void_cast_expression: usize,
+    array_literal_depth: usize,
     return_by_ref_stack: Vec<bool>,
     property_hook_body_depth: usize,
     active_property_hook_scope: Option<ActivePropertyHookScope>,
@@ -8598,6 +8601,7 @@ impl Parser<'_> {
             allow_standalone_list_array_element: self.allow_standalone_list_array_element,
             active_type_scope: self.active_type_scope.clone(),
             allow_unscoped_relative_types: self.allow_unscoped_relative_types,
+            array_literal_depth: self.array_literal_depth,
             return_by_ref_stack: self.return_by_ref_stack.clone(),
             property_hook_body_depth: self.property_hook_body_depth,
             active_property_hook_scope: self.active_property_hook_scope.clone(),
@@ -9410,7 +9414,11 @@ impl Parser<'_> {
     }
 
     fn parse_array_literal(&mut self, left_span: SourceSpan) -> Result<Expr> {
-        let (elements, right_span) = self.parse_array_elements(TokenKind::RightBracket)?;
+        self.reject_deep_short_array_literal(left_span)?;
+        self.enter_array_literal(left_span)?;
+        let result = self.parse_array_elements(TokenKind::RightBracket);
+        self.leave_array_literal();
+        let (elements, right_span) = result?;
         Ok(Expr::Array {
             elements,
             short_syntax: true,
@@ -9420,12 +9428,60 @@ impl Parser<'_> {
 
     fn parse_long_array_literal(&mut self, start_span: SourceSpan) -> Result<Expr> {
         self.expect_left_paren()?;
-        let (elements, right_span) = self.parse_array_elements(TokenKind::RightParen)?;
+        self.enter_array_literal(start_span)?;
+        let result = self.parse_array_elements(TokenKind::RightParen);
+        self.leave_array_literal();
+        let (elements, right_span) = result?;
         Ok(Expr::Array {
             elements,
             short_syntax: false,
             span: combine_spans(start_span, right_span),
         })
+    }
+
+    fn reject_deep_short_array_literal(&self, left_span: SourceSpan) -> Result<()> {
+        let start = self.index.saturating_sub(1);
+        let mut depth = 0usize;
+        let mut index = start;
+        while let Some(token) = self.tokens.get(index) {
+            match token.kind {
+                TokenKind::LeftBracket => {
+                    depth += 1;
+                    if depth > MAX_ARRAY_LITERAL_NESTING {
+                        return Err(Diagnostic::parse_error(
+                            "memory exhausted",
+                            Some(token.span),
+                        ));
+                    }
+                }
+                TokenKind::RightBracket => {
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(());
+                    }
+                }
+                TokenKind::Eof => return Ok(()),
+                _ => {}
+            }
+            index += 1;
+        }
+        Err(Diagnostic::parse_error("memory exhausted", Some(left_span)))
+    }
+
+    fn enter_array_literal(&mut self, span: SourceSpan) -> Result<()> {
+        if self.array_literal_depth >= MAX_ARRAY_LITERAL_NESTING {
+            return Err(Diagnostic::parse_error("memory exhausted", Some(span)));
+        }
+        self.array_literal_depth += 1;
+        Ok(())
+    }
+
+    fn leave_array_literal(&mut self) {
+        debug_assert!(self.array_literal_depth > 0);
+        self.array_literal_depth = self.array_literal_depth.saturating_sub(1);
     }
 
     fn parse_long_list_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {

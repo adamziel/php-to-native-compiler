@@ -4099,6 +4099,21 @@ fn parser_reports_unexpected_tokens_with_parse_error_spans() {
 }
 
 #[test]
+fn parser_reports_deep_array_literals_as_memory_exhaustion_parse_errors() {
+    let depth = 160;
+    let source = format!(
+        "<?php\nfunction a() {{\n    {}1{};\n}}\n",
+        "[".repeat(depth),
+        "]".repeat(depth)
+    );
+
+    let error = parser::parse(&source).unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "memory exhausted");
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn parser_accepts_ternary_expressions() {
     let program = parser::parse("<?php echo $a > $b ? 1 : -1, $name ?: \"fallback\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -13144,6 +13159,32 @@ fn phpc_renders_spanned_parse_diagnostics_as_php_parse_errors() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: The (real) cast has been removed, use (float) instead in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_deep_array_memory_exhaustion_as_parse_error() {
+    let root = temp_dir("ptn-phpc-deep-array-memory-exhaustion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("deep-array.php");
+    let depth = 160;
+    let source = format!(
+        "<?php\nfunction a() {{\n    {}1{};\n}}\n",
+        "[".repeat(depth),
+        "]".repeat(depth)
+    );
+    fs::write(&input, source).unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: memory exhausted in {} on line 3\n",
             input.display()
         )
     );
