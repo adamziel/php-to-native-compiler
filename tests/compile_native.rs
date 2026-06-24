@@ -43327,6 +43327,76 @@ echo $xml->asXML();
 }
 
 #[test]
+fn compile_modern_dom_selector_methods_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-selector-methods");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-selector-methods.php");
+    let output = root.join("modern-dom-selector-methods-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\XMLDocument::createFromString(<<<'XML'
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <div id="main"/>
+    <input required="required"/>
+    <select/>
+    <input xmlns=""/>
+</html>
+XML);
+
+$all = $dom->querySelectorAll('*');
+var_dump(count($all), $all[0] === $dom->querySelector('*'));
+foreach ([':current(div)', ':required', ':optional'] as $selector) {
+    $matches = $dom->querySelectorAll($selector);
+    $first = $matches[0];
+    echo $selector, ':', count($matches), ':', $first ? $first->nodeName : 'none', "\n";
+    if ($first) {
+        echo $dom->saveXML($first), "\n";
+    }
+    $list = [];
+    foreach ($matches as $node) {
+        $list[] = $node;
+    }
+    foreach ($dom->querySelectorAll('*') as $node) {
+        if (in_array($node, $list, true) !== $node->matches($selector)) {
+            echo "mismatch\n";
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "bool(true)\n",
+            ":current(div):1:div\n",
+            "<div xmlns=\"http://www.w3.org/1999/xhtml\" id=\"main\"></div>\n",
+            ":required:1:input\n",
+            "<input xmlns=\"http://www.w3.org/1999/xhtml\" required=\"required\" />\n",
+            ":optional:1:select\n",
+            "<select xmlns=\"http://www.w3.org/1999/xhtml\"></select>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_query_selector_all_object"));
+    assert!(c_source.contains("ptn_dom_query_selector_matches"));
+}
+
+#[test]
 fn compile_simplexml_declared_entity_debug_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-declared-entity-debug");
     fs::create_dir_all(&root).unwrap();

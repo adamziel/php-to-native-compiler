@@ -22835,7 +22835,7 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("    if (resolved.type == PTN_OBJECT && ptn_ascii_case_equal(ptn_dom_effective_class_name(class_name), \"DOMXPath\")) {\n");
+    out.push_str("    if (resolved.type == PTN_OBJECT && ptn_dom_effective_class_is_modeled(class_name) && ptn_internal_class_method_exists(class_name, method_name)) {\n");
     out.push_str(
         "        return ptn_dom_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
