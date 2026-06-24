@@ -2485,6 +2485,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->tick_enabled = 0;
+    runtime->tick_functions = NULL;
+    runtime->tick_functions_len = 0;
+    runtime->tick_functions_capacity = 0;
+    runtime->tick_functions_running = 0;
     runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;
@@ -2832,6 +2837,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
             (size_t)configured_exception_string_param_max_len;
     }
     runtime->strict_types = 0;
+    runtime->tick_enabled = 0;
     runtime->zend_assertions = 1;
     int64_t configured_zend_assertions = 0;
     if (ptn_parse_int64_env("PTN_ZEND_ASSERTIONS", &configured_zend_assertions)) {

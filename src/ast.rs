@@ -8,6 +8,7 @@ pub struct Program {
     pub statements: Vec<Statement>,
     pub compile_warnings: Vec<CompileWarning>,
     pub strict_types: bool,
+    pub ticks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

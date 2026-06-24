@@ -142,6 +142,7 @@ fn parse_with_options(
         property_hook_body_depth: 0,
         active_property_hook_scope: None,
         strict_types: false,
+        ticks: false,
         strict_types_declare_allowed: true,
         compiler_halt_offset,
         compile_warnings: Vec::new(),
@@ -191,6 +192,7 @@ struct Parser<'a> {
     property_hook_body_depth: usize,
     active_property_hook_scope: Option<ActivePropertyHookScope>,
     strict_types: bool,
+    ticks: bool,
     strict_types_declare_allowed: bool,
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
@@ -569,6 +571,7 @@ impl Parser<'_> {
             statements,
             compile_warnings: self.compile_warnings.clone(),
             strict_types: self.strict_types,
+            ticks: self.ticks,
         })
     }
 
@@ -5472,6 +5475,8 @@ impl Parser<'_> {
         let start_span = self.advance().span;
         self.expect_left_paren()?;
         let mut has_strict_types = false;
+        let mut declared_ticks = None;
+        let ticks_before_declare = self.ticks;
         if !matches!(self.peek().kind, TokenKind::RightParen) {
             loop {
                 let name_token = self.advance().clone();
@@ -5489,6 +5494,11 @@ impl Parser<'_> {
                     }
                     has_strict_types = true;
                     self.strict_types = value != 0;
+                } else if name.eq_ignore_ascii_case("ticks") {
+                    let value = self.parse_declare_int_literal_value(&name, name_token.span)?;
+                    let enabled = value != 0;
+                    declared_ticks = Some(enabled);
+                    self.ticks = enabled;
                 } else {
                     self.parse_declare_literal_value(&name, name_token.span)?;
                 }
@@ -5510,6 +5520,9 @@ impl Parser<'_> {
             let previous_strict_types_declare_allowed =
                 std::mem::replace(&mut self.strict_types_declare_allowed, false);
             let statement = self.parse_compound_block();
+            if declared_ticks.is_some() {
+                self.ticks = ticks_before_declare;
+            }
             self.strict_types_declare_allowed = previous_strict_types_declare_allowed;
             return statement;
         }
@@ -8832,6 +8845,7 @@ impl Parser<'_> {
             property_hook_body_depth: self.property_hook_body_depth,
             active_property_hook_scope: self.active_property_hook_scope.clone(),
             strict_types: self.strict_types,
+            ticks: self.ticks,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
             compiler_halt_offset: None,
             compile_warnings: Vec::new(),
@@ -23250,6 +23264,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "range"
             | "register_shutdown_function"
             | "register_tick_function"
+            | "unregister_tick_function"
             | "arsort"
             | "asort"
             | "krsort"

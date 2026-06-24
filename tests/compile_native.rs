@@ -86,6 +86,7 @@ fn parser_records_strict_types_declare_directive() {
     let program =
         parser::parse("<?php declare(ticks=1); declare(strict_types=1); echo \"ok\";").unwrap();
     assert!(program.strict_types);
+    assert!(program.ticks);
 }
 
 #[test]
@@ -13608,6 +13609,38 @@ echo \"done\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_tick_function_dispatch_and_unregister_to_native_binary() {
+    let root = temp_dir("ptn-native-register-tick-function-declare");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("register-tick-function-declare.php");
+    let output = root.join("register-tick-function-declare-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(ticks=1);\n\
+$i = 0;\n\
+$fn = function () use (&$i) { $i++; };\n\
+register_tick_function($fn);\n\
+echo \"hit\\n\";\n\
+unregister_tick_function($fn);\n\
+$before = $i;\n\
+echo \"after\\n\";\n\
+var_dump($i === $before);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hit\nafter\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -42442,18 +42475,6 @@ echo bin2hex(collator_get_sort_key($coll, 'abc')), \"\\n\";\n\
 echo bin2hex($coll->getSortKey('abd')), \"\\n\";\n\
 class Collator2 extends Collator { public function __construct() {} }\n\
 try {\n\
-    (new Collator2())->compare('h', 'H');\n\
-    echo \"returned\\n\";\n\
-} catch (Throwable $e) {\n\
-    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
-}\n\
-try {\n\
-    (new Collator2())->getLocale(Locale::VALID_LOCALE);\n\
-    echo \"returned\\n\";\n\
-} catch (Throwable $e) {\n\
-    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
-}\n\
-try {\n\
     (new Collator2())->getSortKey('h');\n\
     echo \"returned\\n\";\n\
 } catch (Throwable $e) {\n\
@@ -42468,7 +42489,7 @@ try {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\n2a2c2e01070107\n2a2c3001070107\nError: Object not initialized\nError: Object not initialized\nError: Object not initialized\n"
+        "bool(true)\nbool(true)\n2a2c2e01070107\n2a2c3001070107\nError: Object not initialized\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

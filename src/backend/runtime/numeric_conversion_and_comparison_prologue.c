@@ -125,6 +125,11 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->tick_enabled = caller_runtime->tick_enabled;
+    runtime->tick_functions = NULL;
+    runtime->tick_functions_len = 0;
+    runtime->tick_functions_capacity = 0;
+    runtime->tick_functions_running = 0;
     runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
@@ -279,6 +284,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->exception_ignore_args = caller_runtime->exception_ignore_args;
     runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
     runtime->strict_types = caller_runtime->strict_types;
+    runtime->tick_enabled = caller_runtime->tick_enabled;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
     runtime->zend_assertions = caller_runtime->zend_assertions;
     runtime->assert_active = caller_runtime->assert_active;
@@ -451,6 +457,19 @@ static void ptn_shutdown_function_destroy(PtnShutdownFunction *function) {
     function->argc = 0;
 }
 
+static void ptn_tick_function_destroy(PtnTickFunction *function) {
+    if (function == NULL) {
+        return;
+    }
+    ptn_value_destroy(&function->callback);
+    for (size_t i = 0; i < function->argc; i++) {
+        ptn_value_destroy(&function->args[i]);
+    }
+    free(function->args);
+    function->args = NULL;
+    function->argc = 0;
+}
+
 static PTN_UNUSED void ptn_runtime_register_shutdown_function(
     PtnRuntime *runtime,
     PtnValue callback,
@@ -489,6 +508,144 @@ static PTN_UNUSED void ptn_runtime_register_shutdown_function(
             function->args[i] = ptn_value_clone_deref(args[i]);
         }
     }
+}
+
+static PTN_UNUSED void ptn_runtime_register_tick_function(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root->tick_functions_len == root->tick_functions_capacity) {
+        size_t new_capacity = root->tick_functions_capacity == 0
+            ? 4
+            : root->tick_functions_capacity * 2;
+        if (new_capacity < root->tick_functions_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnTickFunction)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnTickFunction *new_functions = realloc(
+            root->tick_functions,
+            new_capacity * sizeof(PtnTickFunction)
+        );
+        if (new_functions == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->tick_functions = new_functions;
+        root->tick_functions_capacity = new_capacity;
+    }
+    PtnTickFunction *function = &root->tick_functions[root->tick_functions_len++];
+    function->callback = ptn_value_clone(callback);
+    function->argc = argc;
+    function->args = NULL;
+    if (argc != 0) {
+        function->args = malloc(argc * sizeof(PtnValue));
+        if (function->args == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < argc; i++) {
+            function->args[i] = ptn_value_clone_deref(args[i]);
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_tick(PtnRuntime *runtime, size_t line) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (
+        runtime == NULL ||
+        !runtime->tick_enabled ||
+        root->tick_functions_len == 0 ||
+        root->tick_functions_running
+    ) {
+        return;
+    }
+    root->tick_functions_running = 1;
+    size_t limit = root->tick_functions_len;
+    for (size_t i = 0; i < limit && i < root->tick_functions_len; i++) {
+        PtnTickFunction *function = &root->tick_functions[i];
+        PtnValue callback = ptn_value_clone(function->callback);
+        size_t argc = function->argc;
+        PtnValue *call_args = NULL;
+        if (argc != 0) {
+            call_args = malloc(argc * sizeof(PtnValue));
+            if (call_args == NULL) {
+                ptn_value_destroy(&callback);
+                ptn_abort_out_of_memory();
+            }
+            for (size_t j = 0; j < argc; j++) {
+                call_args[j] = ptn_value_clone(function->args[j]);
+            }
+        }
+        PtnValue result = ptn_null();
+        PtnTryFrame callback_frame;
+        PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+        int saved_suppress_user_call_frame_location =
+            runtime->suppress_user_call_frame_location;
+        int saved_warn_by_ref_argument_mismatch =
+            runtime->warn_by_ref_argument_mismatch;
+        int saved_throw_argument_count_errors =
+            runtime->throw_argument_count_errors;
+        ptn_try_frame_push(runtime, &callback_frame);
+        if (setjmp(callback_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &callback_frame);
+            runtime->trace_frame = saved_trace_frame;
+            runtime->suppress_user_call_frame_location =
+                saved_suppress_user_call_frame_location;
+            runtime->warn_by_ref_argument_mismatch =
+                saved_warn_by_ref_argument_mismatch;
+            runtime->throw_argument_count_errors =
+                saved_throw_argument_count_errors;
+            for (size_t j = 0; j < argc; j++) {
+                ptn_value_destroy(&call_args[j]);
+            }
+            free(call_args);
+            ptn_value_destroy(&callback);
+            root->tick_functions_running = 0;
+            ptn_rethrow_exception(runtime);
+        }
+        runtime->suppress_user_call_frame_location = 1;
+        runtime->warn_by_ref_argument_mismatch = 1;
+        runtime->throw_argument_count_errors = 1;
+        result = ptn_call_callable(
+            runtime,
+            callback,
+            argc,
+            call_args,
+            line,
+            0
+        );
+        ptn_try_frame_pop(runtime, &callback_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            saved_throw_argument_count_errors;
+        for (size_t j = 0; j < argc; j++) {
+            ptn_value_destroy(&call_args[j]);
+        }
+        free(call_args);
+        ptn_value_destroy(&callback);
+        ptn_value_destroy(&result);
+        if (runtime->exceptions->active_exception != NULL) {
+            root->tick_functions_running = 0;
+            ptn_rethrow_exception(runtime);
+        }
+    }
+    root->tick_functions_running = 0;
+#else
+    (void)runtime;
+    (void)line;
+#endif
 }
 
 static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
@@ -830,6 +987,14 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->shutdown_function_index = 0;
         runtime->shutdown_functions_running = 0;
         runtime->shutdown_functions_completed = 0;
+        for (size_t i = 0; i < runtime->tick_functions_len; i++) {
+            ptn_tick_function_destroy(&runtime->tick_functions[i]);
+        }
+        free(runtime->tick_functions);
+        runtime->tick_functions = NULL;
+        runtime->tick_functions_len = 0;
+        runtime->tick_functions_capacity = 0;
+        runtime->tick_functions_running = 0;
         free(runtime->strtok_string);
         runtime->strtok_string = NULL;
         runtime->strtok_len = 0;

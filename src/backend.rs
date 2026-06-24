@@ -362,6 +362,9 @@ pub fn emit_c(module: &Module) -> String {
     if module.strict_types {
         out.push_str("    runtime.strict_types = 1;\n");
     }
+    if module.ticks {
+        out.push_str("    runtime.tick_enabled = 1;\n");
+    }
     if needs_method_dispatch {
         out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
         out.push_str(
@@ -614,7 +617,7 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
             | Instruction::EarlyDeclareClass { .. }
             | Instruction::DeclareClass { .. }
             | Instruction::ValidateClass { .. } => {}
-            Instruction::Store { name, value } => {
+            Instruction::Store { name, value, .. } => {
                 if let Some((callable, array, line)) = optimized_array_map_call_parts(value) {
                     emit_opcache_array_map_foreach(
                         &mut dump,
@@ -4365,6 +4368,7 @@ fn emit_include_helpers(
             "    size_t ptn_previous_source_snapshot_len = runtime.source_snapshot_len;\n",
         );
         out.push_str("    int ptn_previous_strict_types = runtime.strict_types;\n");
+        out.push_str("    int ptn_previous_tick_enabled = runtime.tick_enabled;\n");
         out.push_str("    runtime.source_path = \"");
         out.push_str(&c_string(&include.source_file));
         out.push_str("\";\n");
@@ -4377,6 +4381,9 @@ fn emit_include_helpers(
         out.push_str("    runtime.compiled_include_depth++;\n");
         out.push_str("    runtime.strict_types = ");
         out.push_str(if include.strict_types { "1" } else { "0" });
+        out.push_str(";\n");
+        out.push_str("    runtime.tick_enabled = ");
+        out.push_str(if include.ticks { "1" } else { "0" });
         out.push_str(";\n");
         out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
@@ -4417,6 +4424,7 @@ fn emit_include_helpers(
         out.push_str("    runtime.source_snapshot_data = ptn_previous_source_snapshot_data;\n");
         out.push_str("    runtime.source_snapshot_len = ptn_previous_source_snapshot_len;\n");
         out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
+        out.push_str("    runtime.tick_enabled = ptn_previous_tick_enabled;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
@@ -14209,6 +14217,7 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
         Instruction::Store {
             name: target,
             value,
+            ..
         } => target == name || value_mentions_variable(value, name),
         Instruction::StoreRef {
             name: target,
@@ -14326,7 +14335,7 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
         | Instruction::Goto { .. } => false,
         Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
-        | Instruction::Echo(value)
+        | Instruction::Echo { value, .. }
         | Instruction::Throw { value, .. } => value_mentions_variable(value, name),
         Instruction::InternalCall { arguments, .. } => arguments
             .iter()
@@ -25107,7 +25116,7 @@ fn emit_instruction(
     label_scope: Option<&LabelScope<'_>>,
 ) {
     match instruction {
-        Instruction::Store { name, value } => {
+        Instruction::Store { name, value, .. } => {
             values.update_generator_yield_assignment_variable(name, value);
             let emitted_value = values.emit_materialized_value(out, value);
             if name == "GLOBALS" {
@@ -25561,9 +25570,9 @@ fn emit_instruction(
                 );
             }
         }
-        Instruction::Echo(value) => {
+        Instruction::Echo { value, line } => {
             let emitted_value = values.emit_materialized_value(out, value);
-            let line = value_expr_runtime_line(value).unwrap_or(0);
+            let line = value_expr_runtime_line(value).unwrap_or(*line);
             out.push_str("    ptn_echo(&runtime, ");
             out.push_str(&emitted_value);
             out.push_str(", ");
@@ -26885,6 +26894,11 @@ fn emit_instruction(
                 out.push_str(");\n");
             }
         }
+    }
+    if let Some(line) = instruction_runtime_line(instruction) {
+        out.push_str("    ptn_runtime_tick(&runtime, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
     }
 }
 
@@ -29478,7 +29492,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::Store { value, .. }
         | Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
-        | Instruction::Echo(value) => {
+        | Instruction::Echo { value, .. } => {
             collect_value_legacy_dollar_brace_deprecations(value, deprecations);
         }
         Instruction::BindStatic {
@@ -30250,7 +30264,7 @@ fn collect_instruction_runtime_requirements(
     requirements: &mut RuntimeRequirements,
 ) {
     match instruction {
-        Instruction::Store { name, value } => {
+        Instruction::Store { name, value, .. } => {
             if variable_needs_request_context(name) {
                 requirements.request_context = true;
             }
@@ -30263,7 +30277,7 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
-        | Instruction::Echo(value) => {
+        | Instruction::Echo { value, .. } => {
             collect_value_runtime_requirements(value, functions, requirements);
         }
         Instruction::BindStatic {
@@ -33094,9 +33108,11 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")
         || name.eq_ignore_ascii_case("register_shutdown_function")
+        || name.eq_ignore_ascii_case("register_tick_function")
         || name.eq_ignore_ascii_case("serialize")
         || name.eq_ignore_ascii_case("spl_autoload_call")
         || name.eq_ignore_ascii_case("spl_autoload_register")
+        || name.eq_ignore_ascii_case("unregister_tick_function")
         || name.eq_ignore_ascii_case("unserialize")
 }
 
@@ -34760,7 +34776,7 @@ fn array_dim_target_line(target: &crate::ir::ArrayDimTarget) -> Option<usize> {
 
 fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
     match instruction {
-        Instruction::Store { value, .. } => value_expr_runtime_line(value),
+        Instruction::Store { value, line, .. } => value_expr_runtime_line(value).or(Some(*line)),
         Instruction::StoreRef { line, .. }
         | Instruction::StoreArrayDim { line, .. }
         | Instruction::Increment { line, .. }
@@ -34788,7 +34804,8 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         Instruction::StoreArrayDimRef { target, source } => {
             array_dim_target_line(target).or_else(|| value_expr_runtime_line(source))
         }
-        Instruction::Expression(value) | Instruction::Echo(value) => value_expr_runtime_line(value),
+        Instruction::Expression(value) => value_expr_runtime_line(value),
+        Instruction::Echo { value, line } => value_expr_runtime_line(value).or(Some(*line)),
         Instruction::Branch { condition, .. }
         | Instruction::While { condition, .. }
         | Instruction::DoWhile { condition, .. } => value_expr_runtime_line(condition),
@@ -35429,7 +35446,9 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
             value: receiver, ..
         }
         | Instruction::Expression(receiver)
-        | Instruction::Echo(receiver)
+        | Instruction::Echo {
+            value: receiver, ..
+        }
         | Instruction::Throw {
             value: receiver, ..
         } => value_expr_uses_this(receiver),

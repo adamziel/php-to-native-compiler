@@ -34,6 +34,7 @@ pub struct Module {
     pub source_dir: String,
     pub source_bytes: Vec<u8>,
     pub strict_types: bool,
+    pub ticks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +58,7 @@ pub struct IncludeFile {
     pub source_bytes: Vec<u8>,
     pub path_aliases: Vec<String>,
     pub strict_types: bool,
+    pub ticks: bool,
     pub instructions: Vec<Instruction>,
     pub compile_warnings: Vec<CompileWarning>,
 }
@@ -347,6 +349,7 @@ pub enum Instruction {
     Store {
         name: String,
         value: ValueExpr,
+        line: usize,
     },
     StoreRef {
         name: String,
@@ -467,7 +470,10 @@ pub enum Instruction {
         line: usize,
     },
     Expression(ValueExpr),
-    Echo(ValueExpr),
+    Echo {
+        value: ValueExpr,
+        line: usize,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -1122,6 +1128,7 @@ pub fn lower_with_source_and_includes(
         source_dir,
         source_bytes,
         strict_types: program.strict_types,
+        ticks: program.ticks,
     }
 }
 
@@ -1524,6 +1531,7 @@ impl<'a> LoweringContext<'a> {
             source_bytes: include.source_bytes.clone(),
             path_aliases: include.path_aliases.clone(),
             strict_types: include.program.strict_types,
+            ticks: include.program.ticks,
             instructions,
             compile_warnings: lower_compile_warnings(&include.program.compile_warnings),
         }
@@ -2192,6 +2200,7 @@ impl<'a> LoweringContext<'a> {
                         instructions.push(Instruction::Store {
                             name: name.clone(),
                             value: self.lower_expr(value),
+                            line: span.line,
                         });
                     } else {
                         instructions.push(Instruction::Expression(ValueExpr::Assign {
@@ -2316,9 +2325,12 @@ impl<'a> LoweringContext<'a> {
                         });
                     }
                 }
-                Statement::Echo { expressions, .. } => {
+                Statement::Echo { expressions, span } => {
                     for expression in expressions {
-                        instructions.push(Instruction::Echo(self.lower_expr(expression)));
+                        instructions.push(Instruction::Echo {
+                            value: self.lower_expr(expression),
+                            line: span.line,
+                        });
                     }
                 }
                 Statement::Print { expression, .. } => {
@@ -2332,8 +2344,11 @@ impl<'a> LoweringContext<'a> {
                     }
                     instructions.push(Instruction::Expression(self.lower_expr(expression)));
                 }
-                Statement::InlineHtml { content, .. } => {
-                    instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
+                Statement::InlineHtml { content, span } => {
+                    instructions.push(Instruction::Echo {
+                        value: ValueExpr::String(content.clone()),
+                        line: span.line,
+                    });
                 }
                 Statement::If {
                     condition,

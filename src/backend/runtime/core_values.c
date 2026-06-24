@@ -1093,6 +1093,12 @@ typedef struct {
 } PtnShutdownFunction;
 
 typedef struct {
+    PtnValue callback;
+    PtnValue *args;
+    size_t argc;
+} PtnTickFunction;
+
+typedef struct {
     size_t function_index;
     const char *name;
     PtnReference *reference;
@@ -1499,6 +1505,11 @@ struct PtnRuntime {
     int shutdown_functions_running;
     int shutdown_functions_completed;
     int shutdown_in_progress;
+    int tick_enabled;
+    PtnTickFunction *tick_functions;
+    size_t tick_functions_len;
+    size_t tick_functions_capacity;
+    int tick_functions_running;
     int defer_uncaught_exception_emit;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;

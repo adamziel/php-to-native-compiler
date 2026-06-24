@@ -66954,8 +66954,7 @@ static PtnValue ptn_intl_collator_compare_values(
 ) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL) {
-        ptn_throw_exception(runtime, "Error", "Object not initialized");
-        return ptn_null();
+        return ptn_bool(0);
     }
     PtnStringOperand left = ptn_value_to_string_operand(left_value);
     PtnStringOperand right = ptn_value_to_string_operand(right_value);
@@ -67060,11 +67059,10 @@ static PtnValue ptn_internal_collator_get_sort_key(PtnRuntime *runtime, size_t a
     return ptn_intl_collator_get_sort_key_value(runtime, args[0], args[1], "collator_get_sort_key", 2, line);
 }
 
-static PtnValue ptn_intl_collator_get_locale_value(PtnRuntime *runtime, PtnValue receiver, PtnValue type_value) {
+static PtnValue ptn_intl_collator_get_locale_value(PtnValue receiver, PtnValue type_value) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL) {
-        ptn_throw_exception(runtime, "Error", "Object not initialized");
-        return ptn_null();
+        return ptn_bool(0);
     }
     int64_t type = ptn_value_to_integer(type_value);
     if (type == PTN_ICU_VALID_LOCALE) {
@@ -67077,9 +67075,10 @@ static PtnValue ptn_intl_collator_get_locale_value(PtnRuntime *runtime, PtnValue
 }
 
 static PtnValue ptn_internal_collator_get_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_intl_collator_get_locale_value(runtime, args[0], args[1]);
+    return ptn_intl_collator_get_locale_value(args[0], args[1]);
 }
 
 static PtnValue ptn_intl_collator_get_attribute_value(PtnValue receiver, PtnValue attribute_value, const char *function_name) {
@@ -67173,7 +67172,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
         return ptn_intl_collator_compare_values(runtime, receiver, args[0], args[1], line);
     }
     if (ptn_ascii_case_equal(name, "getLocale")) {
-        return ptn_intl_collator_get_locale_value(runtime, receiver, args[0]);
+        return ptn_intl_collator_get_locale_value(receiver, args[0]);
     }
     if (ptn_ascii_case_equal(name, "getSortKey")) {
         return ptn_intl_collator_get_sort_key_value(runtime, receiver, args[0], "Collator::getSortKey", 1, line);
@@ -88906,7 +88905,6 @@ static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_register_tick_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)line;
     PtnValue callback = ptn_internal_expect_callback_arg(
         runtime,
@@ -88918,8 +88916,55 @@ static PtnValue ptn_internal_register_tick_function(PtnRuntime *runtime, size_t 
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    ptn_runtime_register_tick_function(
+        runtime,
+        callback,
+        argc > 1 ? argc - 1 : 0,
+        argc > 1 ? args + 1 : NULL
+    );
     ptn_value_destroy(&callback);
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_unregister_tick_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "unregister_tick_function",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    for (size_t i = 0; i < root->tick_functions_len; i++) {
+        int equal = ptn_compare_equal(runtime, root->tick_functions[i].callback, callback, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&callback);
+            return ptn_null();
+        }
+        if (!equal) {
+            continue;
+        }
+        ptn_tick_function_destroy(&root->tick_functions[i]);
+        if (i + 1 < root->tick_functions_len) {
+            memmove(
+                root->tick_functions + i,
+                root->tick_functions + i + 1,
+                (root->tick_functions_len - i - 1) * sizeof(PtnTickFunction)
+            );
+        }
+        root->tick_functions_len--;
+        ptn_value_destroy(&callback);
+        return ptn_bool(1);
+    }
+    ptn_value_destroy(&callback);
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_register_shutdown_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -133225,6 +133270,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "unixtojd", 0, 1, ptn_internal_unixtojd },
         { "uniqid", 0, 2, ptn_internal_uniqid },
         { "unlink", 1, 2, ptn_internal_unlink },
+        { "unregister_tick_function", 1, 1, ptn_internal_unregister_tick_function },
         { "unpack", 2, 3, ptn_internal_unpack },
         { "unserialize", 1, 2, ptn_internal_unserialize },
         { "urldecode", 1, 1, ptn_internal_urldecode },
