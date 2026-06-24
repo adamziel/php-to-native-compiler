@@ -41905,6 +41905,65 @@ echo $xml->asXML();
 }
 
 #[test]
+fn compile_dom_class_name_collection_and_simplexml_import_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-class-name-simplexml-import");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-class-name-simplexml-import.php");
+    let output = root.join("dom-class-name-simplexml-import-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\HTMLDocument::createFromString('<div><p id="child" class=" foo bar "></p><p class="foo"></p></div>', LIBXML_NOERROR);
+$empty = $dom->documentElement->getElementsByClassName("");
+var_dump($empty->count());
+var_dump($dom->getElementsByClassName(" ")->count());
+$matches = $dom->getElementsByClassName("foo bar");
+var_dump($matches->count());
+var_dump($matches->namedItem("child")->getAttribute("id"));
+
+$sxe = simplexml_load_string('<container xmlns="urn:a">foo</container>');
+$element = Dom\import_simplexml($sxe);
+var_dump($element->attributes->length);
+echo $element->ownerDocument->saveXML($element), "\n";
+$element->appendChild($element->ownerDocument->createElementNS('urn:a', 'child'));
+$sxe->addChild('name', 'value');
+echo $element->ownerDocument->saveXML($element), "\n";
+try {
+    dom_import_simplexml($sxe);
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+var_dump(Dom\import_simplexml($sxe) === $element);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "string(5) \"child\"\n",
+            "int(1)\n",
+            "<container xmlns=\"urn:a\">foo</container>\n",
+            "<container xmlns=\"urn:a\">foo<child/><name>value</name></container>\n",
+            "dom_import_simplexml(): Argument #1 ($node) must not be already imported as a Dom\\Node\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_get_elements_by_class_name_object"));
+    assert!(c_source.contains("ptn_internal_modern_dom_import_simplexml"));
+}
+
+#[test]
 fn compile_simplexml_declared_entity_debug_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-declared-entity-debug");
     fs::create_dir_all(&root).unwrap();

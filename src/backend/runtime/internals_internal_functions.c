@@ -97546,6 +97546,7 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos);
 static size_t ptn_xml_node_list_length(PtnXmlNodeListData *list);
 static PtnXmlNode *ptn_xml_node_list_item(PtnXmlNodeListData *list, size_t index);
 static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node);
+static int ptn_xml_node_matches_class_names(PtnXmlNode *node, const char *class_names);
 static void ptn_xml_append_text_content(PtnStringBuffer *buffer, PtnXmlNode *node);
 static char *ptn_xml_parser_decode_entities(PtnXmlParserData *parser, const char *data, size_t len, size_t *decoded_len);
 static PtnXmlReaderEvent *ptn_xml_reader_current_event(PtnXmlReaderData *data);
@@ -131810,6 +131811,10 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "libxml_")) {
         return "libxml";
+    }
+    if (ptn_ascii_case_equal(name, "dom_import_simplexml") ||
+        ptn_ascii_case_equal(name, "Dom\\import_simplexml")) {
+        return "dom";
     }
     if (ptn_internal_function_name_has_prefix(name, "preg_")) {
         return "pcre";

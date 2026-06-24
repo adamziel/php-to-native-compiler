@@ -3321,6 +3321,8 @@ static PTN_UNUSED PtnValue ptn_simplexml_clone(PtnRuntime *runtime, PtnValue sou
 static PTN_UNUSED int ptn_simplexml_is_truthy(PtnValue value, int *truthy_out);
 static PTN_UNUSED int ptn_simplexml_numeric_value(PtnValue value, PtnNumber *number_out);
 static PTN_UNUSED int ptn_simplexml_property_is_set(PtnValue receiver, const char *property, int *isset_out);
+static PtnValue ptn_internal_dom_import_simplexml(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_modern_dom_import_simplexml(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_simplexml_load_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_uri_call_method(
