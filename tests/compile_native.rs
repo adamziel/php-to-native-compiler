@@ -74963,6 +74963,89 @@ try {
 }
 
 #[test]
+fn compile_parent_property_hook_fallback_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-parent-property-hook-fallback-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parent-property-hook-fallback-diagnostics.php");
+    let output = root.join("parent-property-hook-fallback-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+class NoParentHookFallback {
+    public $prop {
+        get => parent::$prop::get();
+    }
+}
+
+$noParent = new NoParentHookFallback();
+try {
+    var_dump($noParent->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+class ParentWithoutHookProp {}
+
+class ChildWithMissingParentHookProp extends ParentWithoutHookProp {
+    public $prop {
+        get {
+            return parent::$prop::get();
+        }
+    }
+}
+
+$missing = new ChildWithMissingParentHookProp();
+try {
+    var_dump($missing->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+class PrivateParentHookProp {
+    private int $prop;
+}
+
+class ChildWithPrivateParentHookProp extends PrivateParentHookProp {
+    public int $prop {
+        get => parent::$prop::get();
+    }
+}
+
+$private = new ChildWithPrivateParentHookProp();
+try {
+    var_dump($private->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot use \"parent\" when current class scope has no parent\n",
+            "Undefined property ParentWithoutHookProp::$prop\n",
+            "Cannot access private property PrivateParentHookProp::$prop\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_metadata"));
+    assert!(c_source.contains("Cannot access %s property %s::$prop"));
+}
+
+#[test]
 fn compile_braced_property_hook_getters_to_native_binary() {
     let root = temp_dir("ptn-native-braced-property-hook-getters");
     fs::create_dir_all(&root).unwrap();

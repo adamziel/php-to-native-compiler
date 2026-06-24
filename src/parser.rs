@@ -3537,6 +3537,13 @@ impl Parser<'_> {
                         hooks.has_get = true;
                         if uses_backing_property {
                             hooks.is_virtual = false;
+                            if !expr_is_property_hook_backing_identity(&value, property_name) {
+                                let span = value.span();
+                                hooks.get_body = Some(vec![Statement::Return {
+                                    value: Some(value),
+                                    span,
+                                }]);
+                            }
                         } else {
                             hooks.get_value = Some(value);
                         }
@@ -27572,6 +27579,18 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
+    }
+}
+
+fn expr_is_property_hook_backing_identity(expr: &Expr, property_name: &str) -> bool {
+    match expr {
+        Expr::PropertyFetch { receiver, name, .. } => {
+            name == property_name
+                && matches!(receiver.as_ref(), Expr::Variable(variable, _) if variable.eq_ignore_ascii_case("this"))
+        }
+        Expr::Variable(name, _) => name.eq_ignore_ascii_case("field"),
+        Expr::Grouped { expr, .. } => expr_is_property_hook_backing_identity(expr, property_name),
+        _ => false,
     }
 }
 

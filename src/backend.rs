@@ -7585,6 +7585,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);\n");
+    out.push_str("static int ptn_declared_class_property_metadata(const char *class_name, const char *property_name, const char **declaring_class_out, int *visibility_out, int *set_visibility_out, int *is_static_out);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_enum_cases(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_non_public_debug_info(const char *name);\n");
@@ -9509,6 +9510,59 @@ fn emit_class_metadata_helpers(
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(property.name));
             out.push_str("\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_property_metadata(const char *class_name, const char *property_name, const char **declaring_class_out, int *visibility_out, int *set_visibility_out, int *is_static_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)declaring_class_out;\n");
+        out.push_str("    (void)visibility_out;\n");
+        out.push_str("    (void)set_visibility_out;\n");
+        out.push_str("    (void)is_static_out;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            if (declaring_class_out != NULL) {\n");
+            out.push_str("                *declaring_class_out = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (visibility_out != NULL) {\n");
+            out.push_str("                *visibility_out = ");
+            out.push_str(c_property_visibility(entry.visibility));
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (set_visibility_out != NULL) {\n");
+            out.push_str("                *set_visibility_out = ");
+            out.push_str(c_property_visibility(entry.set_visibility));
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (is_static_out != NULL) {\n");
+            out.push_str("                *is_static_out = ");
+            out.push_str(if entry.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            }\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -45126,6 +45180,68 @@ impl ValueEmitter {
         )
     }
 
+    fn emit_parent_property_hook_fallback_property_check(
+        &self,
+        out: &mut String,
+        handled_temp: &str,
+        parent_class_temp: &str,
+        property_name: &str,
+        line: usize,
+        for_write: bool,
+    ) {
+        out.push_str("        if (runtime.exceptions->active_exception == NULL && !");
+        out.push_str(handled_temp);
+        out.push_str("_handled) {\n");
+        out.push_str("            const char *ptn_parent_hook_declaring_class = NULL;\n");
+        out.push_str("            int ptn_parent_hook_visibility = PTN_PROPERTY_PUBLIC;\n");
+        out.push_str("            int ptn_parent_hook_set_visibility = PTN_PROPERTY_PUBLIC;\n");
+        out.push_str("            int ptn_parent_hook_is_static = 0;\n");
+        out.push_str("            if (!ptn_declared_class_property_metadata(");
+        out.push_str(parent_class_temp);
+        out.push_str("_class_name, \"");
+        out.push_str(&c_string(property_name));
+        out.push_str("\", &ptn_parent_hook_declaring_class, &ptn_parent_hook_visibility, &ptn_parent_hook_set_visibility, &ptn_parent_hook_is_static) || ptn_parent_hook_is_static) {\n");
+        out.push_str("                char ptn_parent_hook_message[512];\n");
+        out.push_str("                int ptn_parent_hook_written = snprintf(ptn_parent_hook_message, sizeof(ptn_parent_hook_message), \"Undefined property %s::$");
+        out.push_str(&c_string(property_name));
+        out.push_str("\", ");
+        out.push_str(parent_class_temp);
+        out.push_str("_class_name);\n");
+        out.push_str("                if (ptn_parent_hook_written < 0 || (size_t)ptn_parent_hook_written >= sizeof(ptn_parent_hook_message)) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str("                ptn_throw_exception_at(&runtime, \"Error\", ptn_parent_hook_message, \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("            } else {\n");
+        out.push_str("                int ptn_parent_hook_access_visibility = ");
+        out.push_str(if for_write {
+            "ptn_parent_hook_set_visibility"
+        } else {
+            "ptn_parent_hook_visibility"
+        });
+        out.push_str(";\n");
+        out.push_str("                if (!ptn_declared_method_visibility_allows(runtime.current_class_name, ptn_parent_hook_declaring_class, ptn_parent_hook_access_visibility)) {\n");
+        out.push_str("                    const char *ptn_parent_hook_visibility_name = ptn_parent_hook_access_visibility == PTN_PROPERTY_PRIVATE ? \"private\" : (ptn_parent_hook_access_visibility == PTN_PROPERTY_PROTECTED ? \"protected\" : \"public\");\n");
+        out.push_str("                    char ptn_parent_hook_message[512];\n");
+        out.push_str("                    int ptn_parent_hook_written = snprintf(ptn_parent_hook_message, sizeof(ptn_parent_hook_message), \"Cannot access %s property %s::$");
+        out.push_str(&c_string(property_name));
+        out.push_str("\", ptn_parent_hook_visibility_name, ptn_parent_hook_declaring_class);\n");
+        out.push_str("                    if (ptn_parent_hook_written < 0 || (size_t)ptn_parent_hook_written >= sizeof(ptn_parent_hook_message)) {\n");
+        out.push_str("                        ptn_abort_out_of_memory();\n");
+        out.push_str("                    }\n");
+        out.push_str("                    ptn_throw_exception_at(&runtime, \"Error\", ptn_parent_hook_message, \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("                }\n");
+        out.push_str("            }\n");
+        out.push_str("        }\n");
+    }
+
     fn emit_parent_property_hook_call(
         &mut self,
         out: &mut String,
@@ -45237,6 +45353,16 @@ impl ValueEmitter {
             out.push_str(", &");
             out.push_str(&result_temp);
             out.push_str(");\n");
+            if arguments.is_empty() {
+                self.emit_parent_property_hook_fallback_property_check(
+                    out,
+                    &handled_temp,
+                    &parent_class_temp,
+                    property_name,
+                    line,
+                    false,
+                );
+            }
             out.push_str("        if (runtime.exceptions->active_exception == NULL && !");
             out.push_str(&handled_temp);
             out.push_str("_handled) {\n");
@@ -45301,6 +45427,16 @@ impl ValueEmitter {
                 out.push_str(");\n");
             }
             out.push_str("        }\n");
+            if arguments.len() == 1 {
+                self.emit_parent_property_hook_fallback_property_check(
+                    out,
+                    &handled_temp,
+                    &parent_class_temp,
+                    property_name,
+                    line,
+                    true,
+                );
+            }
             out.push_str("        if (runtime.exceptions->active_exception == NULL && !");
             out.push_str(&handled_temp);
             out.push_str("_handled) {\n");
