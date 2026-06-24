@@ -124768,6 +124768,272 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     return ptn_null();
 }
 
+typedef struct PtnZipProceduralEntry {
+    char *name;
+} PtnZipProceduralEntry;
+
+typedef struct PtnZipProceduralArchive {
+    PtnZipProceduralEntry *entries;
+    size_t entry_count;
+    size_t cursor;
+} PtnZipProceduralArchive;
+
+typedef struct PtnZipProceduralEntryData {
+    char *name;
+    int is_open;
+} PtnZipProceduralEntryData;
+
+static uint16_t ptn_zip_read_u16le(const unsigned char *data) {
+    return (uint16_t)data[0] | (uint16_t)((uint16_t)data[1] << 8);
+}
+
+static uint32_t ptn_zip_read_u32le(const unsigned char *data) {
+    return (uint32_t)data[0] |
+        ((uint32_t)data[1] << 8) |
+        ((uint32_t)data[2] << 16) |
+        ((uint32_t)data[3] << 24);
+}
+
+static void ptn_zip_procedural_archive_free_data(PtnZipProceduralArchive *archive) {
+    if (archive == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        free(archive->entries[i].name);
+    }
+    free(archive->entries);
+    free(archive);
+}
+
+static void ptn_zip_procedural_archive_close(PtnResource *resource, void *data) {
+    (void)resource;
+    (void)data;
+}
+
+static void ptn_zip_procedural_archive_free(void *data) {
+    ptn_zip_procedural_archive_free_data((PtnZipProceduralArchive *)data);
+}
+
+static void ptn_zip_procedural_entry_close(PtnResource *resource, void *data) {
+    (void)resource;
+    PtnZipProceduralEntryData *entry = (PtnZipProceduralEntryData *)data;
+    if (entry != NULL) {
+        entry->is_open = 0;
+    }
+}
+
+static void ptn_zip_procedural_entry_free(void *data) {
+    PtnZipProceduralEntryData *entry = (PtnZipProceduralEntryData *)data;
+    if (entry == NULL) {
+        return;
+    }
+    free(entry->name);
+    free(entry);
+}
+
+static PtnZipProceduralArchive *ptn_zip_parse_central_directory(const unsigned char *data, size_t len) {
+    if (data == NULL || len < 22) {
+        return NULL;
+    }
+    size_t max_comment = len < 0xffff + 22 ? len - 22 : 0xffff;
+    size_t eocd_offset = SIZE_MAX;
+    for (size_t back = 0; back <= max_comment; back++) {
+        size_t offset = len - 22 - back;
+        if (ptn_zip_read_u32le(data + offset) == 0x06054b50u) {
+            eocd_offset = offset;
+            break;
+        }
+    }
+    if (eocd_offset == SIZE_MAX || eocd_offset + 22 > len) {
+        return NULL;
+    }
+    uint16_t disk_number = ptn_zip_read_u16le(data + eocd_offset + 4);
+    uint16_t central_directory_disk = ptn_zip_read_u16le(data + eocd_offset + 6);
+    uint16_t disk_entries = ptn_zip_read_u16le(data + eocd_offset + 8);
+    uint16_t total_entries = ptn_zip_read_u16le(data + eocd_offset + 10);
+    uint32_t central_directory_size = ptn_zip_read_u32le(data + eocd_offset + 12);
+    uint32_t central_directory_offset = ptn_zip_read_u32le(data + eocd_offset + 16);
+    uint16_t comment_len = ptn_zip_read_u16le(data + eocd_offset + 20);
+    if (disk_number != 0 ||
+        central_directory_disk != 0 ||
+        disk_entries != total_entries ||
+        eocd_offset + 22 + (size_t)comment_len > len ||
+        (size_t)central_directory_offset > len ||
+        (size_t)central_directory_size > len - (size_t)central_directory_offset) {
+        return NULL;
+    }
+    PtnZipProceduralArchive *archive = calloc(1, sizeof(PtnZipProceduralArchive));
+    if (archive == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (total_entries > 0) {
+        archive->entries = calloc((size_t)total_entries, sizeof(PtnZipProceduralEntry));
+        if (archive->entries == NULL) {
+            free(archive);
+            ptn_abort_out_of_memory();
+        }
+    }
+    size_t cursor = (size_t)central_directory_offset;
+    size_t central_directory_end = cursor + (size_t)central_directory_size;
+    while (archive->entry_count < (size_t)total_entries) {
+        if (cursor + 46 > central_directory_end ||
+            ptn_zip_read_u32le(data + cursor) != 0x02014b50u) {
+            ptn_zip_procedural_archive_free_data(archive);
+            return NULL;
+        }
+        uint16_t name_len = ptn_zip_read_u16le(data + cursor + 28);
+        uint16_t extra_len = ptn_zip_read_u16le(data + cursor + 30);
+        uint16_t entry_comment_len = ptn_zip_read_u16le(data + cursor + 32);
+        size_t record_len = 46u + (size_t)name_len + (size_t)extra_len + (size_t)entry_comment_len;
+        if (record_len > central_directory_end - cursor) {
+            ptn_zip_procedural_archive_free_data(archive);
+            return NULL;
+        }
+        archive->entries[archive->entry_count].name = ptn_duplicate_string_len((const char *)data + cursor + 46, name_len);
+        archive->entry_count++;
+        cursor += record_len;
+    }
+    return archive;
+}
+
+static PtnZipProceduralArchive *ptn_zip_archive_from_resource(PtnResource *resource) {
+    if (resource == NULL || strcmp(resource->type_name, "zip") != 0) {
+        return NULL;
+    }
+    return (PtnZipProceduralArchive *)resource->close_hook_data;
+}
+
+static PtnZipProceduralEntryData *ptn_zip_entry_from_resource(PtnResource *resource) {
+    if (resource == NULL || strcmp(resource->type_name, "zip entry") != 0) {
+        return NULL;
+    }
+    return (PtnZipProceduralEntryData *)resource->close_hook_data;
+}
+
+static void ptn_zip_emit_deprecation(PtnRuntime *runtime, const char *message, size_t line) {
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_internal_zip_open(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_zip_emit_deprecation(
+        runtime,
+        "Function zip_open() is deprecated since 8.0, use ZipArchive::open() instead",
+        line
+    );
+    PtnStringOperand filename = ptn_internal_expect_string_arg(runtime, "zip_open", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(filename);
+        return ptn_null();
+    }
+    if (filename.len == 0) {
+        ptn_string_operand_free(filename);
+        ptn_throw_exception(runtime, "ValueError", "zip_open(): Argument #1 ($filename) must not be empty");
+        return ptn_null();
+    }
+    char *path = ptn_duplicate_string_len(filename.data, filename.len);
+    ptn_string_operand_free(filename);
+    unsigned char *bytes = NULL;
+    size_t len = 0;
+    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    free(path);
+    if (read_result <= 0) {
+        free(bytes);
+        return ptn_bool(0);
+    }
+    PtnZipProceduralArchive *archive = ptn_zip_parse_central_directory(bytes, len);
+    free(bytes);
+    if (archive == NULL) {
+        return ptn_bool(0);
+    }
+    PtnResource *resource = ptn_resource_new_named("zip");
+    resource->close_hook = ptn_zip_procedural_archive_close;
+    resource->close_hook_data = archive;
+    resource->close_hook_data_free = ptn_zip_procedural_archive_free;
+    return ptn_resource(resource);
+}
+
+static PtnValue ptn_internal_zip_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_zip_emit_deprecation(
+        runtime,
+        "Function zip_read() is deprecated since 8.0, use ZipArchive::statIndex() instead",
+        line
+    );
+    PtnResource *resource = ptn_internal_expect_resource_of_type(runtime, "zip_read", 1, "zip", args[0], "zip");
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnZipProceduralArchive *archive = ptn_zip_archive_from_resource(resource);
+    if (archive == NULL || archive->cursor >= archive->entry_count) {
+        return ptn_bool(0);
+    }
+    PtnZipProceduralEntryData *entry = calloc(1, sizeof(PtnZipProceduralEntryData));
+    if (entry == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    entry->name = ptn_duplicate_string(archive->entries[archive->cursor].name == NULL ? "" : archive->entries[archive->cursor].name);
+    entry->is_open = 0;
+    archive->cursor++;
+    PtnResource *entry_resource = ptn_resource_new_named("zip entry");
+    entry_resource->close_hook = ptn_zip_procedural_entry_close;
+    entry_resource->close_hook_data = entry;
+    entry_resource->close_hook_data_free = ptn_zip_procedural_entry_free;
+    return ptn_resource(entry_resource);
+}
+
+static PtnValue ptn_internal_zip_entry_open(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    ptn_zip_emit_deprecation(runtime, "Function zip_entry_open() is deprecated since 8.0", line);
+    PtnResource *zip = ptn_internal_expect_resource_of_type(runtime, "zip_entry_open", 1, "zip", args[0], "zip");
+    if (zip == NULL) {
+        return ptn_null();
+    }
+    PtnResource *entry_resource = ptn_internal_expect_resource_of_type(runtime, "zip_entry_open", 2, "zip_entry", args[1], "zip entry");
+    if (entry_resource == NULL) {
+        return ptn_null();
+    }
+    if (argc >= 3) {
+        PtnStringOperand mode = ptn_internal_expect_string_arg(runtime, "zip_entry_open", 3, "mode", args[2], line);
+        ptn_string_operand_free(mode);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    (void)zip;
+    PtnZipProceduralEntryData *entry = ptn_zip_entry_from_resource(entry_resource);
+    if (entry == NULL) {
+        return ptn_bool(0);
+    }
+    entry->is_open = 1;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_zip_entry_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_zip_emit_deprecation(runtime, "Function zip_entry_close() is deprecated since 8.0", line);
+    PtnResource *resource = ptn_internal_expect_resource_of_type(runtime, "zip_entry_close", 1, "zip_entry", args[0], "zip entry");
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_close(resource);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_zip_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_zip_emit_deprecation(
+        runtime,
+        "Function zip_close() is deprecated since 8.0, use ZipArchive::close() instead",
+        line
+    );
+    PtnResource *resource = ptn_internal_expect_resource_of_type(runtime, "zip_close", 1, "zip", args[0], "zip");
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    ptn_resource_close(resource);
+    return ptn_null();
+}
+
 static int ptn_soap_options_entry(PtnValue options, const char *name, PtnValue *out) {
     options = ptn_value_deref(options);
     if (options.type != PTN_ARRAY || options.as.array == NULL) {
@@ -132651,6 +132917,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "xmlwriter_write_pi", 3, 3, ptn_internal_xmlwriter_write_pi },
         { "xmlwriter_write_raw", 2, 2, ptn_internal_xmlwriter_write_raw },
         { "zend_version", 0, 0, ptn_internal_zend_version },
+        { "zip_close", 1, 1, ptn_internal_zip_close },
+        { "zip_entry_close", 1, 1, ptn_internal_zip_entry_close },
+        { "zip_entry_open", 2, 3, ptn_internal_zip_entry_open },
+        { "zip_open", 1, 1, ptn_internal_zip_open },
+        { "zip_read", 1, 1, ptn_internal_zip_read },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;
@@ -132758,6 +133029,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     if (ptn_internal_function_name_has_prefix(name, "gz") ||
         ptn_internal_function_name_has_prefix(name, "zlib_")) {
         return "zlib";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "zip_")) {
+        return "zip";
     }
     if (ptn_internal_function_name_has_prefix(name, "ctype_")) {
         return "ctype";
