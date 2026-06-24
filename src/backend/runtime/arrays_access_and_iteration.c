@@ -6067,6 +6067,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_null();
         }
+        if (receiver.as.object->lazy_is_proxy && !receiver.as.object->lazy_uninitialized) {
+            receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+                runtime,
+                receiver,
+                line
+            );
+            if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+                return ptn_null();
+            }
+        }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue internal_xml_value = ptn_null();

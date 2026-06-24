@@ -76647,6 +76647,58 @@ var_dump(isset($proxy->prop[\"\"]));
 }
 
 #[test]
+fn compile_lazy_proxy_magic_get_recursion_warns_on_real_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-proxy-magic-get-real-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-proxy-magic-get-real-warning.php");
+    let output = root.join("lazy-proxy-magic-get-real-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyRealInstance {
+    public $_;
+}
+class LazyProxyWithMagicGet extends LazyRealInstance {
+    public function __get($name) {
+        return $this->$name;
+    }
+}
+$rc = new ReflectionClass(LazyProxyWithMagicGet::class);
+$obj = $rc->newLazyProxy(function () {
+    return new LazyRealInstance();
+});
+var_dump($obj->name);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: Undefined property: LazyRealInstance::$name"),
+        "stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("Warning: Undefined property: LazyProxyWithMagicGet::$name"),
+        "stdout:\n{stdout}"
+    );
+    assert!(stdout.ends_with("NULL\n"), "stdout:\n{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_effective_initialized_proxy_receiver_for_access"));
+    assert!(c_source.contains("ptn_magic_property_note_lazy_proxy_initialized"));
+}
+
+#[test]
 fn compile_overloaded_reference_assignment_deprecates_dynamic_target_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-reference-dynamic-target");
     fs::create_dir_all(&root).unwrap();
