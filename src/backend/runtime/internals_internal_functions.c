@@ -69458,6 +69458,58 @@ static void ptn_mb_append_table_replacement(
     }
 }
 
+#if !defined(_WIN32)
+static iconv_t ptn_mb_cached_iconv_open(const char *to_iconv, const char *from_iconv, int *cached) {
+    *cached = 1;
+    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "EUC-TW")) {
+        static int initialized = 0;
+        static iconv_t cd = (iconv_t)-1;
+        if (!initialized) {
+            cd = iconv_open("UTF-16BE", "EUC-TW");
+            initialized = 1;
+        }
+        return cd;
+    }
+    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "GB18030")) {
+        static int initialized = 0;
+        static iconv_t cd = (iconv_t)-1;
+        if (!initialized) {
+            cd = iconv_open("UTF-16BE", "GB18030");
+            initialized = 1;
+        }
+        return cd;
+    }
+    if (ptn_ascii_case_equal(to_iconv, "EUC-TW") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
+        static int initialized = 0;
+        static iconv_t cd = (iconv_t)-1;
+        if (!initialized) {
+            cd = iconv_open("EUC-TW", "UTF-16BE");
+            initialized = 1;
+        }
+        return cd;
+    }
+    if (ptn_ascii_case_equal(to_iconv, "GB18030") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
+        static int initialized = 0;
+        static iconv_t cd = (iconv_t)-1;
+        if (!initialized) {
+            cd = iconv_open("GB18030", "UTF-16BE");
+            initialized = 1;
+        }
+        return cd;
+    }
+    *cached = 0;
+    return iconv_open(to_iconv, from_iconv);
+}
+
+static void ptn_mb_iconv_finish_one(iconv_t cd, int cached) {
+    if (cached) {
+        iconv(cd, NULL, NULL, NULL, NULL);
+    } else {
+        iconv_close(cd);
+    }
+}
+#endif
+
 static int ptn_mb_iconv_one_to_utf16be(const char *input, size_t input_len, const char *from_iconv, uint16_t *unicode) {
 #if defined(_WIN32)
     (void)input;
@@ -69466,10 +69518,12 @@ static int ptn_mb_iconv_one_to_utf16be(const char *input, size_t input_len, cons
     (void)unicode;
     return 0;
 #else
-    iconv_t cd = iconv_open("UTF-16BE", from_iconv);
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open("UTF-16BE", from_iconv, &cached);
     if (cd == (iconv_t)-1) {
         return 0;
     }
+    iconv(cd, NULL, NULL, NULL, NULL);
     char *in_ptr = (char *)input;
     size_t in_left = input_len;
     char out_storage[8];
@@ -69477,15 +69531,15 @@ static int ptn_mb_iconv_one_to_utf16be(const char *input, size_t input_len, cons
     size_t out_left = sizeof(out_storage);
     size_t converted = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
     if (converted == (size_t)-1) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         return 0;
     }
     converted = iconv(cd, NULL, NULL, &out_ptr, &out_left);
     if (converted == (size_t)-1) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         return 0;
     }
-    iconv_close(cd);
+    ptn_mb_iconv_finish_one(cd, cached);
     size_t used = sizeof(out_storage) - out_left;
     if (in_left != 0 || used != 2) {
         return 0;
@@ -69503,10 +69557,12 @@ static int ptn_mb_iconv_utf16be_one_to_bytes(uint16_t unicode, const char *to_ic
     (void)out_len;
     return 0;
 #else
-    iconv_t cd = iconv_open(to_iconv, "UTF-16BE");
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open(to_iconv, "UTF-16BE", &cached);
     if (cd == (iconv_t)-1) {
         return 0;
     }
+    iconv(cd, NULL, NULL, NULL, NULL);
     char input[2];
     input[0] = (char)(unicode >> 8);
     input[1] = (char)(unicode & 0xff);
@@ -69516,15 +69572,15 @@ static int ptn_mb_iconv_utf16be_one_to_bytes(uint16_t unicode, const char *to_ic
     size_t out_left = 8;
     size_t converted = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
     if (converted == (size_t)-1) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         return 0;
     }
     converted = iconv(cd, NULL, NULL, &out_ptr, &out_left);
     if (converted == (size_t)-1) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         return 0;
     }
-    iconv_close(cd);
+    ptn_mb_iconv_finish_one(cd, cached);
     if (in_left != 0) {
         return 0;
     }
