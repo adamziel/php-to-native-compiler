@@ -176425,14 +176425,17 @@ static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t
 
     PtnObject *object = target.as.object;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    if (object->lazy_uninitialized && !object->lazy_initializing) {
-        return result;
-    }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
+        if (object->lazy_uninitialized &&
+            !object->lazy_initializing &&
+            metadata != NULL &&
+            !metadata->lazy_skip) {
+            continue;
+        }
         if (ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }

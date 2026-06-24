@@ -77460,6 +77460,99 @@ exercise_lazy_proxy_success_ref_source($okProxy);
 }
 
 #[test]
+fn compile_lazy_get_mangled_object_vars_preserves_raw_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-mangled-vars-raw-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-mangled-vars-raw-slots.php");
+    let output = root.join("lazy-mangled-vars-raw-slots-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyMangledVarsBox {
+    public $a = 1;
+    public int $b = 2;
+    public int $c;
+}
+
+function exercise_lazy_mangled_vars(string $label, object $obj): void {
+    global $table;
+    unset($table);
+    $reflector = new ReflectionClass(LazyMangledVarsBox::class);
+    $reflector->getProperty('c')->setRawValueWithoutLazyInitialization($obj, 0);
+
+    echo $label, ':pre:';
+    var_export(get_mangled_object_vars($obj));
+    echo \"\\n\";
+
+    try {
+        $reflector->initializeLazyObject($obj);
+    } catch (Exception $e) {
+        echo $label, ':', $e->getMessage(), \"\\n\";
+    }
+
+    echo $label, ':post:';
+    var_export(get_mangled_object_vars($obj));
+    echo \"\\n\";
+    var_dump($reflector->isUninitializedLazyObject($obj), isset($table));
+}
+
+$reflector = new ReflectionClass(LazyMangledVarsBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    global $table;
+    $obj->a = 3;
+    $obj->b = 4;
+    $obj->c = 5;
+    $table = (array) $obj;
+    throw new Exception('boom');
+});
+exercise_lazy_mangled_vars('ghost', $ghost);
+
+$proxy = $reflector->newLazyProxy(function ($obj) {
+    global $table;
+    $obj->a = 3;
+    $obj->b = 4;
+    $obj->c = 5;
+    $table = (array) $obj;
+    throw new Exception('boom');
+});
+exercise_lazy_mangled_vars('proxy', $proxy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ghost:pre:array (\n  'c' => 0,\n)\n",
+            "ghost:boom\n",
+            "ghost:post:array (\n  'c' => 0,\n)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "proxy:pre:array (\n  'c' => 0,\n)\n",
+            "proxy:boom\n",
+            "proxy:post:array (\n  'c' => 0,\n)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_mangled_object_vars"));
+    assert!(c_source.contains("lazy_skip"));
+}
+
+#[test]
 fn compile_reset_lazy_object_reenables_destructor_to_native_binary() {
     let root = temp_dir("ptn-native-reset-lazy-destructor");
     fs::create_dir_all(&root).unwrap();
