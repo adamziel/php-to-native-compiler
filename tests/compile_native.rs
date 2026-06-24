@@ -61377,6 +61377,44 @@ c1::go();
 }
 
 #[test]
+fn compile_exception_trace_prints_required_file_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-trace-require-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-trace-require-argument.php");
+    let include = root.join("strict.inc");
+    let output = root.join("exception-trace-require-argument-bin");
+    fs::write(
+        &include,
+        "<?php\ndeclare(strict_types=1);\ntakes_int(1.0);\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+function takes_int(int $x) {}
+
+try {
+    require __DIR__ . '/strict.inc';
+} catch (TypeError $e) {
+    echo $e->getTraceAsString(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(&format!("#0 {}(3): takes_int(1.0)", include.display())));
+    assert!(stdout.contains(&format!("#1 {}(5): require('", input.display())));
+    assert!(!stdout.contains("require()"));
+    assert!(!stdout.contains("args element is not an array"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_debug_backtrace_metadata_options_to_native_binary() {
     let root = temp_dir("ptn-native-debug-backtrace-metadata-options");
     fs::create_dir_all(&root).unwrap();
