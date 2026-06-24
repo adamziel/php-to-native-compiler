@@ -1486,17 +1486,36 @@ static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index) {
 
 static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t depth);
 
+static int ptn_exception_reaches_object(PtnException *exception, PtnObject *target, size_t depth) {
+    if (exception == NULL || target == NULL || depth > 1024) {
+        return 0;
+    }
+    return ptn_value_reaches_object(exception->trace, target, depth + 1) ||
+        ptn_value_reaches_object(exception->previous, target, depth + 1) ||
+        ptn_value_reaches_object(exception->dynamic_properties, target, depth + 1) ||
+        ptn_value_reaches_object(exception->errors, target, depth + 1) ||
+        ptn_value_reaches_object(exception->soap_fault_headerfault, target, depth + 1);
+}
+
 static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *target, size_t depth) {
     if (object == NULL || target == NULL || object->native_data == NULL || depth > 1024) {
         return 0;
     }
-    if (!ptn_ascii_case_equal(object->class_name, "Fiber")) {
-        return 0;
+    if (ptn_ascii_case_equal(object->class_name, "SensitiveParameterValue")) {
+        typedef struct {
+            PtnValue value;
+        } PtnNativeSensitiveParameterValueData;
+        PtnNativeSensitiveParameterValueData *data =
+            (PtnNativeSensitiveParameterValueData *)object->native_data;
+        return ptn_value_reaches_object(data->value, target, depth + 1);
     }
-    PtnFiberData *data = (PtnFiberData *)object->native_data;
-    return ptn_value_reaches_object(data->callback, target, depth + 1) ||
-        ptn_value_reaches_object(data->return_value, target, depth + 1) ||
-        ptn_value_reaches_object(data->suspension_trace, target, depth + 1);
+    if (ptn_ascii_case_equal(object->class_name, "Fiber")) {
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        return ptn_value_reaches_object(data->callback, target, depth + 1) ||
+            ptn_value_reaches_object(data->return_value, target, depth + 1) ||
+            ptn_value_reaches_object(data->suspension_trace, target, depth + 1);
+    }
+    return 0;
 }
 
 static int ptn_array_reaches_object(PtnArray *array, PtnObject *target, size_t depth) {
@@ -1545,6 +1564,9 @@ static int ptn_value_reaches_object(PtnValue value, PtnObject *target, size_t de
             }
         }
     }
+    if (value.type == PTN_EXCEPTION) {
+        return ptn_exception_reaches_object(value.as.exception, target, depth + 1);
+    }
     return 0;
 }
 
@@ -1571,6 +1593,12 @@ static int ptn_runtime_roots_reach_object(PtnRuntime *root, PtnObject *target) {
         root->global_symbols != NULL &&
         root->global_symbols != &root->symbols &&
         ptn_symbol_table_reaches_object(root->global_symbols, target)
+    ) {
+        return 1;
+    }
+    if (
+        root->exceptions != NULL &&
+        ptn_exception_reaches_object(root->exceptions->active_exception, target, 0)
     ) {
         return 1;
     }

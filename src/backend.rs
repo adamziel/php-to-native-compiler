@@ -3479,6 +3479,7 @@ fn emit_user_functions(
             );
         }
         out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    ptn_runtime_drop_call_frame_arguments(&runtime);\n");
         out.push_str("    ptn_runtime_free(&runtime);\n");
         if function.is_anonymous {
             out.push_str("    free(ptn_closure_trace_name);\n");
@@ -33471,6 +33472,29 @@ fn emit_value_cleanup_with_runtime_line(out: &mut String, indent: &str, value: &
     out.push_str(");\n");
 }
 
+fn emit_push_owned_call_argument_roots(
+    out: &mut String,
+    indent: &str,
+    args_temp: &str,
+    len: usize,
+) {
+    for index in (0..len).rev() {
+        out.push_str(indent);
+        out.push_str("ptn_runtime_push_owned_temporary_root(&runtime, &");
+        out.push_str(args_temp);
+        out.push('[');
+        out.push_str(&index.to_string());
+        out.push_str("]);\n");
+    }
+}
+
+fn emit_pop_owned_call_argument_roots(out: &mut String, indent: &str, len: usize) {
+    for _ in 0..len {
+        out.push_str(indent);
+        out.push_str("ptn_runtime_pop_temporary_root(&runtime);\n");
+    }
+}
+
 fn is_array_mutating_internal_call(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -43497,6 +43521,7 @@ impl ValueEmitter {
                         }
                     }
                     out.push_str(" };\n");
+                    emit_push_owned_call_argument_roots(out, "    ", &args_temp, slot_temps.len());
                     out.push_str("    PtnValue ");
                     out.push_str(&constructor_result);
                     out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -43511,6 +43536,7 @@ impl ValueEmitter {
                     for temp in &unwrap_array_dim_reference_temps {
                         emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
                     }
+                    emit_pop_owned_call_argument_roots(out, "    ", slot_temps.len());
                     for index in 0..slot_temps.len() {
                         emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
                     }
@@ -43566,6 +43592,12 @@ impl ValueEmitter {
                     out.push(')');
                 }
                 out.push_str(" };\n");
+                emit_push_owned_call_argument_roots(
+                    out,
+                    "    ",
+                    &args_temp,
+                    constructor_argument_temps.len(),
+                );
                 out.push_str("    PtnValue ");
                 out.push_str(&constructor_result);
                 out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -43580,6 +43612,7 @@ impl ValueEmitter {
                 for temp in &unwrap_array_dim_reference_temps {
                     emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
                 }
+                emit_pop_owned_call_argument_roots(out, "    ", constructor_argument_temps.len());
                 for index in 0..constructor_argument_temps.len() {
                     emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
                 }
@@ -49864,6 +49897,7 @@ impl ValueEmitter {
             }
         }
         out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if discarded
             && (name.eq_ignore_ascii_case("call_user_func")
                 || name.eq_ignore_ascii_case("call_user_func_array"))
@@ -49928,6 +49962,7 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -50448,6 +50483,7 @@ impl ValueEmitter {
             }
         }
         out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, slot_temps.len());
         self.emit_direct_user_function_call(
             out,
             result_temp,
@@ -50461,6 +50497,7 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        emit_pop_owned_call_argument_roots(out, "    ", slot_temps.len());
         for index in 0..slot_temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -50816,6 +50853,7 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
         }
@@ -50848,6 +50886,7 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -52029,6 +52068,7 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if let Some(value) = no_discard_value.as_ref() {
             let method_name_expr = format!("\"{}\"", c_string(name));
             self.emit_discarded_declared_method_warnings(
@@ -52055,6 +52095,7 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -52244,6 +52285,7 @@ impl ValueEmitter {
                 out.push(')');
             }
             out.push_str(" };\n");
+            emit_push_owned_call_argument_roots(out, "        ", &args_temp, temps.len());
             if let Some(value) = no_discard_value.as_ref() {
                 let method_name_expr = format!("\"{}\"", c_string(name));
                 self.emit_discarded_declared_method_warnings(
@@ -52270,6 +52312,7 @@ impl ValueEmitter {
             for temp in &unwrap_array_dim_reference_temps {
                 emit_unwrap_array_dim_reference_call_argument(out, "        ", temp);
             }
+            emit_pop_owned_call_argument_roots(out, "        ", temps.len());
             for index in 0..temps.len() {
                 emit_value_cleanup(out, "        ", &format!("{args_temp}[{index}]"));
             }
@@ -52461,6 +52504,7 @@ impl ValueEmitter {
                 out.push(')');
             }
             out.push_str(" };\n");
+            emit_push_owned_call_argument_roots(out, "        ", &args_temp, temps.len());
             if let Some(value) = no_discard_value.as_ref() {
                 let method_name_expr = format!("\"{}\"", c_string(name));
                 self.emit_discarded_declared_method_warnings(
@@ -52487,6 +52531,7 @@ impl ValueEmitter {
             for temp in &unwrap_array_dim_reference_temps {
                 emit_unwrap_array_dim_reference_call_argument(out, "        ", temp);
             }
+            emit_pop_owned_call_argument_roots(out, "        ", temps.len());
             for index in 0..temps.len() {
                 emit_value_cleanup(out, "        ", &format!("{args_temp}[{index}]"));
             }
@@ -52635,6 +52680,7 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
         if discarded {
             self.emit_no_discard_warning_for_internal_method_expr(
                 out,
@@ -52659,6 +52705,7 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }

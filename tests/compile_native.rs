@@ -70641,6 +70641,10 @@ class CustomDestructor {
     public function __destruct() {
         echo __METHOD__, \" - \", $this->id, PHP_EOL;
     }
+
+    public function getId(): int {
+        return $this->id;
+    }
 }
 
 function test(#[SensitiveParameter] CustomDestructor $o) {
@@ -70662,6 +70666,7 @@ function main(): SensitiveParameterValue {
 }
 
 $v = main();
+var_dump($v->getValue()->getId());
 echo \"Before unset\", PHP_EOL;
 unset($v);
 echo \"After unset\", PHP_EOL;
@@ -70678,8 +70683,79 @@ echo \"After unset\", PHP_EOL;
         concat!(
             "CustomDestructor::__construct - 2\n",
             "catch\n",
+            "int(2)\n",
             "Before unset\n",
             "CustomDestructor::__destruct - 2\n",
+            "After unset\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_sensitive_parameter_method_trace_value_releases_inner_object_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-method-trace-lifetime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-method-trace-lifetime.php");
+    let output = root.join("sensitive-parameter-method-trace-lifetime-bin");
+    fs::write(
+        &input,
+        "<?php
+class CustomDestructor {
+    public function __construct(private int $id) {
+        echo __METHOD__, \" - \", $this->id, PHP_EOL;
+    }
+
+    public function __destruct() {
+        echo __METHOD__, \" - \", $this->id, PHP_EOL;
+    }
+
+    public function getId(): int {
+        return $this->id;
+    }
+}
+
+class Thrower {
+    public function test(#[SensitiveParameter] CustomDestructor $o) {
+        throw new Exception('Error');
+    }
+}
+
+function wrapper() {
+    $o = new CustomDestructor(3);
+    (new Thrower())->test($o);
+}
+
+function main(): SensitiveParameterValue {
+    try {
+        wrapper();
+    } catch (Exception $e) {
+        echo \"catch\", PHP_EOL;
+        return $e->getTrace()[0]['args'][0];
+    }
+}
+
+$v = main();
+var_dump($v->getValue()->getId());
+echo \"Before unset\", PHP_EOL;
+unset($v);
+echo \"After unset\", PHP_EOL;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "CustomDestructor::__construct - 3\n",
+            "catch\n",
+            "int(3)\n",
+            "Before unset\n",
+            "CustomDestructor::__destruct - 3\n",
             "After unset\n",
         )
     );
