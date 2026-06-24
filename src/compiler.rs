@@ -620,6 +620,25 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            Statement::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            } if name.eq_ignore_ascii_case("opcache_compile_file")
+                && arguments.len() == 1
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack) =>
+            {
+                let candidates =
+                    self.resolve_include(&arguments[0], *span, source_file, source_dir)?;
+                self.resolutions.insert(
+                    (source_file.to_string(), span.byte_start, span.byte_end),
+                    candidates,
+                );
+                self.collect_exprs(arguments, source_file, source_dir)
+            }
             Statement::Call { arguments, .. }
             | Statement::Echo {
                 expressions: arguments,
@@ -1082,6 +1101,25 @@ impl IncludeCollector {
                 );
                 self.apply_include_path_env_effects(&candidates)?;
                 Ok(())
+            }
+            Expr::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            } if name.eq_ignore_ascii_case("opcache_compile_file")
+                && arguments.len() == 1
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack) =>
+            {
+                let candidates =
+                    self.resolve_include(&arguments[0], *span, source_file, source_dir)?;
+                self.resolutions.insert(
+                    (source_file.to_string(), span.byte_start, span.byte_end),
+                    candidates,
+                );
+                self.collect_exprs(arguments, source_file, source_dir)
             }
             Expr::AnonymousFunction(function) => self.collect_with_fresh_path_env(|collector| {
                 collector.collect_statements(&function.body, source_file, source_dir)

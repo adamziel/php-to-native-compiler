@@ -2384,6 +2384,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->source_snapshot_data = NULL;
     runtime->source_snapshot_len = 0;
     runtime->compiled_include_depth = 0;
+    runtime->in_preload = 0;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;
     runtime->current_called_class_name = NULL;

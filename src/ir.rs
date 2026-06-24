@@ -626,6 +626,11 @@ pub enum ValueExpr {
         candidates: Vec<usize>,
         line: usize,
     },
+    OpcacheCompileFile {
+        path: Box<ValueExpr>,
+        candidates: Vec<usize>,
+        line: usize,
+    },
     Exit {
         value: Option<Box<ValueExpr>>,
         line: usize,
@@ -2271,15 +2276,27 @@ impl<'a> LoweringContext<'a> {
                     argument_unpacks,
                     span,
                 } => {
-                    let (arguments, argument_names) =
-                        self.lower_internal_call_arguments(name, arguments, argument_names);
-                    instructions.push(Instruction::InternalCall {
-                        name: name.clone(),
-                        arguments,
-                        argument_names,
-                        argument_unpacks: argument_unpacks.clone(),
-                        line: span.line,
-                    });
+                    if name.eq_ignore_ascii_case("opcache_compile_file")
+                        && arguments.len() == 1
+                        && argument_names.iter().all(Option::is_none)
+                        && argument_unpacks.iter().all(|unpack| !*unpack)
+                    {
+                        instructions.push(Instruction::Expression(ValueExpr::OpcacheCompileFile {
+                            path: Box::new(self.lower_expr(&arguments[0])),
+                            candidates: self.include_candidates(*span),
+                            line: span.line,
+                        }));
+                    } else {
+                        let (arguments, argument_names) =
+                            self.lower_internal_call_arguments(name, arguments, argument_names);
+                        instructions.push(Instruction::InternalCall {
+                            name: name.clone(),
+                            arguments,
+                            argument_names,
+                            argument_unpacks: argument_unpacks.clone(),
+                            line: span.line,
+                        });
+                    }
                 }
                 Statement::Echo { expressions, .. } => {
                     for expression in expressions {
@@ -4589,6 +4606,23 @@ impl<'a> LoweringContext<'a> {
                 candidates: self.include_candidates(*span),
                 line: span.line,
             },
+            Expr::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            } if name.eq_ignore_ascii_case("opcache_compile_file")
+                && arguments.len() == 1
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack) =>
+            {
+                ValueExpr::OpcacheCompileFile {
+                    path: Box::new(self.lower_expr(&arguments[0])),
+                    candidates: self.include_candidates(*span),
+                    line: span.line,
+                }
+            }
             Expr::Exit { value, span } => ValueExpr::Exit {
                 value: value.as_ref().map(|value| Box::new(self.lower_expr(value))),
                 line: span.line,

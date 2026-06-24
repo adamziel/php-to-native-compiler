@@ -1531,6 +1531,7 @@ struct PtnRuntime {
     const unsigned char *source_snapshot_data;
     size_t source_snapshot_len;
     size_t compiled_include_depth;
+    int in_preload;
     const char *current_function_name;
     const char *current_class_name;
     const char *current_called_class_name;

@@ -189,7 +189,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_method_visibility_prototypes(&mut out);
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
-    emit_include_once_state(&mut out, &module.includes);
+    emit_include_once_state(&mut out, &module.includes, &module.preload_include_indices);
     emit_include_runtime_helpers(&mut out);
     emit_source_snapshot_arrays(&mut out, module);
     emit_user_function_prototypes(
@@ -456,6 +456,20 @@ pub fn emit_c(module: &Module) -> String {
         if *preload_index >= module.includes.len() {
             continue;
         }
+        out.push_str("    PtnRuntime *ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" = ptn_runtime_root(&runtime);\n");
+        out.push_str("    size_t ptn_preload_autoload_len_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" = ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" != NULL ? ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len : 0;\n");
+        out.push_str("    int ptn_previous_in_preload_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" = runtime.in_preload;\n");
+        out.push_str("    runtime.in_preload = 1;\n");
         out.push_str("    ptn_include_seen[");
         out.push_str(&preload_index.to_string());
         out.push_str("] = 1;\n");
@@ -467,6 +481,27 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str("    ptn_value_destroy(&ptn_preload_result_");
         out.push_str(&preload_index.to_string());
         out.push_str(");\n");
+        out.push_str("    runtime.in_preload = ptn_previous_in_preload_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(";\n");
+        out.push_str("    if (ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(" != NULL) {\n");
+        out.push_str("        while (ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len > ptn_preload_autoload_len_");
+        out.push_str(&preload_index.to_string());
+        out.push_str(") {\n");
+        out.push_str("            ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len--;\n");
+        out.push_str("            ptn_value_destroy(&ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks[ptn_preload_root_");
+        out.push_str(&preload_index.to_string());
+        out.push_str("->autoload_callbacks_len]);\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
     }
     let mut values = ValueEmitter::new(
         &module.source_file,
@@ -1130,16 +1165,41 @@ fn emit_include_prototypes(out: &mut String, includes: &[IncludeFile]) {
         out.push_str("static PTN_UNUSED PtnValue ");
         out.push_str(&include_c_name(index));
         out.push_str("(PtnRuntime *include_runtime);\n");
+        out.push_str("static PTN_UNUSED int ");
+        out.push_str(&include_compile_c_name(index));
+        out.push_str("(PtnRuntime *include_runtime);\n");
     }
 }
 
-fn emit_include_once_state(out: &mut String, includes: &[IncludeFile]) {
+fn emit_include_once_state(
+    out: &mut String,
+    includes: &[IncludeFile],
+    preload_include_indices: &[usize],
+) {
     if includes.is_empty() {
         return;
     }
     out.push_str("static PTN_UNUSED unsigned char ptn_include_seen[");
     out.push_str(&includes.len().to_string());
     out.push_str("] = {0};\n");
+    let preload_indices = preload_include_indices
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    out.push_str("static PTN_UNUSED unsigned char ptn_include_preloaded[");
+    out.push_str(&includes.len().to_string());
+    out.push_str("] = { ");
+    for index in 0..includes.len() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(if preload_indices.contains(&index) {
+            "1"
+        } else {
+            "0"
+        });
+    }
+    out.push_str(" };\n");
 }
 
 fn emit_include_runtime_helpers(out: &mut String) {
@@ -4265,6 +4325,7 @@ fn emit_include_helpers(
         out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
         emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
+        emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
         emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
@@ -4303,6 +4364,114 @@ fn emit_include_helpers(
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
+
+        out.push_str("\nstatic PTN_UNUSED int ");
+        out.push_str(&include_compile_c_name(index));
+        out.push_str("(PtnRuntime *include_runtime) {\n");
+        out.push_str("    (void)include_runtime;\n");
+        out.push_str("#define runtime (*include_runtime)\n");
+        out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
+        out.push_str("    const unsigned char *ptn_previous_source_snapshot_data = runtime.source_snapshot_data;\n");
+        out.push_str(
+            "    size_t ptn_previous_source_snapshot_len = runtime.source_snapshot_len;\n",
+        );
+        out.push_str("    runtime.source_path = \"");
+        out.push_str(&c_string(&include.source_file));
+        out.push_str("\";\n");
+        out.push_str("    runtime.source_snapshot_data = ");
+        out.push_str(&include_source_snapshot_name(index));
+        out.push_str(";\n");
+        out.push_str("    runtime.source_snapshot_len = ");
+        out.push_str(&include_source_snapshot_len_name(index));
+        out.push_str(";\n");
+        let mut values = ValueEmitter::new(
+            &include.source_file,
+            &include.source_dir,
+            functions,
+            classes,
+            includes,
+            full_internal_dispatch,
+        );
+        let mut control_targets = Vec::new();
+        let mut finally_stack = Vec::new();
+        for instruction in &include.instructions {
+            if !matches!(
+                instruction,
+                Instruction::DeclareFunction { .. } | Instruction::EarlyDeclareClass { .. }
+            ) {
+                break;
+            }
+            emit_instruction(
+                out,
+                &mut values,
+                instruction,
+                &mut control_targets,
+                &mut finally_stack,
+                &include.source_file,
+                None,
+                None,
+            );
+        }
+        out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+        out.push_str("    runtime.source_snapshot_data = ptn_previous_source_snapshot_data;\n");
+        out.push_str("    runtime.source_snapshot_len = ptn_previous_source_snapshot_len;\n");
+        out.push_str("#undef runtime\n");
+        out.push_str("    return 1;\n");
+        out.push_str("}\n");
+    }
+}
+
+fn emit_preload_unlinked_anonymous_class_warnings(
+    out: &mut String,
+    include: &IncludeFile,
+    classes: &[ClassDecl],
+) {
+    for (class_index, class) in classes.iter().enumerate() {
+        if !class.is_anonymous || class.source_file != include.source_file {
+            continue;
+        }
+        let Some(parent_name) = class.parent_name.as_deref() else {
+            continue;
+        };
+        if modeled_internal_class_name(parent_name).is_some()
+            || classes.iter().any(|candidate| {
+                !candidate.is_anonymous
+                    && candidate.source_file == include.source_file
+                    && candidate.name.eq_ignore_ascii_case(parent_name)
+            })
+        {
+            continue;
+        }
+
+        let parent_temp = format!("ptn_preload_parent_{class_index}");
+        out.push_str("    if (runtime.in_preload) {\n");
+        out.push_str("        const char *");
+        out.push_str(&parent_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(parent_name));
+        out.push_str("\");\n");
+        out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
+        out.push_str(&parent_temp);
+        out.push_str(")\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("            && !ptn_internal_class_exists_name(");
+        out.push_str(&parent_temp);
+        out.push_str(")\n");
+        out.push_str("#endif\n");
+        out.push_str("        ) {\n");
+        out.push_str(
+            "            ptn_emit_compile_warning(&runtime, \"Can't preload unlinked class ",
+        );
+        out.push_str(&c_string(&class.name));
+        out.push_str(": Unknown parent ");
+        out.push_str(&c_string(parent_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&class.source_file));
+        out.push_str("\", ");
+        out.push_str(&class.line.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
     }
 }
 
@@ -27302,6 +27471,10 @@ fn include_c_name(index: usize) -> String {
     format!("ptn_include_file_{index}")
 }
 
+fn include_compile_c_name(index: usize) -> String {
+    format!("ptn_compile_include_file_{index}")
+}
+
 fn include_kind_text(kind: IncludeKind) -> &'static str {
     match kind {
         IncludeKind::Include => "include",
@@ -28291,6 +28464,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::Empty { .. }
         | ValueExpr::Print { .. }
         | ValueExpr::Include { .. }
+        | ValueExpr::OpcacheCompileFile { .. }
         | ValueExpr::Exit { .. }
         | ValueExpr::Throw { .. }
         | ValueExpr::Yield { .. }
@@ -29345,6 +29519,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::Include { path, .. } => {
             collect_value_legacy_dollar_brace_deprecations(path, deprecations);
         }
+        ValueExpr::OpcacheCompileFile { path, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(path, deprecations);
+        }
         ValueExpr::Exit { value, .. } => {
             if let Some(value) = value {
                 collect_value_legacy_dollar_brace_deprecations(value, deprecations);
@@ -30214,6 +30391,10 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::Include { path, .. } => {
             collect_value_runtime_requirements(path, functions, requirements);
+        }
+        ValueExpr::OpcacheCompileFile { path, .. } => {
+            collect_value_runtime_requirements(path, functions, requirements);
+            requirements.internal_function_dispatch = true;
         }
         ValueExpr::Exit { value, .. } => {
             if let Some(value) = value {
@@ -33944,6 +34125,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
         ValueExpr::Print { expression } => value_mentions_variable(expression, name),
         ValueExpr::Include { path, .. } => value_mentions_variable(path, name),
+        ValueExpr::OpcacheCompileFile { path, .. } => value_mentions_variable(path, name),
         ValueExpr::Exit { value, .. } => value
             .as_ref()
             .is_some_and(|value| value_mentions_variable(value, name)),
@@ -34193,6 +34375,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::ArrayAccess { line, .. }
         | ValueExpr::ArrayAppendAccess { line, .. }
         | ValueExpr::Include { line, .. }
+        | ValueExpr::OpcacheCompileFile { line, .. }
         | ValueExpr::Exit { line, .. }
         | ValueExpr::Throw { line, .. }
         | ValueExpr::Yield { line, .. }
@@ -34883,6 +35066,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::Empty { target: name }
         | ValueExpr::Print { expression: name }
         | ValueExpr::Include { path: name, .. }
+        | ValueExpr::OpcacheCompileFile { path: name, .. }
         | ValueExpr::Throw { value: name, .. }
         | ValueExpr::FirstClassCallable { callable: name, .. }
         | ValueExpr::Unary { expr: name, .. }
@@ -40498,6 +40682,11 @@ impl ValueEmitter {
                 candidates,
                 line,
             } => self.emit_include(out, *kind, path, candidates, *line),
+            ValueExpr::OpcacheCompileFile {
+                path,
+                candidates,
+                line,
+            } => self.emit_opcache_compile_file(out, path, candidates, *line),
             ValueExpr::Exit { value, line } => self.emit_exit_value(out, value.as_deref(), *line),
             ValueExpr::Throw { value, line } => self.emit_throw_value(out, value, *line),
             ValueExpr::Load { name, line } => format!(
@@ -40881,6 +41070,15 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 out.push_str("        }\n");
             } else {
+                out.push_str("        if (ptn_include_preloaded[");
+                out.push_str(&candidate.to_string());
+                out.push_str("] && ptn_include_seen[");
+                out.push_str(&candidate.to_string());
+                out.push_str("]) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(1);\n");
+                out.push_str("        } else {\n");
                 out.push_str("        ptn_include_seen[");
                 out.push_str(&candidate.to_string());
                 out.push_str("] = 1;\n");
@@ -40922,6 +41120,7 @@ impl ValueEmitter {
                 out.push_str("        ptn_value_destroy(&");
                 out.push_str(&trace_arg_temp);
                 out.push_str(");\n");
+                out.push_str("        }\n");
             }
         }
         out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
@@ -40971,6 +41170,76 @@ impl ValueEmitter {
         out.push_str("    free(");
         out.push_str(&display_path_temp);
         out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_opcache_compile_file(
+        &mut self,
+        out: &mut String,
+        path: &ValueExpr,
+        candidates: &[usize],
+        line: usize,
+    ) -> String {
+        let path_temp = self.emit_materialized_value(out, path);
+        let operand_temp = self.next_temp();
+        out.push_str("    PtnStringOperand ");
+        out.push_str(&operand_temp);
+        out.push_str(" = ptn_value_to_string_operand_with_runtime(&runtime, ");
+        out.push_str(&path_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        let resolved_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&resolved_temp);
+        out.push_str(" = ptn_include_resolve_path(\"");
+        out.push_str(&c_string(&self.source_dir));
+        out.push_str("\", ");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(ptn_opcache_enabled(&runtime) && ptn_opcache_path_exists(");
+        out.push_str(&operand_temp);
+        out.push_str("));\n");
+        out.push_str("    if (runtime.in_preload && ptn_is_truthy(");
+        out.push_str(&result_temp);
+        out.push_str(") && ");
+        out.push_str(&resolved_temp);
+        out.push_str(" != NULL) {\n");
+        let mut emitted_candidate = false;
+        for candidate in candidates {
+            if emitted_candidate {
+                out.push_str("        } else if (");
+            } else {
+                out.push_str("        if (");
+                emitted_candidate = true;
+            }
+            self.emit_include_candidate_condition(out, &resolved_temp, *candidate);
+            out.push_str(") {\n");
+            out.push_str("            ptn_include_seen[");
+            out.push_str(&candidate.to_string());
+            out.push_str("] = 1;\n");
+            out.push_str("            (void)");
+            out.push_str(&include_compile_c_name(*candidate));
+            out.push_str("(&runtime);\n");
+        }
+        if emitted_candidate {
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+        out.push_str("    if (");
+        out.push_str(&resolved_temp);
+        out.push_str(" != NULL) {\n");
+        out.push_str("        free(");
+        out.push_str(&resolved_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        out.push_str("    ptn_string_operand_free(");
+        out.push_str(&operand_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &path_temp);
         result_temp
     }
 
@@ -42236,8 +42505,8 @@ impl ValueEmitter {
                     &self.classes,
                     &self.user_functions,
                     declared_class_index,
-                    line,
-                    &self.source_file,
+                    declared_class.line,
+                    &declared_class.source_file,
                 );
                 out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
                 out.push_str("        runtime.declared_user_classes[");
@@ -42333,8 +42602,8 @@ impl ValueEmitter {
                         &self.classes,
                         &self.user_functions,
                         declared_class_index,
-                        line,
-                        &self.source_file,
+                        declared_class.line,
+                        &declared_class.source_file,
                     );
                 }
                 self.emit_declared_new_object(
