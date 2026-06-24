@@ -23860,6 +23860,65 @@ try {\n\
 }
 
 #[test]
+fn compile_date_period_iso_z_serialize_and_subclass_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-iso-z-subclass-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-iso-z-subclass-properties.php");
+    let output = root.join("date-period-iso-z-subclass-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('Europe/London');\n\
+class MyDatePeriod extends DatePeriod { public int $prop = 3; }\n\
+$d = DatePeriod::createFromISO8601String('R4/2012-07-01T00:00:00Z/P7D');\n\
+$state = $d->__serialize();\n\
+$startState = $state['start']->__serialize();\n\
+var_dump($startState['timezone_type'], $startState['timezone'], $state['current']);\n\
+var_dump(str_contains(serialize($d), 's:7:\"current\";N;'));\n\
+$p = MyDatePeriod::createFromISO8601String('R4/2012-07-01T00:00:00Z/P7D');\n\
+var_dump(str_starts_with(json_encode($p), '{\"prop\":3,\"start\":'));\n\
+var_dump(array_key_first(get_object_vars($p)));\n\
+$serialized = serialize($p);\n\
+var_dump(str_contains($serialized, 's:16:\"include_end_date\";b:0;s:4:\"prop\";i:3;'));\n\
+ob_start();\n\
+$exportReturn = var_export($p);\n\
+$printed = ob_get_clean();\n\
+var_dump(str_starts_with($printed, \"\\\\MyDatePeriod::__set_state(array(\\n   'prop' => 3,\\n   'start' =>\"));\n\
+var_dump($exportReturn);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "string(6) \"+00:00\"\n",
+            "NULL\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(4) \"prop\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_period_reorder_extra_properties_before_internal"));
+    assert!(c_source.contains("ptn_object_named_public_properties_with_extra_public_array"));
+}
+
+#[test]
 fn compile_date_interval_and_period_malformed_string_exceptions_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-period-malformed-exceptions");
     fs::create_dir_all(&root).unwrap();

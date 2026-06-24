@@ -49655,6 +49655,55 @@ impl ValueEmitter {
         Some(result_temp)
     }
 
+    fn date_period_static_factory_property_chain(
+        &self,
+        resolved_name: &str,
+    ) -> Option<(
+        String,
+        Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+    )> {
+        let (class_name, method_name) = self.split_static_call_name(resolved_name)?;
+        if !method_name.eq_ignore_ascii_case("createFromISO8601String")
+            || class_name.eq_ignore_ascii_case("DatePeriod")
+            || !self.class_is_same_or_descendant(class_name, "DatePeriod")
+        {
+            return None;
+        }
+        let declared_class = class_by_name(&self.classes, class_name)?;
+        let chain = class_property_initialization_chain(declared_class, &self.classes);
+        if chain.is_empty() {
+            return None;
+        }
+        Some((declared_class.name.clone(), chain))
+    }
+
+    fn emit_date_period_static_factory_property_initializers(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        resolved_name: &str,
+    ) {
+        let Some((class_name, chain)) =
+            self.date_period_static_factory_property_chain(resolved_name)
+        else {
+            return;
+        };
+        out.push_str("    if (");
+        out.push_str(result_temp);
+        out.push_str(".type == PTN_OBJECT && ");
+        out.push_str(result_temp);
+        out.push_str(".as.object != NULL && ptn_ascii_case_equal(");
+        out.push_str(result_temp);
+        out.push_str(".as.object->class_name, \"");
+        out.push_str(&c_string(&class_name));
+        out.push_str("\")) {\n");
+        self.emit_declared_property_initializers(out, "        ", result_temp, chain);
+        out.push_str("        ptn_date_period_reorder_extra_properties_before_internal(");
+        out.push_str(result_temp);
+        out.push_str(".as.object);\n");
+        out.push_str("    }\n");
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -50142,6 +50191,11 @@ impl ValueEmitter {
                 out.push_str("\", 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                self.emit_date_period_static_factory_property_initializers(
+                    out,
+                    &result_temp,
+                    &resolved_name,
+                );
             }
             return result_temp;
         }
@@ -50285,6 +50339,11 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            self.emit_date_period_static_factory_property_initializers(
+                out,
+                &result_temp,
+                &resolved_name,
+            );
         }
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);

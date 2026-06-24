@@ -10279,6 +10279,14 @@ static void ptn_date_throw_uninitialized_object_error(
     const char *ancestor
 );
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED PtnValue ptn_date_period_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 
 static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
     if (object != NULL &&
@@ -10388,6 +10396,46 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
         ptn_serialize_append_magic_serialize_object(buffer, object, state, &handled_magic_serialize);
     if (handled_magic_serialize) {
         return magic_serialize_referenceable;
+    }
+    if (object != NULL &&
+        object->native_data != NULL &&
+        state != NULL &&
+        state->runtime != NULL &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "DatePeriod")) {
+        PtnValue payload = ptn_date_period_call_method(
+            state->runtime,
+            ptn_object(object),
+            "__serialize",
+            0,
+            NULL,
+            state->line
+        );
+        if (state->runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&payload);
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
+        PtnValue payload_value = ptn_value_deref(payload);
+        if (payload_value.type != PTN_ARRAY) {
+            ptn_value_destroy(&payload);
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
+        ptn_string_buffer_append_format(
+            buffer,
+            "O:%zu:\"%s\":%zu:{",
+            strlen(object->class_name),
+            object->class_name,
+            payload_value.as.array->len
+        );
+        for (size_t i = 0; i < payload_value.as.array->len; i++) {
+            PtnArrayEntry *entry = &payload_value.as.array->entries[i];
+            ptn_serialize_append_key(buffer, entry->key);
+            ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+        }
+        ptn_string_buffer_append_char(buffer, '}');
+        ptn_value_destroy(&payload);
+        return 1;
     }
     int handled_serializable = 0;
     int serializable_referenceable =
@@ -13513,6 +13561,20 @@ static int ptn_unserialize_key_is_spl_array_backed_payload_slot(
     return 0;
 }
 
+static int ptn_date_period_key_is_internal(PtnArrayKey key) {
+    if (key.type != PTN_ARRAY_KEY_STRING ||
+        memchr(key.as.string, '\0', key.string_len) != NULL) {
+        return 0;
+    }
+    return (key.string_len == 5 && memcmp(key.as.string, "start", 5) == 0) ||
+        (key.string_len == 7 && memcmp(key.as.string, "current", 7) == 0) ||
+        (key.string_len == 3 && memcmp(key.as.string, "end", 3) == 0) ||
+        (key.string_len == 8 && memcmp(key.as.string, "interval", 8) == 0) ||
+        (key.string_len == 11 && memcmp(key.as.string, "recurrences", 11) == 0) ||
+        (key.string_len == 18 && memcmp(key.as.string, "include_start_date", 18) == 0) ||
+        (key.string_len == 16 && memcmp(key.as.string, "include_end_date", 16) == 0);
+}
+
 static int ptn_unserialize_key_is_date_internal_property(PtnObject *object, PtnArrayKey key) {
     if (object == NULL || key.type != PTN_ARRAY_KEY_STRING ||
         memchr(key.as.string, '\0', key.string_len) != NULL) {
@@ -13529,13 +13591,7 @@ static int ptn_unserialize_key_is_date_internal_property(PtnObject *object, PtnA
             (key.string_len == 8 && memcmp(key.as.string, "timezone", 8) == 0);
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "DatePeriod")) {
-        return (key.string_len == 5 && memcmp(key.as.string, "start", 5) == 0) ||
-            (key.string_len == 7 && memcmp(key.as.string, "current", 7) == 0) ||
-            (key.string_len == 3 && memcmp(key.as.string, "end", 3) == 0) ||
-            (key.string_len == 8 && memcmp(key.as.string, "interval", 8) == 0) ||
-            (key.string_len == 11 && memcmp(key.as.string, "recurrences", 11) == 0) ||
-            (key.string_len == 18 && memcmp(key.as.string, "include_start_date", 18) == 0) ||
-            (key.string_len == 16 && memcmp(key.as.string, "include_end_date", 16) == 0);
+        return ptn_date_period_key_is_internal(key);
     }
     return 0;
 }
@@ -15570,7 +15626,7 @@ static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const 
     }
     ptn_output_write(runtime, buffer.data, buffer.len);
     free(buffer.data);
-    return ptn_bool(1);
+    return ptn_null();
 }
 
 static void ptn_json_set_last_error(PtnRuntime *runtime, int error, size_t line, size_t column);
@@ -96326,6 +96382,68 @@ static void ptn_date_period_sync_properties(PtnRuntime *runtime, PtnValue object
     ptn_date_period_declare_value_property(runtime, object, "include_end_date", ptn_bool(data->include_end_date), line);
 }
 
+static void ptn_date_period_reorder_extra_properties_before_internal(PtnObject *object) {
+    if (object == NULL || object->properties == NULL || object->properties->len < 2) {
+        return;
+    }
+
+    PtnArray *properties = object->properties;
+    PtnArrayEntry *ordered_entries = malloc(sizeof(PtnArrayEntry) * properties->len);
+    if (ordered_entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t pass = 0; pass < 2; pass++) {
+        for (size_t i = 0; i < properties->len; i++) {
+            int is_internal = ptn_date_period_key_is_internal(properties->entries[i].key);
+            if ((pass == 0 && !is_internal) || (pass == 1 && is_internal)) {
+                ordered_entries[out++] = properties->entries[i];
+            }
+        }
+    }
+    memcpy(properties->entries, ordered_entries, sizeof(PtnArrayEntry) * properties->len);
+    free(ordered_entries);
+    properties->current_index = 0;
+    ptn_array_rebuild_index(properties);
+
+    if (object->property_metadata == NULL || object->property_metadata_len < 2) {
+        return;
+    }
+    PtnObjectPropertyMetadata *ordered_metadata =
+        malloc(sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
+    unsigned char *used = calloc(object->property_metadata_len, sizeof(unsigned char));
+    if (ordered_metadata == NULL || used == NULL) {
+        free(ordered_metadata);
+        free(used);
+        ptn_abort_out_of_memory();
+    }
+
+    out = 0;
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        for (size_t j = 0; j < object->property_metadata_len; j++) {
+            if (!used[j] && strcmp(object->property_metadata[j].storage_name, entry->key.as.string) == 0) {
+                ordered_metadata[out++] = object->property_metadata[j];
+                used[j] = 1;
+                break;
+            }
+        }
+    }
+    for (size_t j = 0; j < object->property_metadata_len; j++) {
+        if (!used[j]) {
+            ordered_metadata[out++] = object->property_metadata[j];
+        }
+    }
+
+    memcpy(object->property_metadata, ordered_metadata, sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
+    free(ordered_metadata);
+    free(used);
+}
+
 static PtnValue ptn_date_period_create_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -96505,7 +96623,7 @@ static PtnValue ptn_date_period_from_iso8601_string(
     time_t timestamp = 0;
     int microsecond = 0;
     char *parsed_timezone = NULL;
-    const char *default_timezone = zulu ? "UTC" : ptn_current_timezone_name();
+    const char *default_timezone = zulu ? "+00:00" : ptn_current_timezone_name();
     if (!ptn_datetime_parse_date_string(normalized_start, default_timezone, &timestamp, &microsecond, &parsed_timezone)) {
         free(start);
         free(interval_spec);
@@ -96764,10 +96882,14 @@ static PTN_UNUSED PtnValue ptn_date_period_call_method(
             "include_start_date",
             "include_end_date"
         };
-        ptn_date_period_ensure_current(runtime, data, line);
         ptn_date_period_sync_properties(runtime, receiver, data, line);
         return receiver.type == PTN_OBJECT
-            ? ptn_object_named_public_properties_array(receiver.as.object, names, sizeof(names) / sizeof(names[0]))
+            ? ptn_object_named_public_properties_with_extra_public_array(
+                runtime,
+                receiver.as.object,
+                names,
+                sizeof(names) / sizeof(names[0])
+            )
             : ptn_array_from_literal_entries(0, NULL);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -155067,6 +155189,7 @@ static void ptn_date_period_unserialize_array(
     );
     ptn_unserialize_replace_native_data(object.as.object, data, ptn_date_period_data_free);
     ptn_date_period_sync_properties(runtime, object, data, line);
+    ptn_date_period_reorder_extra_properties_before_internal(object.as.object);
 }
 
 static int ptn_unserialize_store_object_property_entry(
