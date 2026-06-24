@@ -81996,11 +81996,21 @@ class Hidden {
     }
 }
 
+class ProtectedHidden {
+    protected function __clone() {
+    }
+}
+
 $copy = PrivateChild::make()->copy();
 echo get_class($copy), \"\\n\";
 (new CloneSibling())->run();
 try {
     clone new Hidden();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    clone new ProtectedHidden();
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -82018,7 +82028,8 @@ try {
             "PrivateChild\n",
             "CloneChild::__clone\n",
             "CloneChild\n",
-            "Call to private Hidden::__clone() from global scope\n",
+            "Call to private method Hidden::__clone() from global scope\n",
+            "Call to protected method ProtectedHidden::__clone() from global scope\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

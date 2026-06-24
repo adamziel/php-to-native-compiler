@@ -1624,7 +1624,7 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
         needed = snprintf(
             NULL,
             0,
-            "Call to %s %s::__clone() from global scope",
+            "Call to %s method %s::__clone() from global scope",
             visibility_name,
             declaring_class
         );
@@ -1632,7 +1632,7 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
         needed = snprintf(
             NULL,
             0,
-            "Call to %s %s::__clone() from scope %s",
+            "Call to %s method %s::__clone() from scope %s",
             visibility_name,
             declaring_class,
             scope
@@ -1649,7 +1649,7 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
         snprintf(
             message,
             (size_t)needed + 1,
-            "Call to %s %s::__clone() from global scope",
+            "Call to %s method %s::__clone() from global scope",
             visibility_name,
             declaring_class
         );
@@ -1657,7 +1657,7 @@ static PTN_UNUSED PtnValue ptn_throw_clone_method_visibility_error(
         snprintf(
             message,
             (size_t)needed + 1,
-            "Call to %s %s::__clone() from scope %s",
+            "Call to %s method %s::__clone() from scope %s",
             visibility_name,
             declaring_class,
             scope
