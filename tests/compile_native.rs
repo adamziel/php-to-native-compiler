@@ -20799,6 +20799,12 @@ try {
     assert!(stdout.contains("\n\nNext Exception: 2 in "));
     assert!(stdout.contains("Stack trace:\n#0 [internal function]: gen_two()\n#1 "));
     assert!(stdout.contains(": Generator->rewind()\n#2 {main}\n\nNext Exception: 2"));
+    let gen_two_section = stdout.split("--\n").nth(2).expect("gen_two output section");
+    assert!(
+        gen_two_section.contains("\nNext Exception: 2 in ")
+            && gen_two_section.contains("Stack trace:\n#0 [internal function]: gen_two()\n#1 "),
+        "{stdout}"
+    );
     assert!(stdout.contains("Stack trace:\n#0 [internal function]: gen_three()\n#1 "));
     assert!(stdout.contains(&format!("#0 {path}(")));
     assert!(stdout.contains(": gen_three()\n#1 {main}\n"));

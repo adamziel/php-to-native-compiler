@@ -9857,7 +9857,8 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
     PtnException *exception,
     size_t position,
     size_t line,
-    const char *resume_method_name
+    const char *resume_method_name,
+    int preserve_internal_resume_frame
 ) {
     if (exception == NULL) {
         return;
@@ -9888,6 +9889,7 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
                 PtnValue copied_frame = ptn_value_clone_deref(existing.as.array->entries[i].value);
                 if (
                     i == 0 &&
+                    !preserve_internal_resume_frame &&
                     yielded_from_line != 0 &&
                     ptn_value_deref(copied_frame).type == PTN_ARRAY &&
                     ptn_trace_array_string_slot(ptn_value_deref(copied_frame), "file") == NULL
@@ -9976,7 +9978,8 @@ static PTN_UNUSED int ptn_generator_throw_pending_exception_at_position(
     PtnGenerator *generator,
     size_t position,
     size_t line,
-    const char *resume_method_name
+    const char *resume_method_name,
+    int preserve_internal_resume_frame
 ) {
     if (
         generator == NULL ||
@@ -9995,7 +9998,8 @@ static PTN_UNUSED int ptn_generator_throw_pending_exception_at_position(
             resolved_pending.as.exception,
             position,
             line,
-            resume_method_name
+            resume_method_name,
+            preserve_internal_resume_frame
         );
     }
     ptn_value_destroy(&generator->pending_exception);
@@ -10226,7 +10230,8 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
                 generator,
                 generator->position,
                 line,
-                "next"
+                "next",
+                0
             )) {
             return ptn_null();
         }
@@ -10466,7 +10471,8 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
                     generator,
                     generator->pending_exception_position,
                     line,
-                    "rewind"
+                    "rewind",
+                    1
                 )) {
                 return ptn_null();
             }
@@ -13022,7 +13028,8 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
                 iterator->generator,
                 iterator->index,
                 iterator->line,
-                "next"
+                "next",
+                0
             )) {
             return;
         }
