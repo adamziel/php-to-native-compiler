@@ -67751,6 +67751,7 @@ static char ptn_mb_language_name[32] = "";
 static char ptn_mb_detect_order_name[128] = "";
 static char ptn_mb_substitute_character_name[32] = "";
 static uint32_t ptn_mb_substitute_character_codepoint = 0x3f;
+static int ptn_mb_substitute_encoding_depth = 0;
 static int64_t ptn_mb_illegal_chars = 0;
 static char ptn_mb_regex_options_name[32] = "";
 static char *ptn_mb_ereg_search_pattern = NULL;
@@ -69743,43 +69744,38 @@ static void ptn_mb_append_table_replacement(
 }
 
 #if !defined(_WIN32)
+typedef struct {
+    const char *to_iconv;
+    const char *from_iconv;
+    iconv_t cd;
+    int initialized;
+} PtnMbCachedIconvDescriptor;
+
 static iconv_t ptn_mb_cached_iconv_open(const char *to_iconv, const char *from_iconv, int *cached) {
-    *cached = 1;
-    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "EUC-TW")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("UTF-16BE", "EUC-TW");
-            initialized = 1;
+    static PtnMbCachedIconvDescriptor descriptors[] = {
+        { "UTF-16BE", "EUC-TW", (iconv_t)-1, 0 },
+        { "EUC-TW", "UTF-16BE", (iconv_t)-1, 0 },
+        { "UTF-16BE", "GB18030", (iconv_t)-1, 0 },
+        { "GB18030", "UTF-16BE", (iconv_t)-1, 0 },
+        { "UTF-16BE", "Windows-1254", (iconv_t)-1, 0 },
+        { "Windows-1254", "UTF-16BE", (iconv_t)-1, 0 },
+        { "UTF-8", "Windows-1254", (iconv_t)-1, 0 },
+        { "Windows-1254", "UTF-8", (iconv_t)-1, 0 },
+        { "UTF-16BE", "UTF-8", (iconv_t)-1, 0 },
+        { "UTF-8", "UTF-16BE", (iconv_t)-1, 0 },
+    };
+    for (size_t i = 0; i < sizeof(descriptors) / sizeof(descriptors[0]); i++) {
+        PtnMbCachedIconvDescriptor *descriptor = &descriptors[i];
+        if (!ptn_ascii_case_equal(to_iconv, descriptor->to_iconv) ||
+            !ptn_ascii_case_equal(from_iconv, descriptor->from_iconv)) {
+            continue;
         }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "GB18030")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("UTF-16BE", "GB18030");
-            initialized = 1;
+        *cached = 1;
+        if (!descriptor->initialized) {
+            descriptor->cd = iconv_open(descriptor->to_iconv, descriptor->from_iconv);
+            descriptor->initialized = 1;
         }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "EUC-TW") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("EUC-TW", "UTF-16BE");
-            initialized = 1;
-        }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "GB18030") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("GB18030", "UTF-16BE");
-            initialized = 1;
-        }
-        return cd;
+        return descriptor->cd;
     }
     *cached = 0;
     return iconv_open(to_iconv, from_iconv);
@@ -70261,7 +70257,8 @@ static char *ptn_mb_iconv_convert_alloc_options(
     *output_len = input_len;
     return ptn_duplicate_string_len(input, input_len);
 #else
-    iconv_t cd = iconv_open(to_iconv, from_iconv);
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open(to_iconv, from_iconv, &cached);
     if (cd == (iconv_t)-1) {
         *output_len = input_len;
         return ptn_duplicate_string_len(input, input_len);
@@ -70269,9 +70266,10 @@ static char *ptn_mb_iconv_convert_alloc_options(
     size_t out_cap = input_len < 32 ? 128 : input_len * 4 + 32;
     char *output = malloc(out_cap);
     if (output == NULL) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         ptn_abort_out_of_memory();
     }
+    iconv(cd, NULL, NULL, NULL, NULL);
     char *in_ptr = (char *)input;
     size_t in_left = input_len;
     char *out_ptr = output;
@@ -70323,14 +70321,14 @@ static char *ptn_mb_iconv_convert_alloc_options(
         }
         size_t used = (size_t)(out_ptr - output);
         if (out_cap > SIZE_MAX / 2) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             free(output);
             ptn_abort_out_of_memory();
         }
         out_cap *= 2;
         char *grown = realloc(output, out_cap);
         if (grown == NULL) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             free(output);
             ptn_abort_out_of_memory();
         }
@@ -70340,7 +70338,7 @@ static char *ptn_mb_iconv_convert_alloc_options(
     }
     *out_ptr = '\0';
     *output_len = (size_t)(out_ptr - output);
-    iconv_close(cd);
+    ptn_mb_iconv_finish_one(cd, cached);
     return output;
 #endif
 }
@@ -70362,6 +70360,10 @@ static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding,
         *replacement_len = 0;
         return ptn_duplicate_string_len("", 0);
     }
+    if (ptn_mb_substitute_encoding_depth > 0) {
+        *replacement_len = 1;
+        return ptn_duplicate_string_len("?", 1);
+    }
     uint32_t cp = ptn_mb_substitute_character_codepoint_current();
     if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
         cp = 0x3f;
@@ -70369,6 +70371,7 @@ static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding,
     char utf8[4];
     size_t utf8_len = ptn_mb_codepoint_to_utf8(cp, utf8);
     int64_t illegal_delta = 0;
+    ptn_mb_substitute_encoding_depth++;
     char *replacement = ptn_mb_iconv_convert_alloc_options(
         utf8,
         utf8_len,
@@ -70379,6 +70382,7 @@ static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding,
         &illegal_delta,
         replacement_len
     );
+    ptn_mb_substitute_encoding_depth--;
     if (illegal_delta > 0) {
         free(replacement);
         *replacement_len = 1;
@@ -70920,10 +70924,12 @@ static int ptn_mb_iconv_validate_bytes(const char *data, size_t len, const char 
 #if defined(_WIN32)
     return 1;
 #else
-    iconv_t cd = iconv_open("UTF-8", iconv_name);
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open("UTF-8", iconv_name, &cached);
     if (cd == (iconv_t)-1) {
         return 1;
     }
+    iconv(cd, NULL, NULL, NULL, NULL);
     char *in_ptr = (char *)data;
     size_t in_left = len;
     char scratch[256];
@@ -70934,7 +70940,7 @@ static int ptn_mb_iconv_validate_bytes(const char *data, size_t len, const char 
         if (converted != (size_t)-1 || errno == E2BIG) {
             continue;
         }
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         return 0;
     }
     for (;;) {
@@ -70942,11 +70948,11 @@ static int ptn_mb_iconv_validate_bytes(const char *data, size_t len, const char 
         size_t out_left = sizeof(scratch);
         size_t converted = iconv(cd, NULL, NULL, &out_ptr, &out_left);
         if (converted != (size_t)-1) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             return 1;
         }
         if (errno != E2BIG) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             return 0;
         }
     }

@@ -27821,6 +27821,46 @@ echo mb_strlen($euctw, 'EUC-TW'), \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_cp1254_iconv_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-cp1254-iconv-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-cp1254-iconv-conversion.php");
+    let output = root.join("mb-cp1254-iconv-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+$cp1254 = \"\\x80\\x82\\xD0\\xDD\\xDE\\xF0\\xFD\\xFE\";\n\
+var_dump(mb_check_encoding($cp1254, 'CP1254'));\n\
+var_dump(mb_check_encoding(\"\\x81\", 'CP1254'));\n\
+echo bin2hex(mb_convert_encoding($cp1254, 'UTF-16BE', 'CP1254')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('20ac201a011e0130015e011f0131015f'), 'CP1254', 'UTF-16BE')), \"\\n\";\n\
+mb_substitute_character('long');\n\
+echo mb_convert_encoding(\"\\x81\", 'UTF-8', 'CP1254'), \"\\n\";\n\
+mb_substitute_character(0x1234);\n\
+echo mb_convert_encoding(\"\\x23\\x45\", 'CP1254', 'UTF-16BE'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "20ac201a011e0130015e011f0131015f\n",
+            "8082d0dddef0fdfe\n",
+            "%\n",
+            "?\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_check_encoding_self_referential_array_to_native_binary() {
     let root = temp_dir("ptn-native-mb-check-encoding-self-referential-array");
     fs::create_dir_all(&root).unwrap();
