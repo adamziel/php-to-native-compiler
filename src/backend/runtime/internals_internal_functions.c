@@ -102351,6 +102351,18 @@ static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node) {
     list->items[list->item_count++] = node;
 }
 
+static void ptn_xml_node_list_make_snapshot(PtnXmlNodeListData *list) {
+    if (list == NULL || list->items != NULL) {
+        return;
+    }
+    list->items = malloc(sizeof(PtnXmlNode *));
+    if (list->items == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    list->item_capacity = 1;
+    list->item_count = 0;
+}
+
 static void ptn_xml_collect_elements_by_tag(PtnXmlNodeListData *list, PtnXmlNode *node, const char *tag_name) {
     if (list == NULL || node == NULL) {
         return;
@@ -107867,6 +107879,81 @@ static PtnValue ptn_dom_xpath_namespace_node_array(PtnRuntime *runtime, PtnDomXP
     return result;
 }
 
+static char *ptn_dom_xpath_simple_element_name_copy(const char *expr, int *descendant_out);
+static void ptn_dom_xpath_collect_elements_by_name(PtnXmlNodeListData *list, PtnXmlNode *node, const char *name);
+static size_t ptn_dom_xpath_count_elements_by_name(PtnXmlNode *node, const char *name);
+static int ptn_dom_xpath_node_matches_name(PtnXmlNode *node, const char *name);
+
+static char *ptn_dom_xpath_trimmed_inner_call_copy(const char *expr, const char *prefix) {
+    if (expr == NULL || prefix == NULL) {
+        return NULL;
+    }
+    size_t prefix_len = strlen(prefix);
+    if (strncmp(expr, prefix, prefix_len) != 0) {
+        return NULL;
+    }
+    const char *start = expr + prefix_len;
+    const char *end = strrchr(start, ')');
+    if (end == NULL) {
+        return NULL;
+    }
+    while (start < end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    while (end > start && isspace((unsigned char)*(end - 1))) {
+        end--;
+    }
+    return ptn_duplicate_string_len(start, (size_t)(end - start));
+}
+
+static PtnValue ptn_dom_xpath_count_simple_expression(PtnXmlNode *context, const char *expr) {
+    int descendant = 0;
+    char *name = ptn_dom_xpath_simple_element_name_copy(expr, &descendant);
+    if (name == NULL) {
+        return ptn_null();
+    }
+    size_t count = 0;
+    if (descendant) {
+        count = ptn_dom_xpath_count_elements_by_name(context, name);
+    } else {
+        for (size_t i = 0; context != NULL && i < context->child_count; i++) {
+            if (ptn_dom_xpath_node_matches_name(context->children[i], name)) {
+                count++;
+            }
+        }
+    }
+    free(name);
+    return ptn_float((double)count);
+}
+
+static PtnValue ptn_dom_xpath_node_set_argument_value(PtnRuntime *runtime, PtnXmlNode *context, const char *expr, int function_string) {
+    int descendant = 0;
+    char *name = ptn_dom_xpath_simple_element_name_copy(expr, &descendant);
+    if (name == NULL) {
+        return ptn_null();
+    }
+    PtnValue list = ptn_xml_node_list_object(runtime, context);
+    PtnXmlNodeListData *list_data = ptn_xml_node_list_data(list);
+    ptn_xml_node_list_make_snapshot(list_data);
+    if (descendant) {
+        ptn_dom_xpath_collect_elements_by_name(list_data, context, name);
+    } else {
+        for (size_t i = 0; context != NULL && i < context->child_count; i++) {
+            if (ptn_dom_xpath_node_matches_name(context->children[i], name)) {
+                ptn_xml_node_list_push(list_data, context->children[i]);
+            }
+        }
+    }
+    free(name);
+    if (!function_string) {
+        return list;
+    }
+    PtnXmlNode *first = ptn_xml_node_list_item(list_data, 0);
+    PtnValue text = ptn_xml_text_content_value(first);
+    ptn_value_destroy(&list);
+    return text;
+}
+
 static PtnValue ptn_dom_xpath_argument_value(PtnRuntime *runtime, PtnDomXPathData *data, const char *expr, int function_string) {
     PtnXmlNode *document = ptn_dom_xpath_document(data);
     if (strstr(expr, "string(@href)") != NULL) {
@@ -107880,9 +107967,25 @@ static PtnValue ptn_dom_xpath_argument_value(PtnRuntime *runtime, PtnDomXPathDat
         }
         return ptn_dom_xpath_namespace_node_array(runtime, data);
     }
-    if (strstr(expr, "//p") != NULL) {
-        PtnXmlNode *p = ptn_xml_find_first_element_by_name(document, "p");
-        return ptn_xml_text_content_value(p);
+    const char *comma = strrchr(expr == NULL ? "" : expr, ',');
+    if (comma != NULL) {
+        const char *start = comma + 1;
+        const char *end = strchr(start, ')');
+        if (end != NULL) {
+            while (start < end && isspace((unsigned char)*start)) {
+                start++;
+            }
+            while (end > start && isspace((unsigned char)*(end - 1))) {
+                end--;
+            }
+            char *node_set_expr = ptn_duplicate_string_len(start, (size_t)(end - start));
+            PtnValue value = ptn_dom_xpath_node_set_argument_value(runtime, document, node_set_expr, function_string);
+            free(node_set_expr);
+            if (value.type != PTN_NULL) {
+                return value;
+            }
+            ptn_value_destroy(&value);
+        }
     }
     return ptn_null();
 }
@@ -107903,6 +108006,16 @@ static PtnValue ptn_dom_xpath_evaluate_method(PtnRuntime *runtime, PtnValue rece
     }
     char *expr = ptn_duplicate_string_len(expression.data, expression.len);
     ptn_string_operand_free(expression);
+    PtnXmlNode *context = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? ptn_xml_node_data(args[1])
+        : ptn_dom_xpath_document(data);
+    char *count_expr = ptn_dom_xpath_trimmed_inner_call_copy(expr, "count(");
+    if (count_expr != NULL) {
+        PtnValue count = ptn_dom_xpath_count_simple_expression(context, count_expr);
+        free(count_expr);
+        free(expr);
+        return count;
+    }
     char *function_name = ptn_dom_xpath_extract_function_name(expr);
     if (function_name == NULL) {
         free(expr);
@@ -107983,12 +108096,84 @@ static void ptn_dom_xpath_collect_elements_by_name(PtnXmlNodeListData *list, Ptn
     if (list == NULL || node == NULL || name == NULL) {
         return;
     }
-    if (node->type == PTN_XML_NODE_ELEMENT && strcmp(node->name == NULL ? "" : node->name, name) == 0) {
+    if (ptn_dom_xpath_node_matches_name(node, name)) {
         ptn_xml_node_list_push(list, node);
     }
     for (size_t i = 0; i < node->child_count; i++) {
         ptn_dom_xpath_collect_elements_by_name(list, node->children[i], name);
     }
+}
+
+static int ptn_dom_xpath_node_matches_name(PtnXmlNode *node, const char *name) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT || name == NULL) {
+        return 0;
+    }
+    if (ptn_xml_node_matches_tag(node, name)) {
+        return 1;
+    }
+    const char *local = ptn_xml_local_name(name);
+    return local != name && ptn_xml_node_matches_tag(node, local);
+}
+
+static size_t ptn_dom_xpath_count_elements_by_name(PtnXmlNode *node, const char *name) {
+    if (node == NULL || name == NULL) {
+        return 0;
+    }
+    size_t count = ptn_dom_xpath_node_matches_name(node, name) ? 1 : 0;
+    for (size_t i = 0; i < node->child_count; i++) {
+        count += ptn_dom_xpath_count_elements_by_name(node->children[i], name);
+    }
+    return count;
+}
+
+static void ptn_dom_xpath_collect_child_elements_by_name(PtnXmlNodeListData *list, PtnXmlNode *node, const char *name) {
+    if (list == NULL || node == NULL || name == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        if (ptn_dom_xpath_node_matches_name(node->children[i], name)) {
+            ptn_xml_node_list_push(list, node->children[i]);
+        }
+    }
+}
+
+static int ptn_dom_xpath_simple_name_byte(unsigned char byte) {
+    return isalnum(byte) || byte == '_' || byte == '-' || byte == '.' || byte == ':' || byte == '*';
+}
+
+static char *ptn_dom_xpath_simple_element_name_copy(const char *expr, int *descendant_out) {
+    if (descendant_out != NULL) {
+        *descendant_out = 0;
+    }
+    const char *cursor = expr == NULL ? "" : expr;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor[0] == '.' && cursor[1] == '/' && cursor[2] == '/') {
+        cursor += 3;
+        if (descendant_out != NULL) {
+            *descendant_out = 1;
+        }
+    } else if (cursor[0] == '/' && cursor[1] == '/') {
+        cursor += 2;
+        if (descendant_out != NULL) {
+            *descendant_out = 1;
+        }
+    }
+    const char *start = cursor;
+    while (ptn_dom_xpath_simple_name_byte((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor == start) {
+        return NULL;
+    }
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != '\0') {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(start, (size_t)(cursor - start));
 }
 
 static PtnValue ptn_dom_xpath_query_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
@@ -108014,7 +108199,19 @@ static PtnValue ptn_dom_xpath_query_method(PtnRuntime *runtime, PtnValue receive
     PtnXmlNodeListData *list_data = ptn_xml_node_list_data(list);
     char *name = ptn_dom_xpath_name_predicate_copy(expr);
     if (name != NULL && strstr(expr, "//*") != NULL) {
+        ptn_xml_node_list_make_snapshot(list_data);
         ptn_dom_xpath_collect_elements_by_name(list_data, context, name);
+    } else {
+        int descendant = 0;
+        name = ptn_dom_xpath_simple_element_name_copy(expr, &descendant);
+        if (name != NULL) {
+            ptn_xml_node_list_make_snapshot(list_data);
+            if (descendant) {
+                ptn_dom_xpath_collect_elements_by_name(list_data, context, name);
+            } else {
+                ptn_dom_xpath_collect_child_elements_by_name(list_data, context, name);
+            }
+        }
     }
     free(name);
     free(expr);
@@ -108627,6 +108824,55 @@ static int ptn_xml_attribute_index(PtnXmlNode *attr, size_t *index_out) {
     return 0;
 }
 
+static int ptn_xml_node_depth(PtnXmlNode *node, size_t *depth_out) {
+    if (node == NULL || depth_out == NULL) {
+        return 0;
+    }
+    size_t depth = 0;
+    for (PtnXmlNode *cursor = node; cursor != NULL; cursor = cursor->parent) {
+        depth++;
+    }
+    *depth_out = depth;
+    return 1;
+}
+
+static int ptn_xml_node_precedes_in_document_order(PtnXmlNode *node, PtnXmlNode *other, int *precedes_out) {
+    if (node == NULL || other == NULL || precedes_out == NULL || node == other) {
+        return 0;
+    }
+    size_t node_depth = 0;
+    size_t other_depth = 0;
+    if (!ptn_xml_node_depth(node, &node_depth) || !ptn_xml_node_depth(other, &other_depth)) {
+        return 0;
+    }
+    PtnXmlNode *left = node;
+    PtnXmlNode *right = other;
+    while (node_depth > other_depth && left != NULL) {
+        left = left->parent;
+        node_depth--;
+    }
+    while (other_depth > node_depth && right != NULL) {
+        right = right->parent;
+        other_depth--;
+    }
+    while (left != NULL && right != NULL && left->parent != right->parent) {
+        left = left->parent;
+        right = right->parent;
+    }
+    if (left == NULL || right == NULL || left->parent == NULL || left->parent != right->parent) {
+        return 0;
+    }
+    int left_found = 0;
+    int right_found = 0;
+    size_t left_index = ptn_xml_child_index(left->parent, left, &left_found);
+    size_t right_index = ptn_xml_child_index(right->parent, right, &right_found);
+    if (!left_found || !right_found || left_index == right_index) {
+        return 0;
+    }
+    *precedes_out = left_index < right_index;
+    return 1;
+}
+
 static PtnValue ptn_dom_compare_document_position_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -108679,6 +108925,12 @@ static PtnValue ptn_dom_compare_document_position_method(
                 ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
                 : PTN_DOM_DOCUMENT_POSITION_PRECEDING);
         }
+    }
+    int node_precedes_other = 0;
+    if (ptn_xml_node_precedes_in_document_order(node, other, &node_precedes_other)) {
+        return ptn_int(node_precedes_other
+            ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
+            : PTN_DOM_DOCUMENT_POSITION_PRECEDING);
     }
     return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
 }
@@ -112151,6 +112403,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "isConnected") ||
         ptn_ascii_case_equal(property, "baseURI") ||
         ptn_ascii_case_equal(property, "ownerDocument") ||
+        ptn_ascii_case_equal(property, "document") ||
         ptn_ascii_case_equal(property, "documentElement") ||
         ptn_ascii_case_equal(property, "head") ||
         ptn_ascii_case_equal(property, "body") ||
@@ -112451,6 +112704,14 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 0;
     }
     const char *receiver_dom_class_name = ptn_dom_effective_class_name(receiver.as.object->class_name);
+    if (ptn_ascii_case_equal(receiver_dom_class_name, "DOMXPath")) {
+        if (ptn_ascii_case_equal(property, "document")) {
+            PtnDomXPathData *data = ptn_dom_xpath_data(receiver);
+            *value_out = ptn_xml_node_value_for_runtime(runtime, ptn_dom_xpath_document(data));
+            return 1;
+        }
+        return 0;
+    }
     if (ptn_ascii_case_equal(receiver_dom_class_name, "DOMNodeList") ||
         ptn_ascii_case_equal(receiver_dom_class_name, "DOMNamedNodeMap")) {
         if (ptn_ascii_case_equal(property, "length")) {
