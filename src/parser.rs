@@ -44,6 +44,8 @@ const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
 const NULLSAFE_WRITE_CONTEXT_MESSAGE: &str = "Can't use nullsafe operator in write context";
 const TEMPORARY_WRITE_CONTEXT_MESSAGE: &str = "Cannot use temporary expression in write context";
 const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe chain";
+const INVALID_FIRST_CLASS_CALLABLE_PLACEHOLDER_MESSAGE: &str =
+    "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders";
 const MAX_ARRAY_LITERAL_NESTING: usize = 128;
 
 fn nullsafe_write_context_diagnostic(span: SourceSpan) -> Diagnostic {
@@ -593,7 +595,7 @@ impl Parser<'_> {
             let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             let attribute_start_span =
                 matches!(self.peek().kind, TokenKind::AttributeStart).then_some(self.peek().span);
-            let attributes = self.parse_attribute_groups()?;
+            let attributes = self.parse_attribute_groups_for_upcoming_target()?;
             let item_doc_comment = self
                 .doc_comment_before(self.peek().span.byte_start)
                 .or(leading_doc_comment);
@@ -4123,7 +4125,7 @@ impl Parser<'_> {
         let leading_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let attribute_start_span =
             matches!(self.peek().kind, TokenKind::AttributeStart).then_some(self.peek().span);
-        let attributes = self.parse_attribute_groups()?;
+        let attributes = self.parse_attribute_groups_for_upcoming_target()?;
         let statement_doc_comment = self
             .doc_comment_before(self.peek().span.byte_start)
             .or(leading_doc_comment);
@@ -6812,6 +6814,46 @@ impl Parser<'_> {
         result
     }
 
+    fn parse_attribute_groups_for_upcoming_target(&mut self) -> Result<ParsedAttributes> {
+        let allow_unscoped_relative = self.peek_attribute_groups_target_class_like_decl();
+        if allow_unscoped_relative {
+            self.allow_unscoped_relative_types += 1;
+        }
+        let result = self.parse_attribute_groups();
+        if allow_unscoped_relative {
+            self.allow_unscoped_relative_types -= 1;
+        }
+        result
+    }
+
+    fn peek_attribute_groups_target_class_like_decl(&self) -> bool {
+        let mut index = self.index;
+        while matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::AttributeStart)
+        ) {
+            index += 1;
+            let mut bracket_depth = 1usize;
+            while bracket_depth > 0 {
+                let Some(token) = self.tokens.get(index) else {
+                    return false;
+                };
+                match token.kind {
+                    TokenKind::AttributeStart | TokenKind::LeftBracket => {
+                        bracket_depth += 1;
+                    }
+                    TokenKind::RightBracket => {
+                        bracket_depth -= 1;
+                    }
+                    TokenKind::Eof => return false,
+                    _ => {}
+                }
+                index += 1;
+            }
+        }
+        self.tokens_start_class_like_decl_at(index)
+    }
+
     #[allow(dead_code)]
     fn parse_attribute_group(&mut self) -> Result<ParsedAttributes> {
         let start = self.advance().span;
@@ -9300,6 +9342,23 @@ impl Parser<'_> {
         let attributes = self.parse_attribute_groups()?;
         let anonymous_modifiers = self.parse_anonymous_class_modifiers()?;
         if token_is_identifier_named(self.peek(), "class") {
+            if matches!(
+                (
+                    self.tokens.get(self.index + 1).map(|token| &token.kind),
+                    self.tokens.get(self.index + 2).map(|token| &token.kind),
+                    self.tokens.get(self.index + 3).map(|token| &token.kind),
+                ),
+                (
+                    Some(TokenKind::LeftParen),
+                    Some(TokenKind::Ellipsis),
+                    Some(TokenKind::RightParen)
+                )
+            ) {
+                return Err(Diagnostic::new(
+                    "Cannot create Closure for new expression",
+                    Some(start_span),
+                ));
+            }
             if anonymous_modifiers.is_abstract {
                 return Err(Diagnostic::new(
                     "Cannot use the abstract modifier on an anonymous class",
@@ -9905,6 +9964,7 @@ impl Parser<'_> {
         let mut seen_named_argument = false;
         let mut seen_unpacked_argument = false;
         if !matches!(self.peek().kind, TokenKind::RightParen) {
+            self.reject_invalid_first_class_callable_placeholder_argument()?;
             if matches!(self.peek().kind, TokenKind::Comma) {
                 return Err(syntax_error_unexpected(self.peek(), None));
             }
@@ -9926,6 +9986,7 @@ impl Parser<'_> {
                 if matches!(self.peek().kind, TokenKind::Comma) {
                     return Err(syntax_error_unexpected(self.peek(), Some("\")\"")));
                 }
+                self.reject_invalid_first_class_callable_placeholder_argument()?;
                 let (name, unpack, argument, span) = self.parse_call_argument()?;
                 if unpack {
                     if seen_named_argument {
@@ -9955,6 +10016,22 @@ impl Parser<'_> {
         }
         let right_span = self.expect_right_paren()?;
         Ok((arguments, argument_names, argument_unpacks, right_span))
+    }
+
+    fn reject_invalid_first_class_callable_placeholder_argument(&self) -> Result<()> {
+        if matches!(self.peek().kind, TokenKind::Question)
+            || (matches!(self.peek().kind, TokenKind::Ellipsis)
+                && matches!(
+                    self.tokens.get(self.index + 1).map(|token| &token.kind),
+                    Some(TokenKind::Comma | TokenKind::RightParen)
+                ))
+        {
+            return Err(Diagnostic::new(
+                INVALID_FIRST_CLASS_CALLABLE_PLACEHOLDER_MESSAGE,
+                Some(self.peek().span),
+            ));
+        }
+        Ok(())
     }
 
     fn peek_is_first_class_callable_arguments(&self) -> bool {
@@ -10272,6 +10349,37 @@ impl Parser<'_> {
                     || token_is_identifier_named(self.peek_next(), "abstract")
                     || token_is_identifier_named(self.peek_next(), "final")
                     || token_is_identifier_named(self.peek_next(), "readonly")))
+    }
+
+    fn tokens_start_class_like_decl_at(&self, index: usize) -> bool {
+        self.token_at_is_identifier_named(index, "class")
+            || self.token_at_is_identifier_named(index, "interface")
+            || self.token_at_is_identifier_named(index, "trait")
+            || self.token_at_is_identifier_named(index, "enum")
+            || (self.token_at_is_identifier_named(index, "readonly")
+                && (self.token_at_is_identifier_named(index + 1, "class")
+                    || self.token_at_is_identifier_named(index + 1, "abstract")
+                    || self.token_at_is_identifier_named(index + 1, "final")
+                    || self.token_at_is_identifier_named(index + 1, "readonly")
+                    || self.token_at_is_identifier_named(index + 1, "interface")
+                    || self.token_at_is_identifier_named(index + 1, "trait")
+                    || self.token_at_is_identifier_named(index + 1, "enum")))
+            || (self.token_at_is_identifier_named(index, "abstract")
+                && (self.token_at_is_identifier_named(index + 1, "class")
+                    || self.token_at_is_identifier_named(index + 1, "abstract")
+                    || self.token_at_is_identifier_named(index + 1, "final")
+                    || self.token_at_is_identifier_named(index + 1, "readonly")))
+            || (self.token_at_is_identifier_named(index, "final")
+                && (self.token_at_is_identifier_named(index + 1, "class")
+                    || self.token_at_is_identifier_named(index + 1, "abstract")
+                    || self.token_at_is_identifier_named(index + 1, "final")
+                    || self.token_at_is_identifier_named(index + 1, "readonly")))
+    }
+
+    fn token_at_is_identifier_named(&self, index: usize, expected: &str) -> bool {
+        self.tokens
+            .get(index)
+            .is_some_and(|token| token_is_identifier_named(token, expected))
     }
 
     fn peek_starts_function_decl(&self) -> bool {
@@ -26993,11 +27101,20 @@ fn supported_first_class_callable_const_target_name(callable: &Expr) -> Option<&
 fn first_class_callable_const_target_diagnostic(callable: &Expr) -> Option<&'static str> {
     match callable {
         Expr::Grouped { expr, .. } => first_class_callable_const_target_diagnostic(expr),
-        Expr::String(_, _) => None,
+        Expr::String(name, _) => name
+            .split_once("::")
+            .filter(|(class_name, _)| class_name.eq_ignore_ascii_case("static"))
+            .map(|_| "\"static\" is not allowed in compile-time constants"),
         Expr::Int(_, _) | Expr::Float(_, _) | Expr::Bool(_, _) | Expr::Null(_) => {
             Some("Illegal function name")
         }
-        _ => Some("Cannot use dynamic function name in constant expression"),
+        Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::AnonymousFunction(_)
+        | Expr::DynamicClassNameFetch { .. } => {
+            Some("Cannot use dynamic function name in constant expression")
+        }
+        _ => Some("Constant expression contains invalid operations"),
     }
 }
 

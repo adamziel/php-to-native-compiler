@@ -38527,8 +38527,18 @@ class CallbackAttr {
     public function __construct(public Closure $value) {}
 }
 
+class P {
+    public static function foreign(string $value): string {
+        return \"p:$value\";
+    }
+}
+
+class Q extends P {}
+
 #[CallbackAttr(strrev(...))]
 #[CallbackAttr(strlen(...))]
+#[CallbackAttr(Q::foreign(...))]
+#[CallbackAttr(self::secret(...))]
 #[CallbackAttr(Subject::secret(...))]
 class Subject {
     private static function secret(string $value): string {
@@ -38537,7 +38547,13 @@ class Subject {
 }
 
 foreach ((new ReflectionClass(Subject::class))->getAttributes() as $attribute) {
-    echo ($attribute->newInstance()->value)(\"abc\"), \"\\n\";
+    $fn = $attribute->newInstance()->value;
+    $reflection = new ReflectionFunction($fn);
+    $called = $reflection->getClosureCalledClass();
+    $scope = $reflection->getClosureScopeClass();
+    var_dump($called ? $called->getName() : null);
+    var_dump($scope ? $scope->getName() : null);
+    echo $fn(\"abc\"), \"\\n\";
 }
 ",
     )
@@ -38554,7 +38570,23 @@ foreach ((new ReflectionClass(Subject::class))->getAttributes() as $attribute) {
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "cba\n3\nsecret:abc\n"
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "cba\n",
+            "NULL\n",
+            "NULL\n",
+            "3\n",
+            "string(1) \"Q\"\n",
+            "string(1) \"P\"\n",
+            "p:abc\n",
+            "string(7) \"Subject\"\n",
+            "string(7) \"Subject\"\n",
+            "secret:abc\n",
+            "string(7) \"Subject\"\n",
+            "string(7) \"Subject\"\n",
+            "secret:abc\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -71481,6 +71513,14 @@ new Foo(...);
             3,
         ),
         (
+            "first-class-callable-new-anonymous",
+            "<?php
+new class(...) {};
+",
+            "Cannot create Closure for new expression",
+            2,
+        ),
+        (
             "first-class-callable-attribute",
             "<?php
 #[Attribute(...)]
@@ -71496,6 +71536,61 @@ $foo?->foo->bar(...);
 ",
             "Cannot combine nullsafe operator with Closure creation",
             2,
+        ),
+        (
+            "first-class-callable-non-unary",
+            "<?php
+foo(1, ...);
+",
+            "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders",
+            2,
+        ),
+        (
+            "first-class-callable-non-variadic-placeholder",
+            "<?php
+foo(?);
+",
+            "Cannot create a Closure for call expression with more than one argument, or non-variadic placeholders",
+            2,
+        ),
+        (
+            "first-class-callable-constexpr-instance",
+            "<?php
+class Foo {
+    public function method() {}
+}
+const C = (new Foo())->method(...);
+",
+            "Constant expression contains invalid operations",
+            5,
+        ),
+        (
+            "first-class-callable-constexpr-closure",
+            "<?php
+const C = (static function () {})(...);
+",
+            "Cannot use dynamic function name in constant expression",
+            2,
+        ),
+        (
+            "first-class-callable-constexpr-constant-name",
+            "<?php
+const Name = 'strrev';
+const C = (Name)(...);
+",
+            "Cannot use dynamic function name in constant expression",
+            3,
+        ),
+        (
+            "first-class-callable-constexpr-static",
+            "<?php
+class Foo {
+    public const C = static::method(...);
+    public static function method() {}
+}
+",
+            "\"static\" is not allowed in compile-time constants",
+            3,
         ),
     ];
 

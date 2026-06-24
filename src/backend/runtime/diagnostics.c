@@ -469,6 +469,126 @@ static PTN_UNUSED char *ptn_closure_wrapped_callable_called_class_name(
     return class_name;
 }
 
+static PTN_UNUSED char *ptn_closure_declaring_method_scope_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name
+) {
+    if (class_name == NULL || method_name == NULL || method_name[0] == '\0') {
+        return NULL;
+    }
+    const char *declaring_class = NULL;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    int is_abstract = 0;
+    if (
+        runtime != NULL &&
+        runtime->declared_method_visibility_metadata != NULL &&
+        runtime->declared_method_visibility_metadata(
+            class_name,
+            method_name,
+            &declaring_class,
+            &visibility,
+            &is_abstract
+        )
+    ) {
+        (void)visibility;
+        (void)is_abstract;
+        return declaring_class == NULL ? NULL : ptn_duplicate_string(declaring_class);
+    }
+    return ptn_duplicate_string(class_name);
+}
+
+static PTN_UNUSED char *ptn_closure_wrapped_callable_scope_class_name(
+    PtnRuntime *runtime,
+    PtnValue callable
+) {
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_CLOSURE) {
+        return resolved.as.closure->scope_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(resolved.as.closure->scope_class_name);
+    }
+    if (resolved.type == PTN_OBJECT) {
+        return ptn_closure_declaring_method_scope_name(
+            runtime,
+            resolved.as.object->class_name,
+            "__invoke"
+        );
+    }
+    if (resolved.type == PTN_EXCEPTION) {
+        return ptn_closure_declaring_method_scope_name(
+            runtime,
+            resolved.as.exception->class_name,
+            "__invoke"
+        );
+    }
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator == NULL || separator == name || separator[2] == '\0') {
+            free(name);
+            return NULL;
+        }
+        *separator = '\0';
+        const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(name);
+        const char *resolved_name = runtime == NULL
+            ? lookup_name
+            : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        const char *class_name = ptn_declared_class_canonical_name(resolved_name);
+        char *scope_name =
+            ptn_closure_declaring_method_scope_name(runtime, class_name, separator + 2);
+        free(name);
+        return scope_name;
+    }
+    if (resolved.type != PTN_ARRAY || resolved.as.array == NULL) {
+        return NULL;
+    }
+    PtnArrayEntry *scope_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 0);
+    PtnArrayEntry *method_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 1);
+    if (scope_entry == NULL || method_entry == NULL) {
+        return NULL;
+    }
+    PtnValue scope = ptn_value_deref(scope_entry->value);
+    PtnValue method = ptn_value_deref(method_entry->value);
+    if (method.type != PTN_STRING) {
+        return NULL;
+    }
+    char *method_name = ptn_value_to_string(method);
+    char *scope_name = NULL;
+    if (scope.type == PTN_OBJECT) {
+        scope_name = ptn_closure_declaring_method_scope_name(
+            runtime,
+            scope.as.object->class_name,
+            method_name
+        );
+    } else if (scope.type == PTN_EXCEPTION) {
+        scope_name = ptn_closure_declaring_method_scope_name(
+            runtime,
+            scope.as.exception->class_name,
+            method_name
+        );
+    } else if (scope.type == PTN_CLOSURE) {
+        scope_name = scope.as.closure->scope_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(scope.as.closure->scope_class_name);
+    } else if (scope.type == PTN_STRING) {
+        char *class_name = ptn_value_to_string(scope);
+        const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(class_name);
+        const char *resolved_name = runtime == NULL
+            ? lookup_name
+            : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        const char *canonical_class_name = ptn_declared_class_canonical_name(resolved_name);
+        scope_name = ptn_closure_declaring_method_scope_name(
+            runtime,
+            canonical_class_name,
+            method_name
+        );
+        free(class_name);
+    }
+    free(method_name);
+    return scope_name;
+}
+
 static PTN_UNUSED void ptn_closure_set_bound_scope_name(PtnValue closure, const char *scope_name) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
     free(resolved->bound_scope_name);
@@ -506,17 +626,14 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     PtnFunctionMetadata metadata
 ) {
     PtnValue closure = ptn_closure(runtime, (size_t)-1, "Closure::__invoke", metadata, 0, 0);
-    ptn_closure_set_scope(
-        closure,
-        runtime->current_class_name,
-        runtime->current_called_class_name
-    );
     if (runtime->has_current_receiver) {
         ptn_closure_set_capture(closure, "this", runtime->current_receiver);
     }
     char *called_class_name = ptn_closure_wrapped_callable_called_class_name(runtime, callable);
+    char *scope_class_name = ptn_closure_wrapped_callable_scope_class_name(runtime, callable);
+    ptn_closure_set_scope(closure, scope_class_name, called_class_name);
+    free(scope_class_name);
     if (called_class_name != NULL) {
-        ptn_closure_replace_scope(&closure.as.closure->called_class_name, called_class_name);
         free(called_class_name);
     }
     closure.as.closure->has_wrapped_callable = 1;
