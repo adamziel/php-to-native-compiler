@@ -42704,6 +42704,42 @@ foreach ([\"abc\", \"\\xC3\\xA4bc\"] as $s) {\n\
 }
 
 #[test]
+fn compile_intl_dateformatter_double_construct_and_grapheme_crlf_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-dateformatter-grapheme-crlf");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-dateformatter-grapheme-crlf.php");
+    let output = root.join("intl-dateformatter-grapheme-crlf-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$formatter = new IntlDateFormatter('en', 1, 1);\n\
+try {\n\
+    var_dump($formatter->__construct('en', 1, 1));\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), PHP_EOL;\n\
+}\n\
+var_dump(grapheme_strlen(\"\\r\\n\"));\n\
+var_dump(grapheme_substr(implode(\"\\r\\n\", ['abc', 'def', 'ghi']), 5));\n\
+var_dump(grapheme_strrpos(\"a\\r\\nb\", 'b'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "IntlException: IntlDateFormatter::__construct(): cannot call constructor twice\n\
+int(1)\n\
+string(7) \"ef\r\n\
+ghi\"\n\
+int(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_number_formatter_serialization_is_rejected_to_native_binary() {
     let root = temp_dir("ptn-native-intl-number-formatter-serialization");
     fs::create_dir_all(&root).unwrap();

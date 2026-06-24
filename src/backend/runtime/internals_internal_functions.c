@@ -64509,31 +64509,20 @@ static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
-    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_ensure_data(receiver);
     if (ptn_ascii_case_equal(name, "__construct")) {
-        if (data != NULL) {
-            if (argc >= 1) {
-                ptn_intl_date_formatter_set_string(&data->locale, args[0]);
-            }
-            if (argc >= 2) {
-                data->date_type = (int)ptn_value_to_integer(args[1]);
-            }
-            if (argc >= 3) {
-                data->time_type = (int)ptn_value_to_integer(args[2]);
-            }
-            if (argc >= 4) {
-                ptn_intl_date_formatter_set_string(&data->timezone, args[3]);
-            }
-            if (argc >= 5) {
-                data->calendar = (int)ptn_value_to_integer(args[4]);
-            }
-            if (argc >= 6 && ptn_value_deref(args[5]).type != PTN_NULL) {
-                ptn_intl_date_formatter_set_string(&data->pattern, args[5]);
-            }
+        PtnValue resolved = ptn_value_deref(receiver);
+        if (resolved.type == PTN_OBJECT && resolved.as.object->native_data != NULL) {
+            ptn_throw_exception(runtime, "IntlException", "IntlDateFormatter::__construct(): cannot call constructor twice");
+            return ptn_null();
         }
+        PtnValue replacement = ptn_intl_date_formatter_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
         return ptn_null();
     }
+    PtnIntlDateFormatterData *data = ptn_intl_date_formatter_ensure_data(receiver);
     if (ptn_ascii_case_equal(name, "format")) {
         PtnValue call_args[2] = { receiver, argc >= 1 ? args[0] : ptn_null() };
         return ptn_internal_datefmt_format(runtime, 2, call_args, line);
@@ -65642,6 +65631,9 @@ static size_t ptn_grapheme_next_cluster_len(const char *data, size_t len, size_t
     if (offset >= len) {
         return 0;
     }
+    if (data[offset] == '\r' && offset + 1 < len && data[offset + 1] == '\n') {
+        return 2;
+    }
     unsigned char first = (unsigned char)data[offset];
     if (first < 0x80) {
         return 1;
@@ -65663,6 +65655,20 @@ static size_t ptn_grapheme_next_cluster_len(const char *data, size_t len, size_t
         }
     }
     return expected;
+}
+
+static size_t ptn_grapheme_cluster_count(const char *data, size_t len);
+
+static PtnValue ptn_internal_grapheme_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "grapheme_strlen", 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    size_t count = ptn_grapheme_cluster_count(string.data, string.len);
+    ptn_string_operand_free(string);
+    return ptn_int(count > (size_t)INT64_MAX ? INT64_MAX : (int64_t)count);
 }
 
 static size_t ptn_grapheme_cluster_count(const char *data, size_t len) {
@@ -65749,6 +65755,54 @@ static int ptn_normalize_grapheme_offset(
     }
     *offset_out = (size_t)raw_offset;
     return 1;
+}
+
+static PtnValue ptn_internal_grapheme_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "grapheme_substr", 1, "string", args[0], line);
+    int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "grapheme_substr", 2, "offset", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+
+    size_t cluster_count = ptn_grapheme_cluster_count(string.data, string.len);
+    size_t start_cluster = 0;
+    if (!ptn_normalize_grapheme_offset(runtime, "grapheme_substr", raw_offset, cluster_count, &start_cluster)) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+
+    size_t end_cluster = cluster_count;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        int64_t raw_length = ptn_internal_expect_integer_arg(runtime, "grapheme_substr", 3, "length", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(string);
+            return ptn_null();
+        }
+        if (raw_length >= 0) {
+            uint64_t length = (uint64_t)raw_length;
+            end_cluster = length > (uint64_t)(cluster_count - start_cluster)
+                ? cluster_count
+                : start_cluster + (size_t)length;
+        } else {
+            uint64_t trim = raw_length == INT64_MIN
+                ? ((uint64_t)INT64_MAX + 1)
+                : (uint64_t)(-raw_length);
+            end_cluster = trim > (uint64_t)cluster_count ? 0 : cluster_count - (size_t)trim;
+            if (end_cluster < start_cluster) {
+                end_cluster = start_cluster;
+            }
+        }
+    }
+
+    size_t start = ptn_grapheme_byte_offset_for_char(string.data, string.len, start_cluster);
+    size_t end = ptn_grapheme_byte_offset_for_char(string.data, string.len, end_cluster);
+    PtnValue result = ptn_owned_string_len(
+        ptn_duplicate_string_len(string.data + start, end - start),
+        end - start
+    );
+    ptn_string_operand_free(string);
+    return result;
 }
 
 static PtnValue ptn_internal_grapheme_strpos_named(
@@ -133959,12 +134013,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
         { "gmmktime", 1, 6, ptn_internal_gmmktime },
         { "grapheme_extract", 2, 5, ptn_internal_grapheme_extract },
+        { "grapheme_strlen", 1, 1, ptn_internal_grapheme_strlen },
         { "grapheme_stripos", 2, 3, ptn_internal_grapheme_stripos },
         { "grapheme_stristr", 2, 3, ptn_internal_grapheme_stristr },
         { "grapheme_strpos", 2, 3, ptn_internal_grapheme_strpos },
         { "grapheme_strripos", 2, 3, ptn_internal_grapheme_strripos },
         { "grapheme_strrpos", 2, 3, ptn_internal_grapheme_strrpos },
         { "grapheme_strstr", 2, 3, ptn_internal_grapheme_strstr },
+        { "grapheme_substr", 2, 3, ptn_internal_grapheme_substr },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
