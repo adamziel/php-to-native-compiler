@@ -148973,6 +148973,7 @@ typedef struct {
     int64_t mode;
     int64_t flags;
     int64_t preg_flags;
+    int positioned;
 } PtnRegexIteratorData;
 
 typedef struct {
@@ -149680,6 +149681,29 @@ static PtnRegexIteratorData *ptn_regex_iterator_data(PtnRuntime *runtime, PtnVal
         return NULL;
     }
     return (PtnRegexIteratorData *)receiver.as.object->native_data;
+}
+
+static int ptn_regex_iterator_mode_is_valid(int64_t mode) {
+    return mode >= 0 && mode <= 4;
+}
+
+static void ptn_regex_iterator_throw_invalid_mode(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t arg_num
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE",
+        function_name,
+        arg_num
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
 }
 
 static PtnMultipleIteratorData *ptn_multiple_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -164351,6 +164375,12 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
         ptn_value_destroy(&inner);
         return ptn_null();
     }
+    if (!ptn_regex_iterator_mode_is_valid(mode)) {
+        ptn_regex_iterator_throw_invalid_mode(runtime, "RegexIterator::__construct", 3);
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
     int64_t flags = argc >= 4
         ? ptn_internal_expect_integer_arg(runtime, "RegexIterator::__construct", 4, "flags", args[3], line)
         : 0;
@@ -164379,6 +164409,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_new(
     data->mode = mode;
     data->flags = flags;
     data->preg_flags = preg_flags;
+    data->positioned = 0;
     ptn_string_operand_free(pattern);
 
     PtnValue object = ptn_object_new_shell(runtime, "RegexIterator");
@@ -167227,6 +167258,9 @@ static int ptn_regex_iterator_accepts_current(
     PtnRegexIteratorData *data,
     size_t line
 ) {
+    if (!data->positioned || !ptn_iterator_inner_valid(runtime, data->inner, line)) {
+        return 0;
+    }
     PtnValue pattern = ptn_regex_iterator_pattern_value(data);
     PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -167375,12 +167409,19 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         if (written < 0 || (size_t)written >= sizeof(function_name)) {
             ptn_abort_out_of_memory();
         }
+        const char *parameter_name = ptn_ascii_case_equal(name, "setMode")
+            ? "mode"
+            : (ptn_ascii_case_equal(name, "setPregFlags") ? "pregFlags" : "flags");
         int64_t value =
-            ptn_internal_expect_integer_arg(runtime, function_name, 1, "flags", args[0], line);
+            ptn_internal_expect_integer_arg(runtime, function_name, 1, parameter_name, args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         if (ptn_ascii_case_equal(name, "setMode")) {
+            if (!ptn_regex_iterator_mode_is_valid(value)) {
+                ptn_regex_iterator_throw_invalid_mode(runtime, "RegexIterator::setMode", 1);
+                return ptn_null();
+            }
             data->mode = value;
         } else if (ptn_ascii_case_equal(name, "setFlags")) {
             data->flags = value;
@@ -167396,6 +167437,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         }
         PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
         ptn_value_destroy(&rewind);
+        data->positioned = runtime->exceptions->active_exception == NULL;
         ptn_regex_iterator_skip_rejected(runtime, data, line);
         return ptn_null();
     }
@@ -167406,6 +167448,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         }
         PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
         ptn_value_destroy(&next);
+        data->positioned = runtime->exceptions->active_exception == NULL;
         ptn_regex_iterator_skip_rejected(runtime, data, line);
         return ptn_null();
     }
@@ -167419,7 +167462,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
-            : ptn_bool(ptn_iterator_inner_valid(runtime, data->inner, line));
+            : ptn_bool(data->positioned && ptn_iterator_inner_valid(runtime, data->inner, line));
     }
     if (ptn_ascii_case_equal(name, "current")) {
         ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);

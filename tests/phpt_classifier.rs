@@ -2279,6 +2279,7 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
         "--TEST--\nspl object storage\n--FILE--\n<?php\n$s = new SplObjectStorage();\n$s->attach(new stdClass(), 'info');\nforeach ($s as $object) { var_dump($s->getInfo()); }\n--EXPECT--\n",
         "--TEST--\nspl heap\n--FILE--\n<?php\n$h = new SplMaxHeap();\n$h->insert(2);\n$h->insert(3);\nforeach ($h as $value) { echo $value; }\n--EXPECT--\n",
         "--TEST--\nspl priority queue\n--FILE--\n<?php\n$q = new SplPriorityQueue();\n$q->insert('a', 2);\n$q->setExtractFlags(SplPriorityQueue::EXTR_BOTH);\nvar_dump($q->extract());\n--EXPECT--\n",
+        "--TEST--\nregex iterator\n--FILE--\n<?php\n$it = new RegexIterator(new ArrayIterator(['foo']), '/f/');\nvar_dump($it->getMode());\n--EXPECT--\n",
     ];
 
     for phpt in cases {

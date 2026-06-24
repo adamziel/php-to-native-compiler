@@ -1798,6 +1798,64 @@ var_dump(iterator_to_array($i));
 }
 
 #[test]
+fn compile_regex_iterator_accept_and_mode_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-regex-iterator-accept-mode-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("regex-iterator-accept-mode-errors.php");
+    let output = root.join("regex-iterator-accept-mode-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$it = new RegexIterator(new ArrayIterator(range(1, 3)), '/\d/');
+var_dump($it->valid(), $it->accept());
+$it->rewind();
+var_dump($it->valid(), $it->accept());
+try {
+    $it->setMode(7);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+    var_dump($e->getCode());
+}
+try {
+    new RegexIterator(new ArrayIterator(["foo"]), '/f/', 7);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+    var_dump($e->getCode());
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "RegexIterator::setMode(): Argument #1 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE\n",
+            "int(0)\n",
+            "RegexIterator::__construct(): Argument #3 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_regex_iterator_mode_is_valid"));
+}
+
+#[test]
 fn compile_unserialize_regex_iterator_declares_replacement_property_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-regex-iterator-replacement");
     fs::create_dir_all(&root).unwrap();

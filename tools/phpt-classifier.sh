@@ -1383,7 +1383,7 @@ ptn_phpt_first_unsupported_language_surface() {
             return line ~ /(^|[^[:alnum:]_$])new[[:space:]]+(arrayiterator|arrayobject|recursivearrayiterator|limititerator|iteratoriterator|infiniteiterator|filteriterator|callbackfilteriterator)([^[:alnum:]_]|$)/
         }
         function ptn_has_unmodeled_spl_symbol(line) {
-            return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|regexiterator|splfixedarray|spltempfileobject)([^[:alnum:]_]|$)/
+            return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|splfixedarray|spltempfileobject)([^[:alnum:]_]|$)/
         }
         function ptn_has_unmodeled_spl_function(line) {
             return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|spl_classes)[[:space:]]*\(/ ||
