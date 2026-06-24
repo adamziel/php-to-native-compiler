@@ -17526,6 +17526,54 @@ var_dump(session_get_cookie_params()['path']);
 }
 
 #[test]
+fn compile_session_start_invalid_name_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-session-invalid-name-handler");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("session-invalid-name-handler.php");
+    let output = root.join("session-invalid-name-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function errorHandler($errorNumber, $errorMessage, $fileName, $lineNumber) {
+    session_destroy();
+}
+
+set_error_handler('errorHandler');
+
+ob_start();
+var_dump(session_name("\t"));
+var_dump(session_start());
+"#,
+    )
+    .unwrap();
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SESSION_SAVE_PATH", root.as_os_str())
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_destroy(): Trying to destroy uninitialized session"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(9) \"PHPSESSID\"\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("session.name cannot contain"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_user_save_handler_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-session-user-save-handler");
     fs::create_dir_all(&root).unwrap();

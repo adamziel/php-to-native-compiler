@@ -82081,6 +82081,31 @@ static int ptn_session_prefix_is_valid(PtnStringOperand prefix) {
     return 1;
 }
 
+static int ptn_session_name_is_valid(const char *name) {
+    if (name == NULL) {
+        return 1;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
+        switch (*cursor) {
+            case '=':
+            case ',':
+            case ';':
+            case '.':
+            case '[':
+            case ' ':
+            case '\t':
+            case '\r':
+            case '\n':
+            case '\v':
+            case '\f':
+                return 0;
+            default:
+                break;
+        }
+    }
+    return 1;
+}
+
 static char *ptn_session_create_id_string(PtnRuntime *runtime, const char *prefix) {
     static const char alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,-";
     ptn_session_seed_rng_once();
@@ -83766,6 +83791,17 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     }
     if (argc >= 1) {
         ptn_session_apply_start_options(runtime, args[0], line);
+    }
+    const char *session_name = ptn_runtime_session_ini(runtime, "session.name");
+    if (!ptn_session_name_is_valid(session_name)) {
+        ptn_emit_runtime_warning(
+            runtime,
+            "session_start(): session.name cannot contain any of the following '=,;.[ \\t\\r\\n\\013\\014'",
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
     }
     const char *serialize_handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
     if (!ptn_session_serialize_handler_name_is_supported(serialize_handler)) {

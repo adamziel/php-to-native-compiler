@@ -1282,6 +1282,7 @@ typedef struct {
     int has_error_handler;
     PtnValue error_handler;
     int64_t error_handler_levels;
+    int error_handler_call_depth;
     PtnErrorHandlerFrame *error_handler_stack;
     size_t error_handler_stack_len;
     size_t error_handler_stack_capacity;

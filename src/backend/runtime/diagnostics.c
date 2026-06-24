@@ -999,6 +999,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->has_error_handler = 0;
     diagnostics->error_handler = ptn_null();
     diagnostics->error_handler_levels = PTN_E_ALL;
+    diagnostics->error_handler_call_depth = 0;
     diagnostics->error_handler_stack = NULL;
     diagnostics->error_handler_stack_len = 0;
     diagnostics->error_handler_stack_capacity = 0;
@@ -1238,6 +1239,18 @@ static PTN_UNUSED void ptn_diagnostic_output_write(
         return;
     }
     if (diagnostics != NULL && diagnostics->runtime != NULL) {
+        PtnRuntime *root = ptn_runtime_root(diagnostics->runtime);
+        PtnDiagnosticSink *root_diagnostics = root == NULL
+            ? &diagnostics->runtime->diagnostics
+            : &root->diagnostics;
+        if (root_diagnostics->error_handler_call_depth > 0) {
+            fwrite(data, 1, len, stdout);
+            if (root != NULL) {
+                root->output_has_started = 1;
+                root->output_at_line_start = data[len - 1] == '\n';
+            }
+            return;
+        }
         ptn_output_write(diagnostics->runtime, data, len);
         return;
     }
@@ -1494,6 +1507,9 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
     ptn_try_frame_push(runtime, &handler_frame);
     if (setjmp(handler_frame.jump) != 0) {
         ptn_try_frame_pop(runtime, &handler_frame);
+        if (handler_diagnostics->error_handler_call_depth > 0) {
+            handler_diagnostics->error_handler_call_depth--;
+        }
         runtime->trace_frame = saved_trace_frame;
         runtime->suppress_user_call_frame_location =
             saved_suppress_user_call_frame_location;
@@ -1515,7 +1531,9 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
     if (suppress_user_call_frame_location) {
         runtime->suppress_user_call_frame_location = 1;
     }
+    handler_diagnostics->error_handler_call_depth++;
     result = ptn_call_callable(runtime, saved_handler, 4, call_args, line, 0);
+    handler_diagnostics->error_handler_call_depth--;
     ptn_try_frame_pop(runtime, &handler_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =
