@@ -104980,7 +104980,8 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
                     PtnXmlNode *candidate = stack[i - 1];
                     const char *candidate_name = candidate == NULL || candidate->name == NULL ? "" : candidate->name;
                     int matches = html_mode
-                        ? ptn_ascii_case_equal(ptn_xml_local_name(candidate_name), closing_name)
+                        ? (ptn_ascii_case_equal(candidate_name, closing_name) ||
+                            ptn_ascii_case_equal(ptn_xml_local_name(candidate_name), closing_name))
                         : strcmp(candidate_name, closing_name) == 0;
                     if (matches) {
                         matched_stack_index = i - 1;

@@ -42619,6 +42619,10 @@ $namespaced = $html->createElementNS("urn:x", "x:node");
 $namespaced->setAttributeNS("urn:y", "y:attr", "v");
 $container->appendChild($namespaced);
 echo $html->saveHtml($container), "\n";
+
+$roundtrip = Dom\HTMLDocument::createFromString('<!DOCTYPE HTML><container><example:foo></example:foo>
+<example:foo example2:bar="baz1"></example:foo></container>');
+echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n";
 "#,
     )
     .unwrap();
@@ -42640,6 +42644,8 @@ echo $html->saveHtml($container), "\n";
             "bool(false)\n",
             "bool(true)\n",
             "<container><foo id=\"x\"></foo><x:node y:attr=\"v\"></x:node></container>\n",
+            "<container><example:foo></example:foo>\n",
+            "<example:foo example2:bar=\"baz1\"></example:foo></container>\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -42648,6 +42654,7 @@ echo $html->saveHtml($container), "\n";
     assert!(c_source.contains("ptn_dom_child_insert_like"));
     assert!(c_source.contains("ptn_dom_is_equal_node_method"));
     assert!(c_source.contains("ptn_xml_attribute_is_namespace_declaration"));
+    assert!(c_source.contains("ptn_xml_local_name(candidate_name)"));
 }
 
 #[test]
