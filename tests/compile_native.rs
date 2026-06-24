@@ -31824,6 +31824,65 @@ echo $default->name, \":\", $default->count, \":\", Box::$made, \"\\n\";
 }
 
 #[test]
+fn compile_legacy_class_name_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-legacy-class-name-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-class-name-constructor.php");
+    let output = root.join("legacy-class-name-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class LegacyBox {
+    public $label = \"unset\";
+
+    function LegacyBox($label, $suffix = \"!\") {
+        $this->label = $label . $suffix;
+    }
+
+    function read() {
+        return $this->label;
+    }
+}
+
+class ModernBox {
+    public $label = \"unset\";
+
+    function ModernBox($label) {
+        $this->label = \"old:\" . $label;
+    }
+
+    function __construct($label) {
+        $this->label = \"new:\" . $label;
+    }
+}
+
+$legacy = new LegacyBox(\"old\", \"?\");
+echo $legacy->read(), \"\\n\";
+$legacy->LegacyBox(\"again\", \".\");
+echo $legacy->read(), \"\\n\";
+$modern = new ModernBox(\"ok\");
+echo $modern->label, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "old?\nagain.\nnew:ok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"LegacyBox\")"));
+    assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+    assert!(c_source.contains("\"LegacyBox\""));
+}
+
+#[test]
 fn compile_inherited_declared_class_constructor_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-declared-class-constructor");
     fs::create_dir_all(&root).unwrap();
@@ -42849,6 +42908,11 @@ try {
     echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
 }
 
+$delayed = xml_parser_create();
+xml_set_element_handler($delayed, \"start_element\", \"end_element\");
+xml_set_object($delayed, new A());
+xml_parse($delayed, \"<delayed/>\");
+
 try {
     serialize(xml_parser_create());
 } catch (Throwable $exception) {
@@ -42900,6 +42964,8 @@ while ($reader->read()) {
     assert!(stdout.contains(
         "ValueError: xml_set_object(): Argument #2 ($object) cannot safely swap to object of class B as method \"end_element\" does not exist, which was set via xml_set_element_handler()\n"
     ));
+    assert!(stdout.contains("A::start_element(DELAYED)\n"));
+    assert!(stdout.contains("A::end_element(DELAYED)\n"));
     assert!(stdout.contains("Serialization of 'XMLParser' is not allowed\n"));
     assert!(stdout.contains("Error: Parser must not be called recursively\n"));
     assert!(stdout.contains("Warning: XMLReader::expand(): Couldn't fetch DOMCharacterData"));
@@ -43135,7 +43201,7 @@ fn compile_libxml_xml_dom_boundary_to_native_binary() {
         "<?php
 var_dump(LIBXML_NOENT, LIBXML_DTDLOAD, LIBXML_ERR_FATAL, defined('LIBXML_LOADED_VERSION'));
 $constants = get_defined_constants(true);
-var_dump(isset($constants['libxml']['LIBXML_PARSEHUGE']), isset($constants['xml']['XML_OPTION_PARSE_HUGE']));
+var_dump(XML_SAX_IMPL, $constants['xml']['XML_SAX_IMPL'], isset($constants['libxml']['LIBXML_PARSEHUGE']), isset($constants['xml']['XML_OPTION_PARSE_HUGE']));
 
 var_dump(libxml_use_internal_errors(false));
 var_dump(libxml_use_internal_errors(true));
@@ -43226,6 +43292,8 @@ echo $writer->flush();
             "int(4)\n",
             "int(3)\n",
             "bool(true)\n",
+            "string(6) \"libxml\"\n",
+            "string(6) \"libxml\"\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
