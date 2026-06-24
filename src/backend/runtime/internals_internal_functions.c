@@ -83072,6 +83072,123 @@ static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, con
     return ptn_string(PTN_PHP_SAPI_NAME);
 }
 
+static void ptn_phpinfo_write_display_value(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            break;
+        case PTN_BOOL:
+            if (value.as.boolean) {
+                ptn_output_write_cstr(runtime, "1");
+            }
+            break;
+        case PTN_INT: {
+            char buffer[32];
+            int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
+            break;
+        }
+        case PTN_FLOAT: {
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_runtime_scalar_float(runtime, value.as.floating, formatted, sizeof(formatted));
+            ptn_output_write_cstr(runtime, formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_output_write(runtime, (const char *)value.as.string.data, value.as.string.len);
+            break;
+        case PTN_RESOURCE: {
+            char buffer[64];
+            int written = snprintf(buffer, sizeof(buffer), "Resource id #%lld", (long long)value.as.resource->id);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
+            break;
+        }
+        case PTN_ARRAY:
+            ptn_output_write_cstr(runtime, "Array");
+            break;
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+            ptn_output_write_cstr(runtime, "Object");
+            break;
+        case PTN_REFERENCE:
+            break;
+    }
+}
+
+static void ptn_phpinfo_write_variable_prefix(PtnRuntime *runtime, const char *name, const PtnArrayKey *key) {
+    ptn_output_write_cstr(runtime, "$");
+    ptn_output_write_cstr(runtime, name);
+    if (key == NULL) {
+        return;
+    }
+    if (key->type == PTN_ARRAY_KEY_INT) {
+        char buffer[32];
+        int written = snprintf(buffer, sizeof(buffer), "[%lld]", (long long)key->as.integer);
+        if (written < 0 || (size_t)written >= sizeof(buffer)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_output_write(runtime, buffer, (size_t)written);
+        return;
+    }
+    ptn_output_write_cstr(runtime, "['");
+    ptn_output_write(runtime, key->as.string, key->string_len);
+    ptn_output_write_cstr(runtime, "']");
+}
+
+static void ptn_phpinfo_write_variable_line(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayKey *key,
+    PtnValue value
+) {
+    ptn_phpinfo_write_variable_prefix(runtime, name, key);
+    ptn_output_write_cstr(runtime, " => ");
+    ptn_phpinfo_write_display_value(runtime, value);
+    ptn_output_write_cstr(runtime, "\n");
+}
+
+static void ptn_phpinfo_write_superglobal(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (!ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), name, &value)) {
+        return;
+    }
+
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        ptn_phpinfo_write_variable_line(runtime, name, NULL, value);
+        return;
+    }
+
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        ptn_phpinfo_write_variable_line(runtime, name, &entry->key, entry->value);
+    }
+}
+
+static void ptn_phpinfo_write_variables(PtnRuntime *runtime) {
+    static const char *const names[] = {
+        "_SERVER",
+        "_ENV",
+        "_GET",
+        "_POST",
+        "_COOKIE",
+        "_FILES",
+        "_REQUEST",
+        "_SESSION",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        ptn_phpinfo_write_superglobal(runtime, names[i]);
+    }
+}
+
 static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t flags = PTN_INFO_ALL;
     if (argc >= 1) {
@@ -83088,6 +83205,7 @@ static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const Ptn
     if ((flags & PTN_INFO_VARIABLES) != 0) {
         ptn_output_write_cstr(runtime, "\nPHP Variables\n\n");
         ptn_output_write_cstr(runtime, "Variable => Value\n");
+        ptn_phpinfo_write_variables(runtime);
     }
     return ptn_bool(1);
 }

@@ -42546,6 +42546,14 @@ $constants = get_defined_constants(true);\n\
 var_dump(INFO_GENERAL, INFO_VARIABLES, INFO_ALL);\n\
 var_dump($constants['standard']['INFO_VARIABLES']);\n\
 var_dump(defined('INFO_VARIABLES'), constant('INFO_VARIABLES'));\n\
+$_SERVER = [];\n\
+$_ENV = [];\n\
+$_GET = [];\n\
+$_POST = [];\n\
+$_COOKIE = [];\n\
+$_FILES = [];\n\
+$_REQUEST = [];\n\
+$_SESSION = [];\n\
 phpinfo(INFO_VARIABLES);\n",
     )
     .unwrap();
@@ -42573,6 +42581,38 @@ Variable => Value\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("PTN_INFO_VARIABLES"));
     assert!(c_source.contains("ptn_internal_phpinfo"));
+}
+
+#[test]
+fn compile_phpinfo_reference_superglobal_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-phpinfo-reference-superglobal-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phpinfo-reference-superglobal-variables.php");
+    let output = root.join("phpinfo-reference-superglobal-variables-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$_ENV = [];\n\
+$_SERVER = ['test' => 'test'];\n\
+$reference =& $_SERVER;\n\
+phpinfo(INFO_VARIABLES);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "phpinfo()\n\
+\n\
+PHP Variables\n\
+\n\
+Variable => Value\n\
+$_SERVER['test'] => test\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
