@@ -14201,8 +14201,12 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
         } => {
             value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
         }
-        Instruction::UnsetStaticProperty { .. }
-        | Instruction::DeclareFunction { .. }
+        Instruction::UnsetStaticProperty { .. } => false,
+        Instruction::UnsetDynamicStaticPropertyName {
+            name: property_name,
+            ..
+        } => value_mentions_variable(property_name, name),
+        Instruction::DeclareFunction { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
@@ -23262,9 +23266,18 @@ fn emit_callable_dispatch(
         out.push_str("        if (resolved == NULL && runtime != NULL) {\n");
         out.push_str("            resolved = runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name;\n");
         out.push_str("        }\n");
-        out.push_str(
-            "        return ptn_duplicate_string(resolved != NULL ? resolved : scope_name);\n",
-        );
+        out.push_str("        if (resolved == NULL) {\n");
+        out.push_str("            if (runtime != NULL) {\n");
+        out.push_str("                char message[96];\n");
+        out.push_str("                int written = snprintf(message, sizeof(message), \"Cannot access \\\"%s\\\" when no class scope is active\", scope_name);\n");
+        out.push_str("                if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str("                ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, runtime->call_site_line);\n");
+        out.push_str("            }\n");
+        out.push_str("            return NULL;\n");
+        out.push_str("        }\n");
+        out.push_str("        return ptn_duplicate_string(resolved);\n");
         out.push_str("    }\n");
         out.push_str("    if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n");
         out.push_str("        const char *base = relative_class_name;\n");
@@ -23272,6 +23285,12 @@ fn emit_callable_dispatch(
         out.push_str("            base = runtime->current_class_name;\n");
         out.push_str("        }\n");
         out.push_str("        const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
+        out.push_str("        if (parent == NULL && base == NULL) {\n");
+        out.push_str("            if (runtime != NULL) {\n");
+        out.push_str("                ptn_throw_exception_at(runtime, \"Error\", \"Cannot access \\\"parent\\\" when no class scope is active\", runtime->source_path, runtime->call_site_line);\n");
+        out.push_str("            }\n");
+        out.push_str("            return NULL;\n");
+        out.push_str("        }\n");
         out.push_str(
             "        return ptn_duplicate_string(parent != NULL ? parent : scope_name);\n",
         );
@@ -23521,6 +23540,12 @@ fn emit_callable_dispatch(
             "                    target_method_name = ptn_duplicate_string(method_name);\n",
         );
         out.push_str("                }\n");
+        out.push_str("                if (target_class_name == NULL) {\n");
+        out.push_str("                    free(target_method_name);\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    free(scope_name);\n");
+        out.push_str("                    return ptn_null();\n");
+        out.push_str("                }\n");
         out.push_str("                if (runtime->forward_static_called_class_name != NULL && ptn_ascii_case_equal(scope_name, \"self\") && runtime->current_class_name != NULL) {\n");
         out.push_str("                    free(target_class_name);\n");
         out.push_str("                    target_class_name = ptn_duplicate_string(runtime->current_class_name);\n");
@@ -23630,6 +23655,11 @@ fn emit_callable_dispatch(
         out.push_str(
             "            char *target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
+        out.push_str("            if (target_class_name == NULL) {\n");
+        out.push_str("                free(target_method_name);\n");
+        out.push_str("                free(callable_name);\n");
+        out.push_str("                return ptn_null();\n");
+        out.push_str("            }\n");
         out.push_str("            if (runtime->forward_static_called_class_name != NULL && ptn_ascii_case_equal(scope_name, \"self\") && runtime->current_class_name != NULL) {\n");
         out.push_str("                free(target_class_name);\n");
         out.push_str("                target_class_name = ptn_duplicate_string(runtime->current_class_name);\n");
@@ -25774,15 +25804,85 @@ fn emit_instruction(
             name,
             line,
         } => {
-            let resolved_class_name = values.static_property_class_name(class_name);
-            out.push_str("    ptn_runtime_unset_static_property(&runtime, \"");
-            out.push_str(&c_string(&resolved_class_name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            values.emit_access_scope(out);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
+            if values.class_name_fetch_uses_runtime_scope(class_name) {
+                let scoped_class_temp = values.next_temp();
+                values.emit_runtime_scoped_class_name_cstr(
+                    out,
+                    &scoped_class_temp,
+                    class_name,
+                    *line,
+                );
+                out.push_str("    if (");
+                out.push_str(&scoped_class_temp);
+                out.push_str(
+                    "_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n",
+                );
+                out.push_str("        ptn_runtime_unset_static_property(&runtime, ");
+                out.push_str(&scoped_class_temp);
+                out.push_str("_class_name, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                values.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                let resolved_class_name = values.static_property_class_name(class_name);
+                out.push_str("    ptn_runtime_unset_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                values.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+        }
+        Instruction::UnsetDynamicStaticPropertyName {
+            class_name,
+            name,
+            line,
+        } => {
+            let name_temp = values.emit_dynamic_property_name(out, name, *line);
+            if values.class_name_fetch_uses_runtime_scope(class_name) {
+                let scoped_class_temp = values.next_temp();
+                values.emit_runtime_scoped_class_name_cstr(
+                    out,
+                    &scoped_class_temp,
+                    class_name,
+                    *line,
+                );
+                out.push_str("    if (");
+                out.push_str(&scoped_class_temp);
+                out.push_str(
+                    "_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n",
+                );
+                out.push_str("        ptn_runtime_unset_static_property(&runtime, ");
+                out.push_str(&scoped_class_temp);
+                out.push_str("_class_name, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                values.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            } else {
+                let resolved_class_name = values.static_property_class_name(class_name);
+                out.push_str("    ptn_runtime_unset_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                values.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("    free(");
+            out.push_str(&name_temp);
             out.push_str(");\n");
         }
         Instruction::InternalCall {
@@ -29173,6 +29273,9 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
         Instruction::UnsetStaticProperty { .. } => {}
+        Instruction::UnsetDynamicStaticPropertyName { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -29991,6 +30094,9 @@ fn collect_instruction_runtime_requirements(
             collect_value_runtime_requirements(name, functions, requirements);
         }
         Instruction::UnsetStaticProperty { .. } => {}
+        Instruction::UnsetDynamicStaticPropertyName { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         Instruction::InternalCall {
             name,
             arguments,
@@ -34358,6 +34464,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::UnsetProperty { line, .. }
         | Instruction::UnsetDynamicProperty { line, .. }
         | Instruction::UnsetStaticProperty { line, .. }
+        | Instruction::UnsetDynamicStaticPropertyName { line, .. }
         | Instruction::DefineConstant { line, .. }
         | Instruction::InternalCall { line, .. }
         | Instruction::Return { line, .. }
@@ -35005,6 +35112,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         Instruction::UnsetDynamicProperty { receiver, name, .. } => {
             value_expr_uses_this(receiver) || value_expr_uses_this(name)
         }
+        Instruction::UnsetDynamicStaticPropertyName { name, .. } => value_expr_uses_this(name),
         Instruction::DefineConstant {
             value: receiver, ..
         }
@@ -40383,7 +40491,9 @@ impl ValueEmitter {
                 arms,
                 line,
             } => self.emit_match(out, subject, arms, *line),
-            ValueExpr::InstanceOf { expr, target, .. } => self.emit_instanceof(out, expr, target),
+            ValueExpr::InstanceOf { expr, target, line } => {
+                self.emit_instanceof(out, expr, target, *line)
+            }
             ValueExpr::Unary { op, expr, line } => {
                 if matches!(op, UnaryOp::ErrorSuppress) {
                     return self.emit_error_suppressed_value(out, expr);
@@ -43978,6 +44088,7 @@ impl ValueEmitter {
         out: &mut String,
         expr: &ValueExpr,
         target: &InstanceOfTarget,
+        line: usize,
     ) -> String {
         let expr_temp = self.emit_materialized_value(out, expr);
         let resolved_temp = self.next_temp();
@@ -43991,11 +44102,30 @@ impl ValueEmitter {
         let mut dynamic_owned_temp = None;
         match target {
             InstanceOfTarget::ClassName(class_name) => {
-                out.push_str("    const char *");
-                out.push_str(&expected_class_temp);
-                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-                out.push_str(&c_string(class_name));
-                out.push_str("\");\n");
+                if self.class_name_fetch_uses_runtime_scope(class_name) {
+                    self.emit_runtime_scoped_class_name_cstr(
+                        out,
+                        &expected_class_temp,
+                        class_name,
+                        line,
+                    );
+                    out.push_str("    const char *");
+                    out.push_str(&expected_class_temp);
+                    out.push_str(" = ");
+                    out.push_str(&expected_class_temp);
+                    out.push_str(
+                        "_class_name == NULL ? NULL : ptn_runtime_resolve_class_alias(&runtime, ",
+                    );
+                    out.push_str(&expected_class_temp);
+                    out.push_str("_class_name);\n");
+                } else {
+                    let resolved_class_name = self.static_member_class_name(class_name);
+                    out.push_str("    const char *");
+                    out.push_str(&expected_class_temp);
+                    out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\");\n");
+                }
             }
             InstanceOfTarget::Expr(target) => {
                 let target_temp = self.emit_materialized_value(out, target);
@@ -44546,20 +44676,42 @@ impl ValueEmitter {
         name: &ValueExpr,
         line: usize,
     ) -> String {
-        let resolved_class_name = self.static_property_class_name(class_name);
         let name_temp = self.emit_dynamic_property_name(out, name, line);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
-        out.push_str(&c_string(&resolved_class_name));
-        out.push_str("\", ");
-        out.push_str(&name_temp);
-        out.push_str(", ");
-        self.emit_access_scope(out);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
+        if self.class_name_fetch_uses_runtime_scope(class_name) {
+            out.push_str(" = ptn_null();\n");
+            self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+            out.push_str("    if (");
+            out.push_str(&result_temp);
+            out.push_str(
+                "_class_name != NULL && runtime.exceptions->active_exception == NULL) {\n",
+            );
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_read_static_property(&runtime, ");
+            out.push_str(&result_temp);
+            out.push_str("_class_name, ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            self.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        } else {
+            let resolved_class_name = self.static_property_class_name(class_name);
+            out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+            out.push_str(&c_string(&resolved_class_name));
+            out.push_str("\", ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            self.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         out.push_str("    free(");
         out.push_str(&name_temp);
         out.push_str(");\n");
@@ -45274,9 +45426,9 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str("_class_name == NULL) {\n");
             out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
-            out.push_str("Cannot use \\\"");
+            out.push_str("Cannot access \\\"");
             out.push_str(&c_string(&class_name.to_ascii_lowercase()));
-            out.push_str("\\\" in the global scope");
+            out.push_str("\\\" when no class scope is active");
             out.push_str("\", \"");
             out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");

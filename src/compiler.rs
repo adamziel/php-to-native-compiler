@@ -612,6 +612,9 @@ impl IncludeCollector {
                             self.collect_expr(name, source_file, source_dir)?;
                         }
                         UnsetTarget::StaticProperty { .. } => {}
+                        UnsetTarget::DynamicStaticPropertyName { name, .. } => {
+                            self.collect_expr(name, source_file, source_dir)?;
+                        }
                         UnsetTarget::DynamicVariable { name, .. } => {
                             self.collect_expr(name, source_file, source_dir)?;
                             self.path_env.clear();

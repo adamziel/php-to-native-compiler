@@ -129,6 +129,7 @@ fn parse_with_options(
         allow_append_array_read: false,
         allow_standalone_list_array_element: false,
         active_type_scope: None,
+        anonymous_function_depth: 0,
         allow_unscoped_relative_types: 0,
         allow_void_cast_expression: 0,
         array_literal_depth: 0,
@@ -174,6 +175,7 @@ struct Parser<'a> {
     allow_append_array_read: bool,
     allow_standalone_list_array_element: bool,
     active_type_scope: Option<ActiveTypeScope>,
+    anonymous_function_depth: usize,
     allow_unscoped_relative_types: usize,
     allow_void_cast_expression: usize,
     array_literal_depth: usize,
@@ -4413,7 +4415,9 @@ impl Parser<'_> {
         self.allow_unscoped_relative_types -= 1;
         self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
+        self.anonymous_function_depth += 1;
         let body = self.parse_block();
+        self.anonymous_function_depth -= 1;
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         let body = body?;
@@ -5095,6 +5099,27 @@ impl Parser<'_> {
             }
             _ => unreachable!("relative type keyword checked by caller"),
         }
+    }
+
+    fn relative_class_member_scope_diagnostic(
+        &self,
+        class_name: &str,
+        span: SourceSpan,
+    ) -> Option<Diagnostic> {
+        let lowered = class_name.to_ascii_lowercase();
+        if !matches!(lowered.as_str(), "self" | "static" | "parent") {
+            return None;
+        }
+        if self.active_type_scope.is_some()
+            || self.anonymous_function_depth > 0
+            || self.allow_unscoped_relative_types > 0
+        {
+            return None;
+        }
+        Some(Diagnostic::new(
+            format!("Cannot use \"{lowered}\" when no class scope is active"),
+            Some(span),
+        ))
     }
 
     fn peek_is_type_hint(&self) -> bool {
@@ -6467,6 +6492,15 @@ impl Parser<'_> {
                 name,
                 span,
             }),
+            Expr::DynamicStaticPropertyNameFetch {
+                class_name,
+                name,
+                span,
+            } => Ok(UnsetTarget::DynamicStaticPropertyName {
+                class_name,
+                name,
+                span,
+            }),
             Expr::Call { span, .. } | Expr::DynamicCall { span, .. } => Err(Diagnostic::new(
                 "Can't use function return value in write context",
                 Some(span),
@@ -7485,6 +7519,11 @@ impl Parser<'_> {
                 let target = if self.peek_starts_class_name() {
                     let (name, span, source_name) =
                         self.parse_resolved_class_name_with_source("expected class name")?;
+                    if let Some(diagnostic) =
+                        self.relative_class_member_scope_diagnostic(&name, span)
+                    {
+                        return Err(diagnostic);
+                    }
                     InstanceOfTarget::ClassName {
                         name,
                         source_name,
@@ -8601,6 +8640,7 @@ impl Parser<'_> {
             allow_append_array_read: self.allow_append_array_read,
             allow_standalone_list_array_element: self.allow_standalone_list_array_element,
             active_type_scope: self.active_type_scope.clone(),
+            anonymous_function_depth: self.anonymous_function_depth,
             allow_unscoped_relative_types: self.allow_unscoped_relative_types,
             array_literal_depth: self.array_literal_depth,
             return_by_ref_stack: self.return_by_ref_stack.clone(),
@@ -8785,7 +8825,9 @@ impl Parser<'_> {
         }
         self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
+        self.anonymous_function_depth += 1;
         let expression = self.parse_expr();
+        self.anonymous_function_depth -= 1;
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         self.allow_append_array_read = previous_allow_append_array_read;
@@ -8871,6 +8913,11 @@ impl Parser<'_> {
         class_name: String,
         class_span: SourceSpan,
     ) -> Result<Expr> {
+        if let Some(diagnostic) =
+            self.relative_class_member_scope_diagnostic(&class_name, class_span)
+        {
+            return Err(diagnostic);
+        }
         let scope_span = self.advance().span;
         let member = self.advance().clone();
         if let TokenKind::Variable(member_name) = member.kind {
@@ -20837,6 +20884,9 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_expr(name)?;
         }
+        UnsetTarget::DynamicStaticPropertyName { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
         UnsetTarget::StaticProperty { .. } => {}
         UnsetTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
@@ -21864,6 +21914,7 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
         UnsetTarget::DynamicProperty { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
         }
+        UnsetTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         UnsetTarget::ArrayDim(target) => {
             target.dimensions.iter().flatten().any(expr_contains_yield)
         }
@@ -27341,6 +27392,9 @@ fn unset_target_uses_this_property(target: &UnsetTarget, property_name: &str) ->
         UnsetTarget::DynamicProperty { receiver, name, .. } => {
             expr_uses_this_property(receiver, property_name)
                 || expr_uses_this_property(name, property_name)
+        }
+        UnsetTarget::DynamicStaticPropertyName { name, .. } => {
+            expr_uses_this_property(name, property_name)
         }
         UnsetTarget::ArrayDim(target) => array_dim_target_uses_this_property(target, property_name),
         UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions

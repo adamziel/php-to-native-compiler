@@ -50780,6 +50780,82 @@ try {
 }
 
 #[test]
+fn parser_rejects_unscoped_self_class_constant_in_named_function() {
+    let root = temp_dir("ptn-native-unscoped-self-named-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unscoped-self-named-function.php");
+    let output = root.join("unscoped-self-named-function-bin");
+    fs::write(
+        &input,
+        "<?php
+function test() {
+    var_dump(self::FOO);
+}
+",
+    )
+    .unwrap();
+
+    let error = compile_file(&input, &output, CompileOptions { emit_c: false })
+        .expect_err("unscoped self in named function should be rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("Cannot use \"self\" when no class scope is active"),
+        "unexpected diagnostic: {error}"
+    );
+}
+
+#[test]
+fn compile_unscoped_self_access_in_closure_errors_at_runtime() {
+    let root = temp_dir("ptn-native-unscoped-self-closure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unscoped-self-closure.php");
+    let output = root.join("unscoped-self-closure-bin");
+    fs::write(
+        &input,
+        "<?php
+$fn = function() {
+    $str = 'foo';
+    foreach ([
+        function() use ($str) { self::${$str . 'bar'}; },
+        function() use ($str) { unset(self::${$str . 'bar'}); },
+        function() use ($str) { isset(self::${$str . 'bar'}); },
+        function() use ($str) { self::{$str . 'bar'}(); },
+        function() { new stdClass instanceof self; },
+    ] as $probe) {
+        try {
+            $probe();
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+};
+$fn();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false })
+        .unwrap_or_else(|error| panic!("compile failed: {error}"));
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&execution.stdout),
+        "Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n\
+Cannot access \"self\" when no class scope is active\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&execution.stderr), "");
+}
+
+#[test]
 fn compile_class_constant_self_reference_trace_to_native_binary() {
     let root = temp_dir("ptn-native-class-constant-self-reference-trace");
     fs::create_dir_all(&root).unwrap();

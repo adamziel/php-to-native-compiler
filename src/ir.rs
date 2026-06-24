@@ -436,6 +436,11 @@ pub enum Instruction {
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
+    UnsetDynamicStaticPropertyName {
+        class_name: String,
+        name: ValueExpr,
+        line: usize,
+    },
     UnsetProperty {
         receiver: ValueExpr,
         name: String,
@@ -4409,6 +4414,15 @@ impl<'a> LoweringContext<'a> {
             } => Instruction::UnsetStaticProperty {
                 class_name: class_name.clone(),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstUnsetTarget::DynamicStaticPropertyName {
+                class_name,
+                name,
+                span,
+            } => Instruction::UnsetDynamicStaticPropertyName {
+                class_name: class_name.clone(),
+                name: self.lower_expr(name),
                 line: span.line,
             },
         }
