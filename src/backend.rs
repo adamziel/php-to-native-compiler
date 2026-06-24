@@ -28813,11 +28813,13 @@ fn enum_class_declaration_fatal_message(
     class: &ClassDecl,
     classes: &[ClassDecl],
 ) -> Option<String> {
-    if !class.is_enum {
-        if class
-            .interfaces
-            .iter()
-            .any(|interface| is_builtin_enum_interface_name(interface))
+    if class.is_interface {
+        return None;
+    }
+    if !class.is_enum && !class.is_interface {
+        if class_transitive_interfaces(class, classes)
+            .into_iter()
+            .any(is_builtin_enum_interface_name)
         {
             return Some(format!(
                 "Non-enum class {} cannot implement interface UnitEnum",

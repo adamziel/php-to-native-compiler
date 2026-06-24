@@ -83093,6 +83093,18 @@ echo \"unreachable\\n\";
             "Non-enum class Foo cannot implement interface UnitEnum",
             2,
         ),
+        (
+            "class-implements-interface-extending-unit-enum",
+            "<?php
+interface I extends UnitEnum {}
+class Foo implements I {
+    public static function cases(): array { return []; }
+}
+echo \"unreachable\\n\";
+",
+            "Non-enum class Foo cannot implement interface UnitEnum",
+            3,
+        ),
     ];
 
     for (name, source, message, line) in cases {
