@@ -51641,7 +51641,7 @@ static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const P
         return ptn_null();
     }
     int64_t total = 0;
-    unsigned char buffer[4096];
+    unsigned char buffer[8192];
     for (;;) {
         size_t read_len = ptn_stream_read_bytes(resource, buffer, sizeof(buffer));
         if (read_len != 0) {

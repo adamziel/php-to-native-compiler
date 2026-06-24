@@ -25437,6 +25437,45 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_fpassthru_write_only_filtered_stream_reports_php_read_size_to_native_binary() {
+    let root = temp_dir("ptn-native-fpassthru-write-only-filtered-read-size");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fpassthru-write-only-filtered-read-size.php");
+    let output = root.join("fpassthru-write-only-filtered-read-size-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/bug35781.txt';\n\
+$fp = fopen($path, 'w');\n\
+stream_filter_append($fp, 'string.rot13', -49);\n\
+fwrite($fp, \"This is a test\\n\");\n\
+rewind($fp);\n\
+fpassthru($fp);\n\
+fclose($fp);\n\
+var_dump(file_get_contents($path));\n\
+unlink($path);\n\
+echo \"Done\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Notice: fpassthru(): Read of 8192 bytes failed with errno=9 Bad file descriptor"
+    ));
+    assert!(!stdout.contains("Notice: fpassthru(): Read of 4096 bytes failed"));
+    assert!(stdout.contains("string(15) \"Guvf vf n grfg\n\"\nDone\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_fpassthru"));
+    assert!(c_source.contains("ptn_internal_stream_filter_append"));
+}
+
+#[test]
 fn compile_stream_filter_remove_detaches_and_invalidates_to_native_binary() {
     let root = temp_dir("ptn-native-stream-filter-remove-detaches");
     fs::create_dir_all(&root).unwrap();
