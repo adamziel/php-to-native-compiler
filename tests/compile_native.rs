@@ -77220,7 +77220,7 @@ var_dump($a);
             concat!(
                 "Init\n",
                 "LazyMagicFoo::__get($x) on LazyMagicFoo\n",
-                "\nDeprecated: Creation of dynamic property LazyMagicBar::$x is deprecated in {} on line 7\n",
+                "\nWarning: Undefined property: LazyMagicFoo::$x in {} on line 7\n",
                 "NULL\n",
             ),
             input.display()

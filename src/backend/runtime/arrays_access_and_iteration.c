@@ -8451,6 +8451,22 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         !ptn_lazy_object_initialize(runtime, receiver, line)) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
+    PtnValue original_receiver = receiver;
+    if (receiver.as.object->lazy_is_proxy && !receiver.as.object->lazy_uninitialized) {
+        receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+            runtime,
+            receiver,
+            line
+        );
+        if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+    }
+    int reference_fetch_forwarded_from_initialized_proxy =
+        original_receiver.type == PTN_OBJECT &&
+        original_receiver.as.object != receiver.as.object &&
+        original_receiver.as.object->lazy_is_proxy &&
+        !original_receiver.as.object->lazy_uninitialized;
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
@@ -8715,6 +8731,14 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     if (entry == NULL) {
+        if (metadata == NULL &&
+            reference_fetch_forwarded_from_initialized_proxy &&
+            ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
+            ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
         if (metadata == NULL &&
             !ptn_object_emit_dynamic_property_creation_deprecation(
                 runtime,
