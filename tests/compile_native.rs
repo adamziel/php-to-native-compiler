@@ -23236,7 +23236,8 @@ setlocale(LC_ALL, \"C\");\n\
 $ts = mktime(8, 8, 8, 8, 8, 2008);\n\
 echo strftime(\"%Y-%m-%d %H:%M:%S %A\", $ts), \"\\n\";\n\
 echo gmstrftime(format: \"%Y-%m-%d %H:%M:%S\", timestamp: $ts), \"\\n\";\n\
-echo strftime(format: \"\"), \"\\n\";\n\
+var_dump(strftime(format: \"\"));\n\
+var_dump(gmstrftime(\"\"));\n\
 var_dump(function_exists(\"strftime\"), function_exists(\"gmstrftime\"));",
     )
     .unwrap();
@@ -23252,7 +23253,9 @@ var_dump(function_exists(\"strftime\"), function_exists(\"gmstrftime\"));",
 \nDeprecated: Function gmstrftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 6\n\
 2008-08-08 08:08:08\n\
 \nDeprecated: Function strftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 7\n\
-\n\
+bool(false)\n\
+\nDeprecated: Function gmstrftime() is deprecated since 8.1, use IntlDateFormatter::format() instead in ptn on line 8\n\
+bool(false)\n\
 bool(true)\n\
 bool(true)\n"
     );

@@ -90040,7 +90040,7 @@ static PtnValue ptn_internal_strftime_named(PtnRuntime *runtime, const char *fun
 
     if (format.len == 0) {
         ptn_string_operand_free(format);
-        return ptn_string("");
+        return ptn_bool(0);
     }
 
     char *format_c = ptn_duplicate_string_len(format.data, format.len);
