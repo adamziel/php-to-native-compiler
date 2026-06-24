@@ -320,6 +320,28 @@ static PTN_UNUSED void ptn_runtime_import_closure_captures(PtnRuntime *runtime, 
     }
 }
 
+static PTN_UNUSED void ptn_generator_adopt_pending_assignment_capture(PtnRuntime *runtime, PtnValue generator) {
+    if (runtime == NULL || runtime->pending_generator_assignment_name == NULL) {
+        return;
+    }
+    const char *name = runtime->pending_generator_assignment_name;
+    runtime->pending_generator_assignment_name = NULL;
+    if (!runtime->owned_call_frame.has_current_closure) {
+        return;
+    }
+    PtnValue closure_value = ptn_value_deref(runtime->owned_call_frame.current_closure);
+    if (closure_value.type != PTN_CLOSURE) {
+        return;
+    }
+    PtnValue capture;
+    if (
+        ptn_symbols_get(&closure_value.as.closure->captures, name, &capture) &&
+        capture.type == PTN_REFERENCE
+    ) {
+        ptn_reference_assign(runtime, capture.as.reference, generator);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closure) {
     PtnClosure *source = ptn_closure_from_value(closure);
     PtnValue copy = ptn_closure(
@@ -2370,6 +2392,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
+    runtime->pending_generator_assignment_name = NULL;
+    runtime->pending_yield_from_generator = NULL;
+    runtime->pending_yield_from_line = 0;
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;

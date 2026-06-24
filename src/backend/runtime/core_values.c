@@ -1015,6 +1015,7 @@ struct PtnGenerator {
     int64_t next_auto_key;
     int completed;
     int started;
+    int executing;
     int yields_by_ref;
 };
 
@@ -1538,6 +1539,9 @@ struct PtnRuntime {
     const char *destructor_access_scope;
     int destructor_shutdown_phase;
     PtnGenerator *current_generator;
+    const char *pending_generator_assignment_name;
+    PtnGenerator *pending_yield_from_generator;
+    size_t pending_yield_from_line;
     int generator_aborted_after_yield;
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;

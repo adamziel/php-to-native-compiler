@@ -190,6 +190,11 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->destructor_access_scope = NULL;
     runtime->destructor_shutdown_phase = 0;
     runtime->current_generator = NULL;
+    runtime->pending_generator_assignment_name =
+        caller_runtime->pending_generator_assignment_name;
+    runtime->pending_yield_from_generator =
+        caller_runtime->pending_yield_from_generator;
+    runtime->pending_yield_from_line = caller_runtime->pending_yield_from_line;
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;

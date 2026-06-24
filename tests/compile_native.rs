@@ -33077,6 +33077,47 @@ foreach ($trace as $frame) {
 }
 
 #[test]
+fn compile_reflection_generator_self_capture_yield_from_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-generator-self-capture-yield-from-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-generator-self-capture-yield-from-trace.php");
+    let output = root.join("reflection-generator-self-capture-yield-from-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+function dumpTrace(ReflectionGenerator $ref) {
+    $trace = $ref->getTrace();
+    echo count($trace), \"\\n\";
+    foreach ($trace as $frame) {
+        echo substr($frame['function'], 0, 9), \"\\n\";
+    }
+}
+
+($gen = (function() use (&$gen) {
+    $ref = new ReflectionGenerator($gen);
+    dumpTrace($ref);
+
+    yield from (function() use ($ref) {
+        dumpTrace($ref);
+        yield;
+    })();
+})())->next();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\n{closure:\n2\n{closure:\n{closure:\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_generator_closed_state_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-generator-closed-state");
     fs::create_dir_all(&root).unwrap();

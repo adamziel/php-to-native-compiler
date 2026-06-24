@@ -2712,10 +2712,19 @@ fn emit_user_functions(
             out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
             out.push_str(");\n");
+            if function.is_anonymous {
+                out.push_str(
+                    "    ptn_generator_adopt_pending_assignment_capture(&runtime, ptn_generator_value);\n",
+                );
+                out.push_str(
+                    "    ptn_generator_adopt_pending_yield_from_delegate(&runtime, ptn_generator_value);\n",
+                );
+            }
             out.push_str(
                 "    runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n",
             );
             out.push_str("    if (runtime.current_generator != NULL) {\n");
+            out.push_str("        runtime.current_generator->executing = 1;\n");
             out.push_str("        runtime.current_generator->source_line = ");
             out.push_str(&function.line.to_string());
             out.push_str(";\n");
@@ -3329,6 +3338,9 @@ fn emit_user_functions(
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
             out.push_str("    if (ptn_generator_capture_pending_exception(&runtime, runtime.current_generator)) {\n");
+            out.push_str("        if (runtime.current_generator != NULL) {\n");
+            out.push_str("            runtime.current_generator->executing = 0;\n");
+            out.push_str("        }\n");
             out.push_str("        runtime.current_generator = NULL;\n");
             out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
@@ -3338,6 +3350,9 @@ fn emit_user_functions(
                 out.push_str("        free(ptn_closure_trace_name);\n");
             }
             out.push_str("        return ptn_generator_value;\n");
+            out.push_str("    }\n");
+            out.push_str("    if (runtime.current_generator != NULL) {\n");
+            out.push_str("        runtime.current_generator->executing = 0;\n");
             out.push_str("    }\n");
         }
         out.push_str("    ptn_runtime_clear_temporary_roots(&runtime);\n");
@@ -3356,6 +3371,9 @@ fn emit_user_functions(
         out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
             out.push_str("    ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
+            out.push_str("    if (runtime.current_generator != NULL) {\n");
+            out.push_str("        runtime.current_generator->executing = 0;\n");
+            out.push_str("    }\n");
             out.push_str("    runtime.current_generator = NULL;\n");
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
@@ -36248,6 +36266,61 @@ impl ValueEmitter {
         self.emit_materialized_value(out, value)
     }
 
+    fn generator_assignment_self_capture_name<'a>(
+        &self,
+        target_name: &'a str,
+        value: &ValueExpr,
+    ) -> Option<&'a str> {
+        let ValueExpr::DynamicCall { callee, .. } = value else {
+            return None;
+        };
+        let ValueExpr::Closure {
+            function_index,
+            captures,
+            ..
+        } = callee.as_ref()
+        else {
+            return None;
+        };
+        let function = self.user_functions.get(*function_index)?;
+        if !function.is_anonymous || !function.is_generator {
+            return None;
+        }
+        captures
+            .iter()
+            .any(|capture| capture.by_ref && capture.name == target_name)
+            .then_some(target_name)
+    }
+
+    fn value_is_anonymous_generator_closure_call(&self, value: &ValueExpr) -> bool {
+        let ValueExpr::DynamicCall { callee, .. } = value else {
+            return false;
+        };
+        let ValueExpr::Closure { function_index, .. } = callee.as_ref() else {
+            return false;
+        };
+        self.user_functions
+            .get(*function_index)
+            .is_some_and(|function| function.is_anonymous && function.is_generator)
+    }
+
+    fn emit_pending_generator_assignment_capture(
+        &mut self,
+        out: &mut String,
+        target_name: &str,
+        value: &ValueExpr,
+    ) -> Option<String> {
+        let capture_name = self.generator_assignment_self_capture_name(target_name, value)?;
+        let previous_temp = self.next_temp();
+        out.push_str("    const char *");
+        out.push_str(&previous_temp);
+        out.push_str(" = runtime.pending_generator_assignment_name;\n");
+        out.push_str("    runtime.pending_generator_assignment_name = \"");
+        out.push_str(&c_string(capture_name));
+        out.push_str("\";\n");
+        Some(previous_temp)
+    }
+
     fn emit_dynamic_variable_quiet_lookup(
         &mut self,
         out: &mut String,
@@ -36916,7 +36989,14 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &value_temp);
                 return assigned_temp;
             }
+            let pending_generator_assignment_name =
+                self.emit_pending_generator_assignment_capture(out, name, value);
             let value_temp = self.emit_materialized_value(out, value);
+            if let Some(previous_temp) = pending_generator_assignment_name {
+                out.push_str("    runtime.pending_generator_assignment_name = ");
+                out.push_str(&previous_temp);
+                out.push_str(";\n");
+            }
             let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             return result_temp;
@@ -47794,7 +47874,32 @@ impl ValueEmitter {
     }
 
     fn emit_yield_from(&mut self, out: &mut String, expr: &ValueExpr, line: usize) -> String {
+        let pending_yield_from_parent = if self.value_is_anonymous_generator_closure_call(expr) {
+            let previous_generator_temp = self.next_temp();
+            let previous_line_temp = self.next_temp();
+            out.push_str("    PtnGenerator *");
+            out.push_str(&previous_generator_temp);
+            out.push_str(" = runtime.pending_yield_from_generator;\n");
+            out.push_str("    size_t ");
+            out.push_str(&previous_line_temp);
+            out.push_str(" = runtime.pending_yield_from_line;\n");
+            out.push_str("    runtime.pending_yield_from_generator = runtime.current_generator;\n");
+            out.push_str("    runtime.pending_yield_from_line = ");
+            out.push_str(&line.to_string());
+            out.push_str(";\n");
+            Some((previous_generator_temp, previous_line_temp))
+        } else {
+            None
+        };
         let source_temp = self.emit_materialized_value(out, expr);
+        if let Some((previous_generator_temp, previous_line_temp)) = pending_yield_from_parent {
+            out.push_str("    runtime.pending_yield_from_generator = ");
+            out.push_str(&previous_generator_temp);
+            out.push_str(";\n");
+            out.push_str("    runtime.pending_yield_from_line = ");
+            out.push_str(&previous_line_temp);
+            out.push_str(";\n");
+        }
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
