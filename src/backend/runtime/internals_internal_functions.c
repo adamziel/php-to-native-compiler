@@ -167927,19 +167927,96 @@ static int ptn_regex_iterator_accepts_current(
     return accepted;
 }
 
+static int ptn_regex_iterator_has_user_accept(PtnRuntime *runtime, PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    return runtime != NULL &&
+        runtime->method_dispatch != NULL &&
+        runtime->declared_method_exists != NULL &&
+        resolved.type == PTN_OBJECT &&
+        resolved.as.object != NULL &&
+        resolved.as.object->class_name != NULL &&
+        !ptn_ascii_case_equal(resolved.as.object->class_name, "RegexIterator") &&
+        runtime->declared_method_exists(resolved.as.object->class_name, "accept");
+}
+
+static int ptn_regex_iterator_accepts_current_for_filter(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    if (!ptn_regex_iterator_has_user_accept(runtime, receiver)) {
+        return ptn_regex_iterator_accepts_current(runtime, data, line);
+    }
+    PtnValue result = runtime->method_dispatch(runtime, receiver, "accept", 0, NULL, line);
+    int accepted = runtime->exceptions->active_exception == NULL && ptn_is_truthy(result);
+    ptn_value_destroy(&result);
+    return accepted;
+}
+
 static void ptn_regex_iterator_skip_rejected(
     PtnRuntime *runtime,
+    PtnValue receiver,
     PtnRegexIteratorData *data,
     size_t line
 ) {
     while (runtime->exceptions->active_exception == NULL &&
         ptn_iterator_inner_valid(runtime, data->inner, line)) {
-        if (ptn_regex_iterator_accepts_current(runtime, data, line)) {
+        if (ptn_regex_iterator_accepts_current_for_filter(runtime, receiver, data, line)) {
             return;
         }
         PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
         ptn_value_destroy(&next);
     }
+}
+
+static PtnValue ptn_regex_iterator_match_result_value(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    const char *function_name,
+    size_t line
+) {
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
+    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&pattern);
+        ptn_value_destroy(&subject);
+        return ptn_null();
+    }
+    PtnValue matches = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    PtnValue flags = ptn_int(data->preg_flags);
+    PtnValue match_args[4] = { pattern, subject, matches, flags };
+    PtnValue result = ptn_call_internal(runtime, function_name, 4, match_args, line);
+    PtnValue matches_result = runtime->exceptions->active_exception != NULL
+        ? ptn_null()
+        : ptn_value_clone_deref(matches);
+    ptn_value_destroy(&result);
+    for (size_t i = 0; i < 4; i++) {
+        ptn_value_destroy(&match_args[i]);
+    }
+    return matches_result;
+}
+
+static PtnValue ptn_regex_iterator_split_result_value(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
+    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&pattern);
+        ptn_value_destroy(&subject);
+        return ptn_null();
+    }
+    PtnValue limit = ptn_int(-1);
+    PtnValue flags = ptn_int(data->preg_flags);
+    PtnValue split_args[4] = { pattern, subject, limit, flags };
+    PtnValue result = ptn_call_internal(runtime, "preg_split", 4, split_args, line);
+    for (size_t i = 0; i < 4; i++) {
+        ptn_value_destroy(&split_args[i]);
+    }
+    return result;
 }
 
 static PtnValue ptn_regex_iterator_current_value(
@@ -167948,12 +168025,21 @@ static PtnValue ptn_regex_iterator_current_value(
     PtnRegexIteratorData *data,
     size_t line
 ) {
+    if (data->mode == 1) {
+        return ptn_regex_iterator_match_result_value(runtime, data, "preg_match", line);
+    }
+    if (data->mode == 2) {
+        return ptn_regex_iterator_match_result_value(runtime, data, "preg_match_all", line);
+    }
+    if (data->mode == 3) {
+        return ptn_regex_iterator_split_result_value(runtime, data, line);
+    }
     PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&current);
         return ptn_null();
     }
-    if (data->mode != 4) {
+    if (data->mode != 4 || (data->flags & 1) != 0) {
         return current;
     }
     PtnValue pattern = ptn_regex_iterator_pattern_value(data);
@@ -167972,6 +168058,32 @@ static PtnValue ptn_regex_iterator_current_value(
     return result;
 }
 
+static PtnValue ptn_regex_iterator_key_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnRegexIteratorData *data,
+    size_t line
+) {
+    if (data->mode != 4 || (data->flags & 1) == 0) {
+        return ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+    }
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
+    PtnValue replacement = ptn_regex_iterator_replacement_value(runtime, receiver, line);
+    PtnValue key = ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&pattern);
+        ptn_value_destroy(&replacement);
+        ptn_value_destroy(&key);
+        return ptn_null();
+    }
+    PtnValue replace_args[3] = { pattern, replacement, key };
+    PtnValue result = ptn_call_internal(runtime, "preg_replace", 3, replace_args, line);
+    ptn_value_destroy(&replace_args[0]);
+    ptn_value_destroy(&replace_args[1]);
+    ptn_value_destroy(&replace_args[2]);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -167980,10 +168092,6 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    PtnRegexIteratorData *data = ptn_regex_iterator_data(runtime, receiver);
-    if (data == NULL) {
-        return ptn_null();
-    }
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_regex_iterator_new(runtime, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
@@ -168008,6 +168116,10 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
             );
         }
         ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnRegexIteratorData *data = ptn_regex_iterator_data(runtime, receiver);
+    if (data == NULL) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getInnerIterator")) {
@@ -168085,7 +168197,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, data->inner, "rewind", line);
         ptn_value_destroy(&rewind);
         data->positioned = runtime->exceptions->active_exception == NULL;
-        ptn_regex_iterator_skip_rejected(runtime, data, line);
+        ptn_regex_iterator_skip_rejected(runtime, receiver, data, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "next")) {
@@ -168096,7 +168208,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         PtnValue next = ptn_iterator_inner_call_no_args(runtime, data->inner, "next", line);
         ptn_value_destroy(&next);
         data->positioned = runtime->exceptions->active_exception == NULL;
-        ptn_regex_iterator_skip_rejected(runtime, data, line);
+        ptn_regex_iterator_skip_rejected(runtime, receiver, data, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "accept")) {
@@ -168121,7 +168233,7 @@ static PTN_UNUSED PtnValue ptn_regex_iterator_call_method(
         ptn_reflection_check_no_arguments(runtime, "RegexIterator", name, argc);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
-            : ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+            : ptn_regex_iterator_key_value(runtime, receiver, data, line);
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);

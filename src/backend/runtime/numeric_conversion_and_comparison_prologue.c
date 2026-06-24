@@ -6088,8 +6088,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     if (property_hook_type_case != NULL) {
         return ptn_builtin_enum_case_singleton(runtime, "PropertyHookType", property_hook_type_case);
     }
-    if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
-        return builtin_value;
+    const char *builtin_lookup_class_name = resolved_class_name;
+    while (builtin_lookup_class_name != NULL) {
+        if (ptn_builtin_class_constant_value(builtin_lookup_class_name, constant, &builtin_value)) {
+            return builtin_value;
+        }
+        builtin_lookup_class_name =
+            ptn_runtime_declared_class_parent_name(runtime, builtin_lookup_class_name);
     }
     return ptn_runtime_undefined_class_constant(
         runtime,
