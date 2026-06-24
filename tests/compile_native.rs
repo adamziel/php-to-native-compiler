@@ -42442,6 +42442,18 @@ echo bin2hex(collator_get_sort_key($coll, 'abc')), \"\\n\";\n\
 echo bin2hex($coll->getSortKey('abd')), \"\\n\";\n\
 class Collator2 extends Collator { public function __construct() {} }\n\
 try {\n\
+    (new Collator2())->compare('h', 'H');\n\
+    echo \"returned\\n\";\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    (new Collator2())->getLocale(Locale::VALID_LOCALE);\n\
+    echo \"returned\\n\";\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
     (new Collator2())->getSortKey('h');\n\
     echo \"returned\\n\";\n\
 } catch (Throwable $e) {\n\
@@ -42456,7 +42468,7 @@ try {\n\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\n2a2c2e01070107\n2a2c3001070107\nError: Object not initialized\n"
+        "bool(true)\nbool(true)\n2a2c2e01070107\n2a2c3001070107\nError: Object not initialized\nError: Object not initialized\nError: Object not initialized\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

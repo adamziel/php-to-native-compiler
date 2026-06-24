@@ -66954,7 +66954,8 @@ static PtnValue ptn_intl_collator_compare_values(
 ) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL) {
-        return ptn_bool(0);
+        ptn_throw_exception(runtime, "Error", "Object not initialized");
+        return ptn_null();
     }
     PtnStringOperand left = ptn_value_to_string_operand(left_value);
     PtnStringOperand right = ptn_value_to_string_operand(right_value);
@@ -67059,10 +67060,11 @@ static PtnValue ptn_internal_collator_get_sort_key(PtnRuntime *runtime, size_t a
     return ptn_intl_collator_get_sort_key_value(runtime, args[0], args[1], "collator_get_sort_key", 2, line);
 }
 
-static PtnValue ptn_intl_collator_get_locale_value(PtnValue receiver, PtnValue type_value) {
+static PtnValue ptn_intl_collator_get_locale_value(PtnRuntime *runtime, PtnValue receiver, PtnValue type_value) {
     PtnIntlCollatorData *data = ptn_intl_collator_data(receiver);
     if (data == NULL) {
-        return ptn_bool(0);
+        ptn_throw_exception(runtime, "Error", "Object not initialized");
+        return ptn_null();
     }
     int64_t type = ptn_value_to_integer(type_value);
     if (type == PTN_ICU_VALID_LOCALE) {
@@ -67075,10 +67077,9 @@ static PtnValue ptn_intl_collator_get_locale_value(PtnValue receiver, PtnValue t
 }
 
 static PtnValue ptn_internal_collator_get_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_intl_collator_get_locale_value(args[0], args[1]);
+    return ptn_intl_collator_get_locale_value(runtime, args[0], args[1]);
 }
 
 static PtnValue ptn_intl_collator_get_attribute_value(PtnValue receiver, PtnValue attribute_value, const char *function_name) {
@@ -67172,7 +67173,7 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
         return ptn_intl_collator_compare_values(runtime, receiver, args[0], args[1], line);
     }
     if (ptn_ascii_case_equal(name, "getLocale")) {
-        return ptn_intl_collator_get_locale_value(receiver, args[0]);
+        return ptn_intl_collator_get_locale_value(runtime, receiver, args[0]);
     }
     if (ptn_ascii_case_equal(name, "getSortKey")) {
         return ptn_intl_collator_get_sort_key_value(runtime, receiver, args[0], "Collator::getSortKey", 1, line);
