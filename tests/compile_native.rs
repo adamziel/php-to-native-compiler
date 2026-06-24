@@ -23939,6 +23939,21 @@ foreach ([\"yesterday\", \"+2 weeks\", \"-3 hours\", \"next month\", \"1 year\",
     $relative = DateInterval::createFromDateString($text);\n\
     echo $text, \"=\", $relative->format(\"%R%y:%m:%d:%h:%i:%s:%a\"), \"\\n\";\n\
 }\n\
+$special = DateInterval::createFromDateString(\"next weekday\");\n\
+var_dump($special->__serialize());\n\
+$restored = unserialize(serialize($special));\n\
+$now = new DateTimeImmutable(\"2022-04-22 16:25:11 BST\");\n\
+echo $now->add($restored)->format(\"Y-m-d H:i:s T\"), \"\\n\";\n\
+try {\n\
+    $now->sub($restored);\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    DateInterval::createFromDateString(\"foobar\");\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";\n\
+}\n\
 $properties = [\n\
     'start' => new DateTimeImmutable(\"2023-01-13 12:29:30\"),\n\
     'end' => new DateTimeImmutable(\"2023-01-16 16:49:29\"),\n\
@@ -23986,6 +24001,15 @@ try {\n\
             "next month=+0:1:0:0:0:0:(unknown)\n",
             "1 year=+1:0:0:0:0:0:(unknown)\n",
             "30 seconds=+0:0:0:0:0:30:(unknown)\n",
+            "array(2) {\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(true)\n",
+            "  [\"date_string\"]=>\n",
+            "  string(12) \"next weekday\"\n",
+            "}\n",
+            "2022-04-25 16:25:11 BST\n",
+            "DateInvalidOperationException: DateTimeImmutable::sub(): Only non-special relative time specifications are supported for subtraction\n",
+            "DateMalformedIntervalStringException: Unknown or bad format (foobar) at position 0 (f): The timezone could not be found in the database\n",
             "Error: An iterator cannot be used with foreach by reference\n",
         )
     );
