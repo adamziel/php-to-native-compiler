@@ -84375,6 +84375,20 @@ static PtnValue ptn_opcache_status_scripts(PtnRuntime *runtime) {
     return scripts;
 }
 
+static PtnValue ptn_opcache_status_interned_strings_usage(PtnRuntime *runtime) {
+    int64_t buffer_mb = ptn_opcache_ini_integer_value(runtime, "opcache.interned_strings_buffer");
+    if (buffer_mb < 0) {
+        buffer_mb = 0;
+    }
+    int64_t buffer_size = buffer_mb * 1024 * 1024;
+    PtnValue usage = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(usage.as.array, ptn_array_string_key("buffer_size"), ptn_int(buffer_size));
+    ptn_array_set_entry(usage.as.array, ptn_array_string_key("used_memory"), ptn_int(0));
+    ptn_array_set_entry(usage.as.array, ptn_array_string_key("free_memory"), ptn_int(buffer_size));
+    ptn_array_set_entry(usage.as.array, ptn_array_string_key("number_of_strings"), ptn_int(0));
+    return usage;
+}
+
 static PtnValue ptn_internal_opcache_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)args;
     (void)line;
@@ -84385,6 +84399,7 @@ static PtnValue ptn_internal_opcache_get_status(PtnRuntime *runtime, size_t argc
     ptn_array_set_entry(result.as.array, ptn_array_string_key("restart_pending"), ptn_bool(0));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("restart_in_progress"), ptn_bool(0));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("scripts"), get_scripts ? ptn_opcache_status_scripts(runtime) : ptn_array_from_literal_entries(0, NULL));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("interned_strings_usage"), ptn_opcache_status_interned_strings_usage(runtime));
     PtnValue jit = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(jit.as.array, ptn_array_string_key("enabled"), ptn_bool(0));
     ptn_array_set_entry(jit.as.array, ptn_array_string_key("on"), ptn_bool(0));

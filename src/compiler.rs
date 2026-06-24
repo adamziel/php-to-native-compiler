@@ -33,6 +33,30 @@ unsafe extern "C" {
 
 type IncludePathEnv = HashMap<String, Vec<String>>;
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IncludeSourceKey {
+    canonical_path: PathBuf,
+    transform: Option<IncludeSourceTransform>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum IncludeSourceTransform {
+    PhpFilter(Vec<PhpFilterReadFilter>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum PhpFilterReadFilter {
+    StringToLower,
+    StringToUpper,
+    StringRot13,
+}
+
+struct ResolvedIncludeCandidate {
+    resource_path: PathBuf,
+    path_aliases: Vec<String>,
+    transform: Option<IncludeSourceTransform>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IncludePathTemplatePart {
     Static(String),
@@ -354,7 +378,8 @@ fn skip_ascii_whitespace(bytes: &[u8], cursor: &mut usize) {
 
 struct IncludeCollector {
     sources: Vec<IncludeSource>,
-    by_path: HashMap<PathBuf, usize>,
+    source_transforms: Vec<Option<IncludeSourceTransform>>,
+    by_source: HashMap<IncludeSourceKey, usize>,
     resolutions: IncludeResolutionMap,
     path_env: IncludePathEnv,
     include_effect_stack: Vec<usize>,
@@ -372,7 +397,8 @@ impl IncludeCollector {
     ) -> Self {
         Self {
             sources: Vec::new(),
-            by_path: HashMap::new(),
+            source_transforms: Vec::new(),
+            by_source: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
             path_env: IncludePathEnv::new(),
             include_effect_stack: Vec::new(),
@@ -1433,26 +1459,35 @@ impl IncludeCollector {
         include_path: &str,
         source_dir: &str,
     ) -> Result<Option<usize>> {
-        let resolved_path = resolve_include_path(include_path, source_dir);
-        let canonical_path = match fs::canonicalize(&resolved_path) {
+        let resolved = resolve_include_candidate_path(include_path, source_dir);
+        let canonical_path = match fs::canonicalize(&resolved.resource_path) {
             Ok(path) => path,
             Err(_) => return Ok(None),
         };
-        let path_aliases = include_path_aliases(&resolved_path, &canonical_path);
-        if let Some(index) = self.by_path.get(&canonical_path).copied() {
+        let path_aliases = if resolved.transform.is_none() {
+            include_path_aliases(&resolved.resource_path, &canonical_path)
+        } else {
+            resolved.path_aliases
+        };
+        let key = IncludeSourceKey {
+            canonical_path: canonical_path.clone(),
+            transform: resolved.transform.clone(),
+        };
+        if let Some(index) = self.by_source.get(&key).copied() {
             self.add_path_aliases(index, path_aliases);
             return Ok(Some(index));
         }
 
-        let source_bytes = match fs::read(&canonical_path) {
+        let mut source_bytes = match fs::read(&canonical_path) {
             Ok(bytes) => bytes,
             Err(_) => return Ok(None),
         };
+        apply_include_source_transform(&mut source_bytes, resolved.transform.as_ref());
         let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
         let program = parse_for_include_collection(&source, &self.runtime_class_aliases)?;
 
         let index = self.sources.len();
-        self.by_path.insert(canonical_path.clone(), index);
+        self.by_source.insert(key, index);
         let source_file = canonical_path.to_string_lossy().into_owned();
         let source_dir = canonical_path
             .parent()
@@ -1465,6 +1500,7 @@ impl IncludeCollector {
             path_aliases,
             program: program.clone(),
         });
+        self.source_transforms.push(resolved.transform);
         self.collect_program(&program, &source_file, &source_dir)?;
         Ok(Some(index))
     }
@@ -1472,9 +1508,13 @@ impl IncludeCollector {
     fn finalize_sources(&mut self) -> Result<()> {
         for index in 0..self.sources.len() {
             let source_file = self.sources[index].source_file.clone();
-            let source_bytes = fs::read(&source_file).map_err(|error| {
+            let mut source_bytes = fs::read(&source_file).map_err(|error| {
                 Diagnostic::new(format!("failed to read {source_file}: {error}"), None)
             })?;
+            apply_include_source_transform(
+                &mut source_bytes,
+                self.source_transforms[index].as_ref(),
+            );
             let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
             self.sources[index].source_bytes = source_bytes;
@@ -2253,6 +2293,91 @@ fn compile_time_dirname(path: &str, levels: usize) -> String {
 fn push_unique_string(strings: &mut Vec<String>, value: String) {
     if !strings.contains(&value) {
         strings.push(value);
+    }
+}
+
+fn resolve_include_candidate_path(path: &str, source_dir: &str) -> ResolvedIncludeCandidate {
+    if let Some(filter_path) = parse_php_filter_include_path(path, source_dir) {
+        return filter_path;
+    }
+    let resource_path = resolve_include_path(path, source_dir);
+    ResolvedIncludeCandidate {
+        path_aliases: Vec::new(),
+        resource_path,
+        transform: None,
+    }
+}
+
+fn parse_php_filter_include_path(path: &str, source_dir: &str) -> Option<ResolvedIncludeCandidate> {
+    let rest = path.strip_prefix("php://filter/")?;
+    let (filter_spec, resource) = rest.split_once("/resource=")?;
+    if resource.is_empty() {
+        return None;
+    }
+
+    let mut read_filters = Vec::new();
+    for segment in filter_spec.split('/') {
+        let Some(filters) = segment.strip_prefix("read=") else {
+            continue;
+        };
+        for filter in filters.split('|') {
+            let filter = php_filter_read_filter(filter)?;
+            read_filters.push(filter);
+        }
+    }
+    if read_filters.is_empty() {
+        return None;
+    }
+
+    let resource_path = resolve_include_path(resource, source_dir);
+    Some(ResolvedIncludeCandidate {
+        resource_path,
+        path_aliases: vec![path.to_string()],
+        transform: Some(IncludeSourceTransform::PhpFilter(read_filters)),
+    })
+}
+
+fn php_filter_read_filter(name: &str) -> Option<PhpFilterReadFilter> {
+    if name.eq_ignore_ascii_case("string.tolower") {
+        Some(PhpFilterReadFilter::StringToLower)
+    } else if name.eq_ignore_ascii_case("string.toupper") {
+        Some(PhpFilterReadFilter::StringToUpper)
+    } else if name.eq_ignore_ascii_case("string.rot13") {
+        Some(PhpFilterReadFilter::StringRot13)
+    } else {
+        None
+    }
+}
+
+fn apply_include_source_transform(
+    source_bytes: &mut [u8],
+    transform: Option<&IncludeSourceTransform>,
+) {
+    let Some(transform) = transform else {
+        return;
+    };
+    match transform {
+        IncludeSourceTransform::PhpFilter(filters) => {
+            for filter in filters {
+                apply_php_filter_read_filter(source_bytes, filter);
+            }
+        }
+    }
+}
+
+fn apply_php_filter_read_filter(source_bytes: &mut [u8], filter: &PhpFilterReadFilter) {
+    match filter {
+        PhpFilterReadFilter::StringToLower => source_bytes.make_ascii_lowercase(),
+        PhpFilterReadFilter::StringToUpper => source_bytes.make_ascii_uppercase(),
+        PhpFilterReadFilter::StringRot13 => {
+            for byte in source_bytes {
+                *byte = match *byte {
+                    b'a'..=b'z' => ((*byte - b'a' + 13) % 26) + b'a',
+                    b'A'..=b'Z' => ((*byte - b'A' + 13) % 26) + b'A',
+                    _ => *byte,
+                };
+            }
+        }
     }
 }
 

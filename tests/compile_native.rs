@@ -63140,6 +63140,8 @@ $config = opcache_get_configuration();\n\
 var_dump($config['directives']['opcache.enable'], $config['directives']['opcache.enable_cli'], $config['directives']['opcache.file_cache_only'], $config['directives']['opcache.optimization_level']);\n\
 $status = opcache_get_status();\n\
 var_dump($status['opcache_enabled'], count($status['scripts']));\n\
+$interned = $status['interned_strings_usage'];\n\
+var_dump($interned['used_memory'] + $interned['free_memory'], $interned['buffer_size']);\n\
 $tmp = __DIR__ . '/opcache-runtime.inc.php';\n\
 var_dump(opcache_is_script_cached($tmp), opcache_compile_file($tmp), opcache_invalidate($tmp, true));\n\
 $value = require $tmp;\n\
@@ -63158,6 +63160,8 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
         .arg("opcache.enable_cli=1")
         .arg("-d")
         .arg("opcache.file_cache_only=0")
+        .arg("-d")
+        .arg("opcache.interned_strings_buffer=16")
         .arg("-d")
         .arg("opcache.optimization_level=-1")
         .arg("-f")
@@ -63180,6 +63184,8 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "int(-1)\n",
             "bool(true)\n",
             "int(0)\n",
+            "int(16777216)\n",
+            "int(16777216)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -64787,6 +64793,36 @@ fn compile_include_path_variable_concatenation_to_native_binary() {
         "included:scope\nresult=allowed\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_filter_include_keeps_filtered_resource_distinct_to_native_binary() {
+    let root = temp_dir("ptn-native-php-filter-include-distinct-resource");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("bug64482.inc");
+    let output = root.join("php-filter-include-distinct-resource-bin");
+    fs::write(&included, "<?php echo \"Dynamic include\";").unwrap();
+    fs::write(
+        &input,
+        "<?php\ninclude 'bug64482.inc';\necho \"\\n\";\ninclude 'php://filter/read=string.toupper/resource=bug64482.inc';\necho \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Dynamic include\nDYNAMIC INCLUDE\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("php://filter/read=string.toupper/resource=bug64482.inc"));
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_include_file_1(&runtime)"));
 }
 
 #[test]

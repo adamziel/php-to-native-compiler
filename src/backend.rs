@@ -1151,7 +1151,7 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("static PTN_UNUSED int ptn_dynamic_include_php_file(PtnRuntime *runtime, const char *path, const char *display_path, size_t line, PtnValue *result_out);\n");
     out.push_str("#endif\n");
     out.push_str("\nstatic PTN_UNUSED int ptn_include_path_is_absolute(PtnStringOperand path) {\n");
-    out.push_str("    if (path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) {\n");
+    out.push_str("    if ((path.len >= 7 && strncmp(path.data, \"phar://\", 7) == 0) || (path.len >= 6 && strncmp(path.data, \"php://\", 6) == 0)) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("#if defined(_WIN32)\n");
