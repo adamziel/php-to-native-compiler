@@ -1903,6 +1903,97 @@ try {
 }
 
 #[test]
+fn compile_regex_iterator_get_match_skips_non_string_subjects_to_native_binary() {
+    let root = temp_dir("ptn-native-regex-iterator-get-match-non-string-subjects");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("regex-iterator-get-match-non-string-subjects.php");
+    let output = root.join("regex-iterator-get-match-non-string-subjects-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyRegexIterator extends RegexIterator {
+    function show() {
+        foreach ($this as $k => $v) {
+            var_dump($k);
+            var_dump($v);
+        }
+    }
+}
+
+$ar = new ArrayIterator(array('1', '1,2', '1,2,3', '', NULL, array(), 'FooBar', ',', ',,'));
+$it = new MyRegexIterator($ar, '/(\d),(\d)/', RegexIterator::GET_MATCH);
+$it->show();
+$it = new MyRegexIterator($ar, '/(\d)/', RegexIterator::GET_MATCH);
+$it->show();
+var_dump($ar[4], $ar[5]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_regex_iterator_subject_string_value"));
+    assert!(c_source.contains("ptn_regex_iterator_match_result_value"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"1,2\"\n",
+            "  [1]=>\n",
+            "  string(1) \"1\"\n",
+            "  [2]=>\n",
+            "  string(1) \"2\"\n",
+            "}\n",
+            "int(2)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"1,2\"\n",
+            "  [1]=>\n",
+            "  string(1) \"1\"\n",
+            "  [2]=>\n",
+            "  string(1) \"2\"\n",
+            "}\n",
+            "int(0)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"1\"\n",
+            "  [1]=>\n",
+            "  string(1) \"1\"\n",
+            "}\n",
+            "int(1)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"1\"\n",
+            "  [1]=>\n",
+            "  string(1) \"1\"\n",
+            "}\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"1\"\n",
+            "  [1]=>\n",
+            "  string(1) \"1\"\n",
+            "}\n",
+            "NULL\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_regex_iterator_subclass_all_matches_accept_to_native_binary() {
     let root = temp_dir("ptn-native-regex-iterator-subclass-all-matches");
     fs::create_dir_all(&root).unwrap();

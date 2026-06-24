@@ -170006,6 +170006,43 @@ static PtnValue ptn_regex_iterator_subject_value(
     return ptn_iterator_inner_call_no_args(runtime, data->inner, method, line);
 }
 
+static int ptn_regex_iterator_subject_string_value(
+    PtnRuntime *runtime,
+    PtnRegexIteratorData *data,
+    size_t line,
+    PtnValue *subject_out
+) {
+    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&subject);
+        return -1;
+    }
+    PtnValue resolved = ptn_value_deref(subject);
+    if (resolved.type == PTN_ARRAY) {
+        ptn_value_destroy(&subject);
+        return 0;
+    }
+    if (resolved.type == PTN_NULL) {
+        *subject_out = ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0);
+        ptn_value_destroy(&subject);
+        return 1;
+    }
+    PtnStringOperand subject_string =
+        ptn_value_to_string_operand_with_runtime(runtime, subject, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(subject_string);
+        ptn_value_destroy(&subject);
+        return -1;
+    }
+    *subject_out = ptn_owned_string_len(
+        ptn_duplicate_string_len(subject_string.data, subject_string.len),
+        subject_string.len
+    );
+    ptn_string_operand_free(subject_string);
+    ptn_value_destroy(&subject);
+    return 1;
+}
+
 static int ptn_regex_iterator_accepts_current(
     PtnRuntime *runtime,
     PtnRegexIteratorData *data,
@@ -170014,13 +170051,12 @@ static int ptn_regex_iterator_accepts_current(
     if (!data->positioned || !ptn_iterator_inner_valid(runtime, data->inner, line)) {
         return 0;
     }
-    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
-    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&pattern);
-        ptn_value_destroy(&subject);
+    PtnValue subject;
+    int subject_status = ptn_regex_iterator_subject_string_value(runtime, data, line, &subject);
+    if (subject_status < 0 || subject_status == 0) {
         return 0;
     }
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
     PtnValue match_args[2] = { pattern, subject };
     PtnValue result = ptn_call_internal(runtime, "preg_match", 2, match_args, line);
     int accepted = runtime->exceptions->active_exception == NULL && ptn_is_truthy(result);
@@ -170082,13 +170118,15 @@ static PtnValue ptn_regex_iterator_match_result_value(
     const char *function_name,
     size_t line
 ) {
-    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
-    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&pattern);
-        ptn_value_destroy(&subject);
+    PtnValue subject;
+    int subject_status = ptn_regex_iterator_subject_string_value(runtime, data, line, &subject);
+    if (subject_status < 0) {
         return ptn_null();
     }
+    if (subject_status == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
     PtnValue matches = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     PtnValue flags = ptn_int(data->preg_flags);
     PtnValue match_args[4] = { pattern, subject, matches, flags };
@@ -170108,13 +170146,15 @@ static PtnValue ptn_regex_iterator_split_result_value(
     PtnRegexIteratorData *data,
     size_t line
 ) {
-    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
-    PtnValue subject = ptn_regex_iterator_subject_value(runtime, data, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&pattern);
-        ptn_value_destroy(&subject);
+    PtnValue subject;
+    int subject_status = ptn_regex_iterator_subject_string_value(runtime, data, line, &subject);
+    if (subject_status < 0) {
         return ptn_null();
     }
+    if (subject_status == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue pattern = ptn_regex_iterator_pattern_value(data);
     PtnValue limit = ptn_int(-1);
     PtnValue flags = ptn_int(data->preg_flags);
     PtnValue split_args[4] = { pattern, subject, limit, flags };
