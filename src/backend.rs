@@ -4241,6 +4241,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
         return Some("next");
     }
+    if name.eq_ignore_ascii_case("openssl_pkcs12_read") && argument_index == 1 {
+        return Some("certificates");
+    }
+    if name.eq_ignore_ascii_case("openssl_private_decrypt") && argument_index == 1 {
+        return Some("decrypted_data");
+    }
+    if name.eq_ignore_ascii_case("openssl_public_encrypt") && argument_index == 1 {
+        return Some("encrypted_data");
+    }
     if (name.eq_ignore_ascii_case("datefmt_localtime")
         || name.eq_ignore_ascii_case("datefmt_parse")
         || name.eq_ignore_ascii_case("datefmt_parse_to_calendar"))

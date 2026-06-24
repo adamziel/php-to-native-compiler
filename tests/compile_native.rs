@@ -86068,6 +86068,68 @@ echo "===DONE===\n";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_openssl_metadata_and_by_ref_surfaces_to_native_binary() {
+    let root = temp_dir("ptn-native-openssl-surfaces");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("openssl-surfaces.php");
+    let output = root.join("openssl-surfaces-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(in_array("aes-128-cbc", openssl_get_cipher_methods()));
+var_dump(openssl_cipher_key_length("AES-128-CBC"));
+var_dump(openssl_cipher_iv_length("aes-128-cbc"));
+
+$cmsInput = tempnam(sys_get_temp_dir(), "ptn");
+$cmsOutput = tempnam(sys_get_temp_dir(), "ptn");
+file_put_contents($cmsInput, "payload");
+var_dump(openssl_cms_encrypt($cmsInput, $cmsOutput, "cert", [], cipher_algo: "aes-128-cbc"));
+var_dump(file_get_contents($cmsOutput));
+unlink($cmsInput);
+unlink($cmsOutput);
+
+$ok = openssl_public_encrypt("abc", $sealed, "pub", OPENSSL_PKCS1_OAEP_PADDING, "sha256");
+var_dump($ok);
+var_dump(openssl_private_decrypt($sealed, $plain, "priv", OPENSSL_PKCS1_OAEP_PADDING, "sha256"));
+var_dump($plain);
+
+$certs = null;
+var_dump(openssl_pkcs12_read("blob", $certs, "pass"));
+var_dump(array_key_exists("cert", $certs));
+var_dump(array_key_exists("pkey", $certs));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(16)\n",
+            "int(16)\n",
+            "bool(true)\n",
+            "string(7) \"payload\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(3) \"abc\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
