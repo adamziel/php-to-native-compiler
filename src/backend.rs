@@ -21638,6 +21638,14 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            const char *resolved = runtime == NULL ? NULL : (runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name);\n");
     out.push_str("            if (resolved != NULL) {\n");
     out.push_str("                resolved_class_name = resolved;\n");
+    out.push_str("                if (runtime != NULL && !ptn_ascii_case_equal(resolved_class_name, class_name)) {\n");
+    out.push_str("                    char deprecation[96];\n");
+    out.push_str("                    int deprecation_written = snprintf(deprecation, sizeof(deprecation), \"Use of \\\"%s\\\" in callables is deprecated\", class_name);\n");
+    out.push_str("                    if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {\n");
+    out.push_str("                        ptn_abort_out_of_memory();\n");
+    out.push_str("                    }\n");
+    out.push_str("                    ptn_emit_deprecation(&runtime->diagnostics, deprecation, runtime->call_site_line);\n");
+    out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        } else if (ptn_ascii_case_equal(class_name, \"parent\")) {\n");
     out.push_str(
@@ -21646,6 +21654,9 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
     out.push_str("            if (parent != NULL) {\n");
     out.push_str("                resolved_class_name = parent;\n");
+    out.push_str("                if (runtime != NULL) {\n");
+    out.push_str("                    ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", runtime->call_site_line);\n");
+    out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        } else {\n");
     out.push_str("            const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);\n");

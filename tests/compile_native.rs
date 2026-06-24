@@ -53811,6 +53811,51 @@ St::e2();
 }
 
 #[test]
+fn compile_is_callable_relative_array_callable_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-is-callable-relative-array-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("is-callable-relative-array-callable.php");
+    let output = root.join("is-callable-relative-array-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+class A { public static function who() {} }
+class B extends A {
+    public static function who() {}
+    public static function test() {
+        var_dump(is_callable([\"self\", \"who\"]));
+        var_dump(is_callable([\"parent\", \"who\"]));
+        var_dump(is_callable([\"static\", \"who\"]));
+    }
+}
+B::test();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Use of \"self\" in callables is deprecated in ptn on line 11\n",
+            "bool(true)\n",
+            "\nDeprecated: Use of \"parent\" in callables is deprecated in ptn on line 11\n",
+            "bool(true)\n",
+            "\nDeprecated: Use of \"static\" in callables is deprecated in ptn on line 11\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_callable_is_valid"));
+    assert!(c_source.contains("Use of \\\"parent\\\" in callables is deprecated"));
+}
+
+#[test]
 fn compile_dynamic_static_self_method_call_avoids_callable_deprecation_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-static-self-method-call-no-callable-deprecation");
     fs::create_dir_all(&root).unwrap();
