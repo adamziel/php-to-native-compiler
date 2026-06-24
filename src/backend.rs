@@ -2263,6 +2263,26 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_EXCEPTION && ptn_exception_name_equal(declaring_class, \"Uri\\\\WhatWg\\\\InvalidUrlException\")) {\n");
     out.push_str("        if (argc >= 2) {\n");
+    out.push_str("            PtnValue errors_arg = ptn_value_deref(args[1]);\n");
+    out.push_str("            int valid_errors = errors_arg.type == PTN_ARRAY && errors_arg.as.array != NULL;\n");
+    out.push_str("            if (valid_errors) {\n");
+    out.push_str("                for (size_t i = 0; i < errors_arg.as.array->len; i++) {\n");
+    out.push_str("                    PtnArrayEntry *entry = &errors_arg.as.array->entries[i];\n");
+    out.push_str("                    PtnValue item = ptn_value_deref(entry->value);\n");
+    out.push_str("                    if (entry->key.type != PTN_ARRAY_KEY_INT || entry->key.as.integer != (int64_t)i ||\n");
+    out.push_str("                        item.type != PTN_OBJECT || item.as.object == NULL ||\n");
+    out.push_str("                        !ptn_ascii_case_equal(item.as.object->class_name, \"Uri\\\\WhatWg\\\\UrlValidationError\")) {\n");
+    out.push_str("                        valid_errors = 0;\n");
+    out.push_str("                        break;\n");
+    out.push_str("                    }\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            if (!valid_errors) {\n");
+    out.push_str("                ptn_value_destroy(&previous);\n");
+    out.push_str("                ptn_value_destroy(&message);\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ValueError\", \"Uri\\\\WhatWg\\\\InvalidUrlException::__construct(): Argument #2 ($errors) must be a list of Uri\\\\WhatWg\\\\UrlValidationError\");\n");
+    out.push_str("                return;\n");
+    out.push_str("            }\n");
     out.push_str("            PtnValue errors = ptn_value_clone_deref(args[1]);\n");
     out.push_str("            ptn_value_destroy(&resolved.as.exception->errors);\n");
     out.push_str("            resolved.as.exception->errors = errors;\n");
@@ -4187,6 +4207,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
         return Some("queued_messages");
     }
     if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse") && argument_index == 2 {
+        return Some("errors");
+    }
+    if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::resolve") && argument_index == 1 {
         return Some("errors");
     }
     if name.eq_ignore_ascii_case("mb_parse_str") && argument_index == 1 {

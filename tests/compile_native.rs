@@ -86216,6 +86216,118 @@ var_dump((array) $uri, (array) $url);
 }
 
 #[test]
+fn compile_uri_phpt_round2_regressions_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-phpt-round2-regressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-phpt-round2-regressions.php");
+    let output = root.join("uri-phpt-round2-regressions-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(Uri\Rfc3986\Uri::parse("http://bad host"));
+
+$url = new Uri\WhatWg\Url("https://example.com");
+try {
+    $url->resolve("https://1.2.3.4.5");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$softErrors = [];
+echo $url->resolve(" /foo", $softErrors)->toAsciiString(), "\n";
+echo count($softErrors), " ", $softErrors[0]->context, " ",
+    $softErrors[0]->type === Uri\WhatWg\UrlValidationErrorType::InvalidUrlUnit ? "InvalidUrlUnit" : "bad",
+    " ", (int)$softErrors[0]->failure, "\n";
+
+try {
+    new Uri\WhatWg\InvalidUrlException("message", ["foo"]);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    new Uri\WhatWg\InvalidUrlException("message", [
+        1 => new Uri\WhatWg\UrlValidationError("context", Uri\WhatWg\UrlValidationErrorType::HostMissing, true),
+    ]);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$uri = new Uri\Rfc3986\Uri("https://example.com/path?x=1#f");
+$serializedUri = serialize($uri);
+echo $serializedUri, "\n";
+echo unserialize($serializedUri)->toRawString(), "\n";
+
+$whatwg = new Uri\WhatWg\Url("https://example.com/path?x=1#f");
+$serializedUrl = serialize($whatwg);
+echo $serializedUrl, "\n";
+echo unserialize($serializedUrl)->toAsciiString(), "\n";
+
+try {
+    unserialize('O:15:"Uri\Rfc3986\Uri":1:{i:0;a:0:{}}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('O:14:"Uri\WhatWg\Url":2:{i:0;a:1:{s:3:"uri";s:11:"invalid-url";}i:1;a:0:{}}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$existingUri = new Uri\Rfc3986\Uri("https://example.com");
+try {
+    $existingUri->__unserialize([["uri" => "ftp://example.org"], []]);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $existingUri->toRawString(), "\n";
+
+$existingUrl = new Uri\WhatWg\Url("https://example.com");
+try {
+    $existingUrl->__unserialize([["uri" => "ftp://example.org"], []]);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $existingUrl->toAsciiString(), "\n";
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "The specified URI is malformed (Ipv4TooManyParts)\n",
+            "https://example.com/foo\n",
+            "1  /foo InvalidUrlUnit 0\n",
+            "Uri\\WhatWg\\InvalidUrlException::__construct(): Argument #2 ($errors) must be a list of Uri\\WhatWg\\UrlValidationError\n",
+            "Uri\\WhatWg\\InvalidUrlException::__construct(): Argument #2 ($errors) must be a list of Uri\\WhatWg\\UrlValidationError\n",
+            "O:15:\"Uri\\Rfc3986\\Uri\":2:{i:0;a:1:{s:3:\"uri\";s:30:\"https://example.com/path?x=1#f\";}i:1;a:0:{}}\n",
+            "https://example.com/path?x=1#f\n",
+            "O:14:\"Uri\\WhatWg\\Url\":2:{i:0;a:1:{s:3:\"uri\";s:30:\"https://example.com/path?x=1#f\";}i:1;a:0:{}}\n",
+            "https://example.com/path?x=1#f\n",
+            "Invalid serialization data for Uri\\Rfc3986\\Uri object\n",
+            "Invalid serialization data for Uri\\WhatWg\\Url object\n",
+            "Invalid serialization data for Uri\\Rfc3986\\Uri object\n",
+            "https://example.com\n",
+            "Invalid serialization data for Uri\\WhatWg\\Url object\n",
+            "https://example.com/\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_assign_op_false_root_warns_nested_missing_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-assign-op-false-root");
     fs::create_dir_all(&root).unwrap();

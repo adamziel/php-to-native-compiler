@@ -7432,6 +7432,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 2 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::parse")) {
         return 1;
     }
+    if (index == 1 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::resolve")) {
+        return 1;
+    }
     if (index == 1 && ptn_ascii_case_equal(name, "mb_parse_str")) {
         return 1;
     }
@@ -10268,6 +10271,7 @@ static int ptn_serialize_object_is_plain_root_user_class(PtnSerializeState *stat
     return 1;
 }
 
+static int ptn_serialize_append_uri_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_object_error(
     PtnRuntime *runtime,
@@ -10374,6 +10378,9 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     if (object != NULL && ptn_internal_class_name_is_bcmath_number(object->class_name)) {
         ptn_serialize_append_bcmath_number_object(buffer, object, state);
+        return 1;
+    }
+    if (ptn_serialize_append_uri_object(buffer, object, state)) {
         return 1;
     }
     int handled_magic_serialize = 0;
@@ -12644,6 +12651,12 @@ static int ptn_unserialize_declared_magic_method_exists(
             "DateTimeZone"
         )) {
         return ptn_internal_class_method_exists("DateTimeZone", "__unserialize");
+    }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(resolved.as.object->class_name)) {
+        return ptn_internal_class_method_exists("Uri\\Rfc3986\\Uri", "__unserialize");
+    }
+    if (ptn_internal_class_name_is_uri_whatwg_url(resolved.as.object->class_name)) {
+        return ptn_internal_class_method_exists("Uri\\WhatWg\\Url", "__unserialize");
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
@@ -27405,6 +27418,9 @@ static int ptn_uri_validate_host_component(const char *data, size_t len) {
         if (byte == '[' || byte == ']' || byte == ':' || byte == '@' || byte == '/' || byte == '?' || byte == '#') {
             return 0;
         }
+        if (!ptn_uri_is_unreserved(byte) && !ptn_uri_is_sub_delim(byte)) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -28554,6 +28570,31 @@ static int ptn_uri_whatwg_try_ipv4(const char *host, size_t host_len, char **hos
     return 1;
 }
 
+static int ptn_uri_whatwg_ipv4_too_many_parts(const char *host, size_t host_len) {
+    size_t part_count = 0;
+    size_t i = 0;
+    while (i < host_len) {
+        if (!isdigit((unsigned char)host[i])) {
+            return 0;
+        }
+        while (i < host_len && isdigit((unsigned char)host[i])) {
+            i++;
+        }
+        part_count++;
+        if (i == host_len) {
+            break;
+        }
+        if (host[i] != '.') {
+            return 0;
+        }
+        i++;
+        if (i == host_len) {
+            return 0;
+        }
+    }
+    return part_count > 4;
+}
+
 static int ptn_uri_whatwg_parse_ipv6(
     const char *host,
     size_t host_len,
@@ -28725,6 +28766,11 @@ static int ptn_uri_whatwg_normalize_host(
             *unicode_out = ptn_uri_duplicate_len(ipv4, strlen(ipv4));
             *host_type_out = PTN_URI_HOST_TYPE_IPV4;
             return 1;
+        }
+        if (ptn_uri_whatwg_ipv4_too_many_parts(decoded_host, decoded_len)) {
+            free(decoded_host);
+            *reason_out = "Ipv4TooManyParts";
+            return 0;
         }
     }
 
@@ -29197,6 +29243,29 @@ static PtnValue ptn_uri_whatwg_to_string_value(const PtnUriData *data, int unico
     return ptn_owned_string_len(buffer.data == NULL ? ptn_uri_duplicate_len("", 0) : buffer.data, buffer.len);
 }
 
+static int ptn_serialize_append_uri_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
+    if (object == NULL ||
+        object->native_data == NULL ||
+        (!ptn_internal_class_name_is_uri_rfc3986_uri(object->class_name) &&
+         !ptn_internal_class_name_is_uri_whatwg_url(object->class_name))) {
+        return 0;
+    }
+    int whatwg = ptn_internal_class_name_is_uri_whatwg_url(object->class_name);
+    PtnValue uri = whatwg
+        ? ptn_uri_whatwg_to_string_value((const PtnUriData *)object->native_data, 0, 1)
+        : ptn_uri_to_string_value((const PtnUriData *)object->native_data, 0);
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":2:{i:0;a:1:{s:3:\"uri\";",
+        strlen(object->class_name),
+        object->class_name
+    );
+    ptn_serialize_append_value_with_id(buffer, uri, state, 0);
+    ptn_string_buffer_append(buffer, "}i:1;a:0:{}}");
+    ptn_value_destroy(&uri);
+    return 1;
+}
+
 static const char *ptn_uri_whatwg_host_type_case_name(const PtnUriData *data) {
     switch ((PtnUriHostType)data->host_type) {
         case PTN_URI_HOST_TYPE_DOMAIN:
@@ -29566,6 +29635,34 @@ static PtnValue ptn_uri_whatwg_validation_errors(
     return errors;
 }
 
+static PtnValue ptn_uri_whatwg_resolve_validation_errors(
+    PtnRuntime *runtime,
+    PtnStringOperand input,
+    const char *reason,
+    size_t line
+) {
+    PtnValue errors = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    if (input.len != 0 && input.data != NULL) {
+        unsigned char first = (unsigned char)input.data[0];
+        unsigned char last = (unsigned char)input.data[input.len - 1];
+        if (first <= 0x20 || last <= 0x20) {
+            ptn_uri_whatwg_append_validation_error(
+                runtime,
+                errors,
+                &index,
+                input.data,
+                input.len,
+                "InvalidUrlUnit",
+                0,
+                line
+            );
+        }
+    }
+    ptn_uri_whatwg_append_reason_diagnostics(runtime, errors, &index, input, reason, line);
+    return errors;
+}
+
 static PtnValue ptn_uri_equals(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -29755,23 +29852,40 @@ static PtnValue ptn_uri_whatwg_resolve(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc != 1) {
-        ptn_throw_exception(runtime, "ArgumentCountError", "Uri\\WhatWg\\Url::resolve() expects exactly 1 argument");
+    if (argc < 1 || argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Uri\\WhatWg\\Url::resolve() expects between 1 and 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
+    int has_errors = argc >= 2 && args[1].type == PTN_REFERENCE;
     PtnStringOperand reference = ptn_internal_expect_string_arg(runtime, "Uri\\WhatWg\\Url::resolve", 1, "uri", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(reference);
         return ptn_null();
     }
     if (ptn_uri_whatwg_reference_authority_has_nul(reference.data, reference.len)) {
+        PtnValue errors = has_errors
+            ? ptn_uri_whatwg_resolve_validation_errors(runtime, reference, "DomainInvalidCodePoint", line)
+            : ptn_null();
         ptn_string_operand_free(reference);
-        ptn_uri_whatwg_throw_malformed(runtime, "URI", "DomainInvalidCodePoint");
+        ptn_uri_whatwg_throw_malformed_with_errors(runtime, "URI", "DomainInvalidCodePoint", errors);
         return ptn_null();
     }
 #ifndef PTN_USE_ADA_URL
+    PtnValue errors = has_errors
+        ? ptn_uri_whatwg_resolve_validation_errors(runtime, reference, "AdaParserUnavailable", line)
+        : ptn_null();
     ptn_string_operand_free(reference);
-    ptn_uri_whatwg_throw_malformed(runtime, "URI", "AdaParserUnavailable");
+    ptn_uri_whatwg_throw_malformed_with_errors(runtime, "URI", "AdaParserUnavailable", errors);
     return ptn_null();
 #else
     PtnUriData *base_data = ptn_uri_data_from_value(receiver);
@@ -29784,15 +29898,36 @@ static PtnValue ptn_uri_whatwg_resolve(
     );
     ptn_value_destroy(&base_href);
     if (url == NULL || !ada_is_valid(url)) {
+        const char *reason = NULL;
+        if (url != NULL) {
+            const char *parse_error = ada_get_parse_error(url);
+            if (parse_error != NULL && parse_error[0] != '\0') {
+                reason = ptn_duplicate_string(parse_error);
+            }
+        }
+        if (reason == NULL) {
+            reason = ptn_uri_whatwg_classify_parse_failure(reference);
+        }
+        PtnValue errors = has_errors
+            ? ptn_uri_whatwg_resolve_validation_errors(runtime, reference, reason, line)
+            : ptn_null();
         if (url != NULL) {
             ada_free(url);
         }
         ptn_string_operand_free(reference);
-        ptn_uri_whatwg_throw_malformed(runtime, "URI", NULL);
+        ptn_uri_whatwg_throw_malformed_with_errors(runtime, "URI", reason, errors);
         return ptn_null();
     }
     PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
     ada_free(url);
+    if (has_errors) {
+        PtnValue errors = ptn_uri_whatwg_resolve_validation_errors(runtime, reference, NULL, line);
+        if (!ptn_reference_assign(runtime, args[1].as.reference, errors)) {
+            ptn_value_destroy(&result);
+            ptn_string_operand_free(reference);
+            return ptn_null();
+        }
+    }
     ptn_string_operand_free(reference);
     return result;
 #endif
@@ -30876,6 +31011,123 @@ static PtnValue ptn_uri_rfc3986_uri_static_parse(
     return ptn_uri_parse_static(runtime, "Uri\\Rfc3986\\Uri", argc, args, line);
 }
 
+static void ptn_uri_throw_invalid_serialization(PtnRuntime *runtime, const char *class_name) {
+    char message[112];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Invalid serialization data for %s object",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static PtnArrayEntry *ptn_uri_array_int_entry(PtnValue value, int64_t index) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return NULL;
+    }
+    return ptn_array_entry_for_key(value.as.array, ptn_array_int_key(index));
+}
+
+static PtnArrayEntry *ptn_uri_array_string_entry(PtnValue value, const char *name) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(value.as.array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static PtnValue ptn_uri_unserialize(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    int whatwg,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    const char *class_name = whatwg ? "Uri\\WhatWg\\Url" : "Uri\\Rfc3986\\Uri";
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__unserialize() expects exactly 1 argument, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type != PTN_OBJECT ||
+        resolved_receiver.as.object == NULL ||
+        resolved_receiver.as.object->native_data != NULL) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+
+    PtnValue payload = ptn_value_deref(args[0]);
+    if (payload.type != PTN_ARRAY || payload.as.array == NULL || payload.as.array->len != 2) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    PtnArrayEntry *state_entry = ptn_uri_array_int_entry(payload, 0);
+    PtnArrayEntry *properties_entry = ptn_uri_array_int_entry(payload, 1);
+    if (state_entry == NULL || properties_entry == NULL) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    PtnValue state = ptn_value_deref(state_entry->value);
+    PtnValue properties = ptn_value_deref(properties_entry->value);
+    if (state.type != PTN_ARRAY ||
+        state.as.array == NULL ||
+        state.as.array->len != 1 ||
+        properties.type != PTN_ARRAY ||
+        properties.as.array == NULL ||
+        properties.as.array->len != 0) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    PtnArrayEntry *uri_entry = ptn_uri_array_string_entry(state, "uri");
+    if (uri_entry == NULL) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    PtnValue uri_value = ptn_value_deref(uri_entry->value);
+    if (uri_value.type != PTN_STRING) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+
+    PtnStringOperand input = ptn_string_operand_borrowed_len(
+        (const char *)uri_value.as.string.data,
+        uri_value.as.string.len
+    );
+    PtnUriData *data = NULL;
+    const char *reason = NULL;
+    int valid = whatwg
+        ? ptn_uri_parse_whatwg(input, &data, &reason)
+        : ptn_uri_parse(input, &data);
+    (void)reason;
+    if (!valid || data == NULL) {
+        ptn_uri_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    ptn_uri_replace_object_data(resolved_receiver, data);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_uri_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -30884,11 +31136,6 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    PtnUriData *data = ptn_uri_data_from_value(receiver);
-    if (data == NULL) {
-        ptn_throw_exception(runtime, "Error", "Invalid URI object");
-        return ptn_null();
-    }
     int whatwg = ptn_ascii_case_equal(ptn_value_deref(receiver).as.object->class_name, "Uri\\WhatWg\\Url");
     if (ptn_ascii_case_equal(name, "__construct")) {
         (void)argc;
@@ -30907,17 +31154,11 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
-        char message[112];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Invalid serialization data for %s object",
-            whatwg ? "Uri\\WhatWg\\Url" : "Uri\\Rfc3986\\Uri"
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "Exception", message);
+        return ptn_uri_unserialize(runtime, receiver, whatwg, argc, args, line);
+    }
+    PtnUriData *data = ptn_uri_data_from_value(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid URI object");
         return ptn_null();
     }
     if (whatwg) {

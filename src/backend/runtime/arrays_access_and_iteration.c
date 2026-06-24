@@ -660,6 +660,33 @@ static PTN_UNUSED char *ptn_dynamic_new_class_name_from_value(PtnRuntime *runtim
     }
 }
 
+static int ptn_invalid_url_exception_errors_arg_valid(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        PtnArrayEntry *entry = &value.as.array->entries[i];
+        PtnValue item = ptn_value_deref(entry->value);
+        if (entry->key.type != PTN_ARRAY_KEY_INT ||
+            entry->key.as.integer != (int64_t)i ||
+            item.type != PTN_OBJECT ||
+            item.as.object == NULL ||
+            !ptn_ascii_case_equal(item.as.object->class_name, "Uri\\WhatWg\\UrlValidationError")) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_invalid_url_exception_throw_errors_arg_value_error(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "Uri\\WhatWg\\InvalidUrlException::__construct(): Argument #2 ($errors) must be a list of Uri\\WhatWg\\UrlValidationError"
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_new_exception_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -701,6 +728,13 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
         args,
         line
     );
+    if (is_invalid_url_exception &&
+        argc >= 2 &&
+        !ptn_invalid_url_exception_errors_arg_valid(args[1])) {
+        ptn_string_operand_free(message);
+        ptn_invalid_url_exception_throw_errors_arg_value_error(runtime);
+        return ptn_null();
+    }
     int64_t code = 0;
     size_t code_index = is_invalid_url_exception ? 2 : 1;
     if (!is_soap_fault && argc > code_index) {
