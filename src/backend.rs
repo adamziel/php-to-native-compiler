@@ -18138,6 +18138,8 @@ fn emit_class_method_signature_compatibility_validation(
     source_path: &str,
 ) {
     let mut type_temp_counter = 0usize;
+    let has_static_incompatibility =
+        class_has_runtime_method_signature_static_incompatibility(class, classes, functions);
     for (method_index, method) in class.methods.iter().enumerate().rev() {
         if method.visibility == PropertyVisibility::Private {
             continue;
@@ -18184,8 +18186,105 @@ fn emit_class_method_signature_compatibility_validation(
             method_index,
             source_path,
             &mut type_temp_counter,
+            has_static_incompatibility,
         );
     }
+}
+
+fn class_has_runtime_method_signature_static_incompatibility(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> bool {
+    class.methods.iter().any(|method| {
+        if method.visibility == PropertyVisibility::Private {
+            return false;
+        }
+        let Some((parent_class, parent_method)) =
+            find_runtime_visible_parent_method(class, &method.name, classes)
+        else {
+            return false;
+        };
+        if !runtime_method_requires_parent_signature_compatibility(method, parent_method) {
+            return false;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            return false;
+        };
+        let Some(parent_function) = functions.get(parent_method.function_index) else {
+            return false;
+        };
+        runtime_parameter_signature_static_incompatible(function, parent_function, class, classes)
+            || runtime_return_signature_static_incompatible(
+                function,
+                parent_function,
+                parent_class,
+                class,
+                classes,
+            )
+    })
+}
+
+fn runtime_parameter_signature_static_incompatible(
+    function: &FunctionDecl,
+    parent_function: &FunctionDecl,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    if parent_function.return_by_ref && !function.return_by_ref {
+        return true;
+    }
+    for (parameter_index, parent_parameter) in parent_function.parameters.iter().enumerate() {
+        let Some(parameter) = function.parameters.get(parameter_index) else {
+            return true;
+        };
+        if parameter.by_ref != parent_parameter.by_ref {
+            return true;
+        }
+        match (&parameter.type_hint, &parent_parameter.type_hint) {
+            (None, _) | (Some(TypeHint::Mixed), None) => {}
+            (Some(_), None) => return true,
+            (Some(type_hint), Some(parent_type_hint)) => {
+                if !runtime_type_hint_static_subtype(parent_type_hint, type_hint, class, classes)
+                    && runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
+                        .is_none()
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn runtime_return_signature_static_incompatible(
+    function: &FunctionDecl,
+    parent_function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    let Some(parent_return_type) = &parent_function.return_type else {
+        return false;
+    };
+    let Some(return_type) = &function.return_type else {
+        return true;
+    };
+    if runtime_type_hint_static_subtype(return_type, parent_return_type, class, classes)
+        || runtime_unavailable_class_name(return_type, parent_return_type, classes).is_some()
+    {
+        return false;
+    }
+    if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
+        (return_type, parent_return_type)
+    {
+        if target_name.eq_ignore_ascii_case(&class.name)
+            || target_name.eq_ignore_ascii_case(&parent_class.name)
+        {
+            return runtime_return_candidate_should_autoload(candidate_name, target_name, classes);
+        }
+    }
+    true
 }
 
 fn runtime_method_requires_parent_signature_compatibility(
@@ -18389,6 +18488,7 @@ fn emit_runtime_return_signature_compatibility_validation(
     method_index: usize,
     source_path: &str,
     type_temp_counter: &mut usize,
+    class_has_static_incompatibility: bool,
 ) {
     let Some(parent_return_type) = &parent_function.return_type else {
         return;
@@ -18429,7 +18529,8 @@ fn emit_runtime_return_signature_compatibility_validation(
         if let (TypeHint::Class(candidate_name), TypeHint::Class(target_name)) =
             (return_type, parent_return_type)
         {
-            if !target_name.eq_ignore_ascii_case(&class.name)
+            let current_class_target = target_name.eq_ignore_ascii_case(&class.name);
+            if (!current_class_target || !class_has_static_incompatibility)
                 && runtime_return_candidate_should_autoload(candidate_name, target_name, classes)
             {
                 emit_runtime_signature_type_autoload(

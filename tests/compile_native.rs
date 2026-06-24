@@ -11783,6 +11783,70 @@ try {
     }
 }
 
+fn assert_ordered_contains(haystack: &str, needles: &[&str]) {
+    let mut offset = 0;
+    for needle in needles {
+        let relative = haystack[offset..]
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} after byte {offset} in {haystack:?}"));
+        offset += relative + needle.len();
+    }
+}
+
+#[test]
+fn compile_autoload_variance_current_class_target_candidates_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-variance-current-class-target-candidates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-variance-current-class-target-candidates.php");
+    let output = root.join("autoload-variance-current-class-target-candidates-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($class) {
+    if ($class == 'A') {
+        class A
+        {
+            function m(): B {}
+            function m2(): B {}
+        }
+        var_dump(new A);
+    } elseif ($class == 'B') {
+        class B extends A
+        {
+            function m(): X {}
+            function m2(): Y {}
+        }
+        var_dump(new B);
+    } elseif ($class == 'X') {
+        class X extends B {}
+        var_dump(new X);
+    } else {
+        class Y extends B {}
+        var_dump(new Y);
+    }
+});
+
+new B;
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_ordered_contains(
+        &stdout,
+        &["object(A)#", "object(Y)#", "object(X)#", "object(B)#"],
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_runtime_linking_class_static_subtype"));
+    assert!(c_source.contains("ptn_runtime_autoload_class"));
+}
+
 #[test]
 fn compile_autoload_unlinked_parent_reports_requested_parent_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-unlinked-parent");
