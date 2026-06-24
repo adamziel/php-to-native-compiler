@@ -21714,9 +21714,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
@@ -21773,9 +21770,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
@@ -21882,9 +21876,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
@@ -21911,9 +21902,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
@@ -21964,9 +21952,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {
@@ -22019,9 +22004,6 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
-    out.push_str(
-        "    resolved = ptn_lazy_object_effective_initialized_proxy_receiver(resolved);\n",
-    );
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    (void)class_name;\n");
     for class in classes {

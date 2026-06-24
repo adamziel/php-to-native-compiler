@@ -4257,7 +4257,6 @@ static PTN_UNUSED int ptn_magic_property_get(
         ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_get(runtime, receiver, property, line, value_out);
 }
 
@@ -4266,7 +4265,6 @@ static PTN_UNUSED int ptn_magic_property_get_exists(PtnRuntime *runtime, PtnValu
     if (runtime == NULL || runtime->magic_property_get_exists == NULL) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_get_exists(runtime, receiver);
 }
 
@@ -4291,7 +4289,6 @@ static PTN_UNUSED int ptn_magic_property_isset(
         ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);
 }
 
@@ -4331,7 +4328,6 @@ static PTN_UNUSED int ptn_magic_property_set_len(
         )) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_set(runtime, receiver, property, property_len, value, line);
 }
 
@@ -4368,7 +4364,6 @@ static PTN_UNUSED int ptn_magic_property_unset_len(
         )) {
         return 0;
     }
-    receiver = ptn_lazy_object_effective_initialized_proxy_receiver(receiver);
     return runtime->magic_property_unset(runtime, receiver, property, property_len, line);
 }
 
@@ -5847,6 +5842,12 @@ static PTN_UNUSED PtnValue ptn_exception_write_dynamic_property(
     return result;
 }
 
+static PTN_UNUSED int ptn_uninitialized_lazy_object_declares_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+);
+
 static PTN_UNUSED int ptn_lazy_object_property_reference_needs_initialization(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -5858,6 +5859,10 @@ static PTN_UNUSED int ptn_lazy_object_property_reference_needs_initialization(
     if (receiver.type != PTN_OBJECT ||
         !receiver.as.object->lazy_uninitialized ||
         receiver.as.object->lazy_initializing) {
+        return 0;
+    }
+    if (ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__get") &&
+        !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
         return 0;
     }
 
@@ -5952,7 +5957,7 @@ static PTN_UNUSED int ptn_lazy_object_property_access_uses_local_slot(
     return blocked_metadata != NULL && blocked_metadata->lazy_skip;
 }
 
-static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
+static PTN_UNUSED int ptn_uninitialized_lazy_object_declares_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *method_name
@@ -5963,9 +5968,33 @@ static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
         receiver.type == PTN_OBJECT &&
         receiver.as.object != NULL &&
         receiver.as.object->lazy_uninitialized &&
-        receiver.as.object->lazy_is_proxy &&
         !receiver.as.object->lazy_initializing &&
         runtime->declared_method_exists(receiver.as.object->class_name, method_name);
+}
+
+static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+) {
+    receiver = ptn_value_deref(receiver);
+    return receiver.type == PTN_OBJECT &&
+        receiver.as.object != NULL &&
+        receiver.as.object->lazy_is_proxy &&
+        ptn_uninitialized_lazy_object_declares_method(runtime, receiver, method_name);
+}
+
+static PTN_UNUSED int ptn_initialized_lazy_proxy_should_forward_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property
+) {
+    receiver = ptn_value_deref(receiver);
+    return receiver.type == PTN_OBJECT &&
+        receiver.as.object != NULL &&
+        receiver.as.object->lazy_is_proxy &&
+        !receiver.as.object->lazy_uninitialized &&
+        !ptn_magic_property_get_exists_inactive(runtime, receiver, property);
 }
 
 static PTN_UNUSED int ptn_lazy_object_property_read_needs_initialization(
@@ -6055,7 +6084,7 @@ static PTN_UNUSED int ptn_lazy_object_property_isset_needs_initialization(
     }
 
     if (metadata == NULL &&
-        ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__isset") &&
+        ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__isset") &&
         !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
@@ -6091,7 +6120,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_incomplete_object_property_access_warning(runtime, receiver.as.object, line);
         return ptn_null();
     }
-    if (receiver.as.object->lazy_is_proxy && !receiver.as.object->lazy_uninitialized) {
+    if (ptn_initialized_lazy_proxy_should_forward_property_read(runtime, receiver, property)) {
         receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
             runtime,
             receiver,
@@ -6111,6 +6140,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
                 line
             ) &&
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_null();
+        }
+    }
+    if (ptn_initialized_lazy_proxy_should_forward_property_read(runtime, receiver, property)) {
+        receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+            runtime,
+            receiver,
+            line
+        );
+        if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
             return ptn_null();
         }
     }
@@ -7615,7 +7654,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 !indirect_write &&
                 lazy_metadata == NULL &&
                 lazy_entry == NULL &&
-                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -7627,7 +7666,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         } else {
             lazy_magic_set_dispatch =
                 !indirect_write &&
-                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -8822,19 +8861,29 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
         return;
     }
-    if (receiver.as.object->lazy_uninitialized &&
-        !receiver.as.object->lazy_initializing &&
-        !ptn_lazy_object_property_access_uses_local_slot(
-            runtime,
-            receiver,
-            property,
-            access_scope,
-            PTN_PROPERTY_ACCESS_UNSET,
-            line,
-            NULL
-        ) &&
-        !ptn_lazy_object_initialize(runtime, receiver, line)) {
-        return;
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        int lazy_magic_unset_dispatch =
+            ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__unset") &&
+            !ptn_magic_property_is_active_len(
+                runtime,
+                receiver,
+                property,
+                property_len,
+                PTN_MAGIC_PROPERTY_UNSET
+            );
+        if (!lazy_magic_unset_dispatch &&
+            !ptn_lazy_object_property_access_uses_local_slot(
+                runtime,
+                receiver,
+                property,
+                access_scope,
+                PTN_PROPERTY_ACCESS_UNSET,
+                line,
+                NULL
+            ) &&
+            !ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return;
+        }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue internal_value = ptn_null();
