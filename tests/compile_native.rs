@@ -28019,11 +28019,11 @@ echo bin2hex(mb_convert_encoding(hex2bin('7e7b7e7d61626364'), 'UTF-8', 'HZ')), \
 }
 
 #[test]
-fn compile_mbstring_cp936_and_euctw_table_overrides_to_native_binary() {
-    let root = temp_dir("ptn-native-mb-cp936-euctw-table-overrides");
+fn compile_mbstring_encoding_table_overrides_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-encoding-table-overrides");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("mb-cp936-euctw-table-overrides.php");
-    let output = root.join("mb-cp936-euctw-table-overrides-bin");
+    let input = root.join("mb-encoding-table-overrides.php");
+    let output = root.join("mb-encoding-table-overrides-bin");
     fs::write(
         &input,
         "<?php\n\
@@ -28036,6 +28036,15 @@ echo bin2hex(mb_convert_encoding(hex2bin('20ac'), 'CP936', 'UTF-16BE')), \"\\n\"
 echo bin2hex(mb_convert_encoding(hex2bin('fe10'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('f900'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
 echo mb_strlen($cp936, 'CP936'), \"\\n\";\n\
+$cp1254 = hex2bin('80ddfe');\n\
+var_dump(mb_check_encoding($cp1254, 'CP1254'));\n\
+var_dump(mb_check_encoding(\"\\x81\", 'CP1254'));\n\
+echo bin2hex(mb_convert_encoding($cp1254, 'UTF-16BE', 'CP1254')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('20ac0130015f'), 'CP1254', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(\"\\x81A\", 'UTF-16BE', 'CP1254')), \"\\n\";\n\
+mb_substitute_character(0x1234);\n\
+echo bin2hex(mb_convert_encoding(hex2bin('2345'), 'CP1254', 'UTF-16BE')), \"\\n\";\n\
+mb_substitute_character(0x25);\n\
 $euctw = hex2bin('8eaecfa6');\n\
 var_dump(mb_check_encoding($euctw, 'EUC-TW'));\n\
 var_dump(mb_check_encoding(hex2bin('8ea3a1a1'), 'EUC-TW'));\n\
@@ -28061,6 +28070,12 @@ echo mb_strlen($euctw, 'EUC-TW'), \"\\n\";\n",
             "25\n",
             "d84d\n",
             "1\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "20ac0130015f\n",
+            "80ddfe\n",
+            "00250041\n",
+            "3f\n",
             "bool(true)\n",
             "bool(false)\n",
             "8d9d\n",
