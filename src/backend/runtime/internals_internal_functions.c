@@ -49140,6 +49140,22 @@ static int ptn_try_open_php_fd_stream(const char *path, PtnValue *out, char **de
 static int ptn_data_url_is_stream(PtnResource *resource);
 static PtnValue ptn_data_url_stream_metadata(PtnResource *resource);
 
+typedef struct {
+    char *scheme;
+    char *class_name;
+} PtnUserStreamWrapper;
+
+typedef struct {
+    PtnRuntime *runtime;
+    PtnValue wrapper_object;
+    size_t line;
+} PtnUserStreamResourceData;
+
+static PtnUserStreamWrapper *ptn_user_stream_wrappers = NULL;
+static size_t ptn_user_stream_wrapper_count = 0;
+static size_t ptn_user_stream_wrapper_capacity = 0;
+static PtnResource *ptn_default_stream_context = NULL;
+
 static int ptn_ascii_case_has_prefix(const char *value, const char *prefix) {
     size_t prefix_len = strlen(prefix);
     return strlen(value) >= prefix_len && ptn_ascii_case_equal_n(value, prefix, prefix_len);
@@ -50092,8 +50108,191 @@ static int ptn_stream_mode_is_append(PtnResource *resource) {
     return resource != NULL && resource->stream_mode != NULL && resource->stream_mode[0] == 'a';
 }
 
+static char *ptn_user_stream_scheme_copy(const char *path) {
+    if (path == NULL || !isalpha((unsigned char)path[0])) {
+        return NULL;
+    }
+    size_t len = 0;
+    while (path[len] != '\0') {
+        unsigned char byte = (unsigned char)path[len];
+        if (byte == ':') {
+            if (path[len + 1] != '/' || path[len + 2] != '/') {
+                return NULL;
+            }
+            char *scheme = malloc(len + 1);
+            if (scheme == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < len; i++) {
+                scheme[i] = (char)tolower((unsigned char)path[i]);
+            }
+            scheme[len] = '\0';
+            return scheme;
+        }
+        if (!(isalnum(byte) || byte == '+' || byte == '-' || byte == '.')) {
+            return NULL;
+        }
+        len++;
+    }
+    return NULL;
+}
+
+static PtnUserStreamWrapper *ptn_user_stream_wrapper_find_scheme(const char *scheme) {
+    if (scheme == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < ptn_user_stream_wrapper_count; i++) {
+        if (ptn_ascii_case_equal(ptn_user_stream_wrappers[i].scheme, scheme)) {
+            return &ptn_user_stream_wrappers[i];
+        }
+    }
+    return NULL;
+}
+
+static PtnUserStreamWrapper *ptn_user_stream_wrapper_find_path(const char *path) {
+    char *scheme = ptn_user_stream_scheme_copy(path);
+    if (scheme == NULL) {
+        return NULL;
+    }
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_scheme(scheme);
+    free(scheme);
+    return wrapper;
+}
+
+static void ptn_user_stream_resource_data_free(void *raw) {
+    PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
+    if (data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&data->wrapper_object);
+    free(data);
+}
+
+static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
+    (void)resource;
+    PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
+    if (data == NULL || data->runtime == NULL) {
+        return;
+    }
+    if (data->runtime->method_dispatch == NULL) {
+        return;
+    }
+    PtnValue result = data->runtime->method_dispatch(
+        data->runtime,
+        data->wrapper_object,
+        "stream_close",
+        0,
+        NULL,
+        data->line
+    );
+    ptn_value_destroy(&result);
+}
+
+static PtnResource *ptn_fopen_context_arg(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        return NULL;
+    }
+    return value.as.resource;
+}
+
+static PtnResource *ptn_effective_stream_context(size_t argc, const PtnValue *args) {
+    if (argc >= 4 && args != NULL) {
+        PtnResource *context = ptn_fopen_context_arg(args[3]);
+        if (context != NULL) {
+            return context;
+        }
+    }
+    return ptn_default_stream_context;
+}
+
+static int ptn_try_open_user_stream_wrapper(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *mode,
+    PtnResource *context,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+
+    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnObject *object_ptr = ptn_value_deref(object).as.object;
+    if (context != NULL) {
+        ptn_resource_retain(context);
+        ptn_array_set_entry(
+            object_ptr->properties,
+            ptn_array_string_key("context"),
+            ptn_resource(context)
+        );
+    }
+
+    PtnValue opened_path = ptn_reference_value(ptn_reference_new_owned(ptn_string("")));
+    PtnValue open_args[4] = {
+        ptn_string(path),
+        ptn_string(mode == NULL ? "" : mode),
+        ptn_int(0),
+        opened_path
+    };
+    PtnValue open_result = runtime->method_dispatch(runtime, object, "stream_open", 4, open_args, line);
+    ptn_value_destroy(&open_args[0]);
+    ptn_value_destroy(&open_args[1]);
+    ptn_value_destroy(&open_args[2]);
+    ptn_value_destroy(&open_args[3]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&open_result);
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    int opened = ptn_is_truthy(open_result);
+    ptn_value_destroy(&open_result);
+    if (!opened) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        path,
+        mode,
+        PTN_STREAM_BACKEND_MEMORY,
+        SIZE_MAX,
+        1,
+        ptn_ascii_case_equal(mode == NULL ? "" : mode, "a") || (mode != NULL && mode[0] == 'a')
+    );
+    PtnUserStreamResourceData *resource_data = malloc(sizeof(PtnUserStreamResourceData));
+    if (resource_data == NULL) {
+        ptn_value_destroy(&object);
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        ptn_abort_out_of_memory();
+    }
+    resource_data->runtime = runtime;
+    resource_data->wrapper_object = ptn_value_clone(object);
+    resource_data->line = line;
+    resource->close_hook = ptn_user_stream_close_hook;
+    resource->close_hook_data = resource_data;
+    resource->close_hook_data_free = ptn_user_stream_resource_data_free;
+    ptn_value_destroy(&object);
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
     char *path = ptn_fopen_path_operand_to_c_string(path_operand);
     char *uri = path == NULL ? NULL : ptn_duplicate_string_len(path_operand.data, path_operand.len);
@@ -50197,6 +50396,12 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return php_stream;
     }
     if (ptn_try_open_phar_stream(path, mode, &php_stream)) {
+        free(uri);
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (ptn_try_open_user_stream_wrapper(runtime, path, mode, ptn_effective_stream_context(argc, args), line, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -52312,6 +52517,143 @@ static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, siz
         return ptn_array_from_literal_entries(0, NULL);
     }
     return ptn_stream_context_options_snapshot_value(value.as.resource->context_options, 0);
+}
+
+static PtnResource *ptn_default_stream_context_ensure(void) {
+    if (ptn_default_stream_context == NULL) {
+        ptn_default_stream_context = ptn_resource_new_named("stream-context");
+        ptn_value_destroy(&ptn_default_stream_context->context_options);
+        ptn_default_stream_context->context_options = ptn_array_from_literal_entries(0, NULL);
+    }
+    return ptn_default_stream_context;
+}
+
+static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnResource *context = ptn_default_stream_context_ensure();
+    ptn_resource_retain(context);
+    return ptn_resource(context);
+}
+
+static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue options = ptn_value_deref(args[0]);
+    if (options.type != PTN_ARRAY) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_context_set_default(): Argument #1 ($options) must be of type array, %s given",
+            ptn_offset_container_type_name(options)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnResource *context = ptn_default_stream_context_ensure();
+    ptn_value_destroy(&context->context_options);
+    context->context_options = ptn_stream_context_options_snapshot_value(options, 0);
+    (void)line;
+    ptn_resource_retain(context);
+    return ptn_resource(context);
+}
+
+static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
+    return ptn_ascii_case_equal(scheme, "file") ||
+        ptn_ascii_case_equal(scheme, "php") ||
+        ptn_ascii_case_equal(scheme, "data") ||
+        ptn_ascii_case_equal(scheme, "phar") ||
+        ptn_ascii_case_equal(scheme, "compress.zlib") ||
+        ptn_ascii_case_equal(scheme, "http") ||
+        ptn_ascii_case_equal(scheme, "https");
+}
+
+static PtnValue ptn_internal_stream_wrapper_register_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, function_name, 1, "protocol", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand class_name = ptn_internal_expect_string_arg(runtime, function_name, 2, "class", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(protocol);
+        return ptn_null();
+    }
+    if (protocol.len == 0 || memchr(protocol.data, '\0', protocol.len) != NULL) {
+        ptn_string_operand_free(protocol);
+        ptn_string_operand_free(class_name);
+        ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): Protocol must be a valid scheme name", line);
+        return ptn_bool(0);
+    }
+    char *scheme = malloc(protocol.len + 1);
+    if (scheme == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < protocol.len; i++) {
+        unsigned char byte = (unsigned char)protocol.data[i];
+        if (!(isalnum(byte) || byte == '+' || byte == '-' || byte == '.')) {
+            free(scheme);
+            ptn_string_operand_free(protocol);
+            ptn_string_operand_free(class_name);
+            ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): Protocol must be a valid scheme name", line);
+            return ptn_bool(0);
+        }
+        scheme[i] = (char)tolower(byte);
+    }
+    scheme[protocol.len] = '\0';
+    char *class_copy = ptn_duplicate_string_len(class_name.data, class_name.len);
+    ptn_string_operand_free(protocol);
+    ptn_string_operand_free(class_name);
+
+    if (ptn_stream_wrapper_builtin_scheme(scheme) || ptn_user_stream_wrapper_find_scheme(scheme) != NULL) {
+        free(scheme);
+        free(class_copy);
+        ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): Protocol already defined", line);
+        return ptn_bool(0);
+    }
+    if (!ptn_declared_runtime_user_class_exists(runtime, class_copy)) {
+        free(scheme);
+        free(class_copy);
+        ptn_emit_warning(&runtime->diagnostics, "stream_wrapper_register(): class does not exist", line);
+        return ptn_bool(0);
+    }
+    if (ptn_user_stream_wrapper_count == ptn_user_stream_wrapper_capacity) {
+        size_t new_capacity = ptn_user_stream_wrapper_capacity == 0 ? 8 : ptn_user_stream_wrapper_capacity * 2;
+        if (new_capacity < ptn_user_stream_wrapper_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnUserStreamWrapper)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnUserStreamWrapper *new_wrappers =
+            realloc(ptn_user_stream_wrappers, new_capacity * sizeof(PtnUserStreamWrapper));
+        if (new_wrappers == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_user_stream_wrappers = new_wrappers;
+        ptn_user_stream_wrapper_capacity = new_capacity;
+    }
+    ptn_user_stream_wrappers[ptn_user_stream_wrapper_count].scheme = scheme;
+    ptn_user_stream_wrappers[ptn_user_stream_wrapper_count].class_name = class_copy;
+    ptn_user_stream_wrapper_count++;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_stream_wrapper_register_named(runtime, "stream_wrapper_register", argc, args, line);
+}
+
+static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_stream_wrapper_register_named(runtime, "stream_register_wrapper", argc, args, line);
 }
 
 static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value) {
@@ -132430,16 +132772,20 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -133313,7 +133659,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcspn", 2, 4, ptn_internal_strcspn },
         { "strcoll", 2, 2, ptn_internal_strcoll },
         { "stream_context_create", 0, 2, ptn_internal_stream_context_create },
+        { "stream_context_get_default", 0, 1, ptn_internal_stream_context_get_default },
         { "stream_context_get_options", 1, 1, ptn_internal_stream_context_get_options },
+        { "stream_context_set_default", 1, 1, ptn_internal_stream_context_set_default },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
         { "stream_filter_prepend", 2, 4, ptn_internal_stream_filter_prepend },
@@ -133328,6 +133676,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
         { "stream_socket_server", 1, 5, ptn_internal_stream_socket_server },
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
+        { "stream_register_wrapper", 2, 3, ptn_internal_stream_register_wrapper },
+        { "stream_wrapper_register", 2, 3, ptn_internal_stream_wrapper_register },
         { "strip_tags", 1, 2, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripos", 2, 3, ptn_internal_stripos },
@@ -157381,7 +157731,42 @@ static PtnValue ptn_internal_simplexml_load_file(PtnRuntime *runtime, size_t arg
     }
     unsigned char *bytes = NULL;
     size_t len = 0;
-    int read_result = ptn_read_file_bytes(path, &bytes, &len);
+    int read_result = 0;
+    PtnValue stream_value = ptn_null();
+    PtnResource *context = ptn_libxml_streams_context != NULL
+        ? ptn_libxml_streams_context
+        : ptn_default_stream_context;
+    if (ptn_try_open_user_stream_wrapper(runtime, path, "rb", context, line, &stream_value)) {
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            ptn_value_destroy(&stream_value);
+            return ptn_null();
+        }
+        PtnValue resolved_stream = ptn_value_deref(stream_value);
+        if (resolved_stream.type == PTN_RESOURCE && ptn_stream_resource_is_open(resolved_stream.as.resource)) {
+            PtnValue contents = ptn_stream_read_remaining(runtime, "simplexml_load_file", resolved_stream.as.resource, -1, line);
+            if (ptn_value_deref(contents).type == PTN_STRING) {
+                PtnValue contents_value = ptn_value_deref(contents);
+                len = contents_value.as.string.len;
+                bytes = malloc(len + 1);
+                if (bytes == NULL) {
+                    ptn_value_destroy(&contents);
+                    ptn_value_destroy(&stream_value);
+                    free(path);
+                    ptn_abort_out_of_memory();
+                }
+                if (len != 0) {
+                    memcpy(bytes, contents_value.as.string.data, len);
+                }
+                bytes[len] = '\0';
+                read_result = 1;
+            }
+            ptn_value_destroy(&contents);
+        }
+        ptn_value_destroy(&stream_value);
+    } else {
+        read_result = ptn_read_file_bytes(path, &bytes, &len);
+    }
     if (read_result <= 0) {
         free(path);
         free(bytes);
