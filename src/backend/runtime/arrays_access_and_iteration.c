@@ -946,9 +946,17 @@ static PTN_UNUSED PtnValue ptn_php_token_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_random_engine_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine(const char *class_name);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name);
 #endif
@@ -1316,6 +1324,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_random_randomizer(lookup_class_name)) {
         return ptn_random_randomizer_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_random_engine(lookup_class_name)) {
+        return ptn_random_engine_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_phar(lookup_class_name)) {
         return ptn_phar_new(runtime, argc, args, line);
@@ -18528,29 +18539,144 @@ static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc,
     return (int64_t)array->len;
 }
 
-static PTN_UNUSED uint64_t ptn_random_u64(void) {
-    static uint64_t state = 0;
-    if (state == 0) {
-        uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)(uintptr_t)&state << 1);
-#if defined(_WIN32)
-        seed ^= (uint64_t)_getpid();
-#else
-        seed ^= (uint64_t)getpid();
-#endif
-        state = seed == 0 ? 0x9e3779b97f4a7c15ULL : seed;
+typedef struct {
+    uint32_t state[624];
+    uint32_t count;
+    int mode;
+    int seeded;
+} PtnMt19937State;
+
+#define PTN_MT_RAND_MT19937 0
+#define PTN_MT_RAND_PHP 1
+#define PTN_MT19937_N 624
+#define PTN_MT19937_M 397
+
+static PtnMt19937State ptn_global_mt19937_state = { { 0 }, PTN_MT19937_N, PTN_MT_RAND_MT19937, 0 };
+
+static uint32_t ptn_mt19937_twist(uint32_t m, uint32_t u, uint32_t v) {
+    uint32_t mix = (u & 0x80000000U) | (v & 0x7fffffffU);
+    return m ^ (mix >> 1) ^ ((uint32_t)(-(int32_t)(v & 1U)) & 0x9908b0dfU);
+}
+
+static uint32_t ptn_mt19937_twist_php(uint32_t m, uint32_t u, uint32_t v) {
+    uint32_t mix = (u & 0x80000000U) | (v & 0x7fffffffU);
+    return m ^ (mix >> 1) ^ ((uint32_t)(-(int32_t)(u & 1U)) & 0x9908b0dfU);
+}
+
+static void ptn_mt19937_reload(PtnMt19937State *state) {
+    uint32_t *p = state->state;
+    if (state->mode == PTN_MT_RAND_MT19937) {
+        for (uint32_t i = PTN_MT19937_N - PTN_MT19937_M; i--; ++p) {
+            *p = ptn_mt19937_twist(p[PTN_MT19937_M], p[0], p[1]);
+        }
+        for (uint32_t i = PTN_MT19937_M; --i; ++p) {
+            *p = ptn_mt19937_twist(p[PTN_MT19937_M - PTN_MT19937_N], p[0], p[1]);
+        }
+        *p = ptn_mt19937_twist(p[PTN_MT19937_M - PTN_MT19937_N], p[0], state->state[0]);
+    } else {
+        for (uint32_t i = PTN_MT19937_N - PTN_MT19937_M; i--; ++p) {
+            *p = ptn_mt19937_twist_php(p[PTN_MT19937_M], p[0], p[1]);
+        }
+        for (uint32_t i = PTN_MT19937_M; --i; ++p) {
+            *p = ptn_mt19937_twist_php(p[PTN_MT19937_M - PTN_MT19937_N], p[0], p[1]);
+        }
+        *p = ptn_mt19937_twist_php(p[PTN_MT19937_M - PTN_MT19937_N], p[0], state->state[0]);
     }
-    state += 0x9e3779b97f4a7c15ULL;
-    uint64_t z = state;
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-    return z ^ (z >> 31);
+    state->count = 0;
+}
+
+static PTN_UNUSED void ptn_mt19937_seed32(PtnMt19937State *state, uint32_t seed, int mode) {
+    state->mode = mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937;
+    state->state[0] = seed;
+    for (uint32_t i = 1; i < PTN_MT19937_N; i++) {
+        uint32_t prev = state->state[i - 1];
+        state->state[i] = (1812433253U * (prev ^ (prev >> 30)) + i) & 0xffffffffU;
+    }
+    state->count = PTN_MT19937_N;
+    state->seeded = 1;
+    ptn_mt19937_reload(state);
+}
+
+static void ptn_mt19937_seed_default(PtnMt19937State *state) {
+    uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)(uintptr_t)state << 1);
+#if defined(_WIN32)
+    seed ^= (uint64_t)_getpid();
+#else
+    seed ^= (uint64_t)getpid();
+#endif
+    ptn_mt19937_seed32(state, (uint32_t)seed, PTN_MT_RAND_MT19937);
+}
+
+static uint32_t ptn_mt19937_generate(PtnMt19937State *state) {
+    if (!state->seeded) {
+        ptn_mt19937_seed_default(state);
+    }
+    if (state->count >= PTN_MT19937_N) {
+        ptn_mt19937_reload(state);
+    }
+
+    uint32_t value = state->state[state->count++];
+    value ^= value >> 11;
+    value ^= (value << 7) & 0x9d2c5680U;
+    value ^= (value << 15) & 0xefc60000U;
+    return value ^ (value >> 18);
+}
+
+static uint32_t ptn_mt19937_range32(PtnMt19937State *state, uint32_t upper_inclusive) {
+    uint32_t result = ptn_mt19937_generate(state);
+    if (upper_inclusive == UINT32_MAX) {
+        return result;
+    }
+
+    uint32_t range = upper_inclusive + 1U;
+    if ((range & (range - 1U)) == 0) {
+        return result & (range - 1U);
+    }
+
+    uint32_t limit = UINT32_MAX - (UINT32_MAX % range) - 1U;
+    for (uint32_t attempts = 0; result > limit && attempts <= 50; attempts++) {
+        result = ptn_mt19937_generate(state);
+    }
+    return result % range;
+}
+
+static uint64_t ptn_mt19937_u64(PtnMt19937State *state) {
+    uint64_t low = (uint64_t)ptn_mt19937_generate(state);
+    uint64_t high = (uint64_t)ptn_mt19937_generate(state);
+    return low | (high << 32);
+}
+
+static uint64_t ptn_mt19937_range64(PtnMt19937State *state, uint64_t upper_inclusive) {
+    uint64_t result = ptn_mt19937_u64(state);
+    if (upper_inclusive == UINT64_MAX) {
+        return result;
+    }
+
+    uint64_t range = upper_inclusive + 1ULL;
+    if ((range & (range - 1ULL)) == 0) {
+        return result & (range - 1ULL);
+    }
+
+    uint64_t limit = UINT64_MAX - (UINT64_MAX % range) - 1ULL;
+    for (uint32_t attempts = 0; result > limit && attempts <= 50; attempts++) {
+        result = ptn_mt19937_u64(state);
+    }
+    return result % range;
+}
+
+static PTN_UNUSED size_t ptn_mt19937_bounded_index(PtnMt19937State *state, size_t upper_inclusive) {
+    if (upper_inclusive <= (size_t)UINT32_MAX) {
+        return (size_t)ptn_mt19937_range32(state, (uint32_t)upper_inclusive);
+    }
+    return (size_t)ptn_mt19937_range64(state, (uint64_t)upper_inclusive);
+}
+
+static PTN_UNUSED void ptn_random_seed(uint64_t seed, int mode) {
+    ptn_mt19937_seed32(&ptn_global_mt19937_state, (uint32_t)seed, mode);
 }
 
 static PTN_UNUSED size_t ptn_random_bounded_index(size_t upper_inclusive) {
-    if (upper_inclusive == (size_t)UINT64_MAX) {
-        return (size_t)ptn_random_u64();
-    }
-    return (size_t)(ptn_random_u64() % ((uint64_t)upper_inclusive + 1ULL));
+    return ptn_mt19937_bounded_index(&ptn_global_mt19937_state, upper_inclusive);
 }
 
 static int ptn_array_key_compare_ascending(PtnArrayKey left, PtnArrayKey right) {
@@ -19438,10 +19564,13 @@ static PTN_UNUSED void ptn_array_natcasesort_values(PtnRuntime *runtime, PtnArra
     ptn_array_rebuild_index(array);
 }
 
-static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
+static PTN_UNUSED void ptn_array_shuffle_values_with_state(PtnArray *array, PtnMt19937State *state) {
+    if (state == NULL) {
+        state = &ptn_global_mt19937_state;
+    }
     if (array->len > 1) {
         for (size_t i = array->len - 1; i > 0; i--) {
-            size_t j = ptn_random_bounded_index(i);
+            size_t j = ptn_mt19937_bounded_index(state, i);
             PtnArrayEntry tmp = array->entries[i];
             array->entries[i] = array->entries[j];
             array->entries[j] = tmp;
@@ -19457,6 +19586,10 @@ static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
     array->current_index = 0;
     ptn_array_recompute_next_auto_key(array);
     ptn_array_rebuild_index(array);
+}
+
+static PTN_UNUSED void ptn_array_shuffle_values(PtnArray *array) {
+    ptn_array_shuffle_values_with_state(array, &ptn_global_mt19937_state);
 }
 
 static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *array, size_t argc, const PtnValue *values) {

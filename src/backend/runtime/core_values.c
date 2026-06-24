@@ -2153,6 +2153,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_result(const char *clas
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
@@ -2377,6 +2378,13 @@ static PTN_UNUSED PtnValue ptn_return_type_will_change_new(
 );
 static PTN_UNUSED PtnValue ptn_random_randomizer_new(
     PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_engine_new(
+    PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line

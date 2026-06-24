@@ -1688,6 +1688,14 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DateTimeInterface\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Mt19937\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\PcgOneseq128XslRr64\") ||\n");
+    out.push_str(
+        "        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Xoshiro256StarStar\") ||\n",
+    );
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Random\\\\Engine\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DatePeriod\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
@@ -21319,6 +21327,12 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "hashcontext" => Some("HashContext"),
                 "sessionhandler" => Some("SessionHandler"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
+                "random\\engine\\mt19937" => Some("Random\\Engine\\Mt19937"),
+                "random\\engine\\pcgoneseq128xslrr64" => {
+                    Some("Random\\Engine\\PcgOneseq128XslRr64")
+                }
+                "random\\engine\\xoshiro256starstar" => Some("Random\\Engine\\Xoshiro256StarStar"),
+                "random\\engine\\secure" => Some("Random\\Engine\\Secure"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),

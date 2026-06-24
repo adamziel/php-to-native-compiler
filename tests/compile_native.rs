@@ -87536,6 +87536,109 @@ var_dump($randomizer->getBytes(64));
 }
 
 #[test]
+fn compile_random_randomizer_array_methods_and_mt19937_to_native_binary() {
+    let root = temp_dir("ptn-native-random-randomizer-array-methods");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-randomizer-array-methods.php");
+    let output = root.join("random-randomizer-array-methods-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Engine\Mt19937;
+use Random\Engine\Secure;
+use Random\Randomizer;
+
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+$items = ['foo', 'bar', 'baz'];
+mt_srand(1, MT_RAND_PHP);
+var_dump(array_rand($items), array_rand($items), array_rand($items));
+
+$map = ['foo' => 0, 'bar' => 1, 'baz' => 2];
+mt_srand(1234);
+$one = array_rand($map, 1);
+$two = array_rand($map, 2);
+
+$randomizer = new Randomizer(new Mt19937(1234));
+[$methodOne] = $randomizer->pickArrayKeys($map, 1);
+$methodTwo = $randomizer->pickArrayKeys($map, 2);
+var_dump($one === $methodOne, $two === $methodTwo);
+
+$engine = new Secure();
+var_dump(
+    $engine instanceof Random\Engine,
+    class_exists(Random\Engine\PcgOneseq128XslRr64::class),
+    method_exists($randomizer, 'pickArrayKeys'),
+    method_exists($randomizer, 'shuffleArray')
+);
+
+$keys = $randomizer->pickArrayKeys(['x' => 1, 'y' => 2, 'z' => 3], 2);
+$keysOk = count($keys) === 2
+    && count(array_unique($keys)) === 2
+    && array_diff($keys, ['x', 'y', 'z']) === [];
+
+$input = [3 => 'a', 1 => 'b', 2 => 'c'];
+$shuffled = $randomizer->shuffleArray($input);
+sort($shuffled);
+var_dump($keysOk, $shuffled === ['a', 'b', 'c'], array_key_exists(3, $input) && !array_key_exists(0, $input));
+
+try {
+    $randomizer->pickArrayKeys('foo', 2);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $randomizer->pickArrayKeys([], 1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $randomizer->pickArrayKeys([1, 2, 3], 10);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Random\\Randomizer::pickArrayKeys(): Argument #1 ($array) must be of type array, string given\n",
+            "Random\\Randomizer::pickArrayKeys(): Argument #1 ($array) must not be empty\n",
+            "Random\\Randomizer::pickArrayKeys(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_engine_new"));
+    assert!(c_source.contains("ptn_random_randomizer_pick_array_keys"));
+    assert!(c_source.contains("ptn_random_randomizer_shuffle_array"));
+}
+
+#[test]
 fn compile_intersection_type_variance_to_native_binary() {
     let root = temp_dir("ptn-native-intersection-type-variance");
     fs::create_dir_all(&root).unwrap();

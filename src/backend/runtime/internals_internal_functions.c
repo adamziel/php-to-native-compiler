@@ -83,6 +83,12 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
                 "Constant FILTER_SANITIZE_STRIPPED is deprecated since 8.1, use htmlspecialchars() instead",
                 line
             );
+        } else if (strcmp(name, "MT_RAND_PHP") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant MT_RAND_PHP is deprecated since 8.3, as it uses a biased non-standard variant of Mt19937",
+                line
+            );
         } else if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
             ptn_emit_deprecation(
                 &runtime->diagnostics,
@@ -22829,30 +22835,62 @@ static int ptn_array_rand_index_compare(const void *left, const void *right) {
     return (left_index > right_index) - (left_index < right_index);
 }
 
-static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_rand", 1, "array", args[0]);
-    int64_t requested = argc >= 2
-        ? ptn_internal_expect_integer_arg(runtime, "array_rand", 2, "num", args[1], line)
-        : 1;
+static PtnValue ptn_array_pick_keys_with_state(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *array,
+    int64_t requested,
+    PtnMt19937State *state,
+    int always_array
+) {
+    if (state == NULL) {
+        state = &ptn_global_mt19937_state;
+    }
     if (array->len == 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($array) must not be empty",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
         ptn_throw_exception(
             runtime,
             "ValueError",
-            "array_rand(): Argument #1 ($array) must not be empty"
+            message
         );
         return ptn_null();
     }
     if (requested < 1 || (uint64_t)requested > (uint64_t)array->len) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
         ptn_throw_exception(
             runtime,
             "ValueError",
-            "array_rand(): Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)"
+            message
         );
         return ptn_null();
     }
     if (requested == 1) {
-        size_t index = ptn_random_bounded_index(array->len - 1);
-        return ptn_array_key_value(array->entries[index].key);
+        size_t index = ptn_mt19937_bounded_index(state, array->len - 1);
+        PtnValue key = ptn_array_key_value(array->entries[index].key);
+        if (!always_array) {
+            return key;
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), key);
+        return result;
     }
 
     size_t *indices = malloc(array->len * sizeof(size_t));
@@ -22864,7 +22902,7 @@ static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const 
     }
     size_t count = (size_t)requested;
     for (size_t i = 0; i < count; i++) {
-        size_t j = i + ptn_random_bounded_index(array->len - i - 1);
+        size_t j = i + ptn_mt19937_bounded_index(state, array->len - i - 1);
         size_t tmp = indices[i];
         indices[i] = indices[j];
         indices[j] = tmp;
@@ -22885,6 +22923,21 @@ static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const 
     }
     free(indices);
     return result;
+}
+
+static PtnValue ptn_internal_array_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_rand", 1, "array", args[0]);
+    int64_t requested = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "array_rand", 2, "num", args[1], line)
+        : 1;
+    return ptn_array_pick_keys_with_state(
+        runtime,
+        "array_rand",
+        array,
+        requested,
+        &ptn_global_mt19937_state,
+        0
+    );
 }
 
 static PtnValue ptn_internal_array_first(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -79923,17 +79976,30 @@ static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnVal
         }
     }
     uint64_t span = (uint64_t)(max - min) + 1;
-    int64_t value = min + (int64_t)((uint64_t)rand() % span);
+    int64_t value = min + (int64_t)ptn_mt19937_range64(&ptn_global_mt19937_state, span - 1);
     return ptn_int(value);
 }
 
 static PtnValue ptn_internal_srand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     unsigned int seed = argc >= 1 ? (unsigned int)ptn_value_to_integer(args[0]) : (unsigned int)time(NULL);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    srand(seed);
+    int64_t mode = PTN_MT_RAND_MT19937;
+    if (argc >= 2) {
+        mode = ptn_internal_expect_integer_arg(runtime, "mt_srand", 2, "mode", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    if (mode == PTN_MT_RAND_PHP) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "The MT_RAND_PHP variant of Mt19937 is deprecated",
+            line
+        );
+    }
+    ptn_random_seed(seed, mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937);
     return ptn_null();
 }
 
@@ -80001,6 +80067,98 @@ static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, cons
     return ptn_owned_string_len(bytes, len);
 }
 
+static void ptn_random_engine_mt19937_data_free(void *data) {
+    free(data);
+}
+
+static PTN_UNUSED PtnValue ptn_random_engine_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (!ptn_internal_class_name_is_random_engine(class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine class");
+        return ptn_null();
+    }
+
+    if (!ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937")) {
+        return ptn_object_new_shell(runtime, class_name);
+    }
+
+    if (argc > 2) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Engine\\Mt19937::__construct() expects at most 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    int seed_is_null = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
+    int64_t seed = 0;
+    if (!seed_is_null) {
+        seed = ptn_internal_expect_integer_arg(
+            runtime,
+            "Random\\Engine\\Mt19937::__construct",
+            1,
+            "seed",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+
+    int64_t mode = PTN_MT_RAND_MT19937;
+    if (argc >= 2) {
+        mode = ptn_internal_expect_integer_arg(
+            runtime,
+            "Random\\Engine\\Mt19937::__construct",
+            2,
+            "mode",
+            args[1],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    if (mode == PTN_MT_RAND_PHP) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "The MT_RAND_PHP variant of Mt19937 is deprecated",
+            line
+        );
+    }
+
+    PtnMt19937State *state = malloc(sizeof(PtnMt19937State));
+    if (state == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memset(state, 0, sizeof(PtnMt19937State));
+    state->count = PTN_MT19937_N;
+    state->mode = mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937;
+    if (seed_is_null) {
+        ptn_mt19937_seed_default(state);
+    } else {
+        ptn_mt19937_seed32(state, (uint32_t)seed, state->mode);
+    }
+
+    PtnValue object = ptn_object_new_shell(runtime, "Random\\Engine\\Mt19937");
+    object.as.object->native_data = state;
+    object.as.object->native_data_free = ptn_random_engine_mt19937_data_free;
+    return object;
+}
+
 typedef struct {
     PtnValue engine;
 } PtnRandomRandomizerData;
@@ -80028,7 +80186,8 @@ static PtnRandomRandomizerData *ptn_random_randomizer_data(PtnRuntime *runtime, 
 static int ptn_random_engine_value_is_valid(PtnValue value) {
     value = ptn_value_deref(value);
     return value.type == PTN_OBJECT &&
-        ptn_declared_class_implements_interface(value.as.object->class_name, "Random\\Engine");
+        (ptn_internal_class_name_is_random_engine(value.as.object->class_name) ||
+            ptn_declared_class_implements_interface(value.as.object->class_name, "Random\\Engine"));
 }
 
 static int ptn_random_randomizer_set_engine(
@@ -80216,6 +80375,124 @@ static PtnValue ptn_random_randomizer_get_bytes(
     return ptn_owned_string_len(bytes, requested);
 }
 
+static PtnMt19937State *ptn_random_randomizer_mt19937_state(PtnRandomRandomizerData *data) {
+    if (data == NULL) {
+        return &ptn_global_mt19937_state;
+    }
+    PtnValue engine = ptn_value_deref(data->engine);
+    if (engine.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(engine.as.object->class_name, "Random\\Engine\\Mt19937") &&
+        engine.as.object->native_data != NULL) {
+        return (PtnMt19937State *)engine.as.object->native_data;
+    }
+    return &ptn_global_mt19937_state;
+}
+
+static PtnValue ptn_random_randomizer_pick_array_keys(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::pickArrayKeys() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnArray *array = ptn_internal_expect_array_arg(
+        runtime,
+        "Random\\Randomizer::pickArrayKeys",
+        1,
+        "array",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t requested = ptn_internal_expect_integer_arg(
+        runtime,
+        "Random\\Randomizer::pickArrayKeys",
+        2,
+        "num",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_array_pick_keys_with_state(
+        runtime,
+        "Random\\Randomizer::pickArrayKeys",
+        array,
+        requested,
+        ptn_random_randomizer_mt19937_state(data),
+        1
+    );
+}
+
+static PtnValue ptn_random_randomizer_shuffle_array(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::shuffleArray() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnArray *array = ptn_internal_expect_array_arg(
+        runtime,
+        "Random\\Randomizer::shuffleArray",
+        1,
+        "array",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < array->len; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone(ptn_array_reindexing_internal_value(array->entries[i].value))
+        );
+    }
+    ptn_array_shuffle_values_with_state(
+        result.as.array,
+        ptn_random_randomizer_mt19937_state(data)
+    );
+    (void)line;
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -80241,6 +80518,12 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     }
     if (ptn_ascii_case_equal(name, "getBytes")) {
         return ptn_random_randomizer_get_bytes(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "pickArrayKeys")) {
+        return ptn_random_randomizer_pick_array_keys(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "shuffleArray")) {
+        return ptn_random_randomizer_shuffle_array(runtime, data, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method Random\\Randomizer");
     return ptn_null();
@@ -86280,6 +86563,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CONNECTION_TIMEOUT", 2);
     ptn_get_defined_constants_add_int(table, "CASE_LOWER", 0);
     ptn_get_defined_constants_add_int(table, "CASE_UPPER", 1);
+    ptn_get_defined_constants_add_int(table, "MT_RAND_MT19937", PTN_MT_RAND_MT19937);
+    ptn_get_defined_constants_add_int(table, "MT_RAND_PHP", PTN_MT_RAND_PHP);
     ptn_get_defined_constants_add_int(table, "SORT_REGULAR", PTN_SORT_REGULAR);
     ptn_get_defined_constants_add_int(table, "SORT_NUMERIC", PTN_SORT_NUMERIC);
     ptn_get_defined_constants_add_int(table, "SORT_STRING", PTN_SORT_STRING);
@@ -86765,6 +87050,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "CONNECTION_TIMEOUT",
         "CASE_LOWER",
         "CASE_UPPER",
+        "MT_RAND_MT19937",
+        "MT_RAND_PHP",
         "SORT_REGULAR",
         "SORT_NUMERIC",
         "SORT_STRING",
@@ -87039,6 +87326,9 @@ static const char *ptn_internal_constant_deprecated_since(const char *name) {
     if (ptn_ascii_case_equal(name, "DATE_RFC7231")) {
         return "8.5";
     }
+    if (ptn_ascii_case_equal(name, "MT_RAND_PHP")) {
+        return "8.3";
+    }
     return NULL;
 }
 
@@ -87049,6 +87339,9 @@ static const char *ptn_internal_constant_deprecated_message(const char *name) {
     }
     if (ptn_ascii_case_equal(name, "DATE_RFC7231")) {
         return "as this format ignores the associated timezone and always uses GMT";
+    }
+    if (ptn_ascii_case_equal(name, "MT_RAND_PHP")) {
+        return "as it uses a biased non-standard variant of Mt19937";
     }
     return NULL;
 }
@@ -135826,6 +136119,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *c
     return ptn_ascii_case_equal(class_name, "Random\\Randomizer");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937") ||
+        ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64") ||
+        ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar") ||
+        ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ZipArchive");
 }
@@ -136118,6 +136418,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_phar_data(class_name)
         || ptn_internal_class_name_is_phar_file_info(class_name)
         || ptn_internal_class_name_is_random_randomizer(class_name)
+        || ptn_internal_class_name_is_random_engine(class_name)
         || ptn_internal_class_name_is_zip_archive(class_name)
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
@@ -138156,7 +138457,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_random_randomizer(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
-            || ptn_ascii_case_equal(method_name, "getBytes");
+            || ptn_ascii_case_equal(method_name, "getBytes")
+            || ptn_ascii_case_equal(method_name, "pickArrayKeys")
+            || ptn_ascii_case_equal(method_name, "shuffleArray");
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
