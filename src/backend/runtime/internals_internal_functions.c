@@ -1900,6 +1900,16 @@ static int ptn_dom_effective_class_is_modeled(const char *class_name) {
         ptn_ascii_case_equal(effective, "DOMXPath");
 }
 
+static int ptn_dom_effective_class_has_xml_node_native_data(const char *class_name) {
+    const char *effective = ptn_dom_effective_class_name(class_name);
+    return ptn_dom_effective_class_is_modeled(effective) &&
+        !ptn_ascii_case_equal(effective, "DOMImplementation") &&
+        !ptn_ascii_case_equal(effective, "DOMNodeList") &&
+        !ptn_ascii_case_equal(effective, "DOMNamedNodeMap") &&
+        !ptn_ascii_case_equal(effective, "DOMTokenList") &&
+        !ptn_ascii_case_equal(effective, "DOMXPath");
+}
+
 static int ptn_object_is_xml_reader_instance(PtnObject *object) {
     return object != NULL &&
         (ptn_ascii_case_equal(object->class_name, "XMLReader") ||
@@ -155547,6 +155557,11 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
         }
     }
 
+    int adopted_xml_node_native_data =
+        parent.as.object->native_data != NULL &&
+        ptn_dom_effective_class_has_xml_node_native_data(parent.as.object->class_name) &&
+        ptn_dom_effective_class_has_xml_node_native_data(target.as.object->class_name);
+
     if (target.as.object->native_data != NULL && target.as.object->native_data_free != NULL) {
         target.as.object->native_data_free(target.as.object->native_data);
     }
@@ -155554,6 +155569,9 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
     target.as.object->native_data_free = parent.as.object->native_data_free;
     parent.as.object->native_data = NULL;
     parent.as.object->native_data_free = NULL;
+    if (adopted_xml_node_native_data && target.as.object->native_data != NULL) {
+        ((PtnXmlNode *)target.as.object->native_data)->object = target.as.object;
+    }
 
     for (size_t i = 0; i < parent.as.object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &parent.as.object->property_metadata[i];

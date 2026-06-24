@@ -43264,13 +43264,13 @@ fn compile_dom_text_processing_instruction_and_subclass_surface_to_native_binary
     fs::write(
         &input,
         "<?php
-class Books extends DOMDocument {
+class books extends domDocument {
     public function addBook(string $title): void {
         $this->documentElement->appendChild($this->createElement('book', $title));
     }
 }
 
-$books = new Books();
+$books = new books();
 $books->loadXML('<books/>');
 $books->addBook('x');
 echo $books->saveXML($books->documentElement), \"\\n\";
