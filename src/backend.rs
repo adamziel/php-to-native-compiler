@@ -2541,7 +2541,9 @@ fn emit_declared_class_new_instance_without_constructor(
             out.push_str("        runtime->warn_by_ref_argument_mismatch = 1;\n");
             out.push_str("        runtime->throw_argument_count_errors = 1;\n");
             out.push_str("        const char *const *constructor_arg_names = runtime->next_call_arg_names;\n");
-            out.push_str("        PtnValue constructor_result = ptn_call_declared_method_named(runtime, result, \"__construct\", argc, args, constructor_arg_names, line);\n");
+            out.push_str("        PtnValue constructor_result = ptn_call_declared_method_named(runtime, result, \"");
+            out.push_str(&c_string(&constructor.name));
+            out.push_str("\", argc, args, constructor_arg_names, line);\n");
             out.push_str("        runtime->throw_argument_count_errors = previous_throw_argument_count_errors;\n");
             out.push_str("        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;\n");
             out.push_str("        if (runtime->exceptions->active_exception == NULL && result.type == PTN_OBJECT) {\n");
@@ -21051,9 +21053,25 @@ fn class_constructor_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Option<ClassMethodLookupEntry<'a>> {
-    class_method_lookup_chain(class, classes)
-        .into_iter()
+    let methods = class_method_lookup_chain(class, classes);
+    if let Some(constructor) = methods
+        .iter()
+        .copied()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
+    {
+        return Some(constructor);
+    }
+    methods.into_iter().find(|method| {
+        !method.is_static
+            && !method.declaring_class.contains('\\')
+            && method.name.eq_ignore_ascii_case(
+                method
+                    .declaring_class
+                    .rsplit('\\')
+                    .next()
+                    .unwrap_or(method.declaring_class),
+            )
+    })
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
@@ -43794,7 +43812,7 @@ impl ValueEmitter {
             } else if argument_unpacks.iter().any(|unpack| *unpack) {
                 let args_temp = self.emit_call_arguments_builder(
                     out,
-                    "__construct",
+                    &constructor_name,
                     arguments,
                     argument_names,
                     argument_unpacks,
@@ -43806,7 +43824,9 @@ impl ValueEmitter {
                 out.push_str(&constructor_result);
                 out.push_str(" = ptn_call_declared_method(&runtime, ");
                 out.push_str(result_temp);
-                out.push_str(", \"__construct\", ");
+                out.push_str(", \"");
+                out.push_str(&c_string(&constructor_name));
+                out.push_str("\", ");
                 out.push_str(&args_temp);
                 out.push_str(".len, ");
                 out.push_str(&args_temp);
@@ -43821,7 +43841,9 @@ impl ValueEmitter {
                 out.push_str(&constructor_result);
                 out.push_str(" = ptn_call_declared_method(&runtime, ");
                 out.push_str(result_temp);
-                out.push_str(", \"__construct\", 0, NULL, ");
+                out.push_str(", \"");
+                out.push_str(&c_string(&constructor_name));
+                out.push_str("\", 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
             } else if argument_names.iter().any(Option::is_some) {
@@ -43858,7 +43880,7 @@ impl ValueEmitter {
                             self.emit_by_ref_call_argument(
                                 out,
                                 argument,
-                                "__construct",
+                                &constructor_name,
                                 slot_index,
                                 parameter_name,
                                 line,
@@ -43866,7 +43888,12 @@ impl ValueEmitter {
                                 true,
                             )
                         } else {
-                            self.emit_call_argument(out, "__construct", argument_index, argument)
+                            self.emit_call_argument(
+                                out,
+                                &constructor_name,
+                                argument_index,
+                                argument,
+                            )
                         };
                         if by_ref_parameter.is_some()
                             && value_is_array_dim_reference_target(argument)
@@ -43898,7 +43925,9 @@ impl ValueEmitter {
                     out.push_str(&constructor_result);
                     out.push_str(" = ptn_call_declared_method(&runtime, ");
                     out.push_str(result_temp);
-                    out.push_str(", \"__construct\", ");
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&constructor_name));
+                    out.push_str("\", ");
                     out.push_str(&slot_temps.len().to_string());
                     out.push_str(", ");
                     out.push_str(&args_temp);
@@ -43931,7 +43960,7 @@ impl ValueEmitter {
                         let temp = self.emit_by_ref_call_argument(
                             out,
                             argument,
-                            "__construct",
+                            &constructor_name,
                             argument_index,
                             parameter_name,
                             line,
@@ -43945,7 +43974,7 @@ impl ValueEmitter {
                     } else {
                         constructor_argument_temps.push(self.emit_call_argument(
                             out,
-                            "__construct",
+                            &constructor_name,
                             argument_index,
                             argument,
                         ));
@@ -43974,7 +44003,9 @@ impl ValueEmitter {
                 out.push_str(&constructor_result);
                 out.push_str(" = ptn_call_declared_method(&runtime, ");
                 out.push_str(result_temp);
-                out.push_str(", \"__construct\", ");
+                out.push_str(", \"");
+                out.push_str(&c_string(&constructor_name));
+                out.push_str("\", ");
                 out.push_str(&constructor_argument_temps.len().to_string());
                 out.push_str(", ");
                 out.push_str(&args_temp);

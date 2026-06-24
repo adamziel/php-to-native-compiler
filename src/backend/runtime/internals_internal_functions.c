@@ -85371,6 +85371,7 @@ static PtnValue ptn_defined_constants_zlib_table(void) {
 }
 
 static void ptn_defined_constants_add_xml(PtnValue table) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("XML_SAX_IMPL"), ptn_string("libxml"));
     ptn_get_defined_constants_add_int(table, "XML_OPTION_CASE_FOLDING", 1);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_TARGET_ENCODING", 2);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_SKIP_TAGSTART", 3);
@@ -85991,6 +85992,7 @@ static int ptn_reflection_constant_is_zlib(const char *name) {
 
 static int ptn_reflection_constant_is_xml(const char *name) {
     static const char *const names[] = {
+        "XML_SAX_IMPL",
         "XML_OPTION_CASE_FOLDING",
         "XML_OPTION_TARGET_ENCODING",
         "XML_OPTION_SKIP_TAGSTART",
@@ -113978,14 +113980,7 @@ static int ptn_xml_parser_validate_handler(
             }
         }
         if (!data->has_callback_object) {
-            ptn_xml_parser_throw_handler_value_error(
-                runtime,
-                function_name,
-                position,
-                parameter_name,
-                "an object must be set via xml_set_object() to be able to lookup method"
-            );
-            return 0;
+            return 1;
         }
         if (!ptn_xml_parser_object_string_handler_is_valid(runtime, data, deref)) {
             if (runtime->exceptions->active_exception != NULL) {

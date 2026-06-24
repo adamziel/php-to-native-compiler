@@ -23692,6 +23692,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "LIBXML_ERR_WARNING"
             | "LIBXML_ERR_ERROR"
             | "LIBXML_ERR_FATAL"
+            | "XML_SAX_IMPL"
             | "XML_OPTION_CASE_FOLDING"
             | "XML_OPTION_TARGET_ENCODING"
             | "XML_OPTION_SKIP_TAGSTART"
