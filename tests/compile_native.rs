@@ -75027,6 +75027,14 @@ class Base {
     public static function inheritedProbe() {
         return property_exists(\"Child\", \"baseStatic\");
     }
+
+    public function inheritedPrivateObjectProbe($object) {
+        return property_exists($object, \"basePrivate\");
+    }
+
+    public function inheritedPrivateClassProbe() {
+        return property_exists(\"Child\", \"basePrivate\");
+    }
 }
 
 #[AllowDynamicProperties]
@@ -75040,9 +75048,12 @@ $child = new Child();
 $child->dynamic = 8;
 $std = new stdClass();
 $std->value = null;
+$childReflection = new ReflectionClass(\"Child\");
 
 var_dump(function_exists(\"property_exists\"));
 var_dump(Child::inheritedProbe());
+var_dump($child->inheritedPrivateObjectProbe($child));
+var_dump($child->inheritedPrivateClassProbe());
 var_dump(property_exists(\"Base\", \"basePrivate\"));
 var_dump(property_exists(\"Child\", \"basePrivate\"));
 var_dump(property_exists(\"Child\", \"shared\"));
@@ -75057,6 +75068,13 @@ var_dump(property_exists($child, \"baseStatic\"));
 var_dump(property_exists($child, \"dynamic\"));
 var_dump(property_exists($std, \"value\"));
 var_dump(property_exists($std, \"missing\"));
+var_dump($childReflection->hasProperty(\"basePrivate\"));
+
+try {
+    $childReflection->getProperty(\"basePrivate\");
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
 
 try {
     var_dump(property_exists(1, \"value\"));
@@ -75085,6 +75103,8 @@ try {
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
@@ -75096,6 +75116,8 @@ try {
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
+            "bool(false)\n",
+            "Property Child::$basePrivate does not exist\n",
             "property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given\n",
             "property_exists(): Argument #2 ($property) must be of type string, stdClass given\n",
         )

@@ -7595,6 +7595,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_property_prototype_class(const char *class_name, const char *property_name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);\n");
+    out.push_str("static int ptn_declared_class_property_exists_with_scope(const char *class_name, const char *property_name, const char *access_scope);\n");
     out.push_str("static int ptn_declared_class_property_metadata(const char *class_name, const char *property_name, const char **declaring_class_out, int *visibility_out, int *set_visibility_out, int *is_static_out);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_enum_cases(const char *name);\n");
@@ -9517,9 +9518,45 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         for property in class_property_exists_chain(class, classes) {
+            if !class_property_exists_entry_visible_from_class(&property, class.name.as_str()) {
+                continue;
+            }
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(property.name));
             out.push_str("\") == 0) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_property_exists_with_scope(const char *class_name, const char *property_name, const char *access_scope) {\n",
+    );
+    out.push_str("    if (ptn_declared_class_property_exists(class_name, property_name)) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (access_scope == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in class_property_exists_chain(class, classes) {
+            if property.visibility != PropertyVisibility::Private
+                || property.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(property.name));
+            out.push_str("\") == 0 && ptn_ascii_case_equal(access_scope, \"");
+            out.push_str(&c_string(property.declaring_class));
+            out.push_str("\")) {\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -18306,11 +18343,16 @@ fn reflection_class_visible_property_entries<'a>(
 ) -> Vec<ClassPropertyExistsEntry<'a>> {
     class_property_exists_chain(class, classes)
         .into_iter()
-        .filter(|entry| {
-            entry.visibility != PropertyVisibility::Private
-                || entry.declaring_class.eq_ignore_ascii_case(&class.name)
-        })
+        .filter(|entry| class_property_exists_entry_visible_from_class(entry, class.name.as_str()))
         .collect()
+}
+
+fn class_property_exists_entry_visible_from_class(
+    entry: &ClassPropertyExistsEntry<'_>,
+    class_name: &str,
+) -> bool {
+    entry.visibility != PropertyVisibility::Private
+        || entry.declaring_class.eq_ignore_ascii_case(class_name)
 }
 
 fn reflection_class_visible_method_entries<'a>(

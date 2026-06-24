@@ -134433,6 +134433,7 @@ static int ptn_declared_class_constant_value(PtnRuntime *runtime, const char *cl
 static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
+static int ptn_declared_class_property_exists_with_scope(const char *class_name, const char *property_name, const char *access_scope);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -176828,7 +176829,11 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
 
     int exists = 0;
     if (target.type == PTN_OBJECT) {
-        exists = ptn_declared_class_property_exists(target.as.object->class_name, property_name) ||
+        exists = ptn_declared_class_property_exists_with_scope(
+                target.as.object->class_name,
+                property_name,
+                runtime->current_class_name
+            ) ||
             ptn_internal_class_property_exists(target.as.object->class_name, property_name) ||
             ptn_object_public_property_slot_exists(target.as.object, property_name) ||
             ptn_array_object_array_as_props_property_exists(
@@ -176859,7 +176864,11 @@ static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, c
     } else if (target.type == PTN_CLOSURE) {
         exists = ptn_declared_class_property_exists("Closure", property_name);
     } else if (target.type == PTN_EXCEPTION) {
-        exists = ptn_declared_class_property_exists(target.as.exception->class_name, property_name);
+        exists = ptn_declared_class_property_exists_with_scope(
+            target.as.exception->class_name,
+            property_name,
+            runtime->current_class_name
+        );
     }
 
     free(property_name);
