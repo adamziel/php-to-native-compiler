@@ -27353,6 +27353,44 @@ echo mb_strlen($euctw, 'EUC-TW'), \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_windows1254_table_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-windows1254-table-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-windows1254-table-conversion.php");
+    let output = root.join("mb-windows1254-table-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+$valid = hex2bin('808a9fddf0fdfe');\n\
+var_dump(mb_check_encoding($valid, 'CP1254'));\n\
+var_dump(mb_check_encoding(hex2bin('81'), 'CP1254'));\n\
+echo bin2hex(mb_convert_encoding($valid, 'UTF-16BE', 'CP1254')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('20ac016001780130011f0131015f'), 'CP1254', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('818e9e'), 'UTF-16BE', 'CP1254')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1234'), 'CP1254', 'UTF-16BE')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "20ac016001780130011f0131015f\n",
+            "808a9fddf0fdfe\n",
+            "002500250025\n",
+            "25\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_check_encoding_self_referential_array_to_native_binary() {
     let root = temp_dir("ptn-native-mb-check-encoding-self-referential-array");
     fs::create_dir_all(&root).unwrap();
