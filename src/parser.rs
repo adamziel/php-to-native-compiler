@@ -23184,6 +23184,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "XML_OPTION_SKIP_TAGSTART"
             | "XML_OPTION_SKIP_WHITE"
             | "XML_OPTION_PARSE_HUGE"
+            | "XML_SAX_IMPL"
             | "XML_ERROR_NONE"
             | "XML_ERROR_NO_MEMORY"
             | "XML_ERROR_SYNTAX"

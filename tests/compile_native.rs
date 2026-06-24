@@ -42155,6 +42155,76 @@ while ($reader->read()) {
 }
 
 #[test]
+fn compile_xml_parser_streaming_default_and_struct_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-streaming-default-struct-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-streaming-default-struct-callback.php");
+    let output = root.join("xml-parser-streaming-default-struct-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(XML_SAX_IMPL);
+
+$parser = xml_parser_create_ns('utf-8');
+$chunks = [];
+xml_set_default_handler($parser, function ($parser, $data) use (&$chunks) {
+    $chunks[] = $data;
+});
+foreach (str_split('<!-- xxx --><foo attr=\"&lt;\"></foo>') as $byte) {
+    xml_parse($parser, $byte, false);
+}
+xml_parse($parser, '', true);
+foreach ($chunks as $chunk) {
+    echo $chunk, \"\\n\";
+}
+
+class StructCallbackState {
+    public $parser;
+    public $values;
+    public $index;
+
+    public function __construct() {
+        $this->parser = xml_parser_create();
+        xml_set_element_handler(
+            $this->parser,
+            function ($parser, $name, $attrs) {
+                $this->values = 0xdead;
+                $this->index = 0xbeef;
+            },
+            function ($parser, $name) {}
+        );
+    }
+
+    public function run($xml) {
+        $this->values = [];
+        $this->index = [];
+        xml_parse_into_struct($this->parser, $xml, $this->values, $this->index);
+    }
+}
+
+$state = new StructCallbackState();
+$state->run('<container><child/></container>');
+var_dump($state->values, $state->index);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(6) \"libxml\"\n"));
+    assert!(stdout.contains("<!-- xxx -->\n<foo attr=\"&lt;\">\n</foo>\n"));
+    assert!(stdout.contains("int(57005)\nint(48879)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_xml_parse"));
+    assert!(c_source.contains("ptn_internal_xml_parse_into_struct"));
+}
+
+#[test]
 fn compile_xml_parser_element_handler_validation_to_native_binary() {
     let root = temp_dir("ptn-native-xml-parser-element-handler-validation");
     fs::create_dir_all(&root).unwrap();
