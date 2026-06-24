@@ -5907,7 +5907,7 @@ static PTN_UNUSED int ptn_lazy_object_property_access_uses_local_slot(
     return blocked_metadata != NULL && blocked_metadata->lazy_skip;
 }
 
-static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
+static PTN_UNUSED int ptn_uninitialized_lazy_object_declares_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *method_name
@@ -5918,7 +5918,6 @@ static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
         receiver.type == PTN_OBJECT &&
         receiver.as.object != NULL &&
         receiver.as.object->lazy_uninitialized &&
-        receiver.as.object->lazy_is_proxy &&
         !receiver.as.object->lazy_initializing &&
         runtime->declared_method_exists(receiver.as.object->class_name, method_name);
 }
@@ -6010,7 +6009,7 @@ static PTN_UNUSED int ptn_lazy_object_property_isset_needs_initialization(
     }
 
     if (metadata == NULL &&
-        ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__isset") &&
+        ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__isset") &&
         !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
@@ -7560,7 +7559,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 !indirect_write &&
                 lazy_metadata == NULL &&
                 lazy_entry == NULL &&
-                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -7572,7 +7571,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         } else {
             lazy_magic_set_dispatch =
                 !indirect_write &&
-                ptn_uninitialized_lazy_proxy_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -8753,6 +8752,16 @@ static PTN_UNUSED void ptn_object_unset_property_len(
             PTN_PROPERTY_ACCESS_UNSET,
             line,
             NULL
+        ) &&
+        !(
+            ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__unset") &&
+            !ptn_magic_property_is_active_len(
+                runtime,
+                receiver,
+                property,
+                property_len,
+                PTN_MAGIC_PROPERTY_UNSET
+            )
         ) &&
         !ptn_lazy_object_initialize(runtime, receiver, line)) {
         return;
