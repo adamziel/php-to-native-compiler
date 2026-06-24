@@ -878,6 +878,52 @@ var_dump($nonempty->getSize(), $nonempty[0], isset($nonempty->foo));
 }
 
 #[test]
+fn compile_internal_object_unserialize_and_directory_serialize_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-object-serialization-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-object-serialization-guards.php");
+    let output = root.join("internal-object-serialization-guards-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$number = unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:6:"0.1230";}');
+var_dump($number);
+
+$directory = dir(__DIR__);
+try {
+    serialize($directory);
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(BcMath\\Number)#1 (2)"), "{stdout}");
+    assert!(
+        stdout.contains("[\"value\"]=>\n  string(6) \"0.1230\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"scale\"]=>\n  int(4)"), "{stdout}");
+    assert!(
+        stdout.contains("Exception: Serialization of 'Directory' is not allowed"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_fixed_array_object_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-spl-fixed-array-object-surfaces");
     fs::create_dir_all(&root).unwrap();

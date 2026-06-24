@@ -10528,6 +10528,7 @@ static int ptn_serialize_append_value_with_id(
                 ptn_ascii_case_equal(class_name, "SensitiveParameterValue") ||
                 ptn_internal_class_name_is_weak_reference(class_name) ||
                 ptn_internal_class_name_is_weak_map(class_name) ||
+                ptn_internal_class_name_is_directory(class_name) ||
                 ptn_internal_class_name_is_number_formatter(class_name) ||
                 ptn_internal_class_name_is_sensitive_parameter_value(class_name) ||
                 ptn_internal_class_name_is_xml_parser(class_name)) {
@@ -12704,6 +12705,9 @@ static int ptn_unserialize_declared_magic_method_exists(
     }
     if (ptn_internal_class_name_is_uri_whatwg_url(resolved.as.object->class_name)) {
         return ptn_internal_class_method_exists("Uri\\WhatWg\\Url", "__unserialize");
+    }
+    if (ptn_internal_class_name_is_bcmath_number(resolved.as.object->class_name)) {
+        return ptn_internal_class_method_exists("BcMath\\Number", "__unserialize");
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
