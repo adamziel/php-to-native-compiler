@@ -76936,6 +76936,61 @@ foreach ($outer as $name => $value) {
 }
 
 #[test]
+fn compile_foreach_by_ref_lazy_object_replacement_initializes_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-by-ref-lazy-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-by-ref-lazy-replacement.php");
+    let output = root.join("foreach-by-ref-lazy-replacement-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyReplacementBox {
+    public int $a;
+
+    public function __construct() {
+        $this->a = 1;
+    }
+}
+
+$object = new LazyReplacementBox();
+$reflector = new ReflectionClass(LazyReplacementBox::class);
+
+try {
+    foreach ($object as &$value) {
+        echo \"loop\\n\";
+        $object = $reflector->newLazyGhost(function ($object) {
+            echo \"init\\n\";
+            throw new Error(\"boom\");
+        });
+    }
+    echo \"after\\n\";
+} catch (Error $e) {
+    echo $e::class, \":\", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "loop\ninit\nError:boom\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_refresh_watched_object"));
+}
+
+#[test]
 fn compile_lazy_property_reference_fetch_initializes_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-property-reference-fetch");
     fs::create_dir_all(&root).unwrap();

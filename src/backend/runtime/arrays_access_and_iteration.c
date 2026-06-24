@@ -12784,7 +12784,10 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_variable(
         return ptn_array_iterator_empty();
     }
     PtnArrayIterator iterator = ptn_array_iterator_by_ref_from_slot(runtime, slot, access_scope, path, line);
-    if (iterator.object == NULL && iterator.array != NULL) {
+    if (
+        iterator.array != NULL &&
+        (iterator.object == NULL || iterator.object_property_iterator)
+    ) {
         iterator.watched_slot = slot;
     }
     return iterator;
@@ -13014,6 +13017,60 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
 
 static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array);
 
+static PTN_UNUSED int ptn_array_iterator_refresh_watched_object(PtnArrayIterator *iterator) {
+    if (
+        iterator == NULL ||
+        !iterator->object_property_iterator ||
+        iterator->watched_slot == NULL
+    ) {
+        return 0;
+    }
+
+    PtnValue watched = ptn_value_deref(*iterator->watched_slot);
+    if (watched.type != PTN_OBJECT || watched.as.object == NULL) {
+        ptn_array_iterator_clear_current_key(iterator);
+        iterator->valid = 0;
+        return 1;
+    }
+
+    PtnObject *effective_object = ptn_lazy_object_foreach_effective_object(
+        iterator->runtime,
+        watched.as.object,
+        iterator->line
+    );
+    if (effective_object == NULL) {
+        ptn_array_iterator_clear_current_key(iterator);
+        iterator->valid = 0;
+        return 1;
+    }
+    if (effective_object == iterator->object) {
+        return 0;
+    }
+
+    PtnRuntime *runtime = iterator->runtime;
+    const char *access_scope = iterator->access_scope;
+    size_t line = iterator->line;
+    PtnValue *watched_slot = iterator->watched_slot;
+    PtnArray *old_array = iterator->array;
+    PtnObject *old_object = iterator->object;
+    PtnArrayIterator replacement =
+        ptn_array_iterator_from_object_properties(runtime, effective_object, access_scope, line);
+
+    ptn_array_iterator_clear_current_key(iterator);
+    if (old_array != NULL) {
+        ptn_array_iterator_release(old_array);
+        ptn_array_free(old_array);
+    }
+    if (old_object != NULL) {
+        PtnValue old_value = ptn_object(old_object);
+        ptn_value_destroy_with_runtime_scope_at(runtime, &old_value, line);
+    }
+
+    *iterator = replacement;
+    iterator->watched_slot = watched_slot;
+    return 1;
+}
+
 static PTN_UNUSED PtnArray *ptn_array_iterator_watched_slot_array(PtnArrayIterator *iterator) {
     if (iterator->watched_slot == NULL) {
         return NULL;
@@ -13139,6 +13196,10 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         size_t limit = iterator->array == NULL ? 0 : iterator->array->len;
         iterator->valid = iterator->index < limit;
         ptn_array_iterator_remember_current_key(iterator);
+        return;
+    }
+
+    if (ptn_array_iterator_refresh_watched_object(iterator)) {
         return;
     }
 
