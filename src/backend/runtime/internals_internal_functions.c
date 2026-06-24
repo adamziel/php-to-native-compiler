@@ -80599,6 +80599,22 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string("UTC");
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "date.default_latitude")) {
+        *out = ptn_string("31.7667");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "date.default_longitude")) {
+        *out = ptn_string("35.2333");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "date.sunset_zenith")) {
+        *out = ptn_string("90.583333");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "date.sunrise_zenith")) {
+        *out = ptn_string("90.583333");
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "bcmath.scale")) {
         *out = ptn_ini_int_string(ptn_runtime_config_root(runtime)->bcmath_scale);
         return 1;
@@ -153951,6 +153967,10 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
     }
     if (ptn_ascii_case_equal(extension_name, "date")) {
         ptn_extension_ini_set_entry(runtime, result, "date.timezone");
+        ptn_extension_ini_set_entry(runtime, result, "date.default_latitude");
+        ptn_extension_ini_set_entry(runtime, result, "date.default_longitude");
+        ptn_extension_ini_set_entry(runtime, result, "date.sunset_zenith");
+        ptn_extension_ini_set_entry(runtime, result, "date.sunrise_zenith");
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "bcmath")) {
@@ -154312,9 +154332,34 @@ static PtnValue ptn_reflection_extension_dependencies(const char *extension_name
     return result;
 }
 
+static void ptn_reflection_extension_info_write_ini_entry(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (!ptn_ini_value(runtime, ptn_string_operand_borrowed(name), &value)) {
+        return;
+    }
+    char *value_text = ptn_value_to_string(value);
+    ptn_output_write_cstr(runtime, name);
+    ptn_output_write_cstr(runtime, " => ");
+    ptn_output_write_cstr(runtime, value_text);
+    ptn_output_write_cstr(runtime, " => ");
+    ptn_output_write_cstr(runtime, value_text);
+    ptn_output_write_cstr(runtime, "\n");
+    free(value_text);
+    ptn_value_destroy(&value);
+}
+
+static void ptn_reflection_extension_info_write_date_ini(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "\nDirective => Local Value => Master Value\n");
+    ptn_reflection_extension_info_write_ini_entry(runtime, "date.timezone");
+    ptn_reflection_extension_info_write_ini_entry(runtime, "date.default_latitude");
+    ptn_reflection_extension_info_write_ini_entry(runtime, "date.default_longitude");
+    ptn_reflection_extension_info_write_ini_entry(runtime, "date.sunset_zenith");
+    ptn_reflection_extension_info_write_ini_entry(runtime, "date.sunrise_zenith");
+}
+
 static PtnValue ptn_reflection_extension_info(PtnRuntime *runtime, const char *extension_name) {
     if (ptn_ascii_case_equal(extension_name, "Reflection")) {
-        ptn_output_write_cstr(runtime, "Reflection\n\nReflection => enabled\n");
+        ptn_output_write_cstr(runtime, "Reflection\n\nReflection => enabled\n\n");
         return ptn_null();
     }
     if (ptn_ascii_case_equal(extension_name, "date")) {
@@ -154325,14 +154370,17 @@ static PtnValue ptn_reflection_extension_info(PtnRuntime *runtime, const char *e
             "timelib version => 2026.1\n"
             "\"Olson\" Timezone Database Version => 2026.1\n"
             "Timezone Database => internal\n"
-            "Default timezone => UTC\n"
+            "Default timezone => "
         );
+        ptn_output_write_cstr(runtime, ptn_current_timezone_name());
+        ptn_output_write_cstr(runtime, "\n");
+        ptn_reflection_extension_info_write_date_ini(runtime);
         return ptn_null();
     }
     ptn_output_write_cstr(runtime, extension_name);
     ptn_output_write_cstr(runtime, "\n\n");
     ptn_output_write_cstr(runtime, extension_name);
-    ptn_output_write_cstr(runtime, " => enabled\n");
+    ptn_output_write_cstr(runtime, " => enabled\n\n");
     return ptn_null();
 }
 

@@ -35693,6 +35693,67 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
 }
 
 #[test]
+fn compile_reflection_extension_info_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-extension-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-extension-info.php");
+    let output = root.join("reflection-extension-info-bin");
+    fs::write(
+        &input,
+        "<?php
+$reflection = new ReflectionExtension(\"reflection\");
+$reflection->info();
+
+date_default_timezone_set(\"Europe/Berlin\");
+$date = new ReflectionExtension(\"date\");
+$date->info();
+
+$entries = $date->getINIEntries();
+echo count($entries), \"\\n\";
+foreach ($entries as $name => $value) {
+    echo $name, \"=\", $value, \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Reflection\n",
+            "\n",
+            "Reflection => enabled\n",
+            "\n",
+            "date\n",
+            "\n",
+            "date/time support => enabled\n",
+            "timelib version => 2026.1\n",
+            "\"Olson\" Timezone Database Version => 2026.1\n",
+            "Timezone Database => internal\n",
+            "Default timezone => Europe/Berlin\n",
+            "\n",
+            "Directive => Local Value => Master Value\n",
+            "date.timezone => UTC => UTC\n",
+            "date.default_latitude => 31.7667 => 31.7667\n",
+            "date.default_longitude => 35.2333 => 35.2333\n",
+            "date.sunset_zenith => 90.583333 => 90.583333\n",
+            "date.sunrise_zenith => 90.583333 => 90.583333\n",
+            "5\n",
+            "date.timezone=UTC\n",
+            "date.default_latitude=31.7667\n",
+            "date.default_longitude=35.2333\n",
+            "date.sunset_zenith=90.583333\n",
+            "date.sunrise_zenith=90.583333\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_zend_extension_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-zend-extension-metadata");
     fs::create_dir_all(&root).unwrap();
