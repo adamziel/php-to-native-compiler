@@ -10373,6 +10373,12 @@ try {
 }
 
 try {
+    \"0foo\" % 5;
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
     $array = [null => 'value'];
 } catch (Exception $e) {
     echo $e->getMessage(), \"\\n\";
@@ -10389,6 +10395,7 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "2:The float INF is not representable as an int, cast occurred\n",
+            "2:A non-numeric value encountered\n",
             "8192:Using null as an array offset is deprecated, use an empty string instead\n",
         )
     );
@@ -39761,9 +39768,29 @@ class MyAttrib {}
 #[MyAttrib(notinterned: '')]
 class Test1 {}
 
+#[Attribute(Attribute::TARGET_PROPERTY)]
+class MyAnnotation
+{
+    public function __construct(public bool $nullable = false) {}
+}
+
+class WithPropertyAttribute {
+    #[MyAnnotation(name: \"my_name\", type: \"integer\", nullable: asdasdasd)]
+    public $property;
+}
+
 $attribute = (new ReflectionClass(Test1::class))->getAttributes()[0];
 try {
     $attribute->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$propertyAttribute = (new ReflectionClass(WithPropertyAttribute::class))
+    ->getProperty('property')
+    ->getAttributes()[0];
+try {
+    $propertyAttribute->newInstance();
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -39777,7 +39804,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Unknown named parameter $notinterned\n"
+        "Unknown named parameter $notinterned\nUndefined constant \"asdasdasd\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -87024,6 +87051,24 @@ try {
 } catch (Exception $e) {
     echo $e->getMessage(), "\n";
 }
+
+try {
+    serialize(new ReflectionClass('stdClass'));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('C:15:"ReflectionClass":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('O:15:"ReflectionClass":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
 "#,
     )
     .unwrap();
@@ -87043,7 +87088,10 @@ try {
 Unserialization of 'Generator' is not allowed\n\
 Unserialization of 'Generator' is not allowed\n\
 Unserialization of 'SplFileObject' is not allowed\n\
-Serialization of 'SensitiveParameterValue' is not allowed\n"
+Serialization of 'SensitiveParameterValue' is not allowed\n\
+Serialization of 'ReflectionClass' is not allowed\n\
+Unserialization of 'ReflectionClass' is not allowed\n\
+Unserialization of 'ReflectionClass' is not allowed\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

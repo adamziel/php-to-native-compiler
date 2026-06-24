@@ -12901,14 +12901,7 @@ fn emit_declared_attribute_result_for_class_like(
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_null();\n");
         let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
-        let mut constructor_error = reflection_attribute_arguments_error(instance, classes, traits)
-            .or_else(|| {
-                if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
-                    Some(error.clone())
-                } else {
-                    None
-                }
-            });
+        let mut constructor_error = reflection_attribute_arguments_error(instance, classes, traits);
         if property_hook_context && instance.name.eq_ignore_ascii_case("NoDiscard") {
             constructor_error =
                 Some("#[\\NoDiscard] is not supported for property hooks".to_string());
@@ -13032,6 +13025,35 @@ fn emit_declared_attribute_result_for_class_like(
                     out.push_str(&attribute_index.to_string());
                     out.push_str(");\n");
                 }
+            }
+            if let AttributeConstructorArgumentPlan::Error(error_message) = &constructor_plan {
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
+                out.push_str(&c_string(&instance.name));
+                out.push_str("\", attribute_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(", attribute_arg_reprs_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(", constructor_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(", ");
+                out.push_str(&target.to_string());
+                out.push_str(", ");
+                out.push_str(if repeated { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(&c_attribute_source_file(instance));
+                out.push_str(", ");
+                out.push_str(&instance.line.to_string());
+                out.push_str(", ");
+                out.push_str(if instance.strict_types { "1" } else { "0" });
+                out.push_str(", \"Error\", \"");
+                out.push_str(&c_string(error_message));
+                out.push_str("\"));\n");
+                out.push_str("            ptn_try_frame_pop(runtime, &ptn_attribute_try_frame_");
+                out.push_str(&label_suffix);
+                out.push_str(");\n");
+                out.push_str("            goto ptn_attribute_after_");
+                out.push_str(&label_suffix);
+                out.push_str(";\n");
             }
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name(runtime, \"");
             out.push_str(&c_string(&instance.name));

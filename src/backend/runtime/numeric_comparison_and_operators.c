@@ -1102,8 +1102,14 @@ static PTN_UNUSED void ptn_emit_arithmetic_non_numeric_value_warning(PtnRuntime 
     if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
         return;
     }
+    const char *message = "A non-numeric value encountered";
+    if (ptn_diagnostics_try_error_handler(&runtime->diagnostics, PTN_E_WARNING, message, "ptn", line)) {
+        return;
+    }
     fputc('\n', stdout);
-    fputs("Warning: A non-numeric value encountered in ptn on line ", stdout);
+    fputs("Warning: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
 }
@@ -1814,6 +1820,17 @@ static PTN_UNUSED int ptn_string_has_trailing_non_numeric_data(const char *strin
 
 static PTN_UNUSED void ptn_emit_non_numeric_value_warning(PtnDiagnosticSink *diagnostics) {
     if (diagnostics != NULL && !ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    const char *message = "A non-numeric value encountered";
+    if (diagnostics != NULL &&
+        ptn_diagnostics_try_error_handler(
+            diagnostics,
+            PTN_E_WARNING,
+            message,
+            "ptn-generated-code",
+            0
+        )) {
         return;
     }
     ptn_diagnostic_output_cstr(

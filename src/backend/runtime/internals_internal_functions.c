@@ -9070,6 +9070,33 @@ static int ptn_serialize_object_class_name_is_anonymous(const char *class_name) 
     return class_name != NULL && strstr(class_name, "@anonymous") != NULL;
 }
 
+static int ptn_reflection_class_name_is_serialization_forbidden(const char *class_name) {
+    return class_name != NULL &&
+        (ptn_ascii_case_equal(class_name, "Reflection") ||
+         ptn_ascii_case_equal(class_name, "ReflectionAttribute") ||
+         ptn_ascii_case_equal(class_name, "ReflectionClass") ||
+         ptn_ascii_case_equal(class_name, "ReflectionClassConstant") ||
+         ptn_ascii_case_equal(class_name, "ReflectionConstant") ||
+         ptn_ascii_case_equal(class_name, "ReflectionEnum") ||
+         ptn_ascii_case_equal(class_name, "ReflectionEnumBackedCase") ||
+         ptn_ascii_case_equal(class_name, "ReflectionEnumUnitCase") ||
+         ptn_ascii_case_equal(class_name, "ReflectionExtension") ||
+         ptn_ascii_case_equal(class_name, "ReflectionFiber") ||
+         ptn_ascii_case_equal(class_name, "ReflectionFunction") ||
+         ptn_ascii_case_equal(class_name, "ReflectionFunctionAbstract") ||
+         ptn_ascii_case_equal(class_name, "ReflectionGenerator") ||
+         ptn_ascii_case_equal(class_name, "ReflectionIntersectionType") ||
+         ptn_ascii_case_equal(class_name, "ReflectionMethod") ||
+         ptn_ascii_case_equal(class_name, "ReflectionNamedType") ||
+         ptn_ascii_case_equal(class_name, "ReflectionObject") ||
+         ptn_ascii_case_equal(class_name, "ReflectionParameter") ||
+         ptn_ascii_case_equal(class_name, "ReflectionProperty") ||
+         ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+         ptn_ascii_case_equal(class_name, "ReflectionType") ||
+         ptn_ascii_case_equal(class_name, "ReflectionUnionType") ||
+         ptn_ascii_case_equal(class_name, "ReflectionZendExtension"));
+}
+
 static void ptn_serialize_throw_not_allowed(PtnRuntime *runtime, const char *class_name) {
     PtnStringBuffer message;
     ptn_string_buffer_init(&message);
@@ -10558,7 +10585,7 @@ static int ptn_serialize_append_value_with_id(
         case PTN_OBJECT: {
             const char *class_name = value.as.object->class_name;
             if (ptn_serialize_object_class_name_is_anonymous(class_name) ||
-                ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+                ptn_reflection_class_name_is_serialization_forbidden(class_name) ||
                 ptn_ascii_case_equal(class_name, "Generator") ||
                 ptn_ascii_case_equal(class_name, "SensitiveParameterValue") ||
                 ptn_internal_class_name_is_weak_reference(class_name) ||
@@ -10928,7 +10955,7 @@ static int ptn_unserialize_require_declared_payload(
 }
 
 static int ptn_unserialize_class_name_is_forbidden(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+    return ptn_reflection_class_name_is_serialization_forbidden(class_name) ||
         ptn_ascii_case_equal(class_name, "Generator") ||
         ptn_ascii_case_equal(class_name, "WeakReference") ||
         ptn_ascii_case_equal(class_name, "WeakMap") ||
