@@ -52118,6 +52118,26 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
     return result;
 }
 
+static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_isatty", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (resource->stream == NULL) {
+        return ptn_bool(0);
+    }
+    int descriptor = ptn_stream_file_descriptor(resource->stream);
+    if (descriptor < 0) {
+        return ptn_bool(0);
+    }
+#if defined(_WIN32)
+    return ptn_bool(_isatty(descriptor) != 0);
+#else
+    return ptn_bool(isatty(descriptor) != 0);
+#endif
+}
+
 static PtnStringOperand ptn_file_put_contents_value_operand(
     PtnRuntime *runtime,
     PtnValue value,
@@ -131972,6 +131992,7 @@ static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -132854,6 +132875,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_isatty", 1, 1, ptn_internal_stream_isatty },
         { "stream_select", 4, 5, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },

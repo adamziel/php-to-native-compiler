@@ -25712,6 +25712,47 @@ stream_filter_remove(): supplied resource is not a valid stream filter resource\
 }
 
 #[test]
+fn compile_stream_isatty_handles_filtered_streams_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-isatty-filtered");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-isatty-filtered.php");
+    let output = root.join("stream-isatty-filtered-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('stream_isatty'));\n\
+$stdout = fopen('php://stdout', 'wb');\n\
+stream_filter_append($stdout, 'string.toupper');\n\
+var_dump(stream_isatty($stdout));\n\
+$temp = fopen('php://temp', 'w+');\n\
+var_dump(stream_isatty($temp));\n\
+fclose($temp);\n\
+try {\n\
+    stream_isatty($temp);\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+stream_isatty(): Argument #1 ($stream) must be an open stream resource\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_isatty"));
+}
+
+#[test]
 fn compile_stream_select_base64_and_socket_server_to_native_binary() {
     let root = temp_dir("ptn-native-stream-select-base64-socket-server");
     fs::create_dir_all(&root).unwrap();

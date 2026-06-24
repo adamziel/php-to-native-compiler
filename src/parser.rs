@@ -22652,6 +22652,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_filter_remove"
             | "stream_get_contents"
             | "stream_get_line"
+            | "stream_isatty"
             | "stream_select"
             | "stream_set_blocking"
             | "stream_socket_client"
