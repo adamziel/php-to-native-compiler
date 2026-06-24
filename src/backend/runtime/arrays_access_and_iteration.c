@@ -4117,6 +4117,11 @@ static PTN_UNUSED int ptn_magic_property_unset_len(
     size_t property_len,
     size_t line
 );
+static PTN_UNUSED int ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+);
 
 static PTN_UNUSED int ptn_magic_property_is_active(
     PtnRuntime *runtime,
@@ -4169,6 +4174,49 @@ static PTN_UNUSED int ptn_magic_property_is_active_len(
         }
     }
     return 0;
+}
+
+static PTN_UNUSED int ptn_magic_property_is_active_on_receiver_len(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t property_len,
+    PtnMagicPropertyOperation operation
+) {
+    if (runtime == NULL || property == NULL) {
+        return 0;
+    }
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    size_t receiver_object_id = receiver.as.object->object_id;
+    for (size_t i = 0; i < runtime->magic_property_frame_len; i++) {
+        PtnMagicPropertyFrame *frame = &runtime->magic_property_frames[i];
+        if (frame->object_id == receiver_object_id &&
+            frame->operation == operation &&
+            frame->property != NULL &&
+            frame->property_len == property_len &&
+            memcmp(frame->property, property, property_len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_magic_property_is_active_on_receiver(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnMagicPropertyOperation operation
+) {
+    return ptn_magic_property_is_active_on_receiver_len(
+        runtime,
+        receiver,
+        property,
+        property == NULL ? 0 : strlen(property),
+        operation
+    );
 }
 
 static PTN_UNUSED size_t ptn_magic_property_push(
@@ -5891,6 +5939,16 @@ static PTN_UNUSED int ptn_lazy_object_property_reference_needs_initialization(
         free(lazy_storage_key);
     }
 
+    if (!local_lazy_slot &&
+        ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+            runtime,
+            receiver,
+            "__get"
+        ) &&
+        !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
+        return 0;
+    }
+
     return !local_lazy_slot;
 }
 
@@ -5972,16 +6030,24 @@ static PTN_UNUSED int ptn_uninitialized_lazy_object_declares_method(
         runtime->declared_method_exists(receiver.as.object->class_name, method_name);
 }
 
-static PTN_UNUSED int ptn_uninitialized_lazy_proxy_declares_method(
+static PTN_UNUSED int ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *method_name
 ) {
     receiver = ptn_value_deref(receiver);
-    return receiver.type == PTN_OBJECT &&
-        receiver.as.object != NULL &&
-        receiver.as.object->lazy_is_proxy &&
-        ptn_uninitialized_lazy_object_declares_method(runtime, receiver, method_name);
+    if (!ptn_uninitialized_lazy_object_declares_method(runtime, receiver, method_name)) {
+        return 0;
+    }
+    if (!receiver.as.object->lazy_is_proxy) {
+        return 1;
+    }
+    const char *class_name = receiver.as.object->class_name;
+    const char *parent_name = ptn_declared_class_parent_name(class_name);
+    if (parent_name == NULL) {
+        return 1;
+    }
+    return !ptn_declared_class_direct_non_private_method_exists(class_name, method_name);
 }
 
 static PTN_UNUSED int ptn_initialized_lazy_proxy_should_forward_property_read(
@@ -5990,11 +6056,16 @@ static PTN_UNUSED int ptn_initialized_lazy_proxy_should_forward_property_read(
     const char *property
 ) {
     receiver = ptn_value_deref(receiver);
-    return receiver.type == PTN_OBJECT &&
-        receiver.as.object != NULL &&
-        receiver.as.object->lazy_is_proxy &&
-        !receiver.as.object->lazy_uninitialized &&
-        !ptn_magic_property_get_exists_inactive(runtime, receiver, property);
+    if (receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        !receiver.as.object->lazy_is_proxy ||
+        receiver.as.object->lazy_uninitialized) {
+        return 0;
+    }
+    if (ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
+        return 1;
+    }
+    return !ptn_declared_class_direct_non_private_method_exists(receiver.as.object->class_name, "__get");
 }
 
 static PTN_UNUSED int ptn_lazy_object_property_read_needs_initialization(
@@ -6043,7 +6114,12 @@ static PTN_UNUSED int ptn_lazy_object_property_read_needs_initialization(
 
     if (allow_magic_get &&
         metadata == NULL &&
-        ptn_magic_property_get_exists_inactive(runtime, receiver, property)) {
+        ptn_magic_property_get_exists_inactive(runtime, receiver, property) &&
+        ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+            runtime,
+            receiver,
+            "__get"
+        )) {
         return 0;
     }
 
@@ -6084,7 +6160,11 @@ static PTN_UNUSED int ptn_lazy_object_property_isset_needs_initialization(
     }
 
     if (metadata == NULL &&
-        ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__isset") &&
+        ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+            runtime,
+            receiver,
+            "__isset"
+        ) &&
         !ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_ISSET)) {
         return 0;
     }
@@ -6131,6 +6211,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         }
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        int receiver_was_lazy_proxy = receiver.as.object->lazy_is_proxy;
         if (ptn_lazy_object_property_read_needs_initialization(
                 runtime,
                 receiver,
@@ -6141,6 +6222,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             ) &&
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_null();
+        }
+        if (receiver_was_lazy_proxy && !receiver.as.object->lazy_uninitialized) {
+            receiver = ptn_lazy_object_effective_initialized_proxy_receiver_for_access(
+                runtime,
+                receiver,
+                line
+            );
+            if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {
+                return ptn_null();
+            }
         }
     }
     if (ptn_initialized_lazy_proxy_should_forward_property_read(runtime, receiver, property)) {
@@ -7654,7 +7745,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 !indirect_write &&
                 lazy_metadata == NULL &&
                 lazy_entry == NULL &&
-                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+                    runtime,
+                    receiver,
+                    "__set"
+                ) &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -7666,7 +7761,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         } else {
             lazy_magic_set_dispatch =
                 !indirect_write &&
-                ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__set") &&
+                ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+                    runtime,
+                    receiver,
+                    "__set"
+                ) &&
                 !ptn_magic_property_is_active_len(
                     runtime,
                     receiver,
@@ -8783,7 +8882,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     if (entry == NULL) {
         if (metadata == NULL &&
             reference_fetch_forwarded_from_initialized_proxy &&
-            ptn_magic_property_is_active(runtime, receiver, property, PTN_MAGIC_PROPERTY_GET)) {
+            ptn_magic_property_is_active_on_receiver(
+                runtime,
+                receiver,
+                property,
+                PTN_MAGIC_PROPERTY_GET
+            )) {
             ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
             ptn_array_key_free(key);
             free(storage_key);
@@ -8861,9 +8965,23 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
         return;
     }
-    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+    if (receiver.as.object->lazy_uninitialized &&
+        !receiver.as.object->lazy_initializing) {
+        int lazy_local_unset_slot = ptn_lazy_object_property_access_uses_local_slot(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_UNSET,
+            line,
+            NULL
+        );
         int lazy_magic_unset_dispatch =
-            ptn_uninitialized_lazy_object_declares_method(runtime, receiver, "__unset") &&
+            ptn_uninitialized_lazy_object_magic_dispatch_can_skip_initialization(
+                runtime,
+                receiver,
+                "__unset"
+            ) &&
             !ptn_magic_property_is_active_len(
                 runtime,
                 receiver,
@@ -8871,16 +8989,8 @@ static PTN_UNUSED void ptn_object_unset_property_len(
                 property_len,
                 PTN_MAGIC_PROPERTY_UNSET
             );
-        if (!lazy_magic_unset_dispatch &&
-            !ptn_lazy_object_property_access_uses_local_slot(
-                runtime,
-                receiver,
-                property,
-                access_scope,
-                PTN_PROPERTY_ACCESS_UNSET,
-                line,
-                NULL
-            ) &&
+        if (!lazy_local_unset_slot &&
+            !lazy_magic_unset_dispatch &&
             !ptn_lazy_object_initialize(runtime, receiver, line)) {
             return;
         }

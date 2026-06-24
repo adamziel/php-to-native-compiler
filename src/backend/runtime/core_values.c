@@ -1778,8 +1778,8 @@ static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *fram
 static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
-static PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name);
 #endif
+static PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name);
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_free(void);
