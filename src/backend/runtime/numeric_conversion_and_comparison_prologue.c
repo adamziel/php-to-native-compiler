@@ -4825,10 +4825,23 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "NumberFormatter")) {
-        if (strcmp(constant, "CURRENCY") == 0) {
-            *out = ptn_int(2);
-            return 1;
-        }
+        if (strcmp(constant, "PATTERN_DECIMAL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PATTERN_DECIMAL); return 1; }
+        if (strcmp(constant, "DECIMAL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DECIMAL); return 1; }
+        if (strcmp(constant, "CURRENCY") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_CURRENCY); return 1; }
+        if (strcmp(constant, "PERCENT") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PERCENT); return 1; }
+        if (strcmp(constant, "SCIENTIFIC") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_SCIENTIFIC); return 1; }
+        if (strcmp(constant, "SPELLOUT") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_SPELLOUT); return 1; }
+        if (strcmp(constant, "ORDINAL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_ORDINAL); return 1; }
+        if (strcmp(constant, "DURATION") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DURATION); return 1; }
+        if (strcmp(constant, "PATTERN_RULEBASED") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PATTERN_RULEBASED); return 1; }
+        if (strcmp(constant, "CURRENCY_ACCOUNTING") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING); return 1; }
+        if (strcmp(constant, "DECIMAL_COMPACT_SHORT") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT); return 1; }
+        if (strcmp(constant, "DECIMAL_COMPACT_LONG") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG); return 1; }
+        if (strcmp(constant, "TYPE_DEFAULT") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_DEFAULT); return 1; }
+        if (strcmp(constant, "TYPE_INT32") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_INT32); return 1; }
+        if (strcmp(constant, "TYPE_INT64") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_INT64); return 1; }
+        if (strcmp(constant, "TYPE_DOUBLE") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_DOUBLE); return 1; }
+        if (strcmp(constant, "TYPE_CURRENCY") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_CURRENCY); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlNumberRangeFormatter")) {
         if (strcmp(constant, "COLLAPSE_AUTO") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO); return 1; }

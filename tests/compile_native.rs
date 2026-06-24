@@ -41417,6 +41417,101 @@ try {\n\
 }
 
 #[test]
+fn compile_intl_locale_display_name_too_long_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-locale-display-name-too-long");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-locale-display-name-too-long.php");
+    let output = root.join("intl-locale-display-name-too-long-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$locale = str_repeat('*', 256);\n\
+$displayLocale = 'en_us';\n\
+var_dump(Locale::getDisplayName($locale, $displayLocale));\n\
+var_dump(intl_get_error_message());\n\
+var_dump(locale_get_display_name($locale, $displayLocale));\n\
+var_dump(intl_get_error_message());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+string(65) \"Locale::getDisplayName(): name too long: U_ILLEGAL_ARGUMENT_ERROR\"\n\
+bool(false)\n\
+string(66) \"locale_get_display_name(): name too long: U_ILLEGAL_ARGUMENT_ERROR\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_calendar_unconstructed_subclass_debug_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-calendar-unconstructed-debug");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-calendar-unconstructed-debug.php");
+    let output = root.join("intl-calendar-unconstructed-debug-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A extends IntlCalendar {\n\
+    public function __construct() {}\n\
+    private $a;\n\
+}\n\
+var_dump(new A());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(A)#1 (1) {\n",
+            "  [\"valid\"]=>\n",
+            "  bool(false)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_number_formatter_compact_decimal_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-number-formatter-compact-decimal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-number-formatter-compact-decimal.php");
+    let output = root.join("intl-number-formatter-compact-decimal-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$en = numfmt_create('en_US', NumberFormatter::DECIMAL_COMPACT_SHORT);\n\
+echo numfmt_format($en, 1234567.89), \"\\n\";\n\
+$ru = numfmt_create('ru', NumberFormatter::DECIMAL_COMPACT_SHORT);\n\
+echo numfmt_format($ru, 1234567.89), \"\\n\";\n\
+$zh = NumberFormatter::create('zh_CN', NumberFormatter::DECIMAL_COMPACT_LONG);\n\
+echo $zh->format(1234567.89), \"\\n\";\n\
+var_dump(NumberFormatter::DECIMAL_COMPACT_SHORT, NumberFormatter::DECIMAL_COMPACT_LONG);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1.2M\n1,2\u{00a0}\u{043c}\u{043b}\u{043d}\n123\u{4e07}\nint(14)\nint(15)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();
