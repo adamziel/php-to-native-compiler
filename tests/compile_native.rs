@@ -9374,6 +9374,61 @@ var_dump($c);
 }
 
 #[test]
+fn compile_property_magic_constant_and_hook_parameter_attributes_to_native_binary() {
+    let root = temp_dir("ptn-native-property-magic-constant-hooks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-magic-constant-hooks.php");
+    let output = root.join("property-magic-constant-hooks-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[Attribute]
+class MyAttr {
+    public function __construct(public string $msg) {}
+}
+
+class Foo {
+    #[MyAttr(msg: __PROPERTY__)]
+    public string $i = __PROPERTY__ {
+        #[MyAttr(msg: __PROPERTY__)]
+        get {
+            var_dump(__PROPERTY__);
+            return $this->i;
+        }
+
+        set(#[MyAttr(msg: __PROPERTY__)] string $v) {
+            $this->i = $v;
+        }
+    }
+}
+
+$foo = new Foo;
+var_dump($foo->i);
+
+$prop = new ReflectionProperty(Foo::class, 'i');
+var_dump($prop->getAttributes()[0]->getArguments()['msg']);
+var_dump($prop->getHook(PropertyHookType::Get)->getAttributes()[0]->getArguments()['msg']);
+var_dump($prop->getHook(PropertyHookType::Set)->getParameters()[0]->getAttributes()[0]->getArguments()['msg']);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"i\"\n\
+string(1) \"i\"\n\
+string(1) \"i\"\n\
+string(1) \"i\"\n\
+string(1) \"i\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_constructor_promoted_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-constructor-promoted-reference-property");
     fs::create_dir_all(&root).unwrap();

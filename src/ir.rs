@@ -188,6 +188,7 @@ pub struct PropertyDecl {
     pub hook_get_body: Option<Vec<Instruction>>,
     pub hook_set_body: Option<Vec<Instruction>>,
     pub hook_set_parameter_name: Option<String>,
+    pub hook_set_parameter_attributes: AttributeMetadata,
     pub hook_set_parameter_type: Option<TypeHint>,
     pub hook_set_parameter_doc_comment: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
@@ -1025,6 +1026,7 @@ pub enum MagicConstantKind {
     Class,
     Trait,
     Namespace,
+    Property,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1874,15 +1876,17 @@ impl<'a> LoweringContext<'a> {
                     hook_get_returns_by_ref: property.hook_get_returns_by_ref,
                     hook_set_is_final: property.hook_set_is_final,
                     hook_set_is_abstract: property.hook_set_is_abstract,
-                    hook_get_attributes: self.lower_class_scoped_attribute_metadata(
+                    hook_get_attributes: self.lower_class_property_scoped_attribute_metadata(
                         &property.hook_get_attributes,
                         &class.name,
                         parent_name,
+                        &property.name,
                     ),
-                    hook_set_attributes: self.lower_class_scoped_attribute_metadata(
+                    hook_set_attributes: self.lower_class_property_scoped_attribute_metadata(
                         &property.hook_set_attributes,
                         &class.name,
                         parent_name,
+                        &property.name,
                     ),
                     hook_get_doc_comment: property.hook_get_doc_comment.clone(),
                     hook_set_doc_comment: property.hook_set_doc_comment.clone(),
@@ -1911,6 +1915,13 @@ impl<'a> LoweringContext<'a> {
                         .as_ref()
                         .map(|body| self.lower_statements(body)),
                     hook_set_parameter_name: property.hook_set_parameter_name.clone(),
+                    hook_set_parameter_attributes: self
+                        .lower_class_property_scoped_attribute_metadata(
+                            &property.hook_set_parameter_attributes,
+                            &class.name,
+                            parent_name,
+                            &property.name,
+                        ),
                     hook_set_parameter_type: property
                         .hook_set_parameter_type
                         .clone()
@@ -1920,10 +1931,11 @@ impl<'a> LoweringContext<'a> {
                         .type_hint
                         .as_ref()
                         .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
-                    attributes: self.lower_class_scoped_attribute_metadata(
+                    attributes: self.lower_class_property_scoped_attribute_metadata(
                         &property.attributes,
                         &class.name,
                         parent_name,
+                        &property.name,
                     ),
                     doc_comment: property.doc_comment.clone(),
                     value: property.value.as_ref().map(|value| {
@@ -1945,10 +1957,11 @@ impl<'a> LoweringContext<'a> {
                     .type_hint
                     .as_ref()
                     .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
-                attributes: self.lower_class_scoped_attribute_metadata(
+                attributes: self.lower_class_property_scoped_attribute_metadata(
                     &property.attributes,
                     &class.name,
                     parent_name,
+                    &property.name,
                 ),
                 doc_comment: property.doc_comment.clone(),
                 value: property
@@ -2553,8 +2566,42 @@ impl<'a> LoweringContext<'a> {
         current_class: &str,
         current_parent: Option<&str>,
     ) -> AttributeMetadata {
-        let resolved =
-            resolve_attribute_metadata_for_class_scope(metadata, current_class, current_parent);
+        self.lower_class_scoped_attribute_metadata_with_property(
+            metadata,
+            current_class,
+            current_parent,
+            None,
+        )
+    }
+
+    fn lower_class_property_scoped_attribute_metadata(
+        &mut self,
+        metadata: &AttributeMetadata,
+        current_class: &str,
+        current_parent: Option<&str>,
+        current_property: &str,
+    ) -> AttributeMetadata {
+        self.lower_class_scoped_attribute_metadata_with_property(
+            metadata,
+            current_class,
+            current_parent,
+            Some(current_property),
+        )
+    }
+
+    fn lower_class_scoped_attribute_metadata_with_property(
+        &mut self,
+        metadata: &AttributeMetadata,
+        current_class: &str,
+        current_parent: Option<&str>,
+        current_property: Option<&str>,
+    ) -> AttributeMetadata {
+        let resolved = resolve_attribute_metadata_for_class_scope(
+            metadata,
+            current_class,
+            current_parent,
+            current_property,
+        );
         let previous_class_name = std::mem::replace(
             &mut self.current_class_name,
             Some(current_class.to_string()),
@@ -2671,15 +2718,17 @@ impl<'a> LoweringContext<'a> {
                 hook_get_returns_by_ref: property.hook_get_returns_by_ref,
                 hook_set_is_final: property.hook_set_is_final,
                 hook_set_is_abstract: property.hook_set_is_abstract,
-                hook_get_attributes: self.lower_class_scoped_attribute_metadata(
+                hook_get_attributes: self.lower_class_property_scoped_attribute_metadata(
                     &property.hook_get_attributes,
                     &trait_decl.name,
                     None,
+                    &property.name,
                 ),
-                hook_set_attributes: self.lower_class_scoped_attribute_metadata(
+                hook_set_attributes: self.lower_class_property_scoped_attribute_metadata(
                     &property.hook_set_attributes,
                     &trait_decl.name,
                     None,
+                    &property.name,
                 ),
                 hook_get_doc_comment: property.hook_get_doc_comment.clone(),
                 hook_set_doc_comment: property.hook_set_doc_comment.clone(),
@@ -2710,16 +2759,23 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
+                hook_set_parameter_attributes: self.lower_class_property_scoped_attribute_metadata(
+                    &property.hook_set_parameter_attributes,
+                    &trait_decl.name,
+                    None,
+                    &property.name,
+                ),
                 hook_set_parameter_type: property
                     .hook_set_parameter_type
                     .clone()
                     .map(lower_type_hint),
                 hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: self.lower_class_scoped_attribute_metadata(
+                attributes: self.lower_class_property_scoped_attribute_metadata(
                     &property.attributes,
                     &trait_decl.name,
                     None,
+                    &property.name,
                 ),
                 doc_comment: property.doc_comment.clone(),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
@@ -2736,10 +2792,11 @@ impl<'a> LoweringContext<'a> {
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: self.lower_class_scoped_attribute_metadata(
+                attributes: self.lower_class_property_scoped_attribute_metadata(
                     &property.attributes,
                     &trait_decl.name,
                     None,
+                    &property.name,
                 ),
                 doc_comment: property.doc_comment.clone(),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
@@ -2989,6 +3046,7 @@ fn resolve_attribute_metadata_for_class_scope(
     metadata: &AttributeMetadata,
     current_class: &str,
     current_parent: Option<&str>,
+    current_property: Option<&str>,
 ) -> AttributeMetadata {
     let mut resolved = metadata.clone();
     if let Some(reference) = &mut resolved.deprecated_message_constant {
@@ -3005,6 +3063,7 @@ fn resolve_attribute_metadata_for_class_scope(
                     expression,
                     current_class,
                     current_parent,
+                    current_property,
                 );
             }
             let Some(AttributeConstantReference::ClassConstant { class_name, name }) =
@@ -3051,8 +3110,13 @@ fn resolve_attribute_argument_expression_for_class_scope(
     expression: &mut AttributeArgumentExpression,
     current_class: &str,
     current_parent: Option<&str>,
+    current_property: Option<&str>,
 ) {
     match expression {
+        AttributeArgumentExpression::PropertyMagicConstant => {
+            *expression =
+                AttributeArgumentExpression::String(current_property.unwrap_or("").to_string());
+        }
         AttributeArgumentExpression::ClassName { class_name, .. }
         | AttributeArgumentExpression::ClassConstant { class_name, .. } => {
             if let Some(resolved_class) =
@@ -3064,6 +3128,16 @@ fn resolve_attribute_argument_expression_for_class_scope(
         AttributeArgumentExpression::FirstClassCallable { callable, .. } => {
             resolve_first_class_callable_scope_name(callable, current_class, current_parent);
         }
+        AttributeArgumentExpression::NewObject { arguments, .. } => {
+            for argument in arguments {
+                resolve_attribute_argument_expression_for_class_scope(
+                    argument,
+                    current_class,
+                    current_parent,
+                    current_property,
+                );
+            }
+        }
         AttributeArgumentExpression::Array(elements) => {
             for element in elements {
                 if let Some(key) = &mut element.key {
@@ -3071,12 +3145,14 @@ fn resolve_attribute_argument_expression_for_class_scope(
                         key,
                         current_class,
                         current_parent,
+                        current_property,
                     );
                 }
                 resolve_attribute_argument_expression_for_class_scope(
                     &mut element.value,
                     current_class,
                     current_parent,
+                    current_property,
                 );
             }
         }
@@ -3085,6 +3161,7 @@ fn resolve_attribute_argument_expression_for_class_scope(
                 expr,
                 current_class,
                 current_parent,
+                current_property,
             );
         }
         AttributeArgumentExpression::Binary { left, right, .. } => {
@@ -3092,11 +3169,13 @@ fn resolve_attribute_argument_expression_for_class_scope(
                 left,
                 current_class,
                 current_parent,
+                current_property,
             );
             resolve_attribute_argument_expression_for_class_scope(
                 right,
                 current_class,
                 current_parent,
+                current_property,
             );
         }
         _ => {}
@@ -5687,6 +5766,7 @@ fn assertion_attribute_argument_expression_text(
         AttributeArgumentExpression::Bool(true) => "true".to_string(),
         AttributeArgumentExpression::Bool(false) => "false".to_string(),
         AttributeArgumentExpression::Null => "NULL".to_string(),
+        AttributeArgumentExpression::PropertyMagicConstant => "__PROPERTY__".to_string(),
         AttributeArgumentExpression::Constant(name) => name.clone(),
         AttributeArgumentExpression::ClassName { class_name, .. } => class_name.clone(),
         AttributeArgumentExpression::ClassConstant {
@@ -6486,6 +6566,7 @@ fn assertion_magic_constant_text(kind: AstMagicConstantKind) -> &'static str {
         AstMagicConstantKind::Method => "__METHOD__",
         AstMagicConstantKind::Trait => "__TRAIT__",
         AstMagicConstantKind::Namespace => "__NAMESPACE__",
+        AstMagicConstantKind::Property => "__PROPERTY__",
     }
 }
 
@@ -6583,6 +6664,7 @@ fn lower_magic_constant_kind(kind: AstMagicConstantKind) -> MagicConstantKind {
         AstMagicConstantKind::Class => MagicConstantKind::Class,
         AstMagicConstantKind::Trait => MagicConstantKind::Trait,
         AstMagicConstantKind::Namespace => MagicConstantKind::Namespace,
+        AstMagicConstantKind::Property => MagicConstantKind::Property,
     }
 }
 

@@ -1146,6 +1146,7 @@ fn property_has_attribute_metadata(property: &crate::ir::PropertyDecl) -> bool {
     !property.attributes.instances.is_empty()
         || !property.hook_get_attributes.instances.is_empty()
         || !property.hook_set_attributes.instances.is_empty()
+        || !property.hook_set_parameter_attributes.instances.is_empty()
 }
 
 fn function_has_attribute_metadata(function: &FunctionDecl) -> bool {
@@ -4668,7 +4669,10 @@ fn emit_static_property_initializer_helper(
             out.push_str("            runtime.current_called_class_name = \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\";\n");
+            let previous_property_name =
+                values.current_property_name.replace(property.name.clone());
             let value_temp = values.emit_const_materialized_value(out, value);
+            values.current_property_name = previous_property_name;
             out.push_str("            runtime.current_called_class_name = ");
             out.push_str(&previous_called_scope_temp);
             out.push_str(";\n");
@@ -4735,7 +4739,10 @@ fn emit_static_property_initializer_helper(
             out.push_str("            runtime.current_called_class_name = \"");
             out.push_str(&c_string(&trait_decl.name));
             out.push_str("\";\n");
+            let previous_property_name =
+                values.current_property_name.replace(property.name.clone());
             let value_temp = values.emit_const_materialized_value(out, value);
+            values.current_property_name = previous_property_name;
             out.push_str("            runtime.current_called_class_name = ");
             out.push_str(&previous_called_scope_temp);
             out.push_str(";\n");
@@ -12058,6 +12065,9 @@ fn attribute_flag_argument_expression_value(
                 type_name: "string",
             })
         }
+        AttributeArgumentExpression::PropertyMagicConstant => Err(AttributeFlagError::Type {
+            type_name: "string",
+        }),
         AttributeArgumentExpression::Float(_) => {
             Err(AttributeFlagError::Type { type_name: "float" })
         }
@@ -12304,6 +12314,14 @@ fn emit_declared_function_parameter_reflection_attributes(
                 .parameters
                 .iter()
                 .any(|parameter| !parameter.attributes.instances.is_empty())
+    }) || classes.iter().any(|class| {
+        class.properties.iter().any(|property| {
+            property.hook_has_set && !property.hook_set_parameter_attributes.instances.is_empty()
+        })
+    }) || traits.iter().any(|trait_decl| {
+        trait_decl.properties.iter().any(|property| {
+            property.hook_has_set && !property.hook_set_parameter_attributes.instances.is_empty()
+        })
     });
     if !has_parameter_attributes {
         out.push_str("    (void)function_name;\n");
@@ -12338,6 +12356,70 @@ fn emit_declared_function_parameter_reflection_attributes(
                 traits,
                 functions,
                 scope_class_expr.as_deref(),
+                false,
+            );
+            label_namespace += 1;
+            out.push_str("    }\n");
+        }
+    }
+    for class in classes {
+        let scope_class_expr = format!("\"{}\"", c_string(&class.name));
+        for property in &class.properties {
+            if !property.hook_has_set || property.hook_set_parameter_attributes.instances.is_empty()
+            {
+                continue;
+            }
+            let function_name = format!(
+                "{}::{}",
+                class.name,
+                property_hook_method_name(&property.name, "set")
+            );
+            out.push_str("    if (ptn_ascii_case_equal(function_name, \"");
+            out.push_str(&c_string(&function_name));
+            out.push_str("\") && parameter_index == 0) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionParameter",
+                "ReflectionParameter::getAttributes",
+                &property.hook_set_parameter_attributes,
+                32,
+                label_namespace,
+                classes,
+                traits,
+                functions,
+                Some(scope_class_expr.as_str()),
+                false,
+            );
+            label_namespace += 1;
+            out.push_str("    }\n");
+        }
+    }
+    for trait_decl in traits {
+        let scope_class_expr = format!("\"{}\"", c_string(&trait_decl.name));
+        for property in &trait_decl.properties {
+            if !property.hook_has_set || property.hook_set_parameter_attributes.instances.is_empty()
+            {
+                continue;
+            }
+            let function_name = format!(
+                "{}::{}",
+                trait_decl.name,
+                property_hook_method_name(&property.name, "set")
+            );
+            out.push_str("    if (ptn_ascii_case_equal(function_name, \"");
+            out.push_str(&c_string(&function_name));
+            out.push_str("\") && parameter_index == 0) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionParameter",
+                "ReflectionParameter::getAttributes",
+                &property.hook_set_parameter_attributes,
+                32,
+                label_namespace,
+                classes,
+                traits,
+                functions,
+                Some(scope_class_expr.as_str()),
                 false,
             );
             label_namespace += 1;
@@ -12937,6 +13019,7 @@ fn attribute_argument_expression_display_text(expression: &AttributeArgumentExpr
         AttributeArgumentExpression::Bool(true) => "true".to_string(),
         AttributeArgumentExpression::Bool(false) => "false".to_string(),
         AttributeArgumentExpression::Null => "NULL".to_string(),
+        AttributeArgumentExpression::PropertyMagicConstant => "__PROPERTY__".to_string(),
         AttributeArgumentExpression::Constant(name) => name.clone(),
         AttributeArgumentExpression::ClassName { class_name, .. } => class_name.clone(),
         AttributeArgumentExpression::ClassConstant {
@@ -13281,6 +13364,9 @@ fn emit_attribute_argument_expression(
         }
         AttributeArgumentExpression::Null => {
             emit_attribute_argument_simple(out, target, indent, "ptn_null()");
+        }
+        AttributeArgumentExpression::PropertyMagicConstant => {
+            emit_attribute_argument_simple(out, target, indent, "ptn_string(\"\")");
         }
         AttributeArgumentExpression::Constant(name) => {
             emit_attribute_argument_simple(out, target, indent, &format!(
@@ -14394,6 +14480,7 @@ fn emit_property_hook_get_helper(
                 false,
                 false,
             );
+            values.current_property_name = Some(property.name.clone());
             let value_temp = if let Some(body) = &property.hook_get_body {
                 emit_property_hook_field_binding(out, &class.name, &property.name, body);
                 out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
@@ -14647,6 +14734,7 @@ fn emit_property_hook_set_helper(
                 false,
                 false,
             );
+            values.current_property_name = Some(property.name.clone());
             if let Some(body) = &property.hook_set_body {
                 emit_property_hook_field_binding(out, &class.name, &property.name, body);
                 out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
@@ -33887,6 +33975,7 @@ struct ValueEmitter {
     current_class_name: Option<String>,
     use_runtime_class_scope: bool,
     current_trait_name: Option<String>,
+    current_property_name: Option<String>,
     current_function_return_by_ref: bool,
     current_function_is_generator: bool,
     current_function_tracks_return_line: bool,
@@ -35583,6 +35672,7 @@ impl ValueEmitter {
             current_class_name: current_class_name.map(str::to_string),
             use_runtime_class_scope,
             current_trait_name: current_trait_name.map(str::to_string),
+            current_property_name: None,
             current_function_return_by_ref,
             current_function_is_generator,
             current_function_tracks_return_line,
@@ -41088,6 +41178,12 @@ impl ValueEmitter {
                     )
                 }
                 MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
+                MagicConstantKind::Property => {
+                    format!(
+                        "ptn_string(\"{}\")",
+                        c_string(self.current_property_name.as_deref().unwrap_or(""))
+                    )
+                }
             },
             ValueExpr::InternalCall {
                 name,
@@ -43067,6 +43163,7 @@ impl ValueEmitter {
             let previous_class_name = self
                 .current_class_name
                 .replace(declaring_class_name.clone());
+            let previous_property_name = self.current_property_name.replace(property.name.clone());
             let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
             let shared_array_default_helper = if hook_get_value.is_none() {
                 match property.value.as_ref() {
@@ -43161,6 +43258,7 @@ impl ValueEmitter {
                 }
             };
             self.current_class_name = previous_class_name;
+            self.current_property_name = previous_property_name;
             let assigned_temp = self.next_temp();
             let hook_metadata_class = self
                 .classes

@@ -415,6 +415,7 @@ struct ParsedPropertyHookBlock {
     get_body: Option<Vec<Statement>>,
     set_body: Option<Vec<Statement>>,
     set_parameter_name: Option<String>,
+    set_parameter_attributes: AttributeMetadata,
     set_parameter_type: Option<TypeHint>,
     set_parameter_doc_comment: Option<String>,
     set_parameter_span: Option<SourceSpan>,
@@ -423,6 +424,7 @@ struct ParsedPropertyHookBlock {
 
 struct ParsedPropertyHookSetParameter {
     name: String,
+    attributes: AttributeMetadata,
     type_hint: Option<TypeHint>,
     doc_comment: Option<String>,
     span: SourceSpan,
@@ -3271,6 +3273,7 @@ impl Parser<'_> {
                     hook_get_body: hooks.get_body,
                     hook_set_body: hooks.set_body,
                     hook_set_parameter_name: hooks.set_parameter_name,
+                    hook_set_parameter_attributes: hooks.set_parameter_attributes,
                     hook_set_parameter_type: hooks.set_parameter_type,
                     hook_set_parameter_doc_comment: hooks.set_parameter_doc_comment,
                     hook_set_parameter_span: hooks.set_parameter_span,
@@ -3325,6 +3328,7 @@ impl Parser<'_> {
                 hook_get_body: None,
                 hook_set_body: None,
                 hook_set_parameter_name: None,
+                hook_set_parameter_attributes: AttributeMetadata::default(),
                 hook_set_parameter_type: None,
                 hook_set_parameter_doc_comment: None,
                 hook_set_parameter_span: None,
@@ -3641,6 +3645,7 @@ impl Parser<'_> {
                     } else {
                         ParsedPropertyHookSetParameter {
                             name: "value".to_string(),
+                            attributes: AttributeMetadata::default(),
                             type_hint: None,
                             doc_comment: None,
                             span: token.span,
@@ -3658,6 +3663,7 @@ impl Parser<'_> {
                     hooks.has_set = true;
                     hooks.set_is_abstract = is_abstract_hook;
                     hooks.set_parameter_name = Some(set_parameter.name.clone());
+                    hooks.set_parameter_attributes = set_parameter.attributes.clone();
                     hooks.set_parameter_type = set_parameter.type_hint.clone();
                     hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                     hooks.set_parameter_span = Some(set_parameter.span);
@@ -3685,6 +3691,7 @@ impl Parser<'_> {
                                 hooks.set_value = Some(value);
                             }
                             hooks.set_parameter_name = Some(set_parameter.name.clone());
+                            hooks.set_parameter_attributes = set_parameter.attributes.clone();
                             hooks.set_parameter_type = set_parameter.type_hint.clone();
                             hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                             hooks.set_parameter_span = Some(set_parameter.span);
@@ -3700,6 +3707,7 @@ impl Parser<'_> {
                                     span,
                                 }]);
                                 hooks.set_parameter_name = Some(set_parameter.name.clone());
+                                hooks.set_parameter_attributes = set_parameter.attributes.clone();
                                 hooks.set_parameter_type = set_parameter.type_hint.clone();
                                 hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                                 hooks.set_parameter_span = Some(set_parameter.span);
@@ -3711,6 +3719,7 @@ impl Parser<'_> {
                                     span,
                                 }]);
                                 hooks.set_parameter_name = Some(set_parameter.name.clone());
+                                hooks.set_parameter_attributes = set_parameter.attributes.clone();
                                 hooks.set_parameter_type = set_parameter.type_hint.clone();
                                 hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                                 hooks.set_parameter_span = Some(set_parameter.span);
@@ -3721,6 +3730,7 @@ impl Parser<'_> {
                                 self.parse_property_hook_statement_body(property_name, "set")?;
                             hooks.set_body = Some(body);
                             hooks.set_parameter_name = Some(set_parameter.name.clone());
+                            hooks.set_parameter_attributes = set_parameter.attributes.clone();
                             hooks.set_parameter_type = set_parameter.type_hint.clone();
                             hooks.set_parameter_doc_comment = set_parameter.doc_comment.clone();
                             hooks.set_parameter_span = Some(set_parameter.span);
@@ -3900,6 +3910,7 @@ impl Parser<'_> {
             }
             return Ok(ParsedPropertyHookSetParameter {
                 name: parameter.name.clone(),
+                attributes: parameter.attributes.clone(),
                 type_hint: parameter.type_hint.clone(),
                 doc_comment: parameter.doc_comment.clone(),
                 span: parameter.span,
@@ -3908,6 +3919,7 @@ impl Parser<'_> {
         }
         Ok(ParsedPropertyHookSetParameter {
             name: "value".to_string(),
+            attributes: AttributeMetadata::default(),
             type_hint: None,
             doc_comment: None,
             span: self.previous_span(),
@@ -4718,6 +4730,7 @@ impl Parser<'_> {
                 hook_get_body,
                 hook_set_body,
                 hook_set_parameter_name,
+                hook_set_parameter_attributes,
                 hook_set_parameter_type,
                 hook_set_parameter_doc_comment,
                 hook_set_parameter_span,
@@ -4746,6 +4759,7 @@ impl Parser<'_> {
                     hooks.get_body,
                     hooks.set_body,
                     hooks.set_parameter_name,
+                    hooks.set_parameter_attributes,
                     hooks.set_parameter_type,
                     hooks.set_parameter_doc_comment,
                     hooks.set_parameter_span,
@@ -4775,6 +4789,7 @@ impl Parser<'_> {
                     None,
                     None,
                     None,
+                    AttributeMetadata::default(),
                     None,
                     None,
                     None,
@@ -4808,6 +4823,7 @@ impl Parser<'_> {
                 hook_get_body,
                 hook_set_body,
                 hook_set_parameter_name,
+                hook_set_parameter_attributes,
                 hook_set_parameter_type,
                 hook_set_parameter_doc_comment,
                 hook_set_parameter_span,
@@ -7248,6 +7264,9 @@ impl Parser<'_> {
             Expr::Float(value, _) => Ok(AttributeArgumentExpression::Float(value.to_string())),
             Expr::Bool(value, _) => Ok(AttributeArgumentExpression::Bool(*value)),
             Expr::Null(_) => Ok(AttributeArgumentExpression::Null),
+            Expr::MagicConstant(MagicConstantKind::Property, _) => {
+                Ok(AttributeArgumentExpression::PropertyMagicConstant)
+            }
             Expr::Constant(name, _) => Ok(AttributeArgumentExpression::Constant(name.clone())),
             Expr::ClassConstantFetch {
                 class_name, name, ..
@@ -12655,6 +12674,11 @@ fn parsed_attribute_argument_expression_metadata(
         AttributeArgumentExpression::Null => {
             (String::new(), ParsedAttributeArgumentKind::Null, None)
         }
+        AttributeArgumentExpression::PropertyMagicConstant => (
+            "__PROPERTY__".to_string(),
+            ParsedAttributeArgumentKind::Constant,
+            None,
+        ),
         AttributeArgumentExpression::Constant(name) => (
             name.clone(),
             ParsedAttributeArgumentKind::Constant,
@@ -13292,6 +13316,7 @@ fn promoted_properties_from_constructor(
                 hook_get_body: promoted.hook_get_body.clone(),
                 hook_set_body: promoted.hook_set_body.clone(),
                 hook_set_parameter_name: promoted.hook_set_parameter_name.clone(),
+                hook_set_parameter_attributes: promoted.hook_set_parameter_attributes.clone(),
                 hook_set_parameter_type: promoted.hook_set_parameter_type.clone(),
                 hook_set_parameter_doc_comment: promoted.hook_set_parameter_doc_comment.clone(),
                 hook_set_parameter_span: promoted.hook_set_parameter_span,
@@ -27998,6 +28023,7 @@ fn magic_constant_kind(name: &str) -> Option<MagicConstantKind> {
         "__CLASS__" => Some(MagicConstantKind::Class),
         "__TRAIT__" => Some(MagicConstantKind::Trait),
         "__NAMESPACE__" => Some(MagicConstantKind::Namespace),
+        "__PROPERTY__" => Some(MagicConstantKind::Property),
         _ => None,
     }
 }

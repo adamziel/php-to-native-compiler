@@ -139,6 +139,7 @@ pub struct PropertyDecl {
     pub hook_get_body: Option<Vec<Statement>>,
     pub hook_set_body: Option<Vec<Statement>>,
     pub hook_set_parameter_name: Option<String>,
+    pub hook_set_parameter_attributes: AttributeMetadata,
     pub hook_set_parameter_type: Option<TypeHint>,
     pub hook_set_parameter_doc_comment: Option<String>,
     pub hook_set_parameter_span: Option<SourceSpan>,
@@ -287,6 +288,7 @@ pub struct PromotedProperty {
     pub hook_get_body: Option<Vec<Statement>>,
     pub hook_set_body: Option<Vec<Statement>>,
     pub hook_set_parameter_name: Option<String>,
+    pub hook_set_parameter_attributes: AttributeMetadata,
     pub hook_set_parameter_type: Option<TypeHint>,
     pub hook_set_parameter_doc_comment: Option<String>,
     pub hook_set_parameter_span: Option<SourceSpan>,
@@ -368,6 +370,7 @@ pub enum AttributeArgumentExpression {
     Float(String),
     Bool(bool),
     Null,
+    PropertyMagicConstant,
     Constant(String),
     ClassName {
         class_name: String,
@@ -1383,4 +1386,5 @@ pub enum MagicConstantKind {
     Class,
     Trait,
     Namespace,
+    Property,
 }
