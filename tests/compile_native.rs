@@ -10658,6 +10658,70 @@ class B extends A {
 }
 
 #[test]
+fn compile_closure_callable_variance_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-callable-variance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-callable-variance.php");
+    let output = root.join("closure-callable-variance-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function foo(Closure $c): callable {}
+}
+class B extends A {
+    public function foo(callable $c): Closure {}
+}
+echo \"OK\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_variadic_override_variance_to_native_binary() {
+    let root = temp_dir("ptn-native-variadic-override-variance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variadic-override-variance.php");
+    let output = root.join("variadic-override-variance-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function test1($a, $b) {}
+    public function test2(int $a, int $b) {}
+    public function test3(int $a, int $b) {}
+    public function test4(int $a, string $b) {}
+    public function test5(&$a, &$b) {}
+}
+class B extends A {
+    public function test1(...$args) {}
+    public function test2(...$args) {}
+    public function test3(int ...$args) {}
+    public function test4(int|string ...$args) {}
+    public function test5(&...$args) {}
+}
+echo \"===DONE==\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE==\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mixed_as_reserved_class_name_to_native_fatal() {
     let root = temp_dir("ptn-native-reserved-mixed-class-name");
     fs::create_dir_all(&root).unwrap();

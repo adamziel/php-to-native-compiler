@@ -18545,27 +18545,70 @@ fn runtime_parameter_signature_static_incompatible(
     if parent_function.return_by_ref && !function.return_by_ref {
         return true;
     }
-    for (parameter_index, parent_parameter) in parent_function.parameters.iter().enumerate() {
+    let mut parameter_index = 0;
+    for parent_parameter in &parent_function.parameters {
+        if parent_parameter.is_variadic {
+            let mut has_covering_variadic = false;
+            while let Some(parameter) = function.parameters.get(parameter_index) {
+                if runtime_parameter_static_incompatible(
+                    parameter,
+                    parent_parameter,
+                    class,
+                    classes,
+                ) {
+                    return true;
+                }
+                if !parameter.is_variadic && parameter.default_value.is_none() {
+                    return true;
+                }
+                if parameter.is_variadic {
+                    has_covering_variadic = true;
+                    break;
+                }
+                parameter_index += 1;
+            }
+            return !has_covering_variadic;
+        }
+
         let Some(parameter) = function.parameters.get(parameter_index) else {
             return true;
         };
-        if parameter.by_ref != parent_parameter.by_ref {
+        if runtime_parameter_static_incompatible(parameter, parent_parameter, class, classes)
+            || (parent_parameter.default_value.is_some()
+                && parameter.default_value.is_none()
+                && !parameter.is_variadic)
+        {
             return true;
         }
-        match (&parameter.type_hint, &parent_parameter.type_hint) {
-            (None, _) | (Some(TypeHint::Mixed), None) => {}
-            (Some(_), None) => return true,
-            (Some(type_hint), Some(parent_type_hint)) => {
-                if !runtime_type_hint_static_subtype(parent_type_hint, type_hint, class, classes)
-                    && runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
-                        .is_none()
-                {
-                    return true;
-                }
-            }
+        if !parameter.is_variadic {
+            parameter_index += 1;
+        }
+    }
+    for parameter in function.parameters.iter().skip(parameter_index) {
+        if parameter.default_value.is_none() && !parameter.is_variadic {
+            return true;
         }
     }
     false
+}
+
+fn runtime_parameter_static_incompatible(
+    parameter: &FunctionParameter,
+    parent_parameter: &FunctionParameter,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    if parameter.by_ref != parent_parameter.by_ref {
+        return true;
+    }
+    match (&parameter.type_hint, &parent_parameter.type_hint) {
+        (None, _) | (Some(TypeHint::Mixed), None) => false,
+        (Some(_), None) => true,
+        (Some(type_hint), Some(parent_type_hint)) => {
+            !runtime_type_hint_static_subtype(parent_type_hint, type_hint, class, classes)
+                && runtime_unavailable_class_name(parent_type_hint, type_hint, classes).is_none()
+        }
+    }
 }
 
 fn runtime_return_signature_static_incompatible(
@@ -18634,7 +18677,63 @@ fn emit_runtime_parameter_signature_compatibility_validation(
         return;
     }
 
-    for (parameter_index, parent_parameter) in parent_function.parameters.iter().enumerate() {
+    let mut parameter_index = 0;
+    for parent_parameter in &parent_function.parameters {
+        if parent_parameter.is_variadic {
+            let mut has_covering_variadic = false;
+            while let Some(parameter) = function.parameters.get(parameter_index) {
+                if emit_runtime_parameter_pair_signature_compatibility_validation(
+                    out,
+                    class,
+                    method,
+                    function,
+                    parent_class,
+                    parent_method,
+                    parent_function,
+                    parameter,
+                    parent_parameter,
+                    classes,
+                    class_index,
+                    method_index,
+                    source_path,
+                    type_temp_counter,
+                ) {
+                    return;
+                }
+                if !parameter.is_variadic && parameter.default_value.is_none() {
+                    emit_runtime_method_signature_compatibility_fatal(
+                        out,
+                        class,
+                        method,
+                        function,
+                        parent_class,
+                        parent_method,
+                        parent_function,
+                        source_path,
+                    );
+                    return;
+                }
+                if parameter.is_variadic {
+                    has_covering_variadic = true;
+                    break;
+                }
+                parameter_index += 1;
+            }
+            if !has_covering_variadic {
+                emit_runtime_method_signature_compatibility_fatal(
+                    out,
+                    class,
+                    method,
+                    function,
+                    parent_class,
+                    parent_method,
+                    parent_function,
+                    source_path,
+                );
+            }
+            return;
+        }
+
         let Some(parameter) = function.parameters.get(parameter_index) else {
             emit_runtime_method_signature_compatibility_fatal(
                 out,
@@ -18648,7 +18747,28 @@ fn emit_runtime_parameter_signature_compatibility_validation(
             );
             return;
         };
-        if parameter.by_ref != parent_parameter.by_ref {
+        if emit_runtime_parameter_pair_signature_compatibility_validation(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            parameter,
+            parent_parameter,
+            classes,
+            class_index,
+            method_index,
+            source_path,
+            type_temp_counter,
+        ) {
+            return;
+        }
+        if parent_parameter.default_value.is_some()
+            && parameter.default_value.is_none()
+            && !parameter.is_variadic
+        {
             emit_runtime_method_signature_compatibility_fatal(
                 out,
                 class,
@@ -18661,9 +18781,160 @@ fn emit_runtime_parameter_signature_compatibility_validation(
             );
             return;
         }
-        match (&parameter.type_hint, &parent_parameter.type_hint) {
-            (None, _) | (Some(TypeHint::Mixed), None) => {}
-            (Some(_), None) => {
+        if !parameter.is_variadic {
+            parameter_index += 1;
+        }
+    }
+    for parameter in function.parameters.iter().skip(parameter_index) {
+        if parameter.default_value.is_none() && !parameter.is_variadic {
+            emit_runtime_method_signature_compatibility_fatal(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+            );
+            return;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_parameter_pair_signature_compatibility_validation(
+    out: &mut String,
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+    function: &FunctionDecl,
+    parent_class: &ClassDecl,
+    parent_method: &crate::ir::MethodDecl,
+    parent_function: &FunctionDecl,
+    parameter: &FunctionParameter,
+    parent_parameter: &FunctionParameter,
+    classes: &[ClassDecl],
+    class_index: usize,
+    method_index: usize,
+    source_path: &str,
+    type_temp_counter: &mut usize,
+) -> bool {
+    if parameter.by_ref != parent_parameter.by_ref {
+        emit_runtime_method_signature_compatibility_fatal(
+            out,
+            class,
+            method,
+            function,
+            parent_class,
+            parent_method,
+            parent_function,
+            source_path,
+        );
+        return true;
+    }
+    match (&parameter.type_hint, &parent_parameter.type_hint) {
+        (None, _) | (Some(TypeHint::Mixed), None) => false,
+        (Some(_), None) => {
+            emit_runtime_method_signature_compatibility_fatal(
+                out,
+                class,
+                method,
+                function,
+                parent_class,
+                parent_method,
+                parent_function,
+                source_path,
+            );
+            true
+        }
+        (Some(type_hint), Some(parent_type_hint))
+            if runtime_type_hint_static_subtype(parent_type_hint, type_hint, class, classes) =>
+        {
+            for unavailable_name in
+                runtime_object_compatibility_class_names(parent_type_hint, type_hint, classes)
+            {
+                emit_runtime_method_signature_unresolved_fatal_after_autoload(
+                    out,
+                    class,
+                    method,
+                    function,
+                    parent_class,
+                    parent_method,
+                    parent_function,
+                    &unavailable_name,
+                    class_index,
+                    method_index,
+                    source_path,
+                    type_temp_counter,
+                );
+            }
+            false
+        }
+        (Some(type_hint), Some(parent_type_hint)) => {
+            if let Some(unavailable_name) =
+                runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
+            {
+                emit_runtime_method_signature_unresolved_fatal_after_autoload(
+                    out,
+                    class,
+                    method,
+                    function,
+                    parent_class,
+                    parent_method,
+                    parent_function,
+                    &unavailable_name,
+                    class_index,
+                    method_index,
+                    source_path,
+                    type_temp_counter,
+                );
+            } else {
+                if let (TypeHint::Class(parent_candidate_name), TypeHint::Class(type_name)) =
+                    (parent_type_hint, type_hint)
+                {
+                    if runtime_return_candidate_should_autoload(
+                        parent_candidate_name,
+                        type_name,
+                        classes,
+                    ) {
+                        let resolved_candidate = emit_runtime_signature_type_autoload(
+                            out,
+                            parent_candidate_name,
+                            method.line,
+                            class_index,
+                            method_index,
+                            type_temp_counter,
+                        );
+                        let resolved_target = format!(
+                            "ptn_variance_target_{}_{}_{}",
+                            class_index, method_index, *type_temp_counter
+                        );
+                        *type_temp_counter += 1;
+                        out.push_str("        const char *");
+                        out.push_str(&resolved_target);
+                        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                        out.push_str(&c_string(type_name));
+                        out.push_str("\");\n");
+                        out.push_str("        if (!ptn_declared_runtime_linking_class_static_subtype(&runtime, ");
+                        out.push_str(&resolved_candidate);
+                        out.push_str(", ");
+                        out.push_str(&resolved_target);
+                        out.push_str(")) {\n");
+                        emit_runtime_method_signature_compatibility_fatal_with_indent(
+                            out,
+                            class,
+                            method,
+                            function,
+                            parent_class,
+                            parent_method,
+                            parent_function,
+                            source_path,
+                            "            ",
+                        );
+                        out.push_str("        }\n");
+                        return true;
+                    }
+                }
                 emit_runtime_method_signature_compatibility_fatal(
                     out,
                     class,
@@ -18674,113 +18945,8 @@ fn emit_runtime_parameter_signature_compatibility_validation(
                     parent_function,
                     source_path,
                 );
-                return;
             }
-            (Some(type_hint), Some(parent_type_hint))
-                if runtime_type_hint_static_subtype(
-                    parent_type_hint,
-                    type_hint,
-                    class,
-                    classes,
-                ) =>
-            {
-                for unavailable_name in
-                    runtime_object_compatibility_class_names(parent_type_hint, type_hint, classes)
-                {
-                    emit_runtime_method_signature_unresolved_fatal_after_autoload(
-                        out,
-                        class,
-                        method,
-                        function,
-                        parent_class,
-                        parent_method,
-                        parent_function,
-                        &unavailable_name,
-                        class_index,
-                        method_index,
-                        source_path,
-                        type_temp_counter,
-                    );
-                }
-            }
-            (Some(type_hint), Some(parent_type_hint)) => {
-                if let Some(unavailable_name) =
-                    runtime_unavailable_class_name(parent_type_hint, type_hint, classes)
-                {
-                    emit_runtime_method_signature_unresolved_fatal_after_autoload(
-                        out,
-                        class,
-                        method,
-                        function,
-                        parent_class,
-                        parent_method,
-                        parent_function,
-                        &unavailable_name,
-                        class_index,
-                        method_index,
-                        source_path,
-                        type_temp_counter,
-                    );
-                } else {
-                    if let (TypeHint::Class(parent_candidate_name), TypeHint::Class(type_name)) =
-                        (parent_type_hint, type_hint)
-                    {
-                        if runtime_return_candidate_should_autoload(
-                            parent_candidate_name,
-                            type_name,
-                            classes,
-                        ) {
-                            let resolved_candidate = emit_runtime_signature_type_autoload(
-                                out,
-                                parent_candidate_name,
-                                method.line,
-                                class_index,
-                                method_index,
-                                type_temp_counter,
-                            );
-                            let resolved_target = format!(
-                                "ptn_variance_target_{}_{}_{}",
-                                class_index, method_index, *type_temp_counter
-                            );
-                            *type_temp_counter += 1;
-                            out.push_str("        const char *");
-                            out.push_str(&resolved_target);
-                            out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-                            out.push_str(&c_string(type_name));
-                            out.push_str("\");\n");
-                            out.push_str("        if (!ptn_declared_runtime_linking_class_static_subtype(&runtime, ");
-                            out.push_str(&resolved_candidate);
-                            out.push_str(", ");
-                            out.push_str(&resolved_target);
-                            out.push_str(")) {\n");
-                            emit_runtime_method_signature_compatibility_fatal_with_indent(
-                                out,
-                                class,
-                                method,
-                                function,
-                                parent_class,
-                                parent_method,
-                                parent_function,
-                                source_path,
-                                "            ",
-                            );
-                            out.push_str("        }\n");
-                            return;
-                        }
-                    }
-                    emit_runtime_method_signature_compatibility_fatal(
-                        out,
-                        class,
-                        method,
-                        function,
-                        parent_class,
-                        parent_method,
-                        parent_function,
-                        source_path,
-                    );
-                }
-                return;
-            }
+            true
         }
     }
 }
@@ -19297,6 +19463,13 @@ fn runtime_type_hint_static_subtype(
                 || runtime_type_hint_static_subtype(candidate, &traversable, current_class, classes)
         }
         (TypeHint::True | TypeHint::False, TypeHint::Bool) => true,
+        (TypeHint::Class(candidate_name), TypeHint::Callable)
+            if candidate_name
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("Closure") =>
+        {
+            true
+        }
         (TypeHint::Class(_), TypeHint::Object) | (TypeHint::Static, TypeHint::Object) => true,
         (TypeHint::Static, TypeHint::Class(target_name)) => {
             runtime_class_type_static_subtype(&current_class.name, target_name, classes)
