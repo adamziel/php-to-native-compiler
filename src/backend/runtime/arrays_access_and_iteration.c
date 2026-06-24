@@ -6774,6 +6774,29 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
         !ptn_lazy_object_initialize_for_dynamic_property_compound(runtime, receiver, line)) {
         return ptn_null();
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return internal_xml_value;
+    }
+    PtnValue array_object_value = ptn_null();
+    if (ptn_internal_array_object_property_read(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        line,
+        &array_object_value
+    )) {
+        return array_object_value;
+    }
+#endif
     PtnValue resolved_receiver = ptn_value_deref(receiver);
     int has_magic_get = resolved_receiver.type == PTN_OBJECT &&
         runtime != NULL &&
@@ -6811,6 +6834,29 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
             return ptn_null();
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return internal_xml_value;
+    }
+    PtnValue array_object_value = ptn_null();
+    if (ptn_internal_array_object_property_read(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        line,
+        &array_object_value
+    )) {
+        return array_object_value;
+    }
+#endif
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
     if (blocked_metadata != NULL) {
