@@ -45198,6 +45198,84 @@ try {
 }
 
 #[test]
+fn compile_dom_html_document_encoding_bom_override_and_eof_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-document-encoding-bom-override-eof");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-html-document-encoding-bom-override-eof.php");
+    let output = root.join("dom-html-document-encoding-bom-override-eof-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    Dom\HTMLDocument::createFromString("<p>x</p>", overrideEncoding: "nonexistent");
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$gb18030 = "<!doctype html><html><head><title>No charset!</title></head><body>\n    H" . hex2bin("a8a6") . "llo, world!\n</body>";
+$decoded = Dom\HTMLDocument::createFromString($gb18030, overrideEncoding: "GB18030");
+echo bin2hex($decoded->documentElement->lastChild->textContent), "\n";
+var_dump($decoded->charset);
+
+$empty = Dom\HTMLDocument::createEmpty("GB18030");
+$container = $empty->createElement("container");
+$empty->append($container);
+$container->append(hex2bin("f0908d88"));
+echo bin2hex($empty->saveHtml()), "\n";
+
+$invalid = Dom\HTMLDocument::createEmpty();
+$invalidContainer = $invalid->createElement("container");
+$invalid->append($invalidContainer);
+$invalidContainer->append(hex2bin("ff"));
+echo bin2hex($invalid->saveHtml()), "\n";
+
+$brokenGb18030 = Dom\HTMLDocument::createFromString("<!doctype html><html><head><meta charset=\"gb18030\"></head><body>" . hex2bin("9030"));
+$brokenGb18030->charset = "UTF-8";
+echo bin2hex($brokenGb18030->body->textContent), "\n";
+
+$bom = Dom\HTMLDocument::createFromString("\xEF\xBB\xBF<!doctype html><html><head><meta charset=\"utf-16\"></head><body></body></html>");
+var_dump($bom->characterSet);
+$bom->body->textContent = hex2bin("c3a9");
+echo bin2hex($bom->saveHtml()), "\n";
+
+$text = str_repeat(hex2bin("e28093"), 1359);
+$doc = Dom\HTMLDocument::createFromString("<!DOCTYPE HTML><html>" . $text, 0, "UTF-8");
+var_dump($doc->body->textContent === $text);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Dom\\HTMLDocument::createFromString(): Argument #3 ($overrideEncoding) must be a valid document encoding\n",
+            "0a2020202048c3a96c6c6f2c20776f726c64210a\n",
+            "string(7) \"gb18030\"\n",
+            "3c636f6e7461696e65723e9030d5303c2f636f6e7461696e65723e\n",
+            "3c636f6e7461696e65723eefbfbd3c2f636f6e7461696e65723e\n",
+            "efbfbd\n",
+            "string(5) \"UTF-8\"\n",
+            "3c21444f43545950452068746d6c3e3c68746d6c3e3c686561643e3c6d65746120636861727365743d227574662d3136223e3c2f686561643e3c626f64793ec3a93c2f626f64793e3c2f68746d6c3e\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_canonical_encoding_from_operand_alloc"));
+    assert!(c_source.contains("ptn_dom_html_prepare_source_for_parse"));
+}
+
+#[test]
 fn compile_dom_html_document_noimplied_and_import_void_serialization_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-noimplied-import-void");
     fs::create_dir_all(&root).unwrap();

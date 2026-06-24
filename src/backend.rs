@@ -32607,6 +32607,38 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static DOM_CREATE_EMPTY_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "encoding",
+        default: Some(InternalParameterDefault::Null),
+    }];
+    static DOM_CREATE_FROM_FILE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "overrideEncoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static DOM_CREATE_FROM_STRING_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "source",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "overrideEncoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     if name.eq_ignore_ascii_case("clone") {
         Some(&CLONE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("array_filter") {
@@ -32823,6 +32855,21 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("fromStream"))
     {
         Some(&XMLREADER_FROM_STREAM_PARAMETERS)
+    } else if name
+        .rsplit_once("::")
+        .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("createEmpty"))
+    {
+        Some(&DOM_CREATE_EMPTY_PARAMETERS)
+    } else if name
+        .rsplit_once("::")
+        .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("createFromFile"))
+    {
+        Some(&DOM_CREATE_FROM_FILE_PARAMETERS)
+    } else if name
+        .rsplit_once("::")
+        .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("createFromString"))
+    {
+        Some(&DOM_CREATE_FROM_STRING_PARAMETERS)
     } else {
         None
     }
@@ -32917,6 +32964,24 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static DOM_CREATE_EMPTY_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "encoding",
+        default: Some(InternalParameterDefault::Null),
+    }];
+    static DOM_CREATE_FROM_FILE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "overrideEncoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static DOM_CREATE_FROM_STRING_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "source",
@@ -32927,7 +32992,7 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Int(0)),
         },
         InternalParameterSpec {
-            name: "encoding",
+            name: "overrideEncoding",
             default: Some(InternalParameterDefault::Null),
         },
     ];
@@ -33082,6 +33147,10 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         Some(&DOM_LOAD_PARAMETERS)
     } else if name.eq_ignore_ascii_case("loadHTML") || name.eq_ignore_ascii_case("loadXML") {
         Some(&DOM_LOAD_SOURCE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createEmpty") {
+        Some(&DOM_CREATE_EMPTY_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createFromFile") {
+        Some(&DOM_CREATE_FROM_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("createFromString") {
         Some(&DOM_CREATE_FROM_STRING_PARAMETERS)
     } else if name.eq_ignore_ascii_case("appendXML") {

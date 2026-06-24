@@ -103815,6 +103815,21 @@ static void ptn_html_append_escaped_text(PtnStringBuffer *buffer, PtnXmlNode *no
     const unsigned char *bytes = (const unsigned char *)value;
     for (size_t offset = 0; offset < value_len; offset++) {
         const unsigned char *cursor = bytes + offset;
+        if (*cursor >= 0x80) {
+            size_t sequence_len = 0;
+            if (*cursor == 0xc2 && offset + 1 < value_len && cursor[1] == 0xa0) {
+                ptn_string_buffer_append(buffer, "&nbsp;");
+                offset++;
+                continue;
+            }
+            if (ptn_mb_utf8_valid_sequence_len_at(value, value_len, offset, &sequence_len)) {
+                ptn_string_buffer_append_len(buffer, value + offset, sequence_len);
+                offset += sequence_len - 1;
+                continue;
+            }
+            ptn_string_buffer_append(buffer, "\xef\xbf\xbd");
+            continue;
+        }
         switch (*cursor) {
             case '&':
                 ptn_string_buffer_append(buffer, "&amp;");
@@ -103824,14 +103839,6 @@ static void ptn_html_append_escaped_text(PtnStringBuffer *buffer, PtnXmlNode *no
                 break;
             case '>':
                 ptn_string_buffer_append(buffer, "&gt;");
-                break;
-            case 0xc2:
-                if (offset + 1 < value_len && cursor[1] == 0xa0) {
-                    ptn_string_buffer_append(buffer, "&nbsp;");
-                    offset++;
-                    break;
-                }
-                ptn_string_buffer_append_char(buffer, (char)*cursor);
                 break;
             default:
                 ptn_string_buffer_append_char(buffer, (char)*cursor);
@@ -106372,6 +106379,67 @@ static int ptn_dom_html_attr_name_char(unsigned char byte) {
     return isalnum(byte) || byte == '-' || byte == '_' || byte == ':';
 }
 
+static char *ptn_dom_html_display_encoding_from_canonical_alloc(const char *canonical) {
+    if (canonical == NULL) {
+        return NULL;
+    }
+    if (ptn_ascii_case_equal(canonical, "UTF-8")) {
+        return ptn_duplicate_string("UTF-8");
+    }
+    if (ptn_ascii_case_equal(canonical, "UTF-16")) {
+        return ptn_duplicate_string("UTF-16");
+    }
+    if (ptn_ascii_case_equal(canonical, "UTF-16BE")) {
+        return ptn_duplicate_string("UTF-16BE");
+    }
+    if (ptn_ascii_case_equal(canonical, "UTF-16LE")) {
+        return ptn_duplicate_string("UTF-16LE");
+    }
+    if (ptn_ascii_case_equal(canonical, "SJIS")) {
+        return ptn_duplicate_string("Shift_JIS");
+    }
+    size_t len = strlen(canonical);
+    char *lower = malloc(len + 1);
+    if (lower == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        lower[i] = (char)tolower((unsigned char)canonical[i]);
+    }
+    lower[len] = '\0';
+    return lower;
+}
+
+static char *ptn_dom_html_canonical_encoding_from_operand_alloc(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand encoding
+) {
+    const char *canonical = ptn_mb_canonical_encoding_name(encoding);
+    if (canonical != NULL &&
+        !ptn_ascii_case_equal(canonical, "auto") &&
+        !ptn_mb_encoding_is_raw(canonical) &&
+        ptn_mb_iconv_encoding_name(canonical) != NULL) {
+        return ptn_dom_html_display_encoding_from_canonical_alloc(canonical);
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be a valid document encoding",
+        method_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return NULL;
+}
+
 static char *ptn_dom_html_normalized_charset_alloc(const char *value, size_t len) {
     while (len > 0 && isspace((unsigned char)*value)) {
         value++;
@@ -106383,16 +106451,15 @@ static char *ptn_dom_html_normalized_charset_alloc(const char *value, size_t len
     if (len == 0) {
         return NULL;
     }
-    if (ptn_html_ascii_case_equal_literal(value, len, "UTF-8") ||
-        ptn_html_ascii_case_equal_literal(value, len, "UTF8")) {
-        return ptn_duplicate_string("UTF-8");
+    PtnStringOperand encoding = ptn_string_operand_borrowed_len(value, len);
+    const char *canonical = ptn_mb_canonical_encoding_name(encoding);
+    if (canonical != NULL &&
+        !ptn_ascii_case_equal(canonical, "auto") &&
+        !ptn_mb_encoding_is_raw(canonical) &&
+        ptn_mb_iconv_encoding_name(canonical) != NULL) {
+        return ptn_dom_html_display_encoding_from_canonical_alloc(canonical);
     }
-    if (ptn_html_ascii_case_equal_literal(value, len, "SHIFT_JIS") ||
-        ptn_html_ascii_case_equal_literal(value, len, "SHIFT-JIS") ||
-        ptn_html_ascii_case_equal_literal(value, len, "SJIS")) {
-        return ptn_duplicate_string("Shift_JIS");
-    }
-    return ptn_duplicate_string_len(value, len);
+    return NULL;
 }
 
 static char *ptn_dom_html_content_charset_alloc(const char *value, size_t len) {
@@ -106524,6 +106591,38 @@ static char *ptn_dom_html_prepare_source_for_parse(
     int sniff_charset,
     size_t *parse_len_out
 ) {
+    size_t offset = 0;
+    if (len >= 3 &&
+        (unsigned char)data[0] == 0xef &&
+        (unsigned char)data[1] == 0xbb &&
+        (unsigned char)data[2] == 0xbf) {
+        if (document != NULL) {
+            free(document->encoding);
+            document->encoding = ptn_duplicate_string("UTF-8");
+        }
+        offset = 3;
+        sniff_charset = 0;
+    } else if (len >= 2 &&
+        (unsigned char)data[0] == 0xfe &&
+        (unsigned char)data[1] == 0xff) {
+        if (document != NULL) {
+            free(document->encoding);
+            document->encoding = ptn_duplicate_string("UTF-16BE");
+        }
+        offset = 2;
+        sniff_charset = 0;
+    } else if (len >= 2 &&
+        (unsigned char)data[0] == 0xff &&
+        (unsigned char)data[1] == 0xfe) {
+        if (document != NULL) {
+            free(document->encoding);
+            document->encoding = ptn_duplicate_string("UTF-16LE");
+        }
+        offset = 2;
+        sniff_charset = 0;
+    }
+    data += offset;
+    len -= offset;
     if (sniff_charset) {
         char *charset = ptn_dom_html_sniff_meta_charset_alloc(data, len);
         if (charset != NULL) {
@@ -106538,7 +106637,7 @@ static char *ptn_dom_html_prepare_source_for_parse(
         *parse_len_out = len;
         return ptn_duplicate_string_len(data, len);
     }
-    return ptn_mb_iconv_convert_alloc(data, len, encoding, "UTF-8", parse_len_out);
+    return ptn_mb_iconv_convert_alloc_options(data, len, encoding, "UTF-8", "\xef\xbf\xbd", 3, NULL, parse_len_out);
 }
 
 static int ptn_dom_html_direct_element_named(PtnXmlNode *node, const char *name) {
@@ -106870,7 +106969,7 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
             ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, element);
         }
     }
-    int complete = stack_len <= 1 && well_formed;
+    int complete = (html_mode ? 1 : stack_len <= 1) && well_formed;
     if (html_mode) {
         ptn_dom_html_normalize_root_whitespace(document);
         ptn_dom_html_normalize_body_misnested_wrappers(document);
@@ -110136,30 +110235,70 @@ static int ptn_dom_html_document_validate_options(PtnRuntime *runtime, const cha
 }
 
 static PtnValue ptn_dom_document_create_empty(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
-    (void)args;
-    if (argc != 0) {
+    int html_document = ptn_dom_class_name_is_html_document(class_name);
+    size_t max_args = html_document ? 1 : 0;
+    if (argc > max_args) {
         char message[160];
-        int written = snprintf(message, sizeof(message), "%s::createEmpty() expects exactly 0 arguments, %zu given", class_name, argc);
+        int written = html_document
+            ? snprintf(message, sizeof(message), "%s::createEmpty() expects at most 1 argument, %zu given", class_name, argc)
+            : snprintf(message, sizeof(message), "%s::createEmpty() expects exactly 0 arguments, %zu given", class_name, argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    return ptn_xml_document_new_for_class(runtime, class_name, 0, NULL, line);
+    PtnValue document_value = ptn_xml_document_new_for_class(runtime, class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || document_value.type != PTN_OBJECT) {
+        return document_value;
+    }
+    if (html_document && argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand encoding = ptn_internal_expect_string_arg(
+            runtime,
+            "Dom\\HTMLDocument::createEmpty",
+            1,
+            "encoding",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(encoding);
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        char *canonical = ptn_dom_html_canonical_encoding_from_operand_alloc(
+            runtime,
+            "Dom\\HTMLDocument::createEmpty",
+            1,
+            "encoding",
+            encoding
+        );
+        ptn_string_operand_free(encoding);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        PtnXmlNode *document = ptn_xml_node_data(document_value);
+        free(document->encoding);
+        document->encoding = canonical;
+    }
+    return document_value;
 }
 
 static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
-    if (argc < 1 || argc > 2) {
+    int html_document = ptn_dom_class_name_is_html_document(class_name);
+    size_t max_args = html_document ? 3 : 2;
+    if (argc < 1 || argc > max_args) {
         char message[176];
-        int written = snprintf(message, sizeof(message), "%s::createFromFile() expects 1 or 2 arguments, %zu given", class_name, argc);
+        int written = html_document
+            ? snprintf(message, sizeof(message), "%s::createFromFile() expects 1 to 3 arguments, %zu given", class_name, argc)
+            : snprintf(message, sizeof(message), "%s::createFromFile() expects 1 or 2 arguments, %zu given", class_name, argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    int html_document = ptn_dom_class_name_is_html_document(class_name);
     int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     if (html_document &&
         !ptn_dom_html_document_validate_options(runtime, "Dom\\HTMLDocument::createFromFile", options)) {
@@ -110168,6 +110307,36 @@ static PtnValue ptn_dom_document_create_from_file(PtnRuntime *runtime, const cha
     PtnValue document_value = ptn_xml_document_new_for_class(runtime, class_name, 0, NULL, line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    if (html_document && argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        PtnStringOperand encoding = ptn_internal_expect_string_arg(
+            runtime,
+            "Dom\\HTMLDocument::createFromFile",
+            3,
+            "overrideEncoding",
+            args[2],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(encoding);
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        char *canonical = ptn_dom_html_canonical_encoding_from_operand_alloc(
+            runtime,
+            "Dom\\HTMLDocument::createFromFile",
+            3,
+            "overrideEncoding",
+            encoding
+        );
+        ptn_string_operand_free(encoding);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        PtnXmlNode *document = ptn_xml_node_data(document_value);
+        free(document->encoding);
+        document->encoding = canonical;
     }
     PtnValue loaded = ptn_dom_load_file_method(runtime, document_value, argc, args, line);
     ptn_value_destroy(&loaded);
@@ -110208,15 +110377,27 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
         return ptn_null();
     }
     if (html_document && argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
-        PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, method_name, 3, "encoding", args[2], line);
+        PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, method_name, 3, "overrideEncoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(source);
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        char *canonical = ptn_dom_html_canonical_encoding_from_operand_alloc(
+            runtime,
+            method_name,
+            3,
+            "overrideEncoding",
+            encoding
+        );
+        ptn_string_operand_free(encoding);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(source);
             ptn_value_destroy(&document_value);
             return ptn_null();
         }
         free(document->encoding);
-        document->encoding = ptn_duplicate_string_len(encoding.data, encoding.len);
-        ptn_string_operand_free(encoding);
+        document->encoding = canonical;
     }
     if (source.len == 0 && html_document) {
         ptn_string_operand_free(source);
@@ -110387,7 +110568,9 @@ static char *ptn_dom_path_arg_c_string_or_value_error(
 }
 
 static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
-    if (argc < 1 || argc > 2) {
+    PtnXmlNode *document = ptn_xml_node_data(receiver);
+    int html_document = document != NULL && document->html_document;
+    if (argc < 1 || argc > (html_document ? 3 : 2)) {
         return ptn_dom_throw_count(runtime, "DOMDocument::load", "1 or 2 arguments", argc);
     }
     char *path = ptn_dom_path_arg_c_string_or_value_error(
@@ -110413,9 +110596,8 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
         free(data);
         return ptn_bool(0);
     }
-    PtnXmlNode *document = ptn_xml_node_data(receiver);
-    int html_document = document != NULL && document->html_document;
     int64_t options = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    int has_override_encoding = html_document && argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL;
     if (ptn_dom_document_property_truthy(document, "validateOnParse")) {
         options |= PTN_LIBXML_DTDVALID;
     }
@@ -110439,7 +110621,7 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
         ptn_dom_xml_parse_suppress_warnings = (options & PTN_LIBXML_NOERROR) != 0;
         ptn_dom_xml_parse_warning_php_line = line;
         size_t parse_len = 0;
-        char *parse_data = ptn_dom_html_prepare_source_for_parse(document, (const char *)data, data_len, 1, &parse_len);
+        char *parse_data = ptn_dom_html_prepare_source_for_parse(document, (const char *)data, data_len, !has_override_encoding, &parse_len);
         int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_data, parse_len, 1);
         free(parse_data);
         ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
@@ -111993,6 +112175,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "recover") ||
         ptn_ascii_case_equal(property, "config") ||
         ptn_ascii_case_equal(property, "charset") ||
+        ptn_ascii_case_equal(property, "characterSet") ||
         ptn_ascii_case_equal(property, "childElementCount") ||
         ptn_ascii_case_equal(property, "length") ||
         ptn_ascii_case_equal(property, "data") ||
@@ -112345,7 +112528,8 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             *value_out = ptn_object_new_shell(runtime, "DOMImplementation");
             return 1;
         }
-        if (ptn_ascii_case_equal(property, "charset")) {
+        if (ptn_ascii_case_equal(property, "charset") ||
+            ptn_ascii_case_equal(property, "characterSet")) {
             const char *encoding = node->encoding == NULL || node->encoding[0] == '\0'
                 ? "UTF-8"
                 : node->encoding;
@@ -112768,11 +112952,30 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
             *value_out = ptn_value_clone_deref(value);
             return 1;
         }
-        if (ptn_ascii_case_equal(property, "charset")) {
+        if (ptn_ascii_case_equal(property, "charset") ||
+            ptn_ascii_case_equal(property, "characterSet")) {
             PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(string);
                 *value_out = ptn_null();
+                return 1;
+            }
+            if (node->html_document) {
+                char *canonical = ptn_dom_html_canonical_encoding_from_operand_alloc(
+                    runtime,
+                    "Dom\\HTMLDocument",
+                    1,
+                    property,
+                    string
+                );
+                ptn_string_operand_free(string);
+                if (runtime->exceptions->active_exception != NULL) {
+                    *value_out = ptn_null();
+                    return 1;
+                }
+                free(node->encoding);
+                node->encoding = canonical;
+                *value_out = ptn_value_clone_deref(value);
                 return 1;
             }
             free(node->encoding);
