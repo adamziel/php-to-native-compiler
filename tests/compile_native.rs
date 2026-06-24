@@ -28396,6 +28396,46 @@ var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML
 }
 
 #[test]
+fn compile_mb_parse_str_converts_decoded_query_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-parse-str-query-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-parse-str-query-encoding.php");
+    let output = root.join("mb-parse-str-query-encoding-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_parsed_hex(string $query): void {\n\
+    $array = [];\n\
+    mb_parse_str($query, $array);\n\
+    foreach ($array as $key => $value) {\n\
+        echo bin2hex($key), '=>', bin2hex($value), \"\\n\";\n\
+    }\n\
+}\n\
+dump_parsed_hex(hex2bin('808080'));\n\
+putenv('PTN_MBSTRING_HTTP_INPUT=UTF-8,SJIS,EUC-JP,ISO-8859-1,ISO-2022-JP');\n\
+dump_parsed_hex(hex2bin('82a082a282a43d9356'));\n\
+dump_parsed_hex(hex2bin('666f6f3de6266261723d972662617a3da5'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "3f3f3f=>\n",
+            "e38182e38184e38186=>e5a4a9\n",
+            "666f6f=>c3a6\n",
+            "626172=>c297\n",
+            "62617a=>c2a5\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_replace_callback_array_and_match_debug_refcounts_to_native_binary() {
     let root = temp_dir("ptn-native-preg-replace-callback-array-debug");
     fs::create_dir_all(&root).unwrap();

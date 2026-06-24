@@ -309,6 +309,7 @@ struct RuntimeIni {
     iconv_input_encoding: Option<String>,
     iconv_output_encoding: Option<String>,
     mbstring_internal_encoding: Option<String>,
+    mbstring_http_input: Option<String>,
     mbstring_http_output: Option<String>,
     mbstring_language: Option<String>,
     mbstring_detect_order: Option<String>,
@@ -545,6 +546,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.iconv_output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.internal_encoding") {
         ini.mbstring_internal_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.http_input") {
+        ini.mbstring_http_input = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.http_output") {
         ini.mbstring_http_output = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.language") {
@@ -1041,6 +1044,7 @@ fn compile_and_run(
         iconv_input_encoding: ini.iconv_input_encoding.clone(),
         iconv_output_encoding: ini.iconv_output_encoding.clone(),
         mbstring_internal_encoding: ini.mbstring_internal_encoding.clone(),
+        mbstring_http_input: ini.mbstring_http_input.clone(),
         mbstring_http_output: ini.mbstring_http_output.clone(),
         mbstring_language: ini.mbstring_language.clone(),
         mbstring_detect_order: ini.mbstring_detect_order.clone(),
@@ -1242,6 +1246,9 @@ fn compile_and_run(
     if let Some(mbstring_internal_encoding) = &ini.mbstring_internal_encoding {
         command.env("PTN_MBSTRING_INTERNAL_ENCODING", mbstring_internal_encoding);
     }
+    if let Some(mbstring_http_input) = &ini.mbstring_http_input {
+        command.env("PTN_MBSTRING_HTTP_INPUT", mbstring_http_input);
+    }
     if let Some(mbstring_http_output) = &ini.mbstring_http_output {
         command.env("PTN_MBSTRING_HTTP_OUTPUT", mbstring_http_output);
     }
@@ -1323,6 +1330,7 @@ fn compile_and_run(
         || zend_script_encoding_warning.is_some()
         || session_save_handler_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
+        || ini.mbstring_http_input.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
@@ -1342,6 +1350,11 @@ fn compile_and_run(
     if ini.mbstring_internal_encoding.is_some() {
         println!(
             "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0"
+        );
+    }
+    if ini.mbstring_http_input.is_some() {
+        println!(
+            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0"
         );
     }
     let status = command

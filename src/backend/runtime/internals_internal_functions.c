@@ -74449,15 +74449,91 @@ static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
+typedef struct {
+    const char *from_encoding;
+    const char *to_encoding;
+} PtnMbParseStrConversionContext;
+
+static char *ptn_mb_parse_str_convert_decoded_component(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    void *context,
+    size_t *output_len_out
+) {
+    (void)runtime;
+    PtnMbParseStrConversionContext *conversion = (PtnMbParseStrConversionContext *)context;
+    char *output = ptn_mb_iconv_convert_alloc_counting(
+        data,
+        len,
+        conversion->from_encoding,
+        conversion->to_encoding,
+        output_len_out
+    );
+    return output;
+}
+
+static char *ptn_mb_parse_str_http_input_list_alloc(PtnRuntime *runtime, size_t line) {
+    const char *fallback = ptn_mb_current_internal_encoding(runtime);
+    const char *configured = getenv("PTN_MBSTRING_HTTP_INPUT");
+    if (configured == NULL || configured[0] == '\0') {
+        configured = ptn_mb_current_http_input(runtime);
+    }
+    PtnValue value = ptn_owned_string(ptn_duplicate_string(configured));
+    char *list = ptn_mb_encoding_detect_list_from_value_alloc(
+        runtime,
+        "mb_parse_str",
+        1,
+        "string",
+        value,
+        line,
+        fallback
+    );
+    ptn_value_destroy(&value);
+    return list;
+}
+
 static PtnValue ptn_internal_mb_parse_str(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 2) {
         return ptn_bool(0);
     }
-    PtnValue forwarded[2] = { ptn_value_clone_deref(args[0]), ptn_value_clone(args[1]) };
-    PtnValue ignored = ptn_internal_parse_str(runtime, 2, forwarded, line);
-    ptn_value_destroy(&ignored);
-    ptn_value_destroy(&forwarded[0]);
-    ptn_value_destroy(&forwarded[1]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "mb_parse_str", 1, "string", args[0], line);
+    if (memchr(string.data, '\0', string.len) != NULL) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(runtime, "ValueError", "mb_parse_str(): Argument #1 ($string) must not contain any null bytes");
+        return ptn_null();
+    }
+
+    char *from_encoding_list = ptn_mb_parse_str_http_input_list_alloc(runtime, line);
+    if (from_encoding_list == NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    char *from_encoding = ptn_mb_detect_list_select_for_string_alloc(
+        from_encoding_list,
+        string,
+        ptn_mb_current_internal_encoding(runtime)
+    );
+    PtnMbParseStrConversionContext conversion = {
+        from_encoding,
+        ptn_mb_current_internal_encoding(runtime),
+    };
+    PtnValue result = ptn_parse_str_to_array_with_converter(
+        runtime,
+        string.data,
+        string.len,
+        ptn_runtime_arg_separator_input(runtime),
+        ptn_mb_parse_str_convert_decoded_component,
+        &conversion
+    );
+    free(from_encoding);
+    free(from_encoding_list);
+    if (args[1].type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, args[1].as.reference, result);
+    } else {
+        ptn_value_drop(&result);
+    }
+    ptn_string_operand_free(string);
     return ptn_bool(1);
 }
 

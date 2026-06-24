@@ -585,13 +585,39 @@ static int ptn_parse_str_is_separator(char byte, const char *separators) {
     return 0;
 }
 
-static PtnValue ptn_parse_str_to_array_with_separators(
+typedef char *(*PtnParseStrDecodedConverter)(
     PtnRuntime *runtime,
     const char *data,
     size_t len,
-    const char *separators
+    void *context,
+    size_t *output_len_out
+);
+
+static char *ptn_parse_str_convert_decoded_component(
+    PtnRuntime *runtime,
+    char *decoded,
+    size_t decoded_len,
+    PtnParseStrDecodedConverter converter,
+    void *converter_context,
+    size_t *converted_len_out
 ) {
-    (void)runtime;
+    if (converter == NULL) {
+        *converted_len_out = decoded_len;
+        return decoded;
+    }
+    char *converted = converter(runtime, decoded, decoded_len, converter_context, converted_len_out);
+    free(decoded);
+    return converted;
+}
+
+static PtnValue ptn_parse_str_to_array_with_converter(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    const char *separators,
+    PtnParseStrDecodedConverter converter,
+    void *converter_context
+) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t cursor = 0;
     while (cursor <= len) {
@@ -612,6 +638,22 @@ static PtnValue ptn_parse_str_to_array_with_separators(
             char *value_decoded = equals < pair_len
                 ? ptn_url_decode_component(pair + equals + 1, pair_len - equals - 1, &value_decoded_len)
                 : ptn_duplicate_string_len("", 0);
+            key_decoded = ptn_parse_str_convert_decoded_component(
+                runtime,
+                key_decoded,
+                key_decoded_len,
+                converter,
+                converter_context,
+                &key_decoded_len
+            );
+            value_decoded = ptn_parse_str_convert_decoded_component(
+                runtime,
+                value_decoded,
+                value_decoded_len,
+                converter,
+                converter_context,
+                &value_decoded_len
+            );
             PtnParseStrPath path = ptn_parse_str_parse_key(key_decoded, key_decoded_len);
             ptn_parse_str_assign(
                 result.as.array,
@@ -628,6 +670,15 @@ static PtnValue ptn_parse_str_to_array_with_separators(
         cursor++;
     }
     return result;
+}
+
+static PtnValue ptn_parse_str_to_array_with_separators(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    const char *separators
+) {
+    return ptn_parse_str_to_array_with_converter(runtime, data, len, separators, NULL, NULL);
 }
 
 static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
