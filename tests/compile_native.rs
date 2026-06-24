@@ -33019,6 +33019,83 @@ echo \"end\\n\";
 }
 
 #[test]
+fn compile_late_static_constant_string_lookup_to_native_binary() {
+    let root = temp_dir("ptn-native-late-static-constant-string-lookup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("late-static-constant-string-lookup.php");
+    let output = root.join("late-static-constant-string-lookup-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test1 {
+    static function test() {
+        var_dump(get_called_class());
+        var_dump(defined(\"static::ok\"));
+        if (defined(\"static::ok\")) {
+            echo constant(\"static::ok\"), \"\\n\";
+        }
+    }
+}
+
+class Test2 extends Test1 {
+    const ok = \"ok\";
+}
+
+Test1::test();
+Test2::test();
+
+try {
+    var_dump(get_called_class());
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"Test1\"\n",
+            "bool(false)\n",
+            "string(5) \"Test2\"\n",
+            "bool(true)\n",
+            "ok\n",
+            "get_called_class() must be called from within a class\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_resolve_relative_static_member_class"));
+    assert!(c_source.contains("ptn_runtime_maybe_autoload_static_member_class"));
+}
+
+#[test]
+fn parser_reports_late_static_class_name_row_diagnostics() {
+    for source in [
+        "<?php class static {}",
+        "<?php interface static {}",
+        "<?php trait static {}",
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message, "syntax error, unexpected token \"static\", expecting T_STRING",
+            "{source}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::ParseError, "{source}");
+    }
+
+    let invalid_class = parser::parse("<?php []::X::X;").unwrap_err();
+    assert_eq!(invalid_class.message, "Illegal class name");
+    assert_eq!(invalid_class.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();

@@ -5531,12 +5531,37 @@ static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     return ptn_null();
 }
 
+static PTN_UNUSED const char *ptn_runtime_resolve_relative_static_member_class(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+    if (ptn_ascii_case_equal(lookup_class_name, "static")) {
+        const char *called = runtime == NULL ? NULL : runtime->current_called_class_name;
+        if (called != NULL) {
+            return called;
+        }
+        const char *current = runtime == NULL ? NULL : runtime->current_class_name;
+        return current == NULL ? lookup_class_name : current;
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "self")) {
+        const char *current = runtime == NULL ? NULL : runtime->current_class_name;
+        return current == NULL ? lookup_class_name : current;
+    }
+    if (ptn_ascii_case_equal(lookup_class_name, "parent")) {
+        const char *current = runtime == NULL ? NULL : runtime->current_class_name;
+        const char *parent = current == NULL ? NULL : ptn_runtime_declared_class_parent_name(runtime, current);
+        return parent == NULL ? lookup_class_name : parent;
+    }
+    return lookup_class_name;
+}
+
 static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
     PtnRuntime *runtime,
     const char *class_name,
     size_t line
 ) {
-    const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *lookup_class_name = ptn_runtime_resolve_relative_static_member_class(runtime, class_name);
     const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
     if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)
         && !ptn_declared_trait_exists(resolved_class_name)

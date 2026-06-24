@@ -35,10 +35,9 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
         }
         memcpy(class_name, name, class_len);
         class_name[class_len] = '\0';
-        const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
         PtnValue value = ptn_runtime_read_class_constant_with_scope(
             runtime,
-            resolved_class_name,
+            class_name,
             separator + 2,
             runtime == NULL ? NULL : runtime->current_class_name,
             line
@@ -173839,7 +173838,7 @@ static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, 
     (void)args;
     (void)line;
     if (runtime->current_called_class_name == NULL) {
-        ptn_throw_exception(runtime, "Error", "get_called_class() must be called from a class");
+        ptn_throw_exception(runtime, "Error", "get_called_class() must be called from within a class");
         return ptn_null();
     }
     return ptn_owned_string(ptn_duplicate_string(runtime->current_called_class_name));

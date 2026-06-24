@@ -1742,7 +1742,8 @@ impl Parser<'_> {
                 final_span.or(Some(class_token.span)),
             ));
         }
-        let (class_name, _) = self.parse_declaration_name("expected class name")?;
+        let (class_name, class_name_span) = self.parse_declaration_name("expected class name")?;
+        reject_static_declaration_name(&class_name, class_name_span)?;
         self.reject_tight_class_clause_keyword_name("extends")?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
@@ -1884,7 +1885,8 @@ impl Parser<'_> {
             return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
         }
 
-        let (class_name, _) = self.parse_declaration_name("expected enum name")?;
+        let (class_name, class_name_span) = self.parse_declaration_name("expected enum name")?;
+        reject_static_declaration_name(&class_name, class_name_span)?;
         let enum_backing_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             let token = self.advance().clone();
@@ -2067,7 +2069,8 @@ impl Parser<'_> {
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
         }
-        let (trait_name, _) = self.parse_declaration_name("expected trait name")?;
+        let (trait_name, trait_name_span) = self.parse_declaration_name("expected trait name")?;
+        reject_static_declaration_name(&trait_name, trait_name_span)?;
         self.expect_left_brace()?;
         let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
             class_name: trait_name.clone(),
@@ -8384,6 +8387,9 @@ impl Parser<'_> {
                                 };
                                 continue;
                             }
+                        }
+                        if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
+                            return Err(Diagnostic::new("Illegal class name", Some(start_span)));
                         }
                         let name = literal_name.map_or_else(
                             || dynamic_name.expect("dynamic class constant expression"),
@@ -15059,6 +15065,16 @@ fn reject_reserved_interface_name(name: &str, span: SourceSpan) -> Result<()> {
     };
     Err(Diagnostic::new(
         format!("Cannot use \"{reserved_name}\" as interface name, as it is reserved"),
+        Some(span),
+    ))
+}
+
+fn reject_static_declaration_name(name: &str, span: SourceSpan) -> Result<()> {
+    if declaration_name_segment(name) != "static" {
+        return Ok(());
+    }
+    Err(Diagnostic::parse_error(
+        "syntax error, unexpected token \"static\", expecting T_STRING",
         Some(span),
     ))
 }
@@ -26603,6 +26619,7 @@ fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
         Expr::Grouped { expr, .. } => dynamic_class_name_fetch_has_illegal_literal_receiver(expr),
         Expr::String(_, _)
         | Expr::ShellExec { .. }
+        | Expr::Array { .. }
         | Expr::Int(_, _)
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
