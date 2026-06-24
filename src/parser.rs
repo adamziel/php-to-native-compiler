@@ -6439,20 +6439,29 @@ impl Parser<'_> {
         };
         let eval_source = eval_source.trim();
         let lower_source = eval_source.to_ascii_lowercase();
-        let starts_class = lower_source.starts_with("class")
-            || lower_source.starts_with("abstract class")
-            || lower_source.starts_with("final class");
+        let starts_class_alias_call = lower_source
+            .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+            .next()
+            .is_some_and(|name| name == "class_alias");
+        let starts_class = !starts_class_alias_call
+            && (lower_source.starts_with("class")
+                || lower_source.starts_with("abstract class")
+                || lower_source.starts_with("final class"));
+        let may_contain_class_alias_call =
+            starts_class_alias_call || source_contains_ascii_keyword(&lower_source, "class_alias");
         let starts_typed_property_class =
             starts_class && source_may_contain_class_property_declaration(&lower_source);
         if starts_class
             && !source_contains_ascii_keyword(&lower_source, "use")
             && !starts_typed_property_class
+            && !may_contain_class_alias_call
         {
             return Ok(None);
         }
         if !lower_source.starts_with("function")
             && !lower_source.starts_with("trait")
             && !starts_class
+            && !may_contain_class_alias_call
         {
             return Ok(None);
         }
@@ -6464,6 +6473,16 @@ impl Parser<'_> {
             &self.eval_visible_traits,
             self.validate_method_signatures,
         )?;
+        for statement in &eval_program.statements {
+            self.note_runtime_class_alias_statement(statement);
+        }
+        if starts_class_alias_call
+            && eval_program.functions.is_empty()
+            && eval_program.classes.is_empty()
+            && eval_program.traits.is_empty()
+        {
+            return Ok(None);
+        }
         if eval_program.functions.len() == 1
             && eval_program.classes.is_empty()
             && eval_program.traits.is_empty()

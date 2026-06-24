@@ -85150,6 +85150,31 @@ echo "done\n";
 }
 
 #[test]
+fn compile_literal_eval_class_alias_typed_property_invariance_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-eval-class-alias-typed-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-eval-class-alias-typed-property.php");
+    let output = root.join("literal-eval-class-alias-typed-property-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval('class Foo {} class_alias("Foo", "Bar");');
+eval('class A { public Foo $prop; }');
+eval('class B extends A { public Bar $prop; }');
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dynamic_instanceof_alias_targets_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-instanceof-alias-targets");
     fs::create_dir_all(&root).unwrap();
