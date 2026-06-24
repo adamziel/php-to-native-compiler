@@ -54740,6 +54740,50 @@ St::e2();
 }
 
 #[test]
+fn compile_call_user_func_self_array_magic_call_deprecation_once_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-self-array-magic-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-self-array-magic-once.php");
+    let output = root.join("call-user-func-self-array-magic-once-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicCallSelfArray {
+    public function __call($name, $args) {
+        echo \"__call:\", $name, \"\\n\";
+    }
+
+    public function run() {
+        call_user_func([\"self\", \"missing\"]);
+        call_user_func_array([\"self\", \"other\"], []);
+    }
+}
+
+(new MagicCallSelfArray())->run();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Use of \"self\" in callables is deprecated in ptn on line 8\n",
+            "__call:missing\n",
+            "\nDeprecated: Use of \"self\" in callables is deprecated in ptn on line 9\n",
+            "__call:other\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_relative_callable_deprecation_already_checked"));
+}
+
+#[test]
 fn compile_is_callable_relative_array_callable_deprecation_to_native_binary() {
     let root = temp_dir("ptn-native-is-callable-relative-array-callable");
     fs::create_dir_all(&root).unwrap();

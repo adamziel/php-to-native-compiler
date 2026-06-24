@@ -23813,10 +23813,11 @@ fn emit_callable_dispatch(
             "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
         out.push_str("                } else {\n");
-        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"self\")) {\n");
+        out.push_str("                    int ptn_array_relative_callable_deprecation_already_checked = from_call_user_func && (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\"));\n");
+        out.push_str("                    if (!ptn_array_relative_callable_deprecation_already_checked && !runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"self\")) {\n");
         out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"self\\\" in callables is deprecated\", line);\n");
         out.push_str(
-            "                    } else if (!runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"parent\")) {\n",
+            "                    } else if (!ptn_array_relative_callable_deprecation_already_checked && !runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"parent\")) {\n",
         );
         out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", line);\n");
         out.push_str("                    }\n");
