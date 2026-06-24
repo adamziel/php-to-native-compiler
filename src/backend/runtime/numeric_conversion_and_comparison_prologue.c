@@ -1296,7 +1296,7 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         &runtime->diagnostics,
         message,
         line,
-        1
+        0
     );
     free(message);
 }

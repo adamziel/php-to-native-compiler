@@ -57,6 +57,40 @@ echo $x, \"\\n\";\n",
 }
 
 #[test]
+fn by_ref_warning_error_handler_trace_uses_user_callback_location_to_native_binary() {
+    let root = temp_dir("ptn-native-by-ref-warning-handler-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-ref-warning-handler-trace.php");
+    let output = root.join("by-ref-warning-handler-trace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function needs_ref(&$value) {}\n\
+set_error_handler(function() {\n\
+    MissingTraceClass::$nope = true;\n\
+}, E_ALL);\n\
+call_user_func('needs_ref', 0);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("{closure:"),
+        "expected handler closure in trace, got:\n{combined}"
+    );
+    assert!(
+        !combined.contains("#0 [internal function]: {closure:"),
+        "handler callback frame should keep its source location:\n{combined}"
+    );
+}
+
+#[test]
 fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
     let cases = [
         CowDiagnosticReducerCase {
