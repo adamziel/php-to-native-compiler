@@ -4392,7 +4392,8 @@ impl Parser<'_> {
     ) -> Result<Expr> {
         let doc_comment = self
             .doc_comment_before(span.byte_start)
-            .or(fallback_doc_comment);
+            .or(fallback_doc_comment)
+            .or_else(|| self.current_statement_doc_comment.clone());
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true

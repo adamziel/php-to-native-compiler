@@ -35677,6 +35677,54 @@ echo $hook->getParameters()[0]->getDocComment(), \"\\n\";
 }
 
 #[test]
+fn compile_reflection_closure_doc_comment_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-closure-doc-comment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-closure-doc-comment.php");
+    let output = root.join("reflection-closure-doc-comment-bin");
+    fs::write(
+        &input,
+        "<?php
+/** Closure docs */
+$closure = function(
+    /** Parameter docs */
+    $value
+) {
+};
+
+/** Arrow docs */
+$arrow = fn(
+    /** Arrow parameter docs */
+    $value
+) => null;
+
+$closureReflection = new ReflectionFunction($closure);
+echo $closureReflection->getDocComment(), \"\\n\";
+echo $closureReflection->getParameters()[0]->getDocComment(), \"\\n\";
+echo (new ReflectionFunction($arrow))->getDocComment(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "/** Closure docs */\n",
+            "/** Parameter docs */\n",
+            "/** Arrow docs */\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("/** Closure docs */"));
+}
+
+#[test]
 fn compile_reflection_parameter_is_callable_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-parameter-is-callable");
     fs::create_dir_all(&root).unwrap();
