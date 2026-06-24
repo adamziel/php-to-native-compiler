@@ -2368,6 +2368,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;
     runtime->declared_method_exists = NULL;

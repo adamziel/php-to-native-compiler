@@ -125,6 +125,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->shutdown_functions_running = 0;
     runtime->shutdown_functions_completed = 0;
     runtime->shutdown_in_progress = 0;
+    runtime->defer_uncaught_exception_emit = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
@@ -2048,7 +2049,127 @@ static PTN_UNUSED void ptn_exception_trace_append_frame(
     (*index)++;
 }
 
+static PTN_UNUSED void ptn_exception_trace_append_value_frame(
+    PtnValue trace,
+    size_t *index,
+    PtnValue frame
+) {
+    if (*index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_array_set_entry(trace.as.array, ptn_array_int_key((int64_t)*index), frame);
+    (*index)++;
+}
+
+static PTN_UNUSED void ptn_exception_trace_copy_location(PtnValue target, PtnValue source) {
+    source = ptn_value_deref(source);
+    if (source.type != PTN_ARRAY || source.as.array == NULL) {
+        return;
+    }
+    PtnValue *file_slot = ptn_trace_array_string_slot(source, "file");
+    PtnValue *line_slot = ptn_trace_array_string_slot(source, "line");
+    PtnValue file_value = file_slot == NULL ? ptn_null() : ptn_value_deref(*file_slot);
+    PtnValue line_value = line_slot == NULL ? ptn_null() : ptn_value_deref(*line_slot);
+    if (file_value.type != PTN_STRING || line_value.type != PTN_INT) {
+        return;
+    }
+    ptn_array_set_entry(
+        target.as.array,
+        ptn_array_string_key("file"),
+        ptn_owned_string_len(
+            ptn_duplicate_string_len((const char *)file_value.as.string.data, file_value.as.string.len),
+            file_value.as.string.len
+        )
+    );
+    ptn_array_set_entry(
+        target.as.array,
+        ptn_array_string_key("line"),
+        ptn_int(line_value.as.integer)
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_exception_trace_current_function_frame(
+    PtnRuntime *runtime,
+    PtnValue location_source
+) {
+    PtnValue frame = ptn_array_from_literal_entries(0, NULL);
+    ptn_exception_trace_copy_location(frame, location_source);
+    const char *function_name =
+        runtime != NULL && runtime->current_function_name != NULL
+            ? runtime->current_function_name
+            : "{unknown}";
+    const char *separator = ptn_trace_frame_method_separator(function_name);
+    if (separator != NULL && separator != function_name && separator[2] != '\0') {
+        size_t class_len = (size_t)(separator - function_name);
+        const char *method_name = separator + 2;
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("class"),
+            ptn_owned_string_len(ptn_duplicate_string_len(function_name, class_len), class_len)
+        );
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("type"),
+            ptn_string(runtime != NULL && runtime->has_current_receiver ? "->" : (separator[0] == '-' ? "->" : "::"))
+        );
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(method_name))
+        );
+    } else {
+        ptn_array_set_entry(
+            frame.as.array,
+            ptn_array_string_key("function"),
+            ptn_owned_string(ptn_duplicate_string(function_name))
+        );
+    }
+    ptn_array_set_entry(
+        frame.as.array,
+        ptn_array_string_key("args"),
+        ptn_array_from_literal_entries(0, NULL)
+    );
+    return frame;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_capture_deferred_destructor_trace(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (
+        root == NULL ||
+        !root->defer_uncaught_exception_emit ||
+        !root->destructor_shutdown_phase ||
+        runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL
+    ) {
+        return ptn_null();
+    }
+    PtnValue previous_trace = ptn_value_deref(runtime->exceptions->active_exception->trace);
+    if (previous_trace.type != PTN_ARRAY || previous_trace.as.array == NULL || previous_trace.as.array->len == 0) {
+        return ptn_null();
+    }
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    ptn_exception_trace_append_value_frame(
+        trace,
+        &index,
+        ptn_exception_trace_current_function_frame(runtime, previous_trace.as.array->entries[0].value)
+    );
+    for (size_t i = 1; i < previous_trace.as.array->len; i++) {
+        ptn_exception_trace_append_value_frame(
+            trace,
+            &index,
+            ptn_value_clone_deref(previous_trace.as.array->entries[i].value)
+        );
+    }
+    return trace;
+}
+
 static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
+    PtnValue deferred_destructor_trace = ptn_exception_capture_deferred_destructor_trace(runtime);
+    if (ptn_value_deref(deferred_destructor_trace).type == PTN_ARRAY) {
+        return deferred_destructor_trace;
+    }
+    ptn_value_destroy(&deferred_destructor_trace);
     PtnValue trace = ptn_array_from_literal_entries(0, NULL);
     if (
         runtime != NULL &&
@@ -2458,11 +2579,14 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
         fputc('\n', stderr);
         fprintf(
             stderr,
-            "%s: Uncaught %s: %s",
+            "%s: Uncaught %s",
             first_label,
-            exception->class_name,
-            exception->message
+            exception->class_name
         );
+        if (exception->message_len != 0) {
+            fputs(": ", stderr);
+            fwrite(exception->message, 1, exception->message_len, stderr);
+        }
         if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
             fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
         } else {
@@ -2472,10 +2596,13 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     } else {
         fprintf(
             stderr,
-            "\nNext %s: %s",
-            exception->class_name,
-            exception->message
+            "\nNext %s",
+            exception->class_name
         );
+        if (exception->message_len != 0) {
+            fputs(": ", stderr);
+            fwrite(exception->message, 1, exception->message_len, stderr);
+        }
         if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
             fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
         } else {

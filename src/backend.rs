@@ -24792,6 +24792,7 @@ fn emit_instruction(
 ) {
     match instruction {
         Instruction::Store { name, value } => {
+            values.update_generator_yield_assignment_variable(name, value);
             let emitted_value = values.emit_materialized_value(out, value);
             if name == "GLOBALS" {
                 values.emit_globals_reference_fatal(
@@ -33761,6 +33762,7 @@ struct ValueEmitter {
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
+    generator_yield_assignment_variables: Vec<String>,
     exceptional_finally_saved_exception: Option<String>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
@@ -33825,6 +33827,13 @@ fn direct_yield_argument_indexes(arguments: &[ValueExpr]) -> Option<Vec<usize>> 
     } else {
         None
     }
+}
+
+fn generator_resume_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("send")
+        || name.eq_ignore_ascii_case("next")
+        || name.eq_ignore_ascii_case("throw")
+        || name.eq_ignore_ascii_case("rewind")
 }
 
 fn function_is_trait_body(function: &FunctionDecl) -> bool {
@@ -35447,6 +35456,7 @@ impl ValueEmitter {
             current_function_is_anonymous,
             current_function_index,
             generator_yield_abort_target: None,
+            generator_yield_assignment_variables: Vec::new(),
             exceptional_finally_saved_exception: None,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
@@ -36491,6 +36501,61 @@ impl ValueEmitter {
         self.emit_materialized_value(out, value)
     }
 
+    fn update_generator_yield_assignment_variable(&mut self, name: &str, value: &ValueExpr) {
+        if !self.current_function_is_generator {
+            return;
+        }
+        if matches!(value, ValueExpr::Yield { .. }) {
+            if !self
+                .generator_yield_assignment_variables
+                .iter()
+                .any(|candidate| candidate == name)
+            {
+                self.generator_yield_assignment_variables
+                    .push(name.to_string());
+            }
+        } else {
+            self.generator_yield_assignment_variables
+                .retain(|candidate| candidate != name);
+        }
+    }
+
+    fn generator_resume_receiver_needs_current_generator(
+        &self,
+        receiver: &ValueExpr,
+        method_name: &str,
+    ) -> bool {
+        if !self.current_function_is_generator || !generator_resume_method_name(method_name) {
+            return false;
+        }
+        let ValueExpr::Load { name, .. } = receiver else {
+            return false;
+        };
+        self.generator_yield_assignment_variables
+            .iter()
+            .any(|candidate| candidate == name)
+    }
+
+    fn emit_generator_resume_receiver_if_needed(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        method_name: &str,
+        receiver_temp: String,
+    ) -> String {
+        if !self.generator_resume_receiver_needs_current_generator(receiver, method_name) {
+            return receiver_temp;
+        }
+        let resumed_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&resumed_temp);
+        out.push_str(" = ptn_generator_resume_receiver(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        resumed_temp
+    }
+
     fn generator_assignment_self_capture_name<'a>(
         &self,
         target_name: &'a str,
@@ -37214,6 +37279,7 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &value_temp);
                 return assigned_temp;
             }
+            self.update_generator_yield_assignment_variable(name, value);
             let pending_generator_assignment_name =
                 self.emit_pending_generator_assignment_capture(out, name, value);
             let value_temp = self.emit_materialized_value(out, value);
@@ -51650,6 +51716,8 @@ impl ValueEmitter {
             }
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp =
+            self.emit_generator_resume_receiver_if_needed(out, receiver, name, receiver_temp);
         let result_temp = self.next_temp();
         if !self.full_internal_dispatch
             && is_direct_exception_get_message_call(

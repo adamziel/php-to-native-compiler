@@ -990,6 +990,7 @@ typedef struct {
 struct PtnGenerator {
     PtnArray *values;
     PtnArray *keys;
+    PtnObject *object;
     PtnValue return_value;
     PtnArray *reference_notice_lines;
     PtnArray *yield_lines;
@@ -1498,6 +1499,7 @@ struct PtnRuntime {
     int shutdown_functions_running;
     int shutdown_functions_completed;
     int shutdown_in_progress;
+    int defer_uncaught_exception_emit;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
