@@ -3469,10 +3469,12 @@ fn emit_user_functions(
             out.push_str("    }\n");
         }
         if let Some(return_type) = effective_return_type {
+            let return_type_error_display_name =
+                function_return_type_error_display_name(function, classes);
             emit_return_type_boundary(
                 out,
                 return_type,
-                &function.display_name,
+                &return_type_error_display_name,
                 function.return_by_ref,
             );
         }
@@ -3527,6 +3529,35 @@ fn function_parameter_type_error_display_name(
         return function.display_name.clone();
     }
     class_name.to_string()
+}
+
+fn function_return_type_error_display_name(
+    function: &FunctionDecl,
+    classes: &[ClassDecl],
+) -> String {
+    let Some(class_name) = function.class_name.as_deref() else {
+        return function.display_name.clone();
+    };
+    let Some(method_name) = function.method_name.as_deref() else {
+        return function.display_name.clone();
+    };
+    if !classes
+        .iter()
+        .any(|class| class.is_anonymous && class.name.eq_ignore_ascii_case(class_name))
+    {
+        return function.display_name.clone();
+    }
+    format!(
+        "{}::{}",
+        php_visible_anonymous_class_name(class_name),
+        method_name
+    )
+}
+
+fn php_visible_anonymous_class_name(class_name: &str) -> &str {
+    class_name
+        .split_once('#')
+        .map_or(class_name, |(visible, _)| visible)
 }
 
 fn required_parameter_count(parameters: &[FunctionParameter]) -> usize {

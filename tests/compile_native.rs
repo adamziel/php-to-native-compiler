@@ -31821,6 +31821,60 @@ echo (new ReflectionClass($object))->getMethod('returns')->getReturnType()->getN
 }
 
 #[test]
+fn compile_anonymous_class_union_return_type_uses_visible_name_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-union-return-visible-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-union-return-visible-name.php");
+    let output = root.join("anonymous-class-union-return-visible-name-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new class {
+    public function testParam(self|string $value) {
+    }
+
+    public function test(): self|string {
+        return new stdClass;
+    }
+};
+
+try {
+    $object->testParam(null);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $object->test();
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "class@anonymous(): Argument #1 ($value) must be of type class@anonymous|string, null given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "class@anonymous::test(): Return value must be of type class@anonymous|string, stdClass returned"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("class@anonymous#ptn::test"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_compact_var_dump_anonymous_class_to_native_binary() {
     let root = temp_dir("ptn-native-compact-var-dump-anonymous-class");
     fs::create_dir_all(&root).unwrap();
