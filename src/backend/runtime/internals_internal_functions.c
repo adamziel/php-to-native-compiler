@@ -64900,6 +64900,268 @@ static PtnValue ptn_internal_grapheme_extract(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static size_t ptn_grapheme_next_cluster_len(const char *data, size_t len, size_t offset) {
+    if (offset >= len) {
+        return 0;
+    }
+    unsigned char first = (unsigned char)data[offset];
+    if (first < 0x80) {
+        return 1;
+    }
+    size_t expected = 1;
+    if ((first & 0xe0) == 0xc0) {
+        expected = 2;
+    } else if ((first & 0xf0) == 0xe0) {
+        expected = 3;
+    } else if ((first & 0xf8) == 0xf0) {
+        expected = 4;
+    }
+    if (expected > len - offset) {
+        return 1;
+    }
+    for (size_t i = 1; i < expected; i++) {
+        if (((unsigned char)data[offset + i] & 0xc0) != 0x80) {
+            return 1;
+        }
+    }
+    return expected;
+}
+
+static size_t ptn_grapheme_cluster_count(const char *data, size_t len) {
+    size_t count = 0;
+    for (size_t offset = 0; offset < len;) {
+        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
+        if (cluster_len == 0) {
+            break;
+        }
+        offset += cluster_len;
+        count++;
+    }
+    return count;
+}
+
+static size_t ptn_grapheme_cluster_index_for_byte_offset(const char *data, size_t len, size_t byte_offset) {
+    size_t index = 0;
+    for (size_t offset = 0; offset < len && offset < byte_offset;) {
+        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
+        if (cluster_len == 0) {
+            break;
+        }
+        offset += cluster_len;
+        index++;
+    }
+    return index;
+}
+
+static size_t ptn_grapheme_byte_offset_for_char(const char *data, size_t len, size_t target_index) {
+    size_t index = 0;
+    size_t offset = 0;
+    while (offset < len && index < target_index) {
+        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
+        if (cluster_len == 0) {
+            break;
+        }
+        offset += cluster_len;
+        index++;
+    }
+    return offset;
+}
+
+static int ptn_normalize_grapheme_offset(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int64_t raw_offset,
+    size_t cluster_count,
+    size_t *offset_out
+) {
+    if (raw_offset < 0) {
+        uint64_t magnitude = raw_offset == INT64_MIN
+            ? ((uint64_t)INT64_MAX + 1)
+            : (uint64_t)(-raw_offset);
+        if (magnitude > (uint64_t)cluster_count) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            return 0;
+        }
+        *offset_out = cluster_count - (size_t)magnitude;
+        return 1;
+    }
+    if ((uint64_t)raw_offset > (uint64_t)cluster_count) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *offset_out = (size_t)raw_offset;
+    return 1;
+}
+
+static PtnValue ptn_internal_grapheme_strpos_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int reverse,
+    int case_insensitive
+) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
+    int64_t raw_offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, function_name, 3, "offset", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+
+    size_t cluster_count = ptn_grapheme_cluster_count(haystack.data, haystack.len);
+    size_t grapheme_offset = 0;
+    if (!ptn_normalize_grapheme_offset(runtime, function_name, raw_offset, cluster_count, &grapheme_offset)) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+
+    if (needle.len == 0) {
+        size_t result = grapheme_offset;
+        if (reverse) {
+            result = raw_offset < 0 ? grapheme_offset : cluster_count;
+        }
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_string_position_value(result);
+    }
+
+    size_t byte_offset = ptn_grapheme_byte_offset_for_char(haystack.data, haystack.len, grapheme_offset);
+    size_t match = reverse
+        ? ptn_rfind_bytes_between(haystack.data, haystack.len, needle.data, needle.len, raw_offset >= 0 ? byte_offset : 0, raw_offset >= 0 ? haystack.len : byte_offset, case_insensitive)
+        : ptn_find_bytes_from(haystack.data, haystack.len, needle.data, needle.len, byte_offset, case_insensitive);
+    PtnValue result = match == SIZE_MAX
+        ? ptn_bool(0)
+        : ptn_string_position_value(ptn_grapheme_cluster_index_for_byte_offset(haystack.data, haystack.len, match));
+    ptn_string_operand_free(haystack);
+    ptn_string_operand_free(needle);
+    return result;
+}
+
+static PtnValue ptn_internal_grapheme_strpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strpos_named(runtime, "grapheme_strpos", argc, args, line, 0, 0);
+}
+
+static PtnValue ptn_internal_grapheme_stripos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strpos_named(runtime, "grapheme_stripos", argc, args, line, 0, 1);
+}
+
+static PtnValue ptn_internal_grapheme_strrpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strpos_named(runtime, "grapheme_strrpos", argc, args, line, 1, 0);
+}
+
+static PtnValue ptn_internal_grapheme_strripos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strpos_named(runtime, "grapheme_strripos", argc, args, line, 1, 1);
+}
+
+static PtnValue ptn_internal_grapheme_strstr_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int case_insensitive
+) {
+    PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, function_name, 1, "haystack", args[0], line);
+    PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, function_name, 2, "needle", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return ptn_null();
+    }
+    int before_needle = argc >= 3 && ptn_is_truthy(args[2]);
+    if (needle.len == 0) {
+        PtnValue result = before_needle
+            ? ptn_string("")
+            : ptn_owned_string_len(ptn_duplicate_string_len(haystack.data, haystack.len), haystack.len);
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        return result;
+    }
+
+    size_t match = ptn_find_bytes_from(haystack.data, haystack.len, needle.data, needle.len, 0, case_insensitive);
+    ptn_string_operand_free(needle);
+    if (match == SIZE_MAX) {
+        ptn_string_operand_free(haystack);
+        return ptn_bool(0);
+    }
+    size_t start = before_needle ? 0 : match;
+    size_t len = before_needle ? match : haystack.len - match;
+    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(haystack.data + start, len), len);
+    ptn_string_operand_free(haystack);
+    return result;
+}
+
+static PtnValue ptn_internal_grapheme_strstr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strstr_named(runtime, "grapheme_strstr", argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_grapheme_stristr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_grapheme_strstr_named(runtime, "grapheme_stristr", argc, args, line, 1);
+}
+
+static PtnValue ptn_intl_format_date_only(
+    const char *locale,
+    int date_type,
+    int year,
+    int month,
+    int day
+) {
+    char *formatted;
+    int needed;
+    if (date_type == 3 && locale != NULL && strncmp(locale, "vi", 2) == 0) {
+        needed = snprintf(NULL, 0, "%02d/%02d/%04d", day, month, year);
+    } else if (date_type == 3 && locale != NULL && strncmp(locale, "ko", 2) == 0) {
+        needed = snprintf(NULL, 0, "%02d. %d. %d.", year % 100, month, day);
+    } else if (date_type == 3) {
+        needed = snprintf(NULL, 0, "%d/%d/%02d", month, day, year % 100);
+    } else {
+        needed = snprintf(NULL, 0, "%04d-%02d-%02d", year, month, day);
+    }
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (date_type == 3 && locale != NULL && strncmp(locale, "vi", 2) == 0) {
+        snprintf(formatted, (size_t)needed + 1, "%02d/%02d/%04d", day, month, year);
+    } else if (date_type == 3 && locale != NULL && strncmp(locale, "ko", 2) == 0) {
+        snprintf(formatted, (size_t)needed + 1, "%02d. %d. %d.", year % 100, month, day);
+    } else if (date_type == 3) {
+        snprintf(formatted, (size_t)needed + 1, "%d/%d/%02d", month, day, year % 100);
+    } else {
+        snprintf(formatted, (size_t)needed + 1, "%04d-%02d-%02d", year, month, day);
+    }
+    return ptn_owned_string(formatted);
+}
+
 static PtnValue ptn_internal_datefmt_format_object(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue object = argc >= 1 ? ptn_value_deref(args[0]) : ptn_null();
     if (object.type != PTN_OBJECT) {
@@ -65004,6 +65266,10 @@ static PtnValue ptn_internal_datefmt_format_object(PtnRuntime *runtime, size_t a
     if (pattern != NULL) {
         ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
         return ptn_string("Sun 2012-01-1 00,00,00.000 Portugal Time");
+    }
+    if (time_type == -1) {
+        ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+        return ptn_intl_format_date_only(locale, date_type, year, month, day);
     }
     if (date_type == 0 && strncmp(locale, "en", 2) != 0) {
         int weekday = ptn_intl_weekday_gregorian(year, month, day);
@@ -131262,6 +131528,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
         { "gmmktime", 1, 6, ptn_internal_gmmktime },
         { "grapheme_extract", 2, 5, ptn_internal_grapheme_extract },
+        { "grapheme_stripos", 2, 3, ptn_internal_grapheme_stripos },
+        { "grapheme_stristr", 2, 3, ptn_internal_grapheme_stristr },
+        { "grapheme_strpos", 2, 3, ptn_internal_grapheme_strpos },
+        { "grapheme_strripos", 2, 3, ptn_internal_grapheme_strripos },
+        { "grapheme_strrpos", 2, 3, ptn_internal_grapheme_strrpos },
+        { "grapheme_strstr", 2, 3, ptn_internal_grapheme_strstr },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },

@@ -31830,6 +31830,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&IS_CALLABLE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
         Some(&GRAPHEME_EXTRACT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("grapheme_strpos")
+        || name.eq_ignore_ascii_case("grapheme_stripos")
+        || name.eq_ignore_ascii_case("grapheme_strrpos")
+        || name.eq_ignore_ascii_case("grapheme_strripos")
+    {
+        Some(&OFFSET_SEARCH_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("grapheme_strstr")
+        || name.eq_ignore_ascii_case("grapheme_stristr")
+    {
+        Some(&STRSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
         Some(&EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fgetcsv") {

@@ -41506,6 +41506,78 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_dateformatter_time_none_and_grapheme_empty_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-dateformatter-time-none-grapheme-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-dateformatter-time-none-grapheme-empty.php");
+    let output = root.join("intl-dateformatter-time-none-grapheme-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$date = IntlCalendar::createInstance('Asia/Ho_Chi_Minh');\n\
+$date->setTime(1428133423941.0);\n\
+echo IntlDateFormatter::formatObject($date, [IntlDateFormatter::SHORT, IntlDateFormatter::NONE], 'vi_VN'), \"\\n\";\n\
+echo IntlDateFormatter::formatObject($date, [IntlDateFormatter::SHORT, IntlDateFormatter::NONE], 'ko_KR'), \"\\n\";\n\
+foreach ([\"abc\", \"\\xC3\\xA4bc\"] as $s) {\n\
+    var_dump(grapheme_strpos($s, \"\"));\n\
+    var_dump(grapheme_strpos($s, \"\", -1));\n\
+    var_dump(grapheme_stripos($s, \"\"));\n\
+    var_dump(grapheme_stripos($s, \"\", -1));\n\
+    var_dump(grapheme_strrpos($s, \"\"));\n\
+    var_dump(grapheme_strrpos($s, \"\", -1));\n\
+    var_dump(grapheme_strripos($s, \"\"));\n\
+    var_dump(grapheme_strripos($s, \"\", 1));\n\
+    var_dump(grapheme_strstr($s, \"\"));\n\
+    var_dump(grapheme_strstr($s, \"\", true));\n\
+    var_dump(grapheme_stristr($s, \"\"));\n\
+    var_dump(grapheme_stristr($s, \"\", true));\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "04/04/2015\n",
+            "15. 4. 4.\n",
+            "int(0)\n",
+            "int(2)\n",
+            "int(0)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(3)\n",
+            "string(3) \"abc\"\n",
+            "string(0) \"\"\n",
+            "string(3) \"abc\"\n",
+            "string(0) \"\"\n",
+            "int(0)\n",
+            "int(2)\n",
+            "int(0)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(3)\n",
+            "string(4) \"\u{00e4}bc\"\n",
+            "string(0) \"\"\n",
+            "string(4) \"\u{00e4}bc\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_grapheme_strpos"));
+    assert!(c_source.contains("ptn_intl_format_date_only"));
+}
+
+#[test]
 fn compile_intl_number_formatter_serialization_is_rejected_to_native_binary() {
     let root = temp_dir("ptn-native-intl-number-formatter-serialization");
     fs::create_dir_all(&root).unwrap();
