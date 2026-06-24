@@ -33517,6 +33517,23 @@ struct ValueEmitter {
     full_internal_dispatch: bool,
 }
 
+enum PropertyReadSegment<'a> {
+    Static { name: &'a str, line: usize },
+    Dynamic { name: &'a ValueExpr, line: usize },
+}
+
+enum EmittedPropertyReadSegment<'a> {
+    Static {
+        name: &'a str,
+        line: usize,
+    },
+    Dynamic {
+        name_temp: String,
+        name_len_temp: String,
+        line: usize,
+    },
+}
+
 enum CalledClassOverride {
     Literal(String),
     CurrentCalledOr(String),
@@ -40300,7 +40317,9 @@ impl ValueEmitter {
                 receiver,
                 name,
                 line,
-            } => self.emit_property_fetch(out, receiver, name, *line),
+            } => self
+                .emit_property_read_chain(out, value)
+                .unwrap_or_else(|| self.emit_property_fetch(out, receiver, name, *line)),
             ValueExpr::NullsafePropertyFetch {
                 receiver,
                 name,
@@ -40311,7 +40330,11 @@ impl ValueEmitter {
                 name,
                 nullsafe,
                 line,
-            } => self.emit_dynamic_property_fetch(out, receiver, name, *nullsafe, *line),
+            } => self
+                .emit_property_read_chain(out, value)
+                .unwrap_or_else(|| {
+                    self.emit_dynamic_property_fetch(out, receiver, name, *nullsafe, *line)
+                }),
             ValueExpr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -43791,6 +43814,124 @@ impl ValueEmitter {
         } else {
             "ptn_object_read_property"
         }
+    }
+
+    fn dynamic_property_read_function(&self) -> &'static str {
+        if self.in_const_declaration {
+            "ptn_constant_expression_read_property_len"
+        } else {
+            "ptn_object_read_property_len"
+        }
+    }
+
+    fn non_nullsafe_property_read_chain<'a>(
+        &self,
+        value: &'a ValueExpr,
+    ) -> Option<(&'a ValueExpr, Vec<PropertyReadSegment<'a>>)> {
+        fn collect<'a>(
+            value: &'a ValueExpr,
+            segments: &mut Vec<PropertyReadSegment<'a>>,
+        ) -> Option<&'a ValueExpr> {
+            match value {
+                ValueExpr::PropertyFetch {
+                    receiver,
+                    name,
+                    line,
+                } => {
+                    let base = collect(receiver, segments)?;
+                    segments.push(PropertyReadSegment::Static { name, line: *line });
+                    Some(base)
+                }
+                ValueExpr::DynamicPropertyFetch {
+                    receiver,
+                    name,
+                    nullsafe,
+                    line,
+                } => {
+                    if *nullsafe {
+                        return None;
+                    }
+                    let base = collect(receiver, segments)?;
+                    segments.push(PropertyReadSegment::Dynamic { name, line: *line });
+                    Some(base)
+                }
+                ValueExpr::NullsafePropertyFetch { .. } => None,
+                _ => Some(value),
+            }
+        }
+
+        let mut segments = Vec::new();
+        let base = collect(value, &mut segments)?;
+        (segments.len() > 1).then_some((base, segments))
+    }
+
+    fn emit_property_read_chain(&mut self, out: &mut String, value: &ValueExpr) -> Option<String> {
+        let (base, segments) = self.non_nullsafe_property_read_chain(value)?;
+        let mut receiver_temp = self.emit_materialized_value(out, base);
+        let mut emitted_segments = Vec::with_capacity(segments.len());
+
+        for segment in segments {
+            match segment {
+                PropertyReadSegment::Static { name, line } => {
+                    emitted_segments.push(EmittedPropertyReadSegment::Static { name, line });
+                }
+                PropertyReadSegment::Dynamic { name, line } => {
+                    let (name_temp, name_len_temp) =
+                        self.emit_dynamic_property_name_for_read(out, name, line);
+                    emitted_segments.push(EmittedPropertyReadSegment::Dynamic {
+                        name_temp,
+                        name_len_temp,
+                        line,
+                    });
+                }
+            }
+        }
+
+        for segment in emitted_segments {
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            match segment {
+                EmittedPropertyReadSegment::Static { name, line } => {
+                    out.push_str(self.property_read_function());
+                    out.push_str("(&runtime, ");
+                    out.push_str(&receiver_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
+                EmittedPropertyReadSegment::Dynamic {
+                    name_temp,
+                    name_len_temp,
+                    line,
+                } => {
+                    out.push_str(self.dynamic_property_read_function());
+                    out.push_str("(&runtime, ");
+                    out.push_str(&receiver_temp);
+                    out.push_str(", ");
+                    out.push_str(&name_temp);
+                    out.push_str(", ");
+                    out.push_str(&name_len_temp);
+                    out.push_str(", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    free(");
+                    out.push_str(&name_temp);
+                    out.push_str(");\n");
+                }
+            }
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            receiver_temp = result_temp;
+        }
+
+        Some(receiver_temp)
     }
 
     fn emit_dynamic_property_fetch(

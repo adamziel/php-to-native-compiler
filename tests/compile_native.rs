@@ -52073,6 +52073,53 @@ bool(false)\n",
 }
 
 #[test]
+fn compile_property_chain_evaluates_dynamic_names_before_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-property-chain-name-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-chain-name-order.php");
+    let output = root.join("property-chain-name-order-bin");
+    fs::write(
+        &input,
+        "<?php
+function base_value() { echo \"base\\n\"; return 1; }
+function first_name() { echo \"first\\n\"; return \"first\"; }
+function second_name() { echo \"second\\n\"; return \"second\"; }
+
+var_dump(base_value()->{first_name()}->{second_name()});
+
+$a = 1;
+$b = 1;
+var_dump($a->$b->{$c[1]});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "base\n\
+first\n\
+second\n\
+\nWarning: Attempt to read property \"first\" on int in ptn on line 6\n\
+\nWarning: Attempt to read property \"second\" on null in ptn on line 6\n\
+NULL\n\
+{}\
+\nWarning: Trying to access array offset on null in {} on line 10\n\
+\nWarning: Attempt to read property \"1\" on int in ptn on line 10\n\
+\nWarning: Attempt to read property \"\" on null in ptn on line 10\n\
+NULL\n",
+            undefined_variable_warnings(&input, &[("c", 10)]),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_null_coalescing_variables_and_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-null-coalescing");
     fs::create_dir_all(&root).unwrap();
