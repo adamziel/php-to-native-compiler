@@ -2340,6 +2340,7 @@ fn emit_declared_class_new_instance_without_constructor(
             || declared_class.is_abstract
             || !class_constant_lookup_chain(declared_class, classes).is_empty()
             || !class_property_initialization_chain(declared_class, classes).is_empty()
+            || class_extends_builtin_throwable(declared_class, classes)
         {
             continue;
         }
@@ -2399,6 +2400,11 @@ fn emit_declared_class_new_instance_without_constructor(
                 declared_class.line,
                 true,
             );
+            if class_extends_builtin_throwable(declared_class, classes) {
+                out.push_str(
+                    "    ptn_initialize_declared_exception_object(&runtime, result, 0, NULL, line);\n",
+                );
+            }
             out.push_str("    ptn_runtime_free(&runtime);\n");
             out.push_str("    return result;\n");
         }
@@ -42639,6 +42645,17 @@ impl ValueEmitter {
             line,
             declare_result && !guards_object_initialization,
         );
+        let declared_class_has_constructor =
+            class_constructor_method(declared_class, &self.classes).is_some();
+        if declared_class_has_constructor
+            && class_extends_builtin_throwable(declared_class, &self.classes)
+        {
+            out.push_str("    ptn_initialize_declared_exception_object(&runtime, ");
+            out.push_str(result_temp);
+            out.push_str(", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         if let Some((
             constructor_declaring_class,
             constructor_name,

@@ -61436,6 +61436,37 @@ foreach ([E_ERROR, E_WARNING, E_PARSE, E_USER_DEPRECATED] as $severity) {\n\
 }
 
 #[test]
+fn compile_exception_subclass_writes_protected_line_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-subclass-protected-line");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-subclass-protected-line.php");
+    let output = root.join("exception-subclass-protected-line-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class CustomLineException extends Exception {\n\
+    public function __construct() {\n\
+        $this->line = 0;\n\
+    }\n\
+}\n\
+\n\
+try {\n\
+    throw new CustomLineException;\n\
+} catch (CustomLineException $e) {\n\
+    echo $e->getLine(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_errorexception_subclass_constructor_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-errorexception-subclass-constructor-type-error");
     fs::create_dir_all(&root).unwrap();
