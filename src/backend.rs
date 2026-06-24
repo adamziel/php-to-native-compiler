@@ -37825,7 +37825,11 @@ impl ValueEmitter {
             line,
         } = target
         {
-            let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
+            let receiver_temp = if assignment_compound_binary_op(op).is_some() {
+                self.emit_nested_write_receiver(out, receiver, true)
+            } else {
+                self.emit_materialized_indirect_write_receiver(out, receiver)
+            };
             let (name_temp, name_len_temp) =
                 self.emit_dynamic_property_name_for_write(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
@@ -38990,7 +38994,7 @@ impl ValueEmitter {
         op: BinaryOp,
         value: &ValueExpr,
     ) -> String {
-        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+        let receiver_temp = self.emit_nested_write_receiver(out, receiver, true);
         let path = emit_array_path_segments(out, self, dimensions);
         let path_snapshot = emit_array_path_value_snapshot(out, self, &path);
         let value_temp = self.emit_materialized_value(out, value);
@@ -39075,7 +39079,7 @@ impl ValueEmitter {
         op: BinaryOp,
         value: &ValueExpr,
     ) -> String {
-        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+        let receiver_temp = self.emit_nested_write_receiver(out, receiver, true);
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
@@ -39614,7 +39618,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver, false);
                 out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -39646,7 +39650,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver, false);
                 let name_temp = self.emit_dynamic_property_name(out, name, *line);
                 out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
                 out.push_str(&receiver_temp);
@@ -40016,7 +40020,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver, false);
                 out.push_str("    ptn_object_bind_property_reference(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -42513,7 +42517,7 @@ impl ValueEmitter {
                 }
             }
             IncDecTarget::Property { receiver, name, .. } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver, true);
                 out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -42591,7 +42595,7 @@ impl ValueEmitter {
                 }
             }
             IncDecTarget::DynamicProperty { receiver, name, .. } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver, true);
                 let (name_temp, name_len_temp) =
                     self.emit_dynamic_property_name_for_write(out, name, line);
                 out.push_str("    ptn_validate_property_increment_receiver(&runtime, ");
@@ -44647,7 +44651,12 @@ impl ValueEmitter {
         result_temp
     }
 
-    fn emit_nested_write_receiver(&mut self, out: &mut String, receiver: &ValueExpr) -> String {
+    fn emit_nested_write_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        read_for_compound: bool,
+    ) -> String {
         match receiver {
             ValueExpr::PropertyFetch {
                 receiver,
@@ -44666,6 +44675,8 @@ impl ValueEmitter {
                 self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(", ");
+                out.push_str(if read_for_compound { "1" } else { "0" });
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
                 result_temp
@@ -44689,6 +44700,8 @@ impl ValueEmitter {
                 self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(", ");
+                out.push_str(if read_for_compound { "1" } else { "0" });
                 out.push_str(");\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);

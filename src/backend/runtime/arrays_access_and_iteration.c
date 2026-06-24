@@ -6856,7 +6856,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
     PtnValue receiver,
     const char *property,
     const char *access_scope,
-    size_t line
+    size_t line,
+    int read_for_compound
 ) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
@@ -6947,12 +6948,21 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
     if (entry == NULL) {
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
             if (metadata->is_readonly) {
-                ptn_throw_readonly_property_indirect_modification_error(
-                    runtime,
-                    metadata->declaring_class,
-                    metadata->display_name,
-                    line
-                );
+                if (read_for_compound) {
+                    ptn_throw_uninitialized_typed_property_error(
+                        runtime,
+                        metadata->declaring_class,
+                        metadata->display_name,
+                        line
+                    );
+                } else {
+                    ptn_throw_readonly_property_indirect_modification_error(
+                        runtime,
+                        metadata->declaring_class,
+                        metadata->display_name,
+                        line
+                    );
+                }
                 return ptn_null();
             }
             if (!ptn_property_metadata_accepts_array_auto_initialization(runtime, metadata)) {

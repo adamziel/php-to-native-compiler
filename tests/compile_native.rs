@@ -81758,6 +81758,74 @@ foreach ([true, false] as $init) {
 }
 
 #[test]
+fn compile_readonly_nested_compound_receiver_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-nested-uninitialized-compound-receiver");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-nested-uninitialized-compound-receiver.php");
+    let output = root.join("readonly-nested-uninitialized-compound-receiver-bin");
+    fs::write(
+        &input,
+        "<?php
+class Inner {
+    public int $prop = 1;
+    public array $array = [];
+}
+
+class Test {
+    public readonly Inner $prop;
+
+    public function init() {
+        $this->prop = new Inner();
+    }
+}
+
+function show($label, callable $callback) {
+    echo $label . ': ';
+    try {
+        $callback();
+    } catch (Error $e) {
+        echo $e->getMessage();
+    }
+    echo \"\\n\";
+}
+
+$test = new Test();
+$name = 'prop';
+show('plain-write', fn() => $test->prop->prop = 0);
+show('compound-prop', fn() => $test->prop->prop += 1);
+show('compound-dynamic', fn() => $test->prop->{$name} += 1);
+show('compound-array', fn() => $test->prop->array[0] += 1);
+show('append', fn() => $test->prop->array[] = 1);
+
+$test->init();
+$test->prop->prop += 1;
+echo 'initialized: ', $test->prop->prop, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "plain-write: Cannot indirectly modify readonly property Test::$prop\n",
+            "compound-prop: Typed property Test::$prop must not be accessed before initialization\n",
+            "compound-dynamic: Typed property Test::$prop must not be accessed before initialization\n",
+            "compound-array: Typed property Test::$prop must not be accessed before initialization\n",
+            "append: Cannot indirectly modify readonly property Test::$prop\n",
+            "initialized: 2\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_nested_write_receiver"));
+}
+
+#[test]
 fn compile_asymmetric_object_property_reference_returns_copy_to_native_binary() {
     let root = temp_dir("ptn-native-asymmetric-object-property-reference");
     fs::create_dir_all(&root).unwrap();
