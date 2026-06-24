@@ -54761,7 +54761,20 @@ static PtnValue ptn_internal_chdir(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(1);
     }
 
-    ptn_emit_file_warning(runtime, "chdir", path, strerror(errno), line);
+    int saved_errno = errno;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "chdir(): %s (errno %d)",
+        strerror(saved_errno),
+        saved_errno
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
     free(path);
     return ptn_bool(0);
 }

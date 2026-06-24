@@ -23151,6 +23151,35 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_chdir_missing_directory_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-chdir-missing-directory");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chdir-missing-directory.php");
+    let output = root.join("chdir-missing-directory-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$missing = __FILE__ . \"/idonotexist\";\n\
+var_dump(chdir($missing));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: chdir(): "), "{stdout}");
+    assert!(stdout.contains(" (errno "), "{stdout}");
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert!(
+        !stdout.contains(&format!("chdir({}", input.display())),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_join_and_implode_to_native_binary() {
     let root = temp_dir("ptn-native-join-implode");
     fs::create_dir_all(&root).unwrap();
