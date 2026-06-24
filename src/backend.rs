@@ -17310,29 +17310,27 @@ fn reflection_user_method_qualifiers(
     if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
         out.push_str(", inherits ");
         out.push_str(entry.declaring_class);
-        if let Some(declaring_class) = class_by_name(classes, entry.declaring_class) {
-            if let Some(prototype_class) =
-                reflection_method_effective_prototype_class(declaring_class, &method.name, classes)
-            {
-                out.push_str(", prototype ");
-                out.push_str(prototype_class);
-            }
+        if let Some(prototype_class) =
+            reflection_method_interface_prototype_class(class, &method.name, classes)
+        {
+            out.push_str(", prototype ");
+            out.push_str(prototype_class);
         }
-    } else if let Some((prototype_class, _prototype_method)) =
-        reflection_method_prototype(class, &method.name, classes)
+    } else if let Some(prototype_class) =
+        reflection_method_interface_prototype_class(class, &method.name, classes)
     {
-        if class_by_name(classes, prototype_class).is_some_and(|class| class.is_interface) {
-            out.push_str(", prototype ");
-            out.push_str(prototype_class);
-        } else {
-            out.push_str(", overwrites ");
-            out.push_str(prototype_class);
-            out.push_str(", prototype ");
-            out.push_str(
-                reflection_method_effective_prototype_class(class, &method.name, classes)
-                    .unwrap_or(prototype_class),
-            );
-        }
+        out.push_str(", prototype ");
+        out.push_str(prototype_class);
+    } else if let Some((prototype_class, _prototype_method)) =
+        reflection_method_parent_prototype(class, &method.name, classes)
+    {
+        out.push_str(", overwrites ");
+        out.push_str(prototype_class);
+        out.push_str(", prototype ");
+        out.push_str(
+            reflection_method_effective_prototype_class(class, &method.name, classes)
+                .unwrap_or(prototype_class),
+        );
     }
     if method.name.eq_ignore_ascii_case("__construct") {
         out.push_str(", ctor");
@@ -17999,6 +17997,15 @@ fn reflection_method_prototype<'a>(
     method_name: &str,
     classes: &'a [ClassDecl],
 ) -> Option<(&'a str, &'a str)> {
+    reflection_method_parent_prototype(class, method_name, classes)
+        .or_else(|| reflection_method_interface_prototype(class, method_name, classes))
+}
+
+fn reflection_method_parent_prototype<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a str, &'a str)> {
     let mut parent_name = class.parent_name.as_deref();
     while let Some(name) = parent_name {
         let parent = class_by_name(classes, name)?;
@@ -18010,7 +18017,18 @@ fn reflection_method_prototype<'a>(
         }
         parent_name = parent.parent_name.as_deref();
     }
-    for interface_name in class_transitive_interfaces(class, classes) {
+    None
+}
+
+fn reflection_method_interface_prototype<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a str, &'a str)> {
+    for interface_name in class_transitive_interfaces(class, classes)
+        .into_iter()
+        .rev()
+    {
         let Some(interface) = class_by_name(classes, interface_name) else {
             continue;
         };
@@ -18022,6 +18040,15 @@ fn reflection_method_prototype<'a>(
         }
     }
     None
+}
+
+fn reflection_method_interface_prototype_class<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<&'a str> {
+    reflection_method_interface_prototype(class, method_name, classes)
+        .map(|(prototype_class, _)| prototype_class)
 }
 
 fn reflection_method_effective_prototype_class<'a>(
@@ -19762,12 +19789,44 @@ fn class_has_concrete_method(class: &ClassDecl, method_name: &str, classes: &[Cl
         }) {
             return true;
         }
+        if let Some(parent_name) = candidate.parent_name.as_deref() {
+            if modeled_internal_concrete_method_exists(parent_name, method_name) {
+                return true;
+            }
+        }
         current = candidate
             .parent_name
             .as_deref()
             .and_then(|name| class_by_name(classes, name));
     }
     false
+}
+
+fn modeled_internal_concrete_method_exists(class_name: &str, method_name: &str) -> bool {
+    let Some(class_name) = modeled_internal_class_name(class_name) else {
+        return false;
+    };
+    match class_name {
+        "PDOStatement" => matches!(
+            method_name.to_ascii_lowercase().as_str(),
+            "__construct"
+                | "execute"
+                | "bindparam"
+                | "bindvalue"
+                | "rowcount"
+                | "columncount"
+                | "fetch"
+                | "fetchall"
+                | "fetchcolumn"
+                | "getcolumnmeta"
+                | "setfetchmode"
+                | "debugdumpparams"
+                | "errorcode"
+                | "errorinfo"
+                | "closecursor"
+        ),
+        _ => false,
+    }
 }
 
 fn abstract_methods_runtime_message(
@@ -28806,7 +28865,10 @@ fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDef
         fatal: None,
     };
     for function in &module.functions {
-        if !function.initially_declared {
+        if imported_trait_method_function(function) {
+            continue;
+        }
+        if !function.initially_declared && !declared_trait_method_function(function) {
             continue;
         }
         collect_function_parameter_default_diagnostics(function, &mut diagnostics);
@@ -28815,6 +28877,26 @@ fn collect_module_parameter_default_diagnostics(module: &Module) -> ParameterDef
         }
     }
     diagnostics
+}
+
+fn declared_trait_method_function(function: &FunctionDecl) -> bool {
+    let Some(trait_name) = function.trait_name.as_deref() else {
+        return false;
+    };
+    function
+        .class_name
+        .as_deref()
+        .is_some_and(|class_name| class_name.eq_ignore_ascii_case(trait_name))
+}
+
+fn imported_trait_method_function(function: &FunctionDecl) -> bool {
+    let Some(trait_name) = function.trait_name.as_deref() else {
+        return false;
+    };
+    function
+        .class_name
+        .as_deref()
+        .is_some_and(|class_name| !class_name.eq_ignore_ascii_case(trait_name))
 }
 
 fn collect_function_parameter_default_diagnostics(

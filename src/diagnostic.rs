@@ -43,12 +43,27 @@ pub struct Diagnostic {
     pub span: Option<SourceSpan>,
     pub kind: DiagnosticKind,
     pub uncaught: Option<UncaughtFatal>,
+    pub notices: Vec<DiagnosticNotice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UncaughtFatal {
     pub throwable: String,
     pub call_frame: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticNotice {
+    pub message: String,
+    pub span: SourceSpan,
+    pub kind: DiagnosticNoticeKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticNoticeKind {
+    Warning,
+    UncaughtError,
+    Deprecation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +79,7 @@ impl Diagnostic {
             span,
             kind: DiagnosticKind::Fatal,
             uncaught: None,
+            notices: Vec::new(),
         }
     }
 
@@ -73,6 +89,7 @@ impl Diagnostic {
             span,
             kind: DiagnosticKind::ParseError,
             uncaught: None,
+            notices: Vec::new(),
         }
     }
 
@@ -90,7 +107,13 @@ impl Diagnostic {
                 throwable: throwable.into(),
                 call_frame,
             }),
+            notices: Vec::new(),
         }
+    }
+
+    pub fn with_notices(mut self, notices: Vec<DiagnosticNotice>) -> Self {
+        self.notices = notices;
+        self
     }
 }
 

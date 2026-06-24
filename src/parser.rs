@@ -16,7 +16,7 @@ use crate::ast::{
     TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
     UnsetTarget,
 };
-use crate::diagnostic::{Diagnostic, Result, SourceSpan};
+use crate::diagnostic::{Diagnostic, DiagnosticNotice, DiagnosticNoticeKind, Result, SourceSpan};
 use crate::lexer::{
     lex, StringInterpolationIndex as TokenStringInterpolationIndex, StringPart as TokenStringPart,
     Token, TokenKind,
@@ -102,7 +102,7 @@ fn parse_with_options(
 ) -> Result<Program> {
     let tokens = lex(source)?;
     let compiler_halt_offset = find_compiler_halt_offset(&tokens);
-    Parser {
+    let mut parser = Parser {
         source,
         tokens,
         index: 0,
@@ -148,8 +148,33 @@ fn parse_with_options(
         compile_warnings: Vec::new(),
         validate_method_signatures,
         current_statement_doc_comment: None,
+    };
+    parser.parse_program().map_err(|error| {
+        error.with_notices(diagnostic_notices_from_compile_warnings(
+            &parser.compile_warnings,
+        ))
+    })
+}
+
+fn diagnostic_notices_from_compile_warnings(warnings: &[CompileWarning]) -> Vec<DiagnosticNotice> {
+    warnings
+        .iter()
+        .map(|warning| DiagnosticNotice {
+            message: warning.message.clone(),
+            span: warning.span,
+            kind: diagnostic_notice_kind_from_compile_warning_kind(warning.kind),
+        })
+        .collect()
+}
+
+fn diagnostic_notice_kind_from_compile_warning_kind(
+    kind: CompileWarningKind,
+) -> DiagnosticNoticeKind {
+    match kind {
+        CompileWarningKind::Warning => DiagnosticNoticeKind::Warning,
+        CompileWarningKind::UncaughtError => DiagnosticNoticeKind::UncaughtError,
+        CompileWarningKind::Deprecation => DiagnosticNoticeKind::Deprecation,
     }
-    .parse_program()
 }
 
 struct Parser<'a> {
@@ -499,13 +524,21 @@ impl Parser<'_> {
             validate_override_attributes(&validation_classes, &validation_traits)?;
             validate_traversable_implementations(&validation_classes)?;
             collect_final_private_method_warnings(&validation_classes, &mut self.compile_warnings);
-            validate_method_signature_compatibility(
+            if let Err(diagnostic) = validate_method_signature_compatibility(
                 &validation_classes,
                 &validation_traits,
                 &self.runtime_class_aliases,
                 local_class_count,
                 &mut self.compile_warnings,
-            )?;
+            ) {
+                collect_parameter_default_compile_warnings(
+                    &classes,
+                    &traits,
+                    &functions,
+                    &mut self.compile_warnings,
+                );
+                return Err(diagnostic);
+            }
             validate_property_interface_set_visibility(&validation_classes)?;
             validate_property_hook_set_parameter_types(&validation_classes)?;
             validate_property_hook_signature_compatibility(&validation_classes)?;
@@ -13741,6 +13774,7 @@ fn compose_trait_decl(
         &trait_decl.trait_uses,
         traits,
         &used_trait_refs,
+        None,
     )?;
     for (trait_use, used_trait) in trait_decl.trait_uses.iter().zip(used_traits.iter()) {
         import_trait_members_into_trait(
@@ -13760,6 +13794,7 @@ fn validate_trait_use_adaptations(
     trait_uses: &[TraitUseDecl],
     all_traits: &[TraitDecl],
     used_traits: &[&TraitDecl],
+    non_trait_names: Option<&HashSet<String>>,
 ) -> Result<()> {
     validate_duplicate_trait_precedence_exclusions(trait_uses)?;
     for (index, trait_use) in trait_uses.iter().enumerate() {
@@ -13791,6 +13826,7 @@ fn validate_trait_use_adaptations(
                             alias.method.span,
                             all_traits,
                             &adaptation_traits,
+                            non_trait_names,
                         )?;
                     }
                     if alias.method.trait_name.is_none() {
@@ -13838,6 +13874,7 @@ fn validate_trait_use_adaptations(
                             precedence.method.span,
                             all_traits,
                             &adaptation_traits,
+                            non_trait_names,
                         )?;
                         if precedence
                             .instead_of
@@ -13860,6 +13897,7 @@ fn validate_trait_use_adaptations(
                             precedence.span,
                             all_traits,
                             used_traits,
+                            non_trait_names,
                         )?;
                     }
                     if !trait_method_reference_exists(&precedence.method, &adaptation_traits) {
@@ -13934,6 +13972,7 @@ fn validate_adaptation_trait_reference(
     span: SourceSpan,
     all_traits: &[TraitDecl],
     used_traits: &[&TraitDecl],
+    non_trait_names: Option<&HashSet<String>>,
 ) -> Result<()> {
     reject_reserved_trait_reference(trait_name, span)?;
     if used_traits
@@ -13948,6 +13987,14 @@ fn validate_adaptation_trait_reference(
     {
         return Err(Diagnostic::new(
             format!("Required Trait {trait_name} wasn't added to {composer_name}"),
+            Some(span),
+        ));
+    }
+    if non_trait_names.is_some_and(|names| names.contains(&trait_name.to_ascii_lowercase())) {
+        return Err(Diagnostic::new(
+            format!(
+                "Class {trait_name} is not a trait, Only traits may be used in 'as' and 'insteadof' statements"
+            ),
             Some(span),
         ));
     }
@@ -14155,9 +14202,13 @@ fn compose_class_traits(
             .iter()
             .map(|(_, trait_decl)| *trait_decl)
             .collect::<Vec<_>>();
-        if let Err(diagnostic) =
-            validate_trait_use_adaptations(&class.name, &trait_uses, traits, &used_traits)
-        {
+        if let Err(diagnostic) = validate_trait_use_adaptations(
+            &class.name,
+            &trait_uses,
+            traits,
+            &used_traits,
+            Some(&non_trait_names),
+        ) {
             defer_class_declaration_fatal(class, diagnostic);
             class.trait_uses.clear();
             continue;
@@ -15698,6 +15749,108 @@ fn collect_final_private_method_warnings(
     }
 }
 
+fn collect_parameter_default_compile_warnings(
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+    functions: &[FunctionDecl],
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    for function in functions {
+        if function.is_conditionally_declared {
+            continue;
+        }
+        collect_parameter_default_compile_warnings_for_signature(
+            &function.name,
+            &function.parameters,
+            function.span,
+            compile_warnings,
+        );
+    }
+    for class in classes {
+        if class.is_conditionally_declared || class.is_anonymous {
+            continue;
+        }
+        for method in &class.methods {
+            if method
+                .trait_name
+                .as_deref()
+                .is_some_and(|trait_name| !trait_name.eq_ignore_ascii_case(&class.name))
+            {
+                continue;
+            }
+            collect_parameter_default_compile_warnings_for_signature(
+                &format!("{}::{}", class.name, method.name),
+                &method.parameters,
+                method.span,
+                compile_warnings,
+            );
+        }
+    }
+    for trait_decl in traits {
+        for method in &trait_decl.methods {
+            collect_parameter_default_compile_warnings_for_signature(
+                &format!("{}::{}", trait_decl.name, method.name),
+                &method.parameters,
+                method.span,
+                compile_warnings,
+            );
+        }
+    }
+}
+
+fn collect_parameter_default_compile_warnings_for_signature(
+    function_name: &str,
+    parameters: &[FunctionParameter],
+    span: SourceSpan,
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    for parameter in parameters {
+        if parameter_default_emits_implicit_nullable_compile_warning(parameter) {
+            compile_warnings.push(CompileWarning {
+                message: format!(
+                    "{function_name}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
+                    parameter.name
+                ),
+                span,
+                kind: CompileWarningKind::Deprecation,
+            });
+        }
+    }
+    let Some((required_index, required_parameter)) = parameters
+        .iter()
+        .enumerate()
+        .rfind(|(_, parameter)| !parameter.is_variadic && parameter.default_value.is_none())
+    else {
+        return;
+    };
+    for optional_parameter in parameters.iter().take(required_index) {
+        if optional_parameter.default_value.is_none()
+            || parameter_default_emits_implicit_nullable_compile_warning(optional_parameter)
+        {
+            continue;
+        }
+        compile_warnings.push(CompileWarning {
+            message: format!(
+                "{function_name}(): Optional parameter ${} declared before required parameter ${} is implicitly treated as a required parameter",
+                optional_parameter.name, required_parameter.name
+            ),
+            span,
+            kind: CompileWarningKind::Deprecation,
+        });
+    }
+}
+
+fn parameter_default_emits_implicit_nullable_compile_warning(
+    parameter: &FunctionParameter,
+) -> bool {
+    let Some(type_hint) = parameter.type_hint.as_ref() else {
+        return false;
+    };
+    parameter_default_value_is_null_expr(parameter)
+        && !type_hint_accepts_null_default(type_hint)
+        && type_hint_allows_implicit_nullable_default(type_hint)
+}
+
 fn trait_abstract_method_for_class(
     class_name: &str,
     trait_name: &str,
@@ -17051,6 +17204,7 @@ fn method_signature_display_with_default_scope(
     }
     signature.push_str(&method.name);
     signature.push('(');
+    let required_parameter_count = signature_required_parameter_count(&method.parameters);
     for (index, parameter) in method.parameters.iter().enumerate() {
         if index > 0 {
             signature.push_str(", ");
@@ -17059,6 +17213,7 @@ fn method_signature_display_with_default_scope(
             parameter,
             display_type,
             default_scope,
+            index >= required_parameter_count,
         ));
     }
     signature.push(')');
@@ -17073,10 +17228,21 @@ fn parameter_signature_display_with(
     parameter: &FunctionParameter,
     display_type: fn(&TypeHint) -> String,
     default_scope: Option<&str>,
+    show_default: bool,
 ) -> String {
     let mut display = String::new();
     if let Some(type_hint) = &parameter.type_hint {
-        display.push_str(&display_type(type_hint));
+        if parameter_default_value_is_null_expr(parameter)
+            && !type_hint_accepts_null_default(type_hint)
+            && type_hint_allows_implicit_nullable_default(type_hint)
+        {
+            display.push_str(&implicit_nullable_type_hint_display_with(
+                type_hint,
+                display_type,
+            ));
+        } else {
+            display.push_str(&display_type(type_hint));
+        }
         display.push(' ');
     }
     if parameter.by_ref {
@@ -17087,11 +17253,60 @@ fn parameter_signature_display_with(
     }
     display.push('$');
     display.push_str(&parameter.name);
-    if let Some(default_value) = &parameter.default_value {
-        display.push_str(" = ");
-        display.push_str(&parameter_default_display(default_value, default_scope));
+    if show_default {
+        if let Some(default_value) = &parameter.default_value {
+            display.push_str(" = ");
+            display.push_str(&parameter_default_display(default_value, default_scope));
+        }
     }
     display
+}
+
+fn signature_required_parameter_count(parameters: &[FunctionParameter]) -> usize {
+    parameters
+        .iter()
+        .rposition(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+        .map_or(0, |index| index + 1)
+}
+
+fn parameter_default_value_is_null_expr(parameter: &FunctionParameter) -> bool {
+    matches!(parameter.default_value.as_ref(), Some(Expr::Null(_)))
+}
+
+fn type_hint_allows_implicit_nullable_default(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Mixed | TypeHint::Null | TypeHint::Nullable(_) => false,
+        TypeHint::Union(types) => !types.iter().any(|member| matches!(member, TypeHint::Null)),
+        TypeHint::Void | TypeHint::Never => false,
+        TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Static
+        | TypeHint::Intersection(_)
+        | TypeHint::Class(_) => true,
+    }
+}
+
+fn implicit_nullable_type_hint_display_with(
+    type_hint: &TypeHint,
+    display_type: fn(&TypeHint) -> String,
+) -> String {
+    match type_hint {
+        TypeHint::Union(types) => {
+            let mut members = types.iter().map(display_type).collect::<Vec<_>>();
+            members.push("null".to_string());
+            members.join("|")
+        }
+        TypeHint::Intersection(_) => format!("{}|null", display_type(type_hint)),
+        _ => format!("?{}", display_type(type_hint)),
+    }
 }
 
 fn parameter_default_display(default_value: &Expr, default_scope: Option<&str>) -> String {

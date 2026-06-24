@@ -1,9 +1,11 @@
+use std::fmt;
 use std::fs;
 use std::io::{self, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ptn::diagnostic::{DiagnosticNotice, DiagnosticNoticeKind};
 use ptn::{
     compile_file_with_preloads_and_source_options, CompileOptions, CompileSourceOptions,
     Diagnostic, DiagnosticKind,
@@ -113,61 +115,119 @@ impl std::fmt::Display for PhpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PhpcError::Message(message) => write!(f, "phpc: {message}"),
-            PhpcError::SourceFatal { diagnostic, script } => match diagnostic.span {
-                Some(span) => {
-                    let source = if span.line == 0 {
-                        "Unknown".to_string()
-                    } else {
-                        script.display().to_string()
-                    };
-                    if let Some(uncaught) = &diagnostic.uncaught {
-                        if let Some(call_frame) = &uncaught.call_frame {
+            PhpcError::SourceFatal { diagnostic, script } => {
+                if write_source_fatal_notices(f, diagnostic, script)? {
+                    return Ok(());
+                }
+                match diagnostic.span {
+                    Some(span) => {
+                        let source = if span.line == 0 {
+                            "Unknown".to_string()
+                        } else {
+                            script.display().to_string()
+                        };
+                        if let Some(uncaught) = &diagnostic.uncaught {
+                            if let Some(call_frame) = &uncaught.call_frame {
+                                return write!(
+                                    f,
+                                    "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {}({}): {}\n#1 {{main}}\n  thrown in {} on line {}",
+                                    uncaught.throwable,
+                                    diagnostic.message,
+                                    source,
+                                    span.line,
+                                    source,
+                                    span.line,
+                                    call_frame,
+                                    source,
+                                    span.line
+                                );
+                            }
                             return write!(
                                 f,
-                                "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {}({}): {}\n#1 {{main}}\n  thrown in {} on line {}",
+                                "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
                                 uncaught.throwable,
                                 diagnostic.message,
                                 source,
                                 span.line,
                                 source,
-                                span.line,
-                                call_frame,
-                                source,
                                 span.line
                             );
                         }
-                        return write!(
+                        if source_fatal_is_uncaught_error(diagnostic) {
+                            return write!(
+                                f,
+                                "Fatal error: Uncaught Error: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
+                                diagnostic.message, source, span.line, source, span.line
+                            );
+                        }
+                        write!(
                             f,
-                            "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
-                            uncaught.throwable,
+                            "{}: {} in {} on line {}",
+                            match diagnostic.kind {
+                                DiagnosticKind::Fatal => "Fatal error",
+                                DiagnosticKind::ParseError => "Parse error",
+                            },
                             diagnostic.message,
                             source,
-                            span.line,
-                            source,
                             span.line
-                        );
+                        )
                     }
-                    if source_fatal_is_uncaught_error(diagnostic) {
-                        return write!(
-                            f,
-                            "Fatal error: Uncaught Error: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
-                            diagnostic.message, source, span.line, source, span.line
-                        );
-                    }
-                    write!(
-                        f,
-                        "{}: {} in {} on line {}",
-                        match diagnostic.kind {
-                            DiagnosticKind::Fatal => "Fatal error",
-                            DiagnosticKind::ParseError => "Parse error",
-                        },
-                        diagnostic.message,
-                        source,
-                        span.line
-                    )
+                    None => write!(f, "phpc: {diagnostic}"),
                 }
-                None => write!(f, "phpc: {diagnostic}"),
-            },
+            }
+        }
+    }
+}
+
+fn write_source_fatal_notices(
+    f: &mut fmt::Formatter<'_>,
+    diagnostic: &Diagnostic,
+    script: &Path,
+) -> Result<bool, fmt::Error> {
+    for notice in &diagnostic.notices {
+        if write_source_fatal_notice(f, notice, script)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn write_source_fatal_notice(
+    f: &mut fmt::Formatter<'_>,
+    notice: &DiagnosticNotice,
+    script: &Path,
+) -> Result<bool, fmt::Error> {
+    let source = if notice.span.line == 0 {
+        "Unknown".to_string()
+    } else {
+        script.display().to_string()
+    };
+    match notice.kind {
+        DiagnosticNoticeKind::Warning => {
+            writeln!(
+                f,
+                "Warning: {} in {} on line {}",
+                notice.message, source, notice.span.line
+            )?;
+            writeln!(f)?;
+            Ok(false)
+        }
+        DiagnosticNoticeKind::Deprecation => {
+            writeln!(
+                f,
+                "Deprecated: {} in {} on line {}",
+                notice.message, source, notice.span.line
+            )?;
+            writeln!(f)?;
+            Ok(false)
+        }
+        DiagnosticNoticeKind::UncaughtError => {
+            write!(
+                f,
+                "Fatal error: Uncaught Error: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
+                notice.message, source, notice.span.line, source, notice.span.line
+            )?;
+            Ok(true)
         }
     }
 }
