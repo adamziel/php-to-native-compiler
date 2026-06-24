@@ -20,6 +20,43 @@ struct CowDiagnosticReducerCase {
 }
 
 #[test]
+fn concat_snapshots_left_operand_before_reentrant_tostring_to_native_binary() {
+    let root = temp_dir("ptn-native-concat-reentrant-tostring-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concat-reentrant-tostring-cow.php");
+    let output = root.join("concat-reentrant-tostring-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$c = str_repeat(\"abcd\", 10);\n\
+ob_start(function () use (&$c) {\n\
+    $c = 0;\n\
+    return '';\n\
+}, 1);\n\
+class X {\n\
+    function __toString() {\n\
+        echo \"a\";\n\
+        return \"abc\";\n\
+    }\n\
+}\n\
+$x = $c . new X;\n\
+ob_end_clean();\n\
+echo $x, \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabc\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
     let cases = [
         CowDiagnosticReducerCase {

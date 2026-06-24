@@ -573,6 +573,16 @@ static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand) {
     free(operand.owned);
 }
 
+static PTN_UNUSED PtnStringOperand ptn_string_operand_ensure_owned(PtnStringOperand operand) {
+    if (operand.owned != NULL) {
+        return operand;
+    }
+    return ptn_string_operand_owned_len(
+        ptn_duplicate_string_len(operand.data, operand.len),
+        operand.len
+    );
+}
+
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     value = ptn_value_deref(value);
     char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
@@ -862,6 +872,9 @@ static PTN_UNUSED PtnValue ptn_concat_many(
             ptn_abort_out_of_memory();
         }
         joined_len += strings[i].len;
+        if (i + 1 < count) {
+            strings[i] = ptn_string_operand_ensure_owned(strings[i]);
+        }
     }
     if (joined_len == SIZE_MAX) {
         ptn_abort_out_of_memory();
