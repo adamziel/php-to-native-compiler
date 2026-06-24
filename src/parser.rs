@@ -6427,7 +6427,12 @@ impl Parser<'_> {
         let starts_class = lower_source.starts_with("class")
             || lower_source.starts_with("abstract class")
             || lower_source.starts_with("final class");
-        if starts_class && !source_contains_ascii_keyword(&lower_source, "use") {
+        let starts_typed_property_class =
+            starts_class && source_may_contain_class_property_declaration(&lower_source);
+        if starts_class
+            && !source_contains_ascii_keyword(&lower_source, "use")
+            && !starts_typed_property_class
+        {
             return Ok(None);
         }
         if !lower_source.starts_with("function")
@@ -6503,7 +6508,15 @@ impl Parser<'_> {
                 .into_iter()
                 .next()
                 .expect("checked one eval class");
-            if class.trait_uses.is_empty() {
+            let has_typed_property = class
+                .properties
+                .iter()
+                .any(|property| property.type_hint.is_some())
+                || class
+                    .static_properties
+                    .iter()
+                    .any(|property| property.type_hint.is_some());
+            if class.trait_uses.is_empty() && !has_typed_property {
                 return Ok(None);
             }
             let source = eval_program
@@ -13480,6 +13493,13 @@ fn source_contains_ascii_keyword(source: &str, keyword: &str) -> bool {
         .any(|part| part == keyword)
 }
 
+fn source_may_contain_class_property_declaration(lower_source: &str) -> bool {
+    lower_source.contains('$')
+        && ["public", "protected", "private", "var"]
+            .iter()
+            .any(|keyword| source_contains_ascii_keyword(lower_source, keyword))
+}
+
 fn reject_named_language_construct_arguments(
     argument_names: &[Option<String>],
     span: SourceSpan,
@@ -14099,7 +14119,14 @@ fn import_trait_members_into_class(
                 class.span,
             )?;
         } else {
-            class.properties.push(property.clone());
+            let mut imported = property.clone();
+            substitute_trait_relative_property_type_hint(
+                &mut imported.type_hint,
+                &trait_decl.name,
+                &class.name,
+                class.parent_name.as_deref(),
+            );
+            class.properties.push(imported);
             property_origins.insert(property.name.clone(), trait_decl.name.clone());
         }
     }
@@ -14139,7 +14166,14 @@ fn import_trait_members_into_class(
                 global_constant_values,
             )?;
         } else {
-            class.static_properties.push(property.clone());
+            let mut imported = property.clone();
+            substitute_trait_relative_property_type_hint(
+                &mut imported.type_hint,
+                &trait_decl.name,
+                &class.name,
+                class.parent_name.as_deref(),
+            );
+            class.static_properties.push(imported);
             static_property_origins.insert(property.name.clone(), trait_decl.name.clone());
         }
     }
@@ -15528,6 +15562,88 @@ fn substitute_trait_self_type_hint(type_hint: &mut TypeHint, trait_name: &str, c
         TypeHint::Union(types) | TypeHint::Intersection(types) => {
             for member in types {
                 substitute_trait_self_type_hint(member, trait_name, class_name);
+            }
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Callable
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Class(_) => {}
+    }
+}
+
+fn substitute_trait_relative_property_type_hint(
+    type_hint: &mut Option<PropertyTypeHint>,
+    trait_name: &str,
+    class_name: &str,
+    parent_name: Option<&str>,
+) {
+    let Some(type_hint) = type_hint else {
+        return;
+    };
+    substitute_trait_relative_property_type_kind(
+        &mut type_hint.kind,
+        trait_name,
+        class_name,
+        parent_name,
+    );
+    if let Some(semantic_type) = &mut type_hint.semantic_type {
+        substitute_trait_relative_type_hint(semantic_type, trait_name, class_name, parent_name);
+    }
+}
+
+fn substitute_trait_relative_property_type_kind(
+    kind: &mut PropertyTypeKind,
+    trait_name: &str,
+    class_name: &str,
+    parent_name: Option<&str>,
+) {
+    let PropertyTypeKind::Class(name) = kind else {
+        return;
+    };
+    if name.eq_ignore_ascii_case(trait_name) || name.eq_ignore_ascii_case("self") {
+        *name = class_name.to_string();
+    } else if name.eq_ignore_ascii_case("parent") {
+        if let Some(parent_name) = parent_name {
+            *name = parent_name.to_string();
+        }
+    }
+}
+
+fn substitute_trait_relative_type_hint(
+    type_hint: &mut TypeHint,
+    trait_name: &str,
+    class_name: &str,
+    parent_name: Option<&str>,
+) {
+    match type_hint {
+        TypeHint::Class(name)
+            if name.eq_ignore_ascii_case(trait_name) || name.eq_ignore_ascii_case("self") =>
+        {
+            *name = class_name.to_string();
+        }
+        TypeHint::Class(name) if name.eq_ignore_ascii_case("parent") => {
+            if let Some(parent_name) = parent_name {
+                *name = parent_name.to_string();
+            }
+        }
+        TypeHint::Nullable(inner) => {
+            substitute_trait_relative_type_hint(inner, trait_name, class_name, parent_name)
+        }
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            for member in types {
+                substitute_trait_relative_type_hint(member, trait_name, class_name, parent_name);
             }
         }
         TypeHint::Null

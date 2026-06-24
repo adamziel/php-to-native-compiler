@@ -20093,6 +20093,49 @@ var_dump(class_exists('defclass', false));
 }
 
 #[test]
+fn compile_literal_eval_typed_class_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-eval-typed-class-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-eval-typed-class-properties.php");
+    let output = root.join("literal-eval-typed-class-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+eval('class EvalTypedProps {
+    public int $id;
+    protected ?string $label;
+    private EvalPayload $payload;
+}');
+var_dump(new EvalTypedProps);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(EvalTypedProps)#1 (0) {\n",
+            "  [\"id\"]=>\n",
+            "  uninitialized(int)\n",
+            "  [\"label\":protected]=>\n",
+            "  uninitialized(?string)\n",
+            "  [\"payload\":\"EvalTypedProps\":private]=>\n",
+            "  uninitialized(EvalPayload)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property"));
+    assert!(c_source.contains("EvalTypedProps"));
+}
+
+#[test]
 fn compile_eval_concrete_class_with_abstract_method_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-eval-abstract-method-fatal");
     fs::create_dir_all(&root).unwrap();
@@ -34559,6 +34602,64 @@ var_dump(property_exists('Test2', 'prop'));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(42)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_trait_relative_static_property_types_use_importing_class_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-relative-static-property-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-relative-static-property-types.php");
+    let output = root.join("trait-relative-static-property-types-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {}
+
+trait TypedStatics {
+    public static self $selfProp;
+    public static ?self $nullableSelfProp;
+    public static parent $parentProp;
+}
+
+class Bar extends Foo {
+    use TypedStatics;
+}
+
+Bar::$selfProp = new Bar();
+Bar::$nullableSelfProp = null;
+Bar::$parentProp = new Foo();
+var_dump(Bar::$selfProp, Bar::$nullableSelfProp, Bar::$parentProp);
+
+try {
+    Bar::$selfProp = new Foo();
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Bar)#1 (0) {\n",
+            "}\n",
+            "NULL\n",
+            "object(Foo)#2 (0) {\n",
+            "}\n",
+            "Cannot assign Foo to property Bar::$selfProp of type self\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
