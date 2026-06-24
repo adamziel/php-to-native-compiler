@@ -778,6 +778,13 @@ typedef struct {
     const char *attribute_method_name;
 } PtnFunctionMetadata;
 
+enum {
+    PTN_CLOSURE_ORIGIN_ANONYMOUS = 0,
+    PTN_CLOSURE_ORIGIN_FUNCTION = 1,
+    PTN_CLOSURE_ORIGIN_STATIC_METHOD = 2,
+    PTN_CLOSURE_ORIGIN_METHOD = 3
+};
+
 struct PtnClosure {
     size_t refcount;
     size_t object_id;
@@ -795,6 +802,9 @@ struct PtnClosure {
     int suppress_wrapped_callable_deprecation;
     PtnValue wrapped_callable;
     char *bound_scope_name;
+    int origin_kind;
+    char *origin_class_name;
+    char *origin_method_name;
 };
 
 typedef enum {
@@ -3864,6 +3874,9 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->suppress_wrapped_callable_deprecation = 0;
     closure->wrapped_callable = ptn_null();
     closure->bound_scope_name = NULL;
+    closure->origin_kind = PTN_CLOSURE_ORIGIN_ANONYMOUS;
+    closure->origin_class_name = NULL;
+    closure->origin_method_name = NULL;
     ptn_runtime_register_closure(runtime, closure);
     PtnValue value;
     value.type = PTN_CLOSURE;

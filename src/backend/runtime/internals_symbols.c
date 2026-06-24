@@ -784,6 +784,8 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
         ptn_value_destroy(&closure->wrapped_callable);
     }
     free(closure->bound_scope_name);
+    free(closure->origin_class_name);
+    free(closure->origin_method_name);
     free(closure);
 }
 

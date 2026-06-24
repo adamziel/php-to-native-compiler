@@ -1273,6 +1273,24 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
+    fn lower_expr_in_class_scope(
+        &mut self,
+        expr: &Expr,
+        class_name: &str,
+        parent_name: Option<&str>,
+    ) -> ValueExpr {
+        let previous_class_name =
+            std::mem::replace(&mut self.current_class_name, Some(class_name.to_string()));
+        let previous_parent_name = std::mem::replace(
+            &mut self.current_class_parent_name,
+            parent_name.map(ToString::to_string),
+        );
+        let lowered = self.lower_expr(expr);
+        self.current_class_parent_name = previous_parent_name;
+        self.current_class_name = previous_class_name;
+        lowered
+    }
+
     fn declare_include_functions(&mut self, include_sources: &[IncludeSource]) -> Vec<usize> {
         let mut starts = Vec::with_capacity(include_sources.len());
         for include in include_sources {
@@ -1769,7 +1787,11 @@ impl<'a> LoweringContext<'a> {
             None,
         );
         let display_name = if let Some(scope_name) = &self.current_function_display_name {
-            format!("{{closure:{}():{}}}", scope_name, function.span.line)
+            if scope_name.starts_with("{closure:") {
+                format!("{{closure:{}:{}}}", scope_name, function.span.line)
+            } else {
+                format!("{{closure:{}():{}}}", scope_name, function.span.line)
+            }
         } else {
             format!("{{closure:{}:{}}}", self.source_file, function.span.line)
         };
@@ -1822,84 +1844,85 @@ impl<'a> LoweringContext<'a> {
         let parent_name = class.parent_name.as_deref();
         let class_attributes =
             self.lower_class_scoped_attribute_metadata(&class.attributes, &class.name, parent_name);
-        let properties = class
-            .properties
-            .iter()
-            .map(|property| PropertyDecl {
-                name: property.name.clone(),
-                visibility: lower_property_visibility(property.visibility),
-                set_visibility: lower_property_visibility(property.set_visibility),
-                is_final: property.is_final,
-                is_abstract: property.is_abstract,
-                is_readonly: property.is_readonly,
-                has_hooks: property.has_hooks,
-                is_virtual: property.is_virtual,
-                hook_has_get: property.hook_has_get,
-                hook_has_set: property.hook_has_set,
-                hook_get_is_final: property.hook_get_is_final,
-                hook_get_is_abstract: property.hook_get_is_abstract,
-                hook_get_returns_by_ref: property.hook_get_returns_by_ref,
-                hook_set_is_final: property.hook_set_is_final,
-                hook_set_is_abstract: property.hook_set_is_abstract,
-                hook_get_attributes: self.lower_class_scoped_attribute_metadata(
-                    &property.hook_get_attributes,
-                    &class.name,
-                    parent_name,
-                ),
-                hook_set_attributes: self.lower_class_scoped_attribute_metadata(
-                    &property.hook_set_attributes,
-                    &class.name,
-                    parent_name,
-                ),
-                hook_get_doc_comment: property.hook_get_doc_comment.clone(),
-                hook_set_doc_comment: property.hook_set_doc_comment.clone(),
-                hook_get_line: property
-                    .hook_get_span
-                    .as_ref()
-                    .map(|span| span.line)
-                    .unwrap_or(property.span.line),
-                hook_set_line: property
-                    .hook_set_span
-                    .as_ref()
-                    .map(|span| span.line)
-                    .unwrap_or(property.span.line),
-                hook_get_value: property
-                    .hook_get_value
-                    .as_ref()
-                    .map(|value| self.lower_expr(value)),
-                hook_set_value: property
-                    .hook_set_value
-                    .as_ref()
-                    .map(|value| self.lower_expr(value)),
-                hook_get_body: property
-                    .hook_get_body
-                    .as_ref()
-                    .map(|body| self.lower_statements(body)),
-                hook_set_body: property
-                    .hook_set_body
-                    .as_ref()
-                    .map(|body| self.lower_statements(body)),
-                hook_set_parameter_name: property.hook_set_parameter_name.clone(),
-                hook_set_parameter_type: property
-                    .hook_set_parameter_type
-                    .clone()
-                    .map(lower_type_hint),
-                hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
-                type_hint: property
-                    .type_hint
-                    .as_ref()
-                    .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
-                attributes: self.lower_class_scoped_attribute_metadata(
-                    &property.attributes,
-                    &class.name,
-                    parent_name,
-                ),
-                doc_comment: property.doc_comment.clone(),
-                value: property.value.as_ref().map(|value| self.lower_expr(value)),
-                line: property.span.line,
-                source_order: property.span.byte_start,
-            })
-            .collect();
+        let properties =
+            class
+                .properties
+                .iter()
+                .map(|property| PropertyDecl {
+                    name: property.name.clone(),
+                    visibility: lower_property_visibility(property.visibility),
+                    set_visibility: lower_property_visibility(property.set_visibility),
+                    is_final: property.is_final,
+                    is_abstract: property.is_abstract,
+                    is_readonly: property.is_readonly,
+                    has_hooks: property.has_hooks,
+                    is_virtual: property.is_virtual,
+                    hook_has_get: property.hook_has_get,
+                    hook_has_set: property.hook_has_set,
+                    hook_get_is_final: property.hook_get_is_final,
+                    hook_get_is_abstract: property.hook_get_is_abstract,
+                    hook_get_returns_by_ref: property.hook_get_returns_by_ref,
+                    hook_set_is_final: property.hook_set_is_final,
+                    hook_set_is_abstract: property.hook_set_is_abstract,
+                    hook_get_attributes: self.lower_class_scoped_attribute_metadata(
+                        &property.hook_get_attributes,
+                        &class.name,
+                        parent_name,
+                    ),
+                    hook_set_attributes: self.lower_class_scoped_attribute_metadata(
+                        &property.hook_set_attributes,
+                        &class.name,
+                        parent_name,
+                    ),
+                    hook_get_doc_comment: property.hook_get_doc_comment.clone(),
+                    hook_set_doc_comment: property.hook_set_doc_comment.clone(),
+                    hook_get_line: property
+                        .hook_get_span
+                        .as_ref()
+                        .map(|span| span.line)
+                        .unwrap_or(property.span.line),
+                    hook_set_line: property
+                        .hook_set_span
+                        .as_ref()
+                        .map(|span| span.line)
+                        .unwrap_or(property.span.line),
+                    hook_get_value: property.hook_get_value.as_ref().map(|value| {
+                        self.lower_expr_in_class_scope(value, &class.name, parent_name)
+                    }),
+                    hook_set_value: property.hook_set_value.as_ref().map(|value| {
+                        self.lower_expr_in_class_scope(value, &class.name, parent_name)
+                    }),
+                    hook_get_body: property
+                        .hook_get_body
+                        .as_ref()
+                        .map(|body| self.lower_statements(body)),
+                    hook_set_body: property
+                        .hook_set_body
+                        .as_ref()
+                        .map(|body| self.lower_statements(body)),
+                    hook_set_parameter_name: property.hook_set_parameter_name.clone(),
+                    hook_set_parameter_type: property
+                        .hook_set_parameter_type
+                        .clone()
+                        .map(lower_type_hint),
+                    hook_set_parameter_doc_comment: property.hook_set_parameter_doc_comment.clone(),
+                    type_hint: property
+                        .type_hint
+                        .as_ref()
+                        .map(|type_hint| lower_class_property_type_hint(class, type_hint)),
+                    attributes: self.lower_class_scoped_attribute_metadata(
+                        &property.attributes,
+                        &class.name,
+                        parent_name,
+                    ),
+                    doc_comment: property.doc_comment.clone(),
+                    value: property.value.as_ref().map(|value| {
+                        self.lower_expr_in_class_scope(value, &class.name, parent_name)
+                    }),
+                    line: property.span.line,
+                    source_order: property.span.byte_start,
+                })
+                .collect();
         let static_properties = class
             .static_properties
             .iter()
@@ -1918,7 +1941,10 @@ impl<'a> LoweringContext<'a> {
                     parent_name,
                 ),
                 doc_comment: property.doc_comment.clone(),
-                value: property.value.as_ref().map(|value| self.lower_expr(value)),
+                value: property
+                    .value
+                    .as_ref()
+                    .map(|value| self.lower_expr_in_class_scope(value, &class.name, parent_name)),
                 source_order: property.span.byte_start,
             })
             .collect();
@@ -1956,12 +1982,15 @@ impl<'a> LoweringContext<'a> {
                     deprecated_message_dependency: metadata.message_dependency,
                     deprecated_message_runtime_reference: metadata.message_runtime_reference,
                     is_enum_case: constant.is_enum_case,
-                    enum_case_value: constant
-                        .enum_case_value
-                        .as_ref()
-                        .map(|value| self.lower_expr(value)),
+                    enum_case_value: constant.enum_case_value.as_ref().map(|value| {
+                        self.lower_expr_in_class_scope(value, &class.name, parent_name)
+                    }),
                     is_final: constant.is_final,
-                    value: self.lower_expr(&constant.value),
+                    value: self.lower_expr_in_class_scope(
+                        &constant.value,
+                        &class.name,
+                        parent_name,
+                    ),
                 }
             })
             .collect();

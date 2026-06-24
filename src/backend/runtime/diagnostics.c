@@ -279,6 +279,18 @@ static PTN_UNUSED void ptn_closure_set_scope(
     );
 }
 
+static PTN_UNUSED void ptn_closure_set_origin(
+    PtnValue closure,
+    int origin_kind,
+    const char *origin_class_name,
+    const char *origin_method_name
+) {
+    PtnClosure *resolved = ptn_closure_from_value(closure);
+    resolved->origin_kind = origin_kind;
+    ptn_closure_replace_scope(&resolved->origin_class_name, origin_class_name);
+    ptn_closure_replace_scope(&resolved->origin_method_name, origin_method_name);
+}
+
 static PTN_UNUSED void ptn_closure_set_capture(PtnValue closure, const char *name, PtnValue value) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
     ptn_symbols_set(&resolved->captures, name, ptn_value_deref(value));
@@ -335,6 +347,13 @@ static PTN_UNUSED PtnValue ptn_closure_clone(PtnRuntime *runtime, PtnValue closu
     }
     if (source->bound_scope_name != NULL) {
         copy.as.closure->bound_scope_name = ptn_duplicate_string(source->bound_scope_name);
+    }
+    copy.as.closure->origin_kind = source->origin_kind;
+    if (source->origin_class_name != NULL) {
+        copy.as.closure->origin_class_name = ptn_duplicate_string(source->origin_class_name);
+    }
+    if (source->origin_method_name != NULL) {
+        copy.as.closure->origin_method_name = ptn_duplicate_string(source->origin_method_name);
     }
     return copy;
 }
@@ -480,6 +499,72 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     }
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator != NULL && separator != name && separator[2] != '\0') {
+            *separator = '\0';
+            const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(name);
+            const char *resolved_name = runtime == NULL
+                ? lookup_name
+                : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+            ptn_closure_set_origin(
+                closure,
+                PTN_CLOSURE_ORIGIN_STATIC_METHOD,
+                ptn_declared_class_canonical_name(resolved_name),
+                separator + 2
+            );
+        } else {
+            ptn_closure_set_origin(closure, PTN_CLOSURE_ORIGIN_FUNCTION, NULL, name);
+        }
+        free(name);
+    } else if (resolved.type == PTN_ARRAY && resolved.as.array != NULL) {
+        PtnArrayEntry *scope_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 0);
+        PtnArrayEntry *method_entry = ptn_closure_array_entry_for_int_key(resolved.as.array, 1);
+        if (scope_entry != NULL && method_entry != NULL) {
+            PtnValue scope = ptn_value_deref(scope_entry->value);
+            PtnValue method = ptn_value_deref(method_entry->value);
+            if (method.type == PTN_STRING) {
+                char *method_name = ptn_value_to_string(method);
+                if (scope.type == PTN_OBJECT || scope.type == PTN_EXCEPTION) {
+                    const char *class_name = scope.type == PTN_OBJECT
+                        ? scope.as.object->class_name
+                        : scope.as.exception->class_name;
+                    ptn_closure_set_origin(
+                        closure,
+                        PTN_CLOSURE_ORIGIN_METHOD,
+                        class_name,
+                        method_name
+                    );
+                } else if (scope.type == PTN_STRING) {
+                    char *scope_name = ptn_value_to_string(scope);
+                    const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(scope_name);
+                    const char *resolved_name = runtime == NULL
+                        ? lookup_name
+                        : ptn_runtime_resolve_class_alias(runtime, lookup_name);
+                    ptn_closure_set_origin(
+                        closure,
+                        PTN_CLOSURE_ORIGIN_STATIC_METHOD,
+                        ptn_declared_class_canonical_name(resolved_name),
+                        method_name
+                    );
+                    free(scope_name);
+                }
+                free(method_name);
+            }
+        }
+    } else if (resolved.type == PTN_OBJECT || resolved.type == PTN_EXCEPTION) {
+        const char *class_name = resolved.type == PTN_OBJECT
+            ? resolved.as.object->class_name
+            : resolved.as.exception->class_name;
+        ptn_closure_set_origin(
+            closure,
+            PTN_CLOSURE_ORIGIN_METHOD,
+            class_name,
+            "__invoke"
+        );
+    }
     return closure;
 }
 
@@ -558,7 +643,41 @@ static int ptn_closure_bind_scope_class_exists(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "stdClass")
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
-        || ptn_builtin_exception_class_name(class_name) != NULL;
+        || ptn_builtin_exception_class_name(class_name) != NULL
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        || ptn_internal_class_exists_name(class_name)
+#endif
+        ;
+}
+
+static int ptn_closure_scope_is_internal_class(const char *class_name) {
+    if (class_name == NULL || ptn_ascii_case_equal(class_name, "Closure")) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(class_name, "stdClass")
+        || ptn_ascii_case_equal(class_name, "Generator")
+        || ptn_ascii_case_equal(class_name, "DateTime")
+        || ptn_builtin_exception_class_name(class_name) != NULL
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        || ptn_internal_class_exists_name(class_name)
+#endif
+        ;
+}
+
+static void ptn_closure_emit_scope_rebind_warning(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t line
+) {
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static int ptn_closure_bind_scope_matches_origin(PtnClosure *source, const char *scope_class_name) {
+    if (source->origin_class_name == NULL) {
+        return scope_class_name == NULL || ptn_ascii_case_equal(scope_class_name, "Closure");
+    }
+    return scope_class_name != NULL &&
+        ptn_ascii_case_equal(scope_class_name, source->origin_class_name);
 }
 
 static PTN_UNUSED PtnValue ptn_closure_bind_to(
@@ -667,8 +786,74 @@ static PTN_UNUSED PtnValue ptn_closure_bind_to(
         }
     }
 
+    if (
+        has_new_scope &&
+        ptn_closure_scope_is_internal_class(scope_class_name) &&
+        (source->origin_kind == PTN_CLOSURE_ORIGIN_ANONYMOUS ||
+         source->origin_kind == PTN_CLOSURE_ORIGIN_FUNCTION)
+    ) {
+        char warning[192];
+        int written = snprintf(
+            warning,
+            sizeof(warning),
+            "Cannot bind closure to scope of internal class %s, this will be an error in PHP 9",
+            scope_class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(warning)) {
+            free(owned_scope);
+            ptn_abort_out_of_memory();
+        }
+        ptn_closure_emit_scope_rebind_warning(runtime, warning, line);
+        free(owned_scope);
+        return ptn_null();
+    }
+
+    if (
+        source->origin_kind == PTN_CLOSURE_ORIGIN_FUNCTION &&
+        has_new_scope &&
+        scope_class_name != NULL &&
+        !ptn_ascii_case_equal(scope_class_name, "Closure")
+    ) {
+        ptn_closure_emit_scope_rebind_warning(
+            runtime,
+            "Cannot rebind scope of closure created from function, this will be an error in PHP 9",
+            line
+        );
+        free(owned_scope);
+        return ptn_null();
+    }
+
     PtnValue existing_this;
     int has_existing_this = ptn_symbols_get(&source->captures, "this", &existing_this);
+    if (
+        source->origin_kind == PTN_CLOSURE_ORIGIN_METHOD &&
+        new_this.type == PTN_NULL &&
+        has_existing_this
+    ) {
+        ptn_closure_emit_scope_rebind_warning(
+            runtime,
+            "Cannot unbind $this of method, this will be an error in PHP 9",
+            line
+        );
+        free(owned_scope);
+        return ptn_null();
+    }
+
+    if (
+        (source->origin_kind == PTN_CLOSURE_ORIGIN_METHOD ||
+         source->origin_kind == PTN_CLOSURE_ORIGIN_STATIC_METHOD) &&
+        has_new_scope &&
+        !ptn_closure_bind_scope_matches_origin(source, scope_class_name)
+    ) {
+        ptn_closure_emit_scope_rebind_warning(
+            runtime,
+            "Cannot rebind scope of closure created from method, this will be an error in PHP 9",
+            line
+        );
+        free(owned_scope);
+        return ptn_null();
+    }
+
     if (new_this.type == PTN_NULL && source->uses_this && has_existing_this) {
         ptn_emit_warning(
             &runtime->diagnostics,
@@ -687,6 +872,31 @@ static PTN_UNUSED PtnValue ptn_closure_bind_to(
         const char *new_this_class_name = new_this.type == PTN_EXCEPTION
             ? new_this.as.exception->class_name
             : new_this.as.object->class_name;
+        if (
+            source->origin_kind == PTN_CLOSURE_ORIGIN_METHOD &&
+            source->origin_class_name != NULL &&
+            !ptn_ascii_case_equal(new_this_class_name, source->origin_class_name) &&
+            !ptn_declared_class_is_same_or_descendant(new_this_class_name, source->origin_class_name)
+        ) {
+            char warning[256];
+            int written = snprintf(
+                warning,
+                sizeof(warning),
+                "Cannot bind method %s::%s() to object of class %s, this will be an error in PHP 9",
+                source->origin_class_name,
+                source->origin_method_name == NULL ? "{unknown}" : source->origin_method_name,
+                new_this_class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(warning)) {
+                ptn_value_destroy(&bound);
+                free(owned_scope);
+                ptn_abort_out_of_memory();
+            }
+            ptn_closure_emit_scope_rebind_warning(runtime, warning, line);
+            ptn_value_destroy(&bound);
+            free(owned_scope);
+            return ptn_null();
+        }
         if (!has_new_scope) {
             called_class_name = new_this_class_name;
         }

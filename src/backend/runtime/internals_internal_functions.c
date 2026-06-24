@@ -140798,6 +140798,19 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     return metadata;
 }
 
+static const char *ptn_reflection_internal_method_declaring_class(
+    const char *class_name,
+    const char *method_name
+) {
+    const char *declaring_class = class_name;
+    const char *parent = ptn_declared_class_parent_name(class_name);
+    while (parent != NULL && ptn_internal_class_method_exists(parent, method_name)) {
+        declaring_class = parent;
+        parent = ptn_declared_class_parent_name(parent);
+    }
+    return declaring_class;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     PtnRuntime *runtime,
     const char *class_name,
@@ -141168,6 +141181,16 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             ptn_reflection_method_function_metadata(data)
         );
         ptn_closure_set_scope(closure, data->class_name, data->class_name);
+        const char *origin_class_name = ptn_internal_class_exists_name(data->class_name)
+            ? ptn_reflection_internal_method_declaring_class(data->class_name, data->name)
+            : data->class_name;
+        ptn_closure_set_origin(
+            closure,
+            is_static ? PTN_CLOSURE_ORIGIN_STATIC_METHOD : PTN_CLOSURE_ORIGIN_METHOD,
+            origin_class_name,
+            data->name
+        );
+        closure.as.closure->is_static = is_static;
         if (!is_static) {
             ptn_closure_set_capture(closure, "this", object_arg);
         }

@@ -40788,6 +40788,45 @@ var_dump($r->getNamespaceName() . ($r->inNamespace() ? '\\\\' : '') . $r->getSho
 }
 
 #[test]
+fn compile_reflection_nested_closure_display_omits_call_suffix_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-nested-closure-display");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-nested-closure-display.php");
+    let output = root.join("reflection-nested-closure-display-bin");
+    fs::write(
+        &input,
+        "<?php
+class NestedClosureDisplay {
+    public function run() {
+        $outer = function () {
+            $middle = function () {
+                $inner = function () {};
+                echo (new ReflectionFunction($inner))->getName(), \"\\n\";
+            };
+            $middle();
+        };
+        $outer();
+    }
+}
+(new NestedClosureDisplay())->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("{closure:{closure:{closure:NestedClosureDisplay::run():"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("}():"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_closure_invoke_reflection_parameters_to_native_binary() {
     let root = temp_dir("ptn-native-closure-invoke-reflection-parameters");
     fs::create_dir_all(&root).unwrap();
@@ -69150,6 +69189,78 @@ var_dump(method_exists(\"Closure\", \"fromCallable\"));
 }
 
 #[test]
+fn compile_closure_bindto_validates_reflected_origin_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-bindto-reflected-origin");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-bindto-reflected-origin.php");
+    let output = root.join("closure-bindto-reflected-origin-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BindOriginBase {
+    public function method() {}
+    public static function staticMethod() {}
+}
+class BindOriginChild extends BindOriginBase {}
+class BindOriginOther {}
+
+set_error_handler(function($errno, $errstr) {
+    echo $errstr, "\n";
+});
+
+$function = (new ReflectionFunction('strlen'))->getClosure();
+var_dump($function->bindTo(null, BindOriginBase::class));
+
+$method = (new ReflectionMethod(BindOriginBase::class, 'method'))->getClosure(new BindOriginBase());
+var_dump($method->bindTo(null, BindOriginBase::class));
+var_dump($method->bindTo(new BindOriginOther(), BindOriginBase::class));
+var_dump($method->bindTo(new BindOriginChild(), BindOriginBase::class) instanceof Closure);
+var_dump($method->bindTo(new BindOriginBase(), BindOriginOther::class));
+
+$static = (new ReflectionMethod(BindOriginBase::class, 'staticMethod'))->getClosure();
+var_dump($static->bindTo(new BindOriginBase(), BindOriginBase::class));
+var_dump($static->bindTo(null, BindOriginOther::class));
+var_dump($static->bindTo(null, BindOriginBase::class) instanceof Closure);
+
+$internal = (new ReflectionMethod(SplStack::class, 'count'))->getClosure(new SplStack());
+var_dump($internal->bindTo(new BindOriginOther(), SplDoublyLinkedList::class));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot rebind scope of closure created from function, this will be an error in PHP 9\n",
+            "NULL\n",
+            "Cannot unbind $this of method, this will be an error in PHP 9\n",
+            "NULL\n",
+            "Cannot bind method BindOriginBase::method() to object of class BindOriginOther, this will be an error in PHP 9\n",
+            "NULL\n",
+            "bool(true)\n",
+            "Cannot rebind scope of closure created from method, this will be an error in PHP 9\n",
+            "NULL\n",
+            "Cannot bind an instance to a static closure, this will be an error in PHP 9\n",
+            "NULL\n",
+            "Cannot rebind scope of closure created from method, this will be an error in PHP 9\n",
+            "NULL\n",
+            "bool(true)\n",
+            "Cannot bind method SplDoublyLinkedList::count() to object of class BindOriginOther, this will be an error in PHP 9\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("origin_kind"));
+    assert!(c_source.contains("ptn_closure_set_origin"));
+}
+
+#[test]
 fn compile_closure_static_bind_uses_internal_class_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-closure-static-bind");
     fs::create_dir_all(&root).unwrap();
@@ -70254,6 +70365,41 @@ var_dump((FccPrivateInitializer::C)(3));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_first_class_callable_create"));
+    assert!(c_source.contains("ptn_closure_set_scope"));
+}
+
+#[test]
+fn compile_constexpr_property_closure_uses_declaring_class_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-constexpr-property-closure-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constexpr-property-closure-scope.php");
+    let output = root.join("constexpr-property-closure-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstexprPropertyClosureScope {
+    public Closure $reader = static function (ConstexprPropertyClosureScope $object) {
+        echo $object->secret, \"\\n\";
+    };
+
+    public function __construct(private string $secret) {}
+}
+
+$object = new ConstexprPropertyClosureScope('secret');
+($object->reader)($object);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "secret\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.current_class_name = \"ConstexprPropertyClosureScope\""));
     assert!(c_source.contains("ptn_closure_set_scope"));
 }
 
