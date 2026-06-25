@@ -214,6 +214,14 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (
         root != NULL &&
+        root->output_buffers_len == 0 &&
+        !root->output_buffer_callback_passthrough_output &&
+        !root->header_callback_running
+    ) {
+        ptn_runtime_run_header_callback(runtime);
+    }
+    if (
+        root != NULL &&
         root->output_buffer_callback_depth != 0 &&
         !root->output_buffer_callback_passthrough_output
     ) {
@@ -92602,6 +92610,24 @@ static PtnValue ptn_internal_register_shutdown_function(PtnRuntime *runtime, siz
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_header_register_callback(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "header_register_callback",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_runtime_register_header_callback(runtime, callback);
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
@@ -138086,6 +138112,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
+        { "header_register_callback", 1, 1, ptn_internal_header_register_callback },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },
         { "hypot", 2, 2, ptn_internal_hypot },

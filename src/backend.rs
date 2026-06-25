@@ -32800,6 +32800,11 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static HEADER_REGISTER_CALLBACK_PARAMETERS: [InternalParameterSpec; 1] =
+        [InternalParameterSpec {
+            name: "callback",
+            default: None,
+        }];
     static SUBSTR_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "string",
@@ -33258,6 +33263,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&REQUEST_PARSE_BODY_PARAMETERS)
     } else if name.eq_ignore_ascii_case("headers_sent") {
         Some(&HEADERS_SENT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("header_register_callback") {
+        Some(&HEADER_REGISTER_CALLBACK_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr") {
         Some(&SUBSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr_count") {
@@ -33784,6 +33791,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("forward_static_call")
+        || name.eq_ignore_ascii_case("header_register_callback")
         || name.eq_ignore_ascii_case("ob_start")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")

@@ -126,6 +126,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_has_started = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
+    runtime->header_callback_registered = 0;
+    runtime->header_callback_running = 0;
+    runtime->header_callback_completed = 0;
+    runtime->header_callback = ptn_null();
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
@@ -727,6 +731,96 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
 #endif
 }
 
+static PTN_UNUSED void ptn_runtime_register_header_callback(PtnRuntime *runtime, PtnValue callback) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return;
+    }
+    if (root->header_callback_registered) {
+        ptn_value_destroy(&root->header_callback);
+    }
+    root->header_callback = ptn_value_clone(callback);
+    root->header_callback_registered = 1;
+    root->header_callback_completed = root->output_has_started ? 1 : 0;
+}
+
+static PTN_UNUSED void ptn_runtime_run_header_callback(PtnRuntime *runtime) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (
+        root == NULL ||
+        !root->header_callback_registered ||
+        root->header_callback_completed ||
+        root->header_callback_running
+    ) {
+        return;
+    }
+
+    PtnValue result = ptn_null();
+    PtnTryFrame callback_frame;
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    int saved_suppress_user_call_frame_location =
+        runtime->suppress_user_call_frame_location;
+    int saved_warn_by_ref_argument_mismatch =
+        runtime->warn_by_ref_argument_mismatch;
+    int saved_throw_argument_count_errors =
+        runtime->throw_argument_count_errors;
+    int saved_passthrough_output =
+        root->output_buffer_callback_passthrough_output;
+    size_t saved_skip_buffers = root->output_buffer_callback_skip_buffers;
+
+    root->header_callback_running = 1;
+    root->header_callback_completed = 1;
+    root->output_buffer_callback_passthrough_output = 1;
+    root->output_buffer_callback_skip_buffers = root->output_buffers_len;
+    ptn_try_frame_push(runtime, &callback_frame);
+    if (setjmp(callback_frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &callback_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            saved_throw_argument_count_errors;
+        root->output_buffer_callback_passthrough_output =
+            saved_passthrough_output;
+        root->output_buffer_callback_skip_buffers = saved_skip_buffers;
+        root->header_callback_running = 0;
+        ptn_rethrow_exception(runtime);
+    }
+
+    runtime->suppress_user_call_frame_location = 1;
+    runtime->warn_by_ref_argument_mismatch = 1;
+    runtime->throw_argument_count_errors = 1;
+    result = ptn_call_callable(runtime, root->header_callback, 0, NULL, 0, 0);
+    ptn_try_frame_pop(runtime, &callback_frame);
+    runtime->trace_frame = saved_trace_frame;
+    runtime->suppress_user_call_frame_location =
+        saved_suppress_user_call_frame_location;
+    runtime->warn_by_ref_argument_mismatch =
+        saved_warn_by_ref_argument_mismatch;
+    runtime->throw_argument_count_errors =
+        saved_throw_argument_count_errors;
+    root->output_buffer_callback_passthrough_output =
+        saved_passthrough_output;
+    root->output_buffer_callback_skip_buffers = saved_skip_buffers;
+    root->header_callback_running = 0;
+    ptn_value_destroy(&result);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+    }
+#else
+    (void)runtime;
+#endif
+}
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static void ptn_runtime_session_shutdown(PtnRuntime *runtime);
 #else
@@ -753,6 +847,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         if (session_shutdown_early) {
             ptn_runtime_session_shutdown(runtime);
         }
+        ptn_runtime_run_header_callback(runtime);
         ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
@@ -993,6 +1088,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffer_callback_skip_buffers = 0;
         runtime->output_at_line_start = 1;
         runtime->output_has_started = 0;
+        if (runtime->header_callback_registered) {
+            ptn_value_destroy(&runtime->header_callback);
+        }
+        runtime->header_callback = ptn_null();
+        runtime->header_callback_registered = 0;
+        runtime->header_callback_running = 0;
+        runtime->header_callback_completed = 0;
         for (size_t i = 0; i < runtime->shutdown_functions_len; i++) {
             ptn_shutdown_function_destroy(&runtime->shutdown_functions[i]);
         }

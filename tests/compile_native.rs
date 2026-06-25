@@ -15034,6 +15034,41 @@ var_dump($file, $line);
 }
 
 #[test]
+fn compile_header_register_callback_bypasses_active_buffer_to_native_binary() {
+    let root = temp_dir("ptn-native-header-register-callback-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("header-register-callback-buffer.php");
+    let output = root.join("header-register-callback-buffer-bin");
+    fs::write(
+        &input,
+        "<?php
+ob_start(function ($text) {
+    return '[' . $text . ']';
+});
+header_register_callback(function () {
+    echo 'first';
+});
+header_register_callback(function () {
+    echo 'H';
+});
+echo 'M';
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "H[M]");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_register_header_callback"));
+    assert!(c_source.contains("ptn_runtime_run_header_callback"));
+}
+
+#[test]
 fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
     let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
     fs::create_dir_all(&root).unwrap();

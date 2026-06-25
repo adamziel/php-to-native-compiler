@@ -1521,6 +1521,10 @@ struct PtnRuntime {
     int output_has_started;
     int http_response_code_initialized;
     int64_t http_response_code;
+    int header_callback_registered;
+    int header_callback_running;
+    int header_callback_completed;
+    PtnValue header_callback;
     PtnShutdownFunction *shutdown_functions;
     size_t shutdown_functions_len;
     size_t shutdown_functions_capacity;

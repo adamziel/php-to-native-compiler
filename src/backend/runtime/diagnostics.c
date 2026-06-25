@@ -2514,6 +2514,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_has_started = 0;
     runtime->http_response_code_initialized = 0;
     runtime->http_response_code = 0;
+    runtime->header_callback_registered = 0;
+    runtime->header_callback_running = 0;
+    runtime->header_callback_completed = 0;
+    runtime->header_callback = ptn_null();
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
