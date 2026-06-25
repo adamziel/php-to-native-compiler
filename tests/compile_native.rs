@@ -33760,6 +33760,62 @@ var_dump(is_subclass_of(\"AutoloadMissing2\", \"Worker\"));
 }
 
 #[test]
+fn compile_autoloaded_interface_and_trait_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-autoloaded-interface-trait-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoloaded-interface-trait-metadata.php");
+    let output = root.join("autoloaded-interface-trait-metadata-bin");
+    fs::write(
+        root.join("AutoInterface.inc"),
+        "<?php\ninterface AutoInterface {}\n",
+    )
+    .unwrap();
+    fs::write(root.join("AutoTrait.inc"), "<?php\ntrait AutoTrait {}\n").unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($name) {
+    require_once __DIR__ . "/" . $name . ".inc";
+});
+
+var_dump(interface_exists("AutoInterface", false));
+var_dump(interface_exists("AutoInterface", true));
+var_dump(interface_exists("AutoInterface"));
+var_dump(in_array("AutoTrait", get_declared_traits(), true));
+
+class MyClass {
+    use AutoTrait;
+}
+
+var_dump(in_array("AutoTrait", get_declared_traits(), true));
+var_dump(trait_exists("AutoTrait", false));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_runtime_trait_exists"));
+    assert!(c_source.contains("runtime.declared_user_traits"));
+}
+
+#[test]
 fn compile_method_exists_class_name_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-method-exists-class-name-metadata");
     fs::create_dir_all(&root).unwrap();

@@ -1530,6 +1530,7 @@ struct PtnRuntime {
     PtnMagicPropertyIssetHandler magic_property_isset;
     int *declared_user_functions;
     int *declared_user_classes;
+    int *declared_user_traits;
     PtnMagicPropertyGetHandler magic_property_get;
     PtnMagicPropertyGetExistsHandler magic_property_get_exists;
     PtnMagicPropertySetHandler magic_property_set;
@@ -1772,6 +1773,7 @@ static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
+static PTN_UNUSED int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_is_linking(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED void ptn_declared_runtime_class_mark_variance_dependency(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_slot_has_variance_dependency(PtnRuntime *runtime, size_t index);

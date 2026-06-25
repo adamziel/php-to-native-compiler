@@ -130,6 +130,7 @@ pub struct TraitDecl {
     pub doc_comment: Option<String>,
     pub line: usize,
     pub end_line: usize,
+    pub initially_declared: bool,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
@@ -388,6 +389,9 @@ pub enum Instruction {
     },
     DeclareFunction {
         function_index: usize,
+    },
+    DeclareTrait {
+        trait_index: usize,
     },
     EarlyDeclareClass {
         class_index: usize,
@@ -1141,6 +1145,7 @@ struct LoweringContext<'a> {
     strict_types: bool,
     include_resolutions: &'a IncludeResolutionMap,
     class_names: Vec<ClassNameEntry>,
+    trait_names: Vec<ClassNameEntry>,
     runtime_class_names: HashSet<(String, String)>,
     early_bound_class_names: HashSet<(String, String)>,
     current_class_name: Option<String>,
@@ -1238,6 +1243,15 @@ impl<'a> LoweringContext<'a> {
                 line: class.span.line,
             })
             .collect();
+        let trait_names = program
+            .traits
+            .iter()
+            .map(|trait_decl| ClassNameEntry {
+                source_file: source_file.clone(),
+                name: trait_decl.name.clone(),
+                line: trait_decl.span.line,
+            })
+            .collect();
         let runtime_class_names = program
             .classes
             .iter()
@@ -1253,6 +1267,7 @@ impl<'a> LoweringContext<'a> {
             strict_types: program.strict_types,
             include_resolutions,
             class_names,
+            trait_names,
             runtime_class_names,
             early_bound_class_names: HashSet::new(),
             current_class_name: None,
@@ -1274,6 +1289,18 @@ impl<'a> LoweringContext<'a> {
                     name: class.name.clone(),
                     line: class.span.line,
                 }));
+            self.trait_names
+                .extend(
+                    include
+                        .program
+                        .traits
+                        .iter()
+                        .map(|trait_decl| ClassNameEntry {
+                            source_file: include.source_file.clone(),
+                            name: trait_decl.name.clone(),
+                            line: trait_decl.span.line,
+                        }),
+                );
             self.runtime_class_names.extend(
                 include
                     .program
@@ -1382,12 +1409,15 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
-        let traits = include
+        let mut traits: Vec<_> = include
             .program
             .traits
             .iter()
             .map(|trait_decl| self.lower_trait(trait_decl))
             .collect();
+        for trait_decl in &mut traits {
+            trait_decl.initially_declared = false;
+        }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
@@ -1478,6 +1508,27 @@ impl<'a> LoweringContext<'a> {
             .or_else(|| self.class_index_by_name(name))
     }
 
+    fn trait_index_by_declaration(&self, name: &str, line: usize) -> Option<usize> {
+        self.trait_names
+            .iter()
+            .position(|trait_name| {
+                trait_name.source_file == self.source_file
+                    && trait_name.line == line
+                    && trait_name.name.eq_ignore_ascii_case(name)
+            })
+            .or_else(|| {
+                self.trait_names.iter().position(|trait_name| {
+                    trait_name.source_file == self.source_file
+                        && trait_name.name.eq_ignore_ascii_case(name)
+                })
+            })
+            .or_else(|| {
+                self.trait_names
+                    .iter()
+                    .position(|trait_name| trait_name.name.eq_ignore_ascii_case(name))
+            })
+    }
+
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
         let previous_source_file =
             std::mem::replace(&mut self.source_file, include.source_file.clone());
@@ -1517,6 +1568,13 @@ impl<'a> LoweringContext<'a> {
                     class_index,
                     line: class.span.line,
                 });
+            }
+        }
+        for trait_decl in &include.program.traits {
+            if let Some(trait_index) =
+                self.trait_index_by_declaration(&trait_decl.name, trait_decl.span.line)
+            {
+                instructions.push(Instruction::DeclareTrait { trait_index });
             }
         }
         instructions.extend(self.lower_statements(&include.program.statements));
@@ -2164,7 +2222,11 @@ impl<'a> LoweringContext<'a> {
         for statement in statements {
             match statement {
                 Statement::Empty { .. } => {}
-                Statement::TraitDeclaration { .. } => {}
+                Statement::TraitDeclaration { name, span, .. } => {
+                    if let Some(trait_index) = self.trait_index_by_declaration(name, span.line) {
+                        instructions.push(Instruction::DeclareTrait { trait_index });
+                    }
+                }
                 Statement::ClassDeclaration { name, span, .. } => {
                     if let Some(class_index) = self.class_index_by_declaration(name, span.line) {
                         let declaration_key =
@@ -2871,6 +2933,7 @@ impl<'a> LoweringContext<'a> {
             doc_comment: trait_decl.doc_comment.clone(),
             line: trait_decl.span.line,
             end_line: trait_decl.span.end_line,
+            initially_declared: true,
             properties,
             static_properties,
             constants,

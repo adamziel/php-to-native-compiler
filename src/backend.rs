@@ -359,6 +359,23 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str(" };\n");
         out.push_str("    runtime.declared_user_classes = ptn_declared_user_classes;\n");
     }
+    if !module.traits.is_empty() {
+        out.push_str("    static int ptn_declared_user_traits[");
+        out.push_str(&module.traits.len().to_string());
+        out.push_str("] = { ");
+        for (index, trait_decl) in module.traits.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(if trait_decl.initially_declared {
+                "1"
+            } else {
+                "0"
+            });
+        }
+        out.push_str(" };\n");
+        out.push_str("    runtime.declared_user_traits = ptn_declared_user_traits;\n");
+    }
     if module.strict_types {
         out.push_str("    runtime.strict_types = 1;\n");
     }
@@ -614,6 +631,7 @@ fn opcache_main_after_optimizer_dump(module: &Module) -> Option<String> {
     for instruction in &module.instructions {
         match instruction {
             Instruction::DeclareFunction { .. }
+            | Instruction::DeclareTrait { .. }
             | Instruction::EarlyDeclareClass { .. }
             | Instruction::DeclareClass { .. }
             | Instruction::ValidateClass { .. } => {}
@@ -4477,7 +4495,9 @@ fn emit_include_helpers(
         for instruction in &include.instructions {
             if !matches!(
                 instruction,
-                Instruction::DeclareFunction { .. } | Instruction::EarlyDeclareClass { .. }
+                Instruction::DeclareFunction { .. }
+                    | Instruction::DeclareTrait { .. }
+                    | Instruction::EarlyDeclareClass { .. }
             ) {
                 break;
             }
@@ -8487,6 +8507,40 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_trait_slot_available(PtnRuntime *runtime, size_t index) {\n",
+    );
+    if traits.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)index;\n");
+        out.push_str("    return 0;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_traits == NULL) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    return runtime->declared_user_traits[index] == 1;\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name) {\n");
+    for (index, trait_decl) in traits.iter().enumerate() {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        out.push_str("        if (ptn_declared_runtime_trait_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(")) {\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+    }
+    if traits.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str("\n#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("static int ptn_internal_class_exists_name(const char *class_name);\n");
     out.push_str("static int ptn_internal_interface_exists_name(const char *name);\n");
@@ -8527,7 +8581,9 @@ fn emit_class_metadata_helpers(
     out.push_str("            }\n");
     out.push_str("#endif\n");
     out.push_str("        } else if (kind == 2) {\n");
-    out.push_str("            include = ptn_declared_trait_exists(target_name);\n");
+    out.push_str(
+        "            include = ptn_declared_runtime_trait_exists(runtime, target_name);\n",
+    );
     out.push_str("        }\n");
     out.push_str("        if (include) {\n");
     out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(symbol->name));\n");
@@ -8790,12 +8846,16 @@ fn emit_class_metadata_helpers(
     out.push_str("\nstatic PTN_UNUSED PtnValue ptn_declared_trait_names(PtnRuntime *runtime) {\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
-    for trait_decl in traits {
+    for (trait_index, trait_decl) in traits.iter().enumerate() {
+        out.push_str("    if (ptn_declared_runtime_trait_slot_available(runtime, ");
+        out.push_str(&trait_index.to_string());
+        out.push_str(")) {\n");
         out.push_str(
-            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+            "        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
         );
         out.push_str(&c_string(&trait_decl.name));
         out.push_str("\"));\n");
+        out.push_str("    }\n");
     }
     if traits.is_empty() {
         out.push_str("    (void)index;\n");
@@ -14457,6 +14517,7 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
             ..
         } => value_mentions_variable(property_name, name),
         Instruction::DeclareFunction { .. }
+        | Instruction::DeclareTrait { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
@@ -25105,6 +25166,60 @@ fn emit_declare_interface_dependency_check(
     out.push_str("        }\n");
 }
 
+fn emit_declare_trait_dependency_check(
+    out: &mut String,
+    class_name: &str,
+    class_index: usize,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str("        if (!ptn_declared_runtime_trait_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")) {\n");
+    emit_declaration_dependency_autoload(
+        out,
+        "            ",
+        class_name,
+        class_index,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            if (runtime.exceptions->active_exception != NULL) {\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        "                ",
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        if (!ptn_declared_runtime_trait_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")) {\n");
+    out.push_str("            char trait_message[1024];\n");
+    out.push_str("            snprintf(trait_message, sizeof(trait_message), \"Trait \\\"%s\\\" not found\", ");
+    out.push_str(resolved_name_temp);
+    out.push_str(");\n");
+    out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", trait_message, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    emit_declaration_dependency_exception_handling(
+        out,
+        "            ",
+        class_name,
+        class_index,
+        source_path,
+        line,
+    );
+    out.push_str("        }\n");
+}
+
 struct RuntimeVarianceTypeAvailabilityCheck {
     type_name: String,
     message: String,
@@ -25434,6 +25549,22 @@ fn emit_class_declaration_validation(
             &interface_temp,
             source_path,
             line,
+        );
+    }
+    for (trait_index, trait_use) in class.trait_uses.iter().enumerate() {
+        let trait_temp = format!("ptn_declared_trait_{}_{}", class_index, trait_index);
+        out.push_str("        const char *");
+        out.push_str(&trait_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(&trait_use.name));
+        out.push_str("\");\n");
+        emit_declare_trait_dependency_check(
+            out,
+            &class.name,
+            class_index,
+            &trait_temp,
+            source_path,
+            trait_use.line,
         );
     }
     for check in class_runtime_interface_variance_type_checks(class, classes, functions) {
@@ -26022,6 +26153,13 @@ fn emit_instruction(
             out.push_str(&function_index.to_string());
             out.push_str("] = 1;\n");
             out.push_str("        }\n");
+            out.push_str("    }\n");
+        }
+        Instruction::DeclareTrait { trait_index } => {
+            out.push_str("    if (runtime.declared_user_traits != NULL) {\n");
+            out.push_str("        runtime.declared_user_traits[");
+            out.push_str(&trait_index.to_string());
+            out.push_str("] = 1;\n");
             out.push_str("    }\n");
         }
         Instruction::ValidateClass { class_index, line } => {
@@ -30057,6 +30195,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareTrait { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
@@ -30731,6 +30870,7 @@ fn collect_instruction_runtime_requirements(
             collect_value_runtime_requirements(name, functions, requirements);
         }
         Instruction::DeclareFunction { .. }
+        | Instruction::DeclareTrait { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. } => {}
@@ -35385,6 +35525,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareTrait { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
@@ -36073,6 +36214,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareTrait { .. }
         | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }

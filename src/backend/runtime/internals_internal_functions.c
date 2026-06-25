@@ -4600,6 +4600,7 @@ static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syn
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
+static int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
@@ -136766,6 +136767,7 @@ static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
+static int ptn_declared_runtime_trait_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
@@ -139944,6 +139946,14 @@ static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *
 
 static PTN_UNUSED int ptn_runtime_interface_exists(PtnRuntime *runtime, const char *interface_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
+    if (ptn_declared_runtime_interface_exists(runtime, resolved_name) || ptn_internal_interface_exists_name(resolved_name)) {
+        return 1;
+    }
+    ptn_runtime_autoload_class(runtime, resolved_name, runtime->call_site_line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    resolved_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
     return ptn_declared_runtime_interface_exists(runtime, resolved_name) || ptn_internal_interface_exists_name(resolved_name);
 }
 
@@ -139970,7 +139980,7 @@ static int ptn_runtime_class_alias_source_kind(PtnRuntime *runtime, const char *
     if (ptn_declared_runtime_interface_exists(runtime, resolved_name) || ptn_internal_interface_exists_name(resolved_name)) {
         return PTN_CLASS_ALIAS_SOURCE_INTERFACE;
     }
-    if (ptn_declared_trait_exists(resolved_name)) {
+    if (ptn_declared_runtime_trait_exists(runtime, resolved_name)) {
         return PTN_CLASS_ALIAS_SOURCE_TRAIT;
     }
     return PTN_CLASS_ALIAS_SOURCE_MISSING;
@@ -143846,7 +143856,7 @@ static int ptn_reflection_class_symbol_exists(const char *name) {
 static int ptn_reflection_class_runtime_symbol_exists(PtnRuntime *runtime, const char *name) {
     return ptn_declared_runtime_class_exists(runtime, name)
         || ptn_declared_runtime_interface_exists(runtime, name)
-        || ptn_declared_trait_exists(name)
+        || ptn_declared_runtime_trait_exists(runtime, name)
         || ptn_internal_class_exists_name(name)
         || ptn_internal_interface_exists_name(name);
 }
@@ -152705,7 +152715,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     if (ptn_ascii_case_equal(name, "isTrait")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_declared_trait_exists(class_name));
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_declared_runtime_trait_exists(runtime, class_name));
     }
     if (ptn_ascii_case_equal(name, "isEnum")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -178363,7 +178373,7 @@ static int ptn_class_metadata_target_exists(PtnRuntime *runtime, PtnClassMetadat
         || ptn_declared_runtime_interface_exists(runtime, resolved_name)
         || ptn_internal_class_exists_name(resolved_name)
         || ptn_internal_interface_exists_name(resolved_name)
-        || (kind == PTN_CLASS_METADATA_USES && ptn_declared_trait_exists(resolved_name));
+        || (kind == PTN_CLASS_METADATA_USES && ptn_declared_runtime_trait_exists(runtime, resolved_name));
 }
 
 static int ptn_class_metadata_resolve_target(
@@ -178522,11 +178532,20 @@ static PtnValue ptn_internal_class_uses(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_runtime_interface_exists(runtime, lookup_name);
+    int autoload = argc < 2 || ptn_is_truthy(args[1]);
+    int exists;
+    if (autoload) {
+        size_t previous_call_site_line = runtime->call_site_line;
+        runtime->call_site_line = line;
+        exists = ptn_runtime_interface_exists(runtime, lookup_name);
+        runtime->call_site_line = previous_call_site_line;
+    } else {
+        const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        exists = ptn_declared_runtime_interface_exists(runtime, resolved_name) ||
+            ptn_internal_interface_exists_name(resolved_name);
+    }
     free(name);
     return ptn_bool(exists);
 }
@@ -178573,7 +178592,7 @@ static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, cons
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     int autoload = argc < 2 || ptn_is_truthy(args[1]);
-    int exists = ptn_declared_trait_exists(resolved_name);
+    int exists = ptn_declared_runtime_trait_exists(runtime, resolved_name);
     if (!exists && autoload && ptn_class_lookup_name_is_valid(lookup_name)) {
         size_t previous_call_site_line = runtime->call_site_line;
         runtime->call_site_line = line;
@@ -178584,7 +178603,7 @@ static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, cons
             return ptn_null();
         }
         resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
-        exists = ptn_declared_trait_exists(resolved_name);
+        exists = ptn_declared_runtime_trait_exists(runtime, resolved_name);
     }
     free(name);
     return ptn_bool(exists);

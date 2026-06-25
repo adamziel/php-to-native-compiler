@@ -147,6 +147,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_property_isset = caller_runtime->magic_property_isset;
     runtime->declared_user_functions = caller_runtime->declared_user_functions;
     runtime->declared_user_classes = caller_runtime->declared_user_classes;
+    runtime->declared_user_traits = caller_runtime->declared_user_traits;
     runtime->magic_property_get = caller_runtime->magic_property_get;
     runtime->magic_property_get_exists = caller_runtime->magic_property_get_exists;
     runtime->magic_property_set = caller_runtime->magic_property_set;

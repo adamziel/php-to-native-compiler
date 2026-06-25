@@ -2505,6 +2505,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_isset = NULL;
     runtime->declared_user_functions = NULL;
     runtime->declared_user_classes = NULL;
+    runtime->declared_user_traits = NULL;
     runtime->magic_property_get = NULL;
     runtime->magic_property_get_exists = NULL;
     runtime->magic_property_set = NULL;
