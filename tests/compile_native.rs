@@ -47585,6 +47585,87 @@ try {
 }
 
 #[test]
+fn compile_dom_get_element_by_id_marker_mutations_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-get-element-by-id-marker-mutations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-get-element-by-id-marker-mutations.php");
+    let output = root.join("dom-get-element-by-id-marker-mutations-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = Dom\XMLDocument::createFromString('<root><test1 xml:id="x"/><test2 xml:id="y"/><test3 attr="x"/></root>');
+$test1 = $xml->documentElement->firstElementChild;
+$test3 = $xml->documentElement->lastElementChild;
+var_dump($xml->getElementById('x')?->nodeName);
+$test1->setAttribute('xml:id', 'y');
+var_dump($xml->getElementById('x')?->nodeName);
+var_dump($xml->getElementById('y')?->nodeName);
+$test3->setIdAttribute('attr', true);
+var_dump($test3->getAttributeNode('attr')->isId());
+var_dump($xml->getElementById('x')?->nodeName);
+$test3->setIdAttributeNode($test3->getAttributeNode('attr'), false);
+var_dump($test3->getAttributeNode('attr')->isId());
+var_dump($xml->getElementById('x')?->nodeName);
+
+$plain = Dom\XMLDocument::createFromString('<root><test1/><test2/></root>');
+$p1 = $plain->documentElement->firstElementChild;
+$p2 = $p1->nextElementSibling;
+$p2->id = 'p';
+$p1->id = 'p';
+var_dump($plain->getElementById('p')?->nodeName);
+$p1->setIdAttribute('id', false);
+var_dump($p1->getAttributeNode('id')->isId());
+var_dump($plain->getElementById('p')?->nodeName);
+
+$html = Dom\HTMLDocument::createFromString('<p><em id="x"></em><strong id="y"></strong></p>', LIBXML_NOERROR);
+$em = $html->getElementById('x');
+$em->setAttributeNS('urn:x', 'id', 'z');
+var_dump($html->getElementById('x')?->nodeName);
+var_dump($html->getElementById('z')?->nodeName);
+$em->setAttribute('ID', 'z');
+var_dump($html->getElementById('x')?->nodeName);
+var_dump($html->getElementById('z')?->nodeName);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"test1\"\n",
+            "NULL\n",
+            "string(5) \"test1\"\n",
+            "bool(true)\n",
+            "string(5) \"test3\"\n",
+            "bool(false)\n",
+            "NULL\n",
+            "string(5) \"test1\"\n",
+            "bool(false)\n",
+            "string(5) \"test2\"\n",
+            "string(2) \"EM\"\n",
+            "NULL\n",
+            "NULL\n",
+            "string(2) \"EM\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_find_element_by_id"));
+    assert!(c_source.contains("ptn_dom_set_id_attribute_method"));
+    assert!(c_source.contains("ptn_dom_attribute_is_active_id"));
+}
+
+#[test]
 fn compile_dom_clone_import_namespace_residual_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-clone-import-namespace-residual-pack");
     fs::create_dir_all(&root).unwrap();
