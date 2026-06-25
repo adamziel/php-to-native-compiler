@@ -39091,6 +39091,12 @@ class ReflectMethodFactoryOverride extends ReflectionMethod {
     }
 }
 
+enum ReflectMethodEnum {
+    case A;
+
+    public function enumMethod() {}
+}
+
 $inherited = new ReflectionMethod(\"ReflectMethodSubject\", \"inherited\");
 var_dump($inherited->getName());
 var_dump($inherited->getDeclaringClass()->getName());
@@ -39138,6 +39144,13 @@ $internal = new ReflectionMethod(\"ReflectionProperty\", \"__construct\");
 var_dump($internal->isInternal());
 var_dump($internal->isUserDefined());
 var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
+
+$enumMethod = new ReflectionMethod(\"ReflectMethodEnum\", \"enumMethod\");
+var_dump($enumMethod->class);
+var_dump(get_class($enumMethod->getDeclaringClass()));
+var_dump($enumMethod->getDeclaringClass()->getName());
+$enumFactory = ReflectionMethod::createFromMethodName(\"ReflectMethodEnum::enumMethod\");
+var_dump(get_class($enumFactory->getDeclaringClass()));
 ",
     )
     .unwrap();
@@ -39186,6 +39199,10 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "string(17) \"ReflectMethodEnum\"\n",
+            "string(14) \"ReflectionEnum\"\n",
+            "string(17) \"ReflectMethodEnum\"\n",
+            "string(14) \"ReflectionEnum\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -41246,6 +41263,70 @@ foreach ((new ReflectionClass(Subject::class))->getAttributes() as $attribute) {
 }
 
 #[test]
+fn compile_reflection_function_attributes_follow_method_first_class_callable_origin() {
+    let root = temp_dir("ptn-native-reflection-function-method-callable-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-method-callable-attributes.php");
+    let output = root.join("reflection-function-method-callable-attributes-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(Attribute::TARGET_FUNCTION)]
+class FunctionOnly {}
+
+#[Attribute(Attribute::TARGET_METHOD)]
+class MethodOnly {}
+
+class CallableAttributeTarget {
+    #[FunctionOnly]
+    #[MethodOnly]
+    public function run() {}
+}
+
+#[FunctionOnly]
+#[MethodOnly]
+function callable_attribute_target() {}
+
+function showCallableAttribute(string $attributeClass, Closure $callable): void {
+    try {
+        $attribute = (new ReflectionFunction($callable))->getAttributes($attributeClass)[0];
+        echo get_class($attribute->newInstance()), \"\\n\";
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+$function = callable_attribute_target(...);
+$method = [new CallableAttributeTarget(), 'run'](...);
+
+showCallableAttribute(FunctionOnly::class, $function);
+showCallableAttribute(MethodOnly::class, $function);
+showCallableAttribute(FunctionOnly::class, $method);
+showCallableAttribute(MethodOnly::class, $method);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "FunctionOnly\n",
+            "Attribute \"MethodOnly\" cannot target function (allowed targets: method)\n",
+            "Attribute \"FunctionOnly\" cannot target method (allowed targets: function)\n",
+            "MethodOnly\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_function_method_metadata_attributes"));
+}
+
+#[test]
 fn compile_property_first_class_callable_uses_declaring_method_metadata() {
     let root = temp_dir("ptn-native-property-first-class-callable-declaring-method");
     fs::create_dir_all(&root).unwrap();
@@ -42900,6 +42981,7 @@ class Box {
     public (X&Y)|null $dnf;
     public iterable $items;
     public ?iterable $maybe;
+    public string|null $nullableText { set => $value; }
     public function make(): static { return $this; }
 }
 function f_union(): X|Y|int|null {}
@@ -42927,6 +43009,9 @@ show((new ReflectionFunction('f_iterable'))->getReturnType());
 show((new ReflectionClass(Box::class))->getProperty('dnf')->getType());
 show((new ReflectionClass(Box::class))->getProperty('items')->getType());
 show((new ReflectionClass(Box::class))->getProperty('maybe')->getType());
+$nullableText = (new ReflectionClass(Box::class))->getProperty('nullableText');
+show($nullableText->getType());
+show($nullableText->getSettableType());
 show((new ReflectionMethod(Box::class, 'make'))->getReturnType());
 ",
     )
@@ -42939,7 +43024,7 @@ show((new ReflectionMethod(Box::class, 'make'))->getReturnType());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "\nDeprecated: f_implicit(): Implicitly marking parameter $value as nullable is deprecated, the explicit nullable type must be used instead in ptn on line 13\n",
+            "\nDeprecated: f_implicit(): Implicitly marking parameter $value as nullable is deprecated, the explicit nullable type must be used instead in ptn on line 14\n",
             "ReflectionUnionType X|Y|int|null null=1\n",
             "  ReflectionNamedType X name=X builtin=0 null=0\n",
             "  ReflectionNamedType Y name=Y builtin=0 null=0\n",
@@ -42961,6 +43046,10 @@ show((new ReflectionMethod(Box::class, 'make'))->getReturnType());
             "  name=iterable builtin=1\n",
             "ReflectionNamedType ?iterable null=1\n",
             "  name=iterable builtin=1\n",
+            "ReflectionNamedType ?string null=1\n",
+            "  name=string builtin=1\n",
+            "ReflectionNamedType ?string null=1\n",
+            "  name=string builtin=1\n",
             "ReflectionNamedType static null=0\n",
             "  name=static builtin=0\n",
         )

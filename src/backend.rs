@@ -6057,6 +6057,13 @@ fn reflection_property_named_type_metadata(
             metadata.name = Some("self".to_string());
             metadata.display_name = "self".to_string();
             metadata.is_builtin = false;
+        } else if metadata.name.is_some()
+            && matches!(semantic_type, TypeHint::Nullable(_) | TypeHint::Union(_))
+        {
+            metadata.display_name = reflection_named_type_display_name(
+                reflection_nullable_named_type(semantic_type)?,
+                metadata.allows_null,
+            );
         } else {
             metadata.display_name = type_hint.text.clone();
         }
@@ -6081,6 +6088,14 @@ fn reflection_property_named_type_metadata(
         }
         PropertyTypeKind::Unsupported => {
             let name = type_hint.text.strip_prefix('?').unwrap_or(&type_hint.text);
+            if let Some(nullable_name) = reflection_nullable_textual_named_type(name) {
+                return Some(ReflectionTypeMetadata {
+                    name: Some(nullable_name.to_string()),
+                    display_name: format!("?{nullable_name}"),
+                    allows_null: true,
+                    is_builtin: reflection_textual_named_type_is_builtin(nullable_name),
+                });
+            }
             if matches!(name, "callable" | "iterable" | "true" | "false" | "static") {
                 return Some(ReflectionTypeMetadata {
                     name: Some(name.to_string()),
@@ -6109,6 +6124,51 @@ fn reflection_property_named_type_metadata(
         allows_null: type_hint.allows_null,
         is_builtin: true,
     })
+}
+
+fn reflection_nullable_textual_named_type(type_text: &str) -> Option<&str> {
+    let mut members = type_text.split('|').map(str::trim);
+    let first = members.next()?;
+    let second = members.next()?;
+    if members.next().is_some() {
+        return None;
+    }
+    match (
+        first.eq_ignore_ascii_case("null"),
+        second.eq_ignore_ascii_case("null"),
+    ) {
+        (true, false) if reflection_textual_type_is_named(second) => Some(second),
+        (false, true) if reflection_textual_type_is_named(first) => Some(first),
+        _ => None,
+    }
+}
+
+fn reflection_textual_type_is_named(type_text: &str) -> bool {
+    !type_text.is_empty()
+        && !type_text.contains('&')
+        && !type_text.contains('|')
+        && !type_text.starts_with('(')
+        && !type_text.ends_with(')')
+}
+
+fn reflection_textual_named_type_is_builtin(type_text: &str) -> bool {
+    matches!(
+        type_text.to_ascii_lowercase().as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn reflection_property_never_type_metadata() -> ReflectionTypeMetadata {

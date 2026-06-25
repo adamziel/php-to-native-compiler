@@ -153018,6 +153018,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_int((int64_t)end_line);
     }
     if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
+        if (ptn_declared_class_is_enum(data->class_name)) {
+            return ptn_reflection_class_object_from_name_as(runtime, "ReflectionEnum", data->class_name);
+        }
         return ptn_reflection_class_object_from_name(runtime, data->class_name);
     }
     if (ptn_ascii_case_equal(name, "getParameters")) {
@@ -177796,6 +177799,19 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             return ptn_reflection_function_method_metadata_attributes(
                 runtime,
                 metadata.attribute_method_name,
+                argc,
+                args,
+                line
+            );
+        }
+        if (
+            !metadata.is_internal &&
+            metadata.name != NULL &&
+            strstr(metadata.name, "::") != NULL
+        ) {
+            return ptn_reflection_function_method_metadata_attributes(
+                runtime,
+                metadata.name,
                 argc,
                 args,
                 line
