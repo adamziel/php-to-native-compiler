@@ -77484,6 +77484,161 @@ var_dump($bag);
 }
 
 #[test]
+fn compile_property_hook_debug_materialization_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-debug-materialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-debug-materialization.php");
+    let output = root.join("property-hook-debug-materialization-bin");
+    fs::write(
+        &input,
+        "<?php
+class HookDebug {
+    public $plain = 'plain';
+    public $virtual {
+        get { return 'VIRTUAL'; }
+    }
+    public $backed = 'backed' {
+        get { return strtoupper($this->backed); }
+    }
+}
+
+$obj = new HookDebug();
+var_dump(get_object_vars($obj));
+var_export($obj);
+echo \"\\n\";
+echo json_encode($obj), \"\\n\";
+var_dump((array) $obj);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"plain\"]=>\n",
+            "  string(5) \"plain\"\n",
+            "  [\"virtual\"]=>\n",
+            "  string(7) \"VIRTUAL\"\n",
+            "  [\"backed\"]=>\n",
+            "  string(6) \"BACKED\"\n",
+            "}\n",
+            "\\HookDebug::__set_state(array(\n",
+            "   'plain' => 'plain',\n",
+            "   'virtual' => 'VIRTUAL',\n",
+            "   'backed' => 'BACKED',\n",
+            "))\n",
+            "{\"plain\":\"plain\",\"virtual\":\"VIRTUAL\",\"backed\":\"BACKED\"}\n",
+            "array(2) {\n",
+            "  [\"plain\"]=>\n",
+            "  string(5) \"plain\"\n",
+            "  [\"backed\"]=>\n",
+            "  string(6) \"backed\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_json_encode_append_object_properties"));
+}
+
+#[test]
+fn compile_property_hook_generator_getter_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-generator-getter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-generator-getter.php");
+    let output = root.join("property-hook-generator-getter-bin");
+    fs::write(
+        &input,
+        "<?php
+class GeneratorHookBag {
+    public $numbers {
+        get {
+            yield 1;
+            yield 2;
+            yield 3;
+        }
+    }
+}
+
+var_dump(iterator_to_array((new GeneratorHookBag())->numbers));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_new"));
+}
+
+#[test]
+fn compile_php8_class_name_method_is_not_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-class-name-method-not-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-name-method-not-constructor.php");
+    let output = root.join("class-name-method-not-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class OldStyleName {
+    public function OldStyleName() {
+        echo \"bad\\n\";
+    }
+}
+
+new OldStyleName();
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_property_hook_object_foreach_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-object-foreach-lifecycle");
     fs::create_dir_all(&root).unwrap();
