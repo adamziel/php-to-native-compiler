@@ -21135,6 +21135,8 @@ fn class_property_exists_chain<'a>(
         let instance_property_entry = |property: &'a crate::ir::PropertyDecl| {
             let effective_get_hook = effective_property_hook(class, property, classes, "get");
             let effective_set_hook = effective_property_hook(class, property, classes, "set");
+            let effective_has_hooks =
+                property.has_hooks || effective_get_hook.is_some() || effective_set_hook.is_some();
             ClassPropertyExistsEntry {
                 declaring_class: class.name.as_str(),
                 name: property.name.as_str(),
@@ -21145,7 +21147,7 @@ fn class_property_exists_chain<'a>(
                 is_abstract: property.is_abstract,
                 is_readonly: property.is_readonly,
                 is_promoted: property.is_promoted,
-                has_hooks: property.has_hooks,
+                has_hooks: effective_has_hooks,
                 is_virtual: property.is_virtual,
                 hook_has_get: effective_get_hook.is_some(),
                 hook_has_set: effective_set_hook.is_some(),
@@ -21373,12 +21375,12 @@ fn class_reflection_property_defaults_chain<'a>(
 fn class_property_initialization_chain(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)> {
+) -> Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)> {
     fn collect(
         class: &ClassDecl,
         classes: &[ClassDecl],
         seen_classes: &mut HashSet<String>,
-        properties: &mut Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+        properties: &mut Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
         if !seen_classes.insert(lookup_name) {
@@ -21396,6 +21398,7 @@ fn class_property_initialization_chain(
                 .and_then(|(_, hook_property)| hook_property.hook_get_value.clone());
             (
                 property_runtime_declaring_class(class, &property, classes),
+                class.name.clone(),
                 property,
                 hook_get_value,
             )
@@ -21421,7 +21424,7 @@ fn property_default_class_constant_reads(
 ) -> Vec<PropertyDefaultClassConstantRead> {
     let mut reads = Vec::new();
     let mut seen = HashSet::new();
-    for (declaring_class_name, property, hook_get_value) in
+    for (declaring_class_name, _source_class_name, property, hook_get_value) in
         class_property_initialization_chain(class, classes)
     {
         let Some(value) = hook_get_value.as_ref().or(property.value.as_ref()) else {
@@ -44545,15 +44548,22 @@ impl ValueEmitter {
                 result_temp,
                 chain
                     .into_iter()
-                    .map(|(declaring_class_name, property, hook_get_value)| {
-                        let runtime_declaring_class =
-                            if declaring_class_name.eq_ignore_ascii_case(&candidate.name) {
-                                parent_name.to_string()
-                            } else {
-                                declaring_class_name
-                            };
-                        (runtime_declaring_class, property, hook_get_value)
-                    })
+                    .map(
+                        |(declaring_class_name, source_class_name, property, hook_get_value)| {
+                            let runtime_declaring_class =
+                                if declaring_class_name.eq_ignore_ascii_case(&candidate.name) {
+                                    parent_name.to_string()
+                                } else {
+                                    declaring_class_name
+                                };
+                            (
+                                runtime_declaring_class,
+                                source_class_name,
+                                property,
+                                hook_get_value,
+                            )
+                        },
+                    )
                     .collect::<Vec<_>>(),
             );
             emitted_branch = true;
@@ -44568,9 +44578,9 @@ impl ValueEmitter {
         out: &mut String,
         indent: &str,
         result_temp: &str,
-        chain: Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+        chain: Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
     ) {
-        for (declaring_class_name, property, hook_get_value) in chain {
+        for (declaring_class_name, source_class_name, property, hook_get_value) in chain {
             let previous_class_name = self
                 .current_class_name
                 .replace(declaring_class_name.clone());
@@ -44674,7 +44684,7 @@ impl ValueEmitter {
             let hook_metadata_class = self
                 .classes
                 .iter()
-                .find(|class| class.name.eq_ignore_ascii_case(&declaring_class_name));
+                .find(|class| class.name.eq_ignore_ascii_case(&source_class_name));
             let effective_hook_get = hook_metadata_class
                 .and_then(|class| effective_property_hook(class, &property, &self.classes, "get"));
             let effective_hook_set = hook_metadata_class
@@ -44685,6 +44695,8 @@ impl ValueEmitter {
             let runtime_is_virtual = property.is_virtual && !has_inherited_backing_property;
             let effective_hook_has_get = effective_hook_get.is_some() || property.hook_has_get;
             let effective_hook_has_set = effective_hook_set.is_some() || property.hook_has_set;
+            let effective_has_hooks =
+                property.has_hooks || effective_hook_has_get || effective_hook_has_set;
             let hook_get_declaring_class = effective_hook_get
                 .map(|(class_name, _)| class_name)
                 .or_else(|| {
@@ -44715,7 +44727,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if property.is_readonly { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(if property.has_hooks { "1" } else { "0" });
+            out.push_str(if effective_has_hooks { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(if runtime_is_virtual { "1" } else { "0" });
             out.push_str(", ");
@@ -44755,7 +44767,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(if property.has_hooks && runtime_is_virtual {
+            out.push_str(if effective_has_hooks && runtime_is_virtual {
                 "0"
             } else if property.type_hint.is_some()
                 && property.value.is_none()
@@ -50987,7 +50999,7 @@ impl ValueEmitter {
         resolved_name: &str,
     ) -> Option<(
         String,
-        Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+        Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
     )> {
         let (class_name, method_name) = self.split_static_call_name(resolved_name)?;
         if !method_name.eq_ignore_ascii_case("createFromISO8601String")

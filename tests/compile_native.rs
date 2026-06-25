@@ -9923,6 +9923,29 @@ class Child extends Base implements Contract {
 }
 
 #[test]
+fn parser_accepts_hook_override_attributes_for_implicit_backed_parent_hooks() {
+    parser::parse(
+        "<?php
+class Base {
+    public $value {
+        set {
+            $this->value = $value;
+        }
+    }
+}
+
+class Child extends Base {
+    public $value {
+        #[\\Override]
+        get => parent::$value::get();
+    }
+}
+",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_preserves_modeled_builtin_attribute_metadata() {
     let source = "<?php
 #[\\Deprecated(\"use newer\") ]
@@ -80629,6 +80652,90 @@ var_dump($default->prop);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("active_property_hook_property"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_set"));
+}
+
+#[test]
+fn compile_property_hook_inherited_plain_redeclaration_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-inherited-plain-redeclaration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-inherited-plain-redeclaration.php");
+    let output = root.join("property-hook-inherited-plain-redeclaration-bin");
+    fs::write(
+        &input,
+        "<?php
+class BackedBase {
+    public $prop {
+        set {
+            $this->prop = 42;
+        }
+    }
+}
+
+class BackedChild extends BackedBase {
+    public $prop {
+        #[Override]
+        get => parent::$prop::get();
+    }
+}
+
+$backed = new BackedChild();
+$backed->prop = 1;
+var_dump($backed->prop);
+
+class A {
+    public $prop {
+        get {
+            echo __METHOD__, \"\\n\";
+            return 42;
+        }
+        set {
+            echo __METHOD__, \"\\n\";
+        }
+    }
+}
+
+class B extends A {
+    public $prop;
+}
+
+$a = new A();
+$a->prop = 43;
+var_dump($a->prop);
+
+$b = new B();
+$b->prop = 43;
+var_dump($b->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(42)\n",
+            "A::$prop::set\n",
+            "A::$prop::get\n",
+            "int(42)\n",
+            "A::$prop::set\n",
+            "A::$prop::get\n",
+            "int(42)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property_with_hooks"));
     assert!(c_source.contains("ptn_declared_class_property_hook_get"));
     assert!(c_source.contains("ptn_declared_class_property_hook_set"));
 }

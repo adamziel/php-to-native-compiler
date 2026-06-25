@@ -19700,11 +19700,18 @@ fn property_satisfies_hook(
     }
     match hook_name {
         "get" => {
-            property.hook_has_get
-                && !property.hook_get_is_abstract
-                && (!requires_by_ref || property.hook_get_returns_by_ref)
+            if property.hook_has_get {
+                return !property.hook_get_is_abstract
+                    && (!requires_by_ref || property.hook_get_returns_by_ref);
+            }
+            !property.is_virtual && !requires_by_ref
         }
-        "set" => property.hook_has_set && !property.hook_set_is_abstract,
+        "set" => {
+            if property.hook_has_set {
+                return !property.hook_set_is_abstract;
+            }
+            !property.is_virtual && !property.is_readonly
+        }
         _ => false,
     }
 }
