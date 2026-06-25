@@ -5031,11 +5031,11 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Never
             }
-            TokenKind::IntType | TokenKind::IntegerType => {
+            TokenKind::IntType => {
                 self.advance();
                 TypeHint::Int
             }
-            TokenKind::FloatType | TokenKind::DoubleType => {
+            TokenKind::FloatType => {
                 self.advance();
                 TypeHint::Float
             }
@@ -5045,9 +5045,15 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::String
             }
-            TokenKind::BoolType | TokenKind::BooleanType => {
+            TokenKind::BoolType => {
                 self.advance();
                 TypeHint::Bool
+            }
+            TokenKind::IntegerType | TokenKind::DoubleType | TokenKind::BooleanType => {
+                let parsed = self.parse_name("expected type hint")?;
+                validate_qualified_type_name_not_reserved(&parsed)?;
+                self.warn_if_confusable_unqualified_type_hint(&parsed);
+                TypeHint::Class(self.resolve_class_name(&parsed))
             }
             TokenKind::True => {
                 self.advance();
@@ -5098,6 +5104,7 @@ impl Parser<'_> {
             TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
                 let parsed = self.parse_name("expected type hint")?;
                 validate_qualified_type_name_not_reserved(&parsed)?;
+                self.warn_if_confusable_unqualified_type_hint(&parsed);
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             _ if name_segment_from_token(&token.kind).is_some()
@@ -5123,6 +5130,53 @@ impl Parser<'_> {
             type_hint,
             span: token.span,
         })
+    }
+
+    fn warn_if_confusable_unqualified_type_hint(&mut self, parsed: &ParsedName) {
+        if parsed.resolution != NameResolution::Unqualified {
+            return;
+        }
+        let lowered = parsed.name.to_ascii_lowercase();
+        if self.class_aliases.contains_key(&lowered) {
+            return;
+        }
+        let Some(message) = self.confusable_type_hint_warning_message(&lowered, &parsed.name)
+        else {
+            return;
+        };
+        self.compile_warnings.push(CompileWarning {
+            message,
+            span: parsed.span,
+            kind: CompileWarningKind::Warning,
+        });
+    }
+
+    fn confusable_type_hint_warning_message(&self, lowered: &str, name: &str) -> Option<String> {
+        let suppression = self.confusable_type_hint_suppression(name);
+        match lowered {
+            "integer" => Some(format!(
+                "\"{name}\" will be interpreted as a class name. Did you mean \"int\"? Write {suppression} to suppress this warning"
+            )),
+            "double" => Some(format!(
+                "\"{name}\" will be interpreted as a class name. Did you mean \"float\"? Write {suppression} to suppress this warning"
+            )),
+            "boolean" => Some(format!(
+                "\"{name}\" will be interpreted as a class name. Did you mean \"bool\"? Write {suppression} to suppress this warning"
+            )),
+            "resource" => Some(format!(
+                "\"{name}\" is not a supported builtin type and will be interpreted as a class name. Write {suppression} to suppress this warning"
+            )),
+            _ => None,
+        }
+    }
+
+    fn confusable_type_hint_suppression(&self, name: &str) -> String {
+        match self.current_namespace.as_deref() {
+            Some(namespace) if !namespace.is_empty() => {
+                format!("\"\\{namespace}\\{name}\" or import the class with \"use\"")
+            }
+            _ => format!("\"\\{name}\""),
+        }
     }
 
     fn relative_type_hint(&self, keyword: &str, span: SourceSpan) -> Result<TypeHint> {
@@ -11161,11 +11215,8 @@ fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
         "array"
             | "callable"
             | "bool"
-            | "boolean"
             | "float"
-            | "double"
             | "int"
-            | "integer"
             | "iterable"
             | "mixed"
             | "null"
