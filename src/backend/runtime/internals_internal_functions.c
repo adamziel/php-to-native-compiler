@@ -163201,6 +163201,13 @@ static const char *ptn_simplexml_debug_child_name(PtnXmlNode *node) {
     return NULL;
 }
 
+static const char *ptn_simplexml_element_child_name(PtnXmlNode *node) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+        return NULL;
+    }
+    return ptn_xml_local_name(node->name == NULL ? "" : node->name);
+}
+
 static int ptn_simplexml_node_matches_property(PtnXmlNode *node, const char *property) {
     const char *name = ptn_simplexml_debug_child_name(node);
     return name != NULL && property != NULL && strcmp(name, property) == 0;
@@ -163234,7 +163241,7 @@ static PtnXmlNode *ptn_simplexml_iterator_node_at(PtnSimpleXmlData *data, size_t
     size_t visible_index = 0;
     for (size_t i = 0; parent != NULL && i < parent->child_count; i++) {
         PtnXmlNode *child = parent->children[i];
-        if (ptn_simplexml_debug_child_name(child) == NULL ||
+        if (ptn_simplexml_element_child_name(child) == NULL ||
             !ptn_simplexml_namespace_view_matches(data, child)) {
             continue;
         }
@@ -163257,7 +163264,7 @@ static size_t ptn_simplexml_iterator_count(PtnSimpleXmlData *data) {
     PtnXmlNode *parent = data->items[0];
     for (size_t i = 0; parent != NULL && i < parent->child_count; i++) {
         PtnXmlNode *child = parent->children[i];
-        if (ptn_simplexml_debug_child_name(child) != NULL &&
+        if (ptn_simplexml_element_child_name(child) != NULL &&
             ptn_simplexml_namespace_view_matches(data, child)) {
             count++;
         }
@@ -165392,7 +165399,7 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
         size_t item_capacity = 0;
         PtnXmlNode *node = data->items[0];
         for (size_t i = 0; node != NULL && i < node->child_count; i++) {
-            if (ptn_simplexml_debug_child_name(node->children[i]) != NULL &&
+            if (ptn_simplexml_element_child_name(node->children[i]) != NULL &&
                 ptn_simplexml_node_namespace_matches(node->children[i], namespace_uri)) {
                 ptn_xml_node_array_push(&items, &item_count, &item_capacity, node->children[i]);
             }
@@ -165462,7 +165469,7 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
         if (node != NULL) {
             const char *name = data->attributes
                 ? (node->name == NULL ? "" : node->name)
-                : ptn_simplexml_debug_child_name(node);
+                : ptn_simplexml_element_child_name(node);
             if (name != NULL) {
                 return ptn_owned_string(ptn_duplicate_string(name));
             }

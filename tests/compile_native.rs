@@ -44308,6 +44308,63 @@ var_dump($copy->item[2]);
 }
 
 #[test]
+fn compile_simplexml_children_iteration_filters_non_elements_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-children-filter-non-elements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-children-filter-non-elements.php");
+    let output = root.join("simplexml-children-filter-non-elements-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sxe = simplexml_load_string(<<<'XML'
+<root>
+  <first>one</first>
+  <!-- comment -->
+  <?target ignored?>
+  <![CDATA[raw]]>
+  <second>two</second>
+</root>
+XML);
+
+foreach ($sxe->children() as $name => $child) {
+    echo $name, ':', trim((string) $child), "\n";
+}
+echo "clone\n";
+foreach (clone $sxe->children() as $name => $child) {
+    echo $name, ':', trim((string) $child), "\n";
+}
+echo "direct\n";
+foreach ($sxe as $name => $child) {
+    echo $name, ':', trim((string) $child), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "first:one\n",
+            "second:two\n",
+            "clone\n",
+            "first:one\n",
+            "second:two\n",
+            "direct\n",
+            "first:one\n",
+            "second:two\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_element_child_name"));
+}
+
+#[test]
 fn compile_simplexml_add_attribute_and_modern_dom_interface_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-add-attribute-modern-dom-interface");
     fs::create_dir_all(&root).unwrap();
