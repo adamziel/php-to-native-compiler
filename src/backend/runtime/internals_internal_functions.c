@@ -6881,6 +6881,7 @@ typedef struct {
     PtnValue storage;
     size_t index;
     int64_t flags;
+    int sorting;
 } PtnArrayIteratorData;
 
 typedef struct {
@@ -9928,6 +9929,28 @@ static PtnValue ptn_serialize_spl_properties_value(PtnRuntime *runtime, PtnObjec
     );
 }
 
+static PtnValue ptn_serialize_spl_legacy_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_array_backed_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_serialize_spl_property_table_key(object, entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
 static void ptn_serialize_append_spl_array_backed_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -9994,6 +10017,54 @@ static PtnValue ptn_spl_array_backed_serialize_array(
         );
     }
     return result;
+}
+
+static PtnValue ptn_spl_array_backed_legacy_serialize(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    PtnSerializeState state;
+    ptn_serialize_state_init(&state, runtime, line);
+    void *previous_active_state = runtime == NULL ? NULL : runtime->active_serialize_state;
+    if (runtime != NULL) {
+        runtime->active_serialize_state = &state;
+    }
+    int caught_exception = 0;
+    PtnTryFrame serialize_frame;
+    if (runtime != NULL) {
+        ptn_try_frame_push(runtime, &serialize_frame);
+        if (setjmp(serialize_frame.jump) != 0) {
+            caught_exception = 1;
+        }
+    }
+    if (!caught_exception) {
+        ptn_string_buffer_append(&buffer, "x:");
+        PtnValue flags = ptn_int(ptn_serialize_spl_array_backed_flags(object));
+        ptn_serialize_append_value_with_id(&buffer, flags, &state, 0);
+        ptn_value_destroy(&flags);
+        PtnValue storage = ptn_serialize_spl_storage_value(object);
+        ptn_serialize_append_value_with_id(&buffer, storage, &state, 0);
+        ptn_value_destroy(&storage);
+        ptn_string_buffer_append(&buffer, ";m:");
+        PtnValue properties = ptn_serialize_spl_legacy_properties_value(object);
+        ptn_serialize_append_value_with_id(&buffer, properties, &state, 0);
+        ptn_value_destroy(&properties);
+    }
+    if (runtime != NULL) {
+        ptn_try_frame_pop(runtime, &serialize_frame);
+        runtime->active_serialize_state = previous_active_state;
+    }
+    if (caught_exception) {
+        free(buffer.data);
+        ptn_serialize_state_free(&state);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
+    ptn_serialize_state_free(&state);
+    return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
 static int ptn_serialize_object_is_spl_fixed_array(PtnObject *object) {
@@ -10157,6 +10228,54 @@ static PtnValue ptn_spl_dllist_serialize_array(PtnRuntime *runtime, PtnObject *o
         ptn_serialize_spl_dllist_properties_value(runtime, object)
     );
     return result;
+}
+
+static PtnValue ptn_spl_dllist_legacy_serialize(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    PtnSerializeState state;
+    ptn_serialize_state_init(&state, runtime, line);
+    void *previous_active_state = runtime == NULL ? NULL : runtime->active_serialize_state;
+    if (runtime != NULL) {
+        runtime->active_serialize_state = &state;
+    }
+    int caught_exception = 0;
+    PtnTryFrame serialize_frame;
+    if (runtime != NULL) {
+        ptn_try_frame_push(runtime, &serialize_frame);
+        if (setjmp(serialize_frame.jump) != 0) {
+            caught_exception = 1;
+        }
+    }
+    if (!caught_exception) {
+        PtnValue flags = ptn_int(ptn_serialize_spl_dllist_flags(object));
+        ptn_serialize_append_value_with_id(&buffer, flags, &state, 0);
+        ptn_value_destroy(&flags);
+        PtnValue storage = ptn_serialize_spl_dllist_storage_value(object);
+        PtnValue resolved_storage = ptn_value_deref(storage);
+        PtnArray *array = resolved_storage.type == PTN_ARRAY ? resolved_storage.as.array : NULL;
+        for (size_t i = 0; array != NULL && i < array->len; i++) {
+            ptn_string_buffer_append_char(&buffer, ':');
+            ptn_serialize_append_value_with_id(&buffer, array->entries[i].value, &state, 0);
+        }
+        ptn_value_destroy(&storage);
+    }
+    if (runtime != NULL) {
+        ptn_try_frame_pop(runtime, &serialize_frame);
+        runtime->active_serialize_state = previous_active_state;
+    }
+    if (caught_exception) {
+        free(buffer.data);
+        ptn_serialize_state_free(&state);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
+    ptn_serialize_state_free(&state);
+    return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
 static int ptn_serialize_object_is_spl_object_storage(PtnObject *object) {
@@ -146008,7 +146127,11 @@ static int ptn_array_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "offsetUnset")
         || ptn_ascii_case_equal(method_name, "rewind")
         || ptn_ascii_case_equal(method_name, "seek")
+        || ptn_ascii_case_equal(method_name, "serialize")
         || ptn_ascii_case_equal(method_name, "setFlags")
+        || ptn_ascii_case_equal(method_name, "unserialize")
+        || ptn_ascii_case_equal(method_name, "uasort")
+        || ptn_ascii_case_equal(method_name, "uksort")
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
@@ -146039,6 +146162,7 @@ static int ptn_array_object_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "offsetGet")
         || ptn_ascii_case_equal(method_name, "offsetSet")
         || ptn_ascii_case_equal(method_name, "offsetUnset")
+        || ptn_ascii_case_equal(method_name, "serialize")
         || ptn_ascii_case_equal(method_name, "setFlags")
         || ptn_ascii_case_equal(method_name, "setIteratorClass")
         || ptn_ascii_case_equal(method_name, "unserialize")
@@ -146165,9 +146289,11 @@ static int ptn_spl_doubly_linked_list_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "prev")
         || ptn_ascii_case_equal(method_name, "push")
         || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "serialize")
         || ptn_ascii_case_equal(method_name, "setIteratorMode")
         || ptn_ascii_case_equal(method_name, "shift")
         || ptn_ascii_case_equal(method_name, "top")
+        || ptn_ascii_case_equal(method_name, "unserialize")
         || ptn_ascii_case_equal(method_name, "unshift")
         || ptn_ascii_case_equal(method_name, "valid");
 }
@@ -161526,6 +161652,7 @@ static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnVal
         data->storage = ptn_array_from_literal_entries(0, NULL);
         data->index = 0;
         data->flags = 0;
+        data->sorting = 0;
         receiver.as.object->native_data = data;
         receiver.as.object->native_data_free = ptn_array_iterator_data_free;
         ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, 0);
@@ -165441,6 +165568,7 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
         data->storage = storage;
         data->index = 0;
         data->flags = ptn_unserialize_spl_array_backed_public_flags(flags);
+        data->sorting = 0;
         ptn_unserialize_replace_native_data(instance, data, ptn_array_iterator_data_free);
         PtnUnserializeState *state = runtime == NULL
             ? NULL
@@ -170364,6 +170492,7 @@ static PtnValue ptn_array_iterator_new_from_storage(
     data->storage = ptn_value_clone_deref(storage);
     data->index = 0;
     data->flags = flags;
+    data->sorting = 0;
 
     PtnValue object;
     if (!ptn_internal_class_name_is_array_iterator(class_name) &&
@@ -170685,6 +170814,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_clone(
     }
     clone_data->index = 0;
     clone_data->flags = source_data->flags;
+    clone_data->sorting = 0;
     clone.as.object->native_data = clone_data;
     clone.as.object->native_data_free = ptn_array_iterator_data_free;
     ptn_spl_declare_storage_property(runtime, clone, "ArrayIterator", clone_data->storage, line);
@@ -171057,6 +171187,147 @@ static PtnValue ptn_spl_dllist_unserialize_array(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+    return ptn_null();
+}
+
+static PtnValue ptn_spl_dllist_unserialize_legacy_payload(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplDoublyLinkedListData *data,
+    PtnStringOperand payload,
+    size_t line
+) {
+    PtnUnserializeState local_state;
+    PtnUnserializeState *state = runtime == NULL
+        ? NULL
+        : (PtnUnserializeState *)runtime->active_unserialize_state;
+    int using_local_state = 0;
+    void *previous_active_state = NULL;
+    PtnUnserializeSavedInput saved;
+    size_t saved_id_len = 0;
+    if (state == NULL) {
+        ptn_unserialize_state_init(&local_state, (const char *)payload.data, payload.len, line);
+        state = &local_state;
+        using_local_state = 1;
+        if (runtime != NULL) {
+            previous_active_state = runtime->active_unserialize_state;
+            runtime->active_unserialize_state = state;
+        }
+    } else {
+        saved.data = state->data;
+        saved.len = state->len;
+        saved.pos = state->pos;
+        saved.error_pos = state->error_pos;
+        saved.line = state->line;
+        saved.failed = state->failed;
+        saved.bad_data = state->bad_data;
+        saved.unexpected_end = state->unexpected_end;
+        saved.insufficient_data = state->insufficient_data;
+        saved.insufficient_required = state->insufficient_required;
+        saved.insufficient_present = state->insufficient_present;
+        saved.max_depth = state->max_depth;
+        saved.current_depth = state->current_depth;
+        saved.max_depth_exceeded = state->max_depth_exceeded;
+        saved_id_len = state->id_len;
+
+        state->data = (const char *)payload.data;
+        state->len = payload.len;
+        state->pos = 0;
+        state->error_pos = 0;
+        state->line = line;
+        state->failed = 0;
+        state->bad_data = 0;
+        state->unexpected_end = 0;
+        state->insufficient_data = 0;
+        state->insufficient_required = 0;
+        state->insufficient_present = 0;
+        state->max_depth_exceeded = 0;
+    }
+
+    int failed = 0;
+    int64_t parsed_flags = 0;
+    PtnValue storage = ptn_null();
+    PtnUnserializeValue flags = ptn_unserialize_parse_value(state, runtime);
+    PtnValue resolved_flags = ptn_value_deref(flags.value);
+    if (state->failed || resolved_flags.type != PTN_INT || resolved_flags.as.integer < 0) {
+        failed = 1;
+        goto done;
+    }
+    parsed_flags = resolved_flags.as.integer;
+    ptn_unserialize_retain_id_value(state, flags.id, flags.value);
+    ptn_value_destroy(&flags.value);
+    flags.value = ptn_null();
+
+    storage = ptn_array_from_literal_entries(0, NULL);
+    while (!state->failed && state->pos < state->len) {
+        if (!ptn_unserialize_consume(state, ':')) {
+            break;
+        }
+        PtnUnserializeValue item = ptn_unserialize_parse_value(state, runtime);
+        if (state->failed) {
+            ptn_value_destroy(&item.value);
+            failed = 1;
+            break;
+        }
+        if (!ptn_unserialize_store_entry(
+                runtime,
+                state,
+                storage.as.array,
+                ptn_array_int_key(storage.as.array->next_auto_key),
+                item
+            )) {
+            failed = 1;
+            break;
+        }
+    }
+
+    if (state->failed || state->pos != state->len) {
+        failed = 1;
+    }
+
+done:
+    ptn_value_destroy(&flags.value);
+
+    if (failed) {
+        ptn_value_destroy(&storage);
+    } else {
+        ptn_value_destroy(&data->storage);
+        data->storage = storage;
+        data->index = 0;
+        data->flags = parsed_flags;
+    }
+
+    if (using_local_state) {
+        ptn_unserialize_state_free(&local_state);
+        if (runtime != NULL) {
+            runtime->active_unserialize_state = previous_active_state;
+        }
+    } else {
+        if (failed) {
+            ptn_unserialize_truncate_ids(state, saved_id_len);
+        }
+        state->data = saved.data;
+        state->len = saved.len;
+        state->pos = saved.pos;
+        state->error_pos = saved.error_pos;
+        state->line = saved.line;
+        state->failed = saved.failed;
+        state->bad_data = saved.bad_data;
+        state->unexpected_end = saved.unexpected_end;
+        state->insufficient_data = saved.insufficient_data;
+        state->insufficient_required = saved.insufficient_required;
+        state->insufficient_present = saved.insufficient_present;
+        state->max_depth = saved.max_depth;
+        state->current_depth = saved.current_depth;
+        state->max_depth_exceeded = saved.max_depth_exceeded;
+    }
+
+    if (failed) {
+        ptn_spl_throw_incomplete_unserialize_data(runtime);
+        return ptn_null();
+    }
+
     ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
     return ptn_null();
 }
@@ -174189,6 +174460,15 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
             ? ptn_spl_dllist_serialize_array(runtime, resolved_receiver.as.object)
             : ptn_array_from_literal_entries(0, NULL);
     }
+    if (ptn_ascii_case_equal(name, "serialize")) {
+        ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return resolved_receiver.type == PTN_OBJECT
+            ? ptn_spl_dllist_legacy_serialize(runtime, resolved_receiver.as.object, line)
+            : ptn_string("");
+    }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::__unserialize() expects exactly 1 argument");
@@ -174201,6 +174481,42 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
             args[0],
             line
         );
+    }
+    if (ptn_ascii_case_equal(name, "unserialize")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplDoublyLinkedList::unserialize() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnStringOperand payload = ptn_internal_expect_string_arg(
+            runtime,
+            "SplDoublyLinkedList::unserialize",
+            1,
+            "data",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_spl_dllist_unserialize_legacy_payload(
+            runtime,
+            receiver,
+            data,
+            payload,
+            line
+        );
+        ptn_string_operand_free(payload);
+        return result;
     }
     if (is_queue && ptn_ascii_case_equal(name, "enqueue")) {
         name = "push";
@@ -178717,6 +179033,8 @@ static int ptn_array_iterator_method_accesses_storage(const char *name) {
         ptn_ascii_case_equal(name, "ksort") ||
         ptn_ascii_case_equal(name, "natsort") ||
         ptn_ascii_case_equal(name, "natcasesort") ||
+        ptn_ascii_case_equal(name, "uasort") ||
+        ptn_ascii_case_equal(name, "uksort") ||
         ptn_ascii_case_equal(name, "offsetGet") ||
         ptn_ascii_case_equal(name, "offsetSet") ||
         ptn_ascii_case_equal(name, "offsetExists") ||
@@ -178777,6 +179095,16 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ? ptn_spl_array_backed_serialize_array(runtime, resolved_receiver.as.object, 0)
             : ptn_array_from_literal_entries(0, NULL);
     }
+    if (ptn_ascii_case_equal(name, "serialize")) {
+        ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        return resolved_receiver.type == PTN_OBJECT
+            ? ptn_spl_array_backed_legacy_serialize(runtime, resolved_receiver.as.object, line)
+            : ptn_string("");
+    }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::__unserialize() expects exactly 1 argument");
@@ -178790,6 +179118,35 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             0,
             line
         );
+    }
+    if (ptn_ascii_case_equal(name, "unserialize")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ArrayIterator::unserialize() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (data->sorting) {
+            ptn_throw_exception(runtime, "Error", "Modification of ArrayObject during sorting is prohibited");
+            return ptn_null();
+        }
+        (void)ptn_internal_expect_string_arg(
+            runtime,
+            "ArrayIterator::unserialize",
+            1,
+            "data",
+            args[0],
+            line
+        );
+        return ptn_null();
     }
     if (ptn_array_iterator_method_accesses_storage(name) &&
         !ptn_spl_storage_initialize_object(runtime, data->storage, line)) {
@@ -178879,7 +179236,11 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
     if (ptn_ascii_case_equal(name, "asort") ||
         ptn_ascii_case_equal(name, "ksort") ||
         ptn_ascii_case_equal(name, "natsort") ||
-        ptn_ascii_case_equal(name, "natcasesort")) {
+        ptn_ascii_case_equal(name, "natcasesort") ||
+        ptn_ascii_case_equal(name, "uasort") ||
+        ptn_ascii_case_equal(name, "uksort")) {
+        int takes_callback = ptn_ascii_case_equal(name, "uasort") || ptn_ascii_case_equal(name, "uksort");
+        int takes_flags = ptn_ascii_case_equal(name, "asort") || ptn_ascii_case_equal(name, "ksort");
         if ((ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc != 0) {
             char message[128];
             int written = snprintf(message, sizeof(message), "ArrayIterator::%s() expects exactly 0 arguments", name);
@@ -178889,9 +179250,18 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
-        if (!(ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc > 1) {
+        if (takes_flags && argc > 1) {
             char message[128];
             int written = snprintf(message, sizeof(message), "ArrayIterator::%s() expects at most 1 argument, %zu given", name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (takes_callback && argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayIterator::%s() expects exactly 1 argument, %zu given", name, argc);
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
@@ -178903,29 +179273,48 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_bool(0);
         }
         PtnObject *storage_object = ptn_spl_storage_object(data->storage);
+        data->sorting = 1;
         if (ptn_ascii_case_equal(name, "asort")) {
             int64_t flags = argc == 1
                 ? ptn_internal_expect_integer_arg(runtime, "ArrayIterator::asort", 1, "flags", args[0], line)
                 : PTN_SORT_REGULAR;
-            if (runtime->exceptions->active_exception != NULL) {
-                return ptn_null();
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
             }
-            ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
         } else if (ptn_ascii_case_equal(name, "ksort")) {
             int64_t flags = argc == 1
                 ? ptn_internal_expect_integer_arg(runtime, "ArrayIterator::ksort", 1, "flags", args[0], line)
                 : PTN_SORT_REGULAR;
-            if (runtime->exceptions->active_exception != NULL) {
-                return ptn_null();
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_array_ksort_entries_with_flags(array, flags);
             }
-            ptn_array_ksort_entries_with_flags(array, flags);
         } else if (ptn_ascii_case_equal(name, "natsort")) {
             ptn_array_natsort_values(runtime, array, line);
-        } else {
+        } else if (ptn_ascii_case_equal(name, "natcasesort")) {
             ptn_array_natcasesort_values(runtime, array, line);
+        } else {
+            PtnValue callback = ptn_internal_expect_callback_arg(
+                runtime,
+                ptn_ascii_case_equal(name, "uasort") ? "ArrayIterator::uasort" : "ArrayIterator::uksort",
+                1,
+                "callback",
+                args[0]
+            );
+            if (runtime->exceptions->active_exception == NULL) {
+                if (ptn_ascii_case_equal(name, "uasort")) {
+                    ptn_array_uasort_values(runtime, array, callback, line);
+                } else {
+                    ptn_array_uksort_entries(runtime, array, callback, line);
+                }
+            }
+            ptn_value_destroy(&callback);
         }
+        data->sorting = 0;
         if (storage_object != NULL && storage_object->properties == array) {
             ptn_spl_reorder_object_metadata_like_properties(storage_object);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
         }
         ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, line);
         data->index = 0;
@@ -179399,6 +179788,16 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         return resolved_receiver.type == PTN_OBJECT
             ? ptn_spl_array_backed_serialize_array(runtime, resolved_receiver.as.object, 1)
             : ptn_array_from_literal_entries(0, NULL);
+    }
+    if (ptn_ascii_case_equal(name, "serialize")) {
+        ptn_reflection_check_no_arguments(runtime, "ArrayObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        return resolved_receiver.type == PTN_OBJECT
+            ? ptn_spl_array_backed_legacy_serialize(runtime, resolved_receiver.as.object, line)
+            : ptn_string("");
     }
     if (ptn_ascii_case_equal(name, "__unserialize")) {
         if (argc != 1) {
