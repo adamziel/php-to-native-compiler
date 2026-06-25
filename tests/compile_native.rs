@@ -12758,6 +12758,15 @@ fn parser_rejects_dynamic_enum_case_initializer_with_zend_message() {
 }
 
 #[test]
+fn parser_rejects_dynamic_class_constant_initializer_with_zend_message() {
+    let error = parser::parse("<?php class Foo { const Bar = \"$value\"; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Constant expression contains invalid operations"
+    );
+}
+
+#[test]
 fn parser_rejects_nested_global_const_declaration() {
     let error = parser::parse("<?php if (true) const C = 1;").unwrap_err();
     assert!(error

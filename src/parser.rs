@@ -2964,7 +2964,7 @@ impl Parser<'_> {
         validate_constant_expression_runtime_restrictions(&value)?;
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
-                "class constant value must be a supported constant expression",
+                "Constant expression contains invalid operations",
                 Some(value.span()),
             ));
         }
