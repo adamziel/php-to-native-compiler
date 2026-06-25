@@ -153745,12 +153745,12 @@ static int ptn_reflection_property_is_readable_result(
     PtnValue target,
     size_t line
 ) {
+    if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
+        return 0;
+    }
     if (data->is_dynamic) {
         return target.type == PTN_OBJECT &&
             ptn_reflection_property_object_storage_initialized(target, data->name, NULL);
-    }
-    if (!ptn_reflection_property_initialize_lazy_target(runtime, target, line)) {
-        return 0;
     }
 
     int read_allowed =

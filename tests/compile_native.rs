@@ -80919,7 +80919,7 @@ var_dump($dynamic->isReadable(null, $lazy));
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
-            "bool(false)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
