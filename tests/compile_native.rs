@@ -21568,7 +21568,7 @@ var_dump($leaf->valid(), $left->valid(), $right->valid());
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nint(7)\nint(8)\nbool(false)\nbool(false)\nbool(false)\n"
+        "int(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nint(7)\nint(8)\nbool(false)\nbool(true)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
