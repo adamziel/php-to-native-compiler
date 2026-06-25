@@ -49565,6 +49565,19 @@ impl ValueEmitter {
     }
 
     fn emit_yield_from(&mut self, out: &mut String, expr: &ValueExpr, line: usize) -> String {
+        if matches!(expr, ValueExpr::Yield { .. }) {
+            let source_temp = self.emit_materialized_value(out, expr);
+            emit_value_cleanup(out, "    ", &source_temp);
+            out.push_str("    ptn_generator_register_send_yield_from(&runtime, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            return result_temp;
+        }
+
         let pending_yield_from_parent = if self.value_is_anonymous_generator_closure_call(expr) {
             let previous_generator_temp = self.next_temp();
             let previous_line_temp = self.next_temp();

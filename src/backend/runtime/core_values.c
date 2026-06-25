@@ -1016,6 +1016,8 @@ struct PtnGenerator {
     PtnArray *send_call_arguments;
     PtnArray *send_call_yield_indexes;
     PtnArray *send_call_lines;
+    PtnArray *send_yield_from_positions;
+    PtnArray *send_yield_from_lines;
     PtnValue pending_exception;
     size_t pending_exception_position;
     int has_pending_exception;
@@ -1771,6 +1773,7 @@ static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, con
 static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_yield_from(PtnRuntime *runtime, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);

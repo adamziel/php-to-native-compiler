@@ -21165,6 +21165,44 @@ var_dump($generator->valid());
 }
 
 #[test]
+fn compile_generator_send_into_yield_from_yield_self_delegate_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-send-yield-from-yield-self");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-send-yield-from-yield-self.php");
+    let output = root.join("generator-send-yield-from-yield-self-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield from yield;
+}
+
+$generator = gen();
+try {
+    $generator->send($generator);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Impossible to yield from the Generator being currently run\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_register_send_yield_from"));
+    assert!(c_source.contains("ptn_generator_send"));
+}
+
+#[test]
 fn compile_generator_yield_from_to_native_binary() {
     let root = temp_dir("ptn-native-generator-yield-from");
     fs::create_dir_all(&root).unwrap();
