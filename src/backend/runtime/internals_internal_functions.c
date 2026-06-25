@@ -102188,6 +102188,7 @@ struct PtnXmlNode {
     int synthetic_namespace_declaration;
     int detached_parent_hidden;
     int allow_reconstructed_document_element_sibling;
+    int parser_substitute_entities;
 };
 
 typedef struct {
@@ -102567,6 +102568,7 @@ static PtnValue ptn_internal_modern_dom_import_simplexml(PtnRuntime *runtime, si
 static const char *ptn_xml_element_attribute_value(PtnXmlNode *element, const char *name);
 static PtnXmlNode *ptn_xml_element_find_attribute(PtnXmlNode *element, const char *name);
 static char *ptn_dom_attribute_name_copy_for_element(PtnXmlNode *element, const char *data, size_t len);
+static int ptn_xml_document_substitute_entities_enabled(PtnXmlNode *document);
 static void ptn_xml_reader_apply_default_attributes(PtnRuntime *runtime, PtnXmlReaderData *data);
 static void ptn_xml_reader_apply_default_attributes_to_node(PtnRuntime *runtime, PtnXmlNode *node, PtnXmlParserData *defaults);
 static void ptn_xml_parser_default_attributes_free(PtnXmlParserData *data);
@@ -103466,7 +103468,7 @@ static void ptn_xml_append_parsed_text_span(
         }
         ptn_xml_append_text_span(runtime, parent, data + chunk_start, pos - chunk_start);
         if (!ptn_libxml_entity_loader_disabled &&
-            ptn_dom_document_property_truthy(document, "substituteEntities")) {
+            ptn_xml_document_substitute_entities_enabled(document)) {
             char *system_id = ptn_xml_document_external_entity_system_id(document, entity_name);
             if (system_id != NULL && system_id[0] != '\0') {
                 unsigned char *entity_data = NULL;
@@ -106909,6 +106911,7 @@ typedef struct {
     size_t line;
     int suppress_warnings;
     int suppress_failed_load_warning;
+    int suppress_external_entity_resolution_warnings;
     int parser_context_warnings;
     const char *source_data;
     size_t source_len;
@@ -106951,6 +106954,12 @@ static int ptn_dom_document_property_truthy(PtnXmlNode *document, const char *pr
         return truthy;
     }
     return 0;
+}
+
+static int ptn_xml_document_substitute_entities_enabled(PtnXmlNode *document) {
+    return document != NULL &&
+        (document->parser_substitute_entities ||
+         ptn_dom_document_property_truthy(document, "substituteEntities"));
 }
 
 static int ptn_dom_document_external_context_enabled(PtnXmlNode *document) {
@@ -107365,6 +107374,14 @@ static void ptn_libxml2_dom_parse_structured_error(void *ctx, const PtnLibxml2Er
     if (capture->suppress_failed_load_warning &&
         message_len >= failed_load_prefix_len &&
         strncmp(error->message, failed_load_prefix, failed_load_prefix_len) == 0) {
+        return;
+    }
+    if (capture->suppress_external_entity_resolution_warnings &&
+        ((message_len >= failed_load_prefix_len &&
+          strncmp(error->message, failed_load_prefix, failed_load_prefix_len) == 0) ||
+         (message_len >= strlen("Entity '' not defined") &&
+          strncmp(error->message, "Entity '", strlen("Entity '")) == 0 &&
+          strstr(error->message, "' not defined") != NULL))) {
         return;
     }
     if (capture->parser_context_warnings &&
@@ -113400,6 +113417,9 @@ static int ptn_dom_libxml_accepts_document_source(
     capture.line = line;
     capture.suppress_warnings = ptn_libxml_internal_errors ||
         ((options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0);
+    capture.suppress_external_entity_resolution_warnings =
+        ptn_libxml_external_entity_loader_is_configured &&
+        ((options & (PTN_LIBXML_NOENT | PTN_LIBXML_DTDLOAD | PTN_LIBXML_DTDVALID)) != 0);
     if (api->xmlSetGenericErrorFunc != NULL) {
         api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
     }
@@ -113469,7 +113489,11 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     ptn_dom_xml_parse_suppress_warnings = ptn_libxml_internal_errors ||
         ((options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0);
     ptn_dom_xml_parse_warning_php_line = line;
+    int previous_parser_substitute_entities = document->parser_substitute_entities;
+    document->parser_substitute_entities =
+        !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
     int ok = ptn_xml_parse_document_into(runtime, document, source.data, source.len);
+    document->parser_substitute_entities = previous_parser_substitute_entities;
     ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
     ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
     if (ok && (options & PTN_LIBXML_DTDATTR) != 0) {
@@ -114053,7 +114077,11 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
     }
     free(path);
     document->child_count = 0;
+    int previous_parser_substitute_entities = document->parser_substitute_entities;
+    document->parser_substitute_entities =
+        !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
     int ok = ptn_xml_parse_document_into(runtime, document, (const char *)data, data_len);
+    document->parser_substitute_entities = previous_parser_substitute_entities;
     free(data);
     return ptn_bool(ok);
 }
@@ -117759,6 +117787,9 @@ static PtnValue ptn_xml_reader_load_string(
     );
     ptn_xml_reader_store_source(data, source, source_len, encoding, options, stream_backed);
     PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    document->parser_substitute_entities =
+        !ptn_libxml_entity_loader_disabled &&
+        (((options & PTN_LIBXML_NOENT) != 0) || data->parser_subst_entities);
     data->parse_complete = ptn_xml_parse_document_into(runtime, document, source, source_len);
     data->document = document;
     if (data->parser_default_attrs) {
@@ -162462,6 +162493,8 @@ static PtnValue ptn_simplexml_from_bytes(
         return ptn_bool(0);
     }
     PtnXmlNode *document = ptn_xml_node_alloc(PTN_XML_NODE_DOCUMENT, NULL, "");
+    document->parser_substitute_entities =
+        !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
     int ok = ptn_xml_parse_document_into(runtime, document, data, len);
     if (!ok) {
         return ptn_bool(0);

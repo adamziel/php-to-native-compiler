@@ -44713,6 +44713,82 @@ var_dump(libxml_get_external_entity_loader());
 }
 
 #[test]
+fn compile_libxml_external_entities_and_simplexml_noent_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-external-entities-noent");
+    fs::create_dir_all(&root).unwrap();
+    let payload = root.join("payload.txt");
+    let input = root.join("libxml-external-entities-noent.php");
+    let output = root.join("libxml-external-entities-noent-bin");
+    fs::write(&payload, "SECRET_DATA").unwrap();
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$payload = {};
+$xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE test [<!ENTITY xxe SYSTEM "$payload">]>
+<foo>&xxe;</foo>
+XML;
+
+var_dump(strpos((string) simplexml_load_string($xml), 'SECRET_DATA') === false);
+var_dump(strpos((string) simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NOENT), 'SECRET_DATA') === false);
+
+$loaderXml = <<<XML
+<!DOCTYPE foo PUBLIC "-//FOO/BAR" "http://example.com/foobar">
+<foo>bar&fooz;</foo>
+XML;
+
+$dtd = <<<DTD
+<!ELEMENT foo (#PCDATA)>
+<!ENTITY % fooentity PUBLIC
+   "-//FOO/ENTITY"
+   "fooentity.ent">
+%fooentity;
+DTD;
+
+$entity = <<<ENT
+<!ENTITY fooz "baz">
+ENT;
+
+libxml_set_external_entity_loader(function ($public, $system, $context) use ($dtd, $entity) {{
+    static $first = true;
+    $stream = fopen('php://temp', 'r+');
+    fwrite($stream, $first ? $dtd : $entity);
+    $first = false;
+    rewind($stream);
+    return $stream;
+}});
+
+$doc = new DOMDocument();
+$doc->substituteEntities = true;
+$doc->resolveExternals = true;
+var_dump($doc->loadXML($loaderXml));
+var_dump($doc->validate());
+"#,
+            php_string_literal(&payload)
+        ),
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_xmlreader_default_attributes_to_native_binary() {
     let root = temp_dir("ptn-native-xmlreader-default-attributes");
     fs::create_dir_all(&root).unwrap();
