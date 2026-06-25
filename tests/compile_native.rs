@@ -45529,6 +45529,16 @@ $rootList = $root->classList;
 var_dump($rootList->value, $rootList->contains('xfoox'));
 $rootList->add('test');
 echo $dom->saveXML(), "\n";
+var_dump($rootList->contains(''), $rootList->contains('xfoox'), $rootList->contains(' xfoox'));
+$root->setAttribute('class', 'D');
+var_dump($rootList->contains('xfoox'), $rootList->contains('D'));
+$rootList->value = 'E';
+var_dump($rootList->contains('D'), $rootList->contains('E'));
+try {
+    $rootList->contains("\0");
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
 
 $removeDom = Dom\XMLDocument::createFromString('<root class="A B C D E F"/>');
 $removeList = $removeDom->documentElement->classList;
@@ -45581,6 +45591,14 @@ try {
             "<!ENTITY ent \"foo\">\n",
             "]>\n",
             "<root class=\"xfoox test\"><child class=\"second\"/></root>\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "Dom\\TokenList::contains(): Argument #1 ($token) must not contain any null bytes\n",
             "remove:0:A\n",
             "remove:0:B\n",
             "remove:1:C\n",

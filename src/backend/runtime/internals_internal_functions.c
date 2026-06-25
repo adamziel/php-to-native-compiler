@@ -115083,7 +115083,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     if (ptn_ascii_case_equal(name, "compareDocumentPosition")) {
         return ptn_dom_compare_document_position_method(runtime, receiver, argc, args, line);
     }
-    if (ptn_ascii_case_equal(name, "contains")) {
+    if (ptn_ascii_case_equal(name, "contains") && !ptn_ascii_case_equal(class_name, "DOMTokenList")) {
         return ptn_dom_contains_method(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "isEqualNode")) {
