@@ -75313,30 +75313,36 @@ static PtnValue ptn_mb_convert_encoding_value(
     const char *from_encoding_list,
     const char *from_encoding_fallback,
     size_t line,
-    size_t depth
+    size_t depth,
+    PtnMbCheckStack *stack
 ) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type == PTN_ARRAY) {
+        PtnArray *array = resolved.as.array;
+        if (ptn_mb_check_stack_contains(stack, array)) {
+            stack->saw_circular = 1;
+            return ptn_array_from_literal_entries(0, NULL);
+        }
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         if (depth >= 16) {
             return result;
         }
-        for (size_t i = 0; i < resolved.as.array->len; i++) {
-            PtnArrayEntry *entry = &resolved.as.array->entries[i];
-            PtnValue entry_value = ptn_value_deref(entry->value);
-            PtnValue converted = entry_value.type == PTN_ARRAY
-                ? ptn_value_clone_deref(entry->value)
-                : ptn_mb_convert_encoding_value(
-                    runtime,
-                    entry->value,
-                    to_encoding,
-                    from_encoding_list,
-                    from_encoding_fallback,
-                    line,
-                    depth + 1
-                );
+        ptn_mb_check_stack_push(stack, array);
+        for (size_t i = 0; i < array->len; i++) {
+            PtnArrayEntry *entry = &array->entries[i];
+            PtnValue converted = ptn_mb_convert_encoding_value(
+                runtime,
+                entry->value,
+                to_encoding,
+                from_encoding_list,
+                from_encoding_fallback,
+                line,
+                depth + 1,
+                stack
+            );
             ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), converted);
         }
+        stack->len--;
         return result;
     }
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "mb_convert_encoding", 1, "string", resolved, line);
@@ -75367,6 +75373,7 @@ static PtnValue ptn_internal_mb_convert_encoding(PtnRuntime *runtime, size_t arg
     if (from_encoding_list == NULL) {
         return ptn_null();
     }
+    PtnMbCheckStack stack = { NULL, 0, 0, 0 };
     PtnValue result = ptn_mb_convert_encoding_value(
         runtime,
         args[0],
@@ -75374,8 +75381,13 @@ static PtnValue ptn_internal_mb_convert_encoding(PtnRuntime *runtime, size_t arg
         from_encoding_list,
         from_encoding_fallback,
         line,
-        0
+        0,
+        &stack
     );
+    if (stack.saw_circular) {
+        ptn_emit_warning(&runtime->diagnostics, "mb_convert_encoding(): Cannot convert recursively referenced values", line);
+    }
+    ptn_mb_check_stack_free(&stack);
     free(from_encoding_list);
     return result;
 }

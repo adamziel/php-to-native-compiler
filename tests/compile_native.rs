@@ -29180,6 +29180,48 @@ var_dump(mb_check_encoding($copy));\n",
 }
 
 #[test]
+fn compile_mb_convert_encoding_self_referential_array_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-convert-encoding-self-referential-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-convert-encoding-self-referential-array.php");
+    let output = root.join("mb-convert-encoding-self-referential-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$nested = [\"hé\" => \"é\"];\n\
+$arr = [\"x\", $nested];\n\
+$tmp = &$arr;\n\
+$arr[] = $tmp;\n\
+$converted = mb_convert_encoding($arr, 'UTF-8', 'UTF-8');\n\
+var_dump($converted);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("mb_convert_encoding(): Cannot convert recursively referenced values")
+            .count(),
+        1,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("array(3) {\n  [0]=>\n  string(1) \"x\"\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(2) \"é\"\n"), "{stdout}");
+    assert!(
+        stdout.ends_with("  [2]=>\n  array(0) {\n  }\n}\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_ucs4_bom_and_invalid_codepoints_to_native_binary() {
     let root = temp_dir("ptn-native-mb-ucs4-bom-invalid");
     fs::create_dir_all(&root).unwrap();
