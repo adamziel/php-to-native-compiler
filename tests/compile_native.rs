@@ -22487,6 +22487,38 @@ fn compile_strlen_expression_to_native_binary() {
 }
 
 #[test]
+fn compile_internal_string_parameters_honor_strict_types_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-string-strict-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-string-strict-types.php");
+    let output = root.join("internal-string-strict-types-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+class Stringish { public function __toString(): string { return \"x\"; } }\n\
+try { var_dump(ord(1)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(strlen(1.5)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(strlen(new Stringish())); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(strlen(\"abc\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ord(): Argument #1 ($character) must be of type string, int given\n\
+strlen(): Argument #1 ($string) must be of type string, float given\n\
+strlen(): Argument #1 ($string) must be of type string, Stringish given\n\
+int(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binary() {
     let root = temp_dir("ptn-native-string-internal-direct-operands");
     fs::create_dir_all(&root).unwrap();
