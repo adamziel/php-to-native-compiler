@@ -21577,6 +21577,67 @@ var_dump($leaf->valid(), $left->valid(), $right->valid());
 }
 
 #[test]
+fn compile_generator_yield_from_externally_advanced_delegate_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from-externally-advanced-delegate");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from-externally-advanced-delegate.php");
+    let output = root.join("generator-yield-from-externally-advanced-delegate-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function single() {
+    yield 1;
+}
+function wrapper($gen) {
+    yield from $gen;
+    echo "reached!\n";
+    yield 2;
+}
+$single = single();
+$wrapper = wrapper($single);
+var_dump($wrapper->valid());
+var_dump($wrapper->current());
+$single->next();
+var_dump($single->valid());
+var_dump($wrapper->valid());
+var_dump($wrapper->current());
+$wrapper->next();
+var_dump($wrapper->valid());
+var_dump($wrapper->current());
+$wrapper->next();
+var_dump($wrapper->valid());
+var_dump($wrapper->current());
+
+function many() {
+    yield from [1, 2, 3, 4, 5];
+}
+function delegate($gen) {
+    yield from $gen;
+}
+$many = many();
+$delegates = [delegate($many), delegate($many)];
+do {
+    foreach ($delegates as $delegate) {
+        var_dump($delegate->current());
+        $many->next();
+    }
+} while ($many->valid());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(1)\nbool(false)\nbool(true)\nint(1)\nreached!\nbool(true)\nint(2)\nbool(false)\nNULL\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_throw_closes_current_chain_to_native_binary() {
     let root = temp_dir("ptn-native-generator-throw-close");
     fs::create_dir_all(&root).unwrap();
