@@ -2920,6 +2920,42 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_INFO_ALL);
         return 1;
     }
+    if (strcmp(name, "CREDITS_GROUP") == 0) {
+        *out = ptn_int(PTN_CREDITS_GROUP);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_GENERAL") == 0) {
+        *out = ptn_int(PTN_CREDITS_GENERAL);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_SAPI") == 0) {
+        *out = ptn_int(PTN_CREDITS_SAPI);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_MODULES") == 0) {
+        *out = ptn_int(PTN_CREDITS_MODULES);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_DOCS") == 0) {
+        *out = ptn_int(PTN_CREDITS_DOCS);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_FULLPAGE") == 0) {
+        *out = ptn_int(PTN_CREDITS_FULLPAGE);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_QA") == 0) {
+        *out = ptn_int(PTN_CREDITS_QA);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_WEB") == 0) {
+        *out = ptn_int(PTN_CREDITS_WEB);
+        return 1;
+    }
+    if (strcmp(name, "CREDITS_ALL") == 0) {
+        *out = ptn_int(PTN_CREDITS_ALL);
+        return 1;
+    }
     if (strcmp(name, "PATHINFO_DIRNAME") == 0) {
         *out = ptn_int(PTN_PATHINFO_DIRNAME);
         return 1;

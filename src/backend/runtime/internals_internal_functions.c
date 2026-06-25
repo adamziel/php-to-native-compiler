@@ -112,7 +112,92 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
 }
 
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime);
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags);
+static char *ptn_output_buffer_name(PtnOutputBuffer *buffer);
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
+    PtnRuntime *runtime,
+    size_t line,
+    int64_t operation_flags,
+    const char *function_name
+);
+
+static void ptn_output_buffer_note_handler_output(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->output_buffer_callback_depth == 0) {
+        return;
+    }
+    if (root->output_buffer_callback_output_warned) {
+        return;
+    }
+    root->output_buffer_callback_output_warned = 1;
+}
+
+static int ptn_output_buffer_deprecation_uses_error_handler(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        return 0;
+    }
+    PtnDiagnosticSink *diagnostics = &root->diagnostics;
+    return diagnostics->has_error_handler &&
+        (diagnostics->error_handler_levels & PTN_E_DEPRECATED) != 0;
+}
+
+static void ptn_output_buffer_emit_handler_output_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *handler_name,
+    size_t line,
+    size_t skip_buffers
+) {
+    const char *effective_function_name = function_name == NULL
+        ? "output handler"
+        : function_name;
+    const char *effective_handler_name = handler_name == NULL
+        ? "unknown"
+        : handler_name;
+    char message[1024];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Producing output from user output handler %s is deprecated",
+        effective_function_name,
+        effective_handler_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL) {
+        ptn_emit_deprecation_with_handler_frame(&runtime->diagnostics, message, line, 1);
+        return;
+    }
+    int saved_passthrough = root->output_buffer_callback_passthrough_output;
+    size_t saved_skip_buffers = root->output_buffer_callback_skip_buffers;
+    root->output_buffer_callback_passthrough_output = 1;
+    root->output_buffer_callback_skip_buffers = skip_buffers;
+    PtnTryFrame frame;
+    ptn_try_frame_push(runtime, &frame);
+    if (setjmp(frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &frame);
+        root->output_buffer_callback_passthrough_output = saved_passthrough;
+        root->output_buffer_callback_skip_buffers = saved_skip_buffers;
+        ptn_rethrow_exception(runtime);
+        return;
+    }
+    ptn_emit_deprecation_with_handler_frame(&runtime->diagnostics, message, line, 1);
+    ptn_try_frame_pop(runtime, &frame);
+    root->output_buffer_callback_passthrough_output = saved_passthrough;
+    root->output_buffer_callback_skip_buffers = saved_skip_buffers;
+}
 
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
     if (data == NULL || len == 0) {
@@ -127,14 +212,32 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         return;
     }
     PtnRuntime *root = ptn_runtime_root(runtime);
-    if (root != NULL && root->output_buffer_callback_depth != 0) {
+    if (
+        root != NULL &&
+        root->output_buffer_callback_depth != 0 &&
+        !root->output_buffer_callback_passthrough_output
+    ) {
+        ptn_output_buffer_note_handler_output(runtime);
         return;
     }
-    if (root != NULL && root->output_buffers_len != 0) {
-        PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
+    size_t output_buffers_len = root == NULL ? 0 : root->output_buffers_len;
+    if (
+        root != NULL &&
+        root->output_buffer_callback_passthrough_output &&
+        root->output_buffer_callback_skip_buffers <= output_buffers_len
+    ) {
+        output_buffers_len -= root->output_buffer_callback_skip_buffers;
+    }
+    if (output_buffers_len != 0) {
+        PtnOutputBuffer *buffer = &root->output_buffers[output_buffers_len - 1];
         ptn_string_buffer_append_len(&buffer->buffer, data, len);
         if (buffer->chunk_size != 0 && buffer->buffer.len >= buffer->chunk_size) {
-            (void)ptn_output_buffer_flush_top_chunk(runtime, 0, PTN_PHP_OUTPUT_HANDLER_WRITE);
+            (void)ptn_output_buffer_flush_top_chunk(
+                runtime,
+                0,
+                PTN_PHP_OUTPUT_HANDLER_WRITE,
+                "ob_start"
+            );
         }
         return;
     }
@@ -230,10 +333,16 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
 }
 
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags) {
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
+    PtnRuntime *runtime,
+    size_t line,
+    int64_t operation_flags,
+    const char *function_name
+) {
     (void)runtime;
     (void)line;
     (void)operation_flags;
+    (void)function_name;
     return 0;
 }
 
@@ -4343,12 +4452,17 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
-            ptn_direct_var_dump_writef(runtime, "array(%zu) {\n", array->len);
+            size_t snapshot_len = array->len;
+            ptn_direct_var_dump_writef(runtime, "array(%zu) {\n", snapshot_len);
             ptn_direct_dump_seen_array_push(seen, array);
-            for (size_t i = 0; i < array->len; i++) {
+            for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
+                PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
+                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
                 ptn_direct_var_dump_indent(runtime, indent + 1);
-                ptn_direct_var_dump_array_key(runtime, array->entries[i].key);
-                ptn_direct_var_dump_value_indented(runtime, array->entries[i].value, indent + 1, seen);
+                ptn_direct_var_dump_array_key(runtime, key);
+                ptn_direct_var_dump_value_indented(runtime, entry_value, indent + 1, seen);
+                ptn_array_key_free(key);
+                ptn_value_destroy(&entry_value);
             }
             ptn_direct_dump_seen_array_pop(seen);
             ptn_direct_var_dump_indent(runtime, indent);
@@ -6051,7 +6165,10 @@ static PtnValue ptn_output_buffer_apply_callback(
     PtnRuntime *runtime,
     PtnOutputBuffer *buffer,
     size_t line,
-    int64_t operation_flags
+    int64_t operation_flags,
+    const char *function_name,
+    size_t skip_buffers,
+    int *handler_output_warned_out
 ) {
     PtnValue original = ptn_output_buffer_contents_value(buffer);
     if (!buffer->has_callback) {
@@ -6066,6 +6183,18 @@ static PtnValue ptn_output_buffer_apply_callback(
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    const char *previous_callback_function_name = root->output_buffer_callback_function_name;
+    char *previous_callback_handler_name = root->output_buffer_callback_handler_name;
+    size_t previous_callback_line = root->output_buffer_callback_line;
+    int previous_callback_output_warned = root->output_buffer_callback_output_warned;
+    int previous_callback_passthrough_output = root->output_buffer_callback_passthrough_output;
+    size_t previous_callback_skip_buffers = root->output_buffer_callback_skip_buffers;
+    root->output_buffer_callback_function_name = function_name;
+    root->output_buffer_callback_handler_name = ptn_output_buffer_name(buffer);
+    root->output_buffer_callback_line = line;
+    root->output_buffer_callback_output_warned = 0;
+    root->output_buffer_callback_passthrough_output = 0;
+    root->output_buffer_callback_skip_buffers = skip_buffers;
 
     ptn_try_frame_push(runtime, &handler_frame);
     root->output_buffer_callback_depth++;
@@ -6075,6 +6204,13 @@ static PtnValue ptn_output_buffer_apply_callback(
         runtime->trace_frame = saved_trace_frame;
         runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
         runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+        free(root->output_buffer_callback_handler_name);
+        root->output_buffer_callback_function_name = previous_callback_function_name;
+        root->output_buffer_callback_handler_name = previous_callback_handler_name;
+        root->output_buffer_callback_line = previous_callback_line;
+        root->output_buffer_callback_output_warned = previous_callback_output_warned;
+        root->output_buffer_callback_passthrough_output = previous_callback_passthrough_output;
+        root->output_buffer_callback_skip_buffers = previous_callback_skip_buffers;
         PtnValue original_output = ptn_value_deref(original);
         if (original_output.type == PTN_STRING) {
             ptn_output_write(runtime, (const char *)original_output.as.string.data, original_output.as.string.len);
@@ -6102,12 +6238,28 @@ static PtnValue ptn_output_buffer_apply_callback(
         ptn_value_destroy(&original);
     }
 
+    int handler_output_warned = root->output_buffer_callback_output_warned;
+    if (handler_output_warned_out != NULL) {
+        *handler_output_warned_out = handler_output_warned;
+    }
     root->output_buffer_callback_depth--;
+    free(root->output_buffer_callback_handler_name);
+    root->output_buffer_callback_function_name = previous_callback_function_name;
+    root->output_buffer_callback_handler_name = previous_callback_handler_name;
+    root->output_buffer_callback_line = previous_callback_line;
+    root->output_buffer_callback_output_warned = previous_callback_output_warned;
+    root->output_buffer_callback_passthrough_output = previous_callback_passthrough_output;
+    root->output_buffer_callback_skip_buffers = previous_callback_skip_buffers;
     ptn_try_frame_pop(runtime, &handler_frame);
     return output;
 }
 
-static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line, int64_t operation_flags) {
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
+    PtnRuntime *runtime,
+    size_t line,
+    int64_t operation_flags,
+    const char *function_name
+) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
         return 0;
@@ -6123,9 +6275,24 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, siz
 
     PtnOutputBuffer chunk = *buffer;
     chunk.buffer = chunk_buffer;
-    PtnValue output = ptn_output_buffer_apply_callback(runtime, &chunk, line, operation_flags);
+    int handler_output_warned = 0;
+    PtnValue output = ptn_output_buffer_apply_callback(
+        runtime,
+        &chunk,
+        line,
+        operation_flags,
+        function_name,
+        1,
+        &handler_output_warned
+    );
     free(chunk_buffer.data);
 
+    char *handler_name = handler_output_warned ? ptn_output_buffer_name(&chunk) : NULL;
+    int deprecation_after_output =
+        handler_output_warned && ptn_output_buffer_deprecation_uses_error_handler(runtime);
+    if (handler_output_warned && !deprecation_after_output) {
+        ptn_output_buffer_emit_handler_output_deprecation(runtime, function_name, handler_name, line, 1);
+    }
     PtnValue string_output = ptn_value_deref(output);
     if (string_output.type == PTN_STRING && string_output.as.string.len != 0) {
         root->output_buffers_len--;
@@ -6136,6 +6303,10 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, siz
         );
         root->output_buffers_len++;
     }
+    if (handler_output_warned && deprecation_after_output) {
+        ptn_output_buffer_emit_handler_output_deprecation(runtime, function_name, handler_name, line, 1);
+    }
+    free(handler_name);
     ptn_value_destroy(&output);
     return 1;
 }
@@ -6199,7 +6370,7 @@ static void ptn_output_buffer_emit_operation_notice(
     free(message);
 }
 
-static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
+static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line, const char *function_name) {
     PtnOutputBuffer *active = ptn_output_buffer_top(runtime);
     if (active != NULL) {
         int64_t required_flags = PTN_PHP_OUTPUT_HANDLER_REMOVABLE |
@@ -6235,13 +6406,32 @@ static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) 
     if ((buffer.flags & PTN_PHP_OUTPUT_HANDLER_STARTED) == 0) {
         operation_flags |= PTN_PHP_OUTPUT_HANDLER_START;
     }
-    PtnValue output = ptn_output_buffer_apply_callback(runtime, &buffer, line, operation_flags);
+    int handler_output_warned = 0;
+    PtnValue output = ptn_output_buffer_apply_callback(
+        runtime,
+        &buffer,
+        line,
+        operation_flags,
+        function_name,
+        0,
+        &handler_output_warned
+    );
+    char *handler_name = handler_output_warned ? ptn_output_buffer_name(&buffer) : NULL;
+    int deprecation_after_output =
+        handler_output_warned && ptn_output_buffer_deprecation_uses_error_handler(runtime);
+    if (handler_output_warned && !deprecation_after_output) {
+        ptn_output_buffer_emit_handler_output_deprecation(runtime, function_name, handler_name, line, 0);
+    }
     if (flush) {
         PtnValue string_output = ptn_value_deref(output);
         if (string_output.type == PTN_STRING) {
             ptn_output_write(runtime, (const char *)string_output.as.string.data, string_output.as.string.len);
         }
     }
+    if (handler_output_warned && deprecation_after_output) {
+        ptn_output_buffer_emit_handler_output_deprecation(runtime, function_name, handler_name, line, 0);
+    }
+    free(handler_name);
     PtnRuntime *root = ptn_runtime_root(runtime);
     int cleanup_inside_callback = buffer.has_callback && root != NULL;
     if (cleanup_inside_callback) {
@@ -6265,7 +6455,7 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
         buffer->flags |= PTN_PHP_OUTPUT_HANDLER_CLEANABLE |
             PTN_PHP_OUTPUT_HANDLER_FLUSHABLE |
             PTN_PHP_OUTPUT_HANDLER_REMOVABLE;
-        (void)ptn_output_buffer_close(runtime, 1, 0);
+        (void)ptn_output_buffer_close(runtime, 1, 0, "ob_end_flush");
     }
 }
 
@@ -8082,12 +8272,17 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
-            printf("array(%zu) {\n", array->len);
+            size_t snapshot_len = array->len;
+            printf("array(%zu) {\n", snapshot_len);
             ptn_dump_seen_arrays_push(seen, array);
-            for (size_t i = 0; i < array->len; i++) {
+            for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
+                PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
+                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
                 ptn_var_dump_indent(indent + 1);
-                ptn_var_dump_array_key(array->entries[i].key);
-                ptn_var_dump_value_indented(array->entries[i].value, indent + 1, seen);
+                ptn_var_dump_array_key(key);
+                ptn_var_dump_value_indented(entry_value, indent + 1, seen);
+                ptn_array_key_free(key);
+                ptn_value_destroy(&entry_value);
             }
             ptn_dump_seen_arrays_pop(seen);
             ptn_var_dump_indent(indent);
@@ -8269,21 +8464,26 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 fputs("*RECURSION*\n", stdout);
                 break;
             }
-            if (array->len == 0) {
+            size_t snapshot_len = array->len;
+            if (snapshot_len == 0) {
                 fputs("array(0) interned {\n", stdout);
             } else {
                 printf(
                     "array(%zu)%s refcount(%zu){\n",
-                    array->len,
+                    snapshot_len,
                     ptn_debug_array_show_packed(array) ? " packed" : "",
                     ptn_array_debug_visible_refcount(array)
                 );
             }
             ptn_dump_seen_arrays_push(seen, array);
-            for (size_t i = 0; i < array->len; i++) {
+            for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
+                PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
+                PtnValue entry_value = ptn_value_clone(array->entries[i].value);
                 ptn_var_dump_indent(indent + 1);
-                ptn_var_dump_array_key(array->entries[i].key);
-                ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1, seen);
+                ptn_var_dump_array_key(key);
+                ptn_debug_zval_dump_value_indented(entry_value, indent + 1, seen);
+                ptn_array_key_free(key);
+                ptn_value_destroy(&entry_value);
             }
             ptn_dump_seen_arrays_pop(seen);
             ptn_var_dump_indent(indent);
@@ -15452,18 +15652,22 @@ static void ptn_var_export_append_array(
     }
     ptn_dump_seen_arrays_push(seen, array);
     ptn_string_buffer_append(buffer, "array (\n");
-    for (size_t i = 0; i < array->len; i++) {
-        PtnArrayEntry *entry = &array->entries[i];
-        PtnValue entry_value = ptn_value_deref(entry->value);
+    size_t snapshot_len = array->len;
+    for (size_t i = 0; i < snapshot_len && i < array->len; i++) {
+        PtnArrayKey key = ptn_array_key_clone(array->entries[i].key);
+        PtnValue entry_value = ptn_value_clone(array->entries[i].value);
+        PtnValue deref_value = ptn_value_deref(entry_value);
         ptn_string_buffer_append_indent(buffer, indent + 2);
-        ptn_var_export_append_key(buffer, entry->key);
+        ptn_var_export_append_key(buffer, key);
         ptn_string_buffer_append(buffer, " => ");
-        if (ptn_var_export_should_break_value(entry_value, seen)) {
+        if (ptn_var_export_should_break_value(deref_value, seen)) {
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
-        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
+        ptn_var_export_append_value(buffer, runtime, deref_value, indent + 2, seen, line);
         ptn_string_buffer_append(buffer, ",\n");
+        ptn_array_key_free(key);
+        ptn_value_destroy(&entry_value);
     }
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append_char(buffer, ')');
@@ -85250,6 +85454,52 @@ static void ptn_phpinfo_write_variables(PtnRuntime *runtime) {
     }
 }
 
+static void ptn_phpcredits_write_section(PtnRuntime *runtime, const char *title, const char *body) {
+    ptn_output_write_cstr(runtime, "\n");
+    ptn_output_write_cstr(runtime, title);
+    ptn_output_write_cstr(runtime, "\n");
+    ptn_output_write_cstr(runtime, body);
+    ptn_output_write_cstr(runtime, "\n");
+}
+
+static void ptn_phpcredits_write(PtnRuntime *runtime, int64_t flags) {
+    ptn_output_write_cstr(runtime, "PHP Credits\n");
+    if ((flags & PTN_CREDITS_GROUP) != 0) {
+        ptn_phpcredits_write_section(runtime, "PHP Group", "The PHP Group");
+    }
+    if ((flags & PTN_CREDITS_GENERAL) != 0) {
+        ptn_phpcredits_write_section(runtime, "Language Design & Concept", "PHP language design and implementation");
+        ptn_phpcredits_write_section(runtime, "PHP Authors", "PHP authors and contributors");
+    }
+    if ((flags & PTN_CREDITS_SAPI) != 0) {
+        ptn_phpcredits_write_section(runtime, "SAPI Modules", "Command line interface");
+    }
+    if ((flags & PTN_CREDITS_MODULES) != 0) {
+        ptn_phpcredits_write_section(runtime, "Module Authors", "Standard module authors");
+    }
+    if ((flags & PTN_CREDITS_DOCS) != 0) {
+        ptn_phpcredits_write_section(runtime, "PHP Documentation", "PHP documentation contributors");
+    }
+    if ((flags & PTN_CREDITS_QA) != 0) {
+        ptn_phpcredits_write_section(runtime, "PHP Quality Assurance Team", "PHP quality assurance contributors");
+    }
+    if ((flags & PTN_CREDITS_WEB) != 0) {
+        ptn_phpcredits_write_section(runtime, "Websites and Infrastructure team", "PHP websites and infrastructure contributors");
+    }
+}
+
+static PtnValue ptn_internal_phpcredits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t flags = PTN_CREDITS_ALL;
+    if (argc >= 1) {
+        flags = ptn_internal_expect_integer_arg(runtime, "phpcredits", 1, "flags", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    ptn_phpcredits_write(runtime, flags);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t flags = PTN_INFO_ALL;
     if (argc >= 1) {
@@ -85262,6 +85512,10 @@ static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const Ptn
     if ((flags & PTN_INFO_GENERAL) != 0) {
         ptn_output_write_cstr(runtime, "\nPHP Version => " PTN_PHP_VERSION "\n");
         ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+    }
+    if ((flags & PTN_INFO_CREDITS) != 0) {
+        ptn_output_write_cstr(runtime, "\n");
+        ptn_phpcredits_write(runtime, PTN_CREDITS_ALL & ~PTN_CREDITS_FULLPAGE);
     }
     if ((flags & PTN_INFO_VARIABLES) != 0) {
         ptn_output_write_cstr(runtime, "\nPHP Variables\n\n");
@@ -88855,6 +89109,15 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "INFO_VARIABLES", PTN_INFO_VARIABLES);
     ptn_get_defined_constants_add_int(table, "INFO_LICENSE", PTN_INFO_LICENSE);
     ptn_get_defined_constants_add_int(table, "INFO_ALL", PTN_INFO_ALL);
+    ptn_get_defined_constants_add_int(table, "CREDITS_GROUP", PTN_CREDITS_GROUP);
+    ptn_get_defined_constants_add_int(table, "CREDITS_GENERAL", PTN_CREDITS_GENERAL);
+    ptn_get_defined_constants_add_int(table, "CREDITS_SAPI", PTN_CREDITS_SAPI);
+    ptn_get_defined_constants_add_int(table, "CREDITS_MODULES", PTN_CREDITS_MODULES);
+    ptn_get_defined_constants_add_int(table, "CREDITS_DOCS", PTN_CREDITS_DOCS);
+    ptn_get_defined_constants_add_int(table, "CREDITS_FULLPAGE", PTN_CREDITS_FULLPAGE);
+    ptn_get_defined_constants_add_int(table, "CREDITS_QA", PTN_CREDITS_QA);
+    ptn_get_defined_constants_add_int(table, "CREDITS_WEB", PTN_CREDITS_WEB);
+    ptn_get_defined_constants_add_int(table, "CREDITS_ALL", PTN_CREDITS_ALL);
     ptn_get_defined_constants_add_int(table, "PATHINFO_DIRNAME", PTN_PATHINFO_DIRNAME);
     ptn_get_defined_constants_add_int(table, "PATHINFO_BASENAME", PTN_PATHINFO_BASENAME);
     ptn_get_defined_constants_add_int(table, "PATHINFO_EXTENSION", PTN_PATHINFO_EXTENSION);
@@ -89338,6 +89601,15 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "INFO_VARIABLES",
         "INFO_LICENSE",
         "INFO_ALL",
+        "CREDITS_GROUP",
+        "CREDITS_GENERAL",
+        "CREDITS_SAPI",
+        "CREDITS_MODULES",
+        "CREDITS_DOCS",
+        "CREDITS_FULLPAGE",
+        "CREDITS_QA",
+        "CREDITS_WEB",
+        "CREDITS_ALL",
         "PATHINFO_DIRNAME",
         "PATHINFO_BASENAME",
         "PATHINFO_EXTENSION",
@@ -92540,7 +92812,21 @@ static PtnValue ptn_internal_ob_clean(PtnRuntime *runtime, size_t argc, const Pt
         ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_clean", "delete", line);
         return ptn_bool(0);
     }
-    PtnValue output = ptn_output_buffer_apply_callback(runtime, buffer, line, PTN_PHP_OUTPUT_HANDLER_CLEAN);
+    int handler_output_warned = 0;
+    PtnValue output = ptn_output_buffer_apply_callback(
+        runtime,
+        buffer,
+        line,
+        PTN_PHP_OUTPUT_HANDLER_CLEAN,
+        "ob_clean",
+        0,
+        &handler_output_warned
+    );
+    if (handler_output_warned) {
+        char *handler_name = ptn_output_buffer_name(buffer);
+        ptn_output_buffer_emit_handler_output_deprecation(runtime, "ob_clean", handler_name, line, 0);
+        free(handler_name);
+    }
     ptn_value_destroy(&output);
     buffer->buffer.len = 0;
     if (buffer->buffer.data != NULL) {
@@ -92552,13 +92838,13 @@ static PtnValue ptn_internal_ob_clean(PtnRuntime *runtime, size_t argc, const Pt
 static PtnValue ptn_internal_ob_end_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    return ptn_bool(ptn_output_buffer_close(runtime, 0, line));
+    return ptn_bool(ptn_output_buffer_close(runtime, 0, line, "ob_end_clean"));
 }
 
 static PtnValue ptn_internal_ob_end_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    return ptn_bool(ptn_output_buffer_close(runtime, 1, line));
+    return ptn_bool(ptn_output_buffer_close(runtime, 1, line, "ob_end_flush"));
 }
 
 static PtnValue ptn_internal_ob_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -92580,7 +92866,7 @@ static PtnValue ptn_internal_ob_flush(PtnRuntime *runtime, size_t argc, const Pt
         ptn_output_buffer_emit_operation_notice(runtime, buffer, "ob_flush", "flush", line);
         return ptn_bool(0);
     }
-    (void)ptn_output_buffer_flush_top_chunk(runtime, line, PTN_PHP_OUTPUT_HANDLER_FLUSH);
+    (void)ptn_output_buffer_flush_top_chunk(runtime, line, PTN_PHP_OUTPUT_HANDLER_FLUSH, "ob_flush");
     return ptn_bool(1);
 }
 
@@ -92604,7 +92890,7 @@ static PtnValue ptn_internal_ob_get_clean(PtnRuntime *runtime, size_t argc, cons
     if (failed) {
         return contents;
     }
-    (void)ptn_output_buffer_close(runtime, 0, line);
+    (void)ptn_output_buffer_close(runtime, 0, line, "ob_get_clean");
     return contents;
 }
 
@@ -92631,7 +92917,7 @@ static PtnValue ptn_internal_ob_get_flush(PtnRuntime *runtime, size_t argc, cons
     if (failed) {
         return contents;
     }
-    (void)ptn_output_buffer_close(runtime, 1, line);
+    (void)ptn_output_buffer_close(runtime, 1, line, "ob_get_flush");
     return contents;
 }
 
@@ -137724,6 +138010,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "password_hash", 2, 3, ptn_internal_password_hash },
         { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
         { "password_verify", 2, 2, ptn_internal_password_verify },
+        { "phpcredits", 0, 1, ptn_internal_phpcredits },
         { "phpinfo", 0, 1, ptn_internal_phpinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },

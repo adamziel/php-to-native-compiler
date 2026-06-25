@@ -232,6 +232,15 @@ typedef struct {
 #define PTN_INFO_VARIABLES 32
 #define PTN_INFO_LICENSE 64
 #define PTN_INFO_ALL 4294967295LL
+#define PTN_CREDITS_GROUP 1
+#define PTN_CREDITS_GENERAL 2
+#define PTN_CREDITS_SAPI 4
+#define PTN_CREDITS_MODULES 8
+#define PTN_CREDITS_DOCS 16
+#define PTN_CREDITS_FULLPAGE 32
+#define PTN_CREDITS_QA 64
+#define PTN_CREDITS_WEB 128
+#define PTN_CREDITS_ALL 4294967295LL
 #define PTN_PHP_SESSION_DISABLED 0
 #define PTN_PHP_SESSION_NONE 1
 #define PTN_PHP_SESSION_ACTIVE 2
@@ -1500,6 +1509,12 @@ struct PtnRuntime {
     size_t output_buffers_len;
     size_t output_buffers_capacity;
     size_t output_buffer_callback_depth;
+    const char *output_buffer_callback_function_name;
+    char *output_buffer_callback_handler_name;
+    size_t output_buffer_callback_line;
+    int output_buffer_callback_output_warned;
+    int output_buffer_callback_passthrough_output;
+    size_t output_buffer_callback_skip_buffers;
     int output_at_line_start;
     int output_has_started;
     int http_response_code_initialized;

@@ -116,6 +116,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->output_buffer_callback_function_name = NULL;
+    runtime->output_buffer_callback_handler_name = NULL;
+    runtime->output_buffer_callback_line = 0;
+    runtime->output_buffer_callback_output_warned = 0;
+    runtime->output_buffer_callback_passthrough_output = 0;
+    runtime->output_buffer_callback_skip_buffers = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
     runtime->http_response_code_initialized = 0;
@@ -978,6 +984,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffers_len = 0;
         runtime->output_buffers_capacity = 0;
         runtime->output_buffer_callback_depth = 0;
+        runtime->output_buffer_callback_function_name = NULL;
+        free(runtime->output_buffer_callback_handler_name);
+        runtime->output_buffer_callback_handler_name = NULL;
+        runtime->output_buffer_callback_line = 0;
+        runtime->output_buffer_callback_output_warned = 0;
+        runtime->output_buffer_callback_passthrough_output = 0;
+        runtime->output_buffer_callback_skip_buffers = 0;
         runtime->output_at_line_start = 1;
         runtime->output_has_started = 0;
         for (size_t i = 0; i < runtime->shutdown_functions_len; i++) {

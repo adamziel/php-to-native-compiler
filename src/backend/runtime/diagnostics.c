@@ -1938,6 +1938,35 @@ static PTN_UNUSED void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, cons
     );
 }
 
+static PTN_UNUSED void ptn_emit_deprecation_with_handler_frame(
+    PtnDiagnosticSink *diagnostics,
+    const char *message,
+    size_t line,
+    int suppress_user_call_frame_location
+) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+    diagnostics->emitted_deprecation = 1;
+    if (ptn_diagnostics_try_error_handler_with_frame(
+        diagnostics,
+        PTN_E_DEPRECATED,
+        message,
+        NULL,
+        line,
+        suppress_user_call_frame_location
+    )) {
+        return;
+    }
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nDeprecated: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_emit_user_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_USER_DEPRECATED)) {
         return;
@@ -2475,6 +2504,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->output_buffer_callback_function_name = NULL;
+    runtime->output_buffer_callback_handler_name = NULL;
+    runtime->output_buffer_callback_line = 0;
+    runtime->output_buffer_callback_output_warned = 0;
+    runtime->output_buffer_callback_passthrough_output = 0;
+    runtime->output_buffer_callback_skip_buffers = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
     runtime->http_response_code_initialized = 0;
