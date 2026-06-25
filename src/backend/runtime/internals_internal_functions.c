@@ -110756,7 +110756,14 @@ static PtnValue ptn_dom_compare_document_position_method(
     PtnXmlNode *node_root = ptn_xml_tree_root(node);
     PtnXmlNode *other_root = ptn_xml_tree_root(other);
     if (node_root == NULL || other_root == NULL || node_root != other_root) {
-        return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+        int direction = ((uintptr_t)node < (uintptr_t)other)
+            ? PTN_DOM_DOCUMENT_POSITION_FOLLOWING
+            : PTN_DOM_DOCUMENT_POSITION_PRECEDING;
+        return ptn_int(
+            PTN_DOM_DOCUMENT_POSITION_DISCONNECTED |
+            PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC |
+            direction
+        );
     }
     if (node->type == PTN_XML_NODE_ATTRIBUTE && other->type == PTN_XML_NODE_ATTRIBUTE && node->parent == other->parent) {
         size_t node_index = 0;
@@ -110792,6 +110799,60 @@ static PtnValue ptn_dom_compare_document_position_method(
             : PTN_DOM_DOCUMENT_POSITION_PRECEDING);
     }
     return ptn_int(PTN_DOM_DOCUMENT_POSITION_DISCONNECTED | PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC);
+}
+
+static PtnValue ptn_dom_contains_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMNode::contains", "exactly 1 argument", argc);
+    }
+    PtnValue resolved = ptn_value_deref(args[0]);
+    if (resolved.type == PTN_NULL) {
+        return ptn_bool(0);
+    }
+    PtnXmlNode *other = ptn_xml_node_data(args[0]);
+    if (other == NULL) {
+        const char *given = resolved.type == PTN_ARRAY ? "array" :
+            (resolved.type == PTN_OBJECT ? resolved.as.object->class_name : ptn_offset_container_type_name(resolved));
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DOMNode::contains(): Argument #1 ($other) must be of type DOMNode|DOMNameSpaceNode|null, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    (void)line;
+    PtnXmlNode *node = ptn_xml_node_data(receiver);
+    return ptn_bool(node != NULL && ptn_xml_node_is_ancestor(node, other));
+}
+
+static PtnValue ptn_dom_is_same_node_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMNode::isSameNode", "exactly 1 argument", argc);
+    }
+    PtnXmlNode *other = NULL;
+    if (!ptn_dom_expect_node_argument(runtime, "DOMNode::isSameNode", 1, "otherNode", args[0], 0, &other)) {
+        return ptn_null();
+    }
+    return ptn_bool(ptn_xml_node_data(receiver) == other);
 }
 
 static int ptn_xml_nullable_string_equal(const char *left, const char *right) {
@@ -110847,8 +110908,13 @@ static int ptn_xml_node_is_equal_node(PtnXmlNode *left, PtnXmlNode *right) {
         !ptn_xml_nullable_string_equal(left->namespace_uri, right->namespace_uri) ||
         !ptn_xml_nullable_string_equal(left->value, right->value) ||
         !ptn_xml_nullable_string_equal(left->public_id, right->public_id) ||
-        !ptn_xml_nullable_string_equal(left->system_id, right->system_id) ||
-        !ptn_xml_nullable_string_equal(left->internal_subset, right->internal_subset) ||
+        !ptn_xml_nullable_string_equal(left->system_id, right->system_id)) {
+        return 0;
+    }
+    if (left->type == PTN_XML_NODE_DOCUMENT_TYPE) {
+        return 1;
+    }
+    if (!ptn_xml_nullable_string_equal(left->internal_subset, right->internal_subset) ||
         !ptn_xml_node_attributes_equal(left, right) ||
         left->child_count != right->child_count) {
         return 0;
@@ -113735,8 +113801,14 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     if (ptn_ascii_case_equal(name, "compareDocumentPosition")) {
         return ptn_dom_compare_document_position_method(runtime, receiver, argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "contains")) {
+        return ptn_dom_contains_method(runtime, receiver, argc, args, line);
+    }
     if (ptn_ascii_case_equal(name, "isEqualNode")) {
         return ptn_dom_is_equal_node_method(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "isSameNode")) {
+        return ptn_dom_is_same_node_method(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "C14N")) {
         return ptn_dom_c14n_method(runtime, receiver, argc, args, line);
@@ -115335,7 +115407,9 @@ static PTN_UNUSED int ptn_internal_xml_property_write_indirect(
 static int ptn_dom_method_exists(const char *class_name, const char *method_name) {
     class_name = ptn_dom_effective_class_name(class_name);
     if ((ptn_ascii_case_equal(method_name, "compareDocumentPosition") ||
-            ptn_ascii_case_equal(method_name, "isEqualNode")) &&
+            ptn_ascii_case_equal(method_name, "contains") ||
+            ptn_ascii_case_equal(method_name, "isEqualNode") ||
+            ptn_ascii_case_equal(method_name, "isSameNode")) &&
         ptn_dom_effective_class_is_modeled(class_name) &&
         !ptn_ascii_case_equal(class_name, "DOMImplementation") &&
         !ptn_ascii_case_equal(class_name, "DOMNodeList") &&
