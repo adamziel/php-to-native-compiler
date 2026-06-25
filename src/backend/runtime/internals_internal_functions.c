@@ -107508,12 +107508,16 @@ static PtnValue ptn_dom_c14n_file_method(PtnRuntime *runtime, PtnValue receiver,
 static int ptn_html_void_element_name(const char *name) {
     return ptn_ascii_case_equal(name, "area") ||
         ptn_ascii_case_equal(name, "base") ||
+        ptn_ascii_case_equal(name, "basefont") ||
+        ptn_ascii_case_equal(name, "bgsound") ||
         ptn_ascii_case_equal(name, "br") ||
         ptn_ascii_case_equal(name, "col") ||
         ptn_ascii_case_equal(name, "embed") ||
+        ptn_ascii_case_equal(name, "frame") ||
         ptn_ascii_case_equal(name, "hr") ||
         ptn_ascii_case_equal(name, "img") ||
         ptn_ascii_case_equal(name, "input") ||
+        ptn_ascii_case_equal(name, "keygen") ||
         ptn_ascii_case_equal(name, "link") ||
         ptn_ascii_case_equal(name, "meta") ||
         ptn_ascii_case_equal(name, "param") ||
@@ -107535,8 +107539,9 @@ static int ptn_html_raw_text_element_name(const char *name) {
 static void ptn_html_append_escaped_text(PtnStringBuffer *buffer, PtnXmlNode *node) {
     const char *value = node == NULL || node->value == NULL ? "" : node->value;
     size_t value_len = node == NULL ? 0 : node->value_len;
-    const char *parent_name = node == NULL || node->parent == NULL ? "" : ptn_xml_local_name(node->parent->name == NULL ? "" : node->parent->name);
-    if (ptn_html_raw_text_element_name(parent_name)) {
+    PtnXmlNode *parent = node == NULL ? NULL : node->parent;
+    const char *parent_name = parent == NULL ? "" : ptn_xml_local_name(parent->name == NULL ? "" : parent->name);
+    if (ptn_dom_node_is_html_namespace_element(parent) && ptn_html_raw_text_element_name(parent_name)) {
         ptn_string_buffer_append_len(buffer, value, value_len);
         return;
     }
@@ -107640,7 +107645,7 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
             ptn_html_append_escaped_text(buffer, node);
             return;
         case PTN_XML_NODE_CDATA:
-            ptn_string_buffer_append(buffer, node->value == NULL ? "" : node->value);
+            ptn_html_append_escaped_text(buffer, node);
             return;
         case PTN_XML_NODE_ENTITY_REFERENCE:
             ptn_string_buffer_append_char(buffer, '&');
@@ -107691,7 +107696,7 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
         }
         ptn_string_buffer_append(buffer, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">");
     }
-    if (ptn_html_void_element_name(name)) {
+    if (ptn_dom_node_is_html_namespace_element(node) && ptn_html_void_element_name(name)) {
         return;
     }
 
