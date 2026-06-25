@@ -94695,13 +94695,6 @@ typedef struct {
 typedef struct PtnDomTokenListData PtnDomTokenListData;
 
 typedef struct {
-    time_t timestamp;
-    int microsecond;
-    char *timezone;
-    int timezone_type;
-} PtnDateTimeData;
-
-typedef struct {
     int64_t years;
     int64_t months;
     int64_t days;

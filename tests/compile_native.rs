@@ -24718,6 +24718,52 @@ try {\n\
 }
 
 #[test]
+fn compile_incomplete_datetime_comparison_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-datetime-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-datetime-comparison.php");
+    let output = root.join("incomplete-datetime-comparison-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class MyDateTime extends DateTime { public function __construct() {} }\n\
+$dt = new DateTime('2023-01-16 17:09:08');\n\
+$dti = new DateTimeImmutable('2023-01-16 17:09:08');\n\
+$bad = new MyDateTime();\n\
+var_dump($dt < $dti);\n\
+foreach ([[$dt, $bad], [$bad, $dt], [$dti, $bad], [$bad, $dti]] as $pair) {\n\
+    try {\n\
+        var_dump($pair[0] < $pair[1]);\n\
+    } catch (DateObjectError $e) {\n\
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "DateObjectError: Trying to compare an incomplete DateTime or DateTimeImmutable object\n",
+            "DateObjectError: Trying to compare an incomplete DateTime or DateTimeImmutable object\n",
+            "DateObjectError: Trying to compare an incomplete DateTime or DateTimeImmutable object\n",
+            "DateObjectError: Trying to compare an incomplete DateTime or DateTimeImmutable object\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();

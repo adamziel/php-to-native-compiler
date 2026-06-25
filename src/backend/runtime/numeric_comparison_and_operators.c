@@ -230,7 +230,20 @@ static PTN_UNUSED int ptn_compare_arrays_identical(
     return result;
 }
 
-static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared);
+typedef struct PtnDateTimeData {
+    time_t timestamp;
+    int microsecond;
+    char *timezone;
+    int timezone_type;
+} PtnDateTimeData;
+
+static int ptn_compare_datetime_objects_order(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line,
+    int *compared
+);
 static int ptn_compare_datetimezone_objects_order(
     PtnRuntime *runtime,
     PtnObject *left,
@@ -262,7 +275,7 @@ static PTN_UNUSED int ptn_compare_objects_equal(
         return 1;
     }
     int datetime_compared = PTN_COMPARE_UNORDERED;
-    if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
+    if (ptn_compare_datetime_objects_order(runtime, left, right, line, &datetime_compared)) {
         return datetime_compared == PTN_COMPARE_EQUAL;
     }
     int timezone_compared = PTN_COMPARE_UNORDERED;
@@ -333,23 +346,39 @@ static PtnArrayEntry *ptn_compare_object_int_property_entry(PtnObject *object, c
     return value.type == PTN_INT ? entry : NULL;
 }
 
-static int ptn_compare_datetime_objects_order(PtnObject *left, PtnObject *right, int *compared) {
+static int ptn_compare_datetime_objects_order(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line,
+    int *compared
+) {
     if (!ptn_compare_object_is_datetime(left) || !ptn_compare_object_is_datetime(right)) {
         return 0;
     }
-    PtnArrayEntry *left_date_entry = ptn_compare_object_string_property_entry(left, "date");
-    PtnArrayEntry *right_date_entry = ptn_compare_object_string_property_entry(right, "date");
-    if (left_date_entry == NULL || right_date_entry == NULL) {
-        return 0;
+    PtnDateTimeData *left_data = (PtnDateTimeData *)left->native_data;
+    PtnDateTimeData *right_data = (PtnDateTimeData *)right->native_data;
+    if (left_data == NULL || right_data == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "DateObjectError",
+            "Trying to compare an incomplete DateTime or DateTimeImmutable object"
+        );
+        *compared = PTN_COMPARE_UNORDERED;
+        return 1;
     }
-    PtnValue left_date = ptn_value_deref(left_date_entry->value);
-    PtnValue right_date = ptn_value_deref(right_date_entry->value);
-    *compared = ptn_compare_string_bytes(
-        left_date.as.string.data,
-        left_date.as.string.len,
-        right_date.as.string.data,
-        right_date.as.string.len
-    );
+    if (left_data->timestamp < right_data->timestamp) {
+        *compared = PTN_COMPARE_LESS;
+    } else if (left_data->timestamp > right_data->timestamp) {
+        *compared = PTN_COMPARE_GREATER;
+    } else if (left_data->microsecond < right_data->microsecond) {
+        *compared = PTN_COMPARE_LESS;
+    } else if (left_data->microsecond > right_data->microsecond) {
+        *compared = PTN_COMPARE_GREATER;
+    } else {
+        *compared = PTN_COMPARE_EQUAL;
+    }
+    (void)line;
     return 1;
 }
 
@@ -600,7 +629,7 @@ static PTN_UNUSED int ptn_compare_objects_order(
         return PTN_COMPARE_EQUAL;
     }
     int datetime_compared = PTN_COMPARE_UNORDERED;
-    if (ptn_compare_datetime_objects_order(left, right, &datetime_compared)) {
+    if (ptn_compare_datetime_objects_order(runtime, left, right, line, &datetime_compared)) {
         return datetime_compared;
     }
     int timezone_compared = PTN_COMPARE_UNORDERED;
