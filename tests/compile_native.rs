@@ -47490,6 +47490,22 @@ $em->setAttribute('ID', 'y');
 var_dump($ids->getElementById('x')?->nodeName);
 var_dump($ids->getElementById('y')?->nodeName);
 
+$created = Dom\HTMLDocument::createEmpty();
+$foo = $created->appendChild($created->createElement('foo'));
+$foo->setAttribute('id', 'made');
+var_dump($created->getElementById('made')?->nodeName);
+
+$xmlIds = Dom\XMLDocument::createFromString('<root><test1 xml:id="x"/><test2 xml:id="y"/></root>');
+$test1 = $xmlIds->getElementById('x');
+$test2 = $xmlIds->getElementById('y');
+var_dump($test1?->nodeName, $test2?->nodeName);
+$test1->getAttributeNode('xml:id')->value = 'y';
+var_dump($xmlIds->getElementById('x')?->nodeName, $xmlIds->getElementById('y')?->nodeName);
+$test1->setIdAttribute('xml:id', false);
+var_dump($xmlIds->getElementById('y')?->nodeName);
+$test1->setIdAttribute('xml:id', true);
+var_dump($xmlIds->getElementById('y')?->nodeName);
+
 $html = Dom\HTMLDocument::createEmpty();
 $container = $html->appendChild($html->createElement('container'));
 
@@ -47561,6 +47577,13 @@ try {
         concat!(
             "NULL\n",
             "string(2) \"EM\"\n",
+            "string(3) \"FOO\"\n",
+            "string(5) \"test1\"\n",
+            "string(5) \"test2\"\n",
+            "NULL\n",
+            "string(5) \"test1\"\n",
+            "string(5) \"test2\"\n",
+            "string(5) \"test1\"\n",
             "bool(true)\n",
             "<container my-attribute=\"1\" a:my-attribute=\"2\" a:my-attribute=\"3\"></container>\n",
             "string(5) \"&amp;\"\n",

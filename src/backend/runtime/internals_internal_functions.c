@@ -103644,6 +103644,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_DOM_DOCUMENT_POSITION_CONTAINED_BY 16
 #define PTN_DOM_DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC 32
 
+#define PTN_DOM_ATTR_ID_DUPLICATE_XML_ID -2
 #define PTN_DOM_ATTR_ID_FORCE_FALSE -1
 #define PTN_DOM_ATTR_ID_AUTO 0
 #define PTN_DOM_ATTR_ID_FORCE_TRUE 1
@@ -106367,7 +106368,8 @@ static int ptn_dom_attribute_is_active_id(PtnXmlNode *attr) {
     if (attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE) {
         return 0;
     }
-    if (attr->id_attribute_state == PTN_DOM_ATTR_ID_FORCE_FALSE) {
+    if (attr->id_attribute_state == PTN_DOM_ATTR_ID_FORCE_FALSE ||
+        attr->id_attribute_state == PTN_DOM_ATTR_ID_DUPLICATE_XML_ID) {
         return 0;
     }
     if (attr->id_attribute_state == PTN_DOM_ATTR_ID_FORCE_TRUE) {
@@ -110592,9 +110594,16 @@ static void ptn_xml_attribute_set_value(PtnRuntime *runtime, PtnXmlNode *attr, c
     if (attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE) {
         return;
     }
+    int was_duplicate_xml_id = attr->id_attribute_state == PTN_DOM_ATTR_ID_DUPLICATE_XML_ID;
+    if (was_duplicate_xml_id) {
+        attr->id_attribute_state = PTN_DOM_ATTR_ID_AUTO;
+    }
     free(attr->value);
     attr->value = ptn_duplicate_string_len(data == NULL ? "" : data, data == NULL ? 0 : len);
     attr->value_len = data == NULL ? 0 : len;
+    if (was_duplicate_xml_id) {
+        ptn_dom_attribute_apply_document_id_defaults(attr->parent, attr);
+    }
     if (attr->child_count == 0) {
         return;
     }
@@ -111361,6 +111370,95 @@ static void ptn_xml_emit_duplicate_id_warning(PtnRuntime *runtime, const char *i
     free(message);
 }
 
+typedef struct {
+    const char **values;
+    size_t count;
+    size_t capacity;
+} PtnXmlIdValueSet;
+
+static int ptn_xml_id_value_set_contains(PtnXmlIdValueSet *set, const char *value) {
+    if (set == NULL || value == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < set->count; i++) {
+        if (strcmp(set->values[i] == NULL ? "" : set->values[i], value) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_xml_id_value_set_add(PtnXmlIdValueSet *set, const char *value) {
+    if (set == NULL || value == NULL) {
+        return;
+    }
+    if (set->count == set->capacity) {
+        size_t new_capacity = set->capacity == 0 ? 8 : set->capacity * 2;
+        if (new_capacity < set->capacity || new_capacity > SIZE_MAX / sizeof(const char *)) {
+            ptn_abort_out_of_memory();
+        }
+        const char **new_values = realloc(set->values, new_capacity * sizeof(const char *));
+        if (new_values == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        set->values = new_values;
+        set->capacity = new_capacity;
+    }
+    set->values[set->count++] = value;
+}
+
+static int ptn_xml_attribute_is_default_xml_id(PtnXmlNode *attr) {
+    if (attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE || ptn_xml_attribute_is_namespace_declaration(attr)) {
+        return 0;
+    }
+    PtnXmlNode *document = ptn_xml_document_for_node(attr);
+    if (document != NULL && document->html_document) {
+        return 0;
+    }
+    return ptn_dom_attribute_name_is_xml_id(attr);
+}
+
+static void ptn_xml_mark_duplicate_xml_ids_walk(PtnRuntime *runtime, PtnXmlNode *node, PtnXmlIdValueSet *seen) {
+    if (node == NULL) {
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT) {
+        for (size_t i = 0; i < node->attribute_count; i++) {
+            PtnXmlNode *attr = node->attributes[i];
+            if (!ptn_xml_attribute_is_default_xml_id(attr)) {
+                continue;
+            }
+            const char *value = attr->value == NULL ? "" : attr->value;
+            if (ptn_xml_id_value_set_contains(seen, value)) {
+                int already_marked_duplicate = attr->id_attribute_state == PTN_DOM_ATTR_ID_DUPLICATE_XML_ID;
+                attr->id_attribute_state = PTN_DOM_ATTR_ID_DUPLICATE_XML_ID;
+                if (!already_marked_duplicate) {
+                    ptn_xml_emit_duplicate_id_warning(runtime, value, node->line_no);
+                }
+            } else {
+                if (attr->id_attribute_state == PTN_DOM_ATTR_ID_DUPLICATE_XML_ID) {
+                    attr->id_attribute_state = PTN_DOM_ATTR_ID_AUTO;
+                }
+                ptn_dom_attribute_apply_document_id_defaults(node, attr);
+                ptn_xml_id_value_set_add(seen, value);
+            }
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_xml_mark_duplicate_xml_ids_walk(runtime, node->children[i], seen);
+    }
+}
+
+static void ptn_xml_document_mark_duplicate_xml_ids(PtnRuntime *runtime, PtnXmlNode *document) {
+    if (document == NULL || document->html_document) {
+        return;
+    }
+    PtnXmlIdValueSet seen;
+    memset(&seen, 0, sizeof(seen));
+    ptn_xml_mark_duplicate_xml_ids_walk(runtime, document, &seen);
+    free(seen.values);
+}
+
 static int ptn_xml_parse_attributes(
     PtnRuntime *runtime,
     PtnXmlNode *document,
@@ -111412,7 +111510,7 @@ static int ptn_xml_parse_attributes(
         if (!html_mode && strcmp(name, "xml:id") == 0) {
             attr->id_attribute_state = PTN_DOM_ATTR_ID_FORCE_TRUE;
             if (ptn_xml_find_element_by_id(document, value) != NULL) {
-                attr->id_attribute_state = PTN_DOM_ATTR_ID_FORCE_FALSE;
+                attr->id_attribute_state = PTN_DOM_ATTR_ID_DUPLICATE_XML_ID;
                 ptn_xml_emit_duplicate_id_warning(runtime, value, element->line_no);
             }
         }
@@ -115969,6 +116067,9 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     document->parser_substitute_entities =
         !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
     int ok = ptn_xml_parse_document_into(runtime, document, source.data, source.len);
+    if (ok) {
+        ptn_xml_document_mark_duplicate_xml_ids(runtime, document);
+    }
     document->parser_substitute_entities = previous_parser_substitute_entities;
     ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
     ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
@@ -116326,6 +116427,9 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
     }
     int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_source, parse_len, html_document);
     free(parse_data);
+    if (ok && !html_document) {
+        ptn_xml_document_mark_duplicate_xml_ids(runtime, document);
+    }
     if (html_document) {
         ptn_dom_html_store_modeled_parser_errors(source.data, source.len, "Entity", (int)options);
     }
