@@ -515,6 +515,7 @@ impl Parser<'_> {
                 &validation_traits,
                 &mut self.compile_warnings,
             )?;
+            defer_runtime_class_declaration_validations(&mut validation_classes);
             for (class, validation_class) in classes
                 .iter_mut()
                 .zip(validation_classes.iter().take(local_class_count))
@@ -15566,6 +15567,9 @@ fn validate_method_signature_compatibility(
                 if let Some((parent_class, parent_method)) =
                     find_final_private_parent_constructor(class, classes)
                 {
+                    if parent_method.trait_name.is_some() {
+                        continue;
+                    }
                     return Err(Diagnostic::new(
                         format!(
                             "Cannot override final method {}::{}()",
@@ -15844,6 +15848,71 @@ fn validate_method_signature_compatibility(
         }
     }
     Ok(())
+}
+
+fn defer_runtime_class_declaration_validations(classes: &mut [ClassDecl]) {
+    let validation_classes = classes.to_vec();
+    for class in classes.iter_mut() {
+        if class_has_runtime_deferred_trait_abstract_method(class, &validation_classes) {
+            class.is_conditionally_declared = true;
+        }
+        defer_trait_imported_final_private_constructor_fatal(class, &validation_classes);
+    }
+}
+
+fn class_has_runtime_deferred_trait_abstract_method(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    if class.is_abstract || class.is_interface {
+        return false;
+    }
+    class.methods.iter().any(|method| {
+        method.is_abstract
+            && method.trait_name.is_some()
+            && method.visibility != PropertyVisibility::Private
+            && method
+                .trait_method_name
+                .as_deref()
+                .is_some_and(|trait_method| method.name.eq_ignore_ascii_case(trait_method))
+            && !trait_abstract_method_has_concrete_implementation(class, method, classes)
+    })
+}
+
+fn defer_trait_imported_final_private_constructor_fatal(
+    class: &mut ClassDecl,
+    classes: &[ClassDecl],
+) {
+    let Some(method) = class
+        .methods
+        .iter()
+        .find(|method| method.name.eq_ignore_ascii_case("__construct"))
+    else {
+        return;
+    };
+    let Some((parent_class, parent_method)) = find_final_private_parent_constructor(class, classes)
+    else {
+        return;
+    };
+    if parent_method.trait_name.is_none() {
+        return;
+    }
+    let message = format!(
+        "Cannot override final method {}::{}()",
+        parent_class.name, parent_method.name
+    );
+    if class
+        .declaration_fatals
+        .iter()
+        .any(|fatal| fatal.message == message)
+    {
+        return;
+    }
+    class.is_conditionally_declared = true;
+    class.declaration_fatals.push(ClassDeclarationFatal {
+        message,
+        span: method.span,
+    });
 }
 
 fn method_signature_type_validation_classes(

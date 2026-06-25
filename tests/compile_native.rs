@@ -12200,6 +12200,114 @@ class NotAbstract {
 }
 
 #[test]
+fn compile_trait_original_abstract_method_fails_at_declaration_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-original-abstract-declaration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-original-abstract-declaration.php");
+    let output = root.join("trait-original-abstract-declaration-bin");
+    fs::write(
+        &input,
+        "<?php
+echo \"before\\n\";
+trait THello {
+    public abstract function hello();
+}
+class TraitsTest {
+    use THello;
+}
+echo \"after\\n\";
+$test = new TraitsTest();
+$test->hello();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Class TraitsTest contains 1 abstract method and must therefore be declared abstract or implement the remaining method (TraitsTest::hello)"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn compile_trait_imported_final_private_constructor_fatal_keeps_declaration_order_to_native_binary()
+{
+    let root = temp_dir("ptn-native-trait-final-private-constructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-final-private-constructor-order.php");
+    let output = root.join("trait-final-private-constructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+trait Bar {
+    final private function __construct() {}
+}
+
+final class Foo1 {
+    use Bar;
+}
+
+final class Foo2 {
+    use Bar {
+        __construct as final;
+    }
+}
+
+class Foo3 {
+    use Bar {
+        __construct as final;
+    }
+}
+
+trait TraitNonConstructor {
+    private final function test() {}
+}
+
+class Foo4 {
+    use TraitNonConstructor { test as __construct; }
+}
+
+for ($i = 1; $i <= 4; $i++) {
+    $rc = new ReflectionClass(\"Foo$i\");
+    echo $rc->getMethod(\"__construct\"), \"\\n\";
+}
+
+class Foo5 extends Foo3 {
+    private function __construct() {}
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout
+        .contains("Private methods cannot be final as they are never overridden by other classes"));
+    assert_eq!(
+        stdout
+            .matches("Method [ <user, ctor> final private method __construct ]")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Cannot override final method Foo3::__construct()"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_autoload_local_trait_delayed_self_obligation_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-local-trait-delayed-self");
     fs::create_dir_all(&root).unwrap();

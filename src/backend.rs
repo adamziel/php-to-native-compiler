@@ -18717,6 +18717,7 @@ struct RuntimeMethodVisibilityOverrideFatal {
 fn class_runtime_unsatisfied_abstract_methods(
     class: &ClassDecl,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
 ) -> Vec<RuntimeAbstractMethodRequirement> {
     if class.is_abstract || class.is_interface {
         return Vec::new();
@@ -18724,6 +18725,7 @@ fn class_runtime_unsatisfied_abstract_methods(
     let mut requirements = Vec::new();
     collect_parent_runtime_abstract_methods(class, classes, &mut requirements);
     collect_interface_runtime_abstract_methods(class, classes, &mut requirements);
+    collect_trait_runtime_abstract_methods(class, classes, functions, &mut requirements);
     let mut seen = HashSet::new();
     requirements
         .into_iter()
@@ -20106,6 +20108,32 @@ fn collect_parent_runtime_abstract_methods(
             }
         }
         parent_name = parent.parent_name.as_deref();
+    }
+}
+
+fn collect_trait_runtime_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    requirements: &mut Vec<RuntimeAbstractMethodRequirement>,
+) {
+    for method in &class.methods {
+        if !method.is_abstract {
+            continue;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            continue;
+        };
+        if function.trait_name.is_none() {
+            continue;
+        }
+        if class_has_concrete_method(class, &method.name, classes) {
+            continue;
+        }
+        requirements.push(RuntimeAbstractMethodRequirement {
+            declaring_class: class.name.clone(),
+            method_name: method.name.clone(),
+        });
     }
 }
 
@@ -25731,7 +25759,7 @@ fn emit_class_declaration_validation(
         out.push_str(&fatal.line.to_string());
         out.push_str(");\n");
     }
-    let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes);
+    let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes, functions);
     if !abstract_methods.is_empty() {
         let message = if class.is_anonymous {
             anonymous_abstract_methods_runtime_message(&class.name, &abstract_methods)
