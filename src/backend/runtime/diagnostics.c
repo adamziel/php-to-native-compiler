@@ -2416,6 +2416,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     if (getenv("PTN_STARTUP_WARNING_EMITTED") != NULL) {
         runtime->diagnostics.emitted_warning = 1;
     }
+    runtime->date_timezone_startup_warning_emitted = 0;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);

@@ -93538,7 +93538,11 @@ static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size
     (void)args;
     (void)line;
     const char *configured_timezone = NULL;
-    if (ptn_configured_date_timezone_is_invalid(&configured_timezone) && !runtime->date_timezone_startup_warning_emitted) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (ptn_configured_date_timezone_is_invalid(&configured_timezone) && !root->date_timezone_startup_warning_emitted) {
         size_t message_len = strlen(configured_timezone) + 72;
         char *message = malloc(message_len);
         if (message == NULL) {
@@ -93546,7 +93550,7 @@ static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size
         }
         snprintf(message, message_len, "PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead", configured_timezone);
         ptn_emit_compile_warning(runtime, message, "Unknown", 0);
-        runtime->date_timezone_startup_warning_emitted = 1;
+        root->date_timezone_startup_warning_emitted = 1;
         free(message);
     }
     return ptn_string(ptn_current_timezone_name());

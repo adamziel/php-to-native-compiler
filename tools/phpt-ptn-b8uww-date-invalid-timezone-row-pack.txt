@@ -1,0 +1,4 @@
+ext/date/tests/date_default_timezone_get-1.phpt
+ext/date/tests/date_default_timezone_get-2.phpt
+ext/date/tests/date_default_timezone_get-4.phpt
+ext/date/tests/date_default_timezone_set-1.phpt

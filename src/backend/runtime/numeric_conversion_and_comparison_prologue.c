@@ -52,6 +52,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->diagnostics.emitted_deprecation = caller_runtime->diagnostics.emitted_deprecation;
     runtime->diagnostics.emitted_warning = caller_runtime->diagnostics.emitted_warning;
     runtime->diagnostics.suppressed = caller_runtime->diagnostics.suppressed;
+    runtime->date_timezone_startup_warning_emitted =
+        caller_runtime->date_timezone_startup_warning_emitted;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
