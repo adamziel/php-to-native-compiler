@@ -44943,6 +44943,9 @@ var_dump($left->isEqualNode($right));
 $namespaced = $html->createElementNS("urn:x", "x:node");
 $namespaced->setAttributeNS("urn:y", "y:attr", "v");
 $container->appendChild($namespaced);
+$container->appendChild($html->createElementNS("http://www.w3.org/1999/xhtml", "xhtml:br"));
+$container->appendChild($html->createElementNS("http://www.w3.org/2000/svg", "s:svg"));
+$container->appendChild($html->createElementNS("http://www.w3.org/1998/Math/MathML", "m:math"));
 echo $html->saveHtml($container), "\n";
 
 $roundtrip = Dom\HTMLDocument::createFromString('<!DOCTYPE HTML><container><example:foo></example:foo>
@@ -44968,7 +44971,7 @@ echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
-            "<container><foo id=\"x\"></foo><x:node y:attr=\"v\"></x:node></container>\n",
+            "<container><foo id=\"x\"></foo><x:node y:attr=\"v\"></x:node><br><svg></svg><math></math></container>\n",
             "<container><example:foo></example:foo>\n",
             "<example:foo example2:bar=\"baz1\"></example:foo></container>\n",
         )
@@ -44980,6 +44983,7 @@ echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n
     assert!(c_source.contains("ptn_dom_is_equal_node_method"));
     assert!(c_source.contains("ptn_xml_attribute_is_namespace_declaration"));
     assert!(c_source.contains("ptn_xml_local_name(candidate_name)"));
+    assert!(c_source.contains("ptn_html_element_serialized_name"));
 }
 
 #[test]

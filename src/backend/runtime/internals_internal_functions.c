@@ -107465,6 +107465,29 @@ static void ptn_html_append_attribute_name(PtnStringBuffer *buffer, PtnXmlNode *
     ptn_string_buffer_append(buffer, attr == NULL || attr->name == NULL ? "" : attr->name);
 }
 
+static const char *ptn_html_element_serialized_name(PtnXmlNode *node) {
+    const char *name = node == NULL || node->name == NULL ? "" : node->name;
+    const char *uri = node == NULL || node->namespace_uri == NULL ? "" : node->namespace_uri;
+    if (!ptn_xml_name_has_prefix(name)) {
+        return name;
+    }
+    if (strcmp(uri, ptn_dom_xhtml_namespace_uri()) != 0 &&
+        strcmp(uri, ptn_dom_svg_namespace_uri()) != 0 &&
+        strcmp(uri, ptn_dom_mathml_namespace_uri()) != 0) {
+        return name;
+    }
+    char *prefix = ptn_xml_prefix_dup(name);
+    char *xmlns_name = ptn_dom_xmlns_attribute_name_for_prefix(prefix);
+    const char *local_binding = ptn_xml_element_attribute_value(node, xmlns_name);
+    int strip_prefix = local_binding != NULL && strcmp(local_binding, uri) == 0;
+    free(xmlns_name);
+    free(prefix);
+    if (strip_prefix) {
+        return ptn_xml_local_name(name);
+    }
+    return name;
+}
+
 static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, int pretty, int inject_meta) {
     if (node == NULL) {
         return;
@@ -107519,7 +107542,7 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
     if (node->type != PTN_XML_NODE_ELEMENT) {
         return;
     }
-    const char *name = node->name == NULL ? "" : node->name;
+    const char *name = ptn_html_element_serialized_name(node);
     ptn_string_buffer_append_char(buffer, '<');
     ptn_string_buffer_append(buffer, name);
     for (size_t i = 0; i < node->attribute_count; i++) {
