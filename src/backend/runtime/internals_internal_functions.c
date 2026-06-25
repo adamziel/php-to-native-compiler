@@ -15914,7 +15914,49 @@ static void ptn_var_export_append_object_state_array(
         ptn_string_buffer_append_char(buffer, ')');
         return;
     }
-    int exported_virtual_hook_properties = 0;
+    PtnValue receiver = ptn_object(object);
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
+            continue;
+        }
+        if (ptn_object_metadata_is_array_object_storage(metadata) ||
+            ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            continue;
+        }
+        PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(properties, storage_key);
+        ptn_array_key_free(storage_key);
+        int hook_readable =
+            metadata->has_hooks &&
+            metadata->hook_has_get &&
+            !ptn_property_is_set_only_virtual(metadata);
+        if (entry == NULL && !hook_readable) {
+            continue;
+        }
+        PtnValue entry_value = hook_readable
+            ? ptn_object_read_property(
+                runtime,
+                receiver,
+                metadata->display_name,
+                metadata->declaring_class,
+                line
+            )
+            : ptn_value_clone_deref(entry->value);
+        PtnValue deref_value = ptn_value_deref(entry_value);
+        PtnArrayKey display_key = ptn_array_string_key(metadata->display_name);
+        ptn_string_buffer_append_indent(buffer, indent + 3);
+        ptn_var_export_append_key(buffer, display_key);
+        ptn_array_key_free(display_key);
+        ptn_string_buffer_append(buffer, " => ");
+        if (ptn_var_export_should_break_value(deref_value, seen)) {
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_string_buffer_append_indent(buffer, indent + 2);
+        }
+        ptn_var_export_append_value(buffer, runtime, deref_value, indent + 2, seen, line);
+        ptn_value_destroy(&entry_value);
+        ptn_string_buffer_append(buffer, ",\n");
+    }
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
@@ -15927,18 +15969,7 @@ static void ptn_var_export_append_object_state_array(
                 continue;
             }
             if (metadata != NULL) {
-                display_key = ptn_array_string_key(metadata->display_name);
-                free_display_key = 1;
-            } else {
-                ptn_var_export_append_virtual_hook_object_properties(
-                    buffer,
-                    runtime,
-                    object,
-                    indent,
-                    seen,
-                    line,
-                    &exported_virtual_hook_properties
-                );
+                continue;
             }
         }
         ptn_string_buffer_append_indent(buffer, indent + 3);
@@ -15954,15 +15985,6 @@ static void ptn_var_export_append_object_state_array(
         ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
         ptn_string_buffer_append(buffer, ",\n");
     }
-    ptn_var_export_append_virtual_hook_object_properties(
-        buffer,
-        runtime,
-        object,
-        indent,
-        seen,
-        line,
-        &exported_virtual_hook_properties
-    );
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append_char(buffer, ')');
 }
@@ -16659,8 +16681,68 @@ static int ptn_json_encode_append_object_properties(
     size_t level
 ) {
     int pretty = ptn_json_pretty_print(flags);
+    PtnRuntime *runtime = ptn_var_dump_active_runtime;
     ptn_string_buffer_append_char(buffer, '{');
     size_t emitted = 0;
+    PtnValue receiver = ptn_object(object);
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (metadata->read_visibility != PTN_PROPERTY_PUBLIC ||
+            ptn_object_metadata_is_array_object_storage(metadata) ||
+            ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
+            continue;
+        }
+        PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, storage_key);
+        ptn_array_key_free(storage_key);
+        int hook_readable =
+            metadata->has_hooks &&
+            metadata->hook_has_get &&
+            !ptn_property_is_set_only_virtual(metadata);
+        if (entry == NULL && !hook_readable) {
+            continue;
+        }
+        PtnValue value = hook_readable
+            ? ptn_object_read_property(
+                runtime,
+                receiver,
+                metadata->display_name,
+                metadata->declaring_class,
+                runtime == NULL ? 0 : runtime->call_site_line
+            )
+            : ptn_value_clone_deref(entry->value);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&value);
+            return 0;
+        }
+        if (pretty) {
+            if (emitted != 0) {
+                ptn_string_buffer_append_char(buffer, ',');
+            }
+            ptn_string_buffer_append_char(buffer, '\n');
+            ptn_json_append_indent(buffer, level + 1);
+        } else if (emitted != 0) {
+            ptn_string_buffer_append_char(buffer, ',');
+        }
+        if (!ptn_json_encode_append_string(
+            buffer,
+            (const unsigned char *)metadata->display_name,
+            strlen(metadata->display_name),
+            flags,
+            error,
+            1
+        )) {
+            ptn_value_destroy(&value);
+            return 0;
+        }
+        ptn_string_buffer_append(buffer, pretty ? ": " : ":");
+        if (!ptn_json_encode_append_value(buffer, value, seen, depth - 1, flags, error, level + 1)) {
+            ptn_value_destroy(&value);
+            return 0;
+        }
+        ptn_value_destroy(&value);
+        emitted++;
+    }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         if (entry->key.type != PTN_ARRAY_KEY_STRING) {
@@ -16668,7 +16750,7 @@ static int ptn_json_encode_append_object_properties(
         }
         const PtnObjectPropertyMetadata *metadata =
             ptn_object_property_metadata(object, entry->key.as.string);
-        if (metadata != NULL && metadata->read_visibility != PTN_PROPERTY_PUBLIC) {
+        if (metadata != NULL) {
             continue;
         }
         if (pretty) {
@@ -181100,25 +181182,31 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
     }
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue receiver = ptn_object(object);
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-        if (
-            ptn_object_property_storage_initialized(object, metadata->storage_name) ||
-            !metadata->has_hooks ||
-            !metadata->hook_has_get ||
-            ptn_property_is_set_only_virtual(metadata)
-        ) {
+        if (ptn_object_metadata_is_array_object_storage(metadata) ||
+            ptn_object_metadata_is_spl_fixed_array_storage(metadata)) {
             continue;
         }
         PtnArrayKey storage_key = ptn_array_string_key(metadata->storage_name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, storage_key);
         int visible =
             ptn_object_property_visible_for_foreach(runtime, object, storage_key, access_scope);
         ptn_array_key_free(storage_key);
         if (!visible) {
             continue;
         }
-        PtnValue value =
-            ptn_object_read_property(runtime, target, metadata->display_name, access_scope, line);
+        int hook_readable =
+            metadata->has_hooks &&
+            metadata->hook_has_get &&
+            !ptn_property_is_set_only_virtual(metadata);
+        if (entry == NULL && !hook_readable) {
+            continue;
+        }
+        PtnValue value = hook_readable
+            ? ptn_object_read_property(runtime, receiver, metadata->display_name, access_scope, line)
+            : ptn_get_object_vars_snapshot_value(entry->value);
         PtnArrayKey result_key = ptn_public_object_property_array_key_from_name_len(
             metadata->display_name,
             strlen(metadata->display_name)
@@ -181136,10 +181224,7 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
                 ptn_object_property_metadata(object, entry->key.as.string);
             if (metadata != NULL) {
                 ptn_array_key_free(result_key);
-                result_key = ptn_public_object_property_array_key_from_name_len(
-                    metadata->display_name,
-                    strlen(metadata->display_name)
-                );
+                continue;
             }
         }
         ptn_array_set_entry(result.as.array, result_key, ptn_get_object_vars_snapshot_value(entry->value));

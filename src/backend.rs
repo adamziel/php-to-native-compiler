@@ -14663,6 +14663,10 @@ fn emit_property_hook_get_helper(
             out.push_str(&c_string(&property.name));
             out.push_str("\";\n");
             out.push_str("        runtime.active_property_hook_object = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object : NULL;\n");
+            let hook_body_is_generator = property
+                .hook_get_body
+                .as_ref()
+                .is_some_and(|body| instructions_contain_generator_statement_yield(body));
 
             let mut values = ValueEmitter::new_with_scope(
                 source_file,
@@ -14677,9 +14681,9 @@ fn emit_property_hook_get_helper(
                 Some(class.name.as_str()),
                 None,
                 property.hook_get_returns_by_ref,
-                false,
-                property.hook_get_body.is_some(),
-                property.hook_get_body.is_some(),
+                hook_body_is_generator,
+                property.hook_get_body.is_some() && !hook_body_is_generator,
+                property.hook_get_body.is_some() && !hook_body_is_generator,
                 false,
                 false,
             );
@@ -14687,8 +14691,27 @@ fn emit_property_hook_get_helper(
             let value_temp = if let Some(body) = &property.hook_get_body {
                 emit_property_hook_field_binding(out, &class.name, &property.name, body);
                 out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
-                out.push_str("        int ptn_return_value_was_set = 0;\n");
-                out.push_str("        size_t ptn_return_line = line;\n");
+                if hook_body_is_generator {
+                    out.push_str(
+                        "        PtnValue ptn_generator_value = ptn_generator_new(&runtime, ",
+                    );
+                    out.push_str(if property.hook_get_returns_by_ref {
+                        "1"
+                    } else {
+                        "0"
+                    });
+                    out.push_str(");\n");
+                    out.push_str("        runtime.current_generator = ptn_generator_from_value(ptn_generator_value);\n");
+                    out.push_str("        if (runtime.current_generator != NULL) {\n");
+                    out.push_str("            runtime.current_generator->executing = 1;\n");
+                    out.push_str("            runtime.current_generator->source_line = ");
+                    out.push_str(&property.hook_get_line.to_string());
+                    out.push_str(";\n");
+                    out.push_str("        }\n");
+                } else {
+                    out.push_str("        int ptn_return_value_was_set = 0;\n");
+                    out.push_str("        size_t ptn_return_line = line;\n");
+                }
                 if property.hook_get_returns_by_ref {
                     out.push_str(
                         "        int ptn_return_value_from_declared_reference_call = 0;\n",
@@ -14721,6 +14744,23 @@ fn emit_property_hook_get_helper(
                 out.push_str(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
+                if hook_body_is_generator {
+                    out.push_str("        if (ptn_generator_capture_pending_exception(&runtime, runtime.current_generator)) {\n");
+                    out.push_str("            if (runtime.current_generator != NULL) {\n");
+                    out.push_str("                runtime.current_generator->executing = 0;\n");
+                    out.push_str("            }\n");
+                    out.push_str("            runtime.current_generator = NULL;\n");
+                    out.push_str("            ptn_value_destroy(&ptn_return_value);\n");
+                    out.push_str("            *value_out = ptn_generator_value;\n");
+                    out.push_str("            caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                    out.push_str("            ptn_runtime_drop_call_frame_arguments(&runtime);\n");
+                    out.push_str("            ptn_runtime_free(&runtime);\n");
+                    out.push_str("            return 1;\n");
+                    out.push_str("        }\n");
+                    out.push_str("        if (runtime.current_generator != NULL) {\n");
+                    out.push_str("            runtime.current_generator->executing = 0;\n");
+                    out.push_str("        }\n");
+                }
                 out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
                 out.push_str("        ptn_runtime_drop_call_frame_arguments(&runtime);\n");
                 out.push_str("        ptn_runtime_free(&runtime);\n");
@@ -14735,6 +14775,18 @@ fn emit_property_hook_get_helper(
                 out.push_str(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
+                if hook_body_is_generator {
+                    out.push_str("        ptn_generator_set_return_value(&runtime, runtime.current_generator, ptn_return_value);\n");
+                    out.push_str("        if (runtime.current_generator != NULL) {\n");
+                    out.push_str("            runtime.current_generator->executing = 0;\n");
+                    out.push_str("        }\n");
+                    out.push_str("        runtime.current_generator = NULL;\n");
+                    out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+                    out.push_str("        *value_out = ptn_generator_value;\n");
+                    out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                    out.push_str("        ptn_runtime_free(&runtime);\n");
+                    out.push_str("        return 1;\n");
+                }
                 "ptn_return_value".to_string()
             } else if property.hook_get_returns_by_ref {
                 let value = property.hook_get_value.as_ref().unwrap();
