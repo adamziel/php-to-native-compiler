@@ -85183,6 +85183,56 @@ try {
 }
 
 #[test]
+fn compile_overloaded_property_reference_assignment_to_variable_source_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-reference-assignment-variable-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-reference-assignment-variable-source.php");
+    let output = root.join("overloaded-property-reference-assignment-variable-source-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public $q;
+    function __construct() { $this->q = 3; }
+    function __get($name) { return $this->q; }
+}
+$a = new A;
+$b = \"short\";
+$a->whatever =& $b;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(
+        stdout,
+        format!(
+            "Notice: Indirect modification of overloaded property A::$whatever has no effect in {} on line 9\n",
+            input.display()
+        )
+    );
+    assert_eq!(
+        stderr,
+        format!(
+            concat!(
+                "\nFatal error: Uncaught Error: Cannot assign by reference to overloaded object in {}:9\n",
+                "Stack trace:\n",
+                "#0 {{main}}\n",
+                "  thrown in {} on line 9\n",
+            ),
+            input.display(),
+            input.display(),
+        )
+    );
+    assert!(!stdout.contains("Creation of dynamic property"), "{stdout}");
+}
+
+#[test]
 fn compile_overloaded_property_reference_assignment_by_ref_source_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-property-reference-assignment-by-ref-source");
     fs::create_dir_all(&root).unwrap();
