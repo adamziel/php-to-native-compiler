@@ -151058,6 +151058,13 @@ static PtnValue ptn_reflection_type_object_from_metadata(
     int allows_null,
     int is_builtin
 );
+static PtnValue ptn_reflection_named_type_object_from_metadata(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *display_name,
+    int allows_null,
+    int is_builtin
+);
 static PtnValue ptn_reflection_function_size_result(size_t value);
 static PtnValue ptn_reflection_parameter_object_from_metadata(
     PtnRuntime *runtime,
@@ -162285,18 +162292,15 @@ static const char *ptn_reflection_type_class_name(PtnReflectionTypeKind kind) {
     }
 }
 
-static PtnValue ptn_reflection_type_object_from_metadata(
+static PtnValue ptn_reflection_type_object_from_kind_metadata(
     PtnRuntime *runtime,
+    PtnReflectionTypeKind kind,
     const char *name,
     const char *display_name,
     int allows_null,
     int is_builtin
 ) {
     if (display_name == NULL) {
-        return ptn_null();
-    }
-    PtnReflectionTypeKind kind = ptn_reflection_type_kind_from_display(display_name);
-    if (kind == PTN_REFLECTION_TYPE_NAMED && name == NULL) {
         return ptn_null();
     }
     PtnReflectionTypeData *data = malloc(sizeof(PtnReflectionTypeData));
@@ -162313,6 +162317,56 @@ static PtnValue ptn_reflection_type_object_from_metadata(
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_type_data_free;
     return object;
+}
+
+static PtnValue ptn_reflection_named_type_object_from_metadata(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *display_name,
+    int allows_null,
+    int is_builtin
+) {
+    if (name == NULL || display_name == NULL) {
+        return ptn_null();
+    }
+    return ptn_reflection_type_object_from_kind_metadata(
+        runtime,
+        PTN_REFLECTION_TYPE_NAMED,
+        name,
+        display_name,
+        allows_null,
+        is_builtin
+    );
+}
+
+static PtnValue ptn_reflection_type_object_from_metadata(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *display_name,
+    int allows_null,
+    int is_builtin
+) {
+    if (display_name == NULL) {
+        return ptn_null();
+    }
+    PtnReflectionTypeKind kind = ptn_reflection_type_kind_from_display(display_name);
+    if (kind == PTN_REFLECTION_TYPE_NAMED) {
+        return ptn_reflection_named_type_object_from_metadata(
+            runtime,
+            name,
+            display_name,
+            allows_null,
+            is_builtin
+        );
+    }
+    return ptn_reflection_type_object_from_kind_metadata(
+        runtime,
+        kind,
+        name,
+        display_name,
+        allows_null,
+        is_builtin
+    );
 }
 
 static PtnValue ptn_reflection_type_object_from_member_display(
