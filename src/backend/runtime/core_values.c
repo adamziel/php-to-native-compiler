@@ -782,6 +782,10 @@ typedef struct {
     const char *return_type_display_name;
     int return_type_allows_null;
     int return_type_is_builtin;
+    const char *tentative_return_type_name;
+    const char *tentative_return_type_display_name;
+    int tentative_return_type_allows_null;
+    int tentative_return_type_is_builtin;
     const char *source_file;
     size_t start_line;
     size_t end_line;
@@ -1900,6 +1904,10 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.return_type_display_name = NULL;
     metadata.return_type_allows_null = 0;
     metadata.return_type_is_builtin = 0;
+    metadata.tentative_return_type_name = NULL;
+    metadata.tentative_return_type_display_name = NULL;
+    metadata.tentative_return_type_allows_null = 0;
+    metadata.tentative_return_type_is_builtin = 0;
     metadata.source_file = NULL;
     metadata.start_line = 0;
     metadata.end_line = 0;
@@ -1939,6 +1947,10 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.return_type_display_name = return_type_display_name;
     metadata.return_type_allows_null = return_type_allows_null;
     metadata.return_type_is_builtin = return_type_is_builtin;
+    metadata.tentative_return_type_name = NULL;
+    metadata.tentative_return_type_display_name = NULL;
+    metadata.tentative_return_type_allows_null = 0;
+    metadata.tentative_return_type_is_builtin = 0;
     metadata.source_file = NULL;
     metadata.start_line = 0;
     metadata.end_line = 0;
@@ -1947,6 +1959,20 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.has_user_function_index = 0;
     metadata.user_function_index = 0;
     metadata.attribute_method_name = NULL;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_tentative_return(
+    PtnFunctionMetadata metadata
+) {
+    metadata.tentative_return_type_name = metadata.return_type_name;
+    metadata.tentative_return_type_display_name = metadata.return_type_display_name;
+    metadata.tentative_return_type_allows_null = metadata.return_type_allows_null;
+    metadata.tentative_return_type_is_builtin = metadata.return_type_is_builtin;
+    metadata.return_type_name = NULL;
+    metadata.return_type_display_name = NULL;
+    metadata.return_type_allows_null = 0;
+    metadata.return_type_is_builtin = 0;
     return metadata;
 }
 

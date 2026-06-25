@@ -142245,6 +142245,12 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         if (ptn_internal_function_name_has_prefix(name, "DateTimeZone::")) {
             return "date";
         }
+        if (ptn_internal_function_name_has_prefix(name, "DirectoryIterator::") ||
+            ptn_internal_function_name_has_prefix(name, "FilesystemIterator::") ||
+            ptn_internal_function_name_has_prefix(name, "GlobIterator::") ||
+            ptn_internal_function_name_has_prefix(name, "RecursiveDirectoryIterator::")) {
+            return "SPL";
+        }
         if (ptn_internal_function_name_has_prefix(name, "Phar::") ||
             ptn_internal_function_name_has_prefix(name, "PharData::")) {
             return "Phar";
@@ -142764,7 +142770,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     }
     if (ptn_ascii_case_equal(function->name, "DateTimeZone::listIdentifiers") ||
         ptn_ascii_case_equal(function->name, "timezone_identifiers_list")) {
-        return ptn_function_metadata_found(
+        PtnFunctionMetadata metadata = ptn_function_metadata_found(
             function->name,
             1,
             sizeof(PTN_INTERNAL_DATETIMEZONE_LIST_IDENTIFIERS_PARAMETERS) /
@@ -142778,6 +142784,9 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             1
         );
+        return ptn_ascii_case_equal(function->name, "DateTimeZone::listIdentifiers")
+            ? ptn_function_metadata_with_tentative_return(metadata)
+            : metadata;
     }
     if (ptn_ascii_case_equal(function->name, "IntlTimeZone::getCanonicalID") ||
         ptn_ascii_case_equal(function->name, "intltz_get_canonical_id")) {
@@ -144914,6 +144923,8 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "hasReturnType")
+        || ptn_ascii_case_equal(method_name, "getTentativeReturnType")
+        || ptn_ascii_case_equal(method_name, "hasTentativeReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "invoke")
@@ -144971,6 +144982,8 @@ static int ptn_reflection_function_abstract_method_exists(const char *method_nam
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "hasReturnType")
+        || ptn_ascii_case_equal(method_name, "getTentativeReturnType")
+        || ptn_ascii_case_equal(method_name, "hasTentativeReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
@@ -145047,6 +145060,8 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getPrototype")
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "hasReturnType")
+        || ptn_ascii_case_equal(method_name, "getTentativeReturnType")
+        || ptn_ascii_case_equal(method_name, "hasTentativeReturnType")
         || ptn_ascii_case_equal(method_name, "getShortName")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
@@ -151208,6 +151223,26 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
             0
         );
     }
+    if (
+        ptn_ascii_case_equal(data->class_name, "FilesystemIterator") &&
+        ptn_ascii_case_equal(data->name, "current")
+    ) {
+        return ptn_function_metadata_with_tentative_return(
+            ptn_function_metadata_found(
+                "FilesystemIterator::current",
+                1,
+                0,
+                0,
+                0,
+                NULL,
+                0,
+                "SplFileInfo|FilesystemIterator|string",
+                "SplFileInfo|FilesystemIterator|string",
+                0,
+                0
+            )
+        );
+    }
     if (ptn_internal_class_name_is_collator(data->class_name)) {
         if (ptn_ascii_case_equal(data->name, "sort") ||
             ptn_ascii_case_equal(data->name, "asort")) {
@@ -151478,6 +151513,12 @@ static PtnValue ptn_reflection_internal_method_to_string(
     if (ptn_ascii_case_equal(data->name, "__construct")) {
         ptn_string_buffer_append(&buffer, ", ctor");
     }
+    if (
+        ptn_ascii_case_equal(data->class_name, "FilesystemIterator") &&
+        ptn_ascii_case_equal(data->name, "current")
+    ) {
+        ptn_string_buffer_append(&buffer, ", overwrites DirectoryIterator, prototype Iterator");
+    }
     ptn_string_buffer_append(&buffer, "> ");
     if (is_final) {
         ptn_string_buffer_append(&buffer, "final ");
@@ -151496,7 +151537,8 @@ static PtnValue ptn_reflection_internal_method_to_string(
     );
     int closure_invoke_method = ptn_ascii_case_equal(data->class_name, "Closure") &&
         ptn_ascii_case_equal(data->name, "__invoke");
-    if (metadata.parameter_count > 0) {
+    if (metadata.parameter_count > 0 || metadata.return_type_display_name != NULL ||
+            metadata.tentative_return_type_display_name != NULL) {
         ptn_string_buffer_append(&buffer, "\n");
         ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
         for (size_t i = 0; i < metadata.parameter_count; i++) {
@@ -151538,6 +151580,12 @@ static PtnValue ptn_reflection_internal_method_to_string(
     }
     if (metadata.return_type_display_name != NULL) {
         ptn_string_buffer_append_format(&buffer, "  - Return [ %s ]\n", metadata.return_type_display_name);
+    } else if (metadata.tentative_return_type_display_name != NULL) {
+        ptn_string_buffer_append_format(
+            &buffer,
+            "  - Tentative return [ %s ]\n",
+            metadata.tentative_return_type_display_name
+        );
     }
     ptn_string_buffer_append(&buffer, "}\n");
     return ptn_owned_string_len(buffer.data, buffer.len);
@@ -151585,6 +151633,11 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             &is_final,
             &is_abstract
         );
+    } else if (
+        ptn_internal_class_name_is_datetime_zone(data->class_name) &&
+        ptn_ascii_case_equal(data->name, "listIdentifiers")
+    ) {
+        is_static = 1;
     }
     if (ptn_ascii_case_equal(name, "invoke")) {
         if (is_abstract) {
@@ -151915,6 +151968,23 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     if (ptn_ascii_case_equal(name, "hasReturnType")) {
         PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
         return ptn_bool(metadata.found && metadata.return_type_display_name != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getTentativeReturnType")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        if (!metadata.found || metadata.tentative_return_type_display_name == NULL) {
+            return ptn_null();
+        }
+        return ptn_reflection_type_object_from_metadata(
+            runtime,
+            metadata.tentative_return_type_name,
+            metadata.tentative_return_type_display_name,
+            metadata.tentative_return_type_allows_null,
+            metadata.tentative_return_type_is_builtin
+        );
+    }
+    if (ptn_ascii_case_equal(name, "hasTentativeReturnType")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        return ptn_bool(metadata.found && metadata.tentative_return_type_display_name != NULL);
     }
     if (ptn_ascii_case_equal(name, "returnsReference")) {
         PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
@@ -176412,6 +176482,21 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     }
     if (ptn_ascii_case_equal(name, "hasReturnType")) {
         return ptn_bool(metadata.return_type_display_name != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getTentativeReturnType")) {
+        if (metadata.tentative_return_type_display_name == NULL) {
+            return ptn_null();
+        }
+        return ptn_reflection_type_object_from_metadata(
+            runtime,
+            metadata.tentative_return_type_name,
+            metadata.tentative_return_type_display_name,
+            metadata.tentative_return_type_allows_null,
+            metadata.tentative_return_type_is_builtin
+        );
+    }
+    if (ptn_ascii_case_equal(name, "hasTentativeReturnType")) {
+        return ptn_bool(metadata.tentative_return_type_display_name != NULL);
     }
     if (ptn_ascii_case_equal(name, "getNumberOfParameters")) {
         return ptn_reflection_function_size_result(metadata.parameter_count);

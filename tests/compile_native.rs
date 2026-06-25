@@ -38524,6 +38524,98 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
 }
 
 #[test]
+fn compile_reflection_method_tentative_returns_and_static_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-tentative-static-vars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-method-tentative-static-vars.php");
+    let output = root.join("reflection-method-tentative-static-vars-bin");
+    fs::write(
+        &input,
+        "<?php
+function reflection_static_default() {
+    echo \"test() called\\n\";
+    return 42;
+}
+
+function static_reflection_target() {
+    $function = new ReflectionFunction(__FUNCTION__);
+    $before = $function->getStaticVariables()['a'];
+    static $a = reflection_static_default();
+    var_dump($a);
+    $live = &$function->getStaticVariables()['a'];
+    $live = $before;
+}
+
+static_reflection_target();
+static_reflection_target();
+
+class MyDateTimeZone extends DateTimeZone
+{
+    #[ReturnTypeWillChange]
+    public static function listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): string
+    {
+        return '';
+    }
+}
+
+function show_tentative(ReflectionMethod $method) {
+    var_dump($method->hasReturnType());
+    var_dump($method->hasTentativeReturnType());
+    var_dump((string) $method->getReturnType());
+    var_dump((string) $method->getTentativeReturnType());
+    echo $method, \"--\\n\";
+}
+
+show_tentative(new ReflectionMethod(DateTimeZone::class, 'listIdentifiers'));
+show_tentative(new ReflectionMethod(MyDateTimeZone::class, 'listIdentifiers'));
+show_tentative(new ReflectionMethod(FileSystemIterator::class, 'current'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("test() called\nint(42)\nNULL\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\nbool(true)\nstring(0) \"\"\nstring(5) \"array\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("static public method listIdentifiers")
+            && stdout.contains("  - Tentative return [ array ]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\nbool(false)\nstring(6) \"string\"\nstring(0) \"\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("overwrites DateTimeZone, prototype DateTimeZone"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("DateTimeZone::ALL"), "{stdout}");
+    assert!(!stdout.contains("\\DateTimeZone::ALL"), "{stdout}");
+    assert!(
+        stdout.contains("string(37) \"SplFileInfo|FilesystemIterator|string\"")
+            && stdout.contains("overwrites DirectoryIterator, prototype Iterator")
+            && stdout.contains("  - Parameters [0] {\n  }\n")
+            && stdout.contains("  - Tentative return [ SplFileInfo|FilesystemIterator|string ]\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_metadata_with_tentative_return"));
+    assert!(c_source.contains("ptn_runtime_static_local_values"));
+}
+
+#[test]
 fn compile_reflection_method_class_scoped_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-method-scoped-defaults");
     fs::create_dir_all(&root).unwrap();

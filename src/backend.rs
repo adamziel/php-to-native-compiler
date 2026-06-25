@@ -15230,6 +15230,13 @@ fn emit_class_reflection_metadata_helpers(
                     ));
                 }
             }
+            if let Some(internal_name) = inherited_modeled_internal_class_name(class, classes) {
+                for (method_name, prototype_method) in
+                    reflection_modeled_internal_method_prototypes(internal_name)
+                {
+                    entries.push((*method_name, internal_name, *prototype_method));
+                }
+            }
             entries
         })
         .collect::<Vec<_>>();
@@ -17510,6 +17517,13 @@ fn reflection_user_method_qualifiers(
             reflection_method_effective_prototype_class(class, &method.name, classes)
                 .unwrap_or(prototype_class),
         );
+    } else if let Some(prototype_class) =
+        reflection_method_internal_parent_prototype_class(class, &method.name, classes)
+    {
+        out.push_str(", overwrites ");
+        out.push_str(prototype_class);
+        out.push_str(", prototype ");
+        out.push_str(prototype_class);
     }
     if method.name.eq_ignore_ascii_case("__construct") {
         out.push_str(", ctor");
@@ -18199,6 +18213,40 @@ fn reflection_method_parent_prototype<'a>(
     None
 }
 
+fn reflection_modeled_internal_method_prototypes(
+    class_name: &str,
+) -> &'static [(&'static str, &'static str)] {
+    match class_name {
+        "DateTimeZone" => &[("listIdentifiers", "listIdentifiers")],
+        _ => &[],
+    }
+}
+
+fn reflection_method_internal_parent_prototype_class(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> Option<&'static str> {
+    let mut parent_name = class.parent_name.as_deref();
+    while let Some(name) = parent_name {
+        if let Some(parent) = class_by_name(classes, name) {
+            parent_name = parent.parent_name.as_deref();
+            continue;
+        }
+        let Some(internal_name) = modeled_internal_class_name(name) else {
+            return None;
+        };
+        if reflection_modeled_internal_method_prototypes(internal_name)
+            .iter()
+            .any(|(lookup_method, _)| lookup_method.eq_ignore_ascii_case(method_name))
+        {
+            return Some(internal_name);
+        }
+        return None;
+    }
+    None
+}
+
 fn reflection_method_interface_prototype<'a>(
     class: &'a ClassDecl,
     method_name: &str,
@@ -18434,7 +18482,7 @@ fn reflection_default_class_name_repr(class_name: &str) -> String {
     {
         class_name.to_string()
     } else {
-        format!("\\{}", class_name.trim_start_matches('\\'))
+        class_name.trim_start_matches('\\').to_string()
     }
 }
 
