@@ -21883,6 +21883,46 @@ var_dump($g->current());
 }
 
 #[test]
+fn compile_generator_throwing_in_foreach_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throwing-in-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throwing-in-foreach.php");
+    let output = root.join("generator-throwing-in-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    throw new Exception("foo");
+    yield;
+}
+
+foreach (gen() as $value) {
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let path = input.display().to_string();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: foo in "),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("Stack trace:\n#0 {path}(")),
+        "{stderr}"
+    );
+    assert!(stderr.contains(": gen()\n#1 {main}"), "{stderr}");
+    assert!(!stderr.contains("Generator->rewind()"), "{stderr}");
+    assert!(!stderr.contains("[internal function]: gen()"), "{stderr}");
+}
+
+#[test]
 fn compile_generator_send_into_yield_argument_to_native_binary() {
     let root = temp_dir("ptn-native-generator-send-yield-argument");
     fs::create_dir_all(&root).unwrap();

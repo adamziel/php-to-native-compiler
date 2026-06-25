@@ -27306,6 +27306,9 @@ fn emit_instruction(
             let cleanup_line_temp = values.next_temp();
             let cleanup_frame_temp = values.next_temp();
             let cleanup_frame_active_temp = values.next_temp();
+            let suppress_generator_rewind_trace_temp = values.next_temp();
+            let suppress_generator_rewind_trace_frame_temp = values.next_temp();
+            let suppress_generator_rewind_trace_frame_active_temp = values.next_temp();
             out.push_str("    PtnArrayIterator ");
             out.push_str(&iterator_temp);
             out.push_str(";\n");
@@ -27329,6 +27332,35 @@ fn emit_instruction(
             out.push_str("    (void)");
             out.push_str(&cleanup_frame_active_temp);
             out.push_str(";\n");
+            out.push_str("    int ");
+            out.push_str(&suppress_generator_rewind_trace_temp);
+            out.push_str(" = runtime.suppress_generator_rewind_trace_frame;\n");
+            out.push_str("    PtnTryFrame ");
+            out.push_str(&suppress_generator_rewind_trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("    int ");
+            out.push_str(&suppress_generator_rewind_trace_frame_active_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("    if (runtime.exceptions != NULL) {\n");
+            out.push_str("        ptn_try_frame_push(&runtime, &");
+            out.push_str(&suppress_generator_rewind_trace_frame_temp);
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(&suppress_generator_rewind_trace_frame_active_temp);
+            out.push_str(" = 1;\n");
+            out.push_str("        if (setjmp(");
+            out.push_str(&suppress_generator_rewind_trace_frame_temp);
+            out.push_str(".jump) != 0) {\n");
+            out.push_str("            ptn_try_frame_pop(&runtime, &");
+            out.push_str(&suppress_generator_rewind_trace_frame_temp);
+            out.push_str(");\n");
+            out.push_str("            runtime.suppress_generator_rewind_trace_frame = ");
+            out.push_str(&suppress_generator_rewind_trace_temp);
+            out.push_str(";\n");
+            out.push_str("            ptn_rethrow_exception(&runtime);\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+            out.push_str("    runtime.suppress_generator_rewind_trace_frame = 1;\n");
             let value_list_has_reference = matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
             let iterator_needs_reference = *value_by_ref || value_list_has_reference;
             let iterable_temp = if iterator_needs_reference {
@@ -27426,6 +27458,19 @@ fn emit_instruction(
                 out.push_str(");\n");
                 Some(iterable_temp)
             };
+            out.push_str("    runtime.suppress_generator_rewind_trace_frame = ");
+            out.push_str(&suppress_generator_rewind_trace_temp);
+            out.push_str(";\n");
+            out.push_str("    if (");
+            out.push_str(&suppress_generator_rewind_trace_frame_active_temp);
+            out.push_str(") {\n");
+            out.push_str("        ptn_try_frame_pop(&runtime, &");
+            out.push_str(&suppress_generator_rewind_trace_frame_temp);
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(&suppress_generator_rewind_trace_frame_active_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("    }\n");
             emit_label_reference(out, &cleanup_label);
             emit_label_reference(out, &end_label);
             finally_stack.push(FinallyContext::new_cleanup(

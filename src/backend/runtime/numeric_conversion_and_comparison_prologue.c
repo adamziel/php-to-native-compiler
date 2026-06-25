@@ -222,6 +222,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
+    runtime->suppress_generator_rewind_trace_frame =
+        caller_runtime->suppress_generator_rewind_trace_frame;
     runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
@@ -2505,6 +2507,24 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
             ptn_array_string_key("args"),
             ptn_array_from_literal_entries(0, NULL)
         );
+        if (runtime->suppress_generator_rewind_trace_frame) {
+            if (runtime->source_path != NULL) {
+                ptn_array_set_entry(
+                    generator_frame.as.array,
+                    ptn_array_string_key("file"),
+                    ptn_owned_string(ptn_duplicate_string(runtime->source_path))
+                );
+            }
+            if (runtime->call_site_line <= (size_t)INT64_MAX) {
+                ptn_array_set_entry(
+                    generator_frame.as.array,
+                    ptn_array_string_key("line"),
+                    ptn_int((int64_t)runtime->call_site_line)
+                );
+            }
+            ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);
+            return trace;
+        }
         ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);
 
         PtnValue method_frame = ptn_array_from_literal_entries(0, NULL);
