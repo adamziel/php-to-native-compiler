@@ -2467,6 +2467,11 @@ echo $restored->getName(), "\n";
 $transitions = timezone_transitions_get(new DateTimeZone('Europe/London'), -306972000, -37241999);
 var_dump(count($transitions));
 var_dump($transitions[6]['abbr']);
+$oslo = timezone_location_get(new DateTimeZone('Europe/Oslo'));
+var_dump($oslo['country_code']);
+var_dump($oslo['latitude']);
+var_dump($oslo['longitude']);
+var_dump($oslo['comments']);
 
 date_default_timezone_set('America/Chicago');
 echo date_sunrise(mktime(8, 8, 8, 8, 11, 2008), 1, 41.85, -87.65, 90, -5), "\n";
@@ -2510,6 +2515,10 @@ echo $fallStart->diff($fallEnd)->format('P%dDT%hH%iM%sS'), "\n";
             "America/New_York\n",
             "int(18)\n",
             "string(3) \"BST\"\n",
+            "string(2) \"NO\"\n",
+            "float(59.91666)\n",
+            "float(10.75)\n",
+            "string(0) \"\"\n",
             "05:58\n",
             "2010-03-14 01:59:59 EST America/New_York\n",
             "P0DT0H0M1S\n",

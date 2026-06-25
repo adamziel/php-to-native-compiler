@@ -94720,6 +94720,14 @@ typedef struct {
     int backward_compatible;
 } PtnTimezoneIdentifier;
 
+typedef struct {
+    const char *name;
+    const char *country;
+    double latitude;
+    double longitude;
+    const char *comments;
+} PtnTimezoneLocation;
+
 static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Africa/Abidjan", 1, 0 },
     { "Africa/Addis_Ababa", 1, 0 },
@@ -94769,6 +94777,63 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "UTC", 1024, 0 },
     { "US/Eastern", 2, 1 },
 };
+
+static const PtnTimezoneLocation ptn_timezone_locations[] = {
+    { "Africa/Abidjan", "CI", 5.31666, -4.03334, "" },
+    { "Africa/Addis_Ababa", "ET", 9.03333, 38.7, "Ethiopia" },
+    { "Africa/Casablanca", "MA", 33.65, -7.58334, "" },
+    { "America/Bogota", "CO", 4.6, -74.08334, "" },
+    { "America/Chicago", "US", 41.85, -87.65, "Central (most areas)" },
+    { "America/Havana", "CU", 23.13333, -82.36667, "" },
+    { "America/Halifax", "CA", 44.65, -63.6, "Atlantic - NS (most areas), PE" },
+    { "America/Indiana/Knox", "US", 41.29583, -86.625, "Central - IN (Starke)" },
+    { "America/Los_Angeles", "US", 34.05222, -118.24278, "Pacific" },
+    { "America/Montevideo", "UY", -34.90917, -56.2125, "" },
+    { "America/New_York", "US", 40.71416, -74.00639, "Eastern (most areas)" },
+    { "America/Sao_Paulo", "BR", -23.53334, -46.61667, "Brazil (southeast: GO, DF, MG, ES, RJ, SP, PR, SC, RS)" },
+    { "America/Toronto", "CA", 43.65, -79.38334, "Eastern - ON & QC (most areas)" },
+    { "Asia/Calcutta", "??", -90.0, -180.0, "" },
+    { "Asia/Hong_Kong", "HK", 22.28333, 114.14999, "" },
+    { "Asia/Jerusalem", "IL", 31.78055, 35.22388, "" },
+    { "Asia/Yerevan", "AM", 40.18333, 44.5, "Armenia" },
+    { "Asia/Kolkata", "IN", 22.53333, 88.36666, "" },
+    { "Asia/Singapore", "SG", 1.28333, 103.85, "" },
+    { "Asia/Tehran", "IR", 35.66666, 51.43333, "" },
+    { "Asia/Tokyo", "JP", 35.65444, 139.74472, "" },
+    { "Australia/Adelaide", "AU", -34.91667, 138.58333, "South Australia" },
+    { "Australia/Brisbane", "AU", -27.46667, 153.03333, "Queensland (most areas)" },
+    { "Australia/Broken_Hill", "AU", -31.95, 141.45, "New South Wales (Yancowinna)" },
+    { "Australia/Darwin", "AU", -12.46667, 130.83333, "Northern Territory" },
+    { "Australia/North", "??", -90.0, -180.0, "" },
+    { "Australia/Perth", "AU", -31.95, 115.85, "Western Australia (most areas)" },
+    { "Australia/South", "??", -90.0, -180.0, "" },
+    { "Australia/Sydney", "AU", -33.86667, 151.21666, "New South Wales (most areas)" },
+    { "Australia/Yancowinna", "??", -90.0, -180.0, "" },
+    { "Europe/Amsterdam", "NL", 52.36666, 4.9, "" },
+    { "Europe/Berlin", "DE", 52.5, 13.36666, "most of Germany" },
+    { "Europe/Istanbul", "TR", 41.01666, 28.96666, "" },
+    { "Europe/Kyiv", "UA", 50.43333, 30.51666, "most of Ukraine" },
+    { "Europe/Lisbon", "PT", 38.71666, -9.13334, "Portugal (mainland)" },
+    { "Europe/London", "GB", 51.50833, -0.12528, "" },
+    { "Europe/Minsk", "BY", 53.9, 27.56666, "" },
+    { "Europe/Moscow", "RU", 55.75583, 37.61777, "MSK+00 - Moscow area" },
+    { "Europe/Oslo", "NO", 59.91666, 10.75, "" },
+    { "Europe/Paris", "FR", 48.86666, 2.33333, "" },
+    { "Europe/Rome", "IT", 41.9, 12.48333, "" },
+    { "Pacific/Samoa", "??", -90.0, -180.0, "" },
+    { "Pacific/Wallis", "WF", -13.3, -176.16667, "" },
+    { "US/Alaska", "??", -90.0, -180.0, "" },
+    { "US/Eastern", "??", -90.0, -180.0, "" },
+};
+
+static const PtnTimezoneLocation *ptn_timezone_location_for_name(const char *name) {
+    for (size_t i = 0; i < sizeof(ptn_timezone_locations) / sizeof(ptn_timezone_locations[0]); i++) {
+        if (ptn_ascii_case_equal(ptn_timezone_locations[i].name, name)) {
+            return &ptn_timezone_locations[i];
+        }
+    }
+    return NULL;
+}
 
 static void ptn_datetime_zone_data_free(void *data) {
     PtnDateTimeZoneData *zone = (PtnDateTimeZoneData *)data;
@@ -100787,7 +100852,13 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
         const char *comments = "";
         double latitude = 0.0;
         double longitude = 0.0;
-        if (ptn_ascii_case_equal(zone->name, "America/Halifax") ||
+        const PtnTimezoneLocation *location = ptn_timezone_location_for_name(zone->name);
+        if (location != NULL) {
+            country = location->country;
+            comments = location->comments;
+            latitude = location->latitude;
+            longitude = location->longitude;
+        } else if (ptn_ascii_case_equal(zone->name, "America/Halifax") ||
             ptn_ascii_case_equal(zone->name, "America/Toronto")) {
             country = "CA";
             comments = ptn_ascii_case_equal(zone->name, "America/Halifax")
