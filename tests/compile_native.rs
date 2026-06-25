@@ -29218,6 +29218,61 @@ var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n",
 }
 
 #[test]
+fn compile_preg_utf8_start_offset_validation_window_to_native_binary() {
+    let Some(pcre2_library) = discover_pcre2_library() else {
+        eprintln!("skipping PCRE2 UTF-8 offset validation test: libpcre2-8 was not found");
+        return;
+    };
+
+    let root = temp_dir("ptn-native-preg-utf8-start-offset-validation-window");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-utf8-start-offset-validation-window.php");
+    let output = root.join("preg-utf8-start-offset-validation-window-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$text = json_decode('\"’\"');\n\
+$pattern = '/\\\\b/u';\n\
+var_dump(preg_match($pattern, $text, $matches, 0, 0));\n\
+var_dump(preg_match($pattern, $text, $matches, 0, 1));\n\
+var_dump(preg_last_error() === PREG_BAD_UTF8_OFFSET_ERROR);\n\
+echo \"\\n\";\n\
+$text = \"VA\\xff\"; $text .= \"LID\";\n\
+var_dump(preg_match($pattern, $text, $matches, 0, 4));\n\
+var_dump(preg_match($pattern, $text, $matches, 0, 0));\n\
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PCRE2_LIBRARY", &pcre2_library)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mb_split_empty_pattern_to_native_binary() {
     let root = temp_dir("ptn-native-mb-split-empty-pattern");
     fs::create_dir_all(&root).unwrap();

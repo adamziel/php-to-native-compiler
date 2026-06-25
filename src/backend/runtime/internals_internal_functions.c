@@ -46756,13 +46756,21 @@ static int ptn_preg_utf8_is_valid(const char *subject, size_t subject_len) {
 
 static int ptn_preg_utf8_subject_is_valid_cached(PtnRuntime *runtime, const char *subject, size_t subject_len) {
     PtnRuntime *root = ptn_runtime_root(runtime);
-    if (
-        root != NULL &&
-        root->pcre_utf8_cache_known &&
-        root->pcre_utf8_cache_data == subject &&
-        root->pcre_utf8_cache_len == subject_len
-    ) {
-        return root->pcre_utf8_cache_valid;
+    if (root != NULL && root->pcre_utf8_cache_known) {
+        uintptr_t subject_start = (uintptr_t)subject;
+        uintptr_t subject_end = subject_start + subject_len;
+        uintptr_t cached_start = (uintptr_t)root->pcre_utf8_cache_data;
+        uintptr_t cached_end = cached_start + root->pcre_utf8_cache_len;
+        if (root->pcre_utf8_cache_data == subject && root->pcre_utf8_cache_len == subject_len) {
+            return root->pcre_utf8_cache_valid;
+        }
+        if (
+            root->pcre_utf8_cache_valid &&
+            subject_start >= cached_start &&
+            subject_end <= cached_end
+        ) {
+            return 1;
+        }
     }
     int valid = ptn_preg_utf8_is_valid(subject, subject_len);
     if (root != NULL) {
@@ -46776,11 +46784,15 @@ static int ptn_preg_utf8_subject_is_valid_cached(PtnRuntime *runtime, const char
 
 static void ptn_preg_utf8_cache_forget(PtnRuntime *runtime, const char *subject, size_t subject_len) {
     PtnRuntime *root = ptn_runtime_root(runtime);
+    uintptr_t subject_start = (uintptr_t)subject;
+    uintptr_t subject_end = subject_start + subject_len;
+    uintptr_t cached_start = root != NULL ? (uintptr_t)root->pcre_utf8_cache_data : 0;
+    uintptr_t cached_end = root != NULL ? cached_start + root->pcre_utf8_cache_len : 0;
     if (
         root != NULL &&
         root->pcre_utf8_cache_known &&
-        root->pcre_utf8_cache_data == subject &&
-        root->pcre_utf8_cache_len == subject_len
+        cached_start < subject_end &&
+        subject_start < cached_end
     ) {
         root->pcre_utf8_cache_data = NULL;
         root->pcre_utf8_cache_len = 0;
@@ -46887,7 +46899,11 @@ static int ptn_preg_match_contiguous_word_byte(
             ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_OFFSET_ERROR);
             return -1;
         }
-        if (!ptn_preg_utf8_subject_is_valid_cached(runtime, subject.data, subject.len)) {
+        if (!ptn_preg_utf8_subject_is_valid_cached(
+                runtime,
+                subject.data + start_offset,
+                subject.len - start_offset
+            )) {
             ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
             return -1;
         }
@@ -46931,7 +46947,11 @@ static int ptn_preg_program_match(
             ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_OFFSET_ERROR);
             return -1;
         }
-        if (!ptn_preg_utf8_subject_is_valid_cached(runtime, subject, subject_len)) {
+        if (!ptn_preg_utf8_subject_is_valid_cached(
+                runtime,
+                subject + start_offset,
+                subject_len - start_offset
+            )) {
             ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
             return -1;
         }
