@@ -14582,7 +14582,7 @@ fn import_trait_method_into_class(
         if own_method_names.contains(&alias_key) || (class.is_enum && alias_key == "cases") {
             continue;
         }
-        let mut imported = method_with_trait_origin(method, trait_decl);
+        let mut imported = method_with_trait_origin_for_class(method, trait_decl, class);
         imported.name = alias_name.clone();
         if let Some(visibility) = alias.visibility {
             imported.visibility = visibility;
@@ -14606,7 +14606,12 @@ fn import_trait_method_into_class(
         && !(method.is_abstract && parent_concrete_method_names.contains(&method_key))
         && !(class.is_enum && method_key == "cases")
     {
-        let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
+        let imported = adapted_original_trait_method_for_class(
+            method,
+            trait_decl,
+            class,
+            &trait_use.adaptations,
+        );
         if let Err(existing) =
             insert_imported_trait_method(class, imported_method_names, &method_key, imported)
         {
@@ -14958,12 +14963,13 @@ fn ungroup_const_expr(mut expr: &Expr) -> &Expr {
     expr
 }
 
-fn adapted_original_trait_method(
+fn adapted_original_trait_method_for_class(
     method: &MethodDecl,
     trait_decl: &TraitDecl,
+    class: &ClassDecl,
     adaptations: &[TraitAdaptation],
 ) -> MethodDecl {
-    let mut imported = method_with_trait_origin(method, trait_decl);
+    let mut imported = method_with_trait_origin_for_class(method, trait_decl, class);
     for alias in matching_trait_aliases(adaptations, &trait_decl.name, &method.name) {
         if alias.alias.is_none() {
             if let Some(visibility) = alias.visibility {
@@ -15036,6 +15042,37 @@ fn method_with_trait_origin(method: &MethodDecl, trait_decl: &TraitDecl) -> Meth
         imported.trait_method_name = Some(method.name.clone());
     }
     imported
+}
+
+fn method_with_trait_origin_for_class(
+    method: &MethodDecl,
+    trait_decl: &TraitDecl,
+    class: &ClassDecl,
+) -> MethodDecl {
+    let mut imported = method_with_trait_origin(method, trait_decl);
+    substitute_trait_relative_method_type_hints(
+        &mut imported,
+        &trait_decl.name,
+        &class.name,
+        class.parent_name.as_deref(),
+    );
+    imported
+}
+
+fn substitute_trait_relative_method_type_hints(
+    method: &mut MethodDecl,
+    trait_name: &str,
+    class_name: &str,
+    parent_name: Option<&str>,
+) {
+    for parameter in &mut method.parameters {
+        if let Some(type_hint) = &mut parameter.type_hint {
+            substitute_trait_relative_type_hint(type_hint, trait_name, class_name, parent_name);
+        }
+    }
+    if let Some(return_type) = &mut method.return_type {
+        substitute_trait_relative_type_hint(return_type, trait_name, class_name, parent_name);
+    }
 }
 
 fn validate_class_names(
@@ -15610,31 +15647,33 @@ fn validate_method_signature_compatibility(
                 if method.visibility == PropertyVisibility::Private {
                     continue;
                 }
-                if method_requires_parent_signature_compatibility(method, parent_method) {
-                    validate_method_signature_pair(
-                        class,
-                        method,
-                        parent_class,
-                        parent_method,
-                        type_classes,
-                        runtime_class_aliases,
-                    )?;
-                } else if let Some((signature_class, signature_method)) =
-                    inherited_abstract_constructor_signature_requirement(
-                        method,
-                        parent_class,
-                        parent_method,
-                        classes,
-                    )
-                {
-                    validate_method_signature_pair(
-                        class,
-                        method,
-                        signature_class,
-                        signature_method,
-                        type_classes,
-                        runtime_class_aliases,
-                    )?;
+                if !method_signature_compatibility_deferred_to_runtime(class, method) {
+                    if method_requires_parent_signature_compatibility(method, parent_method) {
+                        validate_method_signature_pair(
+                            class,
+                            method,
+                            parent_class,
+                            parent_method,
+                            type_classes,
+                            runtime_class_aliases,
+                        )?;
+                    } else if let Some((signature_class, signature_method)) =
+                        inherited_abstract_constructor_signature_requirement(
+                            method,
+                            parent_class,
+                            parent_method,
+                            classes,
+                        )
+                    {
+                        validate_method_signature_pair(
+                            class,
+                            method,
+                            signature_class,
+                            signature_method,
+                            type_classes,
+                            runtime_class_aliases,
+                        )?;
+                    }
                 }
                 true
             } else {
@@ -16662,6 +16701,16 @@ fn method_requires_parent_visibility_compatibility(
     parent_method: &MethodDecl,
 ) -> bool {
     !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+fn method_signature_compatibility_deferred_to_runtime(
+    class: &ClassDecl,
+    method: &MethodDecl,
+) -> bool {
+    method
+        .trait_name
+        .as_deref()
+        .is_some_and(|trait_name| !trait_name.eq_ignore_ascii_case(&class.name))
 }
 
 fn inherited_abstract_constructor_visibility_requirement<'a>(

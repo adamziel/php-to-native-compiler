@@ -12204,6 +12204,94 @@ echo "===DONE===\n";
 }
 
 #[test]
+fn compile_concrete_trait_self_return_uses_importing_class_to_native_binary() {
+    let root = temp_dir("ptn-native-concrete-trait-self-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concrete-trait-self-return.php");
+    let output = root.join("concrete-trait-self-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public function create(): ?A {}
+}
+
+trait T {
+    public function create(): self {}
+}
+
+class B extends A {
+    use T;
+}
+
+echo "===DONE===\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_imported_trait_method_signature_fatal_keeps_declaration_order_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-signature-declaration-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-signature-declaration-order.php");
+    let output = root.join("trait-signature-declaration-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+abstract class Base {
+   public abstract function sayHello(array $a);
+}
+
+class SubClass extends Base {
+   public function sayHello(array $a) {
+     echo "World!\n";
+   }
+}
+
+$s = new SubClass();
+$s->sayHello(array());
+
+trait SayWorld {
+   public function sayHello(Base $d) {
+     echo "World!";
+   }
+}
+
+class MyHelloWorld extends Base {
+   use SayWorld;
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "World!\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Declaration of MyHelloWorld::sayHello(Base $d) must be compatible with Base::sayHello(array $a)"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_autoload_variance_object_class_type_names_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-variance-object-class-types");
     fs::create_dir_all(&root).unwrap();
