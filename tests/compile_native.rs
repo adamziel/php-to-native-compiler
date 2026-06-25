@@ -26137,6 +26137,16 @@ date_date_set($set, 2008, 2, 1);
 echo $set->format(DateTime::RFC2822), "\n";
 date_isodate_set($set, 2009, 30, 3);
 echo $set->format('D M j'), "\n";
+
+echo date(DATE_ISO8601, strtotime('2006-1-6T0:0:0-8:0')), "\n";
+$rfc = date_create('Sun, 22 May 1955 02:00:00 +0200');
+echo $rfc->format(DATE_ISO8601), "\n";
+echo $rfc->format('U e'), "\n";
+$rfc->setTimeZone(new DateTimeZone('Europe/Budapest'));
+echo $rfc->format(DATE_ISO8601), "\n";
+echo $rfc->format('U e'), "\n";
+echo DateTime::createFromFormat('Y-m-d|', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
+echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e'), "\n";
 "#,
     )
     .unwrap();
@@ -26170,6 +26180,13 @@ echo $set->format('D M j'), "\n";
             "bool(false)\n",
             "Fri, 01 Feb 2008 19:34:10 +0000\n",
             "Wed Jul 22\n",
+            "2006-01-06T08:00:00+0000\n",
+            "1955-05-22T02:00:00+0200\n",
+            "-461203200 +02:00\n",
+            "1955-05-22T01:00:00+0100\n",
+            "-461203200 Europe/Budapest\n",
+            "2011-02-02 00:00:00 UTC\n",
+            "1970-01-01 00:00:00 UTC\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
