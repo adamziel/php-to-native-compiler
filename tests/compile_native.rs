@@ -21830,6 +21830,46 @@ try {
 }
 
 #[test]
+fn compile_generator_throw_type_error_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-throw-type-error-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-throw-type-error-trace.php");
+    let output = root.join("generator-throw-type-error-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield;
+}
+
+$generator = gen();
+try {
+    $generator->throw(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+    $trace = $e->getTrace();
+    echo $trace[0]["class"], $trace[0]["type"], $trace[0]["function"], "\n";
+    var_dump($trace[0]["args"][0] instanceof stdClass);
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Generator::throw(): Argument #1 ($exception) must be of type Throwable, stdClass given\nGenerator->throw\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_exception_owned_message_at_with_trace_frame"));
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();

@@ -10642,12 +10642,18 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
             "Generator::throw(): Argument #1 ($exception) must be of type Throwable, %s given",
             given
         );
-        ptn_throw_exception_owned_message_at(
+        PtnValue trace_args[] = { exception };
+        ptn_throw_exception_owned_message_at_with_trace_frame(
             runtime,
             "TypeError",
             message,
             runtime != NULL ? runtime->source_path : NULL,
-            line
+            line,
+            "Generator->throw",
+            runtime != NULL ? runtime->source_path : NULL,
+            line,
+            1,
+            trace_args
         );
         return ptn_null();
     }
