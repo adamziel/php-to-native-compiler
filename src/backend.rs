@@ -44724,6 +44724,21 @@ impl ValueEmitter {
             }
             if compile_time_class_name
                 .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("Fiber"))
+            {
+                self.emit_runtime_new_object(
+                    out,
+                    &result_temp,
+                    "Fiber",
+                    arguments,
+                    argument_unpacks,
+                    line,
+                    true,
+                );
+                return result_temp;
+            }
+            if compile_time_class_name
+                .as_deref()
                 .is_some_and(|name| name.eq_ignore_ascii_case("Uri\\WhatWg\\Url"))
             {
                 self.emit_runtime_new_object(
@@ -45946,6 +45961,82 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        if declare_result && class_name.eq_ignore_ascii_case("Fiber") {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_object_new_shell(&runtime, \"Fiber\");\n");
+            if argument_unpacks.iter().any(|unpack| *unpack) {
+                let args_temp = self.emit_call_arguments_builder(
+                    out,
+                    "__construct",
+                    arguments,
+                    &[],
+                    argument_unpacks,
+                    line,
+                    true,
+                    None,
+                );
+                out.push_str("    if (runtime.exceptions->active_exception != NULL || !ptn_fiber_init_object(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(".as.object, ");
+                out.push_str(&args_temp);
+                out.push_str(".len, ");
+                out.push_str(&args_temp);
+                out.push_str(".values, ");
+                out.push_str(&line.to_string());
+                out.push_str(")) {\n");
+                out.push_str("        ptn_value_destroy(&");
+                out.push_str(result_temp);
+                out.push_str(");\n");
+                out.push_str("        ");
+                out.push_str(result_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    }\n");
+                out.push_str("    ptn_call_arguments_destroy(&");
+                out.push_str(&args_temp);
+                out.push_str(");\n");
+                return;
+            }
+
+            let mut argument_temps = Vec::with_capacity(arguments.len());
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            if argument_temps.is_empty() {
+                out.push_str("    if (runtime.exceptions->active_exception != NULL || !ptn_fiber_init_object(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(".as.object, 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(")) {\n");
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ");
+                out.push_str(&argument_temps.join(", "));
+                out.push_str(" };\n");
+                out.push_str("    if (runtime.exceptions->active_exception != NULL || !ptn_fiber_init_object(&runtime, ");
+                out.push_str(result_temp);
+                out.push_str(".as.object, ");
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str(", ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(")) {\n");
+            }
+            out.push_str("        ptn_value_destroy(&");
+            out.push_str(result_temp);
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    }\n");
+            for argument_temp in argument_temps {
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
+            return;
+        }
         if declare_result && class_name.eq_ignore_ascii_case("ArrayObject") {
             out.push_str("    PtnValue ");
             out.push_str(result_temp);

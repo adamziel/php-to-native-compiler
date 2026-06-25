@@ -2895,6 +2895,51 @@ var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[
 }
 
 #[test]
+fn compile_fiber_constructor_allocates_before_argument_objects_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-constructor-object-id-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-constructor-object-id-order.php");
+    let output = root.join("fiber-constructor-object-id-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test
+{
+    public function __invoke(string $arg): void
+    {
+        Fiber::suspend();
+    }
+}
+
+$fiber = new Fiber(new Test);
+$fiber->start('test');
+
+$trace = (new ReflectionFiber($fiber))->getTrace(DEBUG_BACKTRACE_PROVIDE_OBJECT);
+var_dump($trace[1]["object"]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"Fiber\")"));
+    assert!(c_source.contains("ptn_fiber_init_object(&runtime"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#2 (0) {\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uri_whatwg_url_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-uri-whatwg-url-semantics");
     fs::create_dir_all(&root).unwrap();
