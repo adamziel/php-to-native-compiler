@@ -46341,6 +46341,30 @@ $nsRoot = $nsDoc->appendChild($nsDoc->createElement('root'));
 $nsRoot->setAttributeNS('urn:a', 'a:root1', 'bar');
 $nsAttr = $nsRoot->getAttributeNodeNS('urn:a', 'root1');
 var_dump($nsAttr->namespaceURI, $nsAttr->prefix, $nsAttr->localName, $nsAttr->nodeValue);
+$xmlnsDoc = new DOMDocument();
+$xmlnsDoc->loadXML('<root xmlns=\"http://ns\" xmlns:ns2=\"http://ns2\"><ns2:child/></root>');
+$xmlnsAttr = $xmlnsDoc->documentElement->getAttributeNodeNS('http://www.w3.org/2000/xmlns/', 'ns2');
+var_dump($xmlnsAttr->prefix, $xmlnsAttr->namespaceURI);
+file_put_contents(__DIR__ . '/boundary.ent', '<!ENTITY amp     \"&#38;#38;\">' . \"\\n\" . '<!ENTITY % coreattrs \"title CDATA #IMPLIED\">' . \"\\n\" . '<!ENTITY % attrs \"%coreattrs;\">' . \"\\n\" . '<!ATTLIST th %attrs; >' . \"\\n\");
+file_put_contents(__DIR__ . '/boundary.xml', \"<?xml version=\\\"1.0\\\"?>\\n<!DOCTYPE root [\\n<!ENTITY % incent SYSTEM \\\"boundary.ent\\\">\\n%incent;\\n]>\\n<root/>\");
+$dtdDoc = new DOMDocument();
+$dtdDoc->substituteEntities = true;
+$dtdDoc->load(__DIR__ . '/boundary.xml');
+echo $dtdDoc->doctype->internalSubset;
+foreach (['DOMXPath', 'DOMDocument'] as $class) {
+    try {
+        unserialize('O:' . strlen($class) . ':\"' . $class . '\":0:{}');
+    } catch (Exception $exception) {
+        echo $exception->getMessage(), \"\\n\";
+    }
+}
+$modern = Dom\\HTMLDocument::createEmpty();
+$modern->append($modern->createElement('container'));
+$foreign = $modern->documentElement->appendChild($modern->createElementNS('urn:x', 'x:item'));
+ob_start();
+var_dump($foreign);
+$dump = ob_get_clean();
+var_dump(strpos($dump, '[\"outerHTML\"]=>') !== false, strpos($dump, 'object(Dom\\\\Element)') !== false, $foreign->nodeValue);
 $adoptedDoc = new DOMDocument();
 $adoptedDoc->appendChild($adoptedDoc->adoptNode($nsRoot));
 echo $adoptedDoc->saveXML();
@@ -46430,6 +46454,18 @@ echo $writer->flush();
             "string(1) \"a\"\n",
             "string(5) \"root1\"\n",
             "string(3) \"bar\"\n",
+            "string(3) \"ns2\"\n",
+            "string(10) \"http://ns2\"\n",
+            "<!ENTITY % incent SYSTEM \"boundary.ent\">\n",
+            "<!ENTITY amp \"&#38;#38;\">\n",
+            "<!ENTITY % coreattrs \"title CDATA #IMPLIED\">\n",
+            "<!ENTITY % attrs \"%coreattrs;\">\n",
+            "<!ATTLIST th title CDATA #IMPLIED>\n",
+            "Unserialization of 'DOMXPath' is not allowed\n",
+            "Unserialization of 'DOMDocument' is not allowed, unless unserialization methods are implemented in a subclass\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "NULL\n",
             "<?xml version=\"1.0\"?>\n",
             "<root xmlns:a=\"urn:a\" a:root1=\"bar\"/>\n",
             "Wrong Document Error\n",

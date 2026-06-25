@@ -1805,6 +1805,40 @@ static const char *const PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES[] = {
     "textContent",
 };
 
+static const char *const PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES[] = {
+    "namespaceURI",
+    "prefix",
+    "localName",
+    "tagName",
+    "id",
+    "className",
+    "classList",
+    "attributes",
+    "children",
+    "firstElementChild",
+    "lastElementChild",
+    "childElementCount",
+    "previousElementSibling",
+    "nextElementSibling",
+    "innerHTML",
+    "outerHTML",
+    "substitutedNodeValue",
+    "nodeType",
+    "nodeName",
+    "baseURI",
+    "isConnected",
+    "ownerDocument",
+    "parentNode",
+    "parentElement",
+    "childNodes",
+    "firstChild",
+    "lastChild",
+    "previousSibling",
+    "nextSibling",
+    "nodeValue",
+    "textContent",
+};
+
 static const char *const PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES[] = {
     "length",
 };
@@ -2113,6 +2147,13 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
     return class_name;
 }
 
+static int ptn_dom_class_name_is_unserialization_forbidden(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "DOMXPath") ||
+        ptn_ascii_case_equal(class_name, "DOMDocument") ||
+        ptn_ascii_case_equal(class_name, "DOMNode") ||
+        ptn_ascii_case_equal(class_name, "DOMNameSpaceNode");
+}
+
 static int ptn_dom_effective_class_is_modeled(const char *class_name) {
     const char *effective = ptn_dom_effective_class_name(class_name);
     return ptn_ascii_case_equal(effective, "DOMNode") ||
@@ -2195,6 +2236,9 @@ static size_t ptn_dom_var_dump_virtual_property_count(PtnObject *object) {
         ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMElement")) {
         return sizeof(PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES[0]);
     }
+    if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\Element")) {
+        return sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES[0]);
+    }
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\DocumentFragment")) {
         return sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[0]);
     }
@@ -2239,6 +2283,10 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
         ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMElement")) {
         *count_out = sizeof(PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES[0]);
         return PTN_DOM_LEGACY_ELEMENT_VAR_DUMP_PROPERTIES;
+    }
+    if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\Element")) {
+        *count_out = sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES[0]);
+        return PTN_DOM_MODERN_ELEMENT_VAR_DUMP_PROPERTIES;
     }
     if (object != NULL && ptn_ascii_case_equal(object->class_name, "Dom\\DocumentFragment")) {
         *count_out = sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[0]);
@@ -11382,6 +11430,7 @@ static void ptn_unserialize_leave_container(PtnUnserializeState *state) {
 
 static int ptn_unserialize_class_name_is_forbidden(const char *class_name) {
     return ptn_reflection_class_name_is_serialization_forbidden(class_name) ||
+        ptn_dom_class_name_is_unserialization_forbidden(class_name) ||
         ptn_ascii_case_equal(class_name, "Generator") ||
         ptn_ascii_case_equal(class_name, "WeakReference") ||
         ptn_ascii_case_equal(class_name, "WeakMap") ||
@@ -11403,11 +11452,17 @@ static int ptn_unserialize_class_name_has_invalid_payload_byte(
 }
 
 static void ptn_unserialize_throw_forbidden_class(PtnRuntime *runtime, const char *class_name) {
-    char message[96];
+    int allows_subclass_methods =
+        ptn_ascii_case_equal(class_name, "DOMDocument") ||
+        ptn_ascii_case_equal(class_name, "DOMNode") ||
+        ptn_ascii_case_equal(class_name, "DOMNameSpaceNode");
+    char message[192];
     int written = snprintf(
         message,
         sizeof(message),
-        "Unserialization of '%s' is not allowed",
+        allows_subclass_methods
+            ? "Unserialization of '%s' is not allowed, unless unserialization methods are implemented in a subclass"
+            : "Unserialization of '%s' is not allowed",
         class_name
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -104186,6 +104241,7 @@ static int ptn_libxml_entity_loader_disabled = 0;
 static const char *ptn_dom_xml_parse_warning_function_name = NULL;
 static int ptn_dom_xml_parse_suppress_warnings = 0;
 static size_t ptn_dom_xml_parse_warning_php_line = 0;
+static const char *ptn_dom_current_load_path = NULL;
 
 struct PtnXmlNode {
     const PtnLibxmlBoundary *boundary;
@@ -112369,6 +112425,252 @@ static void ptn_dom_doctype_append_normalized_internal_entity_subset(
     ptn_string_buffer_append(buffer, ">\n");
 }
 
+typedef struct {
+    char *name;
+    char *value;
+} PtnDomDtdParameterEntity;
+
+static void ptn_dom_dtd_parameter_entities_free(PtnDomDtdParameterEntity *entities, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        free(entities[i].name);
+        free(entities[i].value);
+    }
+    free(entities);
+}
+
+static void ptn_dom_dtd_parameter_entities_set(
+    PtnDomDtdParameterEntity **entities,
+    size_t *count,
+    size_t *capacity,
+    const char *name,
+    const char *value
+) {
+    if (name == NULL || name[0] == '\0' || value == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < *count; i++) {
+        if (strcmp((*entities)[i].name, name) == 0) {
+            free((*entities)[i].value);
+            (*entities)[i].value = ptn_duplicate_string(value);
+            return;
+        }
+    }
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 4 : *capacity * 2;
+        if (new_capacity < *capacity || new_capacity > SIZE_MAX / sizeof(PtnDomDtdParameterEntity)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnDomDtdParameterEntity *next = realloc(*entities, new_capacity * sizeof(PtnDomDtdParameterEntity));
+        if (next == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *entities = next;
+        *capacity = new_capacity;
+    }
+    (*entities)[*count].name = ptn_duplicate_string(name);
+    (*entities)[*count].value = ptn_duplicate_string(value);
+    (*count)++;
+}
+
+static const char *ptn_dom_dtd_parameter_entity_value(
+    PtnDomDtdParameterEntity *entities,
+    size_t count,
+    const char *name,
+    size_t name_len
+) {
+    for (size_t i = 0; i < count; i++) {
+        if (strlen(entities[i].name) == name_len && memcmp(entities[i].name, name, name_len) == 0) {
+            return entities[i].value;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_dom_dtd_append_parameter_expanded(
+    PtnStringBuffer *buffer,
+    const char *data,
+    size_t len,
+    PtnDomDtdParameterEntity *entities,
+    size_t entity_count,
+    unsigned depth
+) {
+    if (depth > 16) {
+        ptn_string_buffer_append_len(buffer, data, len);
+        return;
+    }
+    size_t pos = 0;
+    while (pos < len) {
+        if (data[pos] != '%') {
+            ptn_string_buffer_append_char(buffer, data[pos++]);
+            continue;
+        }
+        size_t name_start = pos + 1;
+        size_t name_end = name_start;
+        while (name_end < len && ptn_xml_name_char((unsigned char)data[name_end])) {
+            name_end++;
+        }
+        if (name_end == name_start || name_end >= len || data[name_end] != ';') {
+            ptn_string_buffer_append_char(buffer, data[pos++]);
+            continue;
+        }
+        const char *value = ptn_dom_dtd_parameter_entity_value(entities, entity_count, data + name_start, name_end - name_start);
+        if (value == NULL) {
+            ptn_string_buffer_append_len(buffer, data + pos, name_end - pos + 1);
+        } else {
+            ptn_dom_dtd_append_parameter_expanded(buffer, value, strlen(value), entities, entity_count, depth + 1);
+        }
+        pos = name_end + 1;
+    }
+}
+
+static char *ptn_dom_dtd_parameter_expanded_copy(
+    const char *data,
+    size_t len,
+    PtnDomDtdParameterEntity *entities,
+    size_t entity_count
+) {
+    PtnStringBuffer expanded;
+    ptn_string_buffer_init(&expanded);
+    ptn_dom_dtd_append_parameter_expanded(&expanded, data, len, entities, entity_count, 0);
+    char *copy = expanded.data == NULL ? ptn_duplicate_string_len(data, len) : expanded.data;
+    size_t copy_len = strlen(copy);
+    if (copy_len > 0 && copy[copy_len - 1] == '>') {
+        size_t trim = copy_len - 1;
+        while (trim > 0 && isspace((unsigned char)copy[trim - 1])) {
+            trim--;
+        }
+        if (trim < copy_len - 1) {
+            copy[trim] = '>';
+            copy[trim + 1] = '\0';
+        }
+    }
+    return copy;
+}
+
+static char *ptn_dom_external_parameter_entity_path(const char *system_id) {
+    if (system_id == NULL || system_id[0] == '\0') {
+        return NULL;
+    }
+    if (system_id[0] == '/' || ptn_dom_current_load_path == NULL || ptn_dom_current_load_path[0] == '\0') {
+        return ptn_duplicate_string(system_id);
+    }
+    const char *slash = strrchr(ptn_dom_current_load_path, '/');
+    if (slash == NULL) {
+        return ptn_duplicate_string(system_id);
+    }
+    size_t dir_len = (size_t)(slash - ptn_dom_current_load_path) + 1;
+    size_t system_len = strlen(system_id);
+    if (dir_len > SIZE_MAX - system_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc(dir_len + system_len + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, ptn_dom_current_load_path, dir_len);
+    memcpy(path + dir_len, system_id, system_len + 1);
+    return path;
+}
+
+static int ptn_dom_read_external_parameter_entity(const char *system_id, char **data_out, size_t *len_out) {
+    *data_out = NULL;
+    *len_out = 0;
+    char *path = ptn_dom_external_parameter_entity_path(system_id);
+    if (path == NULL) {
+        return 0;
+    }
+    unsigned char *data = NULL;
+    size_t len = 0;
+    int ok = ptn_read_file_bytes(path, &data, &len) > 0;
+    free(path);
+    if (!ok) {
+        free(data);
+        return 0;
+    }
+    *data_out = (char *)data;
+    *len_out = len;
+    return 1;
+}
+
+static void ptn_dom_doctype_collect_entity_declaration(
+    PtnRuntime *runtime,
+    PtnXmlNode *doctype,
+    const char *data,
+    size_t start,
+    size_t end,
+    PtnStringBuffer *entity_subset
+);
+
+static void ptn_dom_doctype_collect_notation_declaration(
+    PtnRuntime *runtime,
+    PtnXmlNode *doctype,
+    const char *data,
+    size_t start,
+    size_t end
+);
+
+static void ptn_dom_doctype_collect_external_parameter_subset(
+    PtnRuntime *runtime,
+    PtnXmlNode *doctype,
+    const char *system_id,
+    PtnStringBuffer *entity_subset
+) {
+    char *external = NULL;
+    size_t external_len = 0;
+    if (!ptn_dom_read_external_parameter_entity(system_id, &external, &external_len)) {
+        return;
+    }
+    PtnDomDtdParameterEntity *parameters = NULL;
+    size_t parameter_count = 0;
+    size_t parameter_capacity = 0;
+    size_t pos = 0;
+    while (pos + 8 <= external_len) {
+        if (pos + 8 <= external_len && memcmp(external + pos, "<!ENTITY", 8) == 0) {
+            size_t end = ptn_dom_doctype_declaration_end(external, external_len, pos);
+            size_t entity_pos = pos + strlen("<!ENTITY");
+            ptn_xml_skip_ws(external, end, &entity_pos);
+            if (entity_pos < end && external[entity_pos] == '%') {
+                entity_pos++;
+                ptn_xml_skip_ws(external, end, &entity_pos);
+                char *name = ptn_xml_read_name(external, end, &entity_pos);
+                ptn_xml_skip_ws(external, end, &entity_pos);
+                if (name != NULL && name[0] != '\0' && entity_pos < end &&
+                    (external[entity_pos] == '\'' || external[entity_pos] == '"')) {
+                    char *value = ptn_xml_read_quoted(external, end, &entity_pos);
+                    ptn_dom_dtd_parameter_entities_set(&parameters, &parameter_count, &parameter_capacity, name, value);
+                    free(value);
+                }
+                free(name);
+                ptn_dom_doctype_append_entity_subset(entity_subset, external, pos, end);
+                pos = end;
+                continue;
+            }
+            ptn_dom_doctype_collect_entity_declaration(runtime, doctype, external, pos, end, entity_subset);
+            pos = end;
+            continue;
+        }
+        if (pos + 9 <= external_len &&
+            (memcmp(external + pos, "<!ELEMENT", 9) == 0 ||
+                memcmp(external + pos, "<!ATTLIST", 9) == 0)) {
+            size_t end = ptn_dom_doctype_declaration_end(external, external_len, pos);
+            char *expanded = ptn_dom_dtd_parameter_expanded_copy(external + pos, end - pos, parameters, parameter_count);
+            ptn_dom_doctype_append_entity_subset(entity_subset, expanded, 0, strlen(expanded));
+            free(expanded);
+            pos = end;
+            continue;
+        }
+        if (pos + 10 <= external_len && memcmp(external + pos, "<!NOTATION", 10) == 0) {
+            size_t end = ptn_dom_doctype_declaration_end(external, external_len, pos);
+            ptn_dom_doctype_collect_notation_declaration(runtime, doctype, external, pos, end);
+            pos = end;
+            continue;
+        }
+        pos++;
+    }
+    ptn_dom_dtd_parameter_entities_free(parameters, parameter_count);
+    free(external);
+}
+
 static void ptn_dom_doctype_collect_entity_declaration(
     PtnRuntime *runtime,
     PtnXmlNode *doctype,
@@ -112381,7 +112683,21 @@ static void ptn_dom_doctype_collect_entity_declaration(
     size_t pos = start + strlen("<!ENTITY");
     ptn_xml_skip_ws(data, end, &pos);
     if (pos < end && data[pos] == '%') {
+        pos++;
+        ptn_xml_skip_ws(data, end, &pos);
+        char *parameter_name = ptn_xml_read_name(data, end, &pos);
+        (void)parameter_name;
+        ptn_xml_skip_ws(data, end, &pos);
+        char *public_id = NULL;
+        char *system_id = NULL;
+        int external_parameter = ptn_dom_doctype_read_external_ids(data, end, &pos, &public_id, &system_id);
         ptn_dom_doctype_append_entity_subset(entity_subset, data, start, end);
+        if (external_parameter && system_id != NULL) {
+            ptn_dom_doctype_collect_external_parameter_subset(runtime, doctype, system_id, entity_subset);
+        }
+        free(parameter_name);
+        free(public_id);
+        free(system_id);
         return;
     }
     char *name = ptn_xml_read_name(data, end, &pos);
@@ -117492,13 +117808,16 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
         free(data);
         return ptn_bool(0);
     }
-    free(path);
     document->child_count = 0;
     int previous_parser_substitute_entities = document->parser_substitute_entities;
+    const char *previous_load_path = ptn_dom_current_load_path;
+    ptn_dom_current_load_path = path;
     document->parser_substitute_entities =
         !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
     int ok = ptn_xml_parse_document_into(runtime, document, (const char *)data, data_len);
     document->parser_substitute_entities = previous_parser_substitute_entities;
+    ptn_dom_current_load_path = previous_load_path;
+    free(path);
     free(data);
     return ptn_bool(ok);
 }
@@ -119172,6 +119491,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "nodeType") ||
         ptn_ascii_case_equal(property, "nodeValue") ||
         ptn_ascii_case_equal(property, "textContent") ||
+        ptn_ascii_case_equal(property, "substitutedNodeValue") ||
         ptn_ascii_case_equal(property, "innerHTML") ||
         ptn_ascii_case_equal(property, "outerHTML") ||
         ptn_ascii_case_equal(property, "children") ||
@@ -119604,6 +119924,11 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         if (ptn_ascii_case_equal(property, "publicId") ||
             ptn_ascii_case_equal(property, "systemId") ||
             ptn_ascii_case_equal(property, "internalSubset")) {
+            if (ptn_ascii_case_equal(property, "internalSubset") &&
+                (node->internal_subset == NULL || node->internal_subset[0] == '\0')) {
+                *value_out = ptn_null();
+                return 1;
+            }
             const char *value = "";
             if (ptn_ascii_case_equal(property, "publicId")) {
                 value = node->public_id == NULL ? "" : node->public_id;
@@ -119645,12 +119970,26 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "localName")) {
+        if (ptn_xml_attribute_is_namespace_declaration(node)) {
+            const char *declared_prefix = ptn_dom_namespace_declaration_prefix(node);
+            *value_out = ptn_owned_string(ptn_duplicate_string(
+                declared_prefix == NULL || declared_prefix[0] == '\0' ? "xmlns" : declared_prefix
+            ));
+            return 1;
+        }
         *value_out = (node->type == PTN_XML_NODE_ELEMENT || node->type == PTN_XML_NODE_ATTRIBUTE)
             ? ptn_owned_string(ptn_duplicate_string(ptn_xml_local_name(node->name)))
             : ptn_null();
         return 1;
     }
     if (ptn_ascii_case_equal(property, "prefix")) {
+        if (ptn_xml_attribute_is_namespace_declaration(node)) {
+            const char *declared_prefix = ptn_dom_namespace_declaration_prefix(node);
+            *value_out = declared_prefix == NULL || declared_prefix[0] == '\0'
+                ? ptn_null()
+                : ptn_owned_string(ptn_duplicate_string(declared_prefix));
+            return 1;
+        }
         if (node->type == PTN_XML_NODE_ATTRIBUTE &&
             (node->namespace_uri == NULL || node->namespace_uri[0] == '\0')) {
             *value_out = ptn_null();
@@ -119666,6 +120005,11 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "namespaceURI")) {
+        if (ptn_xml_attribute_is_namespace_declaration(node)) {
+            const char *declared_uri = node->value == NULL ? "" : node->value;
+            *value_out = ptn_owned_string(ptn_duplicate_string(declared_uri));
+            return 1;
+        }
         *value_out = node->namespace_uri == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(node->namespace_uri));
         return 1;
     }
@@ -119714,10 +120058,20 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             return 1;
         }
         if (node->type == PTN_XML_NODE_ELEMENT) {
+            if (node->modern_dom) {
+                *value_out = ptn_null();
+                return 1;
+            }
             *value_out = ptn_xml_text_content_value(node);
             return 1;
         }
         *value_out = ptn_null();
+        return 1;
+    }
+    if (ptn_ascii_case_equal(property, "substitutedNodeValue")) {
+        *value_out = node->type == PTN_XML_NODE_ELEMENT
+            ? ptn_xml_text_content_value(node)
+            : ptn_null();
         return 1;
     }
     if (ptn_ascii_case_equal(property, "textContent")) {
