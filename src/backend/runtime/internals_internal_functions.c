@@ -103841,6 +103841,7 @@ struct PtnXmlNode {
     int type;
     char *name;
     char *serialized_name;
+    char *serialized_value;
     char *value;
     size_t value_len;
     char *namespace_uri;
@@ -104777,6 +104778,7 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     clone->value = ptn_duplicate_string_len(node->value == NULL ? "" : node->value, node->value_len);
     clone->value_len = node->value_len;
     clone->serialized_name = node->serialized_name == NULL ? NULL : ptn_duplicate_string(node->serialized_name);
+    clone->serialized_value = node->serialized_value == NULL ? NULL : ptn_duplicate_string(node->serialized_value);
     free(clone->namespace_uri);
     clone->namespace_uri = node->namespace_uri == NULL ? NULL : ptn_duplicate_string(node->namespace_uri);
     clone->public_id = node->public_id == NULL ? NULL : ptn_duplicate_string(node->public_id);
@@ -105624,7 +105626,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     data->items = NULL;
     data->item_count = 0;
     data->item_capacity = 0;
-    data->position = 0;
+    data->position = SIZE_MAX;
     data->tag_name = NULL;
     data->namespace_uri = NULL;
     data->filter_elements = 0;
@@ -108078,7 +108080,12 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
                 : (node->name == NULL ? "" : node->name);
             ptn_string_buffer_append(buffer, attr_name);
             ptn_string_buffer_append(buffer, "=\"");
-            ptn_xml_append_escaped_attribute_value(buffer, node->value == NULL ? "" : node->value, document, ascii_only);
+            ptn_xml_append_escaped_attribute_value(
+                buffer,
+                node->serialized_value == NULL ? (node->value == NULL ? "" : node->value) : node->serialized_value,
+                document,
+                ascii_only
+            );
             ptn_string_buffer_append_char(buffer, '"');
             return;
         }
@@ -108159,7 +108166,12 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
             ptn_string_buffer_append_char(buffer, ' ');
             ptn_string_buffer_append(buffer, attr_name);
             ptn_string_buffer_append(buffer, "=\"");
-            ptn_xml_append_escaped_attribute_value(buffer, attr->value == NULL ? "" : attr->value, document, ascii_only);
+            ptn_xml_append_escaped_attribute_value(
+                buffer,
+                attr->serialized_value == NULL ? (attr->value == NULL ? "" : attr->value) : attr->serialized_value,
+                document,
+                ascii_only
+            );
             ptn_string_buffer_append_char(buffer, '"');
         }
     } else {
@@ -108178,7 +108190,12 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
                 ptn_string_buffer_append_char(buffer, ' ');
                 ptn_string_buffer_append(buffer, attr_name);
                 ptn_string_buffer_append(buffer, "=\"");
-                ptn_xml_append_escaped_attribute_value(buffer, attr->value == NULL ? "" : attr->value, document, ascii_only);
+                ptn_xml_append_escaped_attribute_value(
+                    buffer,
+                    attr->serialized_value == NULL ? (attr->value == NULL ? "" : attr->value) : attr->serialized_value,
+                    document,
+                    ascii_only
+                );
                 ptn_string_buffer_append_char(buffer, '"');
             }
         }
@@ -108915,7 +108932,11 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
         ptn_string_buffer_append_char(buffer, ' ');
         ptn_html_append_attribute_name(buffer, attr);
         ptn_string_buffer_append(buffer, "=\"");
-        ptn_html_append_escaped_attribute_value(buffer, attr->value == NULL ? "" : attr->value);
+        if (attr->serialized_value != NULL) {
+            ptn_xml_append_escaped_attribute_value(buffer, attr->serialized_value, ptn_xml_document_for_node(node), 0);
+        } else {
+            ptn_html_append_escaped_attribute_value(buffer, attr->value == NULL ? "" : attr->value);
+        }
         ptn_string_buffer_append_char(buffer, '"');
     }
     ptn_string_buffer_append_char(buffer, '>');
@@ -110784,6 +110805,8 @@ static void ptn_xml_attribute_set_value(PtnRuntime *runtime, PtnXmlNode *attr, c
     free(attr->value);
     attr->value = ptn_duplicate_string_len(data == NULL ? "" : data, data == NULL ? 0 : len);
     attr->value_len = data == NULL ? 0 : len;
+    free(attr->serialized_value);
+    attr->serialized_value = NULL;
     if (was_duplicate_xml_id) {
         ptn_dom_attribute_apply_document_id_defaults(attr->parent, attr);
     }
@@ -110833,6 +110856,8 @@ static void ptn_xml_attribute_sync_value_from_children(PtnXmlNode *attr) {
     free(attr->value);
     attr->value = buffer.data;
     attr->value_len = buffer.len;
+    free(attr->serialized_value);
+    attr->serialized_value = NULL;
 }
 
 static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode *element, const char *name, const char *value) {
@@ -111661,6 +111686,7 @@ static int ptn_xml_parse_attributes(
         char *name = ptn_xml_read_name(data, len, pos);
         ptn_xml_skip_ws(data, len, pos);
         char *value = ptn_duplicate_string("");
+        char *serialized_value = NULL;
         if (*pos < len && data[*pos] == '=') {
             (*pos)++;
             free(value);
@@ -111669,7 +111695,7 @@ static int ptn_xml_parse_attributes(
                 size_t decoded_len = 0;
                 value = ptn_xml_parser_decode_entities(parser, raw_value, strlen(raw_value), &decoded_len);
                 (void)decoded_len;
-                free(raw_value);
+                serialized_value = raw_value;
             } else {
                 value = raw_value;
             }
@@ -111679,9 +111705,11 @@ static int ptn_xml_parse_attributes(
         if (html_mode && ptn_xml_element_find_attribute(element, name) != NULL) {
             free(name);
             free(value);
+            free(serialized_value);
             continue;
         }
         PtnXmlNode *attr = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, name, value);
+        attr->serialized_value = serialized_value;
         if (ptn_xml_attribute_name_is_namespace_declaration(name)) {
             attr->namespace_declaration = 1;
             free(attr->namespace_uri);
@@ -118468,19 +118496,24 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_null();
         }
         if (ptn_ascii_case_equal(name, "valid")) {
-            return ptn_bool(list->position < ptn_xml_node_list_length(list));
+            return ptn_bool(list->position != SIZE_MAX && list->position < ptn_xml_node_list_length(list));
         }
         if (ptn_ascii_case_equal(name, "current")) {
-            if (list->position >= ptn_xml_node_list_length(list)) {
+            if (list->position == SIZE_MAX || list->position >= ptn_xml_node_list_length(list)) {
                 return ptn_null();
             }
             return ptn_xml_node_value_for_runtime(runtime, ptn_xml_node_list_item(list, list->position));
         }
         if (ptn_ascii_case_equal(name, "key")) {
+            if (list->position == SIZE_MAX || list->position >= ptn_xml_node_list_length(list)) {
+                return ptn_null();
+            }
             return ptn_int((int64_t)list->position);
         }
         if (ptn_ascii_case_equal(name, "next")) {
-            if (list->position < ptn_xml_node_list_length(list)) {
+            if (list->position == SIZE_MAX) {
+                list->position = 0;
+            } else if (list->position < ptn_xml_node_list_length(list)) {
                 list->position++;
             }
             return ptn_null();

@@ -46906,6 +46906,79 @@ var_dump($entity2->nodeName, $entity2->parentNode);
 }
 
 #[test]
+fn compile_dom_entity_reference_serialization_residuals_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-entity-reference-serialization-residuals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-entity-reference-serialization-residuals.php");
+    let output = root.join("dom-entity-reference-serialization-residuals-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = new DOMDocument;
+$dom->loadXML(<<<XML
+<!DOCTYPE foo [
+<!ENTITY foo1 "bar1">
+<!ENTITY foo2 "bar2">
+<!ENTITY foo3 "bar3">
+]>
+<foo>&foo1;</foo>
+XML);
+
+$ref = $dom->documentElement->firstChild;
+$decl = $ref->firstChild;
+$nodes = $ref->childNodes;
+$iter = $nodes->getIterator();
+$iter->next();
+$dom->removeChild($dom->doctype);
+unset($decl);
+var_dump($iter->current()->publicId);
+
+$xml = Dom\XMLDocument::createFromString(<<<XML
+<!DOCTYPE root [
+    <!ENTITY foo "foo">
+]>
+<root><el x="&foo;bar&foo;"/></root>
+XML);
+
+$el = $xml->documentElement->firstChild;
+echo $xml->saveXml(), "\n";
+
+$html = Dom\HTMLDocument::createEmpty();
+$html->append($html->importNode($el, true));
+echo $html->saveHtml(), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<!DOCTYPE root [\n",
+            "<!ENTITY foo \"foo\">\n",
+            "]>\n",
+            "<root><el x=\"&foo;bar&foo;\"/></root>\n",
+            "<el x=\"&foo;bar&foo;\"></el>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("serialized_value"));
+    assert!(c_source.contains("ptn_xml_node_list_snapshot_object"));
+}
+
+#[test]
 fn compile_dom_text_nodes_clear_siblings_after_delayed_parent_free_to_native_binary() {
     let root = temp_dir("ptn-native-dom-text-delayed-freeing");
     fs::create_dir_all(&root).unwrap();
