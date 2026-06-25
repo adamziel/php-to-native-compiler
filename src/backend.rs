@@ -17496,8 +17496,12 @@ fn reflection_user_method_qualifiers(
     if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
         out.push_str(", inherits ");
         out.push_str(entry.declaring_class);
-        if let Some(prototype_class) =
-            reflection_method_interface_prototype_class(class, &method.name, classes)
+        let declaring_class = class_by_name(classes, entry.declaring_class);
+        if let Some(prototype_class) = declaring_class
+            .and_then(|declaring| {
+                reflection_method_effective_prototype_class(declaring, &method.name, classes)
+            })
+            .or_else(|| reflection_method_interface_prototype_class(class, &method.name, classes))
         {
             out.push_str(", prototype ");
             out.push_str(prototype_class);

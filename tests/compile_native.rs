@@ -38233,6 +38233,80 @@ try {
 }
 
 #[test]
+fn compile_reflection_class_to_string_prototypes_and_default_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-prototypes-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-prototypes-defaults.php");
+    let output = root.join("reflection-class-prototypes-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectPrototypeA {
+    function f() {}
+}
+class ReflectPrototypeB extends ReflectPrototypeA {
+    function f() {}
+}
+class ReflectPrototypeC extends ReflectPrototypeB {
+}
+class ReflectPrototypeD extends ReflectPrototypeC {
+    function f() {}
+}
+
+echo new ReflectionClass(ReflectPrototypeC::class), \"\\n\";
+echo new ReflectionClass(ReflectPrototypeD::class), \"\\n\";
+
+class ReflectDefaultParent {
+    const BAR = 'parent';
+}
+class ReflectDefaultChild extends ReflectDefaultParent {
+    const BAR = 'child';
+    function own($a = self::BAR) {}
+    function inherited($a = parent::BAR) {}
+    function child($a = ReflectDefaultChild::BAR) {}
+    function parentClass($a = ReflectDefaultParent::BAR) {}
+}
+
+echo new ReflectionObject(new ReflectDefaultChild), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Method [ <user, inherits ReflectPrototypeB, prototype ReflectPrototypeA> public method f ]"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Method [ <user, overwrites ReflectPrototypeB, prototype ReflectPrototypeA> public method f ]"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("$a = self::BAR"), "{stdout}");
+    assert!(stdout.contains("$a = parent::BAR"), "{stdout}");
+    assert!(stdout.contains("$a = ReflectDefaultChild::BAR"), "{stdout}");
+    assert!(
+        stdout.contains("$a = ReflectDefaultParent::BAR"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("\\ReflectDefaultChild::BAR"), "{stdout}");
+    assert!(!stdout.contains("\\ReflectDefaultParent::BAR"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("prototype ReflectPrototypeA"));
+    assert!(c_source.contains("ReflectDefaultChild::BAR"));
+    assert!(c_source.contains("ReflectDefaultParent::BAR"));
+}
+
+#[test]
 fn compile_reflection_object_direct_constructor_var_dump_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-object-direct-constructor-var-dump");
     fs::create_dir_all(&root).unwrap();
