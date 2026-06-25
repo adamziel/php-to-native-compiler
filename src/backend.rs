@@ -6016,8 +6016,23 @@ fn emit_reflection_type_metadata_assignments(
 fn reflection_property_named_type_metadata(
     type_hint: &PropertyTypeHint,
 ) -> Option<ReflectionTypeMetadata> {
+    let type_text = type_hint.text.trim_start_matches('?');
+    if type_text.eq_ignore_ascii_case("iterable") {
+        return Some(ReflectionTypeMetadata {
+            name: Some("iterable".to_string()),
+            display_name: type_hint.text.clone(),
+            allows_null: type_hint.allows_null,
+            is_builtin: true,
+        });
+    }
     if let Some(semantic_type) = &type_hint.semantic_type {
         let mut metadata = reflection_type_metadata(semantic_type)?;
+        if matches!(
+            reflection_nullable_named_type(semantic_type),
+            Some(TypeHint::Iterable)
+        ) {
+            return Some(metadata);
+        }
         if type_hint.text.eq_ignore_ascii_case("self") {
             metadata.name = Some("self".to_string());
             metadata.display_name = "self".to_string();
@@ -6097,6 +6112,12 @@ fn reflection_property_settable_type_metadata(
     property
         .type_hint
         .and_then(reflection_property_named_type_metadata)
+}
+
+fn reflection_property_type_display_label(type_hint: &PropertyTypeHint) -> String {
+    reflection_property_named_type_metadata(type_hint)
+        .map(|metadata| metadata.display_name)
+        .unwrap_or_else(|| type_hint.text.clone())
 }
 
 fn reflection_named_type_name(type_hint: &TypeHint) -> String {
@@ -16535,6 +16556,69 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_is_promoted(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.reflection_is_promoted() {
+                "1"
+            } else {
+                "0"
+            });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if entry.reflection_is_promoted() {
+                "1"
+            } else {
+                "0"
+            });
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly) {\n",
     );
     if classes.is_empty() {
@@ -17067,6 +17151,11 @@ fn emit_reflection_class_property_section_to_string_runtime(
     out.push_str(&properties.len().to_string());
     out.push_str("] {\\n\");\n");
     for (index, property) in properties.iter().enumerate() {
+        if let Some(doc_comment) = property.reflection_doc_comment() {
+            out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"    ");
+            out.push_str(&c_string(doc_comment));
+            out.push_str("\\n\");\n");
+        }
         if reflection_property_to_string_needs_runtime_default(property) {
             let default_temp = format!("ptn_reflection_property_default_{index}");
             let repr_temp = format!("ptn_reflection_property_default_repr_{index}");
@@ -17622,6 +17711,7 @@ trait ReflectionPropertySummary {
     fn reflection_is_final(&self) -> bool;
     fn reflection_is_abstract(&self) -> bool;
     fn reflection_is_readonly(&self) -> bool;
+    fn reflection_is_promoted(&self) -> bool;
     fn reflection_is_virtual(&self) -> bool;
     fn reflection_has_hooks(&self) -> bool;
     fn reflection_hook_has_get(&self) -> bool;
@@ -17631,6 +17721,7 @@ trait ReflectionPropertySummary {
     fn reflection_hook_set_is_final(&self) -> bool;
     fn reflection_hook_set_is_abstract(&self) -> bool;
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
+    fn reflection_doc_comment(&self) -> Option<&str>;
     fn reflection_value(&self) -> Option<&ValueExpr>;
     fn reflection_has_default(&self) -> bool;
 }
@@ -17662,6 +17753,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_is_readonly(&self) -> bool {
         self.is_readonly
+    }
+
+    fn reflection_is_promoted(&self) -> bool {
+        self.is_promoted
     }
 
     fn reflection_is_virtual(&self) -> bool {
@@ -17698,6 +17793,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
         self.type_hint
+    }
+
+    fn reflection_doc_comment(&self) -> Option<&str> {
+        self.doc_comment
     }
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
@@ -17738,6 +17837,10 @@ impl ReflectionPropertySummary for crate::ir::PropertyDecl {
         self.is_readonly
     }
 
+    fn reflection_is_promoted(&self) -> bool {
+        self.is_promoted
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         self.is_virtual
     }
@@ -17772,6 +17875,10 @@ impl ReflectionPropertySummary for crate::ir::PropertyDecl {
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
         self.type_hint.as_ref()
+    }
+
+    fn reflection_doc_comment(&self) -> Option<&str> {
+        self.doc_comment.as_deref()
     }
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
@@ -17812,6 +17919,10 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
         false
     }
 
+    fn reflection_is_promoted(&self) -> bool {
+        false
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         false
     }
@@ -17846,6 +17957,10 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
         self.type_hint.as_ref()
+    }
+
+    fn reflection_doc_comment(&self) -> Option<&str> {
+        self.doc_comment.as_deref()
     }
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
@@ -17886,7 +18001,7 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     }
     if let Some(type_hint) = property.reflection_type_hint() {
         out.push(' ');
-        out.push_str(&type_hint.text);
+        out.push_str(&reflection_property_type_display_label(type_hint));
     }
     out.push_str(" $");
     out.push_str(property.reflection_name());
@@ -17947,7 +18062,7 @@ fn reflection_property_to_string_runtime_default_prefix<T: ReflectionPropertySum
     }
     if let Some(type_hint) = property.reflection_type_hint() {
         out.push(' ');
-        out.push_str(&type_hint.text);
+        out.push_str(&reflection_property_type_display_label(type_hint));
     }
     out.push_str(" $");
     out.push_str(property.reflection_name());
@@ -17978,6 +18093,11 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
     out.push_str(&properties.len().to_string());
     out.push_str("] {\n");
     for property in properties {
+        if let Some(doc_comment) = property.reflection_doc_comment() {
+            out.push_str("    ");
+            out.push_str(doc_comment);
+            out.push('\n');
+        }
         out.push_str("    ");
         out.push_str(&reflection_property_to_string(property));
     }
@@ -18122,7 +18242,7 @@ fn reflection_property_hook_method_to_string(
         out.push_str("  - Parameters [1] {\n");
         out.push_str("    Parameter #0 [ <required> ");
         if let Some(type_hint) = &property.type_hint {
-            out.push_str(&type_hint.text);
+            out.push_str(&reflection_property_type_display_label(type_hint));
             out.push(' ');
         }
         out.push_str("$value ]\n");
@@ -18133,7 +18253,7 @@ fn reflection_property_hook_method_to_string(
         out.push_str("  }\n");
         if let Some(type_hint) = &property.type_hint {
             out.push_str("  - Return [ ");
-            out.push_str(&type_hint.text);
+            out.push_str(&reflection_property_type_display_label(type_hint));
             out.push_str(" ]\n");
         }
     }
@@ -20650,6 +20770,7 @@ struct ClassPropertyExistsEntry<'a> {
     is_final: bool,
     is_abstract: bool,
     is_readonly: bool,
+    is_promoted: bool,
     has_hooks: bool,
     is_virtual: bool,
     hook_has_get: bool,
@@ -20692,6 +20813,7 @@ fn trait_property_exists_entries<'a>(
             is_final: property.is_final,
             is_abstract: property.is_abstract,
             is_readonly: property.is_readonly,
+            is_promoted: property.is_promoted,
             has_hooks: property.has_hooks,
             is_virtual: property.is_virtual,
             hook_has_get: property.hook_has_get,
@@ -20726,6 +20848,7 @@ fn trait_property_exists_entries<'a>(
                 is_final: property.is_final,
                 is_abstract: false,
                 is_readonly: false,
+                is_promoted: false,
                 has_hooks: false,
                 is_virtual: false,
                 hook_has_get: false,
@@ -20966,6 +21089,7 @@ fn class_property_exists_chain<'a>(
                     is_final: false,
                     is_abstract: false,
                     is_readonly: true,
+                    is_promoted: false,
                     has_hooks: false,
                     is_virtual: false,
                     hook_has_get: false,
@@ -20991,6 +21115,7 @@ fn class_property_exists_chain<'a>(
                     is_final: false,
                     is_abstract: false,
                     is_readonly: true,
+                    is_promoted: false,
                     has_hooks: false,
                     is_virtual: false,
                     hook_has_get: false,
@@ -21019,6 +21144,7 @@ fn class_property_exists_chain<'a>(
                 is_final: property.is_final,
                 is_abstract: property.is_abstract,
                 is_readonly: property.is_readonly,
+                is_promoted: property.is_promoted,
                 has_hooks: property.has_hooks,
                 is_virtual: property.is_virtual,
                 hook_has_get: effective_get_hook.is_some(),
@@ -21059,6 +21185,7 @@ fn class_property_exists_chain<'a>(
                     is_final: property.is_final,
                     is_abstract: false,
                     is_readonly: false,
+                    is_promoted: false,
                     has_hooks: false,
                     is_virtual: false,
                     hook_has_get: false,

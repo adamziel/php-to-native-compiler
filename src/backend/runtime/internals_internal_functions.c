@@ -141357,6 +141357,7 @@ static int ptn_declared_class_reflection_property_metadata(const char *class_nam
 static int ptn_declared_class_reflection_property_is_readable_hook(const char *class_name, const char *property_name);
 static int ptn_declared_class_reflection_property_has_set_hook(const char *class_name, const char *property_name);
 static const char *ptn_declared_class_reflection_property_doc_comment(const char *class_name, const char *property_name);
+static int ptn_declared_class_reflection_property_is_promoted(const char *class_name, const char *property_name);
 static int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly);
 static int ptn_declared_class_reflection_property_settable_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
@@ -145517,6 +145518,7 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isDefaultValueConstant")
         || ptn_ascii_case_equal(method_name, "isOptional")
         || ptn_ascii_case_equal(method_name, "isPassedByReference")
+        || ptn_ascii_case_equal(method_name, "isPromoted")
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
 
@@ -145562,6 +145564,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isFinal")
         || ptn_ascii_case_equal(method_name, "isInitialized")
         || ptn_ascii_case_equal(method_name, "isLazy")
+        || ptn_ascii_case_equal(method_name, "isPromoted")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isPrivateSet")
         || ptn_ascii_case_equal(method_name, "isProtected")
@@ -154743,6 +154746,17 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ? ptn_null()
             : ptn_bool((modifiers & 32) != 0);
     }
+    if (ptn_ascii_case_equal(name, "isPromoted")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *promoted_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        return ptn_bool(
+            !data->is_dynamic &&
+            ptn_declared_class_reflection_property_is_promoted(promoted_class_name, data->name)
+        );
+    }
     if (ptn_ascii_case_equal(name, "isReadOnly")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         if (runtime->exceptions->active_exception != NULL) {
@@ -156559,7 +156573,8 @@ static int ptn_reflection_object_dynamic_property_entry(PtnObject *object, PtnAr
     if (entry->key.string_len == 0 || entry->key.as.string[0] == '\0') {
         return 0;
     }
-    if (ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
+    if (ptn_object_property_metadata(object, entry->key.as.string) != NULL ||
+        ptn_object_metadata_for_display_name(object, entry->key.as.string) != NULL) {
         return 0;
     }
     return 1;
@@ -162348,6 +162363,28 @@ static int ptn_reflection_parameter_is_optional(
     size_t index
 ) {
     return index < metadata.parameter_count && index >= metadata.required_parameter_count;
+}
+
+static int ptn_reflection_parameter_is_promoted(PtnReflectionParameterData *data) {
+    if (data == NULL || data->metadata.name == NULL || data->metadata.is_internal) {
+        return 0;
+    }
+    const char *separator = strstr(data->metadata.name, "::");
+    if (separator == NULL || !ptn_ascii_case_equal(separator + 2, "__construct")) {
+        return 0;
+    }
+    size_t class_name_len = (size_t)(separator - data->metadata.name);
+    char *class_name = ptn_duplicate_string_len(data->metadata.name, class_name_len);
+    char fallback[32];
+    const char *parameter_name = ptn_function_metadata_parameter_name(
+        data->metadata,
+        data->index,
+        fallback,
+        sizeof(fallback)
+    );
+    int promoted = ptn_declared_class_reflection_property_is_promoted(class_name, parameter_name);
+    free(class_name);
+    return promoted;
 }
 
 static PtnValue ptn_reflection_parameter_throw_default_unavailable(PtnRuntime *runtime) {
@@ -177964,6 +178001,9 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     }
     if (ptn_ascii_case_equal(name, "isPassedByReference")) {
         return ptn_bool(ptn_function_metadata_parameter_by_ref(metadata, index));
+    }
+    if (ptn_ascii_case_equal(name, "isPromoted")) {
+        return ptn_bool(ptn_reflection_parameter_is_promoted(data));
     }
     if (ptn_ascii_case_equal(name, "canBePassedByValue")) {
         return ptn_bool(ptn_function_metadata_parameter_can_be_passed_by_value(metadata, index));

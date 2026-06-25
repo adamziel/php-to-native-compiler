@@ -79676,6 +79676,98 @@ try {
 }
 
 #[test]
+fn compile_reflection_promoted_and_dynamic_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-promoted-and-dynamic-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-promoted-and-dynamic-properties.php");
+    let output = root.join("reflection-promoted-and-dynamic-properties-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectPromotedProperty {
+    public $z;
+    public function __construct(
+        public int $x,
+        /** @SomeAnnotation() */
+        public string $y = \"123\",
+        string $ignored = \"abc\",
+    ) {}
+}
+
+$rc = new ReflectionClass(ReflectPromotedProperty::class);
+$classText = (string) $rc;
+var_dump(strpos($classText, \"    /** @SomeAnnotation() */\\n    Property [ public string \\$y ]\") !== false);
+$y = $rc->getProperty('y');
+var_dump(method_exists($y, 'isPromoted'));
+var_dump($y->isPromoted());
+var_dump($y->getDocComment());
+var_dump($rc->getProperty('z')->isPromoted());
+var_dump((new ReflectionParameter([ReflectPromotedProperty::class, '__construct'], 'y'))->isPromoted());
+var_dump((new ReflectionParameter([ReflectPromotedProperty::class, '__construct'], 'ignored'))->isPromoted());
+
+class ReflectPrivateDynamicBase {
+    private $p = 1;
+}
+
+#[AllowDynamicProperties]
+class ReflectPrivateDynamicChild extends ReflectPrivateDynamicBase {
+}
+
+$object = new ReflectPrivateDynamicChild();
+$object->p = 'value';
+$reflectionObject = new ReflectionObject($object);
+var_dump(strpos((string) $reflectionObject, \"Dynamic properties [0]\") !== false);
+var_dump(count($reflectionObject->getProperties()));
+
+class ReflectIterableSameName {
+    public iterable $iterable;
+    public ?iterable $nullableIterable;
+}
+
+[$iterableProperty, $nullableIterableProperty] = (new ReflectionClass(ReflectIterableSameName::class))->getProperties();
+$iterableType = $iterableProperty->getType();
+$nullableIterableType = $nullableIterableProperty->getType();
+var_dump($iterableType::class, $iterableType->getName(), (string) $iterableType, $iterableType->isBuiltin());
+var_dump($nullableIterableType::class, $nullableIterableType->getName(), (string) $nullableIterableType, $nullableIterableType->isBuiltin());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(24) \"/** @SomeAnnotation() */\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "string(19) \"ReflectionNamedType\"\n",
+            "string(8) \"iterable\"\n",
+            "string(8) \"iterable\"\n",
+            "bool(true)\n",
+            "string(19) \"ReflectionNamedType\"\n",
+            "string(8) \"iterable\"\n",
+            "string(9) \"?iterable\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_parent_property_hook_fallback_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-parent-property-hook-fallback-diagnostics");
     fs::create_dir_all(&root).unwrap();

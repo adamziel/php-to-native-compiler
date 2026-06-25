@@ -118,6 +118,7 @@ pub struct PropertyDecl {
     pub is_final: bool,
     pub is_abstract: bool,
     pub is_readonly: bool,
+    pub is_promoted: bool,
     pub has_hooks: bool,
     pub is_virtual: bool,
     pub hook_has_get: bool,
