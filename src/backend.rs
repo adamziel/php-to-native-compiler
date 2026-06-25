@@ -45,6 +45,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "LibXMLError",
     "XMLWriter",
     "SimpleXMLElement",
+    "SimpleXMLIterator",
     "PDO",
     "Pdo\\Sqlite",
     "Pdo\\Mysql",
@@ -1737,7 +1738,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"IteratorAggregate\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SimpleXMLElement\")) {\n");
+    out.push_str(
+        "    if (ptn_declared_class_is_same_or_descendant(class_name, \"SimpleXMLElement\")) {\n",
+    );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
@@ -7833,6 +7836,7 @@ fn emit_class_metadata_helpers(
         "XMLWriter",
         "XMLParser",
         "SimpleXMLElement",
+        "SimpleXMLIterator",
         "Uri\\Rfc3986\\Uri",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
@@ -8723,6 +8727,7 @@ fn emit_class_metadata_helpers(
         "XMLWriter",
         "XMLParser",
         "SimpleXMLElement",
+        "SimpleXMLIterator",
         "Uri\\Rfc3986\\Uri",
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
@@ -9272,6 +9277,7 @@ fn emit_class_metadata_helpers(
         ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
         ("ReflectionObject", "ReflectionClass"),
         ("PharFileInfo", "SplFileInfo"),
+        ("SimpleXMLIterator", "SimpleXMLElement"),
         ("SplFileObject", "SplFileInfo"),
         ("SplTempFileObject", "SplFileObject"),
         ("SplMaxHeap", "SplHeap"),
@@ -21594,6 +21600,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "xmlwriter" => Some("XMLWriter"),
         "xmlparser" => Some("XMLParser"),
         "simplexmlelement" => Some("SimpleXMLElement"),
+        "simplexmliterator" => Some("SimpleXMLIterator"),
         _ => None,
     }
 }
@@ -31720,6 +31727,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
                 || class_name.eq_ignore_ascii_case("SimpleXMLElement")
+                || class_name.eq_ignore_ascii_case("SimpleXMLIterator")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || is_uri_whatwg_url_class_name(class_name)

@@ -13460,6 +13460,7 @@ fn is_modeled_extension_internal_class_name(name: &str) -> bool {
             | "xmlwriter"
             | "xmlparser"
             | "simplexmlelement"
+            | "simplexmliterator"
     )
 }
 

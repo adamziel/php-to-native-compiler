@@ -32613,7 +32613,7 @@ var_dump(is_callable([1, \"x\"], true));
             "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
-            "bool(false)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
@@ -44497,6 +44497,87 @@ var_dump($copy->item[2]);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_simplexml_load_string"));
+    assert!(c_source.contains("ptn_simplexml_call_method"));
+}
+
+#[test]
+fn compile_simplexml_iterator_class_and_children_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-iterator-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-iterator-class.php");
+    let output = root.join("simplexml-iterator-class-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(
+    class_exists('SimpleXMLIterator'),
+    is_subclass_of('SimpleXMLIterator', 'SimpleXMLElement'),
+    method_exists('SimpleXMLElement', 'getChildren'),
+    method_exists('SimpleXMLIterator', 'getChildren')
+);
+
+$sxe = simplexml_load_string('<root><item><child>one</child></item><item>two</item></root>', 'SimpleXMLIterator');
+var_dump(
+    get_class($sxe),
+    $sxe instanceof SimpleXMLElement,
+    $sxe instanceof SimpleXMLIterator,
+    count($sxe)
+);
+
+$sxe->rewind();
+var_dump($sxe->key(), $sxe->hasChildren());
+$children = $sxe->getChildren();
+var_dump(get_class($children), $children instanceof SimpleXMLIterator, count($children));
+foreach ($children as $name => $child) {
+    echo $name, '=', trim((string) $child), "\n";
+}
+
+class SXETest extends SimpleXMLIterator {
+    public function count(): int {
+        echo __METHOD__, "\n";
+        return parent::count();
+    }
+}
+
+$test = new SXETest('<root><a/><b/><b/></root>');
+var_dump(get_class($test), $test instanceof SimpleXMLIterator, count($test), count($test->b));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(17) \"SimpleXMLIterator\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "string(4) \"item\"\n",
+            "bool(true)\n",
+            "string(17) \"SimpleXMLIterator\"\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "child=one\n",
+            "SXETest::count\n",
+            "SXETest::count\n",
+            "string(7) \"SXETest\"\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SimpleXMLIterator"));
     assert!(c_source.contains("ptn_simplexml_call_method"));
 }
 
