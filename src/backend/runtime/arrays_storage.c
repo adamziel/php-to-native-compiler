@@ -2545,6 +2545,37 @@ static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject 
     ptn_lazy_object_sync_proxy_instance_properties_depth(proxy, 0);
 }
 
+static PTN_UNUSED void ptn_lazy_object_sync_forwarded_proxy_property_reference(
+    PtnValue original_receiver,
+    PtnValue effective_receiver,
+    const char *storage_key,
+    PtnValue reference
+) {
+    original_receiver = ptn_value_deref(original_receiver);
+    effective_receiver = ptn_value_deref(effective_receiver);
+    if (storage_key == NULL ||
+        reference.type != PTN_REFERENCE ||
+        original_receiver.type != PTN_OBJECT ||
+        effective_receiver.type != PTN_OBJECT ||
+        original_receiver.as.object == NULL ||
+        effective_receiver.as.object == NULL ||
+        original_receiver.as.object == effective_receiver.as.object ||
+        !original_receiver.as.object->lazy_is_proxy ||
+        original_receiver.as.object->lazy_uninitialized ||
+        original_receiver.as.object->properties == NULL) {
+        return;
+    }
+    PtnValue real = ptn_value_deref(original_receiver.as.object->lazy_proxy_instance);
+    if (real.type != PTN_OBJECT || real.as.object != effective_receiver.as.object) {
+        return;
+    }
+    ptn_array_set_entry(
+        original_receiver.as.object->properties,
+        ptn_array_string_key(storage_key),
+        ptn_value_clone(reference)
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_lazy_object_effective_initialized_proxy_receiver(PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT || receiver.as.object == NULL) {

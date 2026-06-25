@@ -8716,6 +8716,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
                     }
                     ptn_reference_adopt_property_type(read_entry->value.as.reference, read_metadata);
                     PtnValue reference = ptn_value_clone(read_entry->value);
+                    ptn_lazy_object_sync_forwarded_proxy_property_reference(
+                        original_receiver,
+                        receiver,
+                        read_storage_key,
+                        reference
+                    );
                     free(read_storage_key);
                     return reference;
                 }
@@ -8959,12 +8965,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             mutable_metadata->is_unset = 0;
             ptn_object_metadata_remember_value_type(mutable_metadata, reference);
         }
+        ptn_lazy_object_sync_forwarded_proxy_property_reference(
+            original_receiver,
+            receiver,
+            storage_key,
+            reference
+        );
         ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
         free(storage_key);
         return reference;
     }
     ptn_array_key_free(key);
-    free(storage_key);
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
@@ -8972,7 +8983,14 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     if (metadata != NULL) {
         ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
     }
+    ptn_lazy_object_sync_forwarded_proxy_property_reference(
+        original_receiver,
+        receiver,
+        storage_key,
+        entry->value
+    );
     ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
+    free(storage_key);
     return ptn_value_clone(entry->value);
 }
 

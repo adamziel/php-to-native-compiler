@@ -78090,6 +78090,10 @@ function exercise_lazy_fetch(string $label, object $obj): void {
     $ref = 9;
     var_dump($obj->a);
     var_dump($obj->b);
+    ob_start();
+    var_dump($obj);
+    $dump = ob_get_clean();
+    echo strpos($dump, \"&int(9)\") !== false ? $label . \"-b-ref\\n\" : $label . \"-b-plain\\n\";
 }
 
 $reflector = new ReflectionClass(LazyFetchBox::class);
@@ -78133,12 +78137,14 @@ echo substr_count($dump, \"[\\\"instance\\\"]=>\") === 1 ? \"proxy-instance-once
             "Cannot access uninitialized non-nullable property LazyFetchBox::$c by reference\n",
             "NULL\n",
             "int(9)\n",
+            "ghost-b-ref\n",
             "#proxy\n",
             "proxy init\n",
             "ctor\n",
             "Cannot access uninitialized non-nullable property LazyFetchBox::$c by reference\n",
             "NULL\n",
             "int(9)\n",
+            "proxy-b-ref\n",
             "proxy-a-plain\n",
             "proxy-instance-once\n",
         )
