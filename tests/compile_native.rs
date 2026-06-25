@@ -34818,6 +34818,58 @@ try {
 }
 
 #[test]
+fn compile_unscoped_relative_class_name_fetches_throw_catchable_errors() {
+    let root = temp_dir("ptn-native-unscoped-relative-class-name-fetches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unscoped-relative-class-name-fetches.php");
+    let output = root.join("unscoped-relative-class-name-fetches-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    var_dump(self::class);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump([self::class]);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump(static::class);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump(parent::class);
+} catch (Error $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Error: Cannot use \"self\" in the global scope\n",
+            "Error: Cannot use \"self\" in the global scope\n",
+            "Error: Cannot use \"static\" in the global scope\n",
+            "Error: Cannot use \"parent\" in the global scope\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_exception_at(&runtime, \"Error\""));
+}
+
+#[test]
 fn parser_reports_late_static_class_name_row_diagnostics() {
     for source in [
         "<?php class static {}",

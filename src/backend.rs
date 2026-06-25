@@ -46806,9 +46806,9 @@ impl ValueEmitter {
             out.push_str(result_temp);
             out.push_str("_class_name == NULL) {\n");
             out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
-            out.push_str("Cannot access \\\"");
+            out.push_str("Cannot use \\\"");
             out.push_str(&c_string(&class_name.to_ascii_lowercase()));
-            out.push_str("\\\" when no class scope is active");
+            out.push_str("\\\" in the global scope");
             out.push_str("\", \"");
             out.push_str(&c_string(&self.source_file));
             out.push_str("\", ");
