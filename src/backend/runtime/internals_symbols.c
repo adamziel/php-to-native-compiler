@@ -503,6 +503,10 @@ static PTN_UNUSED void ptn_gc_note_destructor_array_reference_cycle(size_t count
     if (count == 0) {
         return;
     }
+    if (ptn_pending_array_cycle_collections != 0) {
+        ptn_pending_array_cycle_collections = 0;
+        ptn_pending_array_cycle_auto_flushed = 0;
+    }
     if (ptn_pending_array_cycle_collections > SIZE_MAX - count) {
         ptn_abort_out_of_memory();
     }

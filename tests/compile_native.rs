@@ -15503,6 +15503,32 @@ echo \"ok\\n\";
 }
 
 #[test]
+fn compile_gc_collects_array_object_storage_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-array-object-storage-cycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-array-object-storage-cycle.php");
+    let output = root.join("gc-array-object-storage-cycle-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = new ArrayObject();
+$a[0] = $a;
+unset($a);
+var_dump(gc_collect_cycles());
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(2)\nok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_gc_destructor_array_root_flush_preserves_object_count_to_native_binary() {
     let root = temp_dir("ptn-native-gc-destructor-root-buffer-flush");
     fs::create_dir_all(&root).unwrap();

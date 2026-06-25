@@ -78840,6 +78840,16 @@ static size_t ptn_runtime_next_gc_mark_epoch(PtnRuntime *root) {
 
 static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object);
 
+static int ptn_gc_object_has_array_backed_native_storage(PtnObject *object) {
+    return object != NULL &&
+        (
+            ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+            ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") ||
+            ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") ||
+            ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")
+        );
+}
+
 static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *object) {
     if (stack == NULL || object == NULL || object->native_data == NULL) {
         return;
@@ -78849,6 +78859,22 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
         ptn_gc_mark_stack_push(stack, data->callback);
         ptn_gc_mark_stack_push(stack, data->return_value);
         ptn_gc_mark_stack_push(stack, data->suspension_trace);
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator")) {
+        PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
+        ptn_gc_mark_stack_push(stack, data->storage);
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject")) {
+        PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+        ptn_gc_mark_stack_push(stack, data->storage);
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        PtnSplFixedArrayData *data = (PtnSplFixedArrayData *)object->native_data;
+        ptn_gc_mark_stack_push(stack, data->storage);
     }
 }
 
@@ -78911,6 +78937,9 @@ static int ptn_gc_object_has_opaque_native_data(PtnObject *object) {
         return 0;
     }
     if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        return 0;
+    }
+    if (ptn_gc_object_has_array_backed_native_storage(object)) {
         return 0;
     }
     return object->native_data_free != ptn_spl_object_storage_data_free;
@@ -79159,17 +79188,30 @@ static size_t ptn_gc_count_unreachable_contained_values_in_object_native_values(
     if (object == NULL || object->native_data == NULL || depth > 1024) {
         return 0;
     }
-    if (!ptn_internal_class_name_is_fiber(object->class_name)) {
+    PtnValue values[3] = { ptn_null(), ptn_null(), ptn_null() };
+    size_t values_len = 0;
+    if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        values[values_len++] = data->callback;
+        values[values_len++] = data->return_value;
+        values[values_len++] = data->suspension_trace;
+    } else if (
+        ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator")
+    ) {
+        PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject")) {
+        PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        PtnSplFixedArrayData *data = (PtnSplFixedArrayData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else {
         return 0;
     }
-    PtnFiberData *data = (PtnFiberData *)object->native_data;
-    PtnValue values[3] = {
-        data->callback,
-        data->return_value,
-        data->suspension_trace,
-    };
     size_t count = 0;
-    for (size_t i = 0; i < 3; i++) {
+    for (size_t i = 0; i < values_len; i++) {
         size_t nested = ptn_gc_count_unreachable_contained_values_in_value_ex(
             values[i],
             root_epoch,
@@ -79336,31 +79378,37 @@ static void ptn_gc_mark_unreachable_destructor_component_object_native_values(
     if (object == NULL || object->native_data == NULL || depth > 1024) {
         return;
     }
-    if (!ptn_internal_class_name_is_fiber(object->class_name)) {
+    PtnValue values[3] = { ptn_null(), ptn_null(), ptn_null() };
+    size_t values_len = 0;
+    if (ptn_internal_class_name_is_fiber(object->class_name)) {
+        PtnFiberData *data = (PtnFiberData *)object->native_data;
+        values[values_len++] = data->callback;
+        values[values_len++] = data->return_value;
+        values[values_len++] = data->suspension_trace;
+    } else if (
+        ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator")
+    ) {
+        PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject")) {
+        PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFixedArray")) {
+        PtnSplFixedArrayData *data = (PtnSplFixedArrayData *)object->native_data;
+        values[values_len++] = data->storage;
+    } else {
         return;
     }
-    PtnFiberData *data = (PtnFiberData *)object->native_data;
-    ptn_gc_mark_unreachable_destructor_component_value(
-        component,
-        data->callback,
-        root_epoch,
-        component_epoch,
-        depth + 1
-    );
-    ptn_gc_mark_unreachable_destructor_component_value(
-        component,
-        data->return_value,
-        root_epoch,
-        component_epoch,
-        depth + 1
-    );
-    ptn_gc_mark_unreachable_destructor_component_value(
-        component,
-        data->suspension_trace,
-        root_epoch,
-        component_epoch,
-        depth + 1
-    );
+    for (size_t i = 0; i < values_len; i++) {
+        ptn_gc_mark_unreachable_destructor_component_value(
+            component,
+            values[i],
+            root_epoch,
+            component_epoch,
+            depth + 1
+        );
+    }
 }
 
 static void ptn_gc_mark_unreachable_destructor_component_object(
