@@ -533,6 +533,40 @@ static PTN_UNUSED void ptn_array_index_insert(PtnArray *array, PtnArrayKey key, 
     }
 }
 
+static PTN_UNUSED void ptn_array_index_remove(PtnArray *array, PtnArrayKey key) {
+    if (array->index_capacity == 0) {
+        return;
+    }
+
+    uint64_t hash = ptn_array_key_hash(key);
+    size_t mask = array->index_capacity - 1;
+    size_t slot_index = (size_t)hash & mask;
+    for (;;) {
+        PtnArrayIndexSlot *slot = &array->index_slots[slot_index];
+        if (!slot->occupied) {
+            return;
+        }
+        if (slot->hash == hash && ptn_array_keys_equal(array->entries[slot->entry_index].key, key)) {
+            slot->occupied = 0;
+            break;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+
+    size_t scan = (slot_index + 1) & mask;
+    while (array->index_slots[scan].occupied) {
+        PtnArrayIndexSlot moving = array->index_slots[scan];
+        array->index_slots[scan].occupied = 0;
+        size_t destination = ptn_array_index_slot_for_key(
+            array,
+            array->entries[moving.entry_index].key,
+            moving.hash
+        );
+        array->index_slots[destination] = moving;
+        scan = (scan + 1) & mask;
+    }
+}
+
 static PTN_UNUSED void ptn_array_index_insert_appended_entry(
     PtnArray *array,
     PtnArrayKey key,

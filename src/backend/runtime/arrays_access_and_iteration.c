@@ -18960,6 +18960,7 @@ static PTN_UNUSED PtnValue ptn_array_pop_value(PtnArray *array) {
     PtnArrayKey removed_key = array->entries[removed_index].key;
     int64_t old_next_auto_key = array->next_auto_key;
     PtnValue removed = ptn_value_clone_deref(array->entries[removed_index].value);
+    ptn_array_index_remove(array, removed_key);
     ptn_value_destroy(&array->entries[removed_index].value);
     ptn_array_key_free(removed_key);
     array->len--;
@@ -18970,7 +18971,6 @@ static PTN_UNUSED PtnValue ptn_array_pop_value(PtnArray *array) {
     } else {
         array->next_auto_key = old_next_auto_key;
     }
-    ptn_array_rebuild_index(array);
     return removed;
 }
 

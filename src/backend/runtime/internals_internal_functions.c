@@ -70281,6 +70281,9 @@ static char *ptn_mb_detect_list_select_for_string_alloc(
     PtnStringOperand input,
     const char *fallback
 ) {
+    if (detect_list != NULL && detect_list[0] != '\0' && strchr(detect_list, '\n') == NULL) {
+        return ptn_duplicate_string(detect_list);
+    }
     char *first = NULL;
     int has_stateful_escape = ptn_mb_input_has_stateful_escape(input);
     size_t start = 0;
@@ -70676,6 +70679,23 @@ static const uint16_t PTN_MB_WINDOWS_1254_DECODE_TABLE[256] = {
     0x00f8, 0x00f9, 0x00fa, 0x00fb, 0x00fc, 0x0131, 0x015f, 0x00ff,
 };
 
+static unsigned char PTN_MB_WINDOWS_1254_ENCODE_TABLE[65536];
+static int PTN_MB_WINDOWS_1254_ENCODE_TABLE_INITIALIZED = 0;
+
+static void ptn_mb_windows1254_init_encode_table(void) {
+    if (PTN_MB_WINDOWS_1254_ENCODE_TABLE_INITIALIZED) {
+        return;
+    }
+    memset(PTN_MB_WINDOWS_1254_ENCODE_TABLE, 0xff, sizeof(PTN_MB_WINDOWS_1254_ENCODE_TABLE));
+    for (unsigned int byte = 0; byte <= 0xff; byte++) {
+        uint16_t unicode = PTN_MB_WINDOWS_1254_DECODE_TABLE[byte];
+        if (unicode != 0xffff) {
+            PTN_MB_WINDOWS_1254_ENCODE_TABLE[unicode] = (unsigned char)byte;
+        }
+    }
+    PTN_MB_WINDOWS_1254_ENCODE_TABLE_INITIALIZED = 1;
+}
+
 static const unsigned char PTN_MB_CP936_DECODE_OVERRIDES[] = {
     0x00, 0x80, 0x20, 0xac, 0x00, 0xff, 0xf8, 0xf5, 0xa2, 0xe3, 0xe7, 0x6c, 0xa6, 0xd9, 0xe7, 0x8d,
     0xa6, 0xda, 0xe7, 0x8e, 0xa6, 0xdb, 0xe7, 0x8f, 0xa6, 0xdc, 0xe7, 0x90, 0xa6, 0xdd, 0xe7, 0x91,
@@ -70804,6 +70824,9 @@ static const unsigned char PTN_MB_CP936_ENCODE_OVERRIDES[] = {
     0xfe, 0x99, 0xe8, 0x5d, 0xfe, 0x9a, 0xe8, 0x5e, 0xfe, 0x9b, 0xe8, 0x5f, 0xfe, 0x9c, 0xe8, 0x60,
     0xfe, 0x9d, 0xe8, 0x61, 0xfe, 0x9e, 0xe8, 0x62, 0xfe, 0x9f, 0xe8, 0x63, 0xfe, 0xa0, 0xe8, 0x64,
 };
+
+static uint16_t PTN_MB_CP936_ENCODE_TABLE[65536];
+static int PTN_MB_CP936_ENCODE_TABLE_INITIALIZED = 0;
 
 static const unsigned char PTN_MB_EUCTW_2BYTE_BITS[] = {
     0xff, 0xff, 0xff, 0xe1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf5, 0xff, 0xff, 0xff,
@@ -71114,6 +71137,10 @@ static const unsigned char PTN_MB_EUCTW_PLANE_AE_EXCEPTIONS[] = {
     0xe4, 0xaf, 0x9c, 0x27, 0xe4, 0xb1, 0x94, 0x58, 0xe4, 0xb2, 0x77, 0xd6, 0xe4, 0xb3, 0x9b, 0x2d,
 };
 
+static const unsigned char PTN_MB_EUCTW_UNICODE_PAGE_BITS[] = {
+    0x0d, 0x00, 0x00, 0x00, 0x77, 0x00, 0x0f, 0x00, 0x00, 0xc0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0,
+};
 
 
 static char *ptn_mb_iconv_convert_alloc_options(
@@ -71154,6 +71181,42 @@ static int ptn_mb_code16_lookup_unicode(const unsigned char *table, size_t table
         }
     }
     return 0;
+}
+
+static int ptn_mb_iconv_one_to_utf16be(const char *input, size_t input_len, const char *from_iconv, uint16_t *unicode);
+
+static void ptn_mb_cp936_init_encode_table(void) {
+    if (PTN_MB_CP936_ENCODE_TABLE_INITIALIZED) {
+        return;
+    }
+    memset(PTN_MB_CP936_ENCODE_TABLE, 0xff, sizeof(PTN_MB_CP936_ENCODE_TABLE));
+    for (uint16_t byte = 0; byte <= 0x7f; byte++) {
+        PTN_MB_CP936_ENCODE_TABLE[byte] = byte;
+    }
+    for (unsigned int lead = 0x81; lead <= 0xfe; lead++) {
+        for (unsigned int trail = 0; trail <= 0xff; trail++) {
+            uint16_t encoded = (uint16_t)((lead << 8) | trail);
+            if (ptn_mb_code16_lookup_encoded(
+                    PTN_MB_CP936_DECODE_OVERRIDES,
+                    sizeof(PTN_MB_CP936_DECODE_OVERRIDES),
+                    encoded,
+                    NULL
+                )) {
+                continue;
+            }
+            char bytes[2] = { (char)lead, (char)trail };
+            uint16_t unicode = 0;
+            if (ptn_mb_iconv_one_to_utf16be(bytes, sizeof(bytes), "GB18030", &unicode)) {
+                PTN_MB_CP936_ENCODE_TABLE[unicode] = encoded;
+            }
+        }
+    }
+    for (size_t i = 0; i + 3 < sizeof(PTN_MB_CP936_ENCODE_OVERRIDES); i += 4) {
+        uint16_t encoded = ptn_mb_code16_table_read(PTN_MB_CP936_ENCODE_OVERRIDES, i);
+        uint16_t unicode = ptn_mb_code16_table_read(PTN_MB_CP936_ENCODE_OVERRIDES, i + 2);
+        PTN_MB_CP936_ENCODE_TABLE[unicode] = encoded;
+    }
+    PTN_MB_CP936_ENCODE_TABLE_INITIALIZED = 1;
 }
 
 static int ptn_mb_encoding_is_cp936_table(const char *encoding) {
@@ -71219,58 +71282,54 @@ static int ptn_mb_windows1254_decode_byte(unsigned char byte, uint16_t *unicode)
 }
 
 static int ptn_mb_windows1254_encode_code_unit(uint16_t unicode, char out[8], size_t *out_len) {
-    for (unsigned int byte = 0; byte <= 0xff; byte++) {
-        if (PTN_MB_WINDOWS_1254_DECODE_TABLE[byte] != 0xffff &&
-            PTN_MB_WINDOWS_1254_DECODE_TABLE[byte] == unicode) {
-            out[0] = (char)byte;
-            *out_len = 1;
-            return 1;
-        }
+    ptn_mb_windows1254_init_encode_table();
+    unsigned char byte = PTN_MB_WINDOWS_1254_ENCODE_TABLE[unicode];
+    if (byte != 0xff || unicode == 0x00ff) {
+        out[0] = (char)byte;
+        *out_len = 1;
+        return 1;
     }
     return 0;
 }
 
 #if !defined(_WIN32)
 static iconv_t ptn_mb_cached_iconv_open(const char *to_iconv, const char *from_iconv, int *cached) {
+    enum { PTN_MB_ICONV_CACHE_CAPACITY = 32 };
+    typedef struct {
+        char *to_iconv;
+        char *from_iconv;
+        iconv_t cd;
+    } PtnMbIconvCacheEntry;
+    static PtnMbIconvCacheEntry entries[PTN_MB_ICONV_CACHE_CAPACITY];
+    static size_t next_slot = 0;
+
+    for (size_t i = 0; i < PTN_MB_ICONV_CACHE_CAPACITY; i++) {
+        if (entries[i].cd != (iconv_t)0 &&
+            strcmp(entries[i].to_iconv, to_iconv) == 0 &&
+            strcmp(entries[i].from_iconv, from_iconv) == 0) {
+            *cached = 1;
+            iconv(entries[i].cd, NULL, NULL, NULL, NULL);
+            return entries[i].cd;
+        }
+    }
+
+    iconv_t cd = iconv_open(to_iconv, from_iconv);
+    if (cd == (iconv_t)-1) {
+        *cached = 0;
+        return cd;
+    }
+
+    size_t slot = next_slot++ % PTN_MB_ICONV_CACHE_CAPACITY;
+    if (entries[slot].cd != (iconv_t)0) {
+        iconv_close(entries[slot].cd);
+        free(entries[slot].to_iconv);
+        free(entries[slot].from_iconv);
+    }
+    entries[slot].to_iconv = ptn_duplicate_string(to_iconv);
+    entries[slot].from_iconv = ptn_duplicate_string(from_iconv);
+    entries[slot].cd = cd;
     *cached = 1;
-    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "EUC-TW")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("UTF-16BE", "EUC-TW");
-            initialized = 1;
-        }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "UTF-16BE") && ptn_ascii_case_equal(from_iconv, "GB18030")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("UTF-16BE", "GB18030");
-            initialized = 1;
-        }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "EUC-TW") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("EUC-TW", "UTF-16BE");
-            initialized = 1;
-        }
-        return cd;
-    }
-    if (ptn_ascii_case_equal(to_iconv, "GB18030") && ptn_ascii_case_equal(from_iconv, "UTF-16BE")) {
-        static int initialized = 0;
-        static iconv_t cd = (iconv_t)-1;
-        if (!initialized) {
-            cd = iconv_open("GB18030", "UTF-16BE");
-            initialized = 1;
-        }
-        return cd;
-    }
-    *cached = 0;
-    return iconv_open(to_iconv, from_iconv);
+    return cd;
 }
 
 static void ptn_mb_iconv_finish_one(iconv_t cd, int cached) {
@@ -71499,6 +71558,11 @@ static int ptn_mb_euctw_exception_by_unicode(uint16_t unicode, uint16_t *tail) {
         unicode,
         tail
     );
+}
+
+static int ptn_mb_euctw_unicode_may_encode(uint16_t unicode) {
+    unsigned int page = (unsigned int)(unicode >> 8);
+    return (PTN_MB_EUCTW_UNICODE_PAGE_BITS[page / 8u] & (unsigned char)(1u << (page % 8u))) != 0;
 }
 
 static char *ptn_mb_cp936_to_utf16be_alloc_options(
@@ -71732,36 +71796,18 @@ static int ptn_mb_euctw_validate_bytes(const char *input, size_t input_len) {
 }
 
 static int ptn_mb_cp936_encode_code_unit(uint16_t unicode, char out[8], size_t *out_len) {
-    uint16_t encoded = 0;
-    if (ptn_mb_code16_lookup_unicode(
-            PTN_MB_CP936_ENCODE_OVERRIDES,
-            sizeof(PTN_MB_CP936_ENCODE_OVERRIDES),
-            unicode,
-            &encoded
-        )) {
-        if (encoded <= 0xff) {
-            out[0] = (char)encoded;
-            *out_len = 1;
-        } else {
-            out[0] = (char)(encoded >> 8);
-            out[1] = (char)(encoded & 0xff);
-            *out_len = 2;
-        }
-        return 1;
-    }
-    if (!ptn_mb_iconv_utf16be_one_to_bytes(unicode, "GB18030", out, out_len) || *out_len > 2) {
+    ptn_mb_cp936_init_encode_table();
+    uint16_t encoded = PTN_MB_CP936_ENCODE_TABLE[unicode];
+    if (encoded == 0xffff) {
         return 0;
     }
-    encoded = *out_len == 1
-        ? (uint16_t)(unsigned char)out[0]
-        : (uint16_t)(((uint16_t)(unsigned char)out[0] << 8) | (unsigned char)out[1]);
-    if (ptn_mb_code16_lookup_encoded(
-            PTN_MB_CP936_DECODE_OVERRIDES,
-            sizeof(PTN_MB_CP936_DECODE_OVERRIDES),
-            encoded,
-            NULL
-        )) {
-        return 0;
+    if (encoded <= 0xff) {
+        out[0] = (char)encoded;
+        *out_len = 1;
+    } else {
+        out[0] = (char)(encoded >> 8);
+        out[1] = (char)(encoded & 0xff);
+        *out_len = 2;
     }
     return 1;
 }
@@ -71775,6 +71821,9 @@ static int ptn_mb_euctw_encode_code_unit_uncached(uint16_t unicode, char out[8],
         out[3] = (char)(tail & 0xff);
         *out_len = 4;
         return 1;
+    }
+    if (!ptn_mb_euctw_unicode_may_encode(unicode)) {
+        return 0;
     }
     if (!ptn_mb_iconv_utf16be_one_to_bytes(unicode, "EUC-TW", out, out_len)) {
         return 0;
@@ -71839,6 +71888,157 @@ static int ptn_mb_euctw_encode_code_unit(uint16_t unicode, char out[8], size_t *
     return 0;
 }
 
+static size_t ptn_mb_euctw_invalid_input_skip(const char *input, size_t input_len) {
+    if (input_len == 0) {
+        return 0;
+    }
+    unsigned char b0 = (unsigned char)input[0];
+    if (b0 == 0x8e) {
+        if (input_len < 2) {
+            return input_len;
+        }
+        const unsigned char *plane_bits = ptn_mb_euctw_plane_bits((unsigned char)input[1]);
+        if (plane_bits == NULL) {
+            return 2;
+        }
+        if (input_len < 3) {
+            return input_len;
+        }
+        if (!ptn_mb_euctw_cell_lead_valid(plane_bits, (unsigned char)input[2])) {
+            return 3;
+        }
+        return input_len < 4 ? input_len : 4;
+    }
+    if (ptn_mb_euctw_cell_lead_valid(PTN_MB_EUCTW_2BYTE_BITS, b0)) {
+        return input_len < 2 ? input_len : 2;
+    }
+    return 1;
+}
+
+static void ptn_mb_euctw_decode_chunk_append(
+    PtnStringBuffer *buffer,
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars
+) {
+    if (input_len == 0) {
+        return;
+    }
+#if defined(_WIN32)
+    ptn_string_buffer_append_len(buffer, input, input_len);
+#else
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open("UTF-16BE", "EUC-TW", &cached);
+    if (cd == (iconv_t)-1) {
+        ptn_string_buffer_append_len(buffer, input, input_len);
+        return;
+    }
+    size_t out_cap = input_len < 32 ? 128 : input_len * 4 + 32;
+    char *output = malloc(out_cap);
+    if (output == NULL) {
+        ptn_mb_iconv_finish_one(cd, cached);
+        ptn_abort_out_of_memory();
+    }
+    char *in_ptr = (char *)input;
+    size_t in_left = input_len;
+    char *out_ptr = output;
+    size_t out_left = out_cap - 1;
+    while (in_left > 0) {
+        size_t converted = iconv(cd, &in_ptr, &in_left, &out_ptr, &out_left);
+        if (converted != (size_t)-1) {
+            continue;
+        }
+        if (errno == E2BIG) {
+            ptn_mb_iconv_ensure_output_capacity(&output, &out_cap, &out_ptr, &out_left, out_left + 1);
+            continue;
+        }
+        if (illegal_chars != NULL) {
+            (*illegal_chars)++;
+        }
+        if (replacement_len > 0) {
+            ptn_mb_iconv_ensure_output_capacity(&output, &out_cap, &out_ptr, &out_left, replacement_len);
+            memcpy(out_ptr, replacement, replacement_len);
+            out_ptr += replacement_len;
+            out_left -= replacement_len;
+        }
+        size_t skip = ptn_mb_euctw_invalid_input_skip(in_ptr, in_left);
+        if (skip == 0) {
+            skip = 1;
+        }
+        in_ptr += skip;
+        in_left -= skip;
+        iconv(cd, NULL, NULL, NULL, NULL);
+    }
+    for (;;) {
+        size_t converted = iconv(cd, NULL, NULL, &out_ptr, &out_left);
+        if (converted != (size_t)-1) {
+            break;
+        }
+        if (errno != E2BIG) {
+            break;
+        }
+        ptn_mb_iconv_ensure_output_capacity(&output, &out_cap, &out_ptr, &out_left, out_left + 1);
+    }
+    ptn_string_buffer_append_len(buffer, output, (size_t)(out_ptr - output));
+    free(output);
+    ptn_mb_iconv_finish_one(cd, cached);
+#endif
+}
+
+static char *ptn_mb_euctw_to_utf16be_bulk_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    PtnStringBuffer chunk;
+    ptn_string_buffer_init(&chunk);
+    size_t i = 0;
+    while (i < input_len) {
+        if (i + 3 < input_len &&
+            (unsigned char)input[i] == 0x8e &&
+            (unsigned char)input[i + 1] == 0xae) {
+            unsigned char lead = (unsigned char)input[i + 2];
+            unsigned char trail = (unsigned char)input[i + 3];
+            uint16_t tail = (uint16_t)(((uint16_t)lead << 8) | trail);
+            uint16_t unicode = 0;
+            if (ptn_mb_euctw_exception_by_tail(tail, &unicode)) {
+                ptn_mb_euctw_decode_chunk_append(&output, chunk.data, chunk.len, replacement, replacement_len, illegal_chars);
+                chunk.len = 0;
+                if (chunk.data != NULL) {
+                    chunk.data[0] = '\0';
+                }
+                ptn_mb_append_utf16be_code_unit(&output, unicode);
+            } else if (ptn_mb_euctw_plane_ae_cell_valid(lead, trail)) {
+                char translated[4] = { (char)0x8e, (char)0xa3, (char)lead, (char)trail };
+                ptn_string_buffer_append_len(&chunk, translated, sizeof(translated));
+            } else {
+                size_t skip = ptn_mb_euctw_invalid_input_skip(input + i, input_len - i);
+                if (skip == 0) {
+                    skip = 1;
+                }
+                ptn_string_buffer_append_len(&chunk, input + i, skip);
+                i += skip;
+                continue;
+            }
+            i += 4;
+            continue;
+        }
+        ptn_string_buffer_append_char(&chunk, input[i]);
+        i++;
+    }
+    ptn_mb_euctw_decode_chunk_append(&output, chunk.data, chunk.len, replacement, replacement_len, illegal_chars);
+    free(chunk.data);
+    *output_len = output.len;
+    return output.data;
+}
+
 static char *ptn_mb_table_decode_convert_alloc_options(
     const char *input,
     size_t input_len,
@@ -71858,7 +72058,7 @@ static char *ptn_mb_table_decode_convert_alloc_options(
     } else if (ptn_mb_encoding_is_windows1254_table(from_encoding)) {
         utf16 = ptn_mb_windows1254_to_utf16be_alloc_options(input, input_len, replacement_utf16, replacement_utf16_len, illegal_chars, &utf16_len);
     } else {
-        utf16 = ptn_mb_euctw_to_utf16be_alloc_options(input, input_len, replacement_utf16, replacement_utf16_len, illegal_chars, &utf16_len);
+        utf16 = ptn_mb_euctw_to_utf16be_bulk_alloc_options(input, input_len, replacement_utf16, replacement_utf16_len, illegal_chars, &utf16_len);
     }
     free(replacement_utf16);
     if (ptn_ascii_case_equal(to_encoding, "UTF-16BE")) {
@@ -71986,7 +72186,8 @@ static char *ptn_mb_iconv_convert_alloc_options(
     *output_len = input_len;
     return ptn_duplicate_string_len(input, input_len);
 #else
-    iconv_t cd = iconv_open(to_iconv, from_iconv);
+    int cached = 0;
+    iconv_t cd = ptn_mb_cached_iconv_open(to_iconv, from_iconv, &cached);
     if (cd == (iconv_t)-1) {
         *output_len = input_len;
         return ptn_duplicate_string_len(input, input_len);
@@ -71994,7 +72195,7 @@ static char *ptn_mb_iconv_convert_alloc_options(
     size_t out_cap = input_len < 32 ? 128 : input_len * 4 + 32;
     char *output = malloc(out_cap);
     if (output == NULL) {
-        iconv_close(cd);
+        ptn_mb_iconv_finish_one(cd, cached);
         ptn_abort_out_of_memory();
     }
     char *in_ptr = (char *)input;
@@ -72048,14 +72249,14 @@ static char *ptn_mb_iconv_convert_alloc_options(
         }
         size_t used = (size_t)(out_ptr - output);
         if (out_cap > SIZE_MAX / 2) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             free(output);
             ptn_abort_out_of_memory();
         }
         out_cap *= 2;
         char *grown = realloc(output, out_cap);
         if (grown == NULL) {
-            iconv_close(cd);
+            ptn_mb_iconv_finish_one(cd, cached);
             free(output);
             ptn_abort_out_of_memory();
         }
@@ -72065,7 +72266,7 @@ static char *ptn_mb_iconv_convert_alloc_options(
     }
     *out_ptr = '\0';
     *output_len = (size_t)(out_ptr - output);
-    iconv_close(cd);
+    ptn_mb_iconv_finish_one(cd, cached);
     return output;
 #endif
 }
@@ -72083,32 +72284,59 @@ static uint32_t ptn_mb_substitute_character_codepoint_current(void) {
 
 static char *ptn_mb_substitute_bytes_for_encoding_alloc(const char *to_encoding, size_t *replacement_len) {
     const char *mode = ptn_mb_current_substitute_character();
-    if (ptn_ascii_case_equal(mode, "none")) {
-        *replacement_len = 0;
-        return ptn_duplicate_string_len("", 0);
-    }
     uint32_t cp = ptn_mb_substitute_character_codepoint_current();
     if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) {
         cp = 0x3f;
     }
-    char utf8[4];
-    size_t utf8_len = ptn_mb_codepoint_to_utf8(cp, utf8);
-    int64_t illegal_delta = 0;
-    char *replacement = ptn_mb_iconv_convert_alloc_options(
-        utf8,
-        utf8_len,
-        "UTF-8",
-        to_encoding,
-        "?",
-        1,
-        &illegal_delta,
-        replacement_len
-    );
-    if (illegal_delta > 0) {
-        free(replacement);
-        *replacement_len = 1;
-        return ptn_duplicate_string_len("?", 1);
+
+    static char *cached_encoding = NULL;
+    static char *cached_mode = NULL;
+    static char *cached_bytes = NULL;
+    static size_t cached_len = 0;
+    static uint32_t cached_cp = 0;
+    if (cached_encoding != NULL &&
+        cached_mode != NULL &&
+        cached_bytes != NULL &&
+        cached_cp == cp &&
+        strcmp(cached_encoding, to_encoding) == 0 &&
+        strcmp(cached_mode, mode) == 0) {
+        *replacement_len = cached_len;
+        return ptn_duplicate_string_len(cached_bytes, cached_len);
     }
+
+    char *replacement = NULL;
+    if (ptn_ascii_case_equal(mode, "none")) {
+        *replacement_len = 0;
+        replacement = ptn_duplicate_string_len("", 0);
+    } else {
+        char utf8[4];
+        size_t utf8_len = ptn_mb_codepoint_to_utf8(cp, utf8);
+        int64_t illegal_delta = 0;
+        replacement = ptn_mb_iconv_convert_alloc_options(
+            utf8,
+            utf8_len,
+            "UTF-8",
+            to_encoding,
+            "?",
+            1,
+            &illegal_delta,
+            replacement_len
+        );
+        if (illegal_delta > 0) {
+            free(replacement);
+            *replacement_len = 1;
+            replacement = ptn_duplicate_string_len("?", 1);
+        }
+    }
+
+    free(cached_encoding);
+    free(cached_mode);
+    free(cached_bytes);
+    cached_encoding = ptn_duplicate_string(to_encoding);
+    cached_mode = ptn_duplicate_string(mode);
+    cached_bytes = ptn_duplicate_string_len(replacement, *replacement_len);
+    cached_len = *replacement_len;
+    cached_cp = cp;
     return replacement;
 }
 
@@ -75746,6 +75974,39 @@ static PtnValue ptn_internal_mb_regex_set_options(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
+    if (argc >= 1) {
+        PtnStringOperand key = ptn_value_to_string_operand(args[0]);
+        PtnValue value = ptn_bool(0);
+        if (ptn_string_operand_ascii_case_equal(key, "internal_encoding")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "http_output")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_http_output(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "http_input")) {
+            value = ptn_string("pass");
+        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload")) {
+            value = ptn_int(0);
+        } else if (ptn_string_operand_ascii_case_equal(key, "func_overload_list")) {
+            value = ptn_string("no overload");
+        } else if (ptn_string_operand_ascii_case_equal(key, "mail_charset")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
+        } else if (ptn_string_operand_ascii_case_equal(key, "mail_header_encoding") ||
+                   ptn_string_operand_ascii_case_equal(key, "mail_body_encoding")) {
+            value = ptn_string("BASE64");
+        } else if (ptn_string_operand_ascii_case_equal(key, "illegal_chars")) {
+            value = ptn_int(ptn_mb_illegal_chars);
+        } else if (ptn_string_operand_ascii_case_equal(key, "encoding_translation")) {
+            value = ptn_string("Off");
+        } else if (ptn_string_operand_ascii_case_equal(key, "language")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language()));
+        } else if (ptn_string_operand_ascii_case_equal(key, "detect_order")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order()));
+        } else if (ptn_string_operand_ascii_case_equal(key, "substitute_character")) {
+            value = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_substitute_character()));
+        }
+        ptn_string_operand_free(key);
+        return value;
+    }
+
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_string_key("internal_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime))));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("http_output"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_http_output(runtime))));
@@ -75760,16 +76021,6 @@ static PtnValue ptn_internal_mb_get_info(PtnRuntime *runtime, size_t argc, const
     ptn_array_set_entry(result.as.array, ptn_array_string_key("language"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_language())));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("detect_order"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_detect_order())));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("substitute_character"), ptn_owned_string(ptn_duplicate_string(ptn_mb_current_substitute_character())));
-    if (argc >= 1) {
-        PtnStringOperand key = ptn_value_to_string_operand(args[0]);
-        PtnArrayKey lookup_key = ptn_array_string_key_len(key.data, key.len);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(result.as.array, lookup_key);
-        ptn_array_key_free(lookup_key);
-        PtnValue value = entry == NULL ? ptn_bool(0) : ptn_value_clone(entry->value);
-        ptn_string_operand_free(key);
-        ptn_value_destroy(&result);
-        return value;
-    }
     return result;
 }
 
