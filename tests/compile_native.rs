@@ -11196,6 +11196,46 @@ echo \"OK\\n\";
 }
 
 #[test]
+fn compile_internal_class_covariant_return_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-class-covariant-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-class-covariant-return.php");
+    let output = root.join("internal-class-covariant-return-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public static function test(): Traversable {
+        return new ArrayIterator([1, 2]);
+    }
+}
+class Bar extends Foo {
+    public static function test(): ArrayObject {
+        return new ArrayObject([1, 2]);
+    }
+}
+echo get_class(Bar::test()), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ArrayObject\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_variadic_override_variance_to_native_binary() {
     let root = temp_dir("ptn-native-variadic-override-variance");
     fs::create_dir_all(&root).unwrap();

@@ -20254,6 +20254,9 @@ fn runtime_class_type_static_subtype(
     if candidate_name.eq_ignore_ascii_case(target_name) {
         return true;
     }
+    if modeled_internal_type_static_subtype(candidate_name, target_name) {
+        return true;
+    }
     let Some(candidate) = class_by_name(classes, candidate_name) else {
         return false;
     };
@@ -20283,6 +20286,164 @@ fn runtime_class_type_static_subtype(
         parent_name = parent.parent_name.as_deref();
     }
     false
+}
+
+fn modeled_internal_type_static_subtype(candidate_name: &str, target_name: &str) -> bool {
+    let Some(candidate_name) = modeled_internal_class_name(candidate_name) else {
+        return false;
+    };
+    if candidate_name.eq_ignore_ascii_case(target_name) {
+        return true;
+    }
+    let implemented = if candidate_name.eq_ignore_ascii_case("ArrayIterator") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "Iterator",
+            "SeekableIterator",
+            "Serializable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("EmptyIterator")
+        || candidate_name.eq_ignore_ascii_case("InternalIterator")
+    {
+        &["Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveArrayIterator") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "Iterator",
+            "RecursiveIterator",
+            "SeekableIterator",
+            "Serializable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("ArrayObject") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "IteratorAggregate",
+            "Serializable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplFixedArray") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "IteratorAggregate",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplObjectStorage") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "Iterator",
+            "Serializable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("WeakMap") {
+        &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("AppendIterator")
+        || candidate_name.eq_ignore_ascii_case("CachingIterator")
+        || candidate_name.eq_ignore_ascii_case("IteratorIterator")
+        || candidate_name.eq_ignore_ascii_case("FilterIterator")
+        || candidate_name.eq_ignore_ascii_case("CallbackFilterIterator")
+        || candidate_name.eq_ignore_ascii_case("RegexIterator")
+        || candidate_name.eq_ignore_ascii_case("InfiniteIterator")
+        || candidate_name.eq_ignore_ascii_case("LimitIterator")
+        || candidate_name.eq_ignore_ascii_case("NoRewindIterator")
+        || candidate_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
+    {
+        &["Iterator", "OuterIterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("MultipleIterator") {
+        &["Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator") {
+        &[
+            "Iterator",
+            "OuterIterator",
+            "RecursiveIterator",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplHeap")
+        || candidate_name.eq_ignore_ascii_case("SplMaxHeap")
+        || candidate_name.eq_ignore_ascii_case("SplMinHeap")
+        || candidate_name.eq_ignore_ascii_case("SplPriorityQueue")
+    {
+        &["Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplDoublyLinkedList")
+        || candidate_name.eq_ignore_ascii_case("SplQueue")
+        || candidate_name.eq_ignore_ascii_case("SplStack")
+    {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "Iterator",
+            "Serializable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplFileObject")
+        || candidate_name.eq_ignore_ascii_case("SplTempFileObject")
+    {
+        &[
+            "Iterator",
+            "RecursiveIterator",
+            "SeekableIterator",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("DirectoryIterator")
+        || candidate_name.eq_ignore_ascii_case("FilesystemIterator")
+        || candidate_name.eq_ignore_ascii_case("GlobIterator")
+        || candidate_name.eq_ignore_ascii_case("RecursiveDirectoryIterator")
+    {
+        &[
+            "Iterator",
+            "RecursiveIterator",
+            "SeekableIterator",
+            "Stringable",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("DatePeriod") {
+        &["IteratorAggregate", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("DateTime")
+        || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
+    {
+        &["DateTimeInterface"][..]
+    } else if candidate_name.eq_ignore_ascii_case("SessionHandler") {
+        &["SessionHandlerInterface"][..]
+    } else if candidate_name
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("BcMath\\Number")
+    {
+        &["Stringable"][..]
+    } else {
+        &[][..]
+    };
+    implemented
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case(target_name))
+        || modeled_internal_parent_type_static_subtype(candidate_name, target_name)
+}
+
+fn modeled_internal_parent_type_static_subtype(candidate_name: &str, target_name: &str) -> bool {
+    let parent_name = if candidate_name.eq_ignore_ascii_case("SplMaxHeap")
+        || candidate_name.eq_ignore_ascii_case("SplMinHeap")
+    {
+        Some("SplHeap")
+    } else if candidate_name.eq_ignore_ascii_case("SplQueue")
+        || candidate_name.eq_ignore_ascii_case("SplStack")
+    {
+        Some("SplDoublyLinkedList")
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveArrayIterator") {
+        Some("ArrayIterator")
+    } else if candidate_name.eq_ignore_ascii_case("SplTempFileObject") {
+        Some("SplFileObject")
+    } else {
+        None
+    };
+    parent_name.is_some_and(|parent_name| {
+        parent_name.eq_ignore_ascii_case(target_name)
+            || modeled_internal_type_static_subtype(parent_name, target_name)
+    })
 }
 
 fn class_has_stringable_method(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
