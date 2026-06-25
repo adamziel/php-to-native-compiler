@@ -43434,6 +43434,65 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_timezone_identity_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-timezone-identity-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-timezone-identity-offsets.php");
+    let output = root.join("intl-timezone-identity-offsets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+var_dump(IntlTimeZone::getEquivalentID('Europe/Lisbon', '1'));\n\
+var_dump(intltz_get_equivalent_id('Europe/Lisbon', 1));\n\
+$date = strtotime('1 July 2012 +0000') * 1000.0;\n\
+$ams = IntlTimeZone::createTimeZone('Europe/Amsterdam');\n\
+var_dump($ams->getOffset($date, true, $rawOffset, $dstOffset), $rawOffset, $dstOffset);\n\
+$lsb = IntlTimeZone::createTimeZone('Europe/Lisbon');\n\
+var_dump(intltz_get_offset($lsb, $date, true, $rawOffset, $dstOffset), $rawOffset, $dstOffset);\n\
+foreach ([IntlTimeZone::createTimeZone('CET'), IntlTimeZone::createTimeZone('Europe/Amsterdam')] as $tz) {\n\
+    var_dump($tz->getID(), $tz->getRawOffset());\n\
+    $dtz = $tz->toDateTimeZone();\n\
+    var_dump($dtz->getName(), $dtz->getOffset(new DateTime('2012-01-01 00:00:00')));\n\
+}\n\
+$gmt = IntlTimeZone::createTimeZone('GMT+0405');\n\
+var_dump($gmt->getID(), $gmt->getRawOffset());\n\
+$dtz = intltz_to_date_time_zone($gmt);\n\
+var_dump($dtz->getName(), $dtz->getOffset(new DateTime('2012-01-01 00:00:00')));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"Portugal\"\n\
+string(8) \"Portugal\"\n\
+bool(true)\n\
+int(3600000)\n\
+int(3600000)\n\
+bool(true)\n\
+int(0)\n\
+int(3600000)\n\
+string(3) \"CET\"\n\
+int(3600000)\n\
+string(3) \"CET\"\n\
+int(3600)\n\
+string(16) \"Europe/Amsterdam\"\n\
+int(3600000)\n\
+string(16) \"Europe/Amsterdam\"\n\
+int(3600)\n\
+string(8) \"GMT+0405\"\n\
+int(14700000)\n\
+string(6) \"+04:05\"\n\
+int(14700)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_dateformatter_time_none_and_grapheme_empty_to_native_binary() {
     let root = temp_dir("ptn-native-intl-dateformatter-time-none-grapheme-empty");
     fs::create_dir_all(&root).unwrap();

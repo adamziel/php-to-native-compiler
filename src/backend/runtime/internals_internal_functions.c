@@ -63817,8 +63817,10 @@ typedef struct {
 static const char *ptn_current_timezone_name(void);
 static int ptn_timezone_offset_for_name(const char *name, time_t timestamp);
 static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_timestamp);
+static char *ptn_timezone_canonical_offset_name(const char *name);
 static time_t ptn_datetime_utc_timestamp_for_parts(int year, int month, int day, int hour, int minute, int second);
 static PtnValue ptn_datetime_create_object(PtnRuntime *runtime, const char *class_name, time_t timestamp, int microsecond, const char *timezone, size_t line);
+static PtnValue ptn_datetime_zone_create_from_name(PtnRuntime *runtime, const char *class_name, const char *name, size_t line);
 
 static void ptn_intl_date_formatter_data_free(void *ptr) {
     PtnIntlDateFormatterData *data = (PtnIntlDateFormatterData *)ptr;
@@ -64242,6 +64244,17 @@ static int ptn_intl_timezone_raw_offset_ms(const char *timezone) {
     return ptn_intl_timezone_offset_seconds(timezone, 0) * 1000;
 }
 
+static void ptn_intl_timezone_offsets_ms(const char *timezone, time_t timestamp, int *raw_offset_out, int *dst_offset_out) {
+    int raw = ptn_intl_timezone_raw_offset_ms(timezone);
+    int total = ptn_intl_timezone_offset_seconds(timezone, timestamp) * 1000;
+    int dst = total - raw;
+    if (dst < 0) {
+        dst = 0;
+    }
+    *raw_offset_out = raw;
+    *dst_offset_out = dst;
+}
+
 static PtnValue ptn_intl_timezone_create(PtnRuntime *runtime, const char *timezone, size_t line) {
     (void)line;
     PtnIntlTimeZoneData *data = malloc(sizeof(PtnIntlTimeZoneData));
@@ -64425,6 +64438,18 @@ static int ptn_intl_timezone_is_lisbon_id(PtnStringOperand timezone_id) {
     return ptn_intl_ascii_case_equal_literal(timezone_id, "Europe/Lisbon");
 }
 
+static const char *ptn_intl_timezone_equivalent_id(PtnStringOperand timezone_id, int64_t index) {
+    if (ptn_intl_timezone_is_lisbon_id(timezone_id) || ptn_intl_timezone_is_portugal_alias(timezone_id)) {
+        if (index == 0) {
+            return "Europe/Lisbon";
+        }
+        if (index == 1) {
+            return "Portugal";
+        }
+    }
+    return "";
+}
+
 static PtnValue ptn_internal_intltz_get_canonical_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand timezone_id =
         ptn_internal_expect_string_arg(runtime, "IntlTimeZone::getCanonicalID", 1, "timezoneId", args[0], line);
@@ -64454,6 +64479,20 @@ static PtnValue ptn_internal_intltz_get_canonical_id(PtnRuntime *runtime, size_t
         "IntlTimeZone::getCanonicalID(): error obtaining canonical ID: U_ILLEGAL_ARGUMENT_ERROR"
     );
     return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_intltz_get_equivalent_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand timezone_id =
+        ptn_internal_expect_string_arg(runtime, "IntlTimeZone::getEquivalentID", 1, "timezoneId", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(timezone_id);
+        return ptn_null();
+    }
+    int64_t index = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    const char *equivalent_id = ptn_intl_timezone_equivalent_id(timezone_id, index);
+    ptn_string_operand_free(timezone_id);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_string(equivalent_id);
 }
 
 static int ptn_intl_weekday_gregorian(int year, int month, int day) {
@@ -65306,6 +65345,10 @@ static PTN_UNUSED PtnValue ptn_intl_timezone_call_method(PtnRuntime *runtime, Pt
         PtnIntlTimeZoneData *other = argc >= 1 ? ptn_intl_timezone_data(args[0]) : NULL;
         return ptn_bool(other != NULL && ptn_ascii_case_equal(data->id, other->id));
     }
+    if (ptn_ascii_case_equal(name, "getRawOffset")) {
+        ptn_intl_timezone_set_error(data, 0, "U_ZERO_ERROR");
+        return ptn_int(data->raw_offset);
+    }
     if (ptn_ascii_case_equal(name, "getOffset")) {
         double date = argc >= 1 ? ptn_value_to_double(args[0]) : 0.0;
         if (!isfinite(date)) {
@@ -65314,15 +65357,29 @@ static PTN_UNUSED PtnValue ptn_intl_timezone_call_method(PtnRuntime *runtime, Pt
             ptn_intl_set_error_message(runtime, message);
             return ptn_bool(0);
         }
-        int offset = ptn_intl_timezone_offset_seconds(data->id, (time_t)(date / 1000.0)) * 1000;
-        if (!ptn_intl_assign_reference_value(runtime, args, argc, 2, ptn_int(offset))) {
+        int raw_offset = 0;
+        int dst_offset = 0;
+        ptn_intl_timezone_offsets_ms(data->id, (time_t)(date / 1000.0), &raw_offset, &dst_offset);
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 2, ptn_int(raw_offset))) {
             return ptn_null();
         }
-        if (!ptn_intl_assign_reference_value(runtime, args, argc, 3, ptn_int(0))) {
+        if (!ptn_intl_assign_reference_value(runtime, args, argc, 3, ptn_int(dst_offset))) {
             return ptn_null();
         }
         ptn_intl_timezone_set_error(data, 0, "U_ZERO_ERROR");
         return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "toDateTimeZone")) {
+        const char *timezone = data->id;
+        char *owned_timezone = NULL;
+        if (strncmp(timezone, "GMT", 3) == 0 && (timezone[3] == '+' || timezone[3] == '-')) {
+            owned_timezone = ptn_timezone_canonical_offset_name(timezone + 3);
+            timezone = owned_timezone;
+        }
+        PtnValue result = ptn_datetime_zone_create_from_name(runtime, "DateTimeZone", timezone, line);
+        free(owned_timezone);
+        ptn_intl_timezone_set_error(data, 0, "U_ZERO_ERROR");
+        return result;
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -67507,14 +67564,26 @@ static PtnValue ptn_internal_intl_timezone_create_timezone(PtnRuntime *runtime, 
 static PtnValue ptn_internal_intltz_get_offset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnIntlTimeZoneData *data = ptn_intl_timezone_data(args[0]);
-    int offset = data == NULL ? 3600000 : data->raw_offset;
-    if (!ptn_intl_assign_reference_value(runtime, args, argc, 3, ptn_int(offset))) {
+    double date = argc >= 2 ? ptn_value_to_double(args[1]) : 0.0;
+    int raw_offset = 3600000;
+    int dst_offset = 0;
+    if (data != NULL && isfinite(date)) {
+        ptn_intl_timezone_offsets_ms(data->id, (time_t)(date / 1000.0), &raw_offset, &dst_offset);
+    }
+    if (!ptn_intl_assign_reference_value(runtime, args, argc, 3, ptn_int(raw_offset))) {
         return ptn_null();
     }
-    if (!ptn_intl_assign_reference_value(runtime, args, argc, 4, ptn_int(0))) {
+    if (!ptn_intl_assign_reference_value(runtime, args, argc, 4, ptn_int(dst_offset))) {
         return ptn_null();
     }
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_intltz_to_date_time_zone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        return ptn_null();
+    }
+    return ptn_intl_timezone_call_method(runtime, args[0], "toDateTimeZone", 0, NULL, line);
 }
 
 static PtnValue ptn_internal_intltz_create_enumeration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -96420,6 +96489,29 @@ static int ptn_datetime_parse_textual_date_string(
                 hour,
                 minute,
                 second,
+                0,
+                timezone_suffix,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    timezone_suffix[0] = '\0';
+    if (sscanf(input, " %d %31s %d %127s %n", &day, month_name, &year, timezone_suffix, &consumed) == 4 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        int month = ptn_date_month_number_from_name(month_name);
+        if (month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                0,
+                0,
+                0,
                 0,
                 timezone_suffix,
                 default_timezone,
@@ -128706,6 +128798,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_intltz_count_equivalent_ids(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
+        ptn_ascii_case_equal(name, "getEquivalentID")) {
+        return ptn_internal_intltz_get_equivalent_id(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "createTimeZoneIDEnumeration")) {
         return ptn_internal_intltz_create_timezone_id_enumeration(runtime, argc, args, line);
     }
@@ -138150,6 +138246,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlTimeZone::createTimeZone", 1, 1, ptn_internal_intl_timezone_create_timezone },
         { "IntlTimeZone::createTimeZoneIDEnumeration", 1, 3, ptn_internal_intltz_create_timezone_id_enumeration },
         { "IntlTimeZone::getCanonicalID", 1, 2, ptn_internal_intltz_get_canonical_id },
+        { "IntlTimeZone::getEquivalentID", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "IntlTimeZone::getGMT", 0, 0, ptn_internal_intltz_get_gmt },
         { "IntlTimeZone::getWindowsID", 1, 1, ptn_internal_intltz_get_windows_id },
         { "datefmt_format_object", 1, 3, ptn_internal_datefmt_format_object },
@@ -138182,8 +138279,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_create_time_zone", 1, 1, ptn_internal_intl_timezone_create_timezone },
         { "intltz_create_time_zone_id_enumeration", 1, 3, ptn_internal_intltz_create_timezone_id_enumeration },
         { "intltz_get_canonical_id", 1, 2, ptn_internal_intltz_get_canonical_id },
+        { "intltz_get_equivalent_id", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "intltz_get_gmt", 0, 0, ptn_internal_intltz_get_gmt },
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
+        { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
         { "intltz_get_windows_id", 1, 1, ptn_internal_intltz_get_windows_id },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
@@ -142815,6 +142914,7 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "createTimeZone")
             || ptn_ascii_case_equal(method_name, "createTimeZoneIDEnumeration")
             || ptn_ascii_case_equal(method_name, "getCanonicalID")
+            || ptn_ascii_case_equal(method_name, "getEquivalentID")
             || ptn_ascii_case_equal(method_name, "getGMT")
             || ptn_ascii_case_equal(method_name, "getWindowsID");
     }
@@ -143531,11 +143631,14 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getCanonicalID",
             "getErrorCode",
             "getErrorMessage",
+            "getEquivalentID",
             "getGMT",
             "getID",
             "getId",
             "getOffset",
+            "getRawOffset",
             "getWindowsID",
+            "toDateTimeZone",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
