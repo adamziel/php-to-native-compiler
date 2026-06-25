@@ -11870,15 +11870,6 @@ static PtnReference *ptn_unserialize_reference_new_owned(PtnValue value) {
     return ptn_reference_new_owned(value);
 }
 
-static int ptn_unserialize_reference_assign_publish_first(
-    PtnRuntime *runtime,
-    PtnReference *reference,
-    PtnValue value
-) {
-    ptn_value_debug_note_reference_wrapped(value);
-    return ptn_reference_assign_publish_first(runtime, reference, value);
-}
-
 static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, size_t id) {
     if (id == 0 || id > state->id_len) {
         ptn_unserialize_fail(state);
@@ -14168,22 +14159,6 @@ static int ptn_unserialize_store_entry(
 ) {
     size_t existing_index = ptn_array_find_key(array, key);
     if (existing_index < array->len) {
-        if (array->entries[existing_index].value.type == PTN_REFERENCE) {
-            ptn_array_update_next_auto_key(array, key);
-            if (!ptn_unserialize_reference_assign_publish_first(
-                    runtime,
-                    array->entries[existing_index].value.as.reference,
-                    parsed.value
-                )) {
-                ptn_array_key_free(key);
-                ptn_value_destroy(&parsed.value);
-                return 0;
-            }
-            ptn_value_destroy(&parsed.value);
-            ptn_array_key_free(key);
-            ptn_unserialize_update_entry_slot(state, parsed.id, &array->entries[existing_index].value);
-            return 1;
-        }
         ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
         ptn_array_set_entry(array, key, parsed.value);
         ptn_unserialize_invalidate_id(state, parsed.id);
@@ -14373,29 +14348,6 @@ static int ptn_unserialize_store_object_property_entry(
 
     PtnArray *properties = object->properties;
     size_t existing_index = ptn_array_find_key(properties, property_key);
-    if (existing_index < properties->len &&
-        properties->entries[existing_index].value.type == PTN_REFERENCE) {
-        ptn_array_update_next_auto_key(properties, property_key);
-        if (!ptn_unserialize_reference_assign_publish_first(
-                runtime,
-                properties->entries[existing_index].value.as.reference,
-                parsed.value
-            )) {
-            ptn_array_key_free(property_key);
-            ptn_value_destroy(&parsed.value);
-            return 0;
-        }
-        ptn_value_destroy(&parsed.value);
-        ptn_array_key_free(property_key);
-        ptn_unserialize_update_property_entry_slot(
-            state,
-            parsed.id,
-            &properties->entries[existing_index].value,
-            metadata
-        );
-        return 1;
-    }
-
     PtnArrayKey lookup = ptn_array_key_clone(property_key);
     if (existing_index < properties->len) {
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
@@ -68851,6 +68803,56 @@ static PtnValue ptn_internal_intltz_get_windows_id(PtnRuntime *runtime, size_t a
     return ptn_string(result);
 }
 
+static PtnValue ptn_internal_intltz_get_id_for_windows_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand id = ptn_internal_expect_string_arg(runtime, "IntlTimeZone::getIDForWindowsID", 1, "timezoneId", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand region = { NULL, 0, 0 };
+    int has_region = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        region = ptn_internal_expect_string_arg(runtime, "IntlTimeZone::getIDForWindowsID", 2, "region", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(id);
+            return ptn_null();
+        }
+        has_region = 1;
+    }
+
+    const char *result = NULL;
+    if (ptn_string_operand_ascii_case_equal(id, "India Standard Time")) {
+        result = "Asia/Calcutta";
+    } else if (ptn_string_operand_ascii_case_equal(id, "Pacific Standard Time")) {
+        if (has_region && ptn_string_operand_ascii_case_equal(region, "CA")) {
+            result = "America/Vancouver";
+        } else if (has_region && ptn_string_operand_ascii_case_equal(region, "ZZ")) {
+            result = "PST8PDT";
+        } else {
+            result = "America/Los_Angeles";
+        }
+    } else if (ptn_string_operand_ascii_case_equal(id, "Romance Standard Time")) {
+        if (has_region && ptn_string_operand_ascii_case_equal(region, "BE")) {
+            result = "Europe/Brussels";
+        } else if (has_region && ptn_string_operand_ascii_case_equal(region, "DK")) {
+            result = "Europe/Copenhagen";
+        } else if (has_region && ptn_string_operand_ascii_case_equal(region, "ES")) {
+            result = "Europe/Madrid";
+        } else {
+            result = "Europe/Paris";
+        }
+    }
+    ptn_string_operand_free(id);
+    if (has_region) {
+        ptn_string_operand_free(region);
+    }
+    if (result == NULL) {
+        ptn_intl_set_error_message(runtime, "IntlTimeZone::getIDForWindowsID(): unknown windows timezone: U_ILLEGAL_ARGUMENT_ERROR");
+        return ptn_bool(0);
+    }
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_string(result);
+}
+
 static PtnValue ptn_internal_intltz_create_timezone_id_enumeration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     if (argc >= 3) {
@@ -96573,6 +96575,7 @@ static int ptn_timezone_is_europe_dst_zone(const char *name) {
         ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
+        ptn_ascii_case_equal(name, "Europe/Brussels") ||
         ptn_ascii_case_equal(name, "Europe/Oslo") ||
         ptn_ascii_case_equal(name, "Europe/Kyiv") ||
         ptn_ascii_case_equal(name, "Europe/Rome");
@@ -96795,6 +96798,7 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
+        ptn_ascii_case_equal(name, "Europe/Brussels") ||
         ptn_ascii_case_equal(name, "Europe/Oslo") ||
         ptn_ascii_case_equal(name, "Europe/Rome")) {
         return europe_dst ? 7200 : 3600;
@@ -131878,6 +131882,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         return ptn_internal_intltz_get_windows_id(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
+        ptn_ascii_case_equal(name, "getIDForWindowsID")) {
+        return ptn_internal_intltz_get_id_for_windows_id(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlTimeZone") &&
         ptn_ascii_case_equal(name, "getGMT")) {
         return ptn_internal_intltz_get_gmt(runtime, argc, args, line);
     }
@@ -141636,6 +141644,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlTimeZone::getCanonicalID", 1, 2, ptn_internal_intltz_get_canonical_id },
         { "IntlTimeZone::getEquivalentID", 2, 2, ptn_internal_intltz_get_equivalent_id },
         { "IntlTimeZone::getGMT", 0, 0, ptn_internal_intltz_get_gmt },
+        { "IntlTimeZone::getIDForWindowsID", 1, 2, ptn_internal_intltz_get_id_for_windows_id },
         { "IntlTimeZone::getWindowsID", 1, 1, ptn_internal_intltz_get_windows_id },
         { "datefmt_format_object", 1, 3, ptn_internal_datefmt_format_object },
         { "intl_get_error_code", 0, 0, ptn_internal_intl_get_error_code },
@@ -146416,6 +146425,7 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getCanonicalID")
             || ptn_ascii_case_equal(method_name, "getEquivalentID")
             || ptn_ascii_case_equal(method_name, "getGMT")
+            || ptn_ascii_case_equal(method_name, "getIDForWindowsID")
             || ptn_ascii_case_equal(method_name, "getWindowsID");
     }
     if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {
@@ -147151,6 +147161,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getEquivalentID",
             "getGMT",
             "getID",
+            "getIDForWindowsID",
             "getId",
             "getOffset",
             "getRawOffset",

@@ -17344,9 +17344,14 @@ class A { public int $a; public $b; }
 class B { public $a; public int $b; }
 class C { public int $a; public string $b; }
 class D { public int $a; public float $b; }
+class OverwriteUntyped { public $prop; }
+class OverwriteTyped { public ?object $prop; }
 
 var_dump(unserialize('O:1:"A":2:{s:1:"a";i:1;s:1:"b";R:2;}'));
 var_dump(unserialize('O:1:"B":2:{s:1:"a";i:1;s:1:"b";R:2;}'));
+var_dump(unserialize('O:16:"OverwriteUntyped":2:{s:4:"prop";R:1;s:4:"prop";i:0;}'));
+var_dump(unserialize('O:14:"OverwriteTyped":2:{s:4:"prop";R:1;s:4:"prop";N;}'));
+var_dump(unserialize('a:3:{i:0;i:1;i:1;R:2;i:1;i:2;}'));
 
 foreach ([
     'O:1:"A":2:{s:1:"a";N;s:1:"b";R:2;}',
@@ -17378,6 +17383,12 @@ foreach ([
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("object(A)#"), "{stdout}");
     assert!(stdout.contains("object(B)#"), "{stdout}");
+    assert!(stdout.contains("object(OverwriteUntyped)#"), "{stdout}");
+    assert!(stdout.contains("object(OverwriteTyped)#"), "{stdout}");
+    assert!(
+        stdout.contains("array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}"),
+        "{stdout}"
+    );
     assert!(stdout.contains("&int(1)"), "{stdout}");
     assert!(
         stdout.contains("Cannot assign null to property A::$a of type int"),
@@ -44304,7 +44315,18 @@ foreach ([IntlTimeZone::createTimeZone('CET'), IntlTimeZone::createTimeZone('Eur
 $gmt = IntlTimeZone::createTimeZone('GMT+0405');\n\
 var_dump($gmt->getID(), $gmt->getRawOffset());\n\
 $dtz = intltz_to_date_time_zone($gmt);\n\
-var_dump($dtz->getName(), $dtz->getOffset(new DateTime('2012-01-01 00:00:00')));\n",
+var_dump($dtz->getName(), $dtz->getOffset(new DateTime('2012-01-01 00:00:00')));\n\
+class IntlOffsetRef { public string $a, $b; }\n\
+$brussels = IntlTimeZone::createTimeZone('Europe/Brussels');\n\
+$test = new IntlOffsetRef;\n\
+$test->a = $test->b = 'hello';\n\
+$rawOffset =& $test->a;\n\
+$dstOffset =& $test->b;\n\
+var_dump(intltz_get_offset($brussels, 0.0, true, $rawOffset, $dstOffset));\n\
+var_dump($test);\n\
+var_dump(IntlTimeZone::getIDForWindowsID('India Standard Time', null));\n\
+var_dump(IntlTimeZone::getIDForWindowsID('Pacific Standard Time', 'CA'));\n\
+var_dump(IntlTimeZone::getIDForWindowsID('Romance Standard Time', 'BE'));\n",
     )
     .unwrap();
 
@@ -44312,9 +44334,10 @@ var_dump($dtz->getName(), $dtz->getOffset(new DateTime('2012-01-01 00:00:00')));
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "string(8) \"Portugal\"\n\
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with(
+            "string(8) \"Portugal\"\n\
 string(8) \"Portugal\"\n\
 bool(true)\n\
 int(3600000)\n\
@@ -44334,6 +44357,32 @@ string(8) \"GMT+0405\"\n\
 int(14700000)\n\
 string(6) \"+04:05\"\n\
 int(14700)\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\nobject(IntlOffsetRef)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("  [\"a\"]=>\n  &string(7) \"3600000\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("  [\"b\"]=>\n  &string(1) \"0\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(13) \"Asia/Calcutta\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(17) \"America/Vancouver\"\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(15) \"Europe/Brussels\"\n"),
+        "{stdout}"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
