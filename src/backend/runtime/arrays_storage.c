@@ -3838,6 +3838,14 @@ static PTN_UNUSED PtnValue ptn_value_snapshot_for_array_path_write(PtnValue valu
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_value_snapshot_for_self_array_path_write(PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY) {
+        return ptn_value_clone(resolved);
+    }
+    return ptn_value_snapshot_for_array_path_write(value);
+}
+
 static PTN_UNUSED void ptn_value_separate_temporary_array_root_for_write(PtnValue *value) {
     if (value == NULL || value->type == PTN_REFERENCE) {
         return;

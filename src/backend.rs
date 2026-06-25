@@ -26097,9 +26097,17 @@ fn emit_instruction(
                 };
                 let value_temp = values.emit_array_path_write_value(out, value);
                 let snapshot_temp = values.next_temp();
+                let snapshot_function = if matches!(value, ValueExpr::Load { name, .. } if name == array)
+                {
+                    "ptn_value_snapshot_for_self_array_path_write"
+                } else {
+                    "ptn_value_snapshot_for_array_path_write"
+                };
                 out.push_str("    PtnValue ");
                 out.push_str(&snapshot_temp);
-                out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+                out.push_str(" = ");
+                out.push_str(snapshot_function);
+                out.push('(');
                 out.push_str(&value_temp);
                 out.push_str(");\n");
                 let post_value_root = if pre_value_root.is_none()
@@ -38348,9 +38356,17 @@ impl ValueEmitter {
             };
             let value_temp = self.emit_array_path_write_value(out, value);
             let snapshot_temp = self.next_temp();
+            let snapshot_function = if matches!(value, ValueExpr::Load { name, .. } if name == array)
+            {
+                "ptn_value_snapshot_for_self_array_path_write"
+            } else {
+                "ptn_value_snapshot_for_array_path_write"
+            };
             out.push_str("    PtnValue ");
             out.push_str(&snapshot_temp);
-            out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+            out.push_str(" = ");
+            out.push_str(snapshot_function);
+            out.push('(');
             out.push_str(&value_temp);
             out.push_str(");\n");
             let post_value_root = if pre_value_root.is_none()

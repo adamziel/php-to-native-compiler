@@ -164,6 +164,51 @@ fn recursive_reference_diagnostic_reducers_fail_before_codegen() {
 }
 
 #[test]
+fn self_array_path_write_snapshots_referenced_root_to_native_binary() {
+    let root = temp_dir("ptn-native-self-array-path-write-snapshot");
+    fs::create_dir_all(&root).unwrap();
+
+    let input = root.join("self-array-path-write-snapshot.php");
+    let output = root.join("self-array-path-write-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$b =& $a;\n\
+$a[0] = $a;\n\
+var_dump($a);\n\
+$a = [[]];\n\
+$b =& $a;\n\
+$a[0][0] = $a;\n\
+var_dump($a);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false })
+        .unwrap_or_else(|error| panic!("compile failed: {error}"));
+    let execution = Command::new(&output)
+        .output()
+        .unwrap_or_else(|error| panic!("run failed: {error}"));
+    assert!(
+        execution.status.success(),
+        "exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert!(
+        execution.stderr.is_empty(),
+        "unexpected stderr:\n{}",
+        String::from_utf8_lossy(&execution.stderr)
+    );
+
+    assert_eq!(
+        String::from_utf8_lossy(&execution.stdout),
+        "array(1) {\n  [0]=>\n  array(0) {\n  }\n}\narray(1) {\n  [0]=>\n  array(1) {\n    [0]=>\n    array(1) {\n      [0]=>\n      array(0) {\n      }\n    }\n  }\n}\n",
+        "stdout mismatch"
+    );
+}
+
+#[test]
 fn arrayaccess_nested_compound_scalar_offset_suppresses_inner_key_warnings() {
     let root = temp_dir("ptn-native-arrayaccess-nested-compound-offset");
     fs::create_dir_all(&root).unwrap();
