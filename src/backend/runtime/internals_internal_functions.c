@@ -163215,6 +163215,56 @@ static int ptn_simplexml_namespace_view_matches(const PtnSimpleXmlData *data, Pt
     return strcmp(node_uri, view_uri) == 0;
 }
 
+static int ptn_simplexml_iterator_uses_child_nodes(const PtnSimpleXmlData *data) {
+    return data != NULL &&
+        !data->attributes &&
+        !data->property_view &&
+        !data->collection_view &&
+        data->item_count == 1;
+}
+
+static PtnXmlNode *ptn_simplexml_iterator_node_at(PtnSimpleXmlData *data, size_t position) {
+    if (data == NULL) {
+        return NULL;
+    }
+    if (!ptn_simplexml_iterator_uses_child_nodes(data)) {
+        return position < data->item_count ? data->items[position] : NULL;
+    }
+    PtnXmlNode *parent = data->items[0];
+    size_t visible_index = 0;
+    for (size_t i = 0; parent != NULL && i < parent->child_count; i++) {
+        PtnXmlNode *child = parent->children[i];
+        if (ptn_simplexml_debug_child_name(child) == NULL ||
+            !ptn_simplexml_namespace_view_matches(data, child)) {
+            continue;
+        }
+        if (visible_index == position) {
+            return child;
+        }
+        visible_index++;
+    }
+    return NULL;
+}
+
+static size_t ptn_simplexml_iterator_count(PtnSimpleXmlData *data) {
+    if (data == NULL) {
+        return 0;
+    }
+    if (!ptn_simplexml_iterator_uses_child_nodes(data)) {
+        return data->item_count;
+    }
+    size_t count = 0;
+    PtnXmlNode *parent = data->items[0];
+    for (size_t i = 0; parent != NULL && i < parent->child_count; i++) {
+        PtnXmlNode *child = parent->children[i];
+        if (ptn_simplexml_debug_child_name(child) != NULL &&
+            ptn_simplexml_namespace_view_matches(data, child)) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static size_t ptn_simplexml_visible_child_count(PtnXmlNode *node) {
     size_t count = 0;
     for (size_t i = 0; node != NULL && i < node->child_count; i++) {
@@ -164478,6 +164528,7 @@ static int ptn_simplexml_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "offsetExists")
         || ptn_ascii_case_equal(method_name, "offsetGet")
         || ptn_ascii_case_equal(method_name, "offsetSet")
+        || ptn_ascii_case_equal(method_name, "offsetUnset")
         || ptn_ascii_case_equal(method_name, "registerXPathNamespace")
         || ptn_ascii_case_equal(method_name, "rewind")
         || ptn_ascii_case_equal(method_name, "valid")
@@ -165190,6 +165241,51 @@ static PtnValue ptn_simplexml_offset_set_method(
     return ptn_null();
 }
 
+static PtnValue ptn_simplexml_offset_unset_method(
+    PtnRuntime *runtime,
+    PtnSimpleXmlData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "SimpleXMLElement::offsetUnset() expects exactly 1 argument");
+        return ptn_null();
+    }
+    if (data == NULL || data->item_count == 0) {
+        return ptn_null();
+    }
+    PtnValue key = ptn_value_deref(args[0]);
+    if (key.type == PTN_STRING) {
+        char *name = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+        for (size_t i = 0; i < data->item_count; i++) {
+            PtnXmlNode *node = data->items[i];
+            if (node != NULL && node->type == PTN_XML_NODE_ELEMENT) {
+                ptn_xml_element_remove_attribute(node, name);
+                ptn_xml_resolve_namespace_recursive(node);
+            }
+        }
+        free(name);
+        return ptn_null();
+    }
+    int64_t index = 0;
+    if (!ptn_simplexml_offset_index(key, &index) || (size_t)index >= data->item_count) {
+        return ptn_null();
+    }
+    PtnXmlNode *node = data->items[(size_t)index];
+    ptn_xml_detach_node(node);
+    for (size_t i = (size_t)index + 1; i < data->item_count; i++) {
+        data->items[i - 1] = data->items[i];
+    }
+    data->item_count--;
+    if (data->position > data->item_count) {
+        data->position = data->item_count;
+    }
+    (void)runtime;
+    (void)line;
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -165342,30 +165438,39 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     if (ptn_ascii_case_equal(name, "offsetSet")) {
         return ptn_simplexml_offset_set_method(runtime, data, argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "offsetUnset")) {
+        return ptn_simplexml_offset_unset_method(runtime, data, argc, args, line);
+    }
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->position = 0;
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
-        return ptn_bool(data->position < data->item_count);
+        return ptn_bool(data->position < ptn_simplexml_iterator_count(data));
     }
     if (ptn_ascii_case_equal(name, "current")) {
-        if (data->position >= data->item_count) {
+        PtnXmlNode *node = ptn_simplexml_iterator_node_at(data, data->position);
+        if (node == NULL) {
             return ptn_null();
         }
-        PtnValue current = ptn_simplexml_object_from_node(runtime, data->items[data->position], data->attributes, data->property_view);
+        PtnValue current = ptn_simplexml_object_from_node(runtime, node, data->attributes, data->property_view);
         ptn_simplexml_value_set_namespace_view(current, data->property_namespace_active, data->property_namespace_uri);
         return current;
     }
     if (ptn_ascii_case_equal(name, "key")) {
-        if (data->attributes && data->position < data->item_count) {
-            PtnXmlNode *attr = data->items[data->position];
-            return ptn_owned_string(ptn_duplicate_string(attr == NULL || attr->name == NULL ? "" : attr->name));
+        PtnXmlNode *node = ptn_simplexml_iterator_node_at(data, data->position);
+        if (node != NULL) {
+            const char *name = data->attributes
+                ? (node->name == NULL ? "" : node->name)
+                : ptn_simplexml_debug_child_name(node);
+            if (name != NULL) {
+                return ptn_owned_string(ptn_duplicate_string(name));
+            }
         }
         return ptn_int((int64_t)data->position);
     }
     if (ptn_ascii_case_equal(name, "next")) {
-        if (data->position < data->item_count) {
+        if (data->position < ptn_simplexml_iterator_count(data)) {
             data->position++;
         }
         return ptn_null();

@@ -44353,6 +44353,90 @@ echo $xml->asXML();
 }
 
 #[test]
+fn compile_simplexml_iterator_keys_and_attribute_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-iterator-keys-attribute-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-iterator-keys-attribute-unset.php");
+    let output = root.join("simplexml-iterator-keys-attribute-unset-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$sxe = simplexml_load_string(<<<'XML'
+<?xml version='1.0'?>
+<sxe id="elem1">
+ Plain text.
+ <elem1 attr1='first'>
+  Bla bla 1.
+  <!-- comment -->
+  <elem2>Nested</elem2>
+ </elem1>
+ <elem11 attr2='second'>
+  Bla bla 2.
+ </elem11>
+</sxe>
+XML);
+
+function dump_names($label, $xml) {
+    echo $label, "\n";
+    foreach ($xml as $name => $data) {
+        var_dump($name);
+        var_dump(trim((string) $data));
+    }
+}
+
+dump_names('root', $sxe);
+dump_names('clone', clone $sxe);
+dump_names('property', $sxe->elem11);
+dump_names('children', $sxe->children());
+
+var_dump((string) $sxe['id']);
+unset($sxe['id']);
+var_dump($sxe['id']);
+var_dump((string) $sxe->elem1['attr1']);
+unset($sxe->elem1['attr1']);
+var_dump($sxe->elem1['attr1']);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "root\n",
+            "string(5) \"elem1\"\n",
+            "string(10) \"Bla bla 1.\"\n",
+            "string(6) \"elem11\"\n",
+            "string(10) \"Bla bla 2.\"\n",
+            "clone\n",
+            "string(5) \"elem1\"\n",
+            "string(10) \"Bla bla 1.\"\n",
+            "string(6) \"elem11\"\n",
+            "string(10) \"Bla bla 2.\"\n",
+            "property\n",
+            "string(6) \"elem11\"\n",
+            "string(10) \"Bla bla 2.\"\n",
+            "children\n",
+            "string(5) \"elem1\"\n",
+            "string(10) \"Bla bla 1.\"\n",
+            "string(6) \"elem11\"\n",
+            "string(10) \"Bla bla 2.\"\n",
+            "string(5) \"elem1\"\n",
+            "NULL\n",
+            "string(5) \"first\"\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_simplexml_offset_unset_method"));
+}
+
+#[test]
 fn compile_modern_dom_selector_methods_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-selector-methods");
     fs::create_dir_all(&root).unwrap();
