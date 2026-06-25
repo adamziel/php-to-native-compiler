@@ -47686,6 +47686,116 @@ $server->handle($client->__getLastRequest());
 }
 
 #[test]
+fn compile_soap_classmap_derived_magic_response_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-classmap-derived-magic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-classmap-derived-magic.php");
+    let output = root.join("soap-classmap-derived-magic-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/classmap-derived.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="ab" targetNamespace="urn:ab"
+  xmlns:typens="urn:ab"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <xsd:schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:ab">
+      <xsd:complexType name="A">
+        <xsd:sequence>
+          <xsd:element name="x" type="xsd:anyType"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="B">
+        <xsd:complexContent>
+          <xsd:extension base="typens:A">
+            <xsd:sequence>
+              <xsd:element name="y" type="xsd:anyType"/>
+            </xsd:sequence>
+          </xsd:extension>
+        </xsd:complexContent>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+  <message name="f"/>
+  <message name="fResponse"><part name="fReturn" type="typens:A"/></message>
+  <portType name="abServerPortType">
+    <operation name="f"><input message="typens:f"/><output message="typens:fResponse"/></operation>
+  </portType>
+  <binding name="abServerBinding" type="typens:abServerPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="f">
+      <soap:operation soapAction="urn:abServerAction"/>
+      <input><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body namespace="urn:ab" use="encoded" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="abService">
+    <port name="abServerPort" binding="typens:abServerBinding"><soap:address location="http://localhost/abServer.php"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class A {
+    public $a;
+    function __construct($a) { $this->x = $a; }
+    function __get($name) { return @$this->a[$name]; }
+    function __set($name, $value) { $this->a[$name] = $value; }
+}
+
+class B extends A {
+    function __construct($a) {
+        parent::__construct($a);
+        $this->y = $a + 1;
+    }
+}
+
+function f() { return new B(5); }
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('f');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        return ob_get_clean();
+    }
+}
+
+$client = new LocalSoapClient($wsdl, ['classmap' => ['A' => 'A', 'B' => 'B']]);
+$result = $client->f();
+echo get_class($result), "\n";
+echo $result->a['x'], '/', $result->a['y'], "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "B\n5/6\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_type_is_or_extends"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();

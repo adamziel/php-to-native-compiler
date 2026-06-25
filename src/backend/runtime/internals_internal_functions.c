@@ -132444,6 +132444,7 @@ static void ptn_soap_parse_complex_type_in_range(
     char *extension_base = ptn_soap_first_attr_in_range(start, end, "extension", "base");
     if (extension_base != NULL) {
         type->is_extension = 1;
+        ptn_soap_type_set_base_type(type, extension_base);
         PtnSoapType *base_type = ptn_soap_type_list_find(types, type_count, extension_base);
         ptn_soap_type_copy_fields(type, base_type);
         free(extension_base);
@@ -135712,6 +135713,31 @@ static const PtnSoapType *ptn_soap_response_schema_type_for_object(
     return ptn_soap_type_list_find(types, type_count, value.as.object->class_name);
 }
 
+static int ptn_soap_type_is_or_extends(
+    PtnSoapType *types,
+    size_t type_count,
+    const PtnSoapType *type,
+    const char *base_name
+) {
+    if (type == NULL || base_name == NULL) {
+        return 0;
+    }
+    char *base_local = ptn_soap_local_name_dup(base_name);
+    const PtnSoapType *cursor = type;
+    for (size_t i = 0; cursor != NULL && i <= type_count; i++) {
+        if (ptn_ascii_case_equal(cursor->name, base_local)) {
+            free(base_local);
+            return 1;
+        }
+        if (cursor->base_type == NULL) {
+            break;
+        }
+        cursor = ptn_soap_type_list_find(types, type_count, cursor->base_type);
+    }
+    free(base_local);
+    return 0;
+}
+
 static int ptn_soap_type_has_array_element_field(
     PtnSoapType *types,
     size_t type_count,
@@ -136262,9 +136288,20 @@ static void ptn_soap_emit_response(
             );
         }
         char *response_type_name = ptn_soap_wsdl_response_part_type(data, method_name);
-        const PtnSoapType *schema_type = response_type_name == NULL
-            ? ptn_soap_response_schema_type_for_object(types, type_count, result)
+        const PtnSoapType *declared_schema_type = response_type_name == NULL
+            ? NULL
             : ptn_soap_type_list_find(types, type_count, response_type_name);
+        const PtnSoapType *actual_schema_type = ptn_soap_response_schema_type_for_object(
+            types,
+            type_count,
+            result
+        );
+        const PtnSoapType *schema_type =
+            actual_schema_type != NULL &&
+                (declared_schema_type == NULL ||
+                 ptn_soap_type_is_or_extends(types, type_count, actual_schema_type, declared_schema_type->name))
+            ? actual_schema_type
+            : (declared_schema_type == NULL ? actual_schema_type : declared_schema_type);
         PtnStringBuffer buffer;
         ptn_string_buffer_init(&buffer);
         if (!ptn_soap_append_options_xml_declaration(runtime, &buffer, data == NULL ? ptn_null() : data->options, line)) {
