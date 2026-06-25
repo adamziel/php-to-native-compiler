@@ -20763,6 +20763,112 @@ try {
 }
 
 #[test]
+fn compile_spl_heap_subclass_iteration_and_layout_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-heap-subclass-layout");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-heap-subclass-layout.php");
+    let output = root.join("spl-heap-subclass-layout-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class OrderedHeap extends SplHeap {
+    public function compare($a, $b): int {
+        return $a <=> $b;
+    }
+}
+
+$ordered = new OrderedHeap();
+foreach ([1, 2, 3] as $value) {
+    $ordered->insert($value);
+}
+foreach ($ordered as $value) {
+    echo "ordered=", $value, "\n";
+}
+
+$layout = new SplMaxHeap();
+foreach ([1, 5, 0, 4] as $value) {
+    $layout->insert($value);
+}
+foreach ($layout->__debugInfo() as $debugValue) {
+    if (is_array($debugValue)) {
+        foreach ($debugValue as $value) {
+            echo "layout=", $value, "\n";
+        }
+    }
+}
+
+class ThrowingHeap extends SplHeap {
+    public function compare($a, $b): int {
+        throw new Exception("foo");
+    }
+}
+
+$throwing = new ThrowingHeap();
+try {
+    $throwing->insert(1);
+    echo "inserted 1\n";
+    $throwing->insert(2);
+} catch (Exception $e) {
+    echo "Exception: ", $e->getMessage(), "\n";
+}
+try {
+    $throwing->insert(4);
+} catch (Exception $e) {
+    echo "Exception: ", $e->getMessage(), "\n";
+}
+try {
+    var_dump($throwing->extract());
+} catch (Exception $e) {
+    echo "Exception: ", $e->getMessage(), "\n";
+}
+echo "Recovering..\n";
+$throwing->recoverFromCorruption();
+try {
+    var_dump($throwing->extract());
+} catch (Exception $e) {
+    echo "Exception: ", $e->getMessage(), "\n";
+}
+try {
+    var_dump($throwing->extract());
+} catch (Exception $e) {
+    echo "Exception: ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ordered=3\n",
+            "ordered=2\n",
+            "ordered=1\n",
+            "layout=5\n",
+            "layout=4\n",
+            "layout=0\n",
+            "layout=1\n",
+            "inserted 1\n",
+            "Exception: foo\n",
+            "Exception: Heap is corrupted, heap properties are no longer ensured.\n",
+            "Exception: Heap is corrupted, heap properties are no longer ensured.\n",
+            "Recovering..\n",
+            "int(1)\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_append_iterator_preserves_inner_cursor_to_native_binary() {
     let root = temp_dir("ptn-native-append-iterator-inner-cursor");
     fs::create_dir_all(&root).unwrap();
