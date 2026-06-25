@@ -103633,7 +103633,7 @@ static int64_t ptn_xml_child_element_count(PtnXmlNode *node) {
 }
 
 static PtnXmlNode *ptn_xml_sibling_element(PtnXmlNode *node, int previous) {
-    if (node == NULL || node->parent == NULL) {
+    if (node == NULL || node->detached_parent_hidden || node->parent == NULL) {
         return NULL;
     }
     int found = 0;
@@ -103658,7 +103658,7 @@ static PtnXmlNode *ptn_xml_sibling_element(PtnXmlNode *node, int previous) {
 }
 
 static PtnXmlNode *ptn_xml_sibling_node(PtnXmlNode *node, int previous) {
-    if (node == NULL || node->parent == NULL) {
+    if (node == NULL || node->detached_parent_hidden || node->parent == NULL) {
         return NULL;
     }
     int found = 0;

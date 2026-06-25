@@ -45738,6 +45738,62 @@ var_dump($entity2->nodeName, $entity2->parentNode);
 }
 
 #[test]
+fn compile_dom_text_nodes_clear_siblings_after_delayed_parent_free_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-text-delayed-freeing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-text-delayed-freeing.php");
+    let output = root.join("dom-text-delayed-freeing-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument;
+$text1 = $doc->appendChild($doc->createElement('container'))
+    ->appendChild($doc->createTextNode('my text 1'));
+$text2 = $doc->documentElement->appendChild($doc->createTextNode('my text 2'));
+echo $doc->saveXML(), "\n";
+$text1->parentNode->remove();
+echo $doc->saveXML(), "\n";
+echo $doc->saveXML($text1), "\n";
+echo $doc->saveXML($text2), "\n";
+var_dump($text1->parentNode, $text2->parentNode);
+var_dump($text1->nextSibling, $text2->previousSibling);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<container>my text 1my text 2</container>\n",
+            "\n",
+            "<?xml version=\"1.0\"?>\n",
+            "\n",
+            "my text 1\n",
+            "my text 2\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_sibling_node"));
+    assert!(c_source.contains("detached_parent_hidden"));
+}
+
+#[test]
 fn compile_dom_current_red_node_metadata_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-current-red-node-metadata-pack");
     fs::create_dir_all(&root).unwrap();
