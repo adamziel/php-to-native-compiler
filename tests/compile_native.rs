@@ -10225,6 +10225,42 @@ try {
 }
 
 #[test]
+fn compile_anonymous_datetime_tentative_return_deprecation_uses_error_handler() {
+    let root = temp_dir("ptn-native-anonymous-datetime-tentative-return-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-datetime-tentative-return-handler.php");
+    let output = root.join("anonymous-datetime-tentative-return-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function($code, $message) {
+    throw new Exception($message);
+});
+
+$class = new class extends DateTime {
+    public function getTimezone() {}
+};
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught Exception: Return type of DateTime@anonymous::getTimezone() should either be compatible with DateTime::getTimezone(): DateTimeZone|false"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("Stack trace:"), "{stderr}");
+    assert!(stderr.contains("(8192, 'Return type of ...'"), "{stderr}");
+}
+
+#[test]
 fn compile_error_handler_stack_and_trigger_error_to_native_binary() {
     let root = temp_dir("ptn-native-error-handler-stack-trigger");
     fs::create_dir_all(&root).unwrap();

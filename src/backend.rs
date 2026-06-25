@@ -18689,6 +18689,140 @@ fn emit_class_method_signature_compatibility_validation(
             has_static_incompatibility,
         );
     }
+    emit_tentative_internal_return_signature_deprecations(
+        out,
+        class,
+        classes,
+        functions,
+        source_path,
+    );
+}
+
+struct TentativeInternalReturnMethod {
+    class_name: &'static str,
+    method_name: &'static str,
+    signature: &'static str,
+    is_static: bool,
+    return_type: TypeHint,
+}
+
+fn tentative_internal_return_method(
+    normalized_class_name: &str,
+    method_name: &str,
+) -> Option<TentativeInternalReturnMethod> {
+    match (
+        normalized_class_name,
+        method_name.to_ascii_lowercase().as_str(),
+    ) {
+        ("datetime", "gettimezone")
+        | ("datetimeimmutable", "gettimezone")
+        | ("datetimeinterface", "gettimezone") => Some(TentativeInternalReturnMethod {
+            class_name: if normalized_class_name == "datetimeimmutable" {
+                "DateTimeImmutable"
+            } else if normalized_class_name == "datetimeinterface" {
+                "DateTimeInterface"
+            } else {
+                "DateTime"
+            },
+            method_name: "getTimezone",
+            signature: "getTimezone(): DateTimeZone|false",
+            is_static: false,
+            return_type: TypeHint::Union(vec![
+                TypeHint::Class("DateTimeZone".to_string()),
+                TypeHint::False,
+            ]),
+        }),
+        _ => None,
+    }
+}
+
+fn find_tentative_internal_parent_return_method(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> Option<TentativeInternalReturnMethod> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        let normalized = name.trim_start_matches('\\').to_ascii_lowercase();
+        if !seen.insert(normalized.clone()) {
+            break;
+        }
+        if let Some(method) = tentative_internal_return_method(&normalized, method_name) {
+            return Some(method);
+        }
+        parent_name = class_by_name(classes, name).and_then(|parent| parent.parent_name.as_deref());
+    }
+    None
+}
+
+fn emit_tentative_internal_return_signature_deprecations(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    source_path: &str,
+) {
+    for method in &class.methods {
+        if method.visibility == PropertyVisibility::Private {
+            continue;
+        }
+        let Some(tentative_method) =
+            find_tentative_internal_parent_return_method(class, &method.name, classes)
+        else {
+            continue;
+        };
+        if method.is_static != tentative_method.is_static
+            || !method
+                .name
+                .eq_ignore_ascii_case(tentative_method.method_name)
+            || method.attributes.return_type_will_change_count > 0
+        {
+            continue;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            continue;
+        };
+        if function
+            .parameters
+            .iter()
+            .any(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+        {
+            let message = format!(
+                "Declaration of {}::{} must be compatible with {}::{}",
+                class.name,
+                runtime_method_signature_display(method, function),
+                tentative_method.class_name,
+                tentative_method.signature
+            );
+            emit_runtime_signature_fatal(out, &message, source_path, method.line, "        ");
+            continue;
+        }
+        if function.return_type.as_ref().is_some_and(|return_type| {
+            runtime_type_hint_static_subtype(
+                return_type,
+                &tentative_method.return_type,
+                class,
+                classes,
+            )
+        }) {
+            continue;
+        }
+        let message = format!(
+            "Return type of {}::{} should either be compatible with {}::{}, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice",
+            class.name,
+            runtime_method_signature_display(method, function),
+            tentative_method.class_name,
+            tentative_method.signature
+        );
+        out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&method.line.to_string());
+        out.push_str(");\n");
+    }
 }
 
 fn class_has_runtime_method_signature_static_incompatibility(
