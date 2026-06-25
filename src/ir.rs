@@ -374,6 +374,13 @@ pub enum Instruction {
         op: IncDecOp,
         line: usize,
     },
+    Tick {
+        line: usize,
+    },
+    TickScope {
+        enabled: bool,
+        body: Vec<Instruction>,
+    },
     UnsetVariable {
         name: String,
     },
@@ -1144,6 +1151,7 @@ struct LoweringContext<'a> {
     source_file: String,
     source_dir: String,
     strict_types: bool,
+    ticks_enabled: bool,
     include_resolutions: &'a IncludeResolutionMap,
     class_names: Vec<ClassNameEntry>,
     trait_names: Vec<ClassNameEntry>,
@@ -1266,6 +1274,7 @@ impl<'a> LoweringContext<'a> {
             source_file,
             source_dir,
             strict_types: program.strict_types,
+            ticks_enabled: program.ticks,
             include_resolutions,
             class_names,
             trait_names,
@@ -1347,6 +1356,8 @@ impl<'a> LoweringContext<'a> {
                 std::mem::replace(&mut self.source_dir, include.source_dir.clone());
             let previous_strict_types =
                 std::mem::replace(&mut self.strict_types, include.program.strict_types);
+            let previous_ticks_enabled =
+                std::mem::replace(&mut self.ticks_enabled, include.program.ticks);
             starts.push(self.functions.len());
             for function in &include.program.functions {
                 let function_index = self.functions.len();
@@ -1356,6 +1367,7 @@ impl<'a> LoweringContext<'a> {
             self.source_file = previous_source_file;
             self.source_dir = previous_source_dir;
             self.strict_types = previous_strict_types;
+            self.ticks_enabled = previous_ticks_enabled;
         }
         starts
     }
@@ -1367,6 +1379,8 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
+        let previous_ticks_enabled =
+            std::mem::replace(&mut self.ticks_enabled, include.program.ticks);
         for (offset, function) in include.program.functions.iter().enumerate() {
             let previous_function_display_name = std::mem::replace(
                 &mut self.current_function_display_name,
@@ -1379,6 +1393,7 @@ impl<'a> LoweringContext<'a> {
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
+        self.ticks_enabled = previous_ticks_enabled;
     }
 
     fn lower_include_classes(&mut self, include: &IncludeSource) -> Vec<ClassDecl> {
@@ -1388,6 +1403,8 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
+        let previous_ticks_enabled =
+            std::mem::replace(&mut self.ticks_enabled, include.program.ticks);
         let mut classes: Vec<_> = include
             .program
             .classes
@@ -1400,6 +1417,7 @@ impl<'a> LoweringContext<'a> {
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
+        self.ticks_enabled = previous_ticks_enabled;
         classes
     }
 
@@ -1537,6 +1555,8 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
+        let previous_ticks_enabled =
+            std::mem::replace(&mut self.ticks_enabled, include.program.ticks);
         let include_constant_values = collect_constant_values(&include.program);
         let include_constant_deprecations =
             collect_constant_deprecations(&include.program, &include_constant_values);
@@ -1584,6 +1604,7 @@ impl<'a> LoweringContext<'a> {
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
+        self.ticks_enabled = previous_ticks_enabled;
         IncludeFile {
             source_file: include.source_file.clone(),
             source_dir: include.source_dir.clone(),
@@ -2403,6 +2424,11 @@ impl<'a> LoweringContext<'a> {
                 }
                 Statement::Expression { expression, .. } => {
                     if expression_statement_is_noop(expression) {
+                        if self.ticks_enabled {
+                            instructions.push(Instruction::Tick {
+                                line: expression.span().line,
+                            });
+                        }
                         continue;
                     }
                     instructions.push(Instruction::Expression(self.lower_expr(expression)));
@@ -2436,8 +2462,21 @@ impl<'a> LoweringContext<'a> {
                         else_body: self.lower_statements(else_body),
                     });
                 }
-                Statement::Block { statements, .. } => {
-                    instructions.extend(self.lower_statements(statements));
+                Statement::Block {
+                    statements, ticks, ..
+                } => {
+                    if let Some(enabled) = ticks {
+                        let previous_ticks_enabled =
+                            std::mem::replace(&mut self.ticks_enabled, *enabled);
+                        let body = self.lower_statements(statements);
+                        self.ticks_enabled = previous_ticks_enabled;
+                        instructions.push(Instruction::TickScope {
+                            enabled: *enabled,
+                            body,
+                        });
+                    } else {
+                        instructions.extend(self.lower_statements(statements));
+                    }
                 }
                 Statement::While {
                     condition, body, ..

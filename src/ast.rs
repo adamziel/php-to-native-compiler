@@ -554,6 +554,7 @@ pub enum Statement {
     },
     Block {
         statements: Vec<Statement>,
+        ticks: Option<bool>,
         span: SourceSpan,
     },
     If {

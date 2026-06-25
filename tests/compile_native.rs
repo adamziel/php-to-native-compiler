@@ -14116,6 +14116,36 @@ var_dump($i === $before);\n",
 }
 
 #[test]
+fn compile_declare_ticks_block_dispatches_noop_statement_and_callback_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-declare-ticks-block");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declare-ticks-block.php");
+    let output = root.join("declare-ticks-block-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+register_tick_function(function ($label) { echo \"tick:$label\\n\"; }, \"block\");\n\
+function foo() { }\n\
+declare(ticks=1) {\n\
+    $statement;\n\
+    foo();\n\
+}\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "tick:block\ntick:block\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_output_buffer_captures_echo_printf_and_flushes_callback_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-callback");
     fs::create_dir_all(&root).unwrap();

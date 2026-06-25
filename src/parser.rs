@@ -5643,7 +5643,12 @@ impl Parser<'_> {
             }
             let previous_strict_types_declare_allowed =
                 std::mem::replace(&mut self.strict_types_declare_allowed, false);
-            let statement = self.parse_compound_block();
+            let span = self.peek().span;
+            let statement = self.parse_block().map(|statements| Statement::Block {
+                statements,
+                ticks: declared_ticks,
+                span,
+            });
             if declared_ticks.is_some() {
                 self.ticks = ticks_before_declare;
             }
@@ -6854,7 +6859,11 @@ impl Parser<'_> {
     fn parse_compound_block(&mut self) -> Result<Statement> {
         let span = self.peek().span;
         let statements = self.parse_block()?;
-        Ok(Statement::Block { statements, span })
+        Ok(Statement::Block {
+            statements,
+            ticks: None,
+            span,
+        })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>> {

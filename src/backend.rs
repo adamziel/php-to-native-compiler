@@ -14438,6 +14438,8 @@ fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool 
                 || value_mentions_variable(source, name)
         }
         Instruction::Increment { target, .. } => inc_dec_target_mentions_variable(target, name),
+        Instruction::Tick { .. } => false,
+        Instruction::TickScope { body, .. } => instructions_mention_variable(body, name),
         Instruction::UnsetVariable { name: target } => target == name,
         Instruction::UnsetDynamicVariable { name: target, .. }
         | Instruction::BindDynamicGlobal { name: target, .. } => {
@@ -26091,6 +26093,79 @@ fn emit_instruction(
         Instruction::Increment { target, op, line } => {
             emit_increment_statement(out, values, target, *op, *line, source_path);
         }
+        Instruction::Tick { .. } => {}
+        Instruction::TickScope { enabled, body } => {
+            let previous_tick_temp = values.next_temp();
+            let target_temp = values.next_temp();
+            let cleanup_label = values.next_label("ptn_tick_scope_cleanup");
+            let end_label = values.next_label("ptn_tick_scope_end");
+            out.push_str("    {\n");
+            out.push_str("        int ");
+            out.push_str(&previous_tick_temp);
+            out.push_str(" = runtime.tick_enabled;\n");
+            out.push_str("        int ");
+            out.push_str(&target_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("        (void)");
+            out.push_str(&target_temp);
+            out.push_str(";\n");
+            out.push_str("        runtime.tick_enabled = ");
+            out.push_str(if *enabled { "1" } else { "0" });
+            out.push_str(";\n");
+            finally_stack.push(FinallyContext::new_cleanup(
+                control_targets.len(),
+                cleanup_label.clone(),
+                target_temp.clone(),
+                None,
+                instruction_labels(body),
+            ));
+            for body_instruction in body {
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    control_targets,
+                    finally_stack,
+                    source_path,
+                    return_target,
+                    label_scope,
+                );
+            }
+            let cleanup_context = finally_stack
+                .pop()
+                .expect("tick-scope cleanup context is active");
+            out.push_str("        runtime.tick_enabled = ");
+            out.push_str(&previous_tick_temp);
+            out.push_str(";\n");
+            if !cleanup_context.targets.is_empty() {
+                out.push_str("        goto ");
+                out.push_str(&end_label);
+                out.push_str(";\n");
+                out.push_str("        ");
+                out.push_str(&cleanup_context.dispatch_label);
+                out.push_str(":\n");
+                out.push_str("        ;\n");
+                out.push_str("        runtime.tick_enabled = ");
+                out.push_str(&previous_tick_temp);
+                out.push_str(";\n");
+                out.push_str("        switch (");
+                out.push_str(&cleanup_context.target_temp);
+                out.push_str(") {\n");
+                for (index, target) in cleanup_context.targets.iter().enumerate() {
+                    out.push_str("            case ");
+                    out.push_str(&(index + 1).to_string());
+                    out.push_str(": goto ");
+                    out.push_str(target);
+                    out.push_str(";\n");
+                }
+                out.push_str("        }\n");
+                out.push_str("        ");
+                out.push_str(&end_label);
+                out.push_str(":\n");
+                out.push_str("        ;\n");
+            }
+            out.push_str("    }\n");
+        }
         Instruction::UnsetVariable { name } => {
             if name == "GLOBALS" {
                 values.emit_globals_reference_fatal(
@@ -30192,6 +30267,10 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_legacy_dollar_brace_deprecations(target, deprecations);
         }
+        Instruction::Tick { .. } => {}
+        Instruction::TickScope { body, .. } => {
+            collect_instructions_legacy_dollar_brace_deprecations(body, deprecations);
+        }
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
@@ -30858,6 +30937,10 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
+        }
+        Instruction::Tick { .. } => {}
+        Instruction::TickScope { body, .. } => {
+            collect_instructions_runtime_requirements(body, functions, requirements);
         }
         Instruction::UnsetVariable { name } | Instruction::BindGlobal { name } => {
             if variable_needs_request_context(name) {
@@ -35488,6 +35571,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         Instruction::StoreRef { line, .. }
         | Instruction::StoreArrayDim { line, .. }
         | Instruction::Increment { line, .. }
+        | Instruction::Tick { line }
         | Instruction::UnsetDynamicVariable { line, .. }
         | Instruction::BindDynamicGlobal { line, .. }
         | Instruction::BindStatic { line, .. }
@@ -35530,6 +35614,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
             .or_else(|| conditions.iter().find_map(value_expr_runtime_line)),
         Instruction::Switch { expression, .. } => value_expr_runtime_line(expression),
         Instruction::Try { body, .. } => body.iter().find_map(instruction_runtime_line),
+        Instruction::TickScope { .. } => None,
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
@@ -36151,6 +36236,8 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
             value_expr_uses_this(receiver) || value_expr_uses_this(name)
         }
         Instruction::UnsetDynamicStaticPropertyName { name, .. } => value_expr_uses_this(name),
+        Instruction::Tick { .. } => false,
+        Instruction::TickScope { body, .. } => instructions_use_this(body),
         Instruction::DefineConstant {
             value: receiver, ..
         }
