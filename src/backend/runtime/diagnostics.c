@@ -2231,6 +2231,16 @@ static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char 
     )) {
         return;
     }
+    if (diagnostics->html_errors) {
+        ptn_diagnostic_emit_html_message(
+            diagnostics,
+            "Warning",
+            message,
+            ptn_diagnostic_html_path(diagnostics, runtime->source_path, line),
+            line
+        );
+        return;
+    }
     ptn_diagnostic_printf(
         diagnostics,
         "\nWarning: %s in %s on line %zu\n",

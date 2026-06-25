@@ -84717,7 +84717,7 @@ static PtnValue ptn_ini_int_string(int value) {
 }
 
 static PtnValue ptn_ini_bool_string(int value) {
-    return value ? ptn_string("1") : ptn_string("");
+    return value ? ptn_string("1") : ptn_string("0");
 }
 
 static PtnValue ptn_ini_size_string(size_t value) {

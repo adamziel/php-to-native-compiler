@@ -69187,6 +69187,33 @@ var_dump(ini_set('html_errors', '0'), ini_get('html_errors'));\n",
 }
 
 #[test]
+fn phpc_ini_set_html_errors_formats_runtime_warnings_as_html() {
+    let root = temp_dir("ptn-phpc-html-errors-runtime-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html-errors-runtime-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('html_errors'));\n\
+var_dump(ini_set('html_errors', true), ini_get('html_errors'));\n\
+file_get_contents(__DIR__ . '/missing.txt');\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("string(1) \"0\"\nstring(1) \"0\"\nstring(1) \"1\"\n<br />\n<b>Warning</b>:  file_get_contents("));
+    assert!(stdout.contains("): Failed to open stream: No such file or directory in <b>"));
+    assert!(stdout.ends_with("</b> on line <b>4</b><br />\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_residual_extension_ini_values_are_runtime_visible() {
     let root = temp_dir("ptn-phpc-residual-extension-ini");
     fs::create_dir_all(&root).unwrap();
