@@ -159589,7 +159589,17 @@ static char *ptn_spl_array_object_iterator_class_arg(
     PtnValue value,
     size_t line
 ) {
-    char *class_name = ptn_value_to_string(value);
+    PtnStringOperand class_name_operand =
+        ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(class_name_operand);
+        return NULL;
+    }
+    char *class_name = ptn_duplicate_string_len(
+        class_name_operand.data,
+        class_name_operand.len
+    );
+    ptn_string_operand_free(class_name_operand);
     if (ptn_spl_iterator_class_is_array_iterator_descendant(runtime, class_name)) {
         return class_name;
     }

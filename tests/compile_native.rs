@@ -19039,6 +19039,97 @@ var_dump(count($decoded));
 }
 
 #[test]
+fn compile_array_object_iterator_class_argument_uses_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-iterator-class-string-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-iterator-class-string-conversion.php");
+    let output = root.join("array-object-iterator-class-string-conversion-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyArrayIterator extends ArrayIterator {}
+class GoodIteratorName {
+    public function __toString() {
+        return "MyArrayIterator";
+    }
+}
+class BadIteratorName {
+    public function __toString() {
+        return "stdClass";
+    }
+}
+class ThrowsOnString {
+    public function __toString() {
+        throw new Exception("boom");
+    }
+}
+class PlainObject {}
+
+$constructed = new ArrayObject([], 0, new GoodIteratorName);
+echo $constructed->getIteratorClass(), "\n";
+
+$configured = new ArrayObject();
+$configured->setIteratorClass(new GoodIteratorName);
+echo $configured->getIteratorClass(), "\n";
+
+try {
+    new ArrayObject([], 0, new ThrowsOnString);
+} catch (Exception $e) {
+    echo "constructor:", $e->getMessage(), "\n";
+}
+
+try {
+    (new ArrayObject())->setIteratorClass(new ThrowsOnString);
+} catch (Exception $e) {
+    echo "setter:", $e->getMessage(), "\n";
+}
+
+try {
+    new ArrayObject([], 0, new PlainObject);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    (new ArrayObject())->setIteratorClass(new PlainObject);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    new ArrayObject([], 0, new BadIteratorName);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "MyArrayIterator\n",
+            "MyArrayIterator\n",
+            "constructor:boom\n",
+            "setter:boom\n",
+            "Object of class PlainObject could not be converted to string\n",
+            "Object of class PlainObject could not be converted to string\n",
+            "ArrayObject::__construct(): Argument #3 ($iteratorClass) must be a class name derived from ArrayIterator, stdClass given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_object_storage_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-storage-metadata");
     fs::create_dir_all(&root).unwrap();
