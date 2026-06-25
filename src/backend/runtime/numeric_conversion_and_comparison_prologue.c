@@ -452,6 +452,25 @@ static PTN_UNUSED void ptn_runtime_push_trace_frame(
     runtime->trace_frame = frame;
 }
 
+static PTN_UNUSED int ptn_runtime_shutdown_line_without_active_file(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return line == 0 && root != NULL && root->shutdown_functions_running;
+}
+
+static PTN_UNUSED const char *ptn_runtime_internal_call_path(PtnRuntime *runtime, size_t line) {
+    if (ptn_runtime_shutdown_line_without_active_file(runtime, line)) {
+        return "[no active file]";
+    }
+    return runtime == NULL ? NULL : runtime->source_path;
+}
+
+static PTN_UNUSED const char *ptn_runtime_internal_trace_file(PtnRuntime *runtime, size_t line) {
+    if (ptn_runtime_shutdown_line_without_active_file(runtime, line)) {
+        return NULL;
+    }
+    return runtime == NULL ? NULL : runtime->source_path;
+}
+
 static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTraceFrame *frame) {
     if (runtime->trace_frame == frame) {
         runtime->trace_frame = frame->previous;

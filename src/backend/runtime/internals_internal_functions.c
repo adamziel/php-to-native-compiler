@@ -93354,19 +93354,27 @@ static PtnValue ptn_internal_ob_get_flush(PtnRuntime *runtime, size_t argc, cons
     return contents;
 }
 
-static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {
+static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name, size_t line) {
     if (runtime->call_frame != NULL) {
         return runtime->call_frame;
     }
     char message[128];
-    const char *format = strcmp(function_name, "func_num_args") == 0
+    const char *format = ptn_runtime_shutdown_line_without_active_file(runtime, line)
+        ? "Cannot call %s() dynamically"
+        : strcmp(function_name, "func_num_args") == 0
         ? "%s() must be called from a function context"
         : "%s() cannot be called from the global scope";
     int written = snprintf(message, sizeof(message), format, function_name);
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        message,
+        ptn_runtime_internal_call_path(runtime, line),
+        line
+    );
     return NULL;
 }
 
@@ -93417,8 +93425,7 @@ static int ptn_call_frame_func_arg_position(PtnCallFrame *frame, size_t visible_
 static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    (void)line;
-    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_num_args");
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_num_args", line);
     size_t visible_arg_count = ptn_call_frame_func_arg_count(frame);
     if (visible_arg_count > (size_t)INT64_MAX) {
         ptn_abort_out_of_memory();
@@ -93428,8 +93435,7 @@ static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, con
 
 static PtnValue ptn_internal_func_get_arg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_arg");
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_arg", line);
     int64_t position = ptn_value_to_integer(args[0]);
     if (position < 0) {
         ptn_throw_exception(
@@ -93452,8 +93458,7 @@ static PtnValue ptn_internal_func_get_arg(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
-    (void)line;
-    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_args");
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_args", line);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t visible = 0;
     for (size_t i = 0; i < frame->argc; i++) {
@@ -181762,7 +181767,7 @@ static void ptn_throw_internal_argument_count_error_with_actual(
         runtime,
         &trace_frame,
         name,
-        runtime->source_path,
+        ptn_runtime_internal_trace_file(runtime, line),
         line,
         trace_argc,
         args
@@ -181777,7 +181782,7 @@ static void ptn_throw_internal_argument_count_error_with_actual(
         0,
         previous,
         PTN_E_ERROR,
-        runtime->source_path,
+        ptn_runtime_internal_call_path(runtime, line),
         line
     );
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
@@ -181832,7 +181837,7 @@ static void ptn_throw_internal_argument_not_passed_error(
         runtime,
         &trace_frame,
         name,
-        runtime->source_path,
+        ptn_runtime_internal_trace_file(runtime, line),
         line,
         trace_argc,
         args
@@ -181847,7 +181852,7 @@ static void ptn_throw_internal_argument_not_passed_error(
         0,
         previous,
         PTN_E_ERROR,
-        runtime->source_path,
+        ptn_runtime_internal_call_path(runtime, line),
         line
     );
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
@@ -181926,7 +181931,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             runtime,
             &trace_frame,
             function->name,
-            runtime->source_path,
+            ptn_runtime_internal_trace_file(runtime, line),
             line,
             argc,
             args

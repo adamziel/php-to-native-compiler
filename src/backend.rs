@@ -23889,12 +23889,19 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str("    if (!ptn_dynamic_call_forbidden_name(name)) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
+    out.push_str("    PtnRuntime *root = ptn_runtime_root(runtime);\n");
+    out.push_str("    if (line == 0 && root != NULL && root->shutdown_functions_running &&\n");
+    out.push_str("        (ptn_ascii_case_equal(name, \"func_get_arg\") ||\n");
+    out.push_str("         ptn_ascii_case_equal(name, \"func_get_args\") ||\n");
+    out.push_str("         ptn_ascii_case_equal(name, \"func_num_args\"))) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
     out.push_str("    char message[160];\n");
     out.push_str(
         "    snprintf(message, sizeof(message), \"Cannot call %s() dynamically\", name);\n",
     );
     out.push_str(
-        "    ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n",
+        "    ptn_throw_exception_at(runtime, \"Error\", message, ptn_runtime_internal_call_path(runtime, line), line);\n",
     );
     out.push_str("    return 1;\n");
     out.push_str("}\n");
