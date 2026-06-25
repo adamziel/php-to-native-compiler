@@ -1326,10 +1326,13 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         saved_active_exception != NULL &&
         root->defer_uncaught_exception_emit &&
         !catch_gc_exception;
+    int catch_destructor_exception =
+        catch_gc_exception ||
+        (saved_active_exception != NULL && !preserve_active_exception);
     if (saved_active_exception != NULL && !preserve_active_exception) {
         root->exceptions->active_exception = NULL;
     }
-    if (catch_gc_exception) {
+    if (catch_destructor_exception) {
         ptn_try_frame_push(root, &destructor_frame);
         if (setjmp(destructor_frame.jump) != 0) {
             ptn_try_frame_pop(root, &destructor_frame);
@@ -1353,7 +1356,7 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
         }
     }
     result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
-    if (catch_gc_exception) {
+    if (catch_destructor_exception) {
         ptn_try_frame_pop(root, &destructor_frame);
     }
     root->suppress_user_call_frame_location =

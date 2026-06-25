@@ -14890,6 +14890,44 @@ $map[$obj] = new class {
 }
 
 #[test]
+fn compile_destructor_object_echo_chains_conversion_error_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-object-echo-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-object-echo-chain.php");
+    let output = root.join("destructor-object-echo-chain-bin");
+    fs::write(
+        &input,
+        "<?php
+class a {
+    public static $i = 0;
+    function __destruct() {
+        if (self::$i++ != 0) throw new Exception;
+        $b = new a;
+        echo $b;
+    }
+}
+new a;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let original_error = stderr
+        .find("Fatal error: Uncaught Error: Object of class a could not be converted to string")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    let chained_exception = stderr
+        .find("\nNext Exception in ")
+        .unwrap_or_else(|| panic!("{stderr}"));
+    assert!(original_error < chained_exception, "{stderr}");
+    assert!(stderr.contains("a->__destruct()"), "{stderr}");
+}
+
+#[test]
 fn compile_weak_reference_guards_to_native_binary() {
     let root = temp_dir("ptn-native-weak-reference-guards");
     fs::create_dir_all(&root).unwrap();

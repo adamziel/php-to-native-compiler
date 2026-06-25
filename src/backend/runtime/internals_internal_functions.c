@@ -188,7 +188,17 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
                 ptn_string_operand_free(object_string);
                 break;
             }
-            ptn_output_write_cstr(runtime, "Object");
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Object of class %s could not be converted to string",
+                value.as.object->class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
             break;
         }
         case PTN_CLOSURE: {
