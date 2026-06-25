@@ -45599,6 +45599,96 @@ var_dump($copy->item[2]);
 }
 
 #[test]
+fn compile_simplexml_namespace_collection_and_dom_import_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-namespace-collection-dom-import");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-namespace-collection-dom-import.php");
+    let output = root.join("simplexml-namespace-collection-dom-import-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function dump_map($map) {
+    foreach ($map as $prefix => $uri) {
+        echo $prefix, '=', $uri, "\n";
+    }
+    echo "--\n";
+}
+
+$xml = <<<'XML'
+<xhtml:html xmlns:html="http://www.w3.org/1999/xhtml" xmlns:xhtml="http://www.w3.org/TR/REC-html40">
+  <xhtml:body html:title="b"><html:h1>bla</html:h1><foo:bar xmlns:foo="foobar" xmlns:baz="foobarbaz"/></xhtml:body>
+</xhtml:html>
+XML;
+
+$sxe = simplexml_load_string($xml);
+dump_map($sxe->getNamespaces());
+dump_map($sxe->getNamespaces(true));
+dump_map($sxe->getDocNamespaces());
+dump_map($sxe->getDocNamespaces(true));
+
+$docXml = <<<'XML'
+<root>
+  <child xmlns="urn:a"><a/><b xmlns=""/><c xmlns:a="urn:a" xmlns="urn:c"/></child>
+  <child2 xmlns:d="urn:d"/>
+</root>
+XML;
+
+$dom = new DOMDocument();
+$dom->loadXML($docXml);
+$modern = Dom\XMLDocument::createFromString($docXml);
+var_dump(function_exists('simplexml_import_dom'));
+dump_map(simplexml_load_string($docXml)->getDocNamespaces(true));
+dump_map(simplexml_import_dom($dom)->getDocNamespaces(true));
+dump_map(simplexml_import_dom($modern)->getDocNamespaces(true));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "xhtml=http://www.w3.org/TR/REC-html40\n",
+            "--\n",
+            "xhtml=http://www.w3.org/TR/REC-html40\n",
+            "html=http://www.w3.org/1999/xhtml\n",
+            "foo=foobar\n",
+            "--\n",
+            "html=http://www.w3.org/1999/xhtml\n",
+            "xhtml=http://www.w3.org/TR/REC-html40\n",
+            "--\n",
+            "html=http://www.w3.org/1999/xhtml\n",
+            "xhtml=http://www.w3.org/TR/REC-html40\n",
+            "foo=foobar\n",
+            "baz=foobarbaz\n",
+            "--\n",
+            "bool(true)\n",
+            "=urn:a\n",
+            "a=urn:a\n",
+            "d=urn:d\n",
+            "--\n",
+            "=urn:a\n",
+            "a=urn:a\n",
+            "d=urn:d\n",
+            "--\n",
+            "=urn:a\n",
+            "a=urn:a\n",
+            "d=urn:d\n",
+            "--\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_simplexml_import_dom"));
+    assert!(c_source.contains("ptn_simplexml_collect_used_namespaces"));
+    assert!(c_source.contains("ptn_simplexml_collect_declared_namespaces"));
+}
+
+#[test]
 fn compile_simplexml_iterator_class_and_children_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-iterator-class");
     fs::create_dir_all(&root).unwrap();
