@@ -45686,6 +45686,88 @@ var_dump($child->ownerDocument === $container);
 }
 
 #[test]
+fn compile_dom_relaxng_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-relaxng-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-relaxng-validation.php");
+    let output = root.join("dom-relaxng-validation-bin");
+    let rng_path = root.join("apple.rng");
+    fs::write(
+        &rng_path,
+        r#"<element name="apple" xmlns="http://relaxng.org/ns/structure/1.0">
+  <element name="pear"><empty/></element>
+</element>
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+$invalid = new DOMDocument();
+$invalid->loadXML('<apple><pear/><pear/></apple>');
+$validRng = <<<'RNG'
+<element name="apple" xmlns="http://relaxng.org/ns/structure/1.0">
+  <element name="pear"><empty/></element>
+</element>
+RNG;
+$invalidRng = <<<'RNG'
+<element name="apple" xmlns="http://relaxng.org/ns/structure/1.0"></element>
+RNG;
+var_dump($invalid->relaxNGValidateSource($validRng));
+var_dump($invalid->relaxNGValidateSource($invalidRng));
+var_dump($invalid->relaxNGValidate('__RNG_PATH__'));
+$valid = new DOMDocument();
+$valid->loadXML('<apple><pear/></apple>');
+var_dump($valid->relaxNGValidateSource($validRng));
+"#
+        .replace("__RNG_PATH__", &rng_path.to_string_lossy()),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.matches("bool(false)\n").count() >= 3,
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(true)\n"),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("DOMDocument::relaxNGValidateSource(): Did not expect element pear there"),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "DOMDocument::relaxNGValidateSource(): xmlRelaxNGParseElement: element has no content"
+        ),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("DOMDocument::relaxNGValidateSource(): Invalid RelaxNG"),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("DOMDocument::relaxNGValidate(): Did not expect element pear there"),
+        "unexpected stdout:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_relaxng_validate_with_libxml"));
+    assert!(c_source.contains("xmlRelaxNGValidateDoc"));
+}
+
+#[test]
 fn compile_dom_element_attribute_map_and_parent_mutators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-element-attribute-map-parent-mutators");
     fs::create_dir_all(&root).unwrap();

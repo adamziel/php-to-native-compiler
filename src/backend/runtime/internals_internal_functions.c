@@ -106785,6 +106785,9 @@ typedef void *PtnLibxml2TextReaderPtr;
 typedef void *PtnLibxml2SchemaParserCtxtPtr;
 typedef void *PtnLibxml2SchemaPtr;
 typedef void *PtnLibxml2SchemaValidCtxtPtr;
+typedef void *PtnLibxml2RelaxNGParserCtxtPtr;
+typedef void *PtnLibxml2RelaxNGPtr;
+typedef void *PtnLibxml2RelaxNGValidCtxtPtr;
 typedef PtnLibxml2ParserInputPtr (*PtnLibxml2ExternalEntityLoader)(const char *, const char *, PtnLibxml2ParserCtxtPtr);
 typedef void (*PtnLibxml2FreeFunc)(void *);
 typedef void *(*PtnLibxml2MallocFunc)(size_t);
@@ -106837,6 +106840,14 @@ typedef struct {
     void (*xmlSchemaFreeValidCtxt)(PtnLibxml2SchemaValidCtxtPtr);
     int (*xmlSchemaSetValidOptions)(PtnLibxml2SchemaValidCtxtPtr, int);
     int (*xmlSchemaValidateDoc)(PtnLibxml2SchemaValidCtxtPtr, PtnLibxml2DocPtr);
+    PtnLibxml2RelaxNGParserCtxtPtr (*xmlRelaxNGNewMemParserCtxt)(const char *, int);
+    PtnLibxml2RelaxNGParserCtxtPtr (*xmlRelaxNGNewParserCtxt)(const char *);
+    void (*xmlRelaxNGFreeParserCtxt)(PtnLibxml2RelaxNGParserCtxtPtr);
+    PtnLibxml2RelaxNGPtr (*xmlRelaxNGParse)(PtnLibxml2RelaxNGParserCtxtPtr);
+    void (*xmlRelaxNGFree)(PtnLibxml2RelaxNGPtr);
+    PtnLibxml2RelaxNGValidCtxtPtr (*xmlRelaxNGNewValidCtxt)(PtnLibxml2RelaxNGPtr);
+    void (*xmlRelaxNGFreeValidCtxt)(PtnLibxml2RelaxNGValidCtxtPtr);
+    int (*xmlRelaxNGValidateDoc)(PtnLibxml2RelaxNGValidCtxtPtr, PtnLibxml2DocPtr);
     void (*xmlDocDumpMemory)(PtnLibxml2DocPtr, unsigned char **, int *);
     PtnLibxml2ExternalEntityLoader (*xmlGetExternalEntityLoader)(void);
     void (*xmlSetExternalEntityLoader)(PtnLibxml2ExternalEntityLoader);
@@ -106897,6 +106908,7 @@ typedef struct {
     const char *function_name;
     size_t line;
     int suppress_warnings;
+    int suppress_failed_load_warning;
     int parser_context_warnings;
     const char *source_data;
     size_t source_len;
@@ -107348,6 +107360,13 @@ static void ptn_libxml2_dom_parse_structured_error(void *ctx, const PtnLibxml2Er
     if (message_len == 0) {
         return;
     }
+    const char *failed_load_prefix = "failed to load ";
+    size_t failed_load_prefix_len = strlen(failed_load_prefix);
+    if (capture->suppress_failed_load_warning &&
+        message_len >= failed_load_prefix_len &&
+        strncmp(error->message, failed_load_prefix, failed_load_prefix_len) == 0) {
+        return;
+    }
     if (capture->parser_context_warnings &&
         error->domain == 1 &&
         ptn_libxml2_emit_reader_context_warnings(capture, error, error->message, message_len)) {
@@ -107432,6 +107451,14 @@ static void ptn_libxml2_load_function_symbols(PtnLibxml2Api *api) {
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaFreeValidCtxt, "xmlSchemaFreeValidCtxt");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaSetValidOptions, "xmlSchemaSetValidOptions");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlSchemaValidateDoc, "xmlSchemaValidateDoc");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGNewMemParserCtxt, "xmlRelaxNGNewMemParserCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGNewParserCtxt, "xmlRelaxNGNewParserCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGFreeParserCtxt, "xmlRelaxNGFreeParserCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGParse, "xmlRelaxNGParse");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGFree, "xmlRelaxNGFree");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGNewValidCtxt, "xmlRelaxNGNewValidCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGFreeValidCtxt, "xmlRelaxNGFreeValidCtxt");
+    PTN_LIBXML2_LOAD_OPTIONAL(xmlRelaxNGValidateDoc, "xmlRelaxNGValidateDoc");
     PTN_LIBXML2_LOAD_OPTIONAL(xmlDocDumpMemory, "xmlDocDumpMemory");
     PTN_LIBXML2_LOAD_REQUIRED(xmlGetExternalEntityLoader, "xmlGetExternalEntityLoader");
     PTN_LIBXML2_LOAD_REQUIRED(xmlSetExternalEntityLoader, "xmlSetExternalEntityLoader");
@@ -108041,6 +108068,57 @@ static int ptn_libxml2_schema_api_available(PtnLibxml2Api *api) {
         api->xmlDocDumpMemory != NULL;
 }
 
+static int ptn_libxml2_relaxng_source_api_available(PtnLibxml2Api *api) {
+    return api != NULL &&
+        api->xmlRelaxNGNewMemParserCtxt != NULL &&
+        api->xmlRelaxNGFreeParserCtxt != NULL &&
+        api->xmlRelaxNGParse != NULL &&
+        api->xmlRelaxNGFree != NULL &&
+        api->xmlRelaxNGNewValidCtxt != NULL &&
+        api->xmlRelaxNGFreeValidCtxt != NULL &&
+        api->xmlRelaxNGValidateDoc != NULL;
+}
+
+static int ptn_libxml2_relaxng_file_api_available(PtnLibxml2Api *api) {
+    return ptn_libxml2_relaxng_source_api_available(api) &&
+        api->xmlRelaxNGNewParserCtxt != NULL;
+}
+
+static void ptn_dom_relaxng_emit_file_load_warning(
+    PtnRuntime *runtime,
+    const char *method,
+    const char *path,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): I/O warning : failed to load %s",
+        method,
+        path == NULL ? "" : path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): I/O warning : failed to load %s",
+        method,
+        path == NULL ? "" : path
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
 static int ptn_dom_schema_validate_source_with_libxml(
     PtnRuntime *runtime,
     PtnXmlNode *document,
@@ -108128,6 +108206,102 @@ static int ptn_dom_schema_validate_source_with_libxml(
     }
     ptn_value_destroy(&serialized);
     return status == 0 && reloaded;
+}
+
+static int ptn_dom_relaxng_validate_with_libxml(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    const char *source,
+    size_t source_len,
+    int source_is_filename,
+    const char *method,
+    size_t line,
+    int *schema_ok_out
+) {
+    if (schema_ok_out != NULL) {
+        *schema_ok_out = 1;
+    }
+    if (document == NULL || ptn_xml_document_element(document) == NULL) {
+        return 0;
+    }
+    if (!source_is_filename && source_len > (size_t)INT_MAX) {
+        return 0;
+    }
+    PtnLibxml2Api *api = ptn_libxml2_api_load();
+    if (source_is_filename) {
+        if (!ptn_libxml2_relaxng_file_api_available(api)) {
+            return 1;
+        }
+    } else if (!ptn_libxml2_relaxng_source_api_available(api)) {
+        return 1;
+    }
+    int suppress_failed_load_warning = 0;
+    if (source_is_filename) {
+        FILE *schema_file = fopen(source, "rb");
+        if (schema_file == NULL) {
+            ptn_dom_relaxng_emit_file_load_warning(runtime, method, source, line);
+            suppress_failed_load_warning = 1;
+        } else {
+            fclose(schema_file);
+        }
+    }
+    PtnValue serialized = ptn_xml_serialized_value(runtime, document, 1, line);
+    PtnValue serialized_value = ptn_value_deref(serialized);
+    if (serialized_value.type != PTN_STRING || serialized_value.as.string.len > (size_t)INT_MAX) {
+        ptn_value_destroy(&serialized);
+        return 0;
+    }
+
+    PtnLibxml2DomParseErrorCapture capture;
+    memset(&capture, 0, sizeof(capture));
+    capture.runtime = runtime;
+    capture.function_name = method;
+    capture.line = line;
+    capture.suppress_warnings = ptn_libxml_internal_errors;
+    capture.suppress_failed_load_warning = suppress_failed_load_warning;
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, ptn_libxml2_generic_error_noop);
+    }
+    api->xmlSetStructuredErrorFunc(&capture, ptn_libxml2_dom_parse_structured_error);
+
+    PtnLibxml2RelaxNGParserCtxtPtr parser = source_is_filename
+        ? api->xmlRelaxNGNewParserCtxt(source)
+        : api->xmlRelaxNGNewMemParserCtxt(source, (int)source_len);
+    PtnLibxml2RelaxNGPtr schema = parser == NULL ? NULL : api->xmlRelaxNGParse(parser);
+    if (schema_ok_out != NULL) {
+        *schema_ok_out = schema != NULL;
+    }
+    PtnLibxml2DocPtr doc = schema == NULL ? NULL : api->xmlReadMemory(
+        (const char *)serialized_value.as.string.data,
+        (int)serialized_value.as.string.len,
+        runtime->source_path,
+        NULL,
+        0
+    );
+    PtnLibxml2RelaxNGValidCtxtPtr valid = doc == NULL ? NULL : api->xmlRelaxNGNewValidCtxt(schema);
+    int status = -1;
+    if (valid != NULL) {
+        status = api->xmlRelaxNGValidateDoc(valid, doc);
+    }
+
+    if (valid != NULL) {
+        api->xmlRelaxNGFreeValidCtxt(valid);
+    }
+    if (doc != NULL) {
+        api->xmlFreeDoc(doc);
+    }
+    if (schema != NULL) {
+        api->xmlRelaxNGFree(schema);
+    }
+    if (parser != NULL) {
+        api->xmlRelaxNGFreeParserCtxt(parser);
+    }
+    api->xmlSetStructuredErrorFunc(NULL, NULL);
+    if (api->xmlSetGenericErrorFunc != NULL) {
+        api->xmlSetGenericErrorFunc(NULL, NULL);
+    }
+    ptn_value_destroy(&serialized);
+    return status == 0;
 }
 
 static int ptn_xml_attribute_has_namespace_identity(PtnXmlNode *attr) {
@@ -115088,57 +115262,70 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             free(path_copy);
             return ptn_bool(0);
         }
+        if (!ptn_ascii_case_equal(name, "schemaValidate")) {
+            int schema_ok = 1;
+            int ok = ptn_dom_relaxng_validate_with_libxml(
+                runtime,
+                ptn_xml_node_data(receiver),
+                path_copy,
+                strlen(path_copy),
+                1,
+                method,
+                line,
+                &schema_ok
+            );
+            if (!schema_ok) {
+                ptn_emit_warning(&runtime->diagnostics, "DOMDocument::relaxNGValidate(): Invalid RelaxNG", line);
+            }
+            free(path_copy);
+            return ptn_bool(ok);
+        }
         unsigned char *schema_data = NULL;
         size_t schema_len = 0;
         int read_result = ptn_read_file_bytes(path_copy, &schema_data, &schema_len);
         if (read_result <= 0) {
-            if (ptn_ascii_case_equal(name, "schemaValidate")) {
-                char detail[1024];
-                int written = snprintf(
-                    detail,
-                    sizeof(detail),
-                    "I/O warning : failed to load %s",
-                    path_copy
-                );
-                if (written < 0 || (size_t)written >= sizeof(detail)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_dom_emit_method_warning(runtime, method, detail, line);
-                written = snprintf(
-                    detail,
-                    sizeof(detail),
-                    "Failed to locate the main schema resource at '%s'.",
-                    path_copy
-                );
-                if (written < 0 || (size_t)written >= sizeof(detail)) {
-                    ptn_abort_out_of_memory();
-                }
-                ptn_dom_emit_method_warning(runtime, method, detail, line);
+            char detail[1024];
+            int written = snprintf(
+                detail,
+                sizeof(detail),
+                "I/O warning : failed to load %s",
+                path_copy
+            );
+            if (written < 0 || (size_t)written >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
             }
-            ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidate") ? "DOMDocument::schemaValidate(): Invalid Schema" : "DOMDocument::relaxNGValidate(): Invalid RelaxNG", line);
+            ptn_dom_emit_method_warning(runtime, method, detail, line);
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                "Failed to locate the main schema resource at '%s'.",
+                path_copy
+            );
+            if (written < 0 || (size_t)written >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_dom_emit_method_warning(runtime, method, detail, line);
+            ptn_emit_warning(&runtime->diagnostics, "DOMDocument::schemaValidate(): Invalid Schema", line);
             free(schema_data);
             free(path_copy);
             return ptn_bool(0);
         }
-        if (ptn_ascii_case_equal(name, "schemaValidate") &&
-            memchr(schema_data, '<', schema_len) == NULL) {
+        if (memchr(schema_data, '<', schema_len) == NULL) {
             ptn_dom_emit_schema_file_parse_warnings(runtime, method, path_copy, (const char *)schema_data, schema_len, line);
             ptn_emit_warning(&runtime->diagnostics, "DOMDocument::schemaValidate(): Invalid Schema", line);
             free(schema_data);
             free(path_copy);
             return ptn_bool(0);
         }
-        int ok = ptn_ascii_case_equal(name, "schemaValidate")
-            ? ptn_dom_schema_validate_source_with_libxml(
-                runtime,
-                ptn_xml_node_data(receiver),
-                (const char *)schema_data,
-                schema_len,
-                argc >= 2 ? ptn_value_to_integer(args[1]) : 0,
-                method,
-                line
-            )
-            : (ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        int ok = ptn_dom_schema_validate_source_with_libxml(
+            runtime,
+            ptn_xml_node_data(receiver),
+            (const char *)schema_data,
+            schema_len,
+            argc >= 2 ? ptn_value_to_integer(args[1]) : 0,
+            method,
+            line
+        );
         free(schema_data);
         free(path_copy);
         return ptn_bool(ok);
@@ -115171,8 +115358,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidateSource") ? "DOMDocument::schemaValidateSource(): Invalid Schema" : "DOMDocument::relaxNGValidateSource(): Invalid RelaxNG", line);
             return ptn_bool(0);
         }
-        int ok = ptn_ascii_case_equal(name, "schemaValidateSource")
-            ? ptn_dom_schema_validate_source_with_libxml(
+        int ok = 0;
+        if (ptn_ascii_case_equal(name, "schemaValidateSource")) {
+            ok = ptn_dom_schema_validate_source_with_libxml(
                 runtime,
                 ptn_xml_node_data(receiver),
                 source.data,
@@ -115180,8 +115368,23 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
                 argc >= 2 ? ptn_value_to_integer(args[1]) : 0,
                 method,
                 line
-            )
-            : (ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+            );
+        } else {
+            int schema_ok = 1;
+            ok = ptn_dom_relaxng_validate_with_libxml(
+                runtime,
+                ptn_xml_node_data(receiver),
+                source.data,
+                source.len,
+                0,
+                method,
+                line,
+                &schema_ok
+            );
+            if (!schema_ok) {
+                ptn_emit_warning(&runtime->diagnostics, "DOMDocument::relaxNGValidateSource(): Invalid RelaxNG", line);
+            }
+        }
         ptn_string_operand_free(source);
         return ptn_bool(ok);
     }
