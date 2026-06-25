@@ -97571,7 +97571,6 @@ static PtnValue ptn_clone_object_storage(PtnRuntime *runtime, PtnObject *source)
 }
 
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
-    (void)line;
     source = ptn_value_deref(source);
     PtnValue clone = ptn_clone_object_storage(runtime, source.as.object);
     PtnDateTimeData *source_data = (PtnDateTimeData *)source.as.object->native_data;
@@ -97587,7 +97586,7 @@ static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue sour
         clone.as.object->native_data = data;
         clone.as.object->native_data_free = ptn_datetime_data_free;
     }
-    return clone;
+    return ptn_object_invoke_clone_magic(runtime, clone, line);
 }
 
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line) {

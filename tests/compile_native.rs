@@ -24693,7 +24693,11 @@ echo $changed->format('Y-m-d H:i:s e'), "\n";
 $fromFormat = DateTime::createFromFormat('D., M# j, Y g:iA', 'Thu., Nov. 29, 2012 5:00PM');
 echo $fromFormat->format('D., M. j, Y g:iA'), "\n";
 
-class NativeDateTimeChild extends DateTime {}
+class NativeDateTimeChild extends DateTime {
+    public function __clone() {
+        echo "NativeDateTimeChild::__clone\n";
+    }
+}
 class NativeDateTimeZoneChild extends DateTimeZone {}
 
 $date = new NativeDateTimeChild('1pm Aug 1 GMT 2007');
@@ -24726,6 +24730,7 @@ echo $zoneCopy->getName(), "\n";
             "2012-12-27 16:24:08 Europe/London\n",
             "2012-12-28 01:24:08 Asia/Tokyo\n",
             "Thu., Nov. 29, 2012 5:00PM\n",
+            "NativeDateTimeChild::__clone\n",
             "Wed, 01 Aug 07 14:00:00 +0000\n",
             "Wed, 01 Aug 07 12:59:59 +0000\n",
             "Asia/Tokyo\n",
