@@ -141107,14 +141107,17 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
         return ptn_value_clone(callable);
     }
     if (!ptn_callable_is_valid(runtime, callable, 0)) {
-        char *message = ptn_invalid_callback_message(
-            runtime,
-            "Closure::fromCallable",
-            1,
-            "callback",
-            callable,
-            0
-        );
+        char *reason = ptn_invalid_callback_reason(runtime, callable);
+        int needed = snprintf(NULL, 0, "Failed to create closure from callable: %s", reason);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Failed to create closure from callable: %s", reason);
+        free(reason);
         ptn_throw_exception_owned_message(runtime, "TypeError", message);
         return ptn_null();
     }
