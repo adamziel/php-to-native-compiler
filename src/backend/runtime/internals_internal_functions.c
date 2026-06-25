@@ -122279,7 +122279,14 @@ static int ptn_xml_parser_validate_handler(
             }
         }
         if (!data->has_callback_object) {
-            return 1;
+            ptn_xml_parser_throw_handler_value_error(
+                runtime,
+                function_name,
+                position,
+                parameter_name,
+                "an object must be set via xml_set_object() to be able to lookup method"
+            );
+            return 0;
         }
         if (!ptn_xml_parser_object_string_handler_is_valid(runtime, data, deref)) {
             if (runtime->exceptions->active_exception != NULL) {
@@ -122420,9 +122427,8 @@ static PtnValue ptn_internal_xml_set_element_handler(PtnRuntime *runtime, size_t
         return ptn_null();
     }
     int non_callable_string_deprecation_emitted = 0;
-    /* PHP reports element-handler validation failures against start_handler for either handler slot. */
     if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[1], line, &non_callable_string_deprecation_emitted) ||
-        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[2], line, &non_callable_string_deprecation_emitted)) {
+        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 3, "end_handler", args[2], line, &non_callable_string_deprecation_emitted)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->start_handler, &data->has_start_handler, args[1]);
@@ -123286,7 +123292,7 @@ static int ptn_xml_parser_emit_start_namespace(PtnRuntime *runtime, PtnValue par
     return ok;
 }
 
-static int ptn_xml_parser_emit_end_namespace(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *prefix, size_t line) {
+static PTN_UNUSED int ptn_xml_parser_emit_end_namespace(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *prefix, size_t line) {
     if (!parser->has_end_namespace_decl_handler) {
         return 1;
     }
@@ -123527,11 +123533,11 @@ static int ptn_xml_parser_emit_frame_namespace_ends(PtnRuntime *runtime, PtnValu
     if (frame == NULL) {
         return 1;
     }
+    (void)runtime;
+    (void)parser_value;
+    (void)line;
     for (size_t i = frame->namespace_prefix_count; i > 0; i--) {
         const char *prefix = frame->namespace_prefixes[i - 1];
-        if (!ptn_xml_parser_emit_end_namespace(runtime, parser_value, parser, prefix, line)) {
-            return 0;
-        }
         ptn_xml_parser_pop_namespace(parser, prefix);
     }
     return 1;

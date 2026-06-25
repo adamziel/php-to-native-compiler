@@ -44940,8 +44940,8 @@ try {
 }
 
 $delayed = xml_parser_create();
-xml_set_element_handler($delayed, \"start_element\", \"end_element\");
 xml_set_object($delayed, new A());
+xml_set_element_handler($delayed, \"start_element\", \"end_element\");
 xml_parse($delayed, \"<delayed/>\");
 
 try {
@@ -45031,6 +45031,21 @@ foreach ([[[], [$object, 'end_handler']], [[$object, 'start_handler'], []]] as $
         echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
     }
 }
+foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
+    try {
+        xml_set_element_handler($parser, $handlers[0], $handlers[1]);
+    } catch (Throwable $exception) {
+        echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+    }
+}
+xml_set_object($parser, new stdClass());
+foreach ([['missing_start', null], [null, 'missing_end']] as $handlers) {
+    try {
+        xml_set_element_handler($parser, $handlers[0], $handlers[1]);
+    } catch (Throwable $exception) {
+        echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+    }
+}
 ",
     )
     .unwrap();
@@ -45039,13 +45054,37 @@ foreach ([[[], [$object, 'end_handler']], [[$object, 'start_handler'], []]] as $
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n"
+    ));
+    assert!(stdout.contains(
+        "TypeError: xml_set_element_handler(): Argument #3 ($end_handler) must be of type callable|string|null\n"
+    ));
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n",
-            "TypeError: xml_set_element_handler(): Argument #2 ($start_handler) must be of type callable|string|null\n",
-        )
+        stdout
+            .matches("Deprecated: xml_set_element_handler(): Passing non-callable strings is deprecated since 8.4")
+            .count(),
+        4
     );
+    assert_eq!(
+        stdout
+            .matches("Deprecated: Function xml_set_object() is deprecated since 8.4")
+            .count(),
+        1
+    );
+    assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) an object must be set via xml_set_object() to be able to lookup method\n"
+    ));
+    assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) an object must be set via xml_set_object() to be able to lookup method\n"
+    ));
+    assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #2 ($start_handler) method stdClass::missing_start() does not exist\n"
+    ));
+    assert!(stdout.contains(
+        "ValueError: xml_set_element_handler(): Argument #3 ($end_handler) method stdClass::missing_end() does not exist\n"
+    ));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
