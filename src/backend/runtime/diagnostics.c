@@ -387,6 +387,32 @@ static const char *ptn_closure_symbol_name_without_leading_slash(const char *nam
     return name == NULL ? "" : name;
 }
 
+static int ptn_closure_scope_name_is_relative(const char *name) {
+    return ptn_ascii_case_equal(name, "self")
+        || ptn_ascii_case_equal(name, "static")
+        || ptn_ascii_case_equal(name, "parent");
+}
+
+static char *ptn_closure_relative_called_class_name(PtnRuntime *runtime, const char *scope_name) {
+    if (runtime == NULL || !ptn_closure_scope_name_is_relative(scope_name)) {
+        return NULL;
+    }
+    const char *class_name = runtime->current_class_name;
+    if (!ptn_ascii_case_equal(scope_name, "self") && runtime->current_called_class_name != NULL) {
+        class_name = runtime->current_called_class_name;
+    }
+    return class_name == NULL ? NULL : ptn_duplicate_string(class_name);
+}
+
+static char *ptn_closure_relative_scope_class_name(PtnRuntime *runtime, const char *scope_name) {
+    if (runtime == NULL || !ptn_closure_scope_name_is_relative(scope_name)) {
+        return NULL;
+    }
+    return runtime->current_class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(runtime->current_class_name);
+}
+
 static PtnArrayEntry *ptn_closure_array_entry_for_int_key(PtnArray *array, int64_t key) {
     if (array == NULL) {
         return NULL;
@@ -424,6 +450,11 @@ static PTN_UNUSED char *ptn_closure_wrapped_callable_called_class_name(
             return NULL;
         }
         *separator = '\0';
+        char *relative_class_name = ptn_closure_relative_called_class_name(runtime, name);
+        if (relative_class_name != NULL) {
+            free(name);
+            return relative_class_name;
+        }
         const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(name);
         const char *resolved_name = runtime == NULL
             ? lookup_name
@@ -460,6 +491,11 @@ static PTN_UNUSED char *ptn_closure_wrapped_callable_called_class_name(
         return NULL;
     }
     char *scope_name = ptn_value_to_string(scope);
+    char *relative_class_name = ptn_closure_relative_called_class_name(runtime, scope_name);
+    if (relative_class_name != NULL) {
+        free(scope_name);
+        return relative_class_name;
+    }
     const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(scope_name);
     const char *resolved_name = runtime == NULL
         ? lookup_name
@@ -530,6 +566,11 @@ static PTN_UNUSED char *ptn_closure_wrapped_callable_scope_class_name(
             return NULL;
         }
         *separator = '\0';
+        char *relative_scope_name = ptn_closure_relative_scope_class_name(runtime, name);
+        if (relative_scope_name != NULL) {
+            free(name);
+            return relative_scope_name;
+        }
         const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(name);
         const char *resolved_name = runtime == NULL
             ? lookup_name
@@ -573,6 +614,12 @@ static PTN_UNUSED char *ptn_closure_wrapped_callable_scope_class_name(
             : ptn_duplicate_string(scope.as.closure->scope_class_name);
     } else if (scope.type == PTN_STRING) {
         char *class_name = ptn_value_to_string(scope);
+        char *relative_scope_name = ptn_closure_relative_scope_class_name(runtime, class_name);
+        if (relative_scope_name != NULL) {
+            free(class_name);
+            free(method_name);
+            return relative_scope_name;
+        }
         const char *lookup_name = ptn_closure_symbol_name_without_leading_slash(class_name);
         const char *resolved_name = runtime == NULL
             ? lookup_name

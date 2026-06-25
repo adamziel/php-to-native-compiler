@@ -74619,6 +74619,52 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
 }
 
 #[test]
+fn compile_call_user_func_object_callable_uses_lexical_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-object-callable-lexical-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-object-callable-lexical-scope.php");
+    let output = root.join("call-user-func-object-callable-lexical-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class LexicalCallableBase {
+    private function pick() {
+        echo 'base:', get_class($this), \"\\n\";
+    }
+
+    public function run($method) {
+        $this->$method();
+        call_user_func([$this, $method]);
+    }
+}
+
+class LexicalCallableChild extends LexicalCallableBase {
+    protected function pick() {
+        echo 'child:', get_class($this), \"\\n\";
+    }
+}
+
+(new LexicalCallableChild())->run('pick');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "base:LexicalCallableChild\nbase:LexicalCallableChild\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime->current_class_name"));
+    assert!(c_source.contains("ptn_object_callable_class"));
+}
+
+#[test]
 fn compile_call_user_func_static_string_callback_autoloads_before_type_error() {
     let root = temp_dir("ptn-native-call-user-func-static-autoload-type-error");
     fs::create_dir_all(&root).unwrap();
@@ -74730,6 +74776,13 @@ foreach ([\"StaticCallableProbe::instance\", \"MagicStaticCallableProbe::missing
 }
 
 try {
+    $callable = [\"MagicStaticCallableProbe\", \"missing\"];
+    $callable();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
     $bad = [1 => 0, 2 => 0];
     $bad();
 } catch (Error $e) {
@@ -74747,8 +74800,9 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "Non-static method StaticCallableProbe::instance() cannot be called statically\n",
-            "Call to undefined method MagicStaticCallableProbe::missing()\n",
+            "Non-static method MagicStaticCallableProbe::missing() cannot be called statically\n",
             "Class \"MissingCallableProbe\" not found\n",
+            "Non-static method MagicStaticCallableProbe::missing() cannot be called statically\n",
             "Array callback has to contain indices 0 and 1\n",
         )
     );
@@ -75649,6 +75703,46 @@ var_dump($sameReflection->getNumberOfParameters());
     assert!(c_source.contains("ptn_internal_closure_from_callable"));
     assert!(c_source.contains("ptn_closure_wrap_callable"));
     assert!(c_source.contains("resolved.as.closure->has_wrapped_callable"));
+}
+
+#[test]
+fn compile_closure_from_callable_parent_string_preserves_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-from-callable-parent-string-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-from-callable-parent-string-scope.php");
+    let output = root.join("closure-from-callable-parent-string-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class ParentCallableBase {
+    public function label($suffix) {
+        return static::class . ':' . $suffix;
+    }
+}
+
+class ParentCallableChild extends ParentCallableBase {
+    public function make() {
+        return Closure::fromCallable('parent::label');
+    }
+}
+
+$closure = (new ParentCallableChild())->make();
+echo $closure('ok'), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("ParentCallableChild:ok\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_relative_scope_class_name"));
+    assert!(c_source.contains("resolved.as.closure->scope_class_name"));
 }
 
 #[test]
