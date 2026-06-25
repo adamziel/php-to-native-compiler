@@ -8072,6 +8072,13 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             mutable_metadata != NULL &&
             !mutable_metadata->readonly_clone_reinitialized;
         if (!readonly_clone_reinit) {
+            if (receiver.as.object->lazy_initializing) {
+                if (receiver.as.object->lazy_initializer_refcount_guards == SIZE_MAX) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_object_retain(receiver.as.object);
+                receiver.as.object->lazy_initializer_refcount_guards++;
+            }
             ptn_array_key_free(key);
             free(storage_key);
             PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();

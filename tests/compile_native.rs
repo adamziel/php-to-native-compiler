@@ -82223,6 +82223,105 @@ $obj = null;
 }
 
 #[test]
+fn compile_reset_lazy_object_restores_readonly_and_default_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-reset-lazy-readonly-default-slots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reset-lazy-readonly-default-slots.php");
+    let output = root.join("reset-lazy-readonly-default-slots-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetReadonlyBase {
+    public readonly int $a;
+    public readonly int $b;
+    public int $c;
+
+    public function __construct(int $value, bool $setB = false) {
+        try {
+            $this->a = $value;
+        } catch (Error $e) {
+            echo 'readonly: ', $e->getMessage(), \"\\n\";
+        }
+        if ($setB) {
+            $this->b = $value;
+        }
+        $this->c = $value;
+    }
+}
+
+final class LazyResetReadonlyChild extends LazyResetReadonlyBase {}
+
+function reset_readonly_object(object $object): void {
+    $reflector = new ReflectionClass($object::class);
+    $reflector->resetAsLazyGhost($object, function ($object) {
+        $object->__construct(2, true);
+    });
+    $reflector->initializeLazyObject($object);
+    echo $object->a, ':', $object->b, ':', $object->c, \"\\n\";
+}
+
+$base = new LazyResetReadonlyBase(1);
+reset_readonly_object($base);
+
+$child = new LazyResetReadonlyChild(1);
+reset_readonly_object($child);
+
+#[AllowDynamicProperties]
+class LazyResetDefaultSlotBox {
+    public $b;
+
+    public function __construct() {
+        $this->a = new stdClass();
+    }
+}
+
+$reflector = new ReflectionClass(LazyResetDefaultSlotBox::class);
+$object = new LazyResetDefaultSlotBox();
+$reflector->resetAsLazyGhost($object, function ($object) {
+    $object->__construct();
+});
+$value = $object->a;
+ob_start();
+var_dump($object);
+$dump = ob_get_clean();
+echo strpos($dump, \"[\\\"b\\\"]=>\\n  NULL\\n\") === false ? \"dump:missing\\n\" : \"dump:b\\n\";
+$vars = get_object_vars($object);
+ksort($vars);
+foreach ($vars as $name => $value) {
+    echo $name, ':', is_object($value) ? 'object' : var_export($value, true), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2:2:2\n",
+            "readonly: Cannot modify readonly property LazyResetReadonlyBase::$a\n",
+            "1:2:2\n",
+            "dump:b\n",
+            "a:object\n",
+            "b:NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_lazy_object_reset_should_preserve_readonly_property"));
+    assert!(c_source.contains("ptn_lazy_object_reset_property_entry_to_default"));
+}
+
+#[test]
 fn compile_lazy_proxy_chain_foreach_initializes_real_instance_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-proxy-chain-foreach");
     fs::create_dir_all(&root).unwrap();

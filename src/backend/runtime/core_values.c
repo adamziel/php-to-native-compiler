@@ -1085,6 +1085,7 @@ struct PtnObject {
     int lazy_is_proxy;
     int lazy_options;
     int lazy_initializing;
+    size_t lazy_initializer_refcount_guards;
     int readonly_clone_initializing;
     int defer_object_id_release_once;
     int var_dump_property_count_initialized;
