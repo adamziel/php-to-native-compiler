@@ -1235,6 +1235,12 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_include_path_is_absolute(path) || source_dir == NULL || source_dir[0] == '\\0') {\n");
     out.push_str("        return ptn_duplicate_string_len(path.data, path.len);\n");
     out.push_str("    }\n");
+    out.push_str("    char *cwd_path = ptn_duplicate_string_len(path.data, path.len);\n");
+    out.push_str("    struct stat cwd_path_info;\n");
+    out.push_str("    if (stat(cwd_path, &cwd_path_info) == 0) {\n");
+    out.push_str("        return cwd_path;\n");
+    out.push_str("    }\n");
+    out.push_str("    free(cwd_path);\n");
     out.push_str("    size_t dir_len = strlen(source_dir);\n");
     out.push_str("    int needs_separator = dir_len > 0 && source_dir[dir_len - 1] != '/';\n");
     out.push_str("    size_t len = dir_len + (needs_separator ? 1 : 0) + path.len;\n");

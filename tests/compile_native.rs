@@ -4070,6 +4070,55 @@ fn compile_interpolated_include_path_alias_to_native_binary() {
 }
 
 #[test]
+fn compile_relative_dir_dynamic_include_uses_existing_cwd_path_to_native_binary() {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = PathBuf::from(format!(
+        "target/ptn-native-relative-dir-include-{}-{now}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("relative-dir-include-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = <<<'PHP'
+<?php
+class RelativeIncludeLoaded {
+    const VALUE = "loaded";
+}
+PHP;
+$path = __DIR__ . "/generated.inc";
+var_dump(file_put_contents($path, $payload) !== false);
+var_dump(file_exists($path));
+include $path;
+echo RelativeIncludeLoaded::VALUE, "\n";
+unlink($path);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nloaded\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() {
     let program =
         parser::parse("<?php echo ++$value, $value--; $after = --$value + $value++;").unwrap();
@@ -86318,6 +86367,39 @@ echo "done\n";
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_literal_eval_class_constants_resolve_global_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-eval-class-constant-global-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-eval-class-constant-global-constant.php");
+    let output = root.join("literal-eval-class-constant-global-constant-bin");
+    fs::write(
+        &input,
+        r#"<?php
+define('EVAL_CLASS_CONST_VALUE', 'resolved');
+eval('class EvalConstantCarrier { const value = EVAL_CLASS_CONST_VALUE; const absolute = \EVAL_CLASS_CONST_VALUE; }');
+var_dump(EvalConstantCarrier::value, EvalConstantCarrier::absolute);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"resolved\"\nstring(8) \"resolved\"\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

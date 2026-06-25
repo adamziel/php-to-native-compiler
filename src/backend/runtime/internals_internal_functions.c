@@ -174602,6 +174602,7 @@ static int ptn_eval_parse_string_literal_value(
 }
 
 static int ptn_eval_parse_scalar_constant_value(
+    PtnRuntime *runtime,
     const char *code,
     size_t len,
     size_t *cursor,
@@ -174628,6 +174629,21 @@ static int ptn_eval_parse_scalar_constant_value(
         *cursor += strlen("null");
         *value_out = ptn_null();
         return 1;
+    }
+    if (ptn_eval_identifier_start((unsigned char)code[*cursor])) {
+        size_t name_start = *cursor;
+        while (*cursor < len && ptn_eval_identifier_part((unsigned char)code[*cursor])) {
+            (*cursor)++;
+        }
+        size_t lookup_offset = code[name_start] == '\\' ? 1 : 0;
+        const char *lookup_name = code + name_start + lookup_offset;
+        size_t lookup_len = *cursor - name_start - lookup_offset;
+        if (lookup_len > 0 &&
+            ptn_runtime_constant_value_len(runtime, lookup_name, lookup_len, value_out)) {
+            return 1;
+        }
+        *cursor = name_start;
+        return 0;
     }
     size_t value_start = *cursor;
     if (code[*cursor] == '-') {
@@ -174683,7 +174699,7 @@ static void ptn_eval_scan_class_constants(
         }
         cursor++;
         PtnValue value = ptn_null();
-        if (ptn_eval_parse_scalar_constant_value(code, body_end, &cursor, &value)) {
+        if (ptn_eval_parse_scalar_constant_value(runtime, code, body_end, &cursor, &value)) {
             ptn_runtime_define_class_constant(runtime, class_name, constant_name, value);
             ptn_value_destroy(&value);
         }
@@ -176916,6 +176932,54 @@ static int ptn_dynamic_execute_return_statement(
     return 1;
 }
 
+static int ptn_dynamic_skip_class_declaration(const char *code, size_t len, size_t *pos) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    while (1) {
+        if (ptn_eval_keyword_at(code, len, cursor, "final")) {
+            cursor = ptn_eval_skip_ws(code, len, cursor + strlen("final"));
+            continue;
+        }
+        if (ptn_eval_keyword_at(code, len, cursor, "abstract")) {
+            cursor = ptn_eval_skip_ws(code, len, cursor + strlen("abstract"));
+            continue;
+        }
+        if (ptn_eval_keyword_at(code, len, cursor, "readonly")) {
+            cursor = ptn_eval_skip_ws(code, len, cursor + strlen("readonly"));
+            continue;
+        }
+        break;
+    }
+    if (!ptn_eval_keyword_at(code, len, cursor, "class")) {
+        return 0;
+    }
+    cursor = ptn_eval_skip_ws(code, len, cursor + strlen("class"));
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    while (cursor < len && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+        cursor++;
+    }
+    while (cursor < len && code[cursor] != '{' && code[cursor] != ';') {
+        if (code[cursor] == '\'' || code[cursor] == '"') {
+            cursor = ptn_eval_skip_quoted_string(code, len, cursor);
+            continue;
+        }
+        cursor++;
+    }
+    if (cursor >= len) {
+        return 0;
+    }
+    if (code[cursor] == ';') {
+        *pos = cursor + 1;
+        return 1;
+    }
+    *pos = ptn_eval_find_matching_brace(code, len, cursor) + 1;
+    if (*pos > len) {
+        *pos = len;
+    }
+    return 1;
+}
+
 static int ptn_dynamic_execute_statements_range(
     PtnRuntime *runtime,
     const char *code,
@@ -176954,6 +177018,10 @@ static int ptn_dynamic_execute_statements_range(
             if (*returned || ptn_runtime_has_active_exception(runtime)) {
                 return 1;
             }
+            continue;
+        }
+        *pos = statement_pos;
+        if (ptn_dynamic_skip_class_declaration(code, end, pos)) {
             continue;
         }
         *pos = statement_pos;
