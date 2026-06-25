@@ -45,6 +45,9 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
         free(class_name);
         return value;
     }
+    if (ptn_ascii_case_equal(name, "__FILE__")) {
+        return ptn_owned_string(ptn_duplicate_string(path != NULL ? path : ""));
+    }
     if (strcmp(name, "WSDL_CACHE_NONE") == 0) {
         return ptn_int(0);
     }
@@ -141462,7 +141465,9 @@ static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -142399,7 +142404,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "socket_strerror", 1, 1, ptn_internal_socket_strerror },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
+        { "spl_autoload", 1, 2, ptn_internal_spl_autoload },
         { "spl_autoload_call", 1, 1, ptn_internal_spl_autoload_call },
+        { "spl_autoload_extensions", 0, 1, ptn_internal_spl_autoload_extensions },
         { "spl_autoload_functions", 0, 0, ptn_internal_spl_autoload_functions },
         { "spl_autoload_register", 0, 3, ptn_internal_spl_autoload_register },
         { "spl_autoload_unregister", 1, 1, ptn_internal_spl_autoload_unregister },
@@ -183927,6 +183934,65 @@ static int ptn_spl_autoload_callbacks_equivalent(
     return equivalent;
 }
 
+static PtnValue ptn_spl_autoload_array_callback(const char *scope, const char *method) {
+    PtnValue callback = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        callback.as.array,
+        ptn_array_int_key(0),
+        ptn_owned_string(ptn_duplicate_string(scope == NULL ? "" : scope))
+    );
+    ptn_array_set_entry(
+        callback.as.array,
+        ptn_array_int_key(1),
+        ptn_owned_string(ptn_duplicate_string(method == NULL ? "" : method))
+    );
+    return callback;
+}
+
+static PtnValue ptn_spl_autoload_normalize_callback(PtnRuntime *runtime, PtnValue callback) {
+    PtnValue resolved = ptn_value_deref(callback);
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator != NULL && separator != name && separator[2] != '\0') {
+            *separator = '\0';
+            const char *lookup_class = ptn_symbol_name_without_leading_slash(name);
+            char *resolved_class = ptn_resolve_callback_class_scope(runtime, lookup_class);
+            PtnValue normalized = ptn_spl_autoload_array_callback(resolved_class, separator + 2);
+            free(resolved_class);
+            free(name);
+            ptn_value_destroy(&callback);
+            return normalized;
+        }
+        free(name);
+        return callback;
+    }
+
+    PtnValue scope;
+    PtnValue method;
+    if (ptn_spl_autoload_array_parts(resolved, &scope, &method) &&
+        ptn_value_deref(scope).type == PTN_STRING &&
+        ptn_value_deref(method).type == PTN_STRING) {
+        char *scope_name = ptn_value_to_string(scope);
+        const char *lookup_class = ptn_symbol_name_without_leading_slash(scope_name);
+        if (ptn_ascii_case_equal(lookup_class, "self") ||
+            ptn_ascii_case_equal(lookup_class, "static") ||
+            ptn_ascii_case_equal(lookup_class, "parent")) {
+            char *resolved_class = ptn_resolve_callback_class_scope(runtime, lookup_class);
+            char *method_name = ptn_value_to_string(method);
+            PtnValue normalized = ptn_spl_autoload_array_callback(resolved_class, method_name);
+            free(method_name);
+            free(resolved_class);
+            free(scope_name);
+            ptn_value_destroy(&callback);
+            return normalized;
+        }
+        free(scope_name);
+    }
+
+    return callback;
+}
+
 static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -183939,6 +184005,7 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    callback = ptn_spl_autoload_normalize_callback(runtime, callback);
 
     for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
         if (ptn_spl_autoload_callbacks_equivalent(
@@ -183986,6 +184053,102 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
     return ptn_bool(1);
 }
 
+static char *ptn_spl_autoload_lowercase_class_path(const char *class_name) {
+    char *path = ptn_duplicate_string(class_name == NULL ? "" : class_name);
+    for (size_t i = 0; path[i] != '\0'; i++) {
+        unsigned char byte = (unsigned char)path[i];
+        if (byte >= 'A' && byte <= 'Z') {
+            path[i] = (char)(byte - 'A' + 'a');
+        } else if (path[i] == '\\') {
+            path[i] = '/';
+        }
+    }
+    return path;
+}
+
+static int ptn_spl_autoload_class_now_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_runtime_class_exists(runtime, resolved_name) ||
+        ptn_declared_runtime_interface_exists(runtime, resolved_name) ||
+        ptn_declared_runtime_trait_exists(runtime, resolved_name) ||
+        ptn_internal_class_exists_name(resolved_name);
+}
+
+static int ptn_spl_autoload_try_candidate(PtnRuntime *runtime, const char *candidate, size_t line) {
+    char *resolved_path = ptn_resolve_existing_include_path(runtime, candidate);
+    if (resolved_path == NULL) {
+        return 0;
+    }
+    if (ptn_runtime_has_included_file(runtime, resolved_path)) {
+        free(resolved_path);
+        return 1;
+    }
+    PtnValue include_result = ptn_null();
+    int ok = ptn_dynamic_include_php_file(runtime, resolved_path, candidate, line, &include_result);
+    ptn_value_destroy(&include_result);
+    free(resolved_path);
+    return ok;
+}
+
+static PtnValue ptn_internal_spl_autoload(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand class_name = ptn_internal_expect_string_arg(runtime, "spl_autoload", 1, "class", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *extensions = root == NULL || root->spl_autoload_extensions == NULL
+        ? ".inc,.php"
+        : root->spl_autoload_extensions;
+    PtnStringOperand explicit_extensions = {0};
+    int explicit_extensions_active = 0;
+    if (argc >= 2) {
+        PtnValue ext_value = ptn_value_deref(args[1]);
+        if (ext_value.type == PTN_NULL) {
+            ptn_string_operand_free(class_name);
+            return ptn_null();
+        }
+        explicit_extensions = ptn_internal_expect_string_arg(runtime, "spl_autoload", 2, "file_extensions", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(class_name);
+            return ptn_null();
+        }
+        extensions = explicit_extensions.data;
+        explicit_extensions_active = 1;
+    }
+
+    char *class_path = ptn_spl_autoload_lowercase_class_path(class_name.data);
+    const char *segment = extensions[0] == '\0' ? NULL : extensions;
+    while (segment != NULL) {
+        const char *comma = strchr(segment, ',');
+        size_t ext_len = comma == NULL ? strlen(segment) : (size_t)(comma - segment);
+        size_t class_len = strlen(class_path);
+        char *candidate = malloc(class_len + ext_len + 1);
+        if (candidate == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(candidate, class_path, class_len);
+        memcpy(candidate + class_len, segment, ext_len);
+        candidate[class_len + ext_len] = '\0';
+        ptn_spl_autoload_try_candidate(runtime, candidate, line);
+        free(candidate);
+        if (ptn_spl_autoload_class_now_exists(runtime, class_name.data)) {
+            break;
+        }
+        if (comma == NULL) {
+            break;
+        }
+        segment = comma + 1;
+    }
+
+    free(class_path);
+    if (explicit_extensions_active) {
+        ptn_string_operand_free(explicit_extensions);
+    }
+    ptn_string_operand_free(class_name);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *class_name = ptn_value_to_string(args[0]);
@@ -183993,6 +184156,26 @@ static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc,
     ptn_runtime_autoload_class(runtime, lookup_name, line);
     free(class_name);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_spl_autoload_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_string(".inc,.php");
+    }
+    if (root->spl_autoload_extensions == NULL) {
+        root->spl_autoload_extensions = ptn_duplicate_string(".inc,.php");
+    }
+    if (argc >= 1) {
+        PtnStringOperand extensions = ptn_internal_expect_string_arg(runtime, "spl_autoload_extensions", 1, "file_extensions", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        free(root->spl_autoload_extensions);
+        root->spl_autoload_extensions = ptn_duplicate_string_len(extensions.data, extensions.len);
+        ptn_string_operand_free(extensions);
+    }
+    return ptn_owned_string(ptn_duplicate_string(root->spl_autoload_extensions));
 }
 
 static PtnValue ptn_internal_spl_autoload_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -184021,31 +184204,37 @@ static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t
         return ptn_bool(0);
     }
 
-    PtnValue callback = ptn_internal_expect_callback_arg(
-        runtime,
-        "spl_autoload_unregister",
-        1,
-        "callback",
-        args[0]
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-
-    PtnValue resolved = ptn_value_deref(callback);
+    PtnValue raw_callback = ptn_value_clone_deref(args[0]);
+    PtnValue resolved = ptn_value_deref(raw_callback);
     if (resolved.type == PTN_STRING) {
         char *name = ptn_value_to_string(resolved);
         if (ptn_ascii_case_equal(name, "spl_autoload_call")) {
             ptn_emit_deprecation(&runtime->diagnostics, "spl_autoload_unregister(): Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()", line);
             free(name);
-            ptn_value_destroy(&callback);
+            for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+                ptn_value_destroy(&root->autoload_callbacks[i]);
+            }
+            root->autoload_callbacks_len = 0;
+            ptn_value_destroy(&raw_callback);
             return ptn_bool(1);
         }
         free(name);
     }
 
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "spl_autoload_unregister",
+        1,
+        "callback",
+        raw_callback
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    callback = ptn_spl_autoload_normalize_callback(runtime, callback);
+
     for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
-        if (!ptn_compare_equal(runtime, root->autoload_callbacks[i], callback, line)) {
+        if (!ptn_spl_autoload_callbacks_equivalent(runtime, root->autoload_callbacks[i], callback, line)) {
             continue;
         }
         ptn_value_destroy(&root->autoload_callbacks[i]);

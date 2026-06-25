@@ -2605,6 +2605,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->autoload_callbacks = NULL;
     runtime->autoload_callbacks_len = 0;
     runtime->autoload_callbacks_capacity = 0;
+    runtime->spl_autoload_extensions = ptn_duplicate_string(".inc,.php");
     runtime->autoloading_class_names = NULL;
     runtime->autoloading_class_names_len = 0;
     runtime->autoloading_class_names_capacity = 0;

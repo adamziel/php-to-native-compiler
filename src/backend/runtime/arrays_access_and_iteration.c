@@ -883,14 +883,19 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
 
     PtnValue active_callback = ptn_null();
     PtnTryFrame autoload_frame;
+    int saved_suppress_user_call_frame_location =
+        runtime->suppress_user_call_frame_location;
     ptn_runtime_push_autoloading_class(root, class_name);
     ptn_try_frame_push(runtime, &autoload_frame);
     if (setjmp(autoload_frame.jump) == 0) {
         for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
             active_callback = ptn_value_clone(root->autoload_callbacks[i]);
             PtnValue callback_args[1] = { ptn_string(class_name) };
+            runtime->suppress_user_call_frame_location = 1;
             PtnValue result =
                 ptn_call_callable(runtime, active_callback, 1, callback_args, line, 0);
+            runtime->suppress_user_call_frame_location =
+                saved_suppress_user_call_frame_location;
             ptn_value_destroy(&result);
             ptn_value_destroy(&active_callback);
             active_callback = ptn_null();
@@ -902,6 +907,8 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
         ptn_runtime_pop_autoloading_class(root);
     } else {
         ptn_try_frame_pop(runtime, &autoload_frame);
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
         ptn_value_destroy(&active_callback);
         ptn_runtime_pop_autoloading_class(root);
         ptn_rethrow_exception(runtime);

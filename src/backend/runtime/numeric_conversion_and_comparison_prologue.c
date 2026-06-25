@@ -246,6 +246,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->autoload_callbacks = NULL;
     runtime->autoload_callbacks_len = 0;
     runtime->autoload_callbacks_capacity = 0;
+    runtime->spl_autoload_extensions = NULL;
     runtime->autoloading_class_names = NULL;
     runtime->autoloading_class_names_len = 0;
     runtime->autoloading_class_names_capacity = 0;
@@ -939,6 +940,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->autoload_callbacks = NULL;
         runtime->autoload_callbacks_len = 0;
         runtime->autoload_callbacks_capacity = 0;
+        free(runtime->spl_autoload_extensions);
+        runtime->spl_autoload_extensions = NULL;
         for (size_t i = 0; i < runtime->autoloading_class_names_len; i++) {
             free(runtime->autoloading_class_names[i]);
         }

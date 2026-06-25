@@ -35384,6 +35384,85 @@ spl_autoload_call('OtherClass');
 }
 
 #[test]
+fn compile_spl_autoload_canonical_callbacks_and_default_loader_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-canonical-default");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("autoloaded.class.inc"),
+        "<?php
+echo __FILE__, \"\\n\";
+class Autoloaded {}
+",
+    )
+    .unwrap();
+    let input = root.join("spl-autoload-canonical-default.php");
+    let output = root.join("spl-autoload-canonical-default-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php
+set_include_path('{}');
+class StaticLoader {{
+    public static function load($class) {{
+        echo __METHOD__, ':', $class, \"\\n\";
+    }}
+}}
+class first {{
+    public static function init() {{
+        spl_autoload_register(['self', 'load']);
+    }}
+    public static function load($class) {{}}
+}}
+class second {{
+    public static function init() {{
+        spl_autoload_register(['self', 'load']);
+    }}
+    public static function load($class) {{}}
+}}
+var_dump(spl_autoload_extensions());
+var_dump(spl_autoload_extensions('.class.inc'));
+spl_autoload_register('StaticLoader::load');
+var_dump(spl_autoload_functions());
+var_dump(spl_autoload_unregister('StaticLoader::load'));
+first::init();
+second::init();
+var_dump(spl_autoload_functions());
+spl_autoload_register();
+var_dump(class_exists('Autoloaded', true));
+",
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(9) \".inc,.php\"\n"));
+    assert!(stdout.contains("string(10) \".class.inc\"\n"));
+    assert!(stdout.contains("string(12) \"StaticLoader\"\n"));
+    assert!(stdout.contains("string(4) \"load\"\n"));
+    assert!(stdout.contains("bool(true)\n"));
+    assert!(stdout.contains("string(5) \"first\"\n"));
+    assert!(stdout.contains("string(6) \"second\"\n"));
+    assert!(stdout.contains("Deprecated: Use of \"self\" in callables is deprecated"));
+    assert!(stdout.contains("autoloaded.class.inc\n"));
+    assert!(stdout.ends_with("bool(true)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_autoload"));
+    assert!(c_source.contains("ptn_internal_spl_autoload_extensions"));
+}
+
+#[test]
 fn compile_spl_autoload_register_invalid_callback_mentions_null_to_native_binary() {
     let root = temp_dir("ptn-native-spl-autoload-invalid-callback");
     fs::create_dir_all(&root).unwrap();

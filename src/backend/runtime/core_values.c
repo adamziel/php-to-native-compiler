@@ -1618,6 +1618,7 @@ struct PtnRuntime {
     PtnValue *autoload_callbacks;
     size_t autoload_callbacks_len;
     size_t autoload_callbacks_capacity;
+    char *spl_autoload_extensions;
     char **autoloading_class_names;
     size_t autoloading_class_names_len;
     size_t autoloading_class_names_capacity;

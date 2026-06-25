@@ -34117,6 +34117,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("register_shutdown_function")
         || name.eq_ignore_ascii_case("register_tick_function")
         || name.eq_ignore_ascii_case("serialize")
+        || name.eq_ignore_ascii_case("spl_autoload")
         || name.eq_ignore_ascii_case("spl_autoload_call")
         || name.eq_ignore_ascii_case("spl_autoload_register")
         || name.eq_ignore_ascii_case("unregister_tick_function")
