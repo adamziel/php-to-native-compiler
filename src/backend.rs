@@ -22418,9 +22418,28 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_isset_args[0] = ptn_string(property);\n");
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
         out.push_str("        runtime->called_class_name_override = class_name;\n");
+        out.push_str("        PtnTryFrame ptn_magic_property_try_frame;\n");
+        out.push_str("        ptn_try_frame_push(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str("        if (setjmp(ptn_magic_property_try_frame.jump) != 0) {\n");
+        out.push_str("            ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str(
+            "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+        );
+        out.push_str("            ptn_value_destroy(&ptn_isset_args[0]);\n");
+        out.push_str(
+            "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+        );
+        out.push_str(
+            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("            ptn_value_destroy(&ptn_magic_receiver);\n");
+        out.push_str("            ptn_rethrow_exception(runtime);\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
         out.push_str("        PtnValue ptn_isset_result = ");
         out.push_str(&user_function_c_name(isset_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
+        out.push_str("        ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
         out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
         out.push_str("        *isset_out = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
@@ -22476,9 +22495,26 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             );
             out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("            runtime->called_class_name_override = class_name;\n");
+            out.push_str("            PtnTryFrame ptn_isset_try_frame;\n");
+            out.push_str("            ptn_try_frame_push(runtime, &ptn_isset_try_frame);\n");
+            out.push_str("            if (setjmp(ptn_isset_try_frame.jump) != 0) {\n");
+            out.push_str("                ptn_try_frame_pop(runtime, &ptn_isset_try_frame);\n");
+            out.push_str("                runtime->called_class_name_override = ptn_previous_called_class;\n");
+            out.push_str("                ptn_value_destroy(&ptn_isset_args[0]);\n");
+            out.push_str(
+                "                ptn_magic_property_pop(runtime, ptn_isset_property_frame_mark);\n",
+            );
+            out.push_str(
+                "                runtime->in_magic_property_dispatch = ptn_previous_isset_dispatch;\n",
+            );
+            out.push_str("                ptn_value_destroy(&ptn_magic_receiver);\n");
+            out.push_str("                ptn_rethrow_exception(runtime);\n");
+            out.push_str("                return 0;\n");
+            out.push_str("            }\n");
             out.push_str("            PtnValue ptn_isset_result = ");
             out.push_str(&user_function_c_name(isset_method.function_index));
             out.push_str("(runtime, resolved, 1, ptn_isset_args, line);\n");
+            out.push_str("            ptn_try_frame_pop(runtime, &ptn_isset_try_frame);\n");
             out.push_str(
                 "            runtime->called_class_name_override = ptn_previous_called_class;\n",
             );
@@ -22516,9 +22552,28 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("        ptn_get_args[0] = ptn_string_literal(property, property_len);\n");
             out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("        runtime->called_class_name_override = class_name;\n");
+            out.push_str("        PtnTryFrame ptn_get_try_frame;\n");
+            out.push_str("        ptn_try_frame_push(runtime, &ptn_get_try_frame);\n");
+            out.push_str("        if (setjmp(ptn_get_try_frame.jump) != 0) {\n");
+            out.push_str("            ptn_try_frame_pop(runtime, &ptn_get_try_frame);\n");
+            out.push_str(
+                "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+            );
+            out.push_str("            ptn_value_destroy(&ptn_get_args[0]);\n");
+            out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
+            out.push_str(
+                "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+            );
+            out.push_str("            ptn_value_destroy(&ptn_magic_receiver);\n");
+            out.push_str("            ptn_rethrow_exception(runtime);\n");
+            out.push_str("            return 0;\n");
+            out.push_str("        }\n");
             out.push_str("        *value_out = ");
             out.push_str(&user_function_c_name(get_method.function_index));
             out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
+            out.push_str("        ptn_try_frame_pop(runtime, &ptn_get_try_frame);\n");
             out.push_str(
                 "        runtime->called_class_name_override = ptn_previous_called_class;\n",
             );
@@ -22604,9 +22659,27 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_get_args[0] = ptn_string(property);\n");
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
         out.push_str("        runtime->called_class_name_override = class_name;\n");
+        out.push_str("        PtnTryFrame ptn_magic_property_try_frame;\n");
+        out.push_str("        ptn_try_frame_push(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str("        if (setjmp(ptn_magic_property_try_frame.jump) != 0) {\n");
+        out.push_str("            ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str(
+            "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+        );
+        out.push_str("            ptn_value_destroy(&ptn_get_args[0]);\n");
+        out.push_str(
+            "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+        );
+        out.push_str(
+            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("            ptn_rethrow_exception(runtime);\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
         out.push_str("        *value_out = ");
         out.push_str(&user_function_c_name(get_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
+        out.push_str("        ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
         out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
         out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
         out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
@@ -22655,9 +22728,28 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_set_args[1] = ptn_value_clone_deref(value);\n");
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
         out.push_str("        runtime->called_class_name_override = class_name;\n");
+        out.push_str("        PtnTryFrame ptn_magic_property_try_frame;\n");
+        out.push_str("        ptn_try_frame_push(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str("        if (setjmp(ptn_magic_property_try_frame.jump) != 0) {\n");
+        out.push_str("            ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str(
+            "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+        );
+        out.push_str("            ptn_value_destroy(&ptn_set_args[1]);\n");
+        out.push_str("            ptn_value_destroy(&ptn_set_args[0]);\n");
+        out.push_str(
+            "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+        );
+        out.push_str(
+            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("            ptn_rethrow_exception(runtime);\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
         out.push_str("        PtnValue ptn_set_result = ");
         out.push_str(&user_function_c_name(set_method.function_index));
         out.push_str("(runtime, resolved, 2, ptn_set_args, line);\n");
+        out.push_str("        ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
         out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
         out.push_str("        ptn_value_destroy(&ptn_set_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_set_args[1]);\n");
@@ -22706,9 +22798,27 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_unset_args[0] = ptn_owned_string_len(ptn_duplicate_string_len(property, property_len), property_len);\n");
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
         out.push_str("        runtime->called_class_name_override = class_name;\n");
+        out.push_str("        PtnTryFrame ptn_magic_property_try_frame;\n");
+        out.push_str("        ptn_try_frame_push(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str("        if (setjmp(ptn_magic_property_try_frame.jump) != 0) {\n");
+        out.push_str("            ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
+        out.push_str(
+            "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+        );
+        out.push_str("            ptn_value_destroy(&ptn_unset_args[0]);\n");
+        out.push_str(
+            "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+        );
+        out.push_str(
+            "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
+        );
+        out.push_str("            ptn_rethrow_exception(runtime);\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
         out.push_str("        PtnValue ptn_unset_result = ");
         out.push_str(&user_function_c_name(unset_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_unset_args, line);\n");
+        out.push_str("        ptn_try_frame_pop(runtime, &ptn_magic_property_try_frame);\n");
         out.push_str("        runtime->called_class_name_override = ptn_previous_called_class;\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_args[0]);\n");

@@ -90375,6 +90375,64 @@ echo $a->func2(), \"\\n\";
 }
 
 #[test]
+fn compile_magic_get_exception_unwinds_interpolated_property_read_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-get-exception-unwinds-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-get-exception-unwinds-interpolation.php");
+    let output = root.join("magic-get-exception-unwinds-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php
+class Obj {
+    public function __get($name) {
+        throw new Exception($name);
+    }
+}
+
+$x = new Obj;
+$y = 0;
+
+try {
+    $r = \"$y|$x->x|\";
+} catch (Exception $e) {
+    echo \"caught:\", $e->getMessage(), \"\\n\";
+}
+
+try {
+    $r = \"$x->x|$y|\";
+} catch (Exception $e) {
+    echo \"caught:\", $e->getMessage(), \"\\n\";
+}
+
+try {
+    $r = \"$y|$y|$x->x\";
+} catch (Exception $e) {
+    echo \"caught:\", $e->getMessage(), \"\\n\";
+}
+
+echo \"==DONE==\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "caught:x\ncaught:x\ncaught:x\n==DONE==\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let magic_read_body =
+        generated_c_static_function_body(&c_source, "ptn_declared_magic_property_read");
+    assert!(magic_read_body.contains("PtnTryFrame ptn_get_try_frame"));
+    assert!(magic_read_body.contains("ptn_rethrow_exception(runtime);"));
+}
+
+#[test]
 fn compile_overloaded_property_reference_assign_ops_to_native_binary() {
     let root = temp_dir("ptn-native-overloaded-property-reference-assign-ops");
     fs::create_dir_all(&root).unwrap();
