@@ -12292,6 +12292,53 @@ class MyHelloWorld extends Base {
 }
 
 #[test]
+fn compile_imported_trait_method_signature_fatal_reports_trait_source_file_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-signature-source-file");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-signature-source-file.php");
+    let trait_file = root.join("trait-signature-source-file.inc");
+    let output = root.join("trait-signature-source-file-bin");
+    fs::write(
+        &trait_file,
+        r#"<?php
+trait T {
+    public function foo(): string {}
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+require __DIR__ . '/trait-signature-source-file.inc';
+
+class A {
+    public function foo(): int {}
+}
+
+class B extends A {
+    use T;
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(&format!(
+            "Fatal error: Declaration of B::foo(): string must be compatible with A::foo(): int in {} on line 3",
+            trait_file.display()
+        )),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_autoload_variance_object_class_type_names_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-variance-object-class-types");
     fs::create_dir_all(&root).unwrap();

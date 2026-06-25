@@ -1093,6 +1093,7 @@ pub fn lower_with_source_and_includes(
         program,
         source_file.clone(),
         source_dir.clone(),
+        collect_include_trait_method_sources(&include_sources),
         include_resolutions,
     );
     let include_function_ranges = context.declare_include_functions(&include_sources);
@@ -1144,10 +1145,28 @@ pub fn lower_with_source_and_includes(
     }
 }
 
+fn collect_include_trait_method_sources(
+    include_sources: &[IncludeSource],
+) -> HashMap<(String, String), String> {
+    let mut sources = HashMap::new();
+    for include in include_sources {
+        for trait_decl in &include.program.traits {
+            let trait_name = trait_decl.name.to_ascii_lowercase();
+            for method in &trait_decl.methods {
+                sources
+                    .entry((trait_name.clone(), method.name.to_ascii_lowercase()))
+                    .or_insert_with(|| include.source_file.clone());
+            }
+        }
+    }
+    sources
+}
+
 struct LoweringContext<'a> {
     functions: Vec<FunctionDecl>,
     constant_deprecations: HashMap<String, DeprecatedMetadata>,
     constant_values: HashMap<String, String>,
+    include_trait_method_sources: HashMap<(String, String), String>,
     source_file: String,
     source_dir: String,
     strict_types: bool,
@@ -1239,6 +1258,7 @@ impl<'a> LoweringContext<'a> {
         program: &Program,
         source_file: String,
         source_dir: String,
+        include_trait_method_sources: HashMap<(String, String), String>,
         include_resolutions: &'a IncludeResolutionMap,
     ) -> Self {
         let constant_values = collect_constant_values(program);
@@ -1271,6 +1291,7 @@ impl<'a> LoweringContext<'a> {
             functions: Vec::new(),
             constant_deprecations,
             constant_values,
+            include_trait_method_sources,
             source_file,
             source_dir,
             strict_types: program.strict_types,
@@ -1289,6 +1310,20 @@ impl<'a> LoweringContext<'a> {
             context.declare_function(function);
         }
         context
+    }
+
+    fn source_file_for_method(&self, method: &crate::ast::MethodDecl) -> String {
+        let Some(trait_name) = method.trait_name.as_ref() else {
+            return self.source_file.clone();
+        };
+        let trait_method_name = method.trait_method_name.as_ref().unwrap_or(&method.name);
+        self.include_trait_method_sources
+            .get(&(
+                trait_name.to_ascii_lowercase(),
+                trait_method_name.to_ascii_lowercase(),
+            ))
+            .cloned()
+            .unwrap_or_else(|| self.source_file.clone())
     }
 
     fn declare_include_class_names(&mut self, include_sources: &[IncludeSource]) {
@@ -2145,11 +2180,12 @@ impl<'a> LoweringContext<'a> {
                     class.parent_name.as_deref(),
                     Some(&class_constant_values),
                 );
+                let method_source_file = self.source_file_for_method(method);
                 let function_index = self.functions.len();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
                     display_name: method_display_name.clone(),
-                    source_file: self.source_file.clone(),
+                    source_file: method_source_file.clone(),
                     strict_types: self.strict_types,
                     doc_comment: method.doc_comment.clone(),
                     class_name: Some(class.name.clone()),
@@ -2193,7 +2229,7 @@ impl<'a> LoweringContext<'a> {
                 self.functions[function_index].body = body;
                 MethodDecl {
                     name: method.name.clone(),
-                    source_file: self.source_file.clone(),
+                    source_file: method_source_file,
                     function_index,
                     visibility: lower_property_visibility(method.visibility),
                     attributes: method_attributes,

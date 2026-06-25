@@ -18868,7 +18868,7 @@ fn emit_tentative_internal_return_signature_deprecations(
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
-    source_path: &str,
+    _source_path: &str,
 ) {
     for method in &class.methods {
         if method.visibility == PropertyVisibility::Private {
@@ -18902,7 +18902,13 @@ fn emit_tentative_internal_return_signature_deprecations(
                 tentative_method.class_name,
                 tentative_method.signature
             );
-            emit_runtime_signature_fatal(out, &message, source_path, method.line, "        ");
+            emit_runtime_signature_fatal(
+                out,
+                &message,
+                &method.source_file,
+                method.line,
+                "        ",
+            );
             continue;
         }
         if function.return_type.as_ref().is_some_and(|return_type| {
@@ -18925,7 +18931,7 @@ fn emit_tentative_internal_return_signature_deprecations(
         out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", \"");
-        out.push_str(&c_string(source_path));
+        out.push_str(&c_string(&method.source_file));
         out.push_str("\", ");
         out.push_str(&method.line.to_string());
         out.push_str(");\n");
@@ -19713,7 +19719,7 @@ fn emit_runtime_method_signature_compatibility_fatal_with_indent(
     parent_class: &ClassDecl,
     parent_method: &crate::ir::MethodDecl,
     parent_function: &FunctionDecl,
-    source_path: &str,
+    _source_path: &str,
     indent: &str,
 ) {
     let message = format!(
@@ -19723,7 +19729,7 @@ fn emit_runtime_method_signature_compatibility_fatal_with_indent(
         parent_class.name,
         runtime_method_signature_display(parent_method, parent_function)
     );
-    emit_runtime_signature_fatal(out, &message, source_path, method.line, indent);
+    emit_runtime_signature_fatal(out, &message, &method.source_file, method.line, indent);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -19736,7 +19742,7 @@ fn emit_runtime_method_signature_unresolved_fatal(
     parent_method: &crate::ir::MethodDecl,
     parent_function: &FunctionDecl,
     unavailable_name: &str,
-    source_path: &str,
+    _source_path: &str,
     indent: &str,
 ) {
     let message = format!(
@@ -19747,7 +19753,7 @@ fn emit_runtime_method_signature_unresolved_fatal(
         runtime_method_signature_display(parent_method, parent_function),
         unavailable_name
     );
-    emit_runtime_signature_fatal(out, &message, source_path, method.line, indent);
+    emit_runtime_signature_fatal(out, &message, &method.source_file, method.line, indent);
 }
 
 fn emit_runtime_signature_fatal(
