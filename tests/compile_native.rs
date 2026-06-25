@@ -44996,6 +44996,22 @@ try {
 $xml->addAttribute('lang', 'en');
 var_dump((string) $xml['lang']);
 echo $xml->asXML();
+
+$offset = simplexml_load_string('<?xml version="1.0" encoding="ISO-8859-1" ?><foo/>');
+try {
+    $offset[""] = "value";
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+$offset["attr"] = "value";
+echo $offset->asXML();
+$offset["attr"] = "new value";
+echo $offset->asXML();
+try {
+    $offset[] = "error";
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
 "#,
     )
     .unwrap();
@@ -45014,6 +45030,12 @@ echo $xml->asXML();
             "string(2) \"en\"\n",
             "<?xml version=\"1.0\"?>\n",
             "<php lang=\"en\">testfest</php>\n",
+            "Cannot create attribute with an empty name\n",
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n",
+            "<foo attr=\"value\"/>\n",
+            "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n",
+            "<foo attr=\"new value\"/>\n",
+            "Cannot append to an attribute list\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -45021,6 +45043,7 @@ echo $xml->asXML();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("DOM\\\\ParentNode"));
     assert!(c_source.contains("ptn_simplexml_add_attribute_method"));
+    assert!(c_source.contains("ptn_simplexml_offset_set_method"));
 }
 
 #[test]

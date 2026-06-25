@@ -167404,6 +167404,11 @@ static PtnValue ptn_simplexml_offset_set_method(
         ptn_string_operand_free(value);
         return ptn_null();
     }
+    if (key.type == PTN_NULL) {
+        ptn_string_operand_free(value);
+        ptn_throw_exception(runtime, "ValueError", "Cannot append to an attribute list");
+        return ptn_null();
+    }
     if (key.type != PTN_STRING) {
         int64_t index = 0;
         if (!ptn_simplexml_offset_index(key, &index)) {
@@ -167423,6 +167428,11 @@ static PtnValue ptn_simplexml_offset_set_method(
             ptn_xml_set_text_content(runtime, node, value.data, value.len);
         }
         ptn_string_operand_free(value);
+        return ptn_null();
+    }
+    if (key.as.string.len == 0) {
+        ptn_string_operand_free(value);
+        ptn_throw_exception(runtime, "ValueError", "Cannot create attribute with an empty name");
         return ptn_null();
     }
     if (!ptn_simplexml_materialize_pending_property(runtime, data)) {
