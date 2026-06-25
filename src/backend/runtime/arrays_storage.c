@@ -737,6 +737,21 @@ static PTN_UNUSED void ptn_throw_exception_at(
     const char *path,
     size_t line
 );
+static PTN_UNUSED PtnException *ptn_exception_new_owned(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    size_t message_len,
+    int64_t code,
+    PtnValue previous,
+    int64_t severity,
+    const char *path,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_exception_previous_or_active(
+    PtnRuntime *runtime,
+    PtnValue previous
+);
 
 static PTN_UNUSED const char *ptn_array_key_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -2676,6 +2691,8 @@ typedef struct {
     PtnLazyObjectReferenceSnapshot *references;
     size_t reference_len;
     size_t reference_capacity;
+    PtnRuntime *root_runtime;
+    int properties_rooted;
 } PtnLazyObjectInitializerSnapshot;
 
 static int ptn_lazy_object_initializer_snapshot_has_reference(
@@ -2766,10 +2783,19 @@ static PtnLazyObjectInitializerSnapshot ptn_lazy_object_initializer_snapshot(Ptn
     snapshot.references = NULL;
     snapshot.reference_len = 0;
     snapshot.reference_capacity = 0;
+    snapshot.root_runtime = object == NULL ? NULL : object->lifecycle_runtime;
+    snapshot.properties_rooted = 0;
     ptn_lazy_object_initializer_snapshot_collect_references(&snapshot, object);
     snapshot.properties = object == NULL || object->properties == NULL
         ? NULL
         : ptn_array_clone(object->properties);
+    if (snapshot.root_runtime != NULL && snapshot.properties != NULL) {
+        ptn_runtime_push_temporary_root(
+            snapshot.root_runtime,
+            ptn_value_borrow(ptn_array(snapshot.properties))
+        );
+        snapshot.properties_rooted = 1;
+    }
     snapshot.metadata_len = object == NULL ? 0 : object->property_metadata_len;
     snapshot.metadata_capacity = object == NULL ? 0 : object->property_metadata_len;
     snapshot.metadata = object == NULL
@@ -2781,12 +2807,24 @@ static PtnLazyObjectInitializerSnapshot ptn_lazy_object_initializer_snapshot(Ptn
     return snapshot;
 }
 
+static void ptn_lazy_object_initializer_snapshot_unroot(
+    PtnLazyObjectInitializerSnapshot *snapshot
+) {
+    if (snapshot == NULL || !snapshot->properties_rooted) {
+        return;
+    }
+    ptn_runtime_pop_temporary_root(snapshot->root_runtime);
+    snapshot->root_runtime = NULL;
+    snapshot->properties_rooted = 0;
+}
+
 static void ptn_lazy_object_initializer_snapshot_discard(
     PtnLazyObjectInitializerSnapshot *snapshot
 ) {
     if (snapshot == NULL) {
         return;
     }
+    ptn_lazy_object_initializer_snapshot_unroot(snapshot);
     ptn_array_free(snapshot->properties);
     ptn_object_property_metadata_free_list(snapshot->metadata, snapshot->metadata_len);
     for (size_t i = 0; i < snapshot->reference_len; i++) {
@@ -2800,6 +2838,8 @@ static void ptn_lazy_object_initializer_snapshot_discard(
     snapshot->references = NULL;
     snapshot->reference_len = 0;
     snapshot->reference_capacity = 0;
+    snapshot->root_runtime = NULL;
+    snapshot->properties_rooted = 0;
 }
 
 static void ptn_lazy_object_initializer_snapshot_restore(
@@ -2809,6 +2849,7 @@ static void ptn_lazy_object_initializer_snapshot_restore(
     if (object == NULL || snapshot == NULL) {
         return;
     }
+    ptn_lazy_object_initializer_snapshot_unroot(snapshot);
     for (size_t i = 0; i < snapshot->reference_len; i++) {
         ptn_lazy_object_reference_snapshot_restore(&snapshot->references[i]);
     }
@@ -2826,6 +2867,8 @@ static void ptn_lazy_object_initializer_snapshot_restore(
     snapshot->references = NULL;
     snapshot->reference_len = 0;
     snapshot->reference_capacity = 0;
+    snapshot->root_runtime = NULL;
+    snapshot->properties_rooted = 0;
 }
 
 static PtnValue ptn_lazy_object_dynamic_properties_snapshot(PtnObject *object) {
@@ -2948,6 +2991,43 @@ static PTN_UNUSED const char *ptn_lazy_object_initializer_type_name(PtnValue val
     return "unknown";
 }
 
+static void ptn_lazy_object_prepare_type_error(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t line
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        return;
+    }
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "TypeError",
+        ptn_duplicate_string(message),
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+}
+
+static void ptn_lazy_object_throw_released_during_initialization(
+    PtnRuntime *runtime,
+    size_t line
+) {
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Lazy object was released during initialization",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
 static void ptn_magic_property_update_lazy_proxy_frame_ids(
     PtnRuntime *runtime,
     size_t proxy_object_id,
@@ -3003,6 +3083,8 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
     PtnLazyObjectInitializerSnapshot snapshot =
         ptn_lazy_object_initializer_snapshot(object);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    size_t refcount_before_initializer = object->refcount;
+    ptn_object_retain(object);
     PtnValue initializer = ptn_value_clone_deref(object->lazy_initializer);
     PtnValue arg = ptn_value_borrow(ptn_object(object));
     PtnValue result = ptn_null();
@@ -3017,6 +3099,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             object->lazy_initializing = 0;
             ptn_value_destroy(&initializer);
             ptn_value_destroy(&result);
+            ptn_object_release(object);
             ptn_rethrow_exception(runtime);
             return 0;
         }
@@ -3026,12 +3109,22 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
         ptn_try_frame_pop(runtime, &initializer_frame);
     }
     ptn_value_destroy(&initializer);
+    int object_released = object->refcount <= refcount_before_initializer;
+    int object_destroyed_during_initializer = object->destructor_called;
     if (runtime != NULL &&
         runtime->exceptions != NULL &&
         runtime->exceptions->active_exception != NULL) {
         ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
         object->lazy_initializing = 0;
         ptn_value_destroy(&result);
+        ptn_object_release(object);
+        return 0;
+    }
+    if (object_destroyed_during_initializer && !object_released) {
+        object->lazy_initializing = 0;
+        ptn_value_destroy(&result);
+        ptn_lazy_object_initializer_snapshot_discard(&snapshot);
+        ptn_object_release(object);
         return 0;
     }
     if (object->lazy_is_proxy) {
@@ -3052,6 +3145,13 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
+            if (object_released) {
+                ptn_lazy_object_prepare_type_error(runtime, message, line);
+                ptn_object_release(object);
+                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                return 0;
+            }
+            ptn_object_release(object);
             ptn_throw_exception(runtime, "TypeError", message);
             return 0;
         }
@@ -3059,6 +3159,17 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
+            if (object_released) {
+                ptn_lazy_object_prepare_type_error(
+                    runtime,
+                    "Lazy proxy factory must return a non-lazy object",
+                    line
+                );
+                ptn_object_release(object);
+                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                return 0;
+            }
+            ptn_object_release(object);
             ptn_throw_exception(runtime, "Error", "Lazy proxy factory must return a non-lazy object");
             return 0;
         }
@@ -3077,7 +3188,22 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
+            if (object_released) {
+                ptn_lazy_object_prepare_type_error(runtime, message, line);
+                ptn_object_release(object);
+                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                return 0;
+            }
+            ptn_object_release(object);
             ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        if (object_released) {
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
+            ptn_value_destroy(&result);
+            object->lazy_initializing = 0;
+            ptn_object_release(object);
+            ptn_lazy_object_throw_released_during_initialization(runtime, line);
             return 0;
         }
         ptn_value_destroy(&object->lazy_proxy_instance);
@@ -3094,11 +3220,31 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
+            if (object_released) {
+                ptn_lazy_object_prepare_type_error(
+                    runtime,
+                    "Lazy object initializer must return NULL or no value",
+                    line
+                );
+                ptn_object_release(object);
+                ptn_lazy_object_throw_released_during_initialization(runtime, line);
+                return 0;
+            }
+            ptn_object_release(object);
             ptn_throw_exception(
                 runtime,
                 "TypeError",
                 "Lazy object initializer must return NULL or no value"
             );
+            return 0;
+        }
+        if (object_released) {
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
+            ptn_value_destroy(&result);
+            ptn_object_run_destructor(object);
+            object->lazy_initializing = 0;
+            ptn_object_release(object);
+            ptn_lazy_object_throw_released_during_initialization(runtime, line);
             return 0;
         }
     }
@@ -3108,6 +3254,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
     object->lazy_uninitialized = 0;
     object->lazy_initializing = 0;
     ptn_lazy_object_initializer_snapshot_discard(&snapshot);
+    ptn_object_release(object);
     return 1;
 #else
     ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);

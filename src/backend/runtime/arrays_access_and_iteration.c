@@ -7741,6 +7741,21 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         ptn_throw_incomplete_object_property_modification(runtime, receiver.as.object, line);
         return ptn_null();
     }
+    PtnValue preserved_lazy_write_value = ptn_null();
+    int has_preserved_lazy_write_value = 0;
+#define PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE() \
+    do { \
+        if (has_preserved_lazy_write_value) { \
+            ptn_value_destroy(&preserved_lazy_write_value); \
+            has_preserved_lazy_write_value = 0; \
+        } \
+    } while (0)
+#define PTN_OBJECT_WRITE_RETURN(expr) \
+    do { \
+        PtnValue ptn_object_write_result__ = (expr); \
+        PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE(); \
+        return ptn_object_write_result__; \
+    } while (0)
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         int lazy_set_hook_dispatch = 0;
@@ -7811,8 +7826,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 );
         }
         if (!local_lazy_slot && !lazy_set_hook_dispatch && !lazy_magic_set_dispatch) {
+            preserved_lazy_write_value = ptn_value_clone_deref(value);
+            has_preserved_lazy_write_value = 1;
+            value = preserved_lazy_write_value;
             if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
-                return ptn_null();
+                PTN_OBJECT_WRITE_RETURN(ptn_null());
             }
         }
     }
@@ -7827,7 +7845,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             line,
             &internal_xml_value
         )) {
-            return internal_xml_value;
+            PTN_OBJECT_WRITE_RETURN(internal_xml_value);
         }
     } else {
         PtnValue internal_xml_value = ptn_null();
@@ -7839,7 +7857,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             line,
             &internal_xml_value
         )) {
-            return internal_xml_value;
+            PTN_OBJECT_WRITE_RETURN(internal_xml_value);
         }
         PtnValue array_object_value = ptn_null();
         if (ptn_internal_array_object_property_write(
@@ -7851,7 +7869,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             line,
             &array_object_value
         )) {
-            return array_object_value;
+            PTN_OBJECT_WRITE_RETURN(array_object_value);
         }
     }
 #endif
@@ -7875,22 +7893,23 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 line
             );
         }
-        return ptn_value_clone_deref(value);
+        PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
     }
     if (
         blocked_metadata != NULL &&
         ptn_blocked_property_write_should_call_magic_set(blocked_metadata)
     ) {
         if (ptn_magic_property_set_len(runtime, receiver, property, property_len, value, line)) {
-            return ptn_value_clone_deref(value);
+            PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
         }
     }
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
         ptn_magic_property_set_len(runtime, receiver, property, property_len, value, line)) {
-        return ptn_value_clone_deref(value);
+        PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
     }
     if (property_len > 0 && property[0] == '\0') {
+        PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
         ptn_throw_exception_at(
             runtime,
             "Error",
@@ -7918,7 +7937,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         line
     );
     if (storage_key == NULL) {
-        return ptn_null();
+        PTN_OBJECT_WRITE_RETURN(ptn_null());
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
@@ -7940,7 +7959,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     ) {
         ptn_array_key_free(key);
         free(storage_key);
-        return ptn_value_clone_deref(value);
+        PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
     }
     if (
         indirect_write &&
@@ -7950,11 +7969,12 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     ) {
         ptn_array_key_free(key);
         free(storage_key);
-        return ptn_value_clone_deref(value);
+        PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
     }
     if (ptn_property_is_get_only_virtual(metadata)) {
         ptn_array_key_free(key);
         free(storage_key);
+        PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
         ptn_throw_get_only_virtual_property_write_error(
             runtime,
             metadata,
@@ -7999,7 +8019,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         )) {
             ptn_array_key_free(key);
             free(storage_key);
-            return ptn_value_clone_deref(value);
+            PTN_OBJECT_WRITE_RETURN(ptn_value_clone_deref(value));
         }
     }
     int readonly_clone_reinit = 0;
@@ -8012,11 +8032,12 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
                 current.as.object == assigned.as.object) {
                 ptn_array_key_free(key);
                 free(storage_key);
-                return ptn_value_clone(assigned);
+                PTN_OBJECT_WRITE_RETURN(ptn_value_clone(assigned));
             }
         }
         ptn_array_key_free(key);
         free(storage_key);
+        PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
         ptn_throw_readonly_property_indirect_modification_error(
             runtime,
             metadata->declaring_class,
@@ -8033,6 +8054,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         if (!readonly_clone_reinit) {
             ptn_array_key_free(key);
             free(storage_key);
+            PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
             ptn_throw_readonly_property_error(
                 runtime,
                 receiver.as.object->class_name,
@@ -8049,7 +8071,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         runtime->exceptions->active_exception != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
-        return ptn_null();
+        PTN_OBJECT_WRITE_RETURN(ptn_null());
     }
     if (metadata == NULL && entry == NULL && !suppress_dynamic_property_deprecation) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
@@ -8084,6 +8106,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
         int receiver_invalidated = assignment_receiver->refcount <= refcount_before_coercion;
         int active_exception = ptn_runtime_has_active_exception(runtime);
         if (receiver_invalidated && !active_exception) {
+            PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
             ptn_throw_object_released_while_assigning_property(
                 runtime,
                 metadata->declaring_class,
@@ -8097,7 +8120,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
             ptn_value_destroy(&stored);
             ptn_array_key_free(key);
             free(storage_key);
-            return ptn_null();
+            PTN_OBJECT_WRITE_RETURN(ptn_null());
         }
     }
     if (metadata == NULL) {
@@ -8123,6 +8146,9 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     }
     ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     free(storage_key);
+    PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
+#undef PTN_OBJECT_WRITE_RETURN
+#undef PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE
     return result;
 }
 

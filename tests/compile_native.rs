@@ -78360,6 +78360,143 @@ exercise_lazy_proxy_success_ref_source($okProxy);
 }
 
 #[test]
+fn compile_lazy_initializer_release_and_assignment_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-initializer-release-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-initializer-release-assignment.php");
+    let output = root.join("lazy-initializer-release-assignment-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyReleasedBox {
+    public $s;
+    public function __destruct() {
+        echo __METHOD__, \"\\n\";
+    }
+}
+
+class LazyAssignmentBox {
+    public $s;
+}
+
+function dump_error_chain(Error $e): void {
+    do {
+        echo $e::class, ': ', $e->getMessage(), \"\\n\";
+    } while ($e = $e->getPrevious());
+}
+
+$releaseReflector = new ReflectionClass(LazyReleasedBox::class);
+
+echo \"# Release ghost\\n\";
+$o = $releaseReflector->newLazyGhost(function ($obj) {
+    global $o;
+    $o = null;
+});
+try {
+    $o->s = new stdClass;
+} catch (Error $e) {
+    dump_error_chain($e);
+}
+
+echo \"# Release proxy\\n\";
+$o = $releaseReflector->newLazyProxy(function ($obj) {
+    global $o;
+    $o = null;
+    return new LazyReleasedBox();
+});
+try {
+    $o->s = new stdClass;
+} catch (Error $e) {
+    dump_error_chain($e);
+}
+
+echo \"# GC snapshot\\n\";
+$o = $releaseReflector->newLazyGhost(function ($obj) {
+    global $o;
+    $o->s = $o;
+    $o = null;
+    gc_collect_cycles();
+});
+$o->s = new stdClass;
+gc_collect_cycles();
+
+echo \"# Nested ghost\\n\";
+$o = $releaseReflector->newLazyGhost(function ($obj) {
+    global $o;
+    $o = null;
+    return new stdClass();
+});
+try {
+    $o->s = new stdClass;
+} catch (Error $e) {
+    dump_error_chain($e);
+}
+
+$assignmentReflector = new ReflectionClass(LazyAssignmentBox::class);
+
+echo \"# Assign ghost\\n\";
+$o = $assignmentReflector->newLazyGhost(function ($obj) {
+    global $p;
+    $p = null;
+});
+$p = new stdClass;
+$q = $p;
+var_dump(($o->s = $p) === $q);
+var_dump($o->s === $q);
+
+echo \"# Assign proxy\\n\";
+$o = $assignmentReflector->newLazyProxy(function ($obj) {
+    global $p;
+    $p = null;
+    return new LazyAssignmentBox();
+});
+$p = new stdClass;
+$q = $p;
+var_dump(($o->s = $p) === $q);
+var_dump($o->s === $q);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "# Release ghost\n",
+            "LazyReleasedBox::__destruct\n",
+            "Error: Lazy object was released during initialization\n",
+            "# Release proxy\n",
+            "LazyReleasedBox::__destruct\n",
+            "Error: Lazy object was released during initialization\n",
+            "# GC snapshot\n",
+            "LazyReleasedBox::__destruct\n",
+            "# Nested ghost\n",
+            "Error: Lazy object was released during initialization\n",
+            "TypeError: Lazy object initializer must return NULL or no value\n",
+            "# Assign ghost\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "# Assign proxy\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("properties_rooted"));
+    assert!(c_source.contains("preserved_lazy_write_value"));
+}
+
+#[test]
 fn compile_lazy_get_mangled_object_vars_preserves_raw_slots_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-mangled-vars-raw-slots");
     fs::create_dir_all(&root).unwrap();
