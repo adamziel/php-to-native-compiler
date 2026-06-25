@@ -102815,6 +102815,7 @@ typedef struct {
     size_t item_count;
     size_t item_capacity;
     size_t position;
+    int iterator_initialized;
     int attributes;
     int property_view;
     PtnXmlNode **pending_parents;
@@ -162852,6 +162853,13 @@ static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, P
     target.as.object->native_data_free = parent.as.object->native_data_free;
     parent.as.object->native_data = NULL;
     parent.as.object->native_data_free = NULL;
+    if (target.as.object->native_data != NULL &&
+        ptn_internal_class_name_is_simplexml(parent.as.object->class_name) &&
+        ptn_internal_class_name_is_simplexml(target.as.object->class_name)) {
+        PtnSimpleXmlData *data = (PtnSimpleXmlData *)target.as.object->native_data;
+        free(data->class_name);
+        data->class_name = ptn_duplicate_string(target.as.object->class_name);
+    }
     if (adopted_xml_node_native_data && target.as.object->native_data != NULL) {
         ((PtnXmlNode *)target.as.object->native_data)->object = target.as.object;
     }
@@ -163319,7 +163327,7 @@ static int ptn_simplexml_iterator_uses_child_nodes(const PtnSimpleXmlData *data)
 }
 
 static PtnXmlNode *ptn_simplexml_iterator_node_at(PtnSimpleXmlData *data, size_t position) {
-    if (data == NULL) {
+    if (data == NULL || !data->iterator_initialized) {
         return NULL;
     }
     if (!ptn_simplexml_iterator_uses_child_nodes(data)) {
@@ -164622,6 +164630,11 @@ static void ptn_simplexml_replace_receiver_data(PtnValue receiver, PtnValue repl
     }
     receiver.as.object->native_data = replacement.as.object->native_data;
     receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+    PtnSimpleXmlData *data = (PtnSimpleXmlData *)receiver.as.object->native_data;
+    if (data != NULL) {
+        free(data->class_name);
+        data->class_name = ptn_duplicate_string(receiver.as.object->class_name);
+    }
     replacement.as.object->native_data = NULL;
     replacement.as.object->native_data_free = NULL;
 }
@@ -165633,14 +165646,16 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     }
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->position = 0;
+        data->iterator_initialized = 1;
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
-        return ptn_bool(data->position < ptn_simplexml_iterator_count(data));
+        return ptn_bool(data->iterator_initialized && data->position < ptn_simplexml_iterator_count(data));
     }
     if (ptn_ascii_case_equal(name, "current")) {
         PtnXmlNode *node = ptn_simplexml_iterator_node_at(data, data->position);
         if (node == NULL) {
+            ptn_throw_exception(runtime, "Error", "Iterator not initialized or already consumed");
             return ptn_null();
         }
         PtnValue current = ptn_simplexml_object_from_node_as(
@@ -165697,13 +165712,15 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     }
     if (ptn_ascii_case_equal(name, "key")) {
         PtnXmlNode *node = ptn_simplexml_iterator_node_at(data, data->position);
-        if (node != NULL) {
-            const char *name = data->attributes
-                ? (node->name == NULL ? "" : node->name)
-                : ptn_simplexml_element_child_name(node);
-            if (name != NULL) {
-                return ptn_owned_string(ptn_duplicate_string(name));
-            }
+        if (node == NULL) {
+            ptn_throw_exception(runtime, "Error", "Iterator not initialized or already consumed");
+            return ptn_null();
+        }
+        const char *name = data->attributes
+            ? (node->name == NULL ? "" : node->name)
+            : ptn_simplexml_element_child_name(node);
+        if (name != NULL) {
+            return ptn_owned_string(ptn_duplicate_string(name));
         }
         return ptn_int((int64_t)data->position);
     }

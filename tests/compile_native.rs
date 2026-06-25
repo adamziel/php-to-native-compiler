@@ -1149,7 +1149,7 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
             "string(5) \"first\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "bool(true)\n",
+            "bool(false)\n",
             "bool(true)\n",
             "temp-next=2:false\n",
             "temp-seek=2:false\n",
@@ -37266,7 +37266,7 @@ var_dump(
         concat!(
             "bool(true)\n",
             "bool(true)\n",
-            "bool(false)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
@@ -44523,6 +44523,7 @@ var_dump(
     $sxe instanceof SimpleXMLIterator,
     count($sxe)
 );
+var_dump($sxe->valid(), $sxe->hasChildren(), $sxe->getChildren());
 
 $sxe->rewind();
 var_dump($sxe->key(), $sxe->hasChildren());
@@ -44554,12 +44555,15 @@ var_dump(get_class($test), $test instanceof SimpleXMLIterator, count($test), cou
         concat!(
             "bool(true)\n",
             "bool(true)\n",
-            "bool(false)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "string(17) \"SimpleXMLIterator\"\n",
             "bool(true)\n",
             "bool(true)\n",
             "int(2)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "NULL\n",
             "string(4) \"item\"\n",
             "bool(true)\n",
             "string(17) \"SimpleXMLIterator\"\n",
