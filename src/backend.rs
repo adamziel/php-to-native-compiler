@@ -22495,6 +22495,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
     out.push_str("        int valid = 0;\n");
     out.push_str("        char *separator = strstr(method_name, \"::\");\n");
+    out.push_str("        int ptn_scoped_object_callable_class_compatible = 1;\n");
     out.push_str(
         "        if (separator != NULL && separator != method_name && separator[2] != '\\0') {\n",
     );
@@ -22513,6 +22514,8 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            }\n");
     out.push_str("            if (ptn_declared_class_is_same_or_descendant(receiver_class_name, target_class_name)) {\n");
     out.push_str("                valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope) || ptn_declared_class_has_call_magic(target_class_name);\n");
+    out.push_str("            } else {\n");
+    out.push_str("                ptn_scoped_object_callable_class_compatible = 0;\n");
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
@@ -22520,7 +22523,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
     out.push_str("        }\n");
     out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
-    out.push_str("        if (runtime != NULL && !valid && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
+    out.push_str("        if (runtime != NULL && !valid && ptn_scoped_object_callable_class_compatible && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
     out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line);\n");
     out.push_str("        }\n");
     out.push_str("        free(method_name);\n");
@@ -24190,15 +24193,28 @@ fn emit_callable_dispatch(
         out.push_str("                char *separator = strstr(method_name, \"::\");\n");
         out.push_str("                if (separator != NULL) {\n");
         out.push_str("                    const char *callable_scope_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
-        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
-        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
-        out.push_str("                    }\n");
         out.push_str("                    *separator = '\\0';\n");
         out.push_str("                    const char *relative_class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
         out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, relative_class_name);\n");
         out.push_str(
             "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
+        out.push_str("                    if (target_class_name != NULL && !ptn_declared_class_is_same_or_descendant(relative_class_name, target_class_name)) {\n");
+        out.push_str("                        char ptn_scoped_object_callable_message[256];\n");
+        out.push_str("                        int ptn_scoped_object_callable_written = snprintf(ptn_scoped_object_callable_message, sizeof(ptn_scoped_object_callable_message), \"call_user_func(): Argument #1 ($callback) must be a valid callback, class %s is not a subclass of %s\", relative_class_name, target_class_name);\n");
+        out.push_str("                        if (ptn_scoped_object_callable_written < 0 || (size_t)ptn_scoped_object_callable_written >= sizeof(ptn_scoped_object_callable_message)) {\n");
+        out.push_str("                            ptn_abort_out_of_memory();\n");
+        out.push_str("                        }\n");
+        out.push_str("                        ptn_throw_exception_at(runtime, \"TypeError\", ptn_scoped_object_callable_message, runtime->source_path, line);\n");
+        out.push_str("                        free(target_method_name);\n");
+        out.push_str("                        free(target_class_name);\n");
+        out.push_str("                        free(method_name);\n");
+        out.push_str("                        return ptn_null();\n");
+        out.push_str("                    }\n");
+        out.push_str("                    *separator = ':';\n");
+        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
+        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                    }\n");
         out.push_str("                }\n");
         out.push_str("                PtnValue result;\n");
         out.push_str("                if (target_class_name != NULL && ptn_call_declared_method_in_scope(runtime, receiver, target_class_name, target_method_name, receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name, argc, args, line, &result)) {\n");

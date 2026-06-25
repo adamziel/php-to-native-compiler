@@ -5118,6 +5118,28 @@ static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue res
                 ) {
                     reason = ptn_format_missing_method_callback_reason(target_class_name, target_method_name);
                 }
+            } else {
+                int needed = snprintf(
+                    NULL,
+                    0,
+                    "class %s is not a subclass of %s",
+                    receiver_class_name,
+                    target_class_name
+                );
+                if (needed < 0) {
+                    ptn_abort_out_of_memory();
+                }
+                reason = malloc((size_t)needed + 1);
+                if (reason == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                snprintf(
+                    reason,
+                    (size_t)needed + 1,
+                    "class %s is not a subclass of %s",
+                    receiver_class_name,
+                    target_class_name
+                );
             }
             *separator = ':';
         } else {
@@ -180837,7 +180859,7 @@ static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const
     (void)line;
     int syntax_only = argc >= 2 && ptn_is_truthy(args[1]);
     if (argc >= 3 && args[2].type == PTN_REFERENCE) {
-        PtnValue callable_name = ptn_owned_string(ptn_callable_output_name(args[0]));
+        PtnValue callable_name = ptn_callable_output_name_value(args[0]);
         ptn_reference_assign(runtime, args[2].as.reference, callable_name);
         ptn_value_destroy(&callable_name);
     }

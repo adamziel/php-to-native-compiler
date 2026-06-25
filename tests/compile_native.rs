@@ -32426,6 +32426,14 @@ var_dump(is_callable(\"missing_function\", true, $name));
 var_dump($name);
 
 $name = \"initial\";
+var_dump(is_callable(\"\\0\", true, $name));
+echo json_encode($name), \"\\n\";
+
+$name = \"initial\";
+var_dump(is_callable(\"welcome\\0\", false, $name));
+echo json_encode($name), \"\\n\";
+
+$name = \"initial\";
 var_dump(is_callable(callable_name_free(...), callable_name: $name));
 var_dump($name);
 
@@ -32471,6 +32479,10 @@ var_dump($name);
                 "string(5) \"Array\"\n",
                 "bool(true)\n",
                 "string(16) \"missing_function\"\n",
+                "bool(true)\n",
+                "\"\\u0000\"\n",
+                "bool(false)\n",
+                "\"welcome\\u0000\"\n",
                 "bool(true)\n",
                 "string(18) \"callable_name_free\"\n",
                 "bool(true)\n",
@@ -57031,6 +57043,52 @@ var_dump($x->doSomethingParentThis(1));
         "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {",
     );
     assert!(scoped_method_body.contains("(void)runtime;"));
+}
+
+#[test]
+fn compile_call_user_func_invalid_scoped_object_callable_reports_subclass_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-scoped-object-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-scoped-object-callable.php");
+    let output = root.join("call-user-func-invalid-scoped-object-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+class BaseForScopedCallable {
+    public function who() {
+        echo \"base\\n\";
+    }
+}
+
+class UnrelatedForScopedCallable {
+    public function __toString() {
+        return '$this';
+    }
+}
+
+$object = new UnrelatedForScopedCallable();
+try {
+    call_user_func([$object, 'BaseForScopedCallable::who']);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "call_user_func(): Argument #1 ($callback) must be a valid callback, class UnrelatedForScopedCallable is not a subclass of BaseForScopedCallable\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("class %s is not a subclass of %s"));
+    assert!(c_source.contains("ptn_declared_class_is_same_or_descendant"));
 }
 
 #[test]
