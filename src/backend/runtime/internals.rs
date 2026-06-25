@@ -4,6 +4,7 @@
 pub(super) const SYMBOLS_C: &str = include_str!("internals_symbols.c");
 pub(super) const INTERNAL_FUNCTIONS_C: &str = include_str!("internals_internal_functions.c");
 pub(super) const CRYPT_PORT_C: &str = include_str!("crypt_port.c");
+pub(super) const HASH_EXTRA_C: &str = include_str!("hash_extra.c");
 pub(super) const BCMATH_CALENDAR_C: &str = include_str!("bcmath_calendar.c");
 
 const CSV_RUNTIME_MARKER: &str = "/* PTN_CSV_RUNTIME_START */";
@@ -26,6 +27,7 @@ pub(super) fn internal_functions_c() -> String {
     let mut source = String::with_capacity(
         INTERNAL_FUNCTIONS_C.len()
             + CRYPT_PORT_C.len()
+            + HASH_EXTRA_C.len()
             + BCMATH_CALENDAR_C.len()
             + super::csv::C.len()
             + super::query::C.len()
@@ -34,6 +36,8 @@ pub(super) fn internal_functions_c() -> String {
     source.push_str(&INTERNAL_FUNCTIONS_C[..marker_end]);
     source.push('\n');
     source.push_str(CRYPT_PORT_C);
+    source.push('\n');
+    source.push_str(HASH_EXTRA_C);
     source.push('\n');
     source.push_str(BCMATH_CALENDAR_C);
     source.push('\n');
