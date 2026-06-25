@@ -21349,6 +21349,37 @@ try {
 }
 
 #[test]
+fn compile_spl_priority_queue_zero_extract_flags_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-pq-zero-extract-flags-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-pq-zero-extract-flags-trace.php");
+    let output = root.join("spl-pq-zero-extract-flags-trace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$queue = new SplPriorityQueue();
+$queue->setExtractFlags(0);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught RuntimeException: Must specify at least one extract flag in {}:3\nStack trace:\n#0 {}(3): SplPriorityQueue->setExtractFlags(0)\n#1 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_append_iterator_preserves_inner_cursor_to_native_binary() {
     let root = temp_dir("ptn-native-append-iterator-inner-cursor");
     fs::create_dir_all(&root).unwrap();

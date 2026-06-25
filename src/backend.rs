@@ -589,6 +589,9 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ");
     out.push_str(&return_label);
     out.push_str(":\n");
+    out.push_str("    if (runtime.exceptions->active_exception != NULL) {\n");
+    out.push_str("        ptn_rethrow_exception(&runtime);\n");
+    out.push_str("    }\n");
     out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");

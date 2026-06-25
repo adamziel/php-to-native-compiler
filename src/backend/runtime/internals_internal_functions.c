@@ -169931,6 +169931,17 @@ static void ptn_spl_declare_private_value_property(
         line
     );
     ptn_value_destroy(&assigned);
+    PtnValue resolved = ptn_value_deref(object);
+    if (resolved.type == PTN_OBJECT && resolved.as.object->properties != NULL) {
+        char *storage_key = ptn_object_private_storage_key(declaring_class, property_name);
+        PtnArrayKey key = ptn_array_string_key(storage_key);
+        ptn_array_set_entry(
+            resolved.as.object->properties,
+            key,
+            ptn_value_clone_deref(value)
+        );
+        free(storage_key);
+    }
     ptn_value_destroy(&property_value);
 }
 
@@ -173349,6 +173360,13 @@ static PtnValue ptn_spl_heap_priority_at(PtnSplHeapData *data, size_t index) {
     return ptn_value_clone_deref(array->entries[index].value);
 }
 
+static void ptn_spl_heap_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplHeapData *data,
+    size_t line
+);
+
 static int ptn_spl_heap_active_exception(PtnRuntime *runtime) {
     return runtime != NULL &&
         runtime->exceptions != NULL &&
@@ -173381,6 +173399,7 @@ static int ptn_spl_heap_compare_priorities(
                 }
                 if (data != NULL) {
                     data->is_corrupted = 1;
+                    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
                 }
                 ptn_value_destroy(&compare_args[0]);
                 ptn_value_destroy(&compare_args[1]);
@@ -173403,6 +173422,7 @@ static int ptn_spl_heap_compare_priorities(
         if (ptn_spl_heap_active_exception(runtime)) {
             if (data != NULL) {
                 data->is_corrupted = 1;
+                ptn_spl_heap_sync_properties(runtime, receiver, data, line);
             }
             ptn_value_destroy(&result);
             return 0;
@@ -173424,6 +173444,7 @@ static int ptn_spl_heap_compare_priorities(
                 }
                 if (data != NULL) {
                     data->is_corrupted = 1;
+                    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
                 }
                 ptn_rethrow_exception(runtime);
                 return 0;
@@ -173442,11 +173463,94 @@ static int ptn_spl_heap_compare_priorities(
         if (ptn_spl_heap_active_exception(runtime)) {
             if (data != NULL) {
                 data->is_corrupted = 1;
+                ptn_spl_heap_sync_properties(runtime, receiver, data, line);
             }
             return 0;
         }
     }
     *compared_out = compared;
+    return 1;
+}
+
+static void ptn_spl_heap_swap_entries(PtnSplHeapData *data, size_t left, size_t right) {
+    if (data == NULL || left == right) {
+        return;
+    }
+    PtnValue values_value = ptn_value_deref(data->values);
+    PtnValue priorities_value = ptn_value_deref(data->priorities);
+    if (values_value.type != PTN_ARRAY || priorities_value.type != PTN_ARRAY ||
+        left >= values_value.as.array->len || right >= values_value.as.array->len ||
+        left >= priorities_value.as.array->len || right >= priorities_value.as.array->len) {
+        return;
+    }
+    PtnValue value_tmp = values_value.as.array->entries[left].value;
+    values_value.as.array->entries[left].value = values_value.as.array->entries[right].value;
+    values_value.as.array->entries[right].value = value_tmp;
+
+    PtnValue priority_tmp = priorities_value.as.array->entries[left].value;
+    priorities_value.as.array->entries[left].value = priorities_value.as.array->entries[right].value;
+    priorities_value.as.array->entries[right].value = priority_tmp;
+}
+
+static int ptn_spl_heap_priority_index_is_better(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplHeapData *data,
+    size_t candidate,
+    size_t incumbent,
+    size_t line,
+    int *better_out
+) {
+    PtnValue candidate_priority = ptn_spl_heap_priority_at(data, candidate);
+    PtnValue incumbent_priority = ptn_spl_heap_priority_at(data, incumbent);
+    int compared = PTN_COMPARE_EQUAL;
+    int ok = ptn_spl_heap_compare_priorities(
+        runtime,
+        receiver,
+        data,
+        candidate_priority,
+        incumbent_priority,
+        line,
+        &compared
+    );
+    ptn_value_destroy(&candidate_priority);
+    ptn_value_destroy(&incumbent_priority);
+    if (!ok) {
+        return 0;
+    }
+    *better_out = (!data->is_min && compared == PTN_COMPARE_GREATER) ||
+        (data->is_min && compared == PTN_COMPARE_LESS);
+    return 1;
+}
+
+static int ptn_spl_heap_child_should_bubble(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplHeapData *data,
+    size_t parent,
+    size_t child,
+    size_t line,
+    int *bubble_out
+) {
+    PtnValue parent_priority = ptn_spl_heap_priority_at(data, parent);
+    PtnValue child_priority = ptn_spl_heap_priority_at(data, child);
+    int compared = PTN_COMPARE_EQUAL;
+    int ok = ptn_spl_heap_compare_priorities(
+        runtime,
+        receiver,
+        data,
+        parent_priority,
+        child_priority,
+        line,
+        &compared
+    );
+    ptn_value_destroy(&parent_priority);
+    ptn_value_destroy(&child_priority);
+    if (!ok) {
+        return 0;
+    }
+    *bubble_out = (!data->is_min && compared == PTN_COMPARE_LESS) ||
+        (data->is_min && compared == PTN_COMPARE_GREATER);
     return 1;
 }
 
@@ -173457,24 +173561,26 @@ static int ptn_spl_heap_validate_inserted_priority(
     size_t inserted_index,
     size_t line
 ) {
-    for (size_t i = 0; i < inserted_index; i++) {
-        PtnValue inserted_priority = ptn_spl_heap_priority_at(data, inserted_index);
-        PtnValue existing_priority = ptn_spl_heap_priority_at(data, i);
-        int compared = PTN_COMPARE_EQUAL;
-        int ok = ptn_spl_heap_compare_priorities(
-            runtime,
-            receiver,
-            data,
-            inserted_priority,
-            existing_priority,
-            line,
-            &compared
-        );
-        ptn_value_destroy(&inserted_priority);
-        ptn_value_destroy(&existing_priority);
-        if (!ok) {
+    size_t current = inserted_index;
+    while (current > 0) {
+        size_t parent = (current - 1) / 2;
+        int should_bubble = 0;
+        if (!ptn_spl_heap_child_should_bubble(
+                runtime,
+                receiver,
+                data,
+                parent,
+                current,
+                line,
+                &should_bubble
+            )) {
             return 0;
         }
+        if (!should_bubble) {
+            break;
+        }
+        ptn_spl_heap_swap_entries(data, parent, current);
+        current = parent;
     }
     return 1;
 }
@@ -173486,35 +173592,14 @@ static int ptn_spl_heap_best_index(
     size_t line,
     size_t *index_out
 ) {
+    (void)runtime;
+    (void)receiver;
+    (void)line;
     size_t count = ptn_spl_heap_count(data);
     if (count == 0) {
         return 0;
     }
-    size_t best = 0;
-    for (size_t i = 1; i < count; i++) {
-        PtnValue current_priority = ptn_spl_heap_priority_at(data, i);
-        PtnValue best_priority = ptn_spl_heap_priority_at(data, best);
-        int compared = PTN_COMPARE_EQUAL;
-        int ok = ptn_spl_heap_compare_priorities(
-            runtime,
-            receiver,
-            data,
-            current_priority,
-            best_priority,
-            line,
-            &compared
-        );
-        ptn_value_destroy(&current_priority);
-        ptn_value_destroy(&best_priority);
-        if (!ok) {
-            return 0;
-        }
-        if ((!data->is_min && compared == PTN_COMPARE_GREATER) ||
-            (data->is_min && compared == PTN_COMPARE_LESS)) {
-            best = i;
-        }
-    }
-    *index_out = best;
+    *index_out = 0;
     return 1;
 }
 
@@ -173547,6 +173632,14 @@ static void ptn_spl_heap_remove_index(
     int64_t next = 0;
     for (size_t i = 0; i < count; i++) {
         if (i == remove_index) {
+            if (i + 1 < count) {
+                ptn_array_set_entry(values.as.array, ptn_array_int_key(next), ptn_spl_heap_value_at(data, count - 1));
+                ptn_array_set_entry(priorities.as.array, ptn_array_int_key(next), ptn_spl_heap_priority_at(data, count - 1));
+                next++;
+            }
+            continue;
+        }
+        if (i + 1 == count) {
             continue;
         }
         ptn_array_set_entry(values.as.array, ptn_array_int_key(next), ptn_spl_heap_value_at(data, i));
@@ -173557,6 +173650,39 @@ static void ptn_spl_heap_remove_index(
     ptn_value_destroy(&data->priorities);
     data->values = values;
     data->priorities = priorities;
+    size_t new_count = ptn_spl_heap_count(data);
+    for (size_t start = new_count / 2; start > 0; start--) {
+        size_t current = start - 1;
+        while (current < new_count) {
+            size_t best = current;
+            size_t left = current * 2 + 1;
+            size_t right = left + 1;
+            int better = 0;
+            if (left < new_count) {
+                if (!ptn_spl_heap_priority_index_is_better(runtime, receiver, data, left, best, line, &better)) {
+                    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+                    return;
+                }
+                if (better) {
+                    best = left;
+                }
+            }
+            if (right < new_count) {
+                if (!ptn_spl_heap_priority_index_is_better(runtime, receiver, data, right, best, line, &better)) {
+                    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+                    return;
+                }
+                if (better) {
+                    best = right;
+                }
+            }
+            if (best == current) {
+                break;
+            }
+            ptn_spl_heap_swap_entries(data, current, best);
+            current = best;
+        }
+    }
     ptn_spl_heap_sync_properties(runtime, receiver, data, line);
 }
 
@@ -174126,6 +174252,9 @@ static PtnValue ptn_spl_heap_call_method(
     PtnValue resolved_receiver = ptn_value_deref(receiver);
     const char *class_name = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object->class_name : "SplHeap";
     if (ptn_ascii_case_equal(name, "__construct")) {
+        if (ptn_spl_heap_reject_modification_if_active(runtime, data)) {
+            return ptn_null();
+        }
         PtnValue replacement = ptn_spl_heap_new(runtime, class_name, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
@@ -174205,6 +174334,13 @@ static PtnValue ptn_spl_heap_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
+        if (ptn_spl_heap_reject_modification_if_active(runtime, data)) {
+            return ptn_null();
+        }
+        if (data->is_corrupted) {
+            ptn_spl_heap_throw_corrupted(runtime);
+            return ptn_null();
+        }
         PtnArray *values = ptn_value_deref(data->values).as.array;
         PtnArray *priorities = ptn_value_deref(data->priorities).as.array;
         if (values->len > (size_t)INT64_MAX || priorities->len > (size_t)INT64_MAX) {
@@ -174231,6 +174367,10 @@ static PtnValue ptn_spl_heap_call_method(
         }
         if (data->is_corrupted) {
             ptn_spl_heap_throw_corrupted(runtime);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "extract") &&
+            ptn_spl_heap_reject_modification_if_active(runtime, data)) {
             return ptn_null();
         }
         size_t best = 0;
@@ -174278,9 +174418,33 @@ static PtnValue ptn_spl_heap_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        if (ptn_spl_heap_reject_modification_if_active(runtime, data)) {
+            return ptn_null();
+        }
         flags &= PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH;
         if (flags == 0) {
-            ptn_throw_exception(runtime, "RuntimeException", "Must specify at least one extract flag");
+            char frame_name[160];
+            int written = snprintf(
+                frame_name,
+                sizeof(frame_name),
+                "%s->setExtractFlags",
+                class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(frame_name)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "RuntimeException",
+                ptn_duplicate_string("Must specify at least one extract flag"),
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                frame_name,
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                argc,
+                args
+            );
             return ptn_null();
         }
         data->extract_flags = flags;
@@ -174293,6 +174457,10 @@ static PtnValue ptn_spl_heap_call_method(
     }
     if (ptn_ascii_case_equal(name, "recoverFromCorruption")) {
         ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception == NULL &&
+            ptn_spl_heap_reject_modification_if_active(runtime, data)) {
+            return ptn_null();
+        }
         if (runtime->exceptions->active_exception == NULL) {
             data->is_corrupted = 0;
             ptn_spl_heap_sync_properties(runtime, receiver, data, line);
@@ -174365,6 +174533,9 @@ static PtnValue ptn_spl_heap_call_method(
         }
         if (data->is_corrupted) {
             ptn_spl_heap_throw_corrupted(runtime);
+            return ptn_null();
+        }
+        if (ptn_spl_heap_reject_modification_if_active(runtime, data)) {
             return ptn_null();
         }
         size_t best = 0;
