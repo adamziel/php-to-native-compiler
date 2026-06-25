@@ -12790,6 +12790,53 @@ try {
 }
 
 #[test]
+fn compile_abstract_call_static_trampoline_throws_requested_method_to_native_binary() {
+    let root = temp_dir("ptn-native-abstract-call-static-trampoline");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("abstract-call-static-trampoline.php");
+    let output = root.join("abstract-call-static-trampoline-bin");
+    fs::write(
+        &input,
+        "<?php
+interface IFoo {
+    public static function __callStatic($method, $args);
+}
+
+abstract class CFoo {
+    abstract public static function __callStatic($method, $args);
+}
+
+try {
+    IFoo::bar();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    CFoo::bar();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot call abstract method IFoo::bar()\nCannot call abstract method CFoo::bar()\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_interface_exists(ptn_static_magic_resolved_class)"));
+    assert!(c_source.contains("ptn_static_magic_abstract_message"));
+}
+
+#[test]
 fn parser_tracks_constructor_final_and_abstract_prototype_contracts() {
     let error = parser::parse(
         "<?php
@@ -77995,6 +78042,85 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_fetch_dynamic_class_name(&runtime"));
     assert!(c_source.contains("ptn_string(\"Worker\")"));
+}
+
+#[test]
+fn compile_unscoped_relative_class_name_fetches_to_native_binary() {
+    let root = temp_dir("ptn-native-unscoped-relative-class-name-fetches");
+    fs::create_dir_all(&root).unwrap();
+
+    let catchable_input = root.join("self-class-name-fetch.php");
+    let catchable_output = root.join("self-class-name-fetch-bin");
+    fs::write(
+        &catchable_input,
+        "<?php
+try {
+    var_dump(self::class);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump([self::class]);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(
+        &catchable_input,
+        &catchable_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let execution = Command::new(&catchable_output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot use \"self\" in the global scope\nCannot use \"self\" in the global scope\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot use \\\"self\\\" in the global scope"));
+
+    for (name, source, message) in [
+        (
+            "static",
+            "<?php
+$x = static::class;
+",
+            "Cannot use \"static\" in the global scope",
+        ),
+        (
+            "parent",
+            "<?php
+$x = parent::class;
+",
+            "Cannot use \"parent\" in the global scope",
+        ),
+    ] {
+        let input = root.join(format!("{name}-class-name-fetch.php"));
+        let output = root.join(format!("{name}-class-name-fetch-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(
+            stderr.contains(&format!("Fatal error: Uncaught Error: {message} in ")),
+            "{name}: {stderr}"
+        );
+        assert!(
+            stderr.contains("Stack trace:\n#0 {main}\n"),
+            "{name}: {stderr}"
+        );
+        assert!(stderr.contains("  thrown in "), "{name}: {stderr}");
+    }
 }
 
 #[test]

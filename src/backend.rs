@@ -7422,7 +7422,7 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
-    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_declared_trait_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_declared_interface_exists(ptn_static_magic_resolved_class) || ptn_declared_trait_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
@@ -11058,6 +11058,18 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if method.is_abstract {
+            out.push_str("        char ptn_static_magic_abstract_message[512];\n");
+            out.push_str("        int ptn_static_magic_abstract_written = snprintf(ptn_static_magic_abstract_message, sizeof(ptn_static_magic_abstract_message), \"Cannot call abstract method %s::%s()\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", method_name);\n");
+            out.push_str("        if (ptn_static_magic_abstract_written < 0 || (size_t)ptn_static_magic_abstract_written >= sizeof(ptn_static_magic_abstract_message)) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_static_magic_abstract_message, runtime->source_path, line);\n");
+            out.push_str("        *result_out = ptn_null();\n");
+            out.push_str("        return 1;\n");
+        }
         out.push_str("        PtnValue ptn_magic_args[2];\n");
         out.push_str(
             "        ptn_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));\n",
@@ -37029,11 +37041,6 @@ impl ValueEmitter {
             }
             let Some(current_class_name) = &self.current_class_name else {
                 let lowered = class_name.to_ascii_lowercase();
-                if lowered == "self" || lowered == "static" {
-                    return Some(format!(
-                        "Cannot use \"{lowered}\" when no class scope is active"
-                    ));
-                }
                 return Some(format!("Cannot use \"{lowered}\" in the global scope"));
             };
             if class_name.eq_ignore_ascii_case("parent")
