@@ -20625,6 +20625,93 @@ foreach ($value[0] as $object) {
 }
 
 #[test]
+fn compile_spl_object_storage_reference_lifecycle_regressions_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-storage-reference-lifecycle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-storage-reference-lifecycle.php");
+    let output = root.join("spl-storage-reference-lifecycle-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class HasDestructor {
+    public function __destruct() {
+        echo "destruct-count=", count($GLOBALS['s']), "\n";
+        throw new RuntimeException("from destructor");
+    }
+}
+
+$o = new stdClass();
+$s = new SplObjectStorage();
+foreach ([0, 1] as $mode) {
+    $s[$o] = new HasDestructor();
+    try {
+        if ($mode === 0) {
+            unset($s[$o]);
+        } else {
+            $s->offsetUnset($o);
+        }
+    } catch (RuntimeException $e) {
+        echo "caught\n";
+    }
+    echo "count=", count($s), "\n";
+}
+
+$bad = 'x:i:3;O:8:"stdClass":0:{},O:8:"stdClass":0:{};R:2;,i:1;;O:8:"stdClass":0:{},r:2;;m:a:0:{}';
+try {
+    $badStorage = new SplObjectStorage();
+    $badStorage->unserialize($bad);
+} catch (UnexpectedValueException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+class MyStorage extends SplObjectStorage {
+    protected $pro = 26;
+    private $pri = 27;
+
+    public function __construct() {
+        $this->pro = 2;
+        $this->pri = 3;
+    }
+
+    public function probe() {
+        echo $this->pro, ":", $this->pri, "\n";
+    }
+}
+
+$storage = new MyStorage();
+$storage[new stdClass()] = null;
+$roundTrip = unserialize(serialize($storage));
+$roundTrip->probe();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "destruct-count=0\n",
+            "caught\n",
+            "count=0\n",
+            "destruct-count=0\n",
+            "caught\n",
+            "count=0\n",
+            "Error at offset 46 of 89 bytes\n",
+            "2:3\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_get_hash_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-get-hash");
     fs::create_dir_all(&root).unwrap();

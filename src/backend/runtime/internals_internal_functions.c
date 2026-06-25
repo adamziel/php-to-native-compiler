@@ -15195,6 +15195,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
         PtnUnserializeValue object = ptn_unserialize_parse_value(state, runtime);
         PtnValue resolved_object = ptn_value_deref(object.value);
         if (state->failed ||
+            object.id == 0 ||
             object.value.type == PTN_REFERENCE ||
             resolved_object.type != PTN_OBJECT) {
             if (!state->failed) {
@@ -171288,6 +171289,16 @@ static void ptn_spl_object_storage_load_members(
         return;
     }
     PtnObject *object = resolved_receiver.as.object;
+    PtnUnserializeState *state = runtime == NULL
+        ? NULL
+        : (PtnUnserializeState *)runtime->active_unserialize_state;
+    PtnUnserializeState local_state;
+    int using_local_state = 0;
+    if (state == NULL) {
+        ptn_unserialize_state_init(&local_state, "", 0, line);
+        state = &local_state;
+        using_local_state = 1;
+    }
     for (size_t i = 0; i < resolved_members.as.array->len; i++) {
         PtnArrayEntry *entry = &resolved_members.as.array->entries[i];
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
@@ -171296,11 +171307,22 @@ static void ptn_spl_object_storage_load_members(
         if (ptn_object_metadata_is_spl_object_storage_storage(metadata)) {
             continue;
         }
-        ptn_array_set_entry(
-            object->properties,
-            ptn_array_key_clone(entry->key),
-            ptn_value_clone(entry->value)
-        );
+        PtnUnserializeValue parsed;
+        parsed.value = ptn_value_clone(entry->value);
+        parsed.id = 0;
+        if (!ptn_unserialize_store_object_property_entry(
+                runtime,
+                state,
+                object,
+                ptn_array_key_clone(entry->key),
+                parsed,
+                1
+            )) {
+            break;
+        }
+    }
+    if (using_local_state) {
+        ptn_unserialize_state_free(&local_state);
     }
 }
 
@@ -171462,9 +171484,9 @@ static void ptn_spl_object_storage_remove_index(
         );
         next++;
     }
-    ptn_value_destroy(&data->objects);
-    ptn_value_destroy(&data->infos);
-    ptn_value_destroy(&data->hashes);
+    PtnValue old_objects = data->objects;
+    PtnValue old_infos = data->infos;
+    PtnValue old_hashes = data->hashes;
     data->objects = objects;
     data->infos = infos;
     data->hashes = hashes;
@@ -171472,6 +171494,9 @@ static void ptn_spl_object_storage_remove_index(
         data->index = (size_t)next;
     }
     ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+    ptn_value_destroy(&old_objects);
+    ptn_value_destroy(&old_infos);
+    ptn_value_destroy(&old_hashes);
 }
 
 static PtnSplObjectStorageData *ptn_spl_object_storage_data_from_arg(PtnValue value) {
