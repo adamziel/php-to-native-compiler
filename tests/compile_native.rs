@@ -43789,6 +43789,197 @@ foreach ([':current(div)', ':required', ':optional'] as $selector) {
 }
 
 #[test]
+fn compile_modern_dom_character_data_index_rules_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-character-data-index-rules");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-character-data-index-rules.php");
+    let output = root.join("modern-dom-character-data-index-rules-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\HTMLDocument::createEmpty();
+$comment = $dom->createComment("foobarbaz");
+var_dump($comment->substringData(0, -1));
+var_dump($comment->substringData(2, -4294967294));
+var_dump($comment->substringData(-4294967294, 2));
+try {
+    var_dump($comment->substringData(0, 2147483649));
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+$comment->deleteData(3, -1);
+echo $dom->saveHtml($comment), "\n";
+
+$comment = $dom->createComment("foobarbaz");
+$comment->replaceData(2, -4294967294, "A");
+echo $dom->saveHtml($comment), "\n";
+
+$comment = $dom->createComment("foobarbaz");
+$comment->insertData(-4294967295, "A");
+echo $dom->saveHtml($comment), "\n";
+
+$text = $dom->createTextNode("foobarbaz");
+try {
+    $text->splitText(-1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$legacy = new DOMDocument();
+$legacyComment = $legacy->createComment("foobarbaz");
+try {
+    $legacyComment->deleteData(3, -1);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $legacy->saveHtml($legacyComment), "\n";
+$legacyText = $legacy->createTextNode("foobarbaz");
+try {
+    $legacyText->splitText(-1);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(9) \"foobarbaz\"\n",
+            "string(2) \"ob\"\n",
+            "string(2) \"ob\"\n",
+            "Index Size Error\n",
+            "<!--foo-->\n",
+            "<!--foAarbaz-->\n",
+            "<!--fAoobarbaz-->\n",
+            "Dom\\Text::splitText(): Argument #1 ($offset) must be greater than or equal to 0\n",
+            "Index Size Error\n",
+            "<!--foobarbaz-->\n",
+            "Index Size Error\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_character_normalize_count"));
+}
+
+#[test]
+fn compile_modern_dom_document_factory_qname_rules_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-document-factory-qname-rules");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-document-factory-qname-rules.php");
+    let output = root.join("modern-dom-document-factory-qname-rules-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = Dom\HTMLDocument::createEmpty();
+foreach (["", "$"] as $name) {
+    try {
+        $dom->createElement($name);
+    } catch (DOMException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$element = $dom->createElement("HEad");
+var_dump($element->tagName, $element->prefix, $element->namespaceURI);
+echo $dom->saveHtml($element), "\n";
+
+$element = $dom->createElementNS(null, "qname", "&hello");
+var_dump($element->tagName, $element->prefix, $element->namespaceURI);
+echo $dom->saveHtml($element), "\n";
+
+$element = $dom->createElementNS("urn:foo", "bar:BAR", "&hello");
+var_dump($element->tagName, $element->prefix, $element->namespaceURI);
+echo $dom->saveHtml($element), "\n";
+
+foreach ([[null, "prefix:name"], ["", "prefix:name"], ["urn:foo", "@"], ["http://www.w3.org/2000/xmlns/", "svg"], ["urn:foo", "xml:xml"]] as $case) {
+    try {
+        $dom->createElementNS($case[0], $case[1]);
+    } catch (DOMException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$attr = $dom->createAttribute("FoOo");
+var_dump($attr->name, $attr->prefix, $attr->localName, $attr->namespaceURI);
+
+foreach ([[null, "bar:bar"], ["urn:a", "foo:bar:baz"], ["http://www.w3.org/2000/xmlns", "xmlns:bar"]] as $case) {
+    try {
+        $dom->createAttributeNS($case[0], $case[1]);
+    } catch (DOMException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$attr = $dom->createAttributeNS("http://www.w3.org/2000/xmlns/", "xmlns");
+var_dump($attr->name, $attr->prefix, $attr->localName, $attr->namespaceURI);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Invalid Character Error\n",
+            "Invalid Character Error\n",
+            "string(4) \"HEAD\"\n",
+            "NULL\n",
+            "string(28) \"http://www.w3.org/1999/xhtml\"\n",
+            "<head></head>\n",
+            "string(5) \"qname\"\n",
+            "NULL\n",
+            "NULL\n",
+            "<qname>&amp;hello</qname>\n",
+            "string(7) \"bar:BAR\"\n",
+            "string(3) \"bar\"\n",
+            "string(7) \"urn:foo\"\n",
+            "<bar:BAR>&amp;hello</bar:BAR>\n",
+            "Namespace Error\n",
+            "Namespace Error\n",
+            "Invalid Character Error\n",
+            "Namespace Error\n",
+            "Namespace Error\n",
+            "string(4) \"fooo\"\n",
+            "NULL\n",
+            "string(4) \"fooo\"\n",
+            "NULL\n",
+            "Namespace Error\n",
+            "Invalid Character Error\n",
+            "Namespace Error\n",
+            "string(5) \"xmlns\"\n",
+            "NULL\n",
+            "string(5) \"xmlns\"\n",
+            "string(29) \"http://www.w3.org/2000/xmlns/\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_namespace_is_valid_for_qname"));
+}
+
+#[test]
 fn compile_simplexml_declared_entity_debug_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-declared-entity-debug");
     fs::create_dir_all(&root).unwrap();

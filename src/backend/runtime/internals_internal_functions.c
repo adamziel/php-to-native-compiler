@@ -101810,6 +101810,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_DOM_WRONG_DOCUMENT_ERR 4
 #define PTN_DOM_INVALID_CHARACTER_ERR 5
 #define PTN_DOM_NO_MODIFICATION_ALLOWED_ERR 7
+#define PTN_DOM_NAMESPACE_ERR 14
 
 static int ptn_libxml_entity_loader_disabled = 0;
 static const char *ptn_dom_xml_parse_warning_function_name = NULL;
@@ -106316,6 +106317,98 @@ static int ptn_xml_name_is_valid_span(const char *data, size_t len) {
         if (!ptn_xml_name_char((unsigned char)data[i])) {
             return 0;
         }
+    }
+    return 1;
+}
+
+static int ptn_xml_ncname_is_valid_span(const char *data, size_t len) {
+    if (data == NULL || len == 0 || data[0] == ':' || !ptn_xml_name_start_char((unsigned char)data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if (data[i] == ':' || !ptn_xml_name_char((unsigned char)data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static const char *ptn_xml_qname_colon(const char *data, size_t len) {
+    if (data == NULL) {
+        return NULL;
+    }
+    const char *colon = NULL;
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] != ':') {
+            continue;
+        }
+        if (colon != NULL) {
+            return data + len;
+        }
+        colon = data + i;
+    }
+    return colon;
+}
+
+static int ptn_xml_qname_is_valid_span(const char *data, size_t len) {
+    const char *colon = ptn_xml_qname_colon(data, len);
+    if (colon == data + len) {
+        return 0;
+    }
+    if (colon == NULL) {
+        return ptn_xml_ncname_is_valid_span(data, len);
+    }
+    size_t prefix_len = (size_t)(colon - data);
+    size_t local_len = len - prefix_len - 1;
+    return prefix_len > 0 &&
+        local_len > 0 &&
+        ptn_xml_ncname_is_valid_span(data, prefix_len) &&
+        ptn_xml_ncname_is_valid_span(colon + 1, local_len);
+}
+
+static int ptn_xml_qname_prefix_equals(const char *data, size_t len, const char *prefix) {
+    const char *colon = ptn_xml_qname_colon(data, len);
+    if (colon == NULL || colon == data + len || prefix == NULL) {
+        return 0;
+    }
+    size_t prefix_len = strlen(prefix);
+    return (size_t)(colon - data) == prefix_len &&
+        memcmp(data, prefix, prefix_len) == 0;
+}
+
+static int ptn_xml_qname_unprefixed_equals(const char *data, size_t len, const char *name) {
+    return ptn_xml_qname_colon(data, len) == NULL &&
+        name != NULL &&
+        strlen(name) == len &&
+        memcmp(data, name, len) == 0;
+}
+
+static int ptn_string_operand_equals_cstr(PtnStringOperand operand, const char *expected) {
+    size_t expected_len = strlen(expected == NULL ? "" : expected);
+    return operand.len == expected_len &&
+        memcmp(operand.data, expected == NULL ? "" : expected, expected_len) == 0;
+}
+
+static int ptn_dom_namespace_is_valid_for_qname(PtnStringOperand namespace_uri, PtnStringOperand qualified_name) {
+    const char *colon = ptn_xml_qname_colon(qualified_name.data, qualified_name.len);
+    int has_prefix = colon != NULL && colon != qualified_name.data + qualified_name.len;
+    int prefix_xml = ptn_xml_qname_prefix_equals(qualified_name.data, qualified_name.len, "xml");
+    int prefix_xmlns = ptn_xml_qname_prefix_equals(qualified_name.data, qualified_name.len, "xmlns");
+    int name_xmlns = ptn_xml_qname_unprefixed_equals(qualified_name.data, qualified_name.len, "xmlns");
+    int namespace_empty = namespace_uri.len == 0;
+    int namespace_xml = ptn_string_operand_equals_cstr(namespace_uri, ptn_dom_xml_namespace_uri());
+    int namespace_xmlns = ptn_string_operand_equals_cstr(namespace_uri, ptn_dom_xmlns_namespace_uri());
+    if (has_prefix && namespace_empty) {
+        return 0;
+    }
+    if (prefix_xml && !namespace_xml) {
+        return 0;
+    }
+    if ((prefix_xmlns || name_xmlns) && !namespace_xmlns) {
+        return 0;
+    }
+    if (namespace_xmlns && !prefix_xmlns && !name_xmlns) {
+        return 0;
     }
     return 1;
 }
@@ -111971,9 +112064,28 @@ static PtnValue ptn_dom_create_element_method(PtnRuntime *runtime, PtnValue rece
         ptn_string_operand_free(name);
         return ptn_null();
     }
-    char *name_copy = ptn_duplicate_string_len(name.data, name.len);
+    if (!ptn_xml_qname_is_valid_span(name.data, name.len)) {
+        ptn_string_operand_free(uri);
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(value);
+        ptn_dom_throw_exception_code(runtime, "Invalid Character Error", PTN_DOM_INVALID_CHARACTER_ERR, line);
+        return ptn_null();
+    }
+    if (ns && !ptn_dom_namespace_is_valid_for_qname(uri, name)) {
+        ptn_string_operand_free(uri);
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(value);
+        ptn_dom_throw_exception_code(runtime, "Namespace Error", PTN_DOM_NAMESPACE_ERR, line);
+        return ptn_null();
+    }
+    char *name_copy = ns
+        ? ptn_duplicate_string_len(name.data, name.len)
+        : ptn_dom_attribute_name_copy_for_element(document, name.data, name.len);
     char *value_copy = ptn_duplicate_string_len(value.data, value.len);
     PtnXmlNode *element = ptn_xml_create_element(runtime, document, name_copy, value_copy);
+    if (!ns) {
+        ptn_dom_apply_html_parser_namespace(element);
+    }
     if (ns && uri.len > 0) {
         free(element->namespace_uri);
         element->namespace_uri = ptn_duplicate_string_len(uri.data, uri.len);
@@ -112089,11 +112201,11 @@ static PtnValue ptn_dom_create_named_node_method(PtnRuntime *runtime, PtnValue r
 }
 
 static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line) {
-    if (argc < 1 || argc > 3) {
-        return ptn_dom_throw_count(runtime, method_name, "at least 1 argument", argc);
-    }
     size_t name_index = ptn_ascii_case_equal(method_name, "DOMDocument::createAttributeNS") ? 1 : 0;
-    PtnStringOperand namespace_uri = name_index == 1
+    if ((!name_index && argc != 1) || (name_index && argc != 2)) {
+        return ptn_dom_throw_count(runtime, method_name, name_index ? "exactly 2 arguments" : "exactly 1 argument", argc);
+    }
+    PtnStringOperand namespace_uri = name_index == 1 && ptn_value_deref(args[0]).type != PTN_NULL
         ? ptn_internal_expect_string_arg(runtime, method_name, 1, "namespace", args[0], line)
         : ptn_string_operand_borrowed("");
     if (runtime->exceptions->active_exception != NULL) {
@@ -112104,7 +112216,7 @@ static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue re
         ptn_string_operand_free(namespace_uri);
         return ptn_null();
     }
-    if (!ptn_xml_name_is_valid_span(name.data, name.len)) {
+    if (!ptn_xml_qname_is_valid_span(name.data, name.len)) {
         ptn_string_operand_free(name);
         ptn_string_operand_free(namespace_uri);
         if (ptn_dom_strict_error_checking_enabled(receiver)) {
@@ -112119,9 +112231,18 @@ static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue re
         ptn_emit_warning(&runtime->diagnostics, message, line);
         return ptn_bool(0);
     }
+    if (name_index == 1 && !ptn_dom_namespace_is_valid_for_qname(namespace_uri, name)) {
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(namespace_uri);
+        ptn_dom_throw_exception_code(runtime, "Namespace Error", PTN_DOM_NAMESPACE_ERR, line);
+        return ptn_null();
+    }
+    PtnXmlNode *document = ptn_xml_document_for_node(ptn_xml_node_data(receiver));
     PtnXmlNode *attr = ptn_xml_node_alloc(PTN_XML_NODE_ATTRIBUTE, "", "");
     free(attr->name);
-    attr->name = ptn_duplicate_string_len(name.data, name.len);
+    attr->name = name_index == 1
+        ? ptn_duplicate_string_len(name.data, name.len)
+        : ptn_dom_attribute_name_copy_for_element(document, name.data, name.len);
     free(attr->namespace_uri);
     attr->namespace_uri = namespace_uri.len > 0
         ? ptn_duplicate_string_len(namespace_uri.data, namespace_uri.len)
@@ -112131,7 +112252,7 @@ static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue re
         ptn_xml_attribute_name_is_namespace_declaration(attr->name)) {
         attr->namespace_declaration = 1;
     }
-    ptn_xml_set_owner_document_recursive(attr, ptn_xml_document_for_node(ptn_xml_node_data(receiver)));
+    ptn_xml_set_owner_document_recursive(attr, document);
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(name);
     return ptn_xml_node_value_for_runtime(runtime, attr);
@@ -112489,11 +112610,7 @@ static PtnValue ptn_dom_set_attribute_method(PtnRuntime *runtime, PtnValue recei
     }
     attr->owner_document = ptn_xml_document_for_node(element);
     PtnXmlNode *replace = ns ? ptn_dom_element_replaced_attribute_for_node(element, attr, 1) : ptn_dom_find_attribute(element, attr->name);
-    int preserve_replaced_name = replace != NULL &&
-        replace != attr &&
-        ptn_dom_attribute_namespaced(attr) &&
-        strcmp(replace->namespace_uri == NULL ? "" : replace->namespace_uri, attr->namespace_uri == NULL ? "" : attr->namespace_uri) == 0;
-    ptn_dom_element_attach_attribute(runtime, element, attr, replace, preserve_replaced_name);
+    ptn_dom_element_attach_attribute(runtime, element, attr, replace, 0);
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(name);
     ptn_string_operand_free(value);
@@ -112529,11 +112646,7 @@ static PtnValue ptn_dom_set_attribute_node_method(PtnRuntime *runtime, PtnValue 
     PtnValue replaced_value = (replace != NULL && replace != attr)
         ? ptn_xml_node_value_for_runtime(runtime, replace)
         : ptn_null();
-    int preserve_replaced_name = replace != NULL &&
-        replace != attr &&
-        ptn_dom_attribute_namespaced(attr) &&
-        strcmp(replace->namespace_uri == NULL ? "" : replace->namespace_uri, attr->namespace_uri == NULL ? "" : attr->namespace_uri) == 0;
-    ptn_dom_element_attach_attribute(runtime, element, attr, replace, preserve_replaced_name);
+    ptn_dom_element_attach_attribute(runtime, element, attr, replace, 0);
     (void)line;
     return replaced_value;
 }
@@ -112559,9 +112672,17 @@ static int ptn_dom_document_is_html(PtnXmlNode *node) {
 static char *ptn_dom_node_name_property_copy(PtnXmlNode *node) {
     const char *name = node == NULL || node->name == NULL ? "" : node->name;
     char *copy = ptn_duplicate_string(name);
+    PtnXmlNode *document = ptn_xml_document_for_node(node);
+    int modern_html_xhtml_element = document != NULL &&
+        document->modern_dom &&
+        document->html_document &&
+        node != NULL &&
+        node->namespace_uri != NULL &&
+        strcmp(node->namespace_uri, ptn_dom_xhtml_namespace_uri()) == 0;
     if (node != NULL &&
         node->type == PTN_XML_NODE_ELEMENT &&
-        ptn_dom_document_is_html(node)) {
+        ptn_dom_document_is_html(node) &&
+        (!(document != NULL && document->modern_dom) || modern_html_xhtml_element)) {
         for (size_t i = 0; copy[i] != '\0'; i++) {
             copy[i] = (char)toupper((unsigned char)copy[i]);
         }
@@ -113704,12 +113825,60 @@ static PtnValue ptn_dom_save_html_file_method(PtnRuntime *runtime, PtnValue rece
     return ptn_dom_write_serialized_file(runtime, "DOMDocument::saveHTMLFile", args[0], serialized, line);
 }
 
+static int ptn_dom_character_uses_modern_index_rules(const char *class_name) {
+    return ptn_dom_class_name_is_modern(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\CharacterData") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\Text") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\CDataSection") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\CdataSection") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "Dom\\Comment");
+}
+
+static int ptn_dom_character_normalize_offset(PtnRuntime *runtime, int64_t offset, size_t max, int modern, size_t *out) {
+    uint64_t normalized = 0;
+    if (offset < 0) {
+        if (!modern) {
+            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+            return 0;
+        }
+        normalized = (uint32_t)offset;
+    } else {
+        normalized = (uint64_t)offset;
+    }
+    if (normalized > max) {
+        ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+        return 0;
+    }
+    *out = (size_t)normalized;
+    return 1;
+}
+
+static int ptn_dom_character_normalize_count(PtnRuntime *runtime, int64_t count, int modern, size_t *out) {
+    uint64_t normalized = 0;
+    if (count < 0) {
+        if (!modern) {
+            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+            return 0;
+        }
+        normalized = (uint32_t)count;
+    } else {
+        if (count > INT32_MAX) {
+            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+            return 0;
+        }
+        normalized = (uint64_t)count;
+    }
+    *out = (size_t)normalized;
+    return 1;
+}
+
 static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver, const char *class_name, const char *name, size_t argc, const PtnValue *args, size_t line) {
     PtnXmlNode *node = ptn_xml_node_data(receiver);
     if (node == NULL || node->uninitialized) {
         ptn_throw_exception(runtime, "DOMException", "Invalid State Error");
         return ptn_null();
     }
+    int modern_index_rules = ptn_dom_character_uses_modern_index_rules(class_name);
     if (ptn_ascii_case_equal(name, "appendData")) {
         if (argc != 1) {
             return ptn_dom_throw_count(runtime, "DOMCharacterData::appendData", "exactly 1 argument", argc);
@@ -113736,15 +113905,15 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (argc != 2) {
             return ptn_dom_throw_count(runtime, "DOMCharacterData::insertData", "exactly 2 arguments", argc);
         }
-        int64_t offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::insertData", 1, "offset", args[0], line);
+        int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::insertData", 1, "offset", args[0], line);
         PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "DOMCharacterData::insertData", 2, "data", args[1], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         size_t old_len = node->value_len;
-        if (offset < 0 || (size_t)offset > old_len) {
+        size_t offset = 0;
+        if (!ptn_dom_character_normalize_offset(runtime, raw_offset, old_len, modern_index_rules, &offset)) {
             ptn_string_operand_free(data);
-            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
             return ptn_null();
         }
         char *next = malloc(old_len + data.len + 1);
@@ -113765,21 +113934,22 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (argc != 2) {
             return ptn_dom_throw_count(runtime, "DOMCharacterData::deleteData", "exactly 2 arguments", argc);
         }
-        int64_t offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::deleteData", 1, "offset", args[0], line);
-        int64_t count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::deleteData", 2, "count", args[1], line);
+        int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::deleteData", 1, "offset", args[0], line);
+        int64_t raw_count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::deleteData", 2, "count", args[1], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         size_t old_len = node->value_len;
-        if (offset < 0 || (size_t)offset > old_len || count < 0) {
-            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+        size_t offset = 0;
+        size_t remove_len = 0;
+        if (!ptn_dom_character_normalize_offset(runtime, raw_offset, old_len, modern_index_rules, &offset) ||
+            !ptn_dom_character_normalize_count(runtime, raw_count, modern_index_rules, &remove_len)) {
             return ptn_null();
         }
-        size_t remove_len = (size_t)count;
-        if (remove_len > old_len - (size_t)offset) {
-            remove_len = old_len - (size_t)offset;
+        if (remove_len > old_len - offset) {
+            remove_len = old_len - offset;
         }
-        memmove(node->value + offset, node->value + offset + remove_len, old_len - (size_t)offset - remove_len + 1);
+        memmove(node->value + offset, node->value + offset + remove_len, old_len - offset - remove_len + 1);
         node->value_len = old_len - remove_len;
         return ptn_null();
     }
@@ -113787,22 +113957,23 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (argc != 3) {
             return ptn_dom_throw_count(runtime, "DOMCharacterData::replaceData", "exactly 3 arguments", argc);
         }
-        int64_t offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::replaceData", 1, "offset", args[0], line);
-        int64_t count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::replaceData", 2, "count", args[1], line);
+        int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::replaceData", 1, "offset", args[0], line);
+        int64_t raw_count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::replaceData", 2, "count", args[1], line);
         PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "DOMCharacterData::replaceData", 3, "data", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(data);
             return ptn_null();
         }
         size_t old_len = node->value_len;
-        if (offset < 0 || (size_t)offset > old_len || count < 0) {
+        size_t offset = 0;
+        size_t remove_len = 0;
+        if (!ptn_dom_character_normalize_offset(runtime, raw_offset, old_len, modern_index_rules, &offset) ||
+            !ptn_dom_character_normalize_count(runtime, raw_count, modern_index_rules, &remove_len)) {
             ptn_string_operand_free(data);
-            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
             return ptn_null();
         }
-        size_t remove_len = (size_t)count;
-        if (remove_len > old_len - (size_t)offset) {
-            remove_len = old_len - (size_t)offset;
+        if (remove_len > old_len - offset) {
+            remove_len = old_len - offset;
         }
         size_t new_len = old_len - remove_len + data.len;
         char *next = malloc(new_len + 1);
@@ -113814,7 +113985,7 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         memcpy(
             next + offset + data.len,
             (node->value == NULL ? "" : node->value) + offset + remove_len,
-            old_len - (size_t)offset - remove_len
+            old_len - offset - remove_len
         );
         next[new_len] = '\0';
         free(node->value);
@@ -113827,19 +113998,20 @@ static PtnValue ptn_dom_character_method(PtnRuntime *runtime, PtnValue receiver,
         if (argc != 2) {
             return ptn_dom_throw_count(runtime, "DOMCharacterData::substringData", "exactly 2 arguments", argc);
         }
-        int64_t offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::substringData", 1, "offset", args[0], line);
-        int64_t count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::substringData", 2, "count", args[1], line);
+        int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::substringData", 1, "offset", args[0], line);
+        int64_t raw_count = ptn_internal_expect_integer_arg(runtime, "DOMCharacterData::substringData", 2, "count", args[1], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         size_t old_len = node->value_len;
-        if (offset < 0 || (size_t)offset > old_len || count < 0) {
-            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+        size_t offset = 0;
+        size_t out_len = 0;
+        if (!ptn_dom_character_normalize_offset(runtime, raw_offset, old_len, modern_index_rules, &offset) ||
+            !ptn_dom_character_normalize_count(runtime, raw_count, modern_index_rules, &out_len)) {
             return ptn_null();
         }
-        size_t out_len = (size_t)count;
-        if (out_len > old_len - (size_t)offset) {
-            out_len = old_len - (size_t)offset;
+        if (out_len > old_len - offset) {
+            out_len = old_len - offset;
         }
         return ptn_owned_string_len(ptn_duplicate_string_len(node->value + offset, out_len), out_len);
     }
@@ -113851,6 +114023,8 @@ static PtnValue ptn_dom_text_split_text_method(PtnRuntime *runtime, PtnValue rec
     if (argc != 1) {
         return ptn_dom_throw_count(runtime, "DOMText::splitText", "exactly 1 argument", argc);
     }
+    PtnValue receiver_value = ptn_value_deref(receiver);
+    const char *receiver_class_name = receiver_value.type == PTN_OBJECT ? receiver_value.as.object->class_name : "DOMText";
     PtnXmlNode *node = ptn_xml_node_data(receiver);
     if (node == NULL || node->uninitialized) {
         ptn_throw_exception(runtime, "DOMException", "Invalid State Error");
@@ -113866,7 +114040,15 @@ static PtnValue ptn_dom_text_split_text_method(PtnRuntime *runtime, PtnValue rec
     }
     const char *value = node->value == NULL ? "" : node->value;
     size_t len = node->value_len;
-    if (offset < 0 || (size_t)offset > len) {
+    if (offset < 0) {
+        if (ptn_dom_character_uses_modern_index_rules(receiver_class_name)) {
+            ptn_throw_exception(runtime, "ValueError", "Dom\\Text::splitText(): Argument #1 ($offset) must be greater than or equal to 0");
+        } else {
+            ptn_throw_exception(runtime, "DOMException", "Index Size Error");
+        }
+        return ptn_null();
+    }
+    if ((size_t)offset > len) {
         ptn_throw_exception(runtime, "DOMException", "Index Size Error");
         return ptn_null();
     }
@@ -114726,7 +114908,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         ptn_ascii_case_equal(name, "deleteData") ||
         ptn_ascii_case_equal(name, "replaceData") ||
         ptn_ascii_case_equal(name, "substringData")) {
-        return ptn_dom_character_method(runtime, receiver, class_name, name, argc, args, line);
+        return ptn_dom_character_method(runtime, receiver, object_class_name, name, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "splitText")) {
         return ptn_dom_text_split_text_method(runtime, receiver, argc, args, line);
@@ -115392,7 +115574,13 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "prefix")) {
-        *value_out = ptn_owned_string(ptn_xml_prefix_dup(node->name));
+        char *prefix = ptn_xml_prefix_dup(node->name);
+        if (prefix[0] == '\0') {
+            free(prefix);
+            *value_out = ptn_null();
+        } else {
+            *value_out = ptn_owned_string(prefix);
+        }
         return 1;
     }
     if (ptn_ascii_case_equal(property, "namespaceURI")) {
