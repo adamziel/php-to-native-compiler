@@ -119,7 +119,6 @@ pub fn emit_c(module: &Module) -> String {
     }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
-    let serializable_deprecations = collect_module_serializable_deprecations(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
     trait_use_deprecations.sort_by_key(|deprecation| deprecation.line);
     let declaration_fatals = collect_module_startup_declaration_fatals(module);
@@ -538,15 +537,12 @@ pub fn emit_c(module: &Module) -> String {
         &parameter_default_diagnostics,
         &module.source_file,
     );
-    emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
     emit_declaration_fatals(
         &mut out,
         &declaration_fatals,
         &module.source_file,
-        !module.compile_warnings.is_empty()
-            || !serializable_deprecations.is_empty()
-            || !magic_visibility_warnings.is_empty(),
+        !module.compile_warnings.is_empty() || !magic_visibility_warnings.is_empty(),
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     emit_static_property_declarations(&mut out, &module.classes, &module.traits);
@@ -5224,12 +5220,6 @@ struct LegacyDollarBraceDeprecation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SerializableDeprecation {
-    class_name: String,
-    line: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct TraitUseDeprecation {
     trait_name: String,
     used_by: String,
@@ -5369,20 +5359,6 @@ fn emit_parameter_default_diagnostics(
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    exit(255);\n");
-}
-
-fn emit_serializable_deprecations(out: &mut String, deprecations: &[SerializableDeprecation]) {
-    for deprecation in deprecations {
-        let message = format!(
-            "{}{}",
-            deprecation.class_name, SERIALIZABLE_DEPRECATION_SUFFIX
-        );
-        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
-        out.push_str(&c_string(&message));
-        out.push_str("\", ");
-        out.push_str(&deprecation.line.to_string());
-        out.push_str(");\n");
-    }
 }
 
 fn emit_trait_use_deprecations(out: &mut String, deprecations: &[TraitUseDeprecation]) {
@@ -25482,6 +25458,14 @@ fn emit_class_declaration_validation(
 ) {
     let class = &classes[class_index];
     emit_class_declaration_fatals(out, class, classes, functions, source_path);
+    if class_needs_serializable_deprecation(class, classes) {
+        let message = format!("{}{}", class.name, SERIALIZABLE_DEPRECATION_SUFFIX);
+        out.push_str("        ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
     if !class.is_interface
         && class
             .interfaces
@@ -29191,31 +29175,21 @@ fn collect_module_legacy_dollar_brace_deprecations(
     deprecations
 }
 
-fn collect_module_serializable_deprecations(module: &Module) -> Vec<SerializableDeprecation> {
-    module
-        .classes
+fn class_needs_serializable_deprecation(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    let has_modern_serialization_hooks = class
+        .methods
         .iter()
-        .filter(|class| {
-            let has_modern_serialization_hooks = class
-                .methods
-                .iter()
-                .any(|method| method.name.eq_ignore_ascii_case("__serialize"))
-                && class
-                    .methods
-                    .iter()
-                    .any(|method| method.name.eq_ignore_ascii_case("__unserialize"));
-            !class.is_interface
-                && !class.is_abstract
-                && !has_modern_serialization_hooks
-                && class_transitive_interfaces(class, &module.classes)
-                    .into_iter()
-                    .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
-        })
-        .map(|class| SerializableDeprecation {
-            class_name: class.name.clone(),
-            line: class.line,
-        })
-        .collect()
+        .any(|method| method.name.eq_ignore_ascii_case("__serialize"))
+        && class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__unserialize"));
+    !class.is_interface
+        && !class.is_abstract
+        && !has_modern_serialization_hooks
+        && class_transitive_interfaces(class, classes)
+            .into_iter()
+            .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
 }
 
 fn collect_module_trait_use_deprecations(module: &Module) -> Vec<TraitUseDeprecation> {

@@ -263,6 +263,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->expose_php = NULL;
     runtime->docref_root = NULL;
     runtime->unserialize_callback_func = NULL;
+    runtime->unserialize_max_depth = caller_runtime->unserialize_max_depth;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
     ptn_symbols_init(&runtime->session_ini);

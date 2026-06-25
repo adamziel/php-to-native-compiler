@@ -103,6 +103,7 @@ typedef struct {
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
 #define PTN_PHP_BINARY "phpc"
+#define PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH 4096
 #define PTN_INI_SCANNER_NORMAL 0
 #define PTN_INI_SCANNER_RAW 1
 #define PTN_INI_SCANNER_TYPED 2
@@ -1663,6 +1664,7 @@ struct PtnRuntime {
     char *docref_root;
     char *user_agent;
     char *unserialize_callback_func;
+    int unserialize_max_depth;
     char *request_body;
     size_t request_body_len;
     PtnSymbolTable session_ini;

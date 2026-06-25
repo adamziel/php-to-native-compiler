@@ -4819,6 +4819,7 @@ static void ptn_runtime_set_iconv_internal_encoding(PtnRuntime *runtime, const c
 static void ptn_runtime_set_iconv_input_encoding(PtnRuntime *runtime, const char *value);
 static void ptn_runtime_set_iconv_output_encoding(PtnRuntime *runtime, const char *value);
 static const char *ptn_runtime_unserialize_callback_func(PtnRuntime *runtime);
+static int ptn_runtime_current_unserialize_max_depth(PtnRuntime *runtime);
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal);
 static PTN_UNUSED void ptn_adopt_internal_parent_object_state(PtnValue target, PtnValue parent);
 static PTN_UNUSED PtnValue ptn_array_object_new_uninitialized(PtnRuntime *runtime);
@@ -11027,6 +11028,9 @@ typedef struct {
     int insufficient_data;
     size_t insufficient_required;
     size_t insufficient_present;
+    size_t max_depth;
+    size_t current_depth;
+    int max_depth_exceeded;
 } PtnUnserializeState;
 
 typedef struct {
@@ -11149,6 +11153,9 @@ static void ptn_unserialize_state_init(
     state->insufficient_data = 0;
     state->insufficient_required = 0;
     state->insufficient_present = 0;
+    state->max_depth = PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH;
+    state->current_depth = 0;
+    state->max_depth_exceeded = 0;
 }
 
 static void ptn_unserialize_pending_callback_clear(PtnUnserializePendingCallback *callback) {
@@ -11230,6 +11237,24 @@ static int ptn_unserialize_require_declared_payload(
         return 0;
     }
     return 1;
+}
+
+static int ptn_unserialize_enter_container(PtnUnserializeState *state) {
+    if (state->max_depth != 0 && state->current_depth >= state->max_depth) {
+        state->max_depth_exceeded = 1;
+        ptn_unserialize_fail(state);
+        return 0;
+    }
+    if (state->current_depth != SIZE_MAX) {
+        state->current_depth++;
+    }
+    return 1;
+}
+
+static void ptn_unserialize_leave_container(PtnUnserializeState *state) {
+    if (state->current_depth > 0) {
+        state->current_depth--;
+    }
 }
 
 static int ptn_unserialize_class_name_is_forbidden(const char *class_name) {
@@ -11855,6 +11880,24 @@ static void ptn_unserialize_emit_insufficient_data_warning(
     ptn_emit_runtime_warning(runtime, message, line);
 }
 
+static void ptn_unserialize_emit_max_depth_warning(
+    PtnRuntime *runtime,
+    size_t max_depth,
+    size_t line
+) {
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unserialize(): Maximum depth of %zu exceeded. The depth limit can be changed using the max_depth unserialize() option or the unserialize_max_depth ini setting",
+        max_depth
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
 static void ptn_unserialize_emit_extra_data_warning(
     PtnRuntime *runtime,
     size_t offset,
@@ -12361,6 +12404,31 @@ static void ptn_unserialize_throw_allowed_classes_value_error(
     free(message);
 }
 
+static void ptn_unserialize_throw_max_depth_type_error(
+    PtnRuntime *runtime,
+    const char *given
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unserialize(): Option \"max_depth\" must be of type int, %s given",
+        given
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static void ptn_unserialize_throw_max_depth_value_error(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "unserialize(): Option \"max_depth\" must be greater than or equal to 0"
+    );
+}
+
 static int ptn_unserialize_allowed_class_name_is_valid(PtnStringOperand name) {
     for (size_t i = 0; i < name.len; i++) {
         unsigned char byte = (unsigned char)name.data[i];
@@ -12480,6 +12548,54 @@ static int ptn_unserialize_parse_allowed_classes_option(
         return 0;
     }
 
+    return 1;
+}
+
+static int ptn_unserialize_parse_max_depth_option(
+    PtnRuntime *runtime,
+    PtnValue options,
+    size_t *max_depth_out,
+    int *has_max_depth_out
+) {
+    *has_max_depth_out = 0;
+    PtnValue resolved_options = ptn_value_deref(options);
+    if (resolved_options.type != PTN_ARRAY) {
+        const char *given = ptn_unserialize_option_type_name(resolved_options);
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "unserialize(): Argument #2 ($options) must be of type array, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+
+    PtnArrayKey key = ptn_array_string_key("max_depth");
+    PtnArrayEntry *entry = ptn_array_entry_for_key(resolved_options.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        return 1;
+    }
+
+    PtnValue raw = ptn_value_deref(entry->value);
+    if (raw.type != PTN_INT) {
+        ptn_unserialize_throw_max_depth_type_error(
+            runtime,
+            ptn_unserialize_option_type_name(raw)
+        );
+        return 0;
+    }
+    if (raw.as.integer < 0) {
+        ptn_unserialize_throw_max_depth_value_error(runtime);
+        return 0;
+    }
+    *max_depth_out = (size_t)raw.as.integer;
+    *has_max_depth_out = 1;
     return 1;
 }
 
@@ -14233,6 +14349,9 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 ptn_unserialize_fail(state);
                 return result;
             }
+            if (!ptn_unserialize_enter_container(state)) {
+                return result;
+            }
             PtnArray *array = ptn_unserialize_new_array_with_capacity(count);
             result.value = ptn_array(array);
             result.id = ptn_unserialize_add_slot(state, &result.value);
@@ -14254,6 +14373,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_consume(state, '}')) {
                 return result;
             }
+            ptn_unserialize_leave_container(state);
             return result;
         }
         case 'O': {
@@ -14315,6 +14435,10 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
+            if (!ptn_unserialize_enter_container(state)) {
+                free(class_name);
+                return result;
+            }
             result.value = ptn_unserialize_new_object_shell(state, runtime, class_name, state->line);
             free(class_name);
             result.id = ptn_unserialize_add_slot(state, &result.value);
@@ -14366,6 +14490,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                     ptn_value_destroy(&payload);
                     return result;
                 }
+                ptn_unserialize_leave_container(state);
                 ptn_unserialize_queue_magic_callback(
                     state,
                     object_value,
@@ -14403,6 +14528,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             if (!ptn_unserialize_consume(state, '}')) {
                 return result;
             }
+            ptn_unserialize_leave_container(state);
             if (!plain_root_serializable_user_class) {
                 ptn_unserialize_hydrate_spl_array_backed_object(runtime, object_value, state->line);
                 ptn_bcmath_number_hydrate_unserialized(runtime, object_value, state->line);
@@ -14450,6 +14576,10 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
+            if (!ptn_unserialize_enter_container(state)) {
+                free(class_name);
+                return result;
+            }
             if (payload_len == SIZE_MAX && !ptn_unserialize_has(state, payload_len)) {
                 state->unexpected_end = 1;
             }
@@ -14471,6 +14601,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
+            ptn_unserialize_leave_container(state);
 
             if (ptn_internal_class_name_is_spl_object_storage(class_name)) {
                 if (payload_len == 0) {
@@ -14734,6 +14865,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     int saved_insufficient_data = state->insufficient_data;
     size_t saved_insufficient_required = state->insufficient_required;
     size_t saved_insufficient_present = state->insufficient_present;
+    int saved_max_depth_exceeded = state->max_depth_exceeded;
     size_t saved_id_len = state->id_len;
 
     state->data = payload;
@@ -14747,6 +14879,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     state->insufficient_data = 0;
     state->insufficient_required = 0;
     state->insufficient_present = 0;
+    state->max_depth_exceeded = 0;
 
     PtnValue resolved_receiver_slot = ptn_value_deref(receiver_slot);
     int use_receiver_slot =
@@ -14931,6 +15064,7 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     state->insufficient_data = saved_insufficient_data;
     state->insufficient_required = saved_insufficient_required;
     state->insufficient_present = saved_insufficient_present;
+    state->max_depth_exceeded = saved_max_depth_exceeded;
     return 1;
 
 fail:
@@ -14957,6 +15091,7 @@ fail:
         state->insufficient_data = saved_insufficient_data;
         state->insufficient_required = saved_insufficient_required;
         state->insufficient_present = saved_insufficient_present;
+        state->max_depth_exceeded = saved_max_depth_exceeded;
         ptn_spl_object_storage_throw_unserialize_error(
             runtime,
             offset,
@@ -15054,6 +15189,9 @@ typedef struct {
     int insufficient_data;
     size_t insufficient_required;
     size_t insufficient_present;
+    size_t max_depth;
+    size_t current_depth;
+    int max_depth_exceeded;
 } PtnUnserializeSavedInput;
 
 static void ptn_spl_dllist_throw_unserialize_error(
@@ -15128,6 +15266,9 @@ static int ptn_unserialize_spl_dllist_legacy_payload(
     saved.insufficient_data = state->insufficient_data;
     saved.insufficient_required = state->insufficient_required;
     saved.insufficient_present = state->insufficient_present;
+    saved.max_depth = state->max_depth;
+    saved.current_depth = state->current_depth;
+    saved.max_depth_exceeded = state->max_depth_exceeded;
     size_t saved_id_len = state->id_len;
 
     state->data = payload;
@@ -15141,6 +15282,7 @@ static int ptn_unserialize_spl_dllist_legacy_payload(
     state->insufficient_data = 0;
     state->insufficient_required = 0;
     state->insufficient_present = 0;
+    state->max_depth_exceeded = 0;
 
     PtnUnserializeValue flags;
     flags.value = ptn_null();
@@ -15213,6 +15355,9 @@ static int ptn_unserialize_spl_dllist_legacy_payload(
     state->insufficient_data = saved.insufficient_data;
     state->insufficient_required = saved.insufficient_required;
     state->insufficient_present = saved.insufficient_present;
+    state->max_depth = saved.max_depth;
+    state->current_depth = saved.current_depth;
+    state->max_depth_exceeded = saved.max_depth_exceeded;
     return 1;
 
 fail:
@@ -15232,6 +15377,9 @@ fail:
         state->insufficient_data = saved.insufficient_data;
         state->insufficient_required = saved.insufficient_required;
         state->insufficient_present = saved.insufficient_present;
+        state->max_depth = saved.max_depth;
+        state->current_depth = saved.current_depth;
+        state->max_depth_exceeded = saved.max_depth_exceeded;
         ptn_spl_dllist_throw_unserialize_error(runtime, offset, payload_len);
         return 0;
     }
@@ -15242,6 +15390,8 @@ static int ptn_unserialize_value_from_operand(
     PtnStringOperand input,
     size_t line,
     const PtnUnserializeAllowedClasses *allowed_classes,
+    size_t max_depth,
+    int reset_depth,
     PtnValue *out,
     int emit_diagnostics,
     int *unexpected_end_out
@@ -15267,6 +15417,9 @@ static int ptn_unserialize_value_from_operand(
         saved.insufficient_data = active_state->insufficient_data;
         saved.insufficient_required = active_state->insufficient_required;
         saved.insufficient_present = active_state->insufficient_present;
+        saved.max_depth = active_state->max_depth;
+        saved.current_depth = active_state->current_depth;
+        saved.max_depth_exceeded = active_state->max_depth_exceeded;
         const PtnUnserializeAllowedClasses *saved_allowed_classes =
             active_state->allowed_classes;
 
@@ -15283,6 +15436,11 @@ static int ptn_unserialize_value_from_operand(
         active_state->insufficient_data = 0;
         active_state->insufficient_required = 0;
         active_state->insufficient_present = 0;
+        active_state->max_depth = max_depth;
+        if (reset_depth) {
+            active_state->current_depth = 0;
+        }
+        active_state->max_depth_exceeded = 0;
         PtnUnserializeValue parsed;
         parsed.value = ptn_null();
         parsed.id = 0;
@@ -15303,6 +15461,8 @@ static int ptn_unserialize_value_from_operand(
         int insufficient_data = active_state->insufficient_data;
         size_t insufficient_required = active_state->insufficient_required;
         size_t insufficient_present = active_state->insufficient_present;
+        int max_depth_exceeded = active_state->max_depth_exceeded;
+        size_t failed_max_depth = active_state->max_depth;
         size_t error_pos = active_state->error_pos;
         size_t parsed_pos = active_state->pos;
 
@@ -15317,6 +15477,9 @@ static int ptn_unserialize_value_from_operand(
         active_state->insufficient_data = saved.insufficient_data;
         active_state->insufficient_required = saved.insufficient_required;
         active_state->insufficient_present = saved.insufficient_present;
+        active_state->max_depth = saved.max_depth;
+        active_state->current_depth = saved.current_depth;
+        active_state->max_depth_exceeded = saved.max_depth_exceeded;
         active_state->allowed_classes = saved_allowed_classes;
 
         if (!caught_exception && !failed) {
@@ -15370,6 +15533,9 @@ static int ptn_unserialize_value_from_operand(
                         line
                     );
                 }
+                if (max_depth_exceeded) {
+                    ptn_unserialize_emit_max_depth_warning(runtime, failed_max_depth, line);
+                }
                 ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             }
             ptn_value_destroy(&parsed.value);
@@ -15399,6 +15565,8 @@ static int ptn_unserialize_value_from_operand(
     );
     state.allowed_classes =
         allowed_classes == NULL ? &PTN_UNSERIALIZE_ALLOW_ALL : allowed_classes;
+    state.max_depth = max_depth;
+    state.current_depth = 0;
     void *previous_active_state = runtime == NULL ? NULL : runtime->active_unserialize_state;
     if (runtime != NULL) {
         runtime->active_unserialize_state = &state;
@@ -15423,6 +15591,8 @@ static int ptn_unserialize_value_from_operand(
     int insufficient_data = state.insufficient_data;
     size_t insufficient_required = state.insufficient_required;
     size_t insufficient_present = state.insufficient_present;
+    int max_depth_exceeded = state.max_depth_exceeded;
+    size_t failed_max_depth = state.max_depth;
     size_t error_pos = state.error_pos;
     size_t parsed_pos = state.pos;
     if (runtime != NULL) {
@@ -15466,6 +15636,9 @@ static int ptn_unserialize_value_from_operand(
                     line
                 );
             }
+            if (max_depth_exceeded) {
+                ptn_unserialize_emit_max_depth_warning(runtime, failed_max_depth, line);
+            }
             ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         }
         ptn_value_destroy(&parsed.value);
@@ -15490,17 +15663,37 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     );
     PtnUnserializeAllowedClasses allowed_classes = PTN_UNSERIALIZE_ALLOW_ALL;
     const PtnUnserializeAllowedClasses *allowed_classes_policy = &allowed_classes;
+    size_t max_depth = runtime == NULL
+        ? PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH
+        : (size_t)ptn_runtime_current_unserialize_max_depth(runtime);
+    int reset_depth = 1;
+    int has_explicit_max_depth = 0;
     if (argc >= 2 &&
         !ptn_unserialize_parse_allowed_classes_option(runtime, args[1], &allowed_classes, line)) {
         ptn_string_operand_free(input);
         ptn_unserialize_allowed_classes_free(&allowed_classes);
         return ptn_null();
     }
-    if (argc < 2 && runtime != NULL && runtime->active_unserialize_state != NULL) {
+    if (argc >= 2 &&
+        !ptn_unserialize_parse_max_depth_option(
+            runtime,
+            args[1],
+            &max_depth,
+            &has_explicit_max_depth
+        )) {
+        ptn_string_operand_free(input);
+        ptn_unserialize_allowed_classes_free(&allowed_classes);
+        return ptn_null();
+    }
+    if (runtime != NULL && runtime->active_unserialize_state != NULL) {
         PtnUnserializeState *active_state =
             (PtnUnserializeState *)runtime->active_unserialize_state;
-        if (active_state->allowed_classes != NULL) {
+        if (argc < 2 && active_state->allowed_classes != NULL) {
             allowed_classes_policy = active_state->allowed_classes;
+        }
+        if (!has_explicit_max_depth) {
+            max_depth = active_state->max_depth;
+            reset_depth = 0;
         }
     }
     PtnValue result = ptn_null();
@@ -15509,6 +15702,8 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
             input,
             line,
             allowed_classes_policy,
+            max_depth,
+            reset_depth,
             &result,
             1,
             NULL
@@ -59967,6 +60162,14 @@ static int ptn_pack_integer_spec(
 
 static int ptn_pack_float_spec(unsigned char code, size_t *width_out, int *endian_out) {
     switch (code) {
+        case 'f':
+            *width_out = 4;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'd':
+            *width_out = 8;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
         case 'e':
             *width_out = 8;
             *endian_out = PTN_PACK_ENDIAN_LITTLE;
@@ -83744,6 +83947,11 @@ static int ptn_runtime_current_serialize_precision(PtnRuntime *runtime) {
     return ptn_runtime_config_root(runtime)->serialize_precision;
 }
 
+static int ptn_runtime_current_unserialize_max_depth(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    return root == NULL ? PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH : root->unserialize_max_depth;
+}
+
 static int ptn_parse_precision_operand(PtnStringOperand value, int *out) {
     char *text = ptn_duplicate_string_len(value.data, value.len);
     char *start = text;
@@ -83791,6 +83999,42 @@ static int ptn_runtime_set_serialize_precision(PtnRuntime *runtime, PtnValue val
         return 0;
     }
     ptn_runtime_config_root(runtime)->serialize_precision = precision;
+    return 1;
+}
+
+static int ptn_unserialize_max_depth_value_from_arg(PtnValue value, int *out) {
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    char *text = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
+    char *start = text;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    char *end = NULL;
+    errno = 0;
+    long parsed = strtol(start, &end, 10);
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+    int ok = errno == 0 &&
+        end != start &&
+        end != NULL &&
+        *end == '\0' &&
+        parsed >= 0 &&
+        parsed <= INT_MAX;
+    if (ok) {
+        *out = (int)parsed;
+    }
+    free(text);
+    return ok;
+}
+
+static int ptn_runtime_set_unserialize_max_depth(PtnRuntime *runtime, PtnValue value) {
+    int max_depth = 0;
+    if (!ptn_unserialize_max_depth_value_from_arg(value, &max_depth)) {
+        return 0;
+    }
+    ptn_runtime_config_root(runtime)->unserialize_max_depth = max_depth;
     return 1;
 }
 
@@ -84363,6 +84607,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_unserialize_callback_func(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "unserialize_max_depth")) {
+        *out = ptn_ini_int_string(ptn_runtime_current_unserialize_max_depth(runtime));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         *out = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         return 1;
@@ -84753,6 +85001,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->serialize_precision = root->initial_serialize_precision;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "unserialize_max_depth")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        root->unserialize_max_depth = PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH;
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -85223,6 +85477,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_current_serialize_precision(runtime));
         if (!ptn_runtime_set_serialize_precision(runtime, args[1])) {
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "unserialize_max_depth")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_current_unserialize_max_depth(runtime));
+        if (!ptn_runtime_set_unserialize_max_depth(runtime, args[1])) {
             ptn_value_destroy(&previous);
             ptn_string_operand_free(option);
             return ptn_bool(0);
@@ -87185,6 +87449,10 @@ static int ptn_session_decode_serialized_value(
             payload,
             line,
             &PTN_UNSERIALIZE_ALLOW_ALL,
+            runtime == NULL
+                ? PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH
+                : (size_t)ptn_runtime_current_unserialize_max_depth(runtime),
+            1,
             &value,
             0,
             &unexpected_end

@@ -2821,6 +2821,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->unserialize_callback_func = ptn_duplicate_string(
         configured_unserialize_callback_func == NULL ? "" : configured_unserialize_callback_func
     );
+    runtime->unserialize_max_depth = PTN_DEFAULT_UNSERIALIZE_MAX_DEPTH;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
     ptn_symbols_init(&runtime->session_ini);
