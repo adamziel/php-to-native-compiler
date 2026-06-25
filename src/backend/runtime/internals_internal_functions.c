@@ -184427,19 +184427,21 @@ static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, con
         }
         resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
     }
+    int declared_user_class = ptn_declared_user_class_or_interface_exists(resolved_class_name);
     int exists = 0;
-    if (ptn_declared_user_class_or_interface_exists(resolved_class_name)) {
+    if (declared_user_class) {
         exists = target_is_object
             ? ptn_declared_class_method_exists(resolved_class_name, method_name)
             : ptn_declared_class_method_exists_from_class_name(resolved_class_name, method_name);
     }
-    if (!exists) {
+    if (!exists && !declared_user_class) {
         exists = ptn_internal_class_method_exists(resolved_class_name, method_name);
     }
-    if (!exists && ptn_declared_user_class_or_interface_exists(resolved_class_name)) {
+    if (!exists && declared_user_class) {
         const char *parent_class_name = ptn_declared_class_parent_name(resolved_class_name);
         while (parent_class_name != NULL) {
-            if (ptn_internal_class_method_exists(parent_class_name, method_name)) {
+            if (!ptn_declared_user_class_or_interface_exists(parent_class_name) &&
+                ptn_internal_class_method_exists(parent_class_name, method_name)) {
                 exists = 1;
                 break;
             }

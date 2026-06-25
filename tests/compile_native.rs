@@ -34900,6 +34900,7 @@ fn compile_method_exists_class_name_metadata_to_native_binary() {
         "<?php
 class MethodBase {
     private function hiddenBase() {}
+    private static function hiddenStaticBase() {}
     protected static function protStatic() {}
     public function visible() {}
 }
@@ -34933,7 +34934,9 @@ spl_autoload_register(function ($name) {
 $child = new MethodChild();
 var_dump(method_exists('MethodChild', 'visible'));
 var_dump(method_exists('MethodChild', 'hiddenBase'));
+var_dump(method_exists('MethodChild', 'hiddenStaticBase'));
 var_dump(method_exists($child, 'hiddenBase'));
+var_dump(method_exists($child, 'hiddenStaticBase'));
 var_dump(method_exists('MethodChild', 'hiddenChild'));
 var_dump(method_exists('MethodChild', 'protStatic'));
 var_dump(method_exists('', 'run'));
@@ -34962,6 +34965,8 @@ try {
         concat!(
             "bool(true)\n",
             "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
