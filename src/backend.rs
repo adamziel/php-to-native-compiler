@@ -28973,9 +28973,7 @@ struct EmittedArrayPath {
     deferred_undefined_variable_warnings: Vec<DeferredUndefinedVariableWarning>,
 }
 
-struct DeferredUndefinedVariableWarning {
-    missing_temp: String,
-}
+struct DeferredUndefinedVariableWarning;
 
 fn emit_array_path_segments(
     out: &mut String,
@@ -29033,8 +29031,7 @@ fn emit_array_path_segments_with_deferred_variable_warnings(
                     line
                 ));
                 value_temps.push(value_temp);
-                deferred_undefined_variable_warnings
-                    .push(DeferredUndefinedVariableWarning { missing_temp });
+                deferred_undefined_variable_warnings.push(DeferredUndefinedVariableWarning);
             }
             Some(dimension) => {
                 let temp = values.emit_materialized_value(out, dimension);
@@ -29122,21 +29119,9 @@ fn emit_array_path_value_snapshot_cleanup(
 
 fn emit_deferred_missing_variable_null_key_deprecation_flag(
     out: &mut String,
-    path: &EmittedArrayPath,
+    _path: &EmittedArrayPath,
 ) {
-    if path.deferred_undefined_variable_warnings.is_empty() {
-        out.push('1');
-        return;
-    }
-
-    out.push_str("!(");
-    for (index, warning) in path.deferred_undefined_variable_warnings.iter().enumerate() {
-        if index > 0 {
-            out.push_str(" || ");
-        }
-        out.push_str(&warning.missing_temp);
-    }
-    out.push(')');
+    out.push('1');
 }
 
 fn value_expr_is_direct_variable_read(value: &ValueExpr) -> bool {

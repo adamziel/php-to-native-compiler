@@ -53030,6 +53030,55 @@ var_dump($items[10]);",
 }
 
 #[test]
+fn compile_array_dim_assignment_undefined_key_deprecates_null_offset_to_native_binary() {
+    let root = temp_dir("ptn-native-array-dim-undefined-key-null-offset-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-dim-undefined-key-null-offset-deprecation.php");
+    let output = root.join("array-dim-undefined-key-null-offset-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function crash()\n\
+{\n\
+    $notDefined[$i] = 'test';\n\
+}\n\
+\n\
+function error_handler() { return false; }\n\
+\n\
+set_error_handler('error_handler');\n\
+crash();\n\
+echo \"made it once\\n\";\n\
+crash();\n\
+echo \"ok\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}\
+\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in {} on line 4\n\
+made it once\n\
+{}\
+\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in {} on line 4\n\
+ok\n",
+            undefined_variable_warning(&input, "i", 4),
+            input.display(),
+            undefined_variable_warning(&input, "i", 4),
+            input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_set_with_key_diagnostics"));
+}
+
+#[test]
 fn compile_array_dim_assignment_rhs_missing_variable_handler_invalidates_root_to_native_binary() {
     let root = temp_dir("ptn-native-array-dim-rhs-missing-variable-handler-invalidates-root");
     fs::create_dir_all(&root).unwrap();
@@ -56084,7 +56133,7 @@ var_dump($a);\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Error: Undefined variable $y\nNULL\n"
+        "Error: Undefined variable $y\nError: Using null as an array offset is deprecated, use an empty string instead\nNULL\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
