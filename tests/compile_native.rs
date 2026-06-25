@@ -47009,6 +47009,55 @@ var_dump($inserted === $x, $moveFragment->childNodes->length);
 }
 
 #[test]
+fn compile_dom_attribute_text_child_and_remove_return_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-attribute-text-child-remove-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-attribute-text-child-remove-return.php");
+    let output = root.join("dom-attribute-text-child-remove-return-bin");
+    fs::write(
+        &input,
+        "<?php
+$dom = new DOMDocument();
+$dom->loadXML('<root lang=\"en\" src=\"picture.gif\"/>');
+$attr = $dom->documentElement->getAttributeNode('src');
+var_dump($attr->childNodes->length);
+var_dump($attr->childNodes->item(0)->nodeName, $attr->childNodes->item(0)->nodeValue, $attr->firstChild->nodeValue);
+var_dump($dom->documentElement->removeAttribute('src'));
+var_dump($dom->documentElement->removeAttribute('missing'));
+$attr = $dom->documentElement->attributes->item(0);
+var_dump($attr->childNodes->length, $attr->childNodes->item(0)->nodeValue);
+$attr->value = 'fr';
+var_dump($attr->childNodes->item(0)->nodeValue);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "string(5) \"#text\"\n",
+            "string(11) \"picture.gif\"\n",
+            "string(11) \"picture.gif\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "string(2) \"en\"\n",
+            "string(2) \"fr\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_attribute_ensure_text_child"));
+    assert!(c_source.contains("ptn_dom_remove_attribute_method"));
+}
+
+#[test]
 fn compile_dom_text_processing_instruction_and_subclass_surface_to_native_binary() {
     let root = temp_dir("ptn-native-dom-text-processing-instruction-subclass");
     fs::create_dir_all(&root).unwrap();

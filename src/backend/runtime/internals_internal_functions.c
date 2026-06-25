@@ -105965,6 +105965,9 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
 }
 
 static PtnValue ptn_xml_child_nodes_object(PtnRuntime *runtime, PtnXmlNode *parent) {
+    if (parent != NULL && parent->type == PTN_XML_NODE_ATTRIBUTE) {
+        ptn_xml_attribute_ensure_text_child(runtime, parent);
+    }
     return ptn_xml_node_list_object(runtime, parent);
 }
 
@@ -111446,9 +111449,9 @@ static void ptn_xml_element_reconcile_synthetic_namespaces(PtnXmlNode *element) 
     } while (changed);
 }
 
-static void ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *name) {
+static int ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *name) {
     if (element == NULL || name == NULL) {
-        return;
+        return 0;
     }
     for (size_t i = 0; i < element->attribute_count; i++) {
         PtnXmlNode *attr = element->attributes[i];
@@ -111459,9 +111462,10 @@ static void ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *na
             element->attribute_count--;
             attr->parent = NULL;
             ptn_xml_element_reconcile_synthetic_namespaces(element);
-            return;
+            return 1;
         }
     }
+    return 0;
 }
 
 static void ptn_xml_element_remove_attribute_node(PtnXmlNode *element, PtnXmlNode *attr) {
@@ -116587,10 +116591,10 @@ static PtnValue ptn_dom_remove_attribute_method(PtnRuntime *runtime, PtnValue re
         }
         char *name_copy = ptn_dom_attribute_name_copy_for_element(element, name.data, name.len);
         ptn_string_operand_free(name);
-        ptn_xml_element_remove_attribute(element, name_copy);
+        int removed = ptn_xml_element_remove_attribute(element, name_copy);
         free(name_copy);
         ptn_xml_resolve_namespace_recursive(element);
-        return ptn_null();
+        return ptn_bool(removed);
     }
     PtnStringOperand namespace_uri = ptn_dom_nullable_string_arg(runtime, method_name, 1, "namespace", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -116606,11 +116610,12 @@ static PtnValue ptn_dom_remove_attribute_method(PtnRuntime *runtime, PtnValue re
     ptn_string_operand_free(namespace_uri);
     ptn_string_operand_free(local_name);
     PtnXmlNode *attr = ptn_dom_find_attribute_ns(element, namespace_copy, local_copy);
+    int removed = attr != NULL;
     ptn_xml_element_remove_attribute_node(element, attr);
     free(namespace_copy);
     free(local_copy);
     ptn_xml_resolve_namespace_recursive(element);
-    return ptn_null();
+    return ptn_bool(removed);
 }
 
 static PtnValue ptn_dom_remove_attribute_node_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
