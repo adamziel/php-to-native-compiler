@@ -49981,7 +49981,7 @@ fn compile_assertion_runtime_ini_state_to_native_binary() {
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert_eq!(
         stdout,
-        "string(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nbool(true)\nassert(false)\nstring(1) \"0\"\n\nWarning: assert(): warned failed in ptn on line 1\nbool(false)\nstring(1) \"1\"\nstring(1) \"1\"\n"
+        "string(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nbool(true)\nassert(false)\n\nDeprecated: ini_set(): assert.exception INI setting is deprecated in ptn on line 1\nstring(1) \"0\"\n\nWarning: assert(): warned failed in ptn on line 1\nbool(false)\nstring(1) \"1\"\nstring(1) \"1\"\n"
     );
     assert!(!stdout.contains("\n\n\nWarning:"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -50057,7 +50057,7 @@ fn compile_legacy_assert_options_state_to_native_binary() {
     let output = root.join("legacy-assert-options-bin");
     fs::write(
         &input,
-        "<?php function assert_cb($file,$line,$code,$desc=null){ echo \"cb:\"; var_dump($code,$desc); } var_dump(ASSERT_ACTIVE, ASSERT_CALLBACK, ASSERT_BAIL, ASSERT_WARNING, ASSERT_EXCEPTION); var_dump(defined(\"ASSERT_CALLBACK\"), constant(\"ASSERT_WARNING\"), get_defined_constants(true)[\"Core\"][\"ASSERT_BAIL\"]); var_dump(ini_get(\"assert.active\"), ini_get(\"assert.warning\"), ini_get(\"assert.bail\"), ini_get(\"assert.callback\")); var_dump(assert_options(ASSERT_ACTIVE), assert_options(ASSERT_WARNING), assert_options(ASSERT_BAIL), assert_options(ASSERT_CALLBACK), assert_options(ASSERT_EXCEPTION)); ini_set(\"assert.exception\", 0); assert_options(ASSERT_CALLBACK, \"assert_cb\"); assert_options(ASSERT_WARNING, 0); var_dump(assert(false, \"silent\")); assert_options(ASSERT_WARNING, 1); var_dump(assert(false, \"loud\")); assert_options(ASSERT_ACTIVE, 0); var_dump(ini_get(\"assert.active\"), assert(false, \"inactive\")); ini_set(\"assert.callback\", \"\"); assert_options(ASSERT_ACTIVE, 1); var_dump(assert_options(ASSERT_CALLBACK)); assert_options(ASSERT_CALLBACK, null); var_dump(assert_options(ASSERT_CALLBACK));",
+        "<?php error_reporting(E_ALL & ~E_DEPRECATED); function assert_cb($file,$line,$code,$desc=null){ echo \"cb:\"; var_dump($code,$desc); } var_dump(ASSERT_ACTIVE, ASSERT_CALLBACK, ASSERT_BAIL, ASSERT_WARNING, ASSERT_EXCEPTION); var_dump(defined(\"ASSERT_CALLBACK\"), constant(\"ASSERT_WARNING\"), get_defined_constants(true)[\"Core\"][\"ASSERT_BAIL\"]); var_dump(ini_get(\"assert.active\"), ini_get(\"assert.warning\"), ini_get(\"assert.bail\"), ini_get(\"assert.callback\")); var_dump(assert_options(ASSERT_ACTIVE), assert_options(ASSERT_WARNING), assert_options(ASSERT_BAIL), assert_options(ASSERT_CALLBACK), assert_options(ASSERT_EXCEPTION)); ini_set(\"assert.exception\", 0); assert_options(ASSERT_CALLBACK, \"assert_cb\"); assert_options(ASSERT_WARNING, 0); var_dump(assert(false, \"silent\")); assert_options(ASSERT_WARNING, 1); var_dump(assert(false, \"loud\")); assert_options(ASSERT_ACTIVE, 0); var_dump(ini_get(\"assert.active\"), assert(false, \"inactive\")); ini_set(\"assert.callback\", \"\"); assert_options(ASSERT_ACTIVE, 1); var_dump(assert_options(ASSERT_CALLBACK)); assert_options(ASSERT_CALLBACK, null); var_dump(assert_options(ASSERT_CALLBACK));",
     )
     .unwrap();
 
@@ -50081,7 +50081,7 @@ fn compile_assert_bail_option_exits_native_binary() {
     let output = root.join("assert-bail-option-bin");
     fs::write(
         &input,
-        "<?php ini_set(\"assert.exception\", 0); assert_options(ASSERT_WARNING, 0); assert_options(ASSERT_BAIL, 1); assert(false, \"bail\"); echo \"after\\n\";",
+        "<?php error_reporting(E_ALL & ~E_DEPRECATED); ini_set(\"assert.exception\", 0); assert_options(ASSERT_WARNING, 0); assert_options(ASSERT_BAIL, 1); assert(false, \"bail\"); echo \"after\\n\";",
     )
     .unwrap();
 
@@ -50101,7 +50101,7 @@ fn compile_assert_bail_callback_failure_uses_warning_uncaught_native_binary() {
     let output = root.join("assert-bail-callback-failure-bin");
     fs::write(
         &input,
-        "<?php ini_set(\"assert.exception\", 0); assert_options(ASSERT_BAIL, 1); assert_options(ASSERT_CALLBACK, function () { throw new Exception(\"Boo\"); }); assert(false, \"assertion\"); echo \"after\\n\";",
+        "<?php error_reporting(E_ALL & ~E_DEPRECATED); ini_set(\"assert.exception\", 0); assert_options(ASSERT_BAIL, 1); assert_options(ASSERT_CALLBACK, function () { throw new Exception(\"Boo\"); }); assert(false, \"assertion\"); echo \"after\\n\";",
     )
     .unwrap();
 

@@ -999,6 +999,38 @@ fn session_save_handler_startup_warning(ini: &RuntimeIni) -> Option<String> {
         })
 }
 
+fn assert_ini_bool_differs_from_default(value: Option<&str>, default: bool) -> bool {
+    value.is_some_and(|value| ini_scalar_truthy(value) != default)
+}
+
+fn assert_ini_string_differs_from_default(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !normalize_ini_scalar(value).is_empty())
+}
+
+fn assert_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
+    let mut warnings = Vec::new();
+    if assert_ini_bool_differs_from_default(ini.assert_active.as_deref(), true) {
+        warnings.push(
+            "Deprecated: PHP Startup: assert.active INI setting is deprecated in Unknown on line 0",
+        );
+    }
+    if assert_ini_bool_differs_from_default(ini.assert_warning.as_deref(), true) {
+        warnings.push("Deprecated: PHP Startup: assert.warning INI setting is deprecated in Unknown on line 0");
+    }
+    if assert_ini_string_differs_from_default(ini.assert_callback.as_deref()) {
+        warnings.push("Deprecated: PHP Startup: assert.callback INI setting is deprecated in Unknown on line 0");
+    }
+    if assert_ini_bool_differs_from_default(ini.assert_bail.as_deref(), false) {
+        warnings.push(
+            "Deprecated: PHP Startup: assert.bail INI setting is deprecated in Unknown on line 0",
+        );
+    }
+    if assert_ini_bool_differs_from_default(ini.assert_exception.as_deref(), true) {
+        warnings.push("Deprecated: PHP Startup: assert.exception INI setting is deprecated in Unknown on line 0");
+    }
+    warnings
+}
+
 fn compile_and_run(
     script: &Path,
     args: &[String],
@@ -1081,6 +1113,7 @@ fn compile_and_run(
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let zend_script_encoding_warning = invalid_zend_script_encoding_warning(&ini);
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
+    let assert_startup_deprecations = assert_startup_deprecations(&ini);
     let source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
         script_encoding: ini
@@ -1329,6 +1362,7 @@ fn compile_and_run(
     let startup_warning_emitted = memory_limit_warning.is_some()
         || zend_script_encoding_warning.is_some()
         || session_save_handler_warning.is_some()
+        || !assert_startup_deprecations.is_empty()
         || ini.mbstring_internal_encoding.is_some()
         || ini.mbstring_http_input.is_some()
         || ini.allow_url_include_deprecated;
@@ -1343,6 +1377,12 @@ fn compile_and_run(
     }
     if let Some(warning) = session_save_handler_warning {
         println!("{warning}");
+    }
+    for (index, warning) in assert_startup_deprecations.iter().enumerate() {
+        println!("{warning}");
+        if index + 1 < assert_startup_deprecations.len() {
+            println!();
+        }
     }
     if ini.allow_url_include_deprecated {
         println!("Deprecated: Directive 'allow_url_include' is deprecated in Unknown on line 0");

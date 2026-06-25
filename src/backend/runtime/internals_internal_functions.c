@@ -89,6 +89,36 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
                 "Constant MT_RAND_PHP is deprecated since 8.3, as it uses a biased non-standard variant of Mt19937",
                 line
             );
+        } else if (strcmp(name, "ASSERT_ACTIVE") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ASSERT_ACTIVE is deprecated since 8.3, as assert_options() is deprecated",
+                line
+            );
+        } else if (strcmp(name, "ASSERT_CALLBACK") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ASSERT_CALLBACK is deprecated since 8.3, as assert_options() is deprecated",
+                line
+            );
+        } else if (strcmp(name, "ASSERT_BAIL") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ASSERT_BAIL is deprecated since 8.3, as assert_options() is deprecated",
+                line
+            );
+        } else if (strcmp(name, "ASSERT_WARNING") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ASSERT_WARNING is deprecated since 8.3, as assert_options() is deprecated",
+                line
+            );
+        } else if (strcmp(name, "ASSERT_EXCEPTION") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant ASSERT_EXCEPTION is deprecated since 8.3, as assert_options() is deprecated",
+                line
+            );
         } else if (strcmp(name, "SUNFUNCS_RET_STRING") == 0) {
             ptn_emit_deprecation(
                 &runtime->diagnostics,
@@ -86372,24 +86402,28 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): assert.exception INI setting is deprecated", line);
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.active")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_active(runtime));
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): assert.active INI setting is deprecated", line);
         ptn_runtime_set_assert_active(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.bail")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_bail(runtime));
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): assert.bail INI setting is deprecated", line);
         ptn_runtime_set_assert_bail(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.callback")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_assert_callback_ini(runtime)));
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): assert.callback INI setting is deprecated", line);
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_assert_callback_string(runtime, next);
@@ -86400,6 +86434,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.warning")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_warning(runtime));
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): assert.warning INI setting is deprecated", line);
         ptn_runtime_set_assert_warning(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
@@ -91086,6 +91121,15 @@ static const char *ptn_internal_constant_deprecated_since(const char *name) {
     if (ptn_ascii_case_equal(name, "MT_RAND_PHP")) {
         return "8.3";
     }
+    if (
+        ptn_ascii_case_equal(name, "ASSERT_ACTIVE") ||
+        ptn_ascii_case_equal(name, "ASSERT_CALLBACK") ||
+        ptn_ascii_case_equal(name, "ASSERT_BAIL") ||
+        ptn_ascii_case_equal(name, "ASSERT_WARNING") ||
+        ptn_ascii_case_equal(name, "ASSERT_EXCEPTION")
+    ) {
+        return "8.3";
+    }
     return NULL;
 }
 
@@ -91099,6 +91143,15 @@ static const char *ptn_internal_constant_deprecated_message(const char *name) {
     }
     if (ptn_ascii_case_equal(name, "MT_RAND_PHP")) {
         return "as it uses a biased non-standard variant of Mt19937";
+    }
+    if (
+        ptn_ascii_case_equal(name, "ASSERT_ACTIVE") ||
+        ptn_ascii_case_equal(name, "ASSERT_CALLBACK") ||
+        ptn_ascii_case_equal(name, "ASSERT_BAIL") ||
+        ptn_ascii_case_equal(name, "ASSERT_WARNING") ||
+        ptn_ascii_case_equal(name, "ASSERT_EXCEPTION")
+    ) {
+        return "as assert_options() is deprecated";
     }
     return NULL;
 }
@@ -94683,7 +94736,7 @@ static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_assert_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
+    ptn_emit_deprecation(&runtime->diagnostics, "Function assert_options() is deprecated since 8.3", line);
     int64_t option = ptn_value_to_integer(args[0]);
     PtnValue previous = ptn_null();
     switch (option) {
