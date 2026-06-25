@@ -46245,6 +46245,118 @@ try {
 }
 
 #[test]
+fn compile_modern_dom_text_processing_instruction_normalize_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-text-pi-normalize-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-text-pi-normalize-pack.php");
+    let output = root.join("modern-dom-text-pi-normalize-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$html = Dom\HTMLDocument::createEmpty();
+try {
+    $html->createProcessingInstruction("target", "?>");
+} catch (DOMException $e) {
+    var_dump($e->getCode());
+    echo $e->getMessage(), "\n";
+}
+$html->appendChild($html->createProcessingInstruction("empty", ""));
+$html->appendChild($html->createProcessingInstruction("foo", "bar"));
+echo $html->saveHtml(), "\n";
+
+try {
+    $html->append("bar");
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+$text = $html->createTextNode("bar");
+try {
+    $html->append($text);
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($text->parentNode);
+var_dump($text->textContent);
+
+$xml = Dom\XMLDocument::createEmpty();
+$element = $xml->createElement("div");
+$span = $xml->createElement("span");
+$span->textContent = "qux";
+$element->append("foo", "bar", "baz", $span, $xml->createCDATASection("a"), $xml->createCDATASection("b"));
+$xml->append($element);
+echo $xml->saveXml(), "\n";
+var_dump($element->firstChild->textContent);
+var_dump($element->firstChild->nextSibling->textContent);
+var_dump($element->firstChild->nextSibling->nextSibling->textContent);
+$xml->normalize();
+echo $xml->saveXml(), "\n";
+var_dump($element->firstChild->textContent);
+var_dump($element->firstChild->nextSibling->textContent);
+$element->textContent = NULL;
+echo $xml->saveXml(), "\n";
+
+$piDoc = Dom\XMLDocument::createFromString('<root><?pi value?></root>');
+var_dump($piDoc->textContent);
+try {
+    $piDoc->textContent = "foo";
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+$pi = $piDoc->documentElement->firstChild;
+echo $pi->substringData(0, 3), "\n";
+$pi->appendData("foobar");
+echo $pi->textContent, "\n";
+$pi->textContent = NULL;
+var_dump($pi->textContent);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "Invalid character sequence \"?>\" in processing instruction\n",
+            "<?empty ><?foo bar>\n",
+            "Cannot insert text as a child of a document\n",
+            "Cannot insert text as a child of a document\n",
+            "NULL\n",
+            "string(3) \"bar\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<div>foobarbaz<span>qux</span><![CDATA[a]]><![CDATA[b]]></div>\n",
+            "string(3) \"foo\"\n",
+            "string(3) \"bar\"\n",
+            "string(3) \"baz\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<div>foobarbaz<span>qux</span><![CDATA[a]]><![CDATA[b]]></div>\n",
+            "string(9) \"foobarbaz\"\n",
+            "string(3) \"qux\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<div></div>\n",
+            "NULL\n",
+            "Cannot modify readonly property Dom\\XMLDocument::$textContent\n",
+            "val\n",
+            "valuefoobar\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_normalize_method"));
+    assert!(c_source.contains("ptn_xml_check_document_text_insertion"));
+}
+
+#[test]
 fn compile_dom_document_load_save_html_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-dom-document-load-save-html-surfaces");
     fs::create_dir_all(&root).unwrap();
