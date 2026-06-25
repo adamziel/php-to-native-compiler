@@ -142642,6 +142642,7 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "hasReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "invoke")
@@ -142698,6 +142699,7 @@ static int ptn_reflection_function_abstract_method_exists(const char *method_nam
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "hasReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
@@ -142773,6 +142775,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getPrototype")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "hasReturnType")
         || ptn_ascii_case_equal(method_name, "getShortName")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
@@ -143521,6 +143524,14 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "next")
             || ptn_ascii_case_equal(method_name, "__debugInfo");
+    }
+    if (ptn_ascii_case_equal(class_name, "SplObserver")) {
+        return ptn_ascii_case_equal(method_name, "update");
+    }
+    if (ptn_ascii_case_equal(class_name, "SplSubject")) {
+        return ptn_ascii_case_equal(method_name, "attach")
+            || ptn_ascii_case_equal(method_name, "detach")
+            || ptn_ascii_case_equal(method_name, "notify");
     }
     if (ptn_internal_class_name_is_bcmath_number(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
@@ -148992,6 +149003,67 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
             0
         );
     }
+    if (ptn_ascii_case_equal(data->class_name, "SplObserver") &&
+        ptn_ascii_case_equal(data->name, "update")) {
+        static const PtnParameterMetadata PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS[] = {
+            { "subject", "SplSubject", "SplSubject", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        };
+        return ptn_function_metadata_found(
+            "SplObserver::update",
+            1,
+            sizeof(PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS[0]),
+            sizeof(PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS) /
+                sizeof(PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS[0]),
+            0,
+            PTN_INTERNAL_SPL_OBSERVER_UPDATE_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(data->class_name, "SplSubject")) {
+        static const PtnParameterMetadata PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS[] = {
+            { "observer", "SplObserver", "SplObserver", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        };
+        if (ptn_ascii_case_equal(data->name, "attach") ||
+            ptn_ascii_case_equal(data->name, "detach")) {
+            return ptn_function_metadata_found(
+                ptn_ascii_case_equal(data->name, "attach")
+                    ? "SplSubject::attach"
+                    : "SplSubject::detach",
+                1,
+                sizeof(PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS) /
+                    sizeof(PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS[0]),
+                sizeof(PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS) /
+                    sizeof(PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS[0]),
+                0,
+                PTN_INTERNAL_SPL_SUBJECT_OBSERVER_PARAMETERS,
+                0,
+                NULL,
+                NULL,
+                0,
+                0
+            );
+        }
+        if (ptn_ascii_case_equal(data->name, "notify")) {
+            return ptn_function_metadata_found(
+                "SplSubject::notify",
+                1,
+                0,
+                0,
+                0,
+                NULL,
+                0,
+                NULL,
+                NULL,
+                0,
+                0
+            );
+        }
+    }
     int needed = snprintf(NULL, 0, "%s::%s", data->class_name, data->name);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -149142,6 +149214,8 @@ static PtnValue ptn_reflection_internal_method_to_string(
         ptn_callback_visibility_name(visibility),
         data->name
     );
+    int closure_invoke_method = ptn_ascii_case_equal(data->class_name, "Closure") &&
+        ptn_ascii_case_equal(data->name, "__invoke");
     if (metadata.parameter_count > 0) {
         ptn_string_buffer_append(&buffer, "\n");
         ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
@@ -149172,7 +149246,11 @@ static PtnValue ptn_reflection_internal_method_to_string(
             }
             ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
             if (default_display != NULL && i >= metadata.required_parameter_count) {
-                ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+                ptn_string_buffer_append_format(
+                    &buffer,
+                    " = %s",
+                    closure_invoke_method ? "<default>" : default_display
+                );
             }
             ptn_string_buffer_append(&buffer, " ]\n");
         }
@@ -149553,6 +149631,10 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             metadata.return_type_allows_null,
             metadata.return_type_is_builtin
         );
+    }
+    if (ptn_ascii_case_equal(name, "hasReturnType")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        return ptn_bool(metadata.found && metadata.return_type_display_name != NULL);
     }
     if (ptn_ascii_case_equal(name, "returnsReference")) {
         PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
@@ -159266,10 +159348,20 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
     return ptn_reflection_parameter_object_from_metadata(runtime, metadata, index);
 }
 
-static PtnValue ptn_reflection_parameter_to_string(
-    PtnFunctionMetadata metadata,
-    size_t index
+static int ptn_reflection_parameter_is_closure_method(
+    PtnReflectionParameterData *data
 ) {
+    return data != NULL &&
+        data->has_declaring_method &&
+        data->declaring_method_class_name != NULL &&
+        data->declaring_method_name != NULL &&
+        ptn_ascii_case_equal(data->declaring_method_class_name, "Closure") &&
+        ptn_ascii_case_equal(data->declaring_method_name, "__invoke");
+}
+
+static PtnValue ptn_reflection_parameter_to_string(PtnReflectionParameterData *data) {
+    PtnFunctionMetadata metadata = data->metadata;
+    size_t index = data->index;
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     char fallback[32];
@@ -159294,7 +159386,11 @@ static PtnValue ptn_reflection_parameter_to_string(
     }
     ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
     if (default_display != NULL && index >= metadata.required_parameter_count) {
-        ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+        ptn_string_buffer_append_format(
+            &buffer,
+            " = %s",
+            ptn_reflection_parameter_is_closure_method(data) ? "<default>" : default_display
+        );
     }
     ptn_string_buffer_append(&buffer, " ]");
     return ptn_owned_string_len(buffer.data, buffer.len);
@@ -173610,6 +173706,9 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             metadata.return_type_is_builtin
         );
     }
+    if (ptn_ascii_case_equal(name, "hasReturnType")) {
+        return ptn_bool(metadata.return_type_display_name != NULL);
+    }
     if (ptn_ascii_case_equal(name, "getNumberOfParameters")) {
         return ptn_reflection_function_size_result(metadata.parameter_count);
     }
@@ -174246,7 +174345,7 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
-        return ptn_reflection_parameter_to_string(metadata, index);
+        return ptn_reflection_parameter_to_string(data);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         char fallback[32];
@@ -174305,10 +174404,16 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         return ptn_bool(ptn_reflection_parameter_is_optional(metadata, index));
     }
     if (ptn_ascii_case_equal(name, "isDefaultValueAvailable")) {
+        if (ptn_reflection_parameter_is_closure_method(data)) {
+            return ptn_bool(0);
+        }
         return ptn_bool(ptn_reflection_parameter_is_default_available(metadata, index));
     }
     if (ptn_ascii_case_equal(name, "isDefaultValueConstant")) {
-        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
+        if (
+            ptn_reflection_parameter_is_closure_method(data) ||
+            !ptn_reflection_parameter_is_default_available(metadata, index)
+        ) {
             return ptn_reflection_parameter_throw_default_unavailable(runtime);
         }
         return ptn_bool(ptn_function_metadata_parameter_default_constant_name(metadata, index) != NULL);
@@ -174316,7 +174421,10 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     if (ptn_ascii_case_equal(name, "getDefaultValueConstantName")) {
         const char *constant_name =
             ptn_function_metadata_parameter_default_constant_name(metadata, index);
-        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
+        if (
+            ptn_reflection_parameter_is_closure_method(data) ||
+            !ptn_reflection_parameter_is_default_available(metadata, index)
+        ) {
             return ptn_reflection_parameter_throw_default_unavailable(runtime);
         }
         if (constant_name == NULL) {
@@ -174325,7 +174433,10 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         return ptn_owned_string(ptn_duplicate_string(constant_name));
     }
     if (ptn_ascii_case_equal(name, "getDefaultValue")) {
-        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
+        if (
+            ptn_reflection_parameter_is_closure_method(data) ||
+            !ptn_reflection_parameter_is_default_available(metadata, index)
+        ) {
             return ptn_reflection_parameter_throw_default_unavailable(runtime);
         }
         PtnParameterDefaultProvider default_provider =
