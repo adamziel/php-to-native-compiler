@@ -62296,6 +62296,8 @@ static PtnHashContextData *ptn_hash_context_data(PtnValue value) {
     return (PtnHashContextData *)value.as.object->native_data;
 }
 
+static void ptn_hash_context_append(PtnHashContextData *data, const unsigned char *bytes, size_t len);
+
 static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, int hmac, const unsigned char *key, size_t key_len) {
     PtnValue object = ptn_object_new_shell(runtime, "HashContext");
     PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
@@ -62318,6 +62320,22 @@ static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, i
         ptn_owned_string(ptn_duplicate_string(algo))
     );
     return object;
+}
+
+static PTN_UNUSED PtnValue ptn_hash_context_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnHashContextData *data = ptn_hash_context_data(source);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid HashContext object");
+        return ptn_null();
+    }
+    if (data->finalized) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone a finalized HashContext");
+        return ptn_null();
+    }
+    PtnValue clone = ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
+    ptn_hash_context_append((PtnHashContextData *)clone.as.object->native_data, data->data, data->data_len);
+    return clone;
 }
 
 static void ptn_hash_context_append(PtnHashContextData *data, const unsigned char *bytes, size_t len) {
@@ -62438,8 +62456,22 @@ static PtnValue ptn_hash_context_serialize_payload(PtnRuntime *runtime, PtnObjec
         return ptn_null();
     }
     PtnHashContextData *data = (PtnHashContextData *)object->native_data;
-    if (data == NULL || data->finalized) {
+    if (data == NULL) {
         ptn_throw_exception(runtime, "ValueError", "HashContext is not a valid, non-finalized HashContext");
+        return ptn_null();
+    }
+    if (data->finalized) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "HashContext for algorithm \"%s\" cannot be serialized",
+            data->algo
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_hash_context_throw_serialize_error(runtime, message);
         return ptn_null();
     }
     if (data->hmac) {

@@ -2199,6 +2199,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_soap_header(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_var(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_param(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
+static PTN_UNUSED PtnValue ptn_hash_context_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED int ptn_internal_class_name_is_session_handler(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_calendar(const char *class_name);
