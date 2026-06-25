@@ -12,8 +12,10 @@ use crate::ast::{
     UnaryOp, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
-use crate::diagnostic::{Diagnostic, Result};
-use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
+use crate::diagnostic::{Diagnostic, DiagnosticKind, Result};
+use crate::ir::{
+    lower_with_source_and_includes, IncludeParseError, IncludeResolutionMap, IncludeSource,
+};
 use crate::lexer::{decode_php_source_bytes, decode_php_source_bytes_with_encoding};
 use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases_and_symbols};
 
@@ -215,6 +217,18 @@ fn decode_compiler_source_bytes(bytes: &[u8], options: &CompileSourceOptions) ->
         &decoded_bytes,
         decode_encoding,
     ))
+}
+
+fn empty_include_program() -> Program {
+    Program {
+        classes: Vec::new(),
+        traits: Vec::new(),
+        functions: Vec::new(),
+        statements: Vec::new(),
+        compile_warnings: Vec::new(),
+        strict_types: false,
+        ticks: false,
+    }
 }
 
 fn is_usable_source_encoding(encoding: &str) -> bool {
@@ -1541,7 +1555,21 @@ impl IncludeCollector {
         };
         apply_include_source_transform(&mut source_bytes, resolved.transform.as_ref());
         let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
-        let program = parse_for_include_collection(&source, &self.runtime_class_aliases)?;
+        let (program, parse_error) =
+            match parse_for_include_collection(&source, &self.runtime_class_aliases) {
+                Ok(program) => (program, None),
+                Err(error) if error.kind == DiagnosticKind::ParseError => {
+                    let line = error.span.map(|span| span.line).unwrap_or(1);
+                    (
+                        empty_include_program(),
+                        Some(IncludeParseError {
+                            message: error.message,
+                            line,
+                        }),
+                    )
+                }
+                Err(error) => return Err(error),
+            };
 
         let index = self.sources.len();
         self.by_source.insert(key, index);
@@ -1555,6 +1583,7 @@ impl IncludeCollector {
             source_dir: source_dir.clone(),
             source_bytes,
             path_aliases,
+            parse_error,
             program: program.clone(),
         });
         self.source_transforms.push(resolved.transform);
@@ -1564,6 +1593,9 @@ impl IncludeCollector {
 
     fn finalize_sources(&mut self) -> Result<()> {
         for index in 0..self.sources.len() {
+            if self.sources[index].parse_error.is_some() {
+                continue;
+            }
             let source_file = self.sources[index].source_file.clone();
             let mut source_bytes = fs::read(&source_file).map_err(|error| {
                 Diagnostic::new(format!("failed to read {source_file}: {error}"), None)

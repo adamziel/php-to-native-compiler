@@ -2603,10 +2603,7 @@ impl Parser<'_> {
             ));
         }
         if !matches!(self.peek().kind, TokenKind::Function) {
-            return Err(Diagnostic::new(
-                "unsupported class member",
-                Some(self.peek().span),
-            ));
+            return Err(syntax_error_unexpected(self.peek(), Some("\"function\"")));
         }
         if modifiers.is_readonly {
             return Err(Diagnostic::new(

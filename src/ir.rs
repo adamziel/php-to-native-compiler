@@ -57,6 +57,7 @@ pub struct IncludeFile {
     pub source_dir: String,
     pub source_bytes: Vec<u8>,
     pub path_aliases: Vec<String>,
+    pub parse_error: Option<IncludeParseError>,
     pub strict_types: bool,
     pub ticks: bool,
     pub instructions: Vec<Instruction>,
@@ -69,7 +70,14 @@ pub struct IncludeSource {
     pub source_dir: String,
     pub source_bytes: Vec<u8>,
     pub path_aliases: Vec<String>,
+    pub parse_error: Option<IncludeParseError>,
     pub program: Program,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncludeParseError {
+    pub message: String,
+    pub line: usize,
 }
 
 pub type IncludeResolutionMap = HashMap<(String, usize, usize), Vec<usize>>;
@@ -1664,6 +1672,7 @@ impl<'a> LoweringContext<'a> {
             source_dir: include.source_dir.clone(),
             source_bytes: include.source_bytes.clone(),
             path_aliases: include.path_aliases.clone(),
+            parse_error: include.parse_error.clone(),
             strict_types: include.program.strict_types,
             ticks: include.program.ticks,
             instructions,

@@ -4116,6 +4116,51 @@ fn compile_interpolated_include_path_alias_to_native_binary() {
 }
 
 #[test]
+fn compile_invalid_required_include_throws_catchable_parse_error_to_native_binary() {
+    let root = temp_dir("ptn-native-invalid-required-include-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let include = root.join("bad.inc");
+    let output = root.join("invalid-required-include-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    require __DIR__ . '/bad.inc';
+} catch (ParseError $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        "<?php
+class A {
+    if (wrongsyntax)
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ParseError: syntax error, unexpected token \"if\", expecting \"function\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_relative_dir_dynamic_include_uses_existing_cwd_path_to_native_binary() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -7271,6 +7316,17 @@ fn parser_reports_php_grammar_reserved_name_diagnostics() {
         assert_eq!(error.message, message, "{source}");
         assert_eq!(error.kind, kind, "{source}");
     }
+}
+
+#[test]
+fn parser_reports_invalid_class_member_as_parse_error() {
+    let error = parser::parse("<?php class A { if (wrongsyntax) }").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \"if\", expecting \"function\""
+    );
 }
 
 #[test]

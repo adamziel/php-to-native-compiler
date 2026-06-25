@@ -4420,11 +4420,6 @@ fn emit_include_helpers(
         out.push_str(";\n");
         out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
-        emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
-        emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
-        let legacy_dollar_brace_deprecations =
-            collect_include_legacy_dollar_brace_deprecations(include);
-        emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
         let mut values = ValueEmitter::new(
             &include.source_file,
             &include.source_dir,
@@ -4436,6 +4431,22 @@ fn emit_include_helpers(
         let mut control_targets = Vec::new();
         let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_include_return");
+        if let Some(parse_error) = &include.parse_error {
+            out.push_str("    ptn_throw_exception_at(&runtime, \"ParseError\", \"");
+            out.push_str(&c_string(&parse_error.message));
+            out.push_str("\", runtime.source_path, ");
+            out.push_str(&parse_error.line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_return_value = ptn_null();\n");
+            out.push_str("    goto ");
+            out.push_str(&return_label);
+            out.push_str(";\n");
+        }
+        emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
+        emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
+        let legacy_dollar_brace_deprecations =
+            collect_include_legacy_dollar_brace_deprecations(include);
+        emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
         for instruction in &include.instructions {
             emit_instruction(
                 out,
@@ -4481,6 +4492,15 @@ fn emit_include_helpers(
         out.push_str("    runtime.source_snapshot_len = ");
         out.push_str(&include_source_snapshot_len_name(index));
         out.push_str(";\n");
+        if include.parse_error.is_some() {
+            out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+            out.push_str("    runtime.source_snapshot_data = ptn_previous_source_snapshot_data;\n");
+            out.push_str("    runtime.source_snapshot_len = ptn_previous_source_snapshot_len;\n");
+            out.push_str("#undef runtime\n");
+            out.push_str("    return 0;\n");
+            out.push_str("}\n");
+            continue;
+        }
         let mut values = ValueEmitter::new(
             &include.source_file,
             &include.source_dir,
