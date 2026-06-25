@@ -2187,6 +2187,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_pdo_row(const char *class_name)
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_stmt(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_result(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_curl_file(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_random_randomizer(const char *class_name);
@@ -2237,6 +2238,12 @@ static PTN_UNUSED int ptn_runtime_class_or_interface_exists(
     const char *class_name
 );
 static PTN_UNUSED PtnValue ptn_reflection_class_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_curl_file_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,

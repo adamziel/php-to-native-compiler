@@ -47852,6 +47852,67 @@ var_dump(curl_setopt($ch, CURLOPT_POSTFIELDS, new CurlBody()));\n",
 }
 
 #[test]
+fn compile_curl_file_read_and_write_callbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-curl-file-read-write-callbacks");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("payload.txt"), "payload").unwrap();
+    fs::write(root.join("upload-in.txt"), "contents of tempfile").unwrap();
+    fs::write(root.join("download.txt"), "test").unwrap();
+    let input = root.join("curl-file-read-write-callbacks.php");
+    let output = root.join("curl-file-read-write-callbacks-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function ptn_curl_read($handle, $stream, $max) {\n\
+    $data = fread($stream, $max - 10);\n\
+    return $data === '' ? '' : 'custom:' . $data;\n\
+}\n\
+function ptn_curl_write($handle, $data) {\n\
+    echo $data;\n\
+    return strlen($data);\n\
+}\n\
+$file = new CURLFile(__DIR__ . '/payload.txt');\n\
+try {\n\
+    serialize($file);\n\
+} catch (Exception $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$read = fopen(__DIR__ . '/upload-in.txt', 'r');\n\
+$upload = curl_init();\n\
+curl_setopt($upload, CURLOPT_URL, 'file://' . __DIR__ . '/upload-out.txt');\n\
+curl_setopt($upload, CURLOPT_UPLOAD, 1);\n\
+curl_setopt($upload, CURLOPT_READFUNCTION, 'ptn_curl_read');\n\
+curl_setopt($upload, CURLOPT_INFILE, $read);\n\
+var_dump(curl_exec($upload));\n\
+fclose($read);\n\
+echo file_get_contents(__DIR__ . '/upload-out.txt'), \"\\n\";\n\
+$download = curl_init('file://' . __DIR__ . '/download.txt');\n\
+curl_setopt($download, CURLOPT_WRITEFUNCTION, 'ptn_curl_write');\n\
+var_dump(curl_exec($download));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Serialization of 'CURLFile' is not allowed\n",
+            "bool(true)\n",
+            "custom:contents of tempfile\n",
+            "testbool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_curl_read_upload_payload"));
+    assert!(c_source.contains("CURLOPT_READFUNCTION"));
+    assert!(c_source.contains("CURLFile"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();
