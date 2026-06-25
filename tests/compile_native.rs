@@ -57259,6 +57259,35 @@ var_dump($a);\n",
 }
 
 #[test]
+fn compile_array_dim_missing_key_passthrough_handler_emits_null_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-array-dim-missing-key-null-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-dim-missing-key-null-deprecation.php");
+    let output = root.join("array-dim-missing-key-null-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function passthrough($errno, $errstr) { return false; }\n\
+set_error_handler('passthrough');\n\
+$notDefined[$i] = 'test';\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Undefined variable $i"));
+    assert!(stdout.contains(
+        "Deprecated: Using null as an array offset is deprecated, use an empty string instead"
+    ));
+    assert!(stdout.ends_with("done\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_expressions_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-expressions");
     fs::create_dir_all(&root).unwrap();

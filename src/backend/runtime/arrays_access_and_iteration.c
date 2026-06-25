@@ -16669,6 +16669,88 @@ static PTN_UNUSED int ptn_array_path_write_guard_invalidated(
     return 1;
 }
 
+static PTN_UNUSED int ptn_array_path_emit_write_diagnostic_changed_array_guarded(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const PtnArrayPathSegment *segment,
+    size_t line,
+    int emit_key_conversion_diagnostic,
+    const char *guarded_name,
+    PtnValue pre_eval_root,
+    uint64_t guarded_epoch,
+    size_t guarded_array_refcount,
+    int guard_enabled,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count
+) {
+    if (!guard_enabled || segment->deferred_missing_variable_name == NULL) {
+        return ptn_array_path_emit_write_diagnostic_changed_array(
+            runtime,
+            array,
+            segment,
+            line,
+            emit_key_conversion_diagnostic
+        );
+    }
+
+    if (array == NULL) {
+        ptn_array_path_emit_deferred_undefined_variable_warning(runtime, segment, line);
+        if (ptn_array_path_write_guard_invalidated(
+            runtime,
+            guarded_name,
+            pre_eval_root,
+            guarded_epoch,
+            guarded_array_refcount,
+            guard_enabled,
+            segments,
+            segment_count,
+            line
+        )) {
+            return 1;
+        }
+        if (emit_key_conversion_diagnostic && !segment->append) {
+            ptn_emit_array_offset_key_conversion_diagnostic(runtime, segment->value, line, 1);
+        }
+        return 0;
+    }
+
+    size_t refcount = array->refcount;
+    uint64_t mutation_epoch = array->mutation_epoch;
+    ptn_array_retain(array);
+    ptn_array_debug_hide_ref(array);
+    ptn_array_path_emit_deferred_undefined_variable_warning(runtime, segment, line);
+    size_t retained_guarded_array_refcount = guarded_array_refcount == 0
+        ? 0
+        : guarded_array_refcount + 1;
+    if (ptn_array_path_write_guard_invalidated(
+        runtime,
+        guarded_name,
+        pre_eval_root,
+        guarded_epoch,
+        retained_guarded_array_refcount,
+        guard_enabled,
+        segments,
+        segment_count,
+        line
+    )) {
+        ptn_array_debug_unhide_ref(array);
+        ptn_array_free(array);
+        return 1;
+    }
+    if (array->refcount != refcount + 1 || array->mutation_epoch != mutation_epoch) {
+        ptn_array_debug_unhide_ref(array);
+        ptn_array_free(array);
+        return 1;
+    }
+    if (emit_key_conversion_diagnostic && !segment->append) {
+        ptn_emit_array_offset_key_conversion_diagnostic(runtime, segment->value, line, 1);
+    }
+    int changed = array->refcount != refcount + 1 || array->mutation_epoch != mutation_epoch;
+    ptn_array_debug_unhide_ref(array);
+    ptn_array_free(array);
+    return changed;
+}
+
 static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
     PtnRuntime *runtime,
     const char *guarded_name,
@@ -16695,12 +16777,19 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
     PtnArray *current = array;
     for (size_t i = 0; i + 1 < segment_count; i++) {
         const PtnArrayPathSegment *segment = &segments[i];
-        if (ptn_array_path_emit_write_diagnostic_changed_array(
+        if (ptn_array_path_emit_write_diagnostic_changed_array_guarded(
             runtime,
             current,
             segment,
             line,
-            emit_null_key_deprecation
+            emit_null_key_deprecation,
+            guarded_name,
+            pre_eval_root,
+            guarded_epoch,
+            guarded_array_refcount,
+            guard_enabled,
+            segments,
+            segment_count
         )) {
             return ptn_null();
         }
@@ -16831,12 +16920,19 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
     }
 
     const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
-    if (ptn_array_path_emit_write_diagnostic_changed_array(
+    if (ptn_array_path_emit_write_diagnostic_changed_array_guarded(
         runtime,
         current,
         leaf,
         line,
-        emit_null_key_deprecation
+        emit_null_key_deprecation,
+        guarded_name,
+        pre_eval_root,
+        guarded_epoch,
+        guarded_array_refcount,
+        guard_enabled,
+        segments,
+        segment_count
     )) {
         return ptn_null();
     }
