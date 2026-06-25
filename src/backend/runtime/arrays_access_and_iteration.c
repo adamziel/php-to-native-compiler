@@ -1513,11 +1513,11 @@ static PTN_UNUSED PtnValue ptn_object_invoke_clone_magic(
     PtnValue clone,
     size_t line
 ) {
-    clone = ptn_value_deref(clone);
-    if (clone.type != PTN_OBJECT || clone.as.object == NULL) {
+    PtnValue resolved_clone = ptn_value_deref(clone);
+    if (resolved_clone.type != PTN_OBJECT || resolved_clone.as.object == NULL) {
         return clone;
     }
-    PtnObject *cloned = clone.as.object;
+    PtnObject *cloned = resolved_clone.as.object;
     PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
         ? runtime
         : runtime->lifecycle_root;

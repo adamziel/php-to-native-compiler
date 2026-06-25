@@ -97697,7 +97697,7 @@ static void ptn_date_interval_sync_properties(PtnRuntime *runtime, PtnValue obje
             runtime,
             object,
             "date_string",
-            ptn_string(data->date_string == NULL ? "" : data->date_string),
+            ptn_owned_string(ptn_duplicate_string(data->date_string == NULL ? "" : data->date_string)),
             line
         );
         return;
@@ -100567,6 +100567,20 @@ static void ptn_date_period_unserialize_array(
     size_t line
 );
 
+static PtnValue ptn_date_interval_object_from_data(PtnRuntime *runtime, PtnDateIntervalData data, size_t line);
+
+static PtnValue ptn_date_period_public_interval_value(PtnRuntime *runtime, PtnValue interval, size_t line) {
+    PtnDateIntervalData *data = ptn_date_interval_data_from_value(interval);
+    if (data != NULL && data->has_relative_special) {
+        PtnDateIntervalData exposed = *data;
+        exposed.from_string = 0;
+        exposed.has_relative_special = 0;
+        exposed.date_string = NULL;
+        return ptn_date_interval_object_from_data(runtime, exposed, line);
+    }
+    return ptn_value_clone_deref(interval);
+}
+
 static void ptn_date_period_sync_properties(PtnRuntime *runtime, PtnValue object, PtnDatePeriodData *data, size_t line) {
     if (object.type != PTN_OBJECT || data == NULL) {
         return;
@@ -100574,7 +100588,7 @@ static void ptn_date_period_sync_properties(PtnRuntime *runtime, PtnValue object
     ptn_date_period_declare_value_property(runtime, object, "start", ptn_value_clone_deref(data->start), line);
     ptn_date_period_declare_value_property(runtime, object, "current", ptn_value_clone_deref(data->current), line);
     ptn_date_period_declare_value_property(runtime, object, "end", ptn_value_clone_deref(data->end), line);
-    ptn_date_period_declare_value_property(runtime, object, "interval", ptn_value_clone_deref(data->interval), line);
+    ptn_date_period_declare_value_property(runtime, object, "interval", ptn_date_period_public_interval_value(runtime, data->interval, line), line);
     ptn_date_period_declare_value_property(runtime, object, "recurrences", ptn_int(ptn_date_period_recurrences_property(data)), line);
     ptn_date_period_declare_value_property(runtime, object, "include_start_date", ptn_bool(data->include_start_date), line);
     ptn_date_period_declare_value_property(runtime, object, "include_end_date", ptn_bool(data->include_end_date), line);
@@ -100782,6 +100796,7 @@ static PtnValue ptn_date_interval_object_from_data(PtnRuntime *runtime, PtnDateI
         ptn_abort_out_of_memory();
     }
     *owned = data;
+    owned->date_string = data.date_string == NULL ? NULL : ptn_duplicate_string(data.date_string);
     PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
     object.as.object->native_data = owned;
     object.as.object->native_data_free = ptn_date_interval_data_free;

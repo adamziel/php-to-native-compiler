@@ -24735,6 +24735,138 @@ var_dump($exportReturn);\n",
 }
 
 #[test]
+fn compile_date_period_special_relative_interval_serializes_numeric_interval_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-special-relative-serialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-special-relative-serialize.php");
+    let output = root.join("date-period-special-relative-serialize-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('Europe/London');\n\
+$start = new DateTimeImmutable('1978-12-22 09:15:00 Europe/Amsterdam');\n\
+$interval = DateInterval::createFromDateString('first monday of next month');\n\
+$period = new DatePeriod($start, $interval, 7, DatePeriod::EXCLUDE_START_DATE);\n\
+foreach ($period as $_) {}\n\
+$state = $period->__serialize();\n\
+echo $state['current']->format(DateTime::ISO8601), \"\\n\";\n\
+var_dump($state['interval']->__serialize());\n\
+$restored = unserialize(serialize($period));\n\
+$restoredState = $restored->__serialize();\n\
+echo $restoredState['current']->format(DateTime::ISO8601), \"\\n\";\n\
+var_dump($restoredState['interval']->__serialize());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1979-08-06T09:15:00+0200\n",
+            "array(10) {\n",
+            "  [\"y\"]=>\n",
+            "  int(0)\n",
+            "  [\"m\"]=>\n",
+            "  int(1)\n",
+            "  [\"d\"]=>\n",
+            "  int(0)\n",
+            "  [\"h\"]=>\n",
+            "  int(0)\n",
+            "  [\"i\"]=>\n",
+            "  int(0)\n",
+            "  [\"s\"]=>\n",
+            "  int(0)\n",
+            "  [\"f\"]=>\n",
+            "  float(0)\n",
+            "  [\"invert\"]=>\n",
+            "  int(0)\n",
+            "  [\"days\"]=>\n",
+            "  bool(false)\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+            "1979-08-06T09:15:00+0200\n",
+            "array(10) {\n",
+            "  [\"y\"]=>\n",
+            "  int(0)\n",
+            "  [\"m\"]=>\n",
+            "  int(1)\n",
+            "  [\"d\"]=>\n",
+            "  int(0)\n",
+            "  [\"h\"]=>\n",
+            "  int(0)\n",
+            "  [\"i\"]=>\n",
+            "  int(0)\n",
+            "  [\"s\"]=>\n",
+            "  int(0)\n",
+            "  [\"f\"]=>\n",
+            "  float(0)\n",
+            "  [\"invert\"]=>\n",
+            "  int(0)\n",
+            "  [\"days\"]=>\n",
+            "  bool(false)\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_period_public_interval_value"));
+}
+
+#[test]
+fn compile_datetime_immutable_clone_temporaries_release_object_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-immutable-clone-temporary-release");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-immutable-clone-temporary-release.php");
+    let output = root.join("datetime-immutable-clone-temporary-release-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('Europe/London');\n\
+$now = new DateTimeImmutable('2022-04-15 10:27:27 BST');\n\
+var_dump(clone $now);\n\
+var_dump(clone $now);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(DateTimeImmutable)#2 (3) {\n",
+            "  [\"date\"]=>\n",
+            "  string(26) \"2022-04-15 10:27:27.000000\"\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(2)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(3) \"BST\"\n",
+            "}\n",
+            "object(DateTimeImmutable)#2 (3) {\n",
+            "  [\"date\"]=>\n",
+            "  string(26) \"2022-04-15 10:27:27.000000\"\n",
+            "  [\"timezone_type\"]=>\n",
+            "  int(2)\n",
+            "  [\"timezone\"]=>\n",
+            "  string(3) \"BST\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("resolved_clone = ptn_value_deref(clone)"));
+}
+
+#[test]
 fn compile_date_interval_and_period_malformed_string_exceptions_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-period-malformed-exceptions");
     fs::create_dir_all(&root).unwrap();
