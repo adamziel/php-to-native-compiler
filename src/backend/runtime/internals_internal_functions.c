@@ -144723,6 +144723,7 @@ static PtnValue ptn_reflection_class_instantiate(
     const char *class_name,
     size_t argc,
     const PtnValue *args,
+    const char *trace_function_name,
     size_t line
 ) {
     if (ptn_declared_trait_exists(class_name)) {
@@ -144731,7 +144732,18 @@ static PtnValue ptn_reflection_class_instantiate(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            trace_function_name,
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
         return ptn_null();
     }
     if (ptn_reflection_class_is_interface_name(class_name) || ptn_declared_class_is_abstract(class_name)) {
@@ -148179,7 +148191,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_bool(ptn_ascii_case_equal(data->name, "__destruct"));
     }
     if (ptn_ascii_case_equal(name, "isFinal")) {
-        return ptn_bool(0);
+        return ptn_bool(is_final);
     }
     if (ptn_ascii_case_equal(name, "isInternal")) {
         return ptn_bool(is_internal);
@@ -153302,7 +153314,14 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_reflection_class_is_instantiable(class_name));
     }
     if (ptn_ascii_case_equal(name, "newInstance")) {
-        return ptn_reflection_class_instantiate(runtime, class_name, argc, args, line);
+        return ptn_reflection_class_instantiate(
+            runtime,
+            class_name,
+            argc,
+            args,
+            "ReflectionClass->newInstance",
+            line
+        );
     }
     if (ptn_ascii_case_equal(name, "newInstanceArgs")) {
         ptn_reflection_class_check_at_most_arguments(runtime, name, argc, 1);
@@ -153323,6 +153342,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             class_name,
             ctor_args.len,
             ctor_args.values,
+            "ReflectionClass->newInstanceArgs",
             line
         );
         runtime->next_call_arg_names = previous_arg_names;

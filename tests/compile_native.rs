@@ -11820,6 +11820,125 @@ Talker::statAlias();
 }
 
 #[test]
+fn compile_trait_alias_final_visibility_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-alias-final-visibility-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-alias-final-visibility-reflection.php");
+    let output = root.join("trait-alias-final-visibility-reflection-bin");
+    fs::write(
+        &input,
+        "<?php
+trait SimpleTrait {
+    public function pub() {}
+    protected function prot() {}
+    private function priv() {}
+
+    public final function final1() {}
+    public final function final2() {}
+    public final function final3() {}
+}
+
+class Test {
+    use SimpleTrait {
+        pub as final;
+        prot as final;
+        priv as final;
+
+        final1 as private;
+        final2 as protected;
+        final3 as public;
+    }
+}
+
+foreach (['pub', 'prot', 'priv', 'final1', 'final2', 'final3'] as $method) {
+    echo \"--- Method: $method ---\\n\";
+    $rm = new ReflectionMethod(Test::class, $method);
+    var_dump($rm->isFinal());
+    var_dump($rm->isPublic());
+    var_dump($rm->isProtected());
+    var_dump($rm->isPrivate());
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches(
+                "Private methods cannot be final as they are never overridden by other classes"
+            )
+            .count(),
+        1
+    );
+    assert!(stdout.ends_with(
+        "--- Method: pub ---\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+--- Method: prot ---\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+--- Method: priv ---\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+--- Method: final1 ---\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n\
+bool(true)\n\
+--- Method: final2 ---\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(false)\n\
+--- Method: final3 ---\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_class_trait_new_instance_stack_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-trait-new-instance-stack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-trait-new-instance-stack.php");
+    let output = root.join("reflection-class-trait-new-instance-stack-bin");
+    fs::write(
+        &input,
+        "<?php
+trait Foo {}
+$rc = new ReflectionClass('Foo');
+$rc->newInstance();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Uncaught Error: Cannot instantiate trait Foo"));
+    assert!(stderr.contains("#0 "));
+    assert!(stderr.contains("ReflectionClass->newInstance()"));
+    assert!(stderr.contains("#1 {main}"));
+}
+
+#[test]
 fn compile_trait_reference_kind_declaration_fatals_to_native_binary() {
     let cases = [
         (

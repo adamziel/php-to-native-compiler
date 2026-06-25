@@ -15551,7 +15551,7 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(c_method_visibility(method.visibility));
             out.push_str(";\n");
             out.push_str("            *is_final = ");
-            out.push_str("0");
+            out.push_str(if method.is_final { "1" } else { "0" });
             out.push_str(";\n");
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
@@ -16046,7 +16046,7 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        if (ptn_reflection_method_matches_filter(");
             out.push_str(if method.is_static { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str("0");
+            out.push_str(if method.is_final { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(c_method_visibility(method.visibility));
             out.push_str(", filter_present, filter)) {\n");
@@ -18101,7 +18101,7 @@ fn reflection_trait_method_to_string(
     out.push_str("Method [ <user> ");
     reflection_user_method_modifiers(
         &mut out,
-        false,
+        method.is_final,
         method.is_abstract,
         method.is_static,
         method.visibility,

@@ -523,7 +523,11 @@ impl Parser<'_> {
             validate_interface_method_conflicts(&validation_classes)?;
             validate_override_attributes(&validation_classes, &validation_traits)?;
             validate_traversable_implementations(&validation_classes)?;
-            collect_final_private_method_warnings(&validation_classes, &mut self.compile_warnings);
+            collect_final_private_method_warnings(
+                &validation_classes,
+                &validation_traits,
+                &mut self.compile_warnings,
+            );
             if let Err(diagnostic) = validate_method_signature_compatibility(
                 &validation_classes,
                 &validation_traits,
@@ -15803,6 +15807,7 @@ fn method_signature_type_validation_classes(
 
 fn collect_final_private_method_warnings(
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) {
     for class in classes {
@@ -15811,6 +15816,9 @@ fn collect_final_private_method_warnings(
                 && method.visibility == PropertyVisibility::Private
                 && !method.name.eq_ignore_ascii_case("__construct")
             {
+                if imported_trait_method_final_private_warning_is_suppressed(method, traits) {
+                    continue;
+                }
                 compile_warnings.push(CompileWarning {
                     message:
                         "Private methods cannot be final as they are never overridden by other classes"
@@ -15821,6 +15829,29 @@ fn collect_final_private_method_warnings(
             }
         }
     }
+}
+
+fn imported_trait_method_final_private_warning_is_suppressed(
+    method: &MethodDecl,
+    traits: &[TraitDecl],
+) -> bool {
+    let (Some(trait_name), Some(trait_method_name)) = (
+        method.trait_name.as_deref(),
+        method.trait_method_name.as_deref(),
+    ) else {
+        return false;
+    };
+    let Some(trait_decl) = find_trait(traits, trait_name) else {
+        return false;
+    };
+    let Some(source_method) = trait_decl
+        .methods
+        .iter()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(trait_method_name))
+    else {
+        return false;
+    };
+    source_method.visibility != PropertyVisibility::Private
 }
 
 fn collect_parameter_default_compile_warnings(
