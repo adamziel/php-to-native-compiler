@@ -19757,6 +19757,61 @@ var_dump($arrayObject["d1"], $arrayObject["scalar"], $arrayObject);
 }
 
 #[test]
+fn compile_array_object_offset_reference_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-offset-reference-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-offset-reference-assignment.php");
+    let output = root.join("array-object-offset-reference-assignment-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$arrayObject = new ArrayObject();
+foreach ([1, 2, 3] as $i => $value) {
+    $arrayObject[$i] =& $value;
+}
+var_dump($arrayObject);
+
+$append = 1;
+try {
+    $arrayObject[] =& $append;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("object(ArrayObject)#1 (1) {\n  [\"storage\":\"ArrayObject\":private]=>"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("&int(3)").count(), 3, "{stdout}");
+    assert!(
+        stdout.contains("Indirect modification of overloaded element of ArrayObject has no effect"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("Cannot assign by reference to an array dimension of an object\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_object_bind_offset_reference"));
+    assert!(c_source.contains("ptn_runtime_bind_array_path_reference"));
+}
+
+#[test]
 fn compile_array_object_nested_assign_op_updates_storage_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-nested-assign-op");
     fs::create_dir_all(&root).unwrap();

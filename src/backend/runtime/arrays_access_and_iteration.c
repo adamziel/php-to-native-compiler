@@ -5054,6 +5054,13 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     int create_if_missing,
     PtnValue *reference_out
 );
+static PTN_UNUSED int ptn_internal_array_object_bind_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    PtnValue reference,
+    size_t line
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_reference_quiet(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -16117,6 +16124,41 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
                 return;
             }
         }
+        if (!segments[0].append) {
+            if (segment_count == 1) {
+                if (ptn_internal_array_object_bind_offset_reference(
+                        runtime,
+                        slot_value,
+                        &segments[0].value,
+                        reference,
+                        line
+                    )) {
+                    return;
+                }
+            } else {
+                PtnValue array_object_reference = ptn_null();
+                if (ptn_internal_array_object_offset_reference(
+                        runtime,
+                        slot_value,
+                        &segments[0].value,
+                        line,
+                        1,
+                        &array_object_reference
+                    )) {
+                    ptn_value_bind_array_path_reference(
+                        runtime,
+                        &array_object_reference,
+                        segments + 1,
+                        segment_count - 1,
+                        reference,
+                        path,
+                        line
+                    );
+                    ptn_value_destroy(&array_object_reference);
+                    return;
+                }
+            }
+        }
 #endif
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
             if (segments[0].append) {
@@ -16349,6 +16391,43 @@ static PTN_UNUSED void ptn_value_bind_array_path_reference(
     }
 
     PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (!segments[0].append) {
+        if (segment_count == 1) {
+            if (ptn_internal_array_object_bind_offset_reference(
+                    runtime,
+                    *target_value,
+                    &segments[0].value,
+                    reference,
+                    line
+                )) {
+                return;
+            }
+        } else {
+            PtnValue array_object_reference = ptn_null();
+            if (ptn_internal_array_object_offset_reference(
+                    runtime,
+                    *target_value,
+                    &segments[0].value,
+                    line,
+                    1,
+                    &array_object_reference
+                )) {
+                ptn_value_bind_array_path_reference(
+                    runtime,
+                    &array_object_reference,
+                    segments + 1,
+                    segment_count - 1,
+                    reference,
+                    path,
+                    line
+                );
+                ptn_value_destroy(&array_object_reference);
+                return;
+            }
+        }
+    }
+#endif
     PtnArray *array = NULL;
     if (target_value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(target_value);

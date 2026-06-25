@@ -165408,6 +165408,63 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     return 1;
 }
 
+static PTN_UNUSED int ptn_internal_array_object_bind_offset_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    PtnValue reference,
+    size_t line
+) {
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    if (offset_value == NULL) {
+        return 0;
+    }
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL) {
+        return 0;
+    }
+    if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetGet") ||
+        ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetSet")) {
+        return 0;
+    }
+
+    PtnValue storage_guard;
+    PtnArray *array =
+        ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
+    if (array == NULL) {
+        return 1;
+    }
+
+    PtnArrayKey key;
+    if (!ptn_spl_offset_key_from_value(
+            runtime,
+            "ArrayObject",
+            ptn_value_deref(*offset_value),
+            line,
+            0,
+            0,
+            &key
+        )) {
+        ptn_value_destroy(&storage_guard);
+        return 1;
+    }
+
+    PtnObject *object = ptn_spl_storage_object(data->storage);
+    PtnArrayKey storage_key = object == NULL
+        ? key
+        : ptn_spl_object_property_key_from_array_key(key);
+    ptn_array_set_entry(array, storage_key, ptn_value_clone(reference));
+    ptn_value_destroy(&storage_guard);
+    if (object != NULL) {
+        ptn_array_key_free(key);
+    }
+    ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+    return 1;
+}
+
 static PTN_UNUSED int ptn_internal_array_object_offset_reference_quiet(
     PtnRuntime *runtime,
     PtnValue receiver,
