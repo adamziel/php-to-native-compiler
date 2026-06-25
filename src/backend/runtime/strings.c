@@ -359,7 +359,12 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
     exit(255);
 }
 
-static PTN_UNUSED char *ptn_dynamic_property_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+static PTN_UNUSED char *ptn_dynamic_property_name_with_array_warning(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    int emit_array_warning
+) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING && value.as.string.len > 0 && value.as.string.data[0] == '\0') {
         ptn_throw_exception_at(
@@ -377,14 +382,33 @@ static PTN_UNUSED char *ptn_dynamic_property_name(PtnRuntime *runtime, PtnValue 
         );
         exit(255);
     }
-    return ptn_dynamic_variable_name(runtime, value, line);
+    if (emit_array_warning && value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    char *result = ptn_duplicate_string_len(string.data, string.len);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PTN_UNUSED char *ptn_dynamic_property_name(PtnRuntime *runtime, PtnValue value, size_t line) {
+    return ptn_dynamic_property_name_with_array_warning(runtime, value, line, 1);
+}
+
+static PTN_UNUSED char *ptn_dynamic_property_name_without_array_warning(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_dynamic_property_name_with_array_warning(runtime, value, line, 0);
 }
 
 static PTN_UNUSED char *ptn_dynamic_property_name_for_read(
     PtnRuntime *runtime,
     PtnValue value,
     size_t line,
-    size_t *len_out
+    size_t *len_out,
+    int emit_array_warning
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
@@ -403,7 +427,7 @@ static PTN_UNUSED char *ptn_dynamic_property_name_for_read(
         return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
     }
 
-    char *name = ptn_dynamic_property_name(runtime, value, line);
+    char *name = ptn_dynamic_property_name_with_array_warning(runtime, value, line, emit_array_warning);
     *len_out = strlen(name);
     return name;
 }
@@ -412,7 +436,8 @@ static PTN_UNUSED char *ptn_dynamic_property_name_for_write(
     PtnRuntime *runtime,
     PtnValue value,
     size_t line,
-    size_t *len_out
+    size_t *len_out,
+    int emit_array_warning
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
@@ -431,7 +456,7 @@ static PTN_UNUSED char *ptn_dynamic_property_name_for_write(
         return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
     }
 
-    char *name = ptn_dynamic_property_name(runtime, value, line);
+    char *name = ptn_dynamic_property_name_with_array_warning(runtime, value, line, emit_array_warning);
     *len_out = strlen(name);
     return name;
 }

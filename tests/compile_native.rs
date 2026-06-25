@@ -8457,6 +8457,11 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
             "<?php class StaticConstantBox { static const X = 1; }",
             "Cannot use the static modifier on a class constant",
         ),
+        (
+            "new expression class constant declaration",
+            "<?php class Test { const X = new stdClass; }",
+            "New expressions are not supported in this context",
+        ),
     ];
 
     for (name, source, message) in cases {
@@ -8467,16 +8472,8 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
 }
 
 #[test]
-fn parser_accepts_new_object_constant_initializers() {
-    parser::parse(
-        "<?php
-const GLOBAL_OBJECT = new stdClass();
-class Test {
-    const X = new stdClass(GLOBAL_OBJECT);
-}
-",
-    )
-    .unwrap();
+fn parser_accepts_global_new_object_constant_initializers() {
+    parser::parse("<?php const GLOBAL_OBJECT = new stdClass();").unwrap();
 }
 
 #[test]
@@ -57390,6 +57387,49 @@ NULL\n\
 NULL\n",
             undefined_variable_warnings(&input, &[("c", 10)]),
             input.display(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_property_names_use_php_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-name-string-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-name-string-conversion.php");
+    let output = root.join("dynamic-property-name-string-conversion-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {}
+$a = new A;
+var_dump($a->{[]});
+var_dump($a->{1});
+try {
+    var_dump($a->{function() {}});
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: Array to string conversion in {} on line 4\n\
+\nWarning: Undefined property: A::$Array in {} on line 4\n\
+NULL\n\
+\nWarning: Undefined property: A::$1 in {} on line 5\n\
+NULL\n\
+Error:Object of class Closure could not be converted to string\n",
+            input.display(),
+            input.display(),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

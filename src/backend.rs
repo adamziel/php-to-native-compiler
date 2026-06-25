@@ -6792,6 +6792,10 @@ fn value_expr_is_shareable_property_default(value: &ValueExpr) -> bool {
     }
 }
 
+fn value_expr_is_compile_time_array_dynamic_property_name(value: &ValueExpr) -> bool {
+    matches!(value, ValueExpr::Array(_)) && value_expr_is_shareable_property_default(value)
+}
+
 fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[ClassDecl]) {
     for class in classes {
         for property in &class.properties {
@@ -37683,7 +37687,15 @@ impl ValueEmitter {
         let name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&name_temp);
-        out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+        out.push_str(" = ");
+        out.push_str(
+            if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                "ptn_dynamic_property_name_without_array_warning"
+            } else {
+                "ptn_dynamic_property_name"
+            },
+        );
+        out.push_str("(&runtime, ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
@@ -37712,6 +37724,14 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(", &");
         out.push_str(&len_temp);
+        out.push_str(", ");
+        out.push_str(
+            if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                "0"
+            } else {
+                "1"
+            },
+        );
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &value_temp);
         (name_temp, len_temp)
@@ -37737,6 +37757,14 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(", &");
         out.push_str(&len_temp);
+        out.push_str(", ");
+        out.push_str(
+            if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                "0"
+            } else {
+                "1"
+            },
+        );
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &value_temp);
         (name_temp, len_temp)
@@ -48208,7 +48236,15 @@ impl ValueEmitter {
             let name_temp = self.next_temp();
             out.push_str("            char *");
             out.push_str(&name_temp);
-            out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+            out.push_str(" = ");
+            out.push_str(
+                if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                    "ptn_dynamic_property_name_without_array_warning"
+                } else {
+                    "ptn_dynamic_property_name"
+                },
+            );
+            out.push_str("(&runtime, ");
             out.push_str(value_temp);
             out.push_str(", ");
             out.push_str(&line.to_string());
@@ -48626,7 +48662,15 @@ impl ValueEmitter {
                     let name_temp = self.next_temp();
                     out.push_str("            char *");
                     out.push_str(&name_temp);
-                    out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+                    out.push_str(" = ");
+                    out.push_str(
+                        if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                            "ptn_dynamic_property_name_without_array_warning"
+                        } else {
+                            "ptn_dynamic_property_name"
+                        },
+                    );
+                    out.push_str("(&runtime, ");
                     out.push_str(value_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
@@ -48813,7 +48857,15 @@ impl ValueEmitter {
                     let name_temp = self.next_temp();
                     out.push_str("            char *");
                     out.push_str(&name_temp);
-                    out.push_str(" = ptn_dynamic_property_name(&runtime, ");
+                    out.push_str(" = ");
+                    out.push_str(
+                        if value_expr_is_compile_time_array_dynamic_property_name(name) {
+                            "ptn_dynamic_property_name_without_array_warning"
+                        } else {
+                            "ptn_dynamic_property_name"
+                        },
+                    );
+                    out.push_str("(&runtime, ");
                     out.push_str(value_temp);
                     out.push_str(", ");
                     out.push_str(&line.to_string());

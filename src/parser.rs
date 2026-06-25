@@ -2965,6 +2965,12 @@ impl Parser<'_> {
         let value = self.parse_const_context_expr()?;
         validate_constant_expression_closures(&value)?;
         validate_constant_expression_runtime_restrictions(&value)?;
+        if const_expr_contains_new_object(&value) {
+            return Err(Diagnostic::new(
+                "New expressions are not supported in this context",
+                Some(value.span()),
+            ));
+        }
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "Constant expression contains invalid operations",
@@ -8345,9 +8351,17 @@ impl Parser<'_> {
                                 }
                             }
                         } else {
+                            let dynamic_name = dynamic_name.expect("dynamic member name");
+                            if expr_is_compile_time_array_dynamic_property_name(&dynamic_name) {
+                                self.compile_warnings.push(CompileWarning {
+                                    message: "Array to string conversion".to_string(),
+                                    span: dynamic_name.span(),
+                                    kind: CompileWarningKind::Warning,
+                                });
+                            }
                             Expr::DynamicPropertyFetch {
                                 receiver: Box::new(expr),
-                                name: Box::new(dynamic_name.expect("dynamic member name")),
+                                name: Box::new(dynamic_name),
                                 nullsafe,
                                 span,
                             }
@@ -27643,6 +27657,11 @@ fn is_supported_property_default_expr(expr: &Expr) -> bool {
         Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
         _ => is_supported_global_const_expr_with_options(expr, false, true, false),
     }
+}
+
+fn expr_is_compile_time_array_dynamic_property_name(expr: &Expr) -> bool {
+    matches!(expr, Expr::Array { .. })
+        && is_supported_global_const_expr_with_options(expr, false, true, false)
 }
 
 fn is_supported_constant_closure(function: &AnonymousFunction) -> bool {
