@@ -24454,6 +24454,9 @@ $changed = $immutable->setTimezone($tokyo);
 echo $immutable->format('Y-m-d H:i:s e'), "\n";
 echo $changed->format('Y-m-d H:i:s e'), "\n";
 
+$fromFormat = DateTime::createFromFormat('D., M# j, Y g:iA', 'Thu., Nov. 29, 2012 5:00PM');
+echo $fromFormat->format('D., M. j, Y g:iA'), "\n";
+
 class NativeDateTimeChild extends DateTime {}
 class NativeDateTimeZoneChild extends DateTimeZone {}
 
@@ -24486,6 +24489,7 @@ echo $zoneCopy->getName(), "\n";
             "string(10) \"Asia/Tokyo\"\n",
             "2012-12-27 16:24:08 Europe/London\n",
             "2012-12-28 01:24:08 Asia/Tokyo\n",
+            "Thu., Nov. 29, 2012 5:00PM\n",
             "Wed, 01 Aug 07 14:00:00 +0000\n",
             "Wed, 01 Aug 07 12:59:59 +0000\n",
             "Asia/Tokyo\n",
@@ -24496,6 +24500,7 @@ echo $zoneCopy->getName(), "\n";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Asia/Tokyo"));
     assert!(c_source.contains("ptn_datetime_parse_meridian_time_token"));
+    assert!(c_source.contains("ptn_datetime_parse_create_from_format"));
 }
 
 #[test]

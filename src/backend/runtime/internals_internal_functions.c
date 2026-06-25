@@ -99474,6 +99474,211 @@ static PtnValue ptn_datetime_create_from_timestamp(
     return ptn_datetime_create_object(runtime, class_name, seconds, microsecond, "+00:00", line);
 }
 
+static int ptn_datetime_strptime_append(char *out, size_t out_size, size_t *len, const char *text) {
+    size_t text_len = strlen(text);
+    if (*len + text_len >= out_size) {
+        return 0;
+    }
+    memcpy(out + *len, text, text_len);
+    *len += text_len;
+    out[*len] = '\0';
+    return 1;
+}
+
+static int ptn_datetime_strptime_append_literal(char *out, size_t out_size, size_t *len, char ch) {
+    char literal[3];
+    if (ch == '%') {
+        literal[0] = '%';
+        literal[1] = '%';
+        literal[2] = '\0';
+        return ptn_datetime_strptime_append(out, out_size, len, literal);
+    }
+    literal[0] = ch;
+    literal[1] = '\0';
+    return ptn_datetime_strptime_append(out, out_size, len, literal);
+}
+
+static int ptn_datetime_php_format_to_strptime(
+    const char *format,
+    char hash_replacement,
+    char *out,
+    size_t out_size
+) {
+    size_t len = 0;
+    out[0] = '\0';
+    for (const char *cursor = format; *cursor != '\0'; cursor++) {
+        if (*cursor == '\\') {
+            cursor++;
+            if (*cursor == '\0') {
+                return ptn_datetime_strptime_append_literal(out, out_size, &len, '\\');
+            }
+            if (!ptn_datetime_strptime_append_literal(out, out_size, &len, *cursor)) {
+                return 0;
+            }
+            continue;
+        }
+        const char *replacement = NULL;
+        switch (*cursor) {
+            case 'd':
+                replacement = "%d";
+                break;
+            case 'j':
+                replacement = "%e";
+                break;
+            case 'm':
+            case 'n':
+                replacement = "%m";
+                break;
+            case 'Y':
+                replacement = "%Y";
+                break;
+            case 'y':
+                replacement = "%y";
+                break;
+            case 'H':
+            case 'G':
+                replacement = "%H";
+                break;
+            case 'h':
+            case 'g':
+                replacement = "%I";
+                break;
+            case 'i':
+                replacement = "%M";
+                break;
+            case 's':
+                replacement = "%S";
+                break;
+            case 'D':
+                replacement = "%a";
+                break;
+            case 'l':
+                replacement = "%A";
+                break;
+            case 'M':
+                replacement = "%b";
+                break;
+            case 'F':
+                replacement = "%B";
+                break;
+            case 'A':
+            case 'a':
+                replacement = "%p";
+                break;
+            case '#':
+                if (hash_replacement == '\0' ||
+                    !ptn_datetime_strptime_append_literal(out, out_size, &len, hash_replacement)) {
+                    return 0;
+                }
+                continue;
+            default:
+                if (isalpha((unsigned char)*cursor) || *cursor == '!' || *cursor == '|' ||
+                    *cursor == '+' || *cursor == '?' || *cursor == '*') {
+                    return 0;
+                }
+                if (!ptn_datetime_strptime_append_literal(out, out_size, &len, *cursor)) {
+                    return 0;
+                }
+                continue;
+        }
+        if (replacement == NULL ||
+            !ptn_datetime_strptime_append(out, out_size, &len, replacement)) {
+            return 0;
+        }
+    }
+    return len > 0;
+}
+
+static int ptn_datetime_try_strptime_format(
+    const char *format,
+    const char *datetime,
+    char hash_replacement,
+    const char *timezone,
+    time_t *timestamp_out,
+    int *microsecond_out,
+    char **timezone_out
+) {
+#if defined(_WIN32)
+    (void)format;
+    (void)datetime;
+    (void)hash_replacement;
+    (void)timezone;
+    (void)timestamp_out;
+    (void)microsecond_out;
+    (void)timezone_out;
+    return 0;
+#else
+    char translated[512];
+    if (!ptn_datetime_php_format_to_strptime(format, hash_replacement, translated, sizeof(translated))) {
+        return 0;
+    }
+    struct tm parts;
+    memset(&parts, 0, sizeof(parts));
+    parts.tm_isdst = -1;
+    char *tail = strptime(datetime, translated, &parts);
+    if (tail == NULL) {
+        return 0;
+    }
+    while (isspace((unsigned char)*tail)) {
+        tail++;
+    }
+    if (*tail != '\0') {
+        return 0;
+    }
+    return ptn_datetime_components_to_timestamp(
+        parts.tm_year + 1900,
+        parts.tm_mon + 1,
+        parts.tm_mday,
+        parts.tm_hour,
+        parts.tm_min,
+        parts.tm_sec,
+        0,
+        NULL,
+        timezone,
+        timestamp_out,
+        microsecond_out,
+        timezone_out
+    );
+#endif
+}
+
+static int ptn_datetime_parse_create_from_format(
+    const char *format,
+    const char *datetime,
+    const char *timezone,
+    time_t *timestamp_out,
+    int *microsecond_out,
+    char **timezone_out
+) {
+    if (strchr(format, '#') == NULL) {
+        return ptn_datetime_try_strptime_format(
+            format,
+            datetime,
+            '\0',
+            timezone,
+            timestamp_out,
+            microsecond_out,
+            timezone_out
+        );
+    }
+
+    static const char separators[] = ";:/.,-()";
+    for (size_t i = 0; separators[i] != '\0'; i++) {
+        if (ptn_datetime_try_strptime_format(
+                format,
+                datetime,
+                separators[i],
+                timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            )) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_datetime_create_from_format(
     PtnRuntime *runtime,
     const char *class_name,
@@ -99540,12 +99745,21 @@ static PtnValue ptn_datetime_create_from_format(
         }
     }
 
+    char *format_string = ptn_duplicate_string_len(format.data, format.len);
     char *datetime_string = ptn_duplicate_string_len(datetime.data, datetime.len);
     time_t timestamp = 0;
     int microsecond = 0;
     char *parsed_timezone = NULL;
     PtnValue result = ptn_bool(0);
-    if (ptn_datetime_parse_date_string(
+    if (ptn_datetime_parse_create_from_format(
+            format_string,
+            datetime_string,
+            timezone,
+            &timestamp,
+            &microsecond,
+            &parsed_timezone
+        ) ||
+        ptn_datetime_parse_date_string(
             datetime_string,
             timezone,
             &timestamp,
@@ -99563,6 +99777,7 @@ static PtnValue ptn_datetime_create_from_format(
     }
     free(parsed_timezone);
     free(datetime_string);
+    free(format_string);
     ptn_string_operand_free(format);
     ptn_string_operand_free(datetime);
     return result;

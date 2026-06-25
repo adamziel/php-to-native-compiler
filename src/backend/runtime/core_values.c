@@ -51,6 +51,7 @@
 
 #if !defined(_WIN32)
 extern char *realpath(const char *path, char *resolved_path);
+extern char *strptime(const char *s, const char *format, struct tm *tm);
 extern char **environ;
 #define PTN_ENVIRON environ
 #else
