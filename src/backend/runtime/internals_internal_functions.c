@@ -59047,6 +59047,7 @@ static PtnResource *ptn_internal_expect_resource_of_type(
 }
 
 #define PTN_CURLOPT_URL 10002
+#define PTN_CURLOPT_FILE 10001
 #define PTN_CURLOPT_HEADER 42
 #define PTN_CURLOPT_UPLOAD 46
 #define PTN_CURLOPT_INFILE 10009
@@ -59392,12 +59393,34 @@ static int ptn_curl_invoke_write_callback(
     return resolved.type == PTN_STRING && written == (int64_t)resolved.as.string.len;
 }
 
+static int ptn_curl_write_file_resource(PtnRuntime *runtime, PtnValue file, PtnValue payload, size_t line) {
+    PtnValue resolved_file = ptn_value_deref(file);
+    PtnValue resolved_payload = ptn_value_deref(payload);
+    if (resolved_file.type != PTN_RESOURCE ||
+        !ptn_stream_resource_is_open(resolved_file.as.resource) ||
+        resolved_payload.type != PTN_STRING) {
+        return 0;
+    }
+    (void)runtime;
+    (void)line;
+    size_t written = ptn_stream_write_bytes(
+        resolved_file.as.resource,
+        resolved_payload.as.string.data,
+        resolved_payload.as.string.len
+    );
+    return written == resolved_payload.as.string.len;
+}
+
 static int ptn_curl_deliver_payload(PtnRuntime *runtime, PtnResource *handle, PtnValue payload, size_t line) {
     PtnValue *write_callback = ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION);
-    if (write_callback == NULL) {
-        return 1;
+    if (write_callback != NULL) {
+        return ptn_curl_invoke_write_callback(runtime, handle, *write_callback, payload, line);
     }
-    return ptn_curl_invoke_write_callback(runtime, handle, *write_callback, payload, line);
+    PtnValue *file = ptn_curl_option_value(handle, PTN_CURLOPT_FILE);
+    if (file != NULL) {
+        return ptn_curl_write_file_resource(runtime, *file, payload, line);
+    }
+    return 1;
 }
 
 static void ptn_curl_getinfo_set_string(PtnValue table, const char *key, const char *value) {
@@ -59618,7 +59641,9 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
     if (ptn_value_deref(payload).type != PTN_STRING) {
         return payload;
     }
-    int delivered_to_callback = ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION) != NULL;
+    int delivered_to_sink =
+        ptn_curl_option_value(handle, PTN_CURLOPT_WRITEFUNCTION) != NULL ||
+        ptn_curl_option_value(handle, PTN_CURLOPT_FILE) != NULL;
     if (!ptn_curl_deliver_payload(runtime, handle, payload, line)) {
         ptn_value_destroy(&payload);
         if (ptn_curl_runtime_has_active_exception(runtime)) {
@@ -59626,7 +59651,7 @@ static PtnValue ptn_internal_curl_exec(PtnRuntime *runtime, size_t argc, const P
         }
         return ptn_bool(0);
     }
-    if (delivered_to_callback) {
+    if (delivered_to_sink) {
         ptn_value_destroy(&payload);
         return ptn_bool(1);
     }
@@ -89922,6 +89947,7 @@ static PtnValue ptn_defined_constants_sockets_table(void) {
 
 static void ptn_defined_constants_add_curl(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CURLOPT_URL", PTN_CURLOPT_URL);
+    ptn_get_defined_constants_add_int(table, "CURLOPT_FILE", PTN_CURLOPT_FILE);
     ptn_get_defined_constants_add_int(table, "CURLOPT_HEADER", PTN_CURLOPT_HEADER);
     ptn_get_defined_constants_add_int(table, "CURLOPT_UPLOAD", PTN_CURLOPT_UPLOAD);
     ptn_get_defined_constants_add_int(table, "CURLOPT_INFILE", PTN_CURLOPT_INFILE);
@@ -90411,6 +90437,7 @@ static int ptn_reflection_constant_is_sockets(const char *name) {
 static int ptn_reflection_constant_is_curl(const char *name) {
     static const char *const names[] = {
         "CURLOPT_URL",
+        "CURLOPT_FILE",
         "CURLOPT_HEADER",
         "CURLOPT_UPLOAD",
         "CURLOPT_INFILE",

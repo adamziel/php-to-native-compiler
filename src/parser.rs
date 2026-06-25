@@ -24243,6 +24243,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "FORCE_GZIP"
             | "FORCE_DEFLATE"
             | "CURLOPT_URL"
+            | "CURLOPT_FILE"
             | "CURLOPT_HEADER"
             | "CURLOPT_UPLOAD"
             | "CURLOPT_INFILE"
