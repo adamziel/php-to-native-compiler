@@ -84099,6 +84099,17 @@ static int ptn_random_engine_value_is_valid(PtnValue value) {
             ptn_declared_class_implements_interface(value.as.object->class_name, "Random\\Engine"));
 }
 
+static PtnValue ptn_random_secure_engine_new(PtnRuntime *runtime) {
+    (void)runtime;
+    return ptn_object_new_shell(runtime, "Random\\Engine\\Secure");
+}
+
+static int ptn_random_engine_value_is_secure(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(value.as.object->class_name, "Random\\Engine\\Secure");
+}
+
 static int ptn_random_randomizer_set_engine(
     PtnRuntime *runtime,
     PtnValue object,
@@ -84122,8 +84133,11 @@ static int ptn_random_randomizer_set_engine(
         return 0;
     }
 
-    PtnValue engine = argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
-    if (argc == 1 && !ptn_random_engine_value_is_valid(engine)) {
+    int use_default_engine = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
+    PtnValue engine = use_default_engine
+        ? ptn_random_secure_engine_new(runtime)
+        : ptn_value_clone_deref(args[0]);
+    if (!use_default_engine && !ptn_random_engine_value_is_valid(engine)) {
         ptn_value_destroy(&engine);
         ptn_throw_exception(
             runtime,
@@ -84161,6 +84175,42 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_new(
         return ptn_null();
     }
     return object;
+}
+
+static PtnValue ptn_random_randomizer_serialize(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)runtime;
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::__serialize() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue state = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        state.as.array,
+        ptn_array_string_key("engine"),
+        ptn_value_clone_deref(data->engine)
+    );
+    PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(0), state);
+    return payload;
 }
 
 static PtnValue ptn_random_randomizer_get_bytes(
@@ -84212,7 +84262,7 @@ static PtnValue ptn_random_randomizer_get_bytes(
     }
 
     PtnValue engine = ptn_value_deref(data->engine);
-    if (engine.type == PTN_NULL) {
+    if (engine.type == PTN_NULL || ptn_random_engine_value_is_secure(engine)) {
         if (!ptn_random_bytes_fill((unsigned char *)bytes, requested)) {
             free(bytes);
             ptn_throw_exception(
@@ -84424,6 +84474,9 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     PtnRandomRandomizerData *data = ptn_random_randomizer_data(runtime, resolved);
     if (data == NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        return ptn_random_randomizer_serialize(runtime, data, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "getBytes")) {
         return ptn_random_randomizer_get_bytes(runtime, data, argc, args, line);
@@ -146542,6 +146595,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_random_randomizer(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__serialize")
             || ptn_ascii_case_equal(method_name, "getBytes")
             || ptn_ascii_case_equal(method_name, "pickArrayKeys")
             || ptn_ascii_case_equal(method_name, "shuffleArray");

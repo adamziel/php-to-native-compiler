@@ -92518,6 +92518,65 @@ var_dump($randomizer->getBytes(64));
 }
 
 #[test]
+fn compile_random_randomizer_default_engine_serialize_to_native_binary() {
+    let root = temp_dir("ptn-native-random-randomizer-default-engine-serialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-randomizer-default-engine-serialize.php");
+    let output = root.join("random-randomizer-default-engine-serialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Randomizer;
+
+$default = new Randomizer();
+$explicit = new Randomizer(null);
+$payload = $explicit->__serialize();
+
+var_dump($default->__serialize()[0]['engine'] instanceof Random\Engine\Secure);
+var_dump($payload[0]['engine'] instanceof Random\Engine\Secure);
+var_dump($payload[0]['engine'] instanceof Random\Engine);
+var_dump(get_class($payload[0]['engine']));
+var_dump(method_exists($explicit, '__serialize'));
+var_dump(strlen($explicit->getBytes(4)));
+
+try {
+    $explicit->__serialize(1);
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(20) \"Random\\Engine\\Secure\"\n",
+            "bool(true)\n",
+            "int(4)\n",
+            "Random\\Randomizer::__serialize() expects exactly 0 arguments, 1 given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_randomizer_serialize"));
+    assert!(c_source.contains("ptn_random_secure_engine_new"));
+}
+
+#[test]
 fn compile_random_randomizer_array_methods_and_mt19937_to_native_binary() {
     let root = temp_dir("ptn-native-random-randomizer-array-methods");
     fs::create_dir_all(&root).unwrap();
