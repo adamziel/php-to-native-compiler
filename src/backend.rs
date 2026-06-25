@@ -32667,6 +32667,68 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static GRAPHEME_SEARCH_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "locale",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static GRAPHEME_STRSTR_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "before_needle",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "locale",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static GRAPHEME_LEVENSHTEIN_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "string1",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string2",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "insertion_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "replacement_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "deletion_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "locale",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static XMLREADER_FROM_STREAM_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "stream",
@@ -32725,16 +32787,24 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&IS_CALLABLE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
         Some(&GRAPHEME_EXTRACT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("grapheme_strlen")
+        || name.eq_ignore_ascii_case("grapheme_strrev")
+    {
+        Some(&SINGLE_STRING_PARAMETER)
+    } else if name.eq_ignore_ascii_case("grapheme_str_split") {
+        Some(&STR_SPLIT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_strpos")
         || name.eq_ignore_ascii_case("grapheme_stripos")
         || name.eq_ignore_ascii_case("grapheme_strrpos")
         || name.eq_ignore_ascii_case("grapheme_strripos")
     {
-        Some(&OFFSET_SEARCH_PARAMETERS)
+        Some(&GRAPHEME_SEARCH_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_strstr")
         || name.eq_ignore_ascii_case("grapheme_stristr")
     {
-        Some(&STRSTR_PARAMETERS)
+        Some(&GRAPHEME_STRSTR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("grapheme_levenshtein") {
+        Some(&GRAPHEME_LEVENSHTEIN_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
         Some(&EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fgetcsv") {

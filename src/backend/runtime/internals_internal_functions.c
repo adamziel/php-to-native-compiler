@@ -546,6 +546,65 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
     if (ptn_ascii_case_equal(name, "mb_ord")) {
         return index == 0 ? "string" : (index == 1 ? "encoding" : NULL);
     }
+    if (ptn_ascii_case_equal(name, "grapheme_strlen") ||
+        ptn_ascii_case_equal(name, "grapheme_strrev")) {
+        return index == 0 ? "string" : NULL;
+    }
+    if (ptn_ascii_case_equal(name, "grapheme_str_split")) {
+        return index == 0 ? "string" : (index == 1 ? "length" : NULL);
+    }
+    if (ptn_ascii_case_equal(name, "grapheme_strpos") ||
+        ptn_ascii_case_equal(name, "grapheme_stripos") ||
+        ptn_ascii_case_equal(name, "grapheme_strrpos") ||
+        ptn_ascii_case_equal(name, "grapheme_strripos")) {
+        if (index == 0) {
+            return "haystack";
+        }
+        if (index == 1) {
+            return "needle";
+        }
+        if (index == 2) {
+            return "offset";
+        }
+        if (index == 3) {
+            return "locale";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "grapheme_strstr") ||
+        ptn_ascii_case_equal(name, "grapheme_stristr")) {
+        if (index == 0) {
+            return "haystack";
+        }
+        if (index == 1) {
+            return "needle";
+        }
+        if (index == 2) {
+            return "before_needle";
+        }
+        if (index == 3) {
+            return "locale";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "grapheme_levenshtein")) {
+        if (index == 0) {
+            return "string1";
+        }
+        if (index == 1) {
+            return "string2";
+        }
+        if (index == 2) {
+            return "insertion_cost";
+        }
+        if (index == 3) {
+            return "replacement_cost";
+        }
+        if (index == 4) {
+            return "deletion_cost";
+        }
+        if (index == 5) {
+            return "locale";
+        }
+    }
     if (ptn_ascii_case_equal(name, "mb_parse_str") && index == 1) {
         return "result";
     }
@@ -65640,77 +65699,156 @@ static PtnValue ptn_internal_msgfmt_format(PtnRuntime *runtime, size_t argc, con
     return ptn_intl_message_formatter_call_method(runtime, args[0], "format", argc - 1, args + 1, line);
 }
 
-static PtnValue ptn_internal_grapheme_extract(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "grapheme_extract", 1, "haystack", args[0], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(source);
-        return ptn_null();
-    }
-    int64_t size = ptn_internal_expect_integer_arg(runtime, "grapheme_extract", 2, "size", args[1], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_string_operand_free(source);
-        return ptn_null();
-    }
-    int64_t offset = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
-    if (offset < 0) {
-        offset = 0;
-    }
-    if ((uint64_t)offset > (uint64_t)source.len) {
-        offset = (int64_t)source.len;
-    }
-    if (size < 0) {
-        size = 0;
-    }
-    size_t start = (size_t)offset;
-    size_t length = (size_t)size;
-    if (length > source.len - start) {
-        length = source.len - start;
-    }
-    char next_buffer[32];
-    int next_written = snprintf(next_buffer, sizeof(next_buffer), "%zu", start + length);
-    if (next_written < 0 || (size_t)next_written >= sizeof(next_buffer)) {
-        ptn_abort_out_of_memory();
-    }
-    if (!ptn_intl_assign_reference_string(runtime, args, argc, 4, next_buffer)) {
-        ptn_string_operand_free(source);
-        return ptn_null();
-    }
-    PtnValue result = ptn_owned_string_len(
-        ptn_duplicate_string_len(source.data + start, length),
-        length
-    );
-    ptn_string_operand_free(source);
-    return result;
+typedef struct {
+    size_t *items;
+    size_t len;
+    size_t capacity;
+} PtnGraphemeBoundaryList;
+
+static int ptn_icu_grapheme_boundaries(const char *data, size_t len, size_t **boundaries_out, size_t *count_out);
+
+static void ptn_grapheme_boundary_list_init(PtnGraphemeBoundaryList *list) {
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
 }
 
-static size_t ptn_grapheme_next_cluster_len(const char *data, size_t len, size_t offset) {
+static void ptn_grapheme_boundary_list_free(PtnGraphemeBoundaryList *list) {
+    free(list->items);
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static void ptn_grapheme_boundary_list_append(PtnGraphemeBoundaryList *list, size_t offset) {
+    if (list->len > 0 && list->items[list->len - 1] == offset) {
+        return;
+    }
+    if (list->len == list->capacity) {
+        size_t new_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        if (new_capacity < list->capacity || new_capacity > SIZE_MAX / sizeof(size_t)) {
+            ptn_abort_out_of_memory();
+        }
+        size_t *new_items = realloc(list->items, new_capacity * sizeof(size_t));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    list->items[list->len++] = offset;
+}
+
+static int ptn_grapheme_is_extend_codepoint(uint32_t codepoint) {
+    return (codepoint >= 0x0300 && codepoint <= 0x036f) ||
+        (codepoint >= 0x0483 && codepoint <= 0x0489) ||
+        (codepoint >= 0x0591 && codepoint <= 0x05bd) ||
+        codepoint == 0x05bf ||
+        (codepoint >= 0x05c1 && codepoint <= 0x05c2) ||
+        (codepoint >= 0x05c4 && codepoint <= 0x05c5) ||
+        codepoint == 0x05c7 ||
+        (codepoint >= 0x0610 && codepoint <= 0x061a) ||
+        (codepoint >= 0x064b && codepoint <= 0x065f) ||
+        codepoint == 0x0670 ||
+        (codepoint >= 0x06d6 && codepoint <= 0x06dc) ||
+        (codepoint >= 0x06df && codepoint <= 0x06e4) ||
+        (codepoint >= 0x06e7 && codepoint <= 0x06e8) ||
+        (codepoint >= 0x06ea && codepoint <= 0x06ed) ||
+        (codepoint >= 0x0900 && codepoint <= 0x0903) ||
+        codepoint == 0x093a ||
+        codepoint == 0x093c ||
+        (codepoint >= 0x093e && codepoint <= 0x094f) ||
+        (codepoint >= 0x0951 && codepoint <= 0x0957) ||
+        (codepoint >= 0x0962 && codepoint <= 0x0963) ||
+        (codepoint >= 0x1ab0 && codepoint <= 0x1aff) ||
+        (codepoint >= 0x1dc0 && codepoint <= 0x1dff) ||
+        (codepoint >= 0x20d0 && codepoint <= 0x20ff) ||
+        (codepoint >= 0xfe00 && codepoint <= 0xfe0f) ||
+        (codepoint >= 0xfe20 && codepoint <= 0xfe2f) ||
+        (codepoint >= 0xe0100 && codepoint <= 0xe01ef) ||
+        (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff);
+}
+
+static size_t ptn_grapheme_fallback_next_cluster_len(const char *data, size_t len, size_t offset) {
     if (offset >= len) {
         return 0;
     }
     if (data[offset] == '\r' && offset + 1 < len && data[offset + 1] == '\n') {
         return 2;
     }
-    unsigned char first = (unsigned char)data[offset];
-    if (first < 0x80) {
+
+    uint32_t codepoint = 0;
+    size_t consumed = 0;
+    if (!ptn_json_utf8_decode((const unsigned char *)data + offset, len - offset, &codepoint, &consumed) || consumed == 0) {
         return 1;
     }
-    size_t expected = 1;
-    if ((first & 0xe0) == 0xc0) {
-        expected = 2;
-    } else if ((first & 0xf0) == 0xe0) {
-        expected = 3;
-    } else if ((first & 0xf8) == 0xf0) {
-        expected = 4;
+    size_t cluster_len = consumed;
+    int join_next = 0;
+    while (offset + cluster_len < len) {
+        uint32_t next = 0;
+        size_t next_len = 0;
+        if (!ptn_json_utf8_decode((const unsigned char *)data + offset + cluster_len, len - offset - cluster_len, &next, &next_len) || next_len == 0) {
+            break;
+        }
+        if (ptn_grapheme_is_extend_codepoint(next)) {
+            cluster_len += next_len;
+            join_next = 0;
+            continue;
+        }
+        if (next == 0x200d) {
+            cluster_len += next_len;
+            join_next = 1;
+            continue;
+        }
+        if (join_next) {
+            cluster_len += next_len;
+            join_next = 0;
+            continue;
+        }
+        break;
     }
-    if (expected > len - offset) {
-        return 1;
+    return cluster_len;
+}
+
+static void ptn_grapheme_fallback_boundaries(const char *data, size_t len, PtnGraphemeBoundaryList *list) {
+    ptn_grapheme_boundary_list_append(list, 0);
+    for (size_t offset = 0; offset < len;) {
+        size_t cluster_len = ptn_grapheme_fallback_next_cluster_len(data, len, offset);
+        if (cluster_len == 0) {
+            break;
+        }
+        offset += cluster_len;
+        ptn_grapheme_boundary_list_append(list, offset);
     }
-    for (size_t i = 1; i < expected; i++) {
-        if (((unsigned char)data[offset + i] & 0xc0) != 0x80) {
+    if (list->len == 0 || list->items[list->len - 1] != len) {
+        ptn_grapheme_boundary_list_append(list, len);
+    }
+}
+
+static void ptn_grapheme_boundaries(const char *data, size_t len, PtnGraphemeBoundaryList *list) {
+    ptn_grapheme_boundary_list_init(list);
+    size_t *icu_items = NULL;
+    size_t icu_count = 0;
+    if (ptn_icu_grapheme_boundaries(data, len, &icu_items, &icu_count) && icu_count > 0) {
+        list->items = icu_items;
+        list->len = icu_count;
+        list->capacity = icu_count;
+        return;
+    }
+    free(icu_items);
+    ptn_grapheme_fallback_boundaries(data, len, list);
+}
+
+static int ptn_grapheme_boundary_list_contains(const PtnGraphemeBoundaryList *list, size_t offset) {
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->items[i] == offset) {
             return 1;
         }
+        if (list->items[i] > offset) {
+            return 0;
+        }
     }
-    return expected;
+    return 0;
 }
 
 static size_t ptn_grapheme_cluster_count(const char *data, size_t len);
@@ -65728,42 +65866,32 @@ static PtnValue ptn_internal_grapheme_strlen(PtnRuntime *runtime, size_t argc, c
 }
 
 static size_t ptn_grapheme_cluster_count(const char *data, size_t len) {
-    size_t count = 0;
-    for (size_t offset = 0; offset < len;) {
-        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
-        if (cluster_len == 0) {
-            break;
-        }
-        offset += cluster_len;
-        count++;
-    }
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(data, len, &boundaries);
+    size_t count = boundaries.len == 0 ? 0 : boundaries.len - 1;
+    ptn_grapheme_boundary_list_free(&boundaries);
     return count;
 }
 
 static size_t ptn_grapheme_cluster_index_for_byte_offset(const char *data, size_t len, size_t byte_offset) {
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(data, len, &boundaries);
     size_t index = 0;
-    for (size_t offset = 0; offset < len && offset < byte_offset;) {
-        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
-        if (cluster_len == 0) {
-            break;
-        }
-        offset += cluster_len;
+    while (index + 1 < boundaries.len && boundaries.items[index + 1] <= byte_offset) {
         index++;
     }
+    ptn_grapheme_boundary_list_free(&boundaries);
     return index;
 }
 
 static size_t ptn_grapheme_byte_offset_for_char(const char *data, size_t len, size_t target_index) {
-    size_t index = 0;
-    size_t offset = 0;
-    while (offset < len && index < target_index) {
-        size_t cluster_len = ptn_grapheme_next_cluster_len(data, len, offset);
-        if (cluster_len == 0) {
-            break;
-        }
-        offset += cluster_len;
-        index++;
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(data, len, &boundaries);
+    size_t offset = len;
+    if (target_index < boundaries.len) {
+        offset = boundaries.items[target_index];
     }
+    ptn_grapheme_boundary_list_free(&boundaries);
     return offset;
 }
 
@@ -65813,6 +65941,16 @@ static int ptn_normalize_grapheme_offset(
     return 1;
 }
 
+static size_t ptn_normalize_grapheme_substr_offset(int64_t raw_offset, size_t cluster_count) {
+    if (raw_offset < 0) {
+        uint64_t magnitude = raw_offset == INT64_MIN
+            ? ((uint64_t)INT64_MAX + 1)
+            : (uint64_t)(-raw_offset);
+        return magnitude > (uint64_t)cluster_count ? 0 : cluster_count - (size_t)magnitude;
+    }
+    return (uint64_t)raw_offset > (uint64_t)cluster_count ? cluster_count : (size_t)raw_offset;
+}
+
 static PtnValue ptn_internal_grapheme_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "grapheme_substr", 1, "string", args[0], line);
     int64_t raw_offset = ptn_internal_expect_integer_arg(runtime, "grapheme_substr", 2, "offset", args[1], line);
@@ -65822,11 +65960,7 @@ static PtnValue ptn_internal_grapheme_substr(PtnRuntime *runtime, size_t argc, c
     }
 
     size_t cluster_count = ptn_grapheme_cluster_count(string.data, string.len);
-    size_t start_cluster = 0;
-    if (!ptn_normalize_grapheme_offset(runtime, "grapheme_substr", raw_offset, cluster_count, &start_cluster)) {
-        ptn_string_operand_free(string);
-        return ptn_null();
-    }
+    size_t start_cluster = ptn_normalize_grapheme_substr_offset(raw_offset, cluster_count);
 
     size_t end_cluster = cluster_count;
     if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
@@ -65861,6 +65995,230 @@ static PtnValue ptn_internal_grapheme_substr(PtnRuntime *runtime, size_t argc, c
     return result;
 }
 
+static int ptn_grapheme_string_is_ascii_fold_equal(
+    const char *left,
+    size_t left_len,
+    const char *right,
+    size_t right_len,
+    const char *locale
+) {
+    size_t left_offset = 0;
+    size_t right_offset = 0;
+    while (left_offset < left_len && right_offset < right_len) {
+        uint32_t left_cp = 0;
+        uint32_t right_cp = 0;
+        size_t left_used = 0;
+        size_t right_used = 0;
+        if (!ptn_json_utf8_decode((const unsigned char *)left + left_offset, left_len - left_offset, &left_cp, &left_used) || left_used == 0 ||
+            !ptn_json_utf8_decode((const unsigned char *)right + right_offset, right_len - right_offset, &right_cp, &right_used) || right_used == 0) {
+            return 0;
+        }
+        if (left_cp >= 0xff01 && left_cp <= 0xff5e) {
+            left_cp = left_cp - 0xff01 + 0x21;
+        }
+        if (right_cp >= 0xff01 && right_cp <= 0xff5e) {
+            right_cp = right_cp - 0xff01 + 0x21;
+        }
+        if (left_cp >= 'A' && left_cp <= 'Z') {
+            left_cp += 'a' - 'A';
+        }
+        if (right_cp >= 'A' && right_cp <= 'Z') {
+            right_cp += 'a' - 'A';
+        }
+        if (locale != NULL && (strncmp(locale, "tr", 2) == 0 || strncmp(locale, "az", 2) == 0)) {
+            if (left_cp == 0x0130) {
+                left_cp = 'i';
+            }
+            if (right_cp == 0x0130) {
+                right_cp = 'i';
+            }
+        }
+        if (left_cp != right_cp) {
+            return 0;
+        }
+        left_offset += left_used;
+        right_offset += right_used;
+    }
+    return left_offset == left_len && right_offset == right_len;
+}
+
+static int ptn_grapheme_collator_compare(
+    const char *left,
+    size_t left_len,
+    const char *right,
+    size_t right_len,
+    const char *locale,
+    int case_insensitive,
+    int *valid_locale_out
+);
+
+static void ptn_grapheme_set_search_error(PtnRuntime *runtime, const char *function_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Error creating search object: U_ILLEGAL_ARGUMENT_ERROR",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_intl_set_error_message(runtime, message);
+}
+
+static int ptn_grapheme_slice_matches(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *haystack,
+    size_t start,
+    size_t end,
+    const char *needle,
+    size_t needle_len,
+    int case_insensitive,
+    const char *locale,
+    int *search_error
+) {
+    size_t slice_len = end - start;
+    int use_collator = (locale != NULL && locale[0] != '\0') || case_insensitive;
+    if (use_collator) {
+        int compared = 1;
+        if (locale != NULL && locale[0] != '\0') {
+            int valid_locale = 1;
+            compared = ptn_grapheme_collator_compare(
+                haystack + start,
+                slice_len,
+                needle,
+                needle_len,
+                locale,
+                case_insensitive,
+                &valid_locale
+            );
+            if (!valid_locale) {
+                ptn_grapheme_set_search_error(runtime, function_name);
+                *search_error = 1;
+                return 0;
+            }
+            if (compared == 0) {
+                return 1;
+            }
+        } else if (case_insensitive &&
+            ptn_grapheme_string_is_ascii_fold_equal(haystack + start, slice_len, needle, needle_len, locale)) {
+            return 1;
+        } else {
+            int valid_locale = 1;
+            compared = ptn_grapheme_collator_compare(
+                haystack + start,
+                slice_len,
+                needle,
+                needle_len,
+                "",
+                case_insensitive,
+                &valid_locale
+            );
+        }
+        return compared == 0;
+    }
+    return slice_len == needle_len && memcmp(haystack + start, needle, needle_len) == 0;
+}
+
+static size_t ptn_grapheme_find_match(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand haystack,
+    PtnStringOperand needle,
+    size_t start_cluster,
+    size_t end_cluster,
+    int reverse,
+    int case_insensitive,
+    const char *locale,
+    int *search_error
+) {
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(haystack.data, haystack.len, &boundaries);
+    if (boundaries.len == 0 || start_cluster >= boundaries.len) {
+        ptn_grapheme_boundary_list_free(&boundaries);
+        return SIZE_MAX;
+    }
+    if (end_cluster >= boundaries.len) {
+        end_cluster = boundaries.len - 1;
+    }
+    if (reverse) {
+        size_t cursor = end_cluster + 1;
+        while (cursor > start_cluster) {
+            size_t start_index = cursor - 1;
+            for (size_t end_index = start_index + 1; end_index <= end_cluster + 1 && end_index < boundaries.len; end_index++) {
+                if (ptn_grapheme_slice_matches(
+                        runtime,
+                        function_name,
+                        haystack.data,
+                        boundaries.items[start_index],
+                        boundaries.items[end_index],
+                        needle.data,
+                        needle.len,
+                        case_insensitive,
+                        locale,
+                        search_error
+                    )) {
+                    size_t result = boundaries.items[start_index];
+                    ptn_grapheme_boundary_list_free(&boundaries);
+                    return result;
+                }
+                if (!case_insensitive && (locale == NULL || locale[0] == '\0') &&
+                    boundaries.items[end_index] - boundaries.items[start_index] >= needle.len) {
+                    break;
+                }
+            }
+            if (*search_error) {
+                break;
+            }
+            cursor--;
+        }
+    } else {
+        for (size_t start_index = start_cluster; start_index <= end_cluster && start_index + 1 < boundaries.len; start_index++) {
+            for (size_t end_index = start_index + 1; end_index < boundaries.len; end_index++) {
+                if (ptn_grapheme_slice_matches(
+                        runtime,
+                        function_name,
+                        haystack.data,
+                        boundaries.items[start_index],
+                        boundaries.items[end_index],
+                        needle.data,
+                        needle.len,
+                        case_insensitive,
+                        locale,
+                        search_error
+                    )) {
+                    size_t result = boundaries.items[start_index];
+                    ptn_grapheme_boundary_list_free(&boundaries);
+                    return result;
+                }
+                if (!case_insensitive && (locale == NULL || locale[0] == '\0') &&
+                    boundaries.items[end_index] - boundaries.items[start_index] >= needle.len) {
+                    break;
+                }
+            }
+            if (*search_error) {
+                break;
+            }
+        }
+    }
+    ptn_grapheme_boundary_list_free(&boundaries);
+    return SIZE_MAX;
+}
+
+static char *ptn_grapheme_locale_arg(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line, size_t position) {
+    if (argc <= position || ptn_value_deref(args[position]).type == PTN_NULL) {
+        return ptn_duplicate_string("");
+    }
+    PtnStringOperand locale = ptn_internal_expect_string_arg(runtime, function_name, position + 1, "locale", args[position], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    char *result = ptn_duplicate_string_len(locale.data, locale.len);
+    ptn_string_operand_free(locale);
+    return result;
+}
+
 static PtnValue ptn_internal_grapheme_strpos_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -65880,12 +66238,20 @@ static PtnValue ptn_internal_grapheme_strpos_named(
         ptn_string_operand_free(needle);
         return ptn_null();
     }
+    char *locale = ptn_grapheme_locale_arg(runtime, function_name, argc, args, line, 3);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        free(locale);
+        return ptn_null();
+    }
 
     size_t cluster_count = ptn_grapheme_cluster_count(haystack.data, haystack.len);
     size_t grapheme_offset = 0;
     if (!ptn_normalize_grapheme_offset(runtime, function_name, raw_offset, cluster_count, &grapheme_offset)) {
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
+        free(locale);
         return ptn_null();
     }
 
@@ -65896,18 +66262,34 @@ static PtnValue ptn_internal_grapheme_strpos_named(
         }
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
+        free(locale);
         return ptn_string_position_value(result);
     }
 
-    size_t byte_offset = ptn_grapheme_byte_offset_for_char(haystack.data, haystack.len, grapheme_offset);
-    size_t match = reverse
-        ? ptn_rfind_bytes_between(haystack.data, haystack.len, needle.data, needle.len, raw_offset >= 0 ? byte_offset : 0, raw_offset >= 0 ? haystack.len : byte_offset, case_insensitive)
-        : ptn_find_bytes_from(haystack.data, haystack.len, needle.data, needle.len, byte_offset, case_insensitive);
+    size_t end_cluster = cluster_count;
+    if (reverse && raw_offset < 0) {
+        end_cluster = grapheme_offset;
+        grapheme_offset = 0;
+    }
+    int search_error = 0;
+    size_t match = ptn_grapheme_find_match(
+        runtime,
+        function_name,
+        haystack,
+        needle,
+        grapheme_offset,
+        end_cluster,
+        reverse,
+        case_insensitive,
+        locale,
+        &search_error
+    );
     PtnValue result = match == SIZE_MAX
         ? ptn_bool(0)
         : ptn_string_position_value(ptn_grapheme_cluster_index_for_byte_offset(haystack.data, haystack.len, match));
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
+    free(locale);
     return result;
 }
 
@@ -65943,17 +66325,39 @@ static PtnValue ptn_internal_grapheme_strstr_named(
         return ptn_null();
     }
     int before_needle = argc >= 3 && ptn_is_truthy(args[2]);
+    char *locale = ptn_grapheme_locale_arg(runtime, function_name, argc, args, line, 3);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(haystack);
+        ptn_string_operand_free(needle);
+        free(locale);
+        return ptn_null();
+    }
     if (needle.len == 0) {
         PtnValue result = before_needle
             ? ptn_string("")
             : ptn_owned_string_len(ptn_duplicate_string_len(haystack.data, haystack.len), haystack.len);
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
+        free(locale);
         return result;
     }
 
-    size_t match = ptn_find_bytes_from(haystack.data, haystack.len, needle.data, needle.len, 0, case_insensitive);
+    int search_error = 0;
+    size_t cluster_count = ptn_grapheme_cluster_count(haystack.data, haystack.len);
+    size_t match = ptn_grapheme_find_match(
+        runtime,
+        function_name,
+        haystack,
+        needle,
+        0,
+        cluster_count,
+        0,
+        case_insensitive,
+        locale,
+        &search_error
+    );
     ptn_string_operand_free(needle);
+    free(locale);
     if (match == SIZE_MAX) {
         ptn_string_operand_free(haystack);
         return ptn_bool(0);
@@ -65971,6 +66375,313 @@ static PtnValue ptn_internal_grapheme_strstr(PtnRuntime *runtime, size_t argc, c
 
 static PtnValue ptn_internal_grapheme_stristr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_grapheme_strstr_named(runtime, "grapheme_stristr", argc, args, line, 1);
+}
+
+static size_t ptn_grapheme_adjust_extract_start(const char *data, size_t len, size_t start) {
+    while (start < len) {
+        unsigned char byte = (unsigned char)data[start];
+        if ((byte & 0xc0) == 0x80) {
+            start++;
+            continue;
+        }
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (ptn_json_utf8_decode((const unsigned char *)data + start, len - start, &codepoint, &consumed) && consumed > 0) {
+            return start;
+        }
+        start++;
+    }
+    return start;
+}
+
+static size_t ptn_grapheme_normalize_extract_start(PtnStringOperand string, int64_t raw_start) {
+    int64_t start = raw_start;
+    if (start < 0) {
+        uint64_t magnitude = start == INT64_MIN ? ((uint64_t)INT64_MAX + 1) : (uint64_t)(-start);
+        start = magnitude > (uint64_t)string.len ? 0 : (int64_t)(string.len - (size_t)magnitude);
+    }
+    if ((uint64_t)start > (uint64_t)string.len) {
+        return SIZE_MAX;
+    }
+    return ptn_grapheme_adjust_extract_start(string.data, string.len, (size_t)start);
+}
+
+static size_t ptn_grapheme_utf8_char_count_len(const char *data, size_t len) {
+    size_t count = 0;
+    for (size_t offset = 0; offset < len;) {
+        offset += ptn_text_utf8_next_len(data, len, offset);
+        count++;
+    }
+    return count;
+}
+
+static PtnValue ptn_internal_grapheme_extract(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand source = ptn_internal_expect_string_arg(runtime, "grapheme_extract", 1, "haystack", args[0], line);
+    int64_t size = ptn_internal_expect_integer_arg(runtime, "grapheme_extract", 2, "size", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    int64_t extract_type = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    int64_t raw_start = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
+    if (size < 0) {
+        size = 0;
+    }
+
+    size_t start = ptn_grapheme_normalize_extract_start(source, raw_start);
+    if (start == SIZE_MAX || start >= source.len) {
+        ptn_string_operand_free(source);
+        return ptn_bool(0);
+    }
+
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(source.data + start, source.len - start, &boundaries);
+    size_t relative_end = 0;
+    if (extract_type == 1) {
+        size_t max_bytes = (size_t)size;
+        for (size_t i = 1; i < boundaries.len; i++) {
+            if (boundaries.items[i] > max_bytes) {
+                break;
+            }
+            relative_end = boundaries.items[i];
+        }
+    } else if (extract_type == 2) {
+        size_t max_chars = (size_t)size;
+        for (size_t i = 1; i < boundaries.len; i++) {
+            size_t candidate_chars = ptn_grapheme_utf8_char_count_len(source.data + start, boundaries.items[i]);
+            if (candidate_chars > max_chars) {
+                break;
+            }
+            relative_end = boundaries.items[i];
+        }
+    } else {
+        size_t count = (size_t)size;
+        relative_end = count + 1 < boundaries.len
+            ? boundaries.items[count]
+            : (boundaries.len == 0 ? 0 : boundaries.items[boundaries.len - 1]);
+    }
+    ptn_grapheme_boundary_list_free(&boundaries);
+
+    size_t next = start + relative_end;
+    char next_buffer[32];
+    int next_written = snprintf(next_buffer, sizeof(next_buffer), "%zu", next);
+    if (next_written < 0 || (size_t)next_written >= sizeof(next_buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    if (!ptn_intl_assign_reference_string(runtime, args, argc, 4, next_buffer)) {
+        ptn_string_operand_free(source);
+        return ptn_null();
+    }
+    PtnValue result = ptn_owned_string_len(
+        ptn_duplicate_string_len(source.data + start, relative_end),
+        relative_end
+    );
+    ptn_string_operand_free(source);
+    return result;
+}
+
+static PtnValue ptn_internal_grapheme_str_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "grapheme_str_split", 1, "string", args[0], line);
+    int64_t raw_length = argc >= 2 ? ptn_internal_expect_integer_arg(runtime, "grapheme_str_split", 2, "length", args[1], line) : 1;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    if (raw_length <= 0) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(runtime, "ValueError", "grapheme_str_split(): Argument #2 ($length) must be greater than 0");
+        return ptn_null();
+    }
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(string.data, string.len, &boundaries);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    size_t cluster_count = boundaries.len == 0 ? 0 : boundaries.len - 1;
+    for (size_t start_cluster = 0; start_cluster < cluster_count; start_cluster += (size_t)raw_length) {
+        size_t end_cluster = start_cluster + (size_t)raw_length;
+        if (end_cluster > cluster_count) {
+            end_cluster = cluster_count;
+        }
+        size_t start = boundaries.items[start_cluster];
+        size_t end = boundaries.items[end_cluster];
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(index++),
+            ptn_owned_string_len(ptn_duplicate_string_len(string.data + start, end - start), end - start)
+        );
+    }
+    ptn_grapheme_boundary_list_free(&boundaries);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PtnValue ptn_internal_grapheme_strrev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "grapheme_strrev", 1, "string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    PtnGraphemeBoundaryList boundaries;
+    ptn_grapheme_boundaries(string.data, string.len, &boundaries);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t cluster_count = boundaries.len == 0 ? 0 : boundaries.len - 1;
+    while (cluster_count > 0) {
+        cluster_count--;
+        size_t start = boundaries.items[cluster_count];
+        size_t end = boundaries.items[cluster_count + 1];
+        ptn_string_buffer_append_len(&output, string.data + start, end - start);
+    }
+    ptn_grapheme_boundary_list_free(&boundaries);
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static int64_t ptn_grapheme_levenshtein_cost_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    int64_t cost = ptn_internal_expect_integer_arg(runtime, function_name, position, argument_name, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 1;
+    }
+    if (cost <= 0 || cost > INT32_MAX) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be greater than 0 and less than or equal to %d",
+            function_name,
+            position,
+            argument_name,
+            INT32_MAX
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 1;
+    }
+    return cost;
+}
+
+static int ptn_grapheme_clusters_equal(
+    const char *left,
+    size_t left_len,
+    const char *right,
+    size_t right_len,
+    const char *locale,
+    int *valid_locale_out
+) {
+    if (ptn_grapheme_collator_compare(left, left_len, right, right_len, locale == NULL ? "" : locale, 0, valid_locale_out) == 0 &&
+        *valid_locale_out) {
+        return 1;
+    }
+    if (!*valid_locale_out) {
+        return 0;
+    }
+    return left_len == right_len && memcmp(left, right, left_len) == 0;
+}
+
+static PtnValue ptn_internal_grapheme_levenshtein(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string1 = ptn_internal_expect_string_arg(runtime, "grapheme_levenshtein", 1, "string1", args[0], line);
+    PtnStringOperand string2 = ptn_internal_expect_string_arg(runtime, "grapheme_levenshtein", 2, "string2", args[1], line);
+    int64_t insertion_cost = argc >= 3 ? ptn_grapheme_levenshtein_cost_arg(runtime, "grapheme_levenshtein", 3, "insertion_cost", args[2], line) : 1;
+    int64_t replacement_cost = argc >= 4 ? ptn_grapheme_levenshtein_cost_arg(runtime, "grapheme_levenshtein", 4, "replacement_cost", args[3], line) : 1;
+    int64_t deletion_cost = argc >= 5 ? ptn_grapheme_levenshtein_cost_arg(runtime, "grapheme_levenshtein", 5, "deletion_cost", args[4], line) : 1;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string1);
+        ptn_string_operand_free(string2);
+        return ptn_null();
+    }
+    char *locale = ptn_grapheme_locale_arg(runtime, "grapheme_levenshtein", argc, args, line, 5);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string1);
+        ptn_string_operand_free(string2);
+        free(locale);
+        return ptn_null();
+    }
+
+    PtnGraphemeBoundaryList left_boundaries;
+    PtnGraphemeBoundaryList right_boundaries;
+    ptn_grapheme_boundaries(string1.data, string1.len, &left_boundaries);
+    ptn_grapheme_boundaries(string2.data, string2.len, &right_boundaries);
+    size_t rows = left_boundaries.len == 0 ? 0 : left_boundaries.len - 1;
+    size_t columns = right_boundaries.len == 0 ? 0 : right_boundaries.len - 1;
+
+    int64_t *previous = malloc((columns + 1) * sizeof(int64_t));
+    int64_t *current = malloc((columns + 1) * sizeof(int64_t));
+    if (previous == NULL || current == NULL) {
+        free(previous);
+        free(current);
+        ptn_abort_out_of_memory();
+    }
+    previous[0] = 0;
+    for (size_t j = 1; j <= columns; j++) {
+        previous[j] = ptn_levenshtein_add_cost(previous[j - 1], insertion_cost);
+    }
+    int valid_locale = 1;
+    for (size_t i = 1; i <= rows; i++) {
+        current[0] = ptn_levenshtein_add_cost(previous[0], deletion_cost);
+        size_t left_start = left_boundaries.items[i - 1];
+        size_t left_end = left_boundaries.items[i];
+        for (size_t j = 1; j <= columns; j++) {
+            size_t right_start = right_boundaries.items[j - 1];
+            size_t right_end = right_boundaries.items[j];
+            int64_t del = ptn_levenshtein_add_cost(previous[j], deletion_cost);
+            int64_t ins = ptn_levenshtein_add_cost(current[j - 1], insertion_cost);
+            int64_t sub = previous[j - 1];
+            if (!ptn_grapheme_clusters_equal(
+                    string1.data + left_start,
+                    left_end - left_start,
+                    string2.data + right_start,
+                    right_end - right_start,
+                    locale,
+                    &valid_locale
+                )) {
+                sub = ptn_levenshtein_add_cost(sub, replacement_cost);
+            }
+            if (!valid_locale) {
+                break;
+            }
+            int64_t best = del < ins ? del : ins;
+            if (sub < best) {
+                best = sub;
+            }
+            current[j] = best;
+        }
+        if (!valid_locale) {
+            break;
+        }
+        int64_t *tmp = previous;
+        previous = current;
+        current = tmp;
+    }
+    if (!valid_locale) {
+        ptn_intl_set_error_message(runtime, "grapheme_levenshtein(): Error on ucol_open: U_ILLEGAL_ARGUMENT_ERROR");
+        free(previous);
+        free(current);
+        ptn_grapheme_boundary_list_free(&left_boundaries);
+        ptn_grapheme_boundary_list_free(&right_boundaries);
+        ptn_string_operand_free(string1);
+        ptn_string_operand_free(string2);
+        free(locale);
+        return ptn_bool(0);
+    }
+    int64_t result = previous[columns];
+    free(previous);
+    free(current);
+    ptn_grapheme_boundary_list_free(&left_boundaries);
+    ptn_grapheme_boundary_list_free(&right_boundaries);
+    ptn_string_operand_free(string1);
+    ptn_string_operand_free(string2);
+    free(locale);
+    return ptn_int(result);
 }
 
 static PtnValue ptn_intl_format_date_only(
@@ -66912,6 +67623,7 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
 
 typedef struct PtnIcuConverter PtnIcuConverter;
 typedef struct PtnIcuCollator PtnIcuCollator;
+typedef struct PtnIcuBreakIterator PtnIcuBreakIterator;
 typedef uint16_t PtnIcuUChar;
 
 typedef struct {
@@ -66936,6 +67648,10 @@ typedef struct {
     void (*ucol_setStrength)(PtnIcuCollator *, int32_t);
     int32_t (*ucol_getStrength)(const PtnIcuCollator *);
     int32_t (*ucol_getAttribute)(const PtnIcuCollator *, int32_t, int32_t *);
+    PtnIcuBreakIterator *(*ubrk_open)(int32_t, const char *, const PtnIcuUChar *, int32_t, int32_t *);
+    void (*ubrk_close)(PtnIcuBreakIterator *);
+    int32_t (*ubrk_first)(PtnIcuBreakIterator *);
+    int32_t (*ubrk_next)(PtnIcuBreakIterator *);
 } PtnIcuApi;
 
 static PtnIcuApi ptn_icu_api = {0};
@@ -66947,6 +67663,8 @@ static PtnIcuApi ptn_icu_api = {0};
 #define PTN_ICU_PRIMARY 0
 #define PTN_ICU_SECONDARY 1
 #define PTN_ICU_TERTIARY 2
+#define PTN_ICU_UBRK_CHARACTER 0
+#define PTN_ICU_UBRK_DONE (-1)
 #define PTN_UCONVERTER_REASON_UNASSIGNED 0
 #define PTN_UCONVERTER_REASON_ILLEGAL 1
 #define PTN_UCONVERTER_REASON_IRREGULAR 2
@@ -67099,6 +67817,10 @@ static PtnIcuApi *ptn_icu_load(void) {
         PTN_ICU_LOAD_I18N(ucol_setStrength, "ucol_setStrength");
         PTN_ICU_LOAD_I18N(ucol_getStrength, "ucol_getStrength");
         PTN_ICU_LOAD_I18N(ucol_getAttribute, "ucol_getAttribute");
+        PTN_ICU_LOAD_I18N(ubrk_open, "ubrk_open");
+        PTN_ICU_LOAD_I18N(ubrk_close, "ubrk_close");
+        PTN_ICU_LOAD_I18N(ubrk_first, "ubrk_first");
+        PTN_ICU_LOAD_I18N(ubrk_next, "ubrk_next");
     }
 #undef PTN_ICU_LOAD_UC
 #undef PTN_ICU_LOAD_I18N
@@ -67109,6 +67831,139 @@ static const char *ptn_icu_error_name(int32_t status) {
     PtnIcuApi *api = ptn_icu_load();
     const char *name = api == NULL || api->u_errorName == NULL ? NULL : api->u_errorName(status);
     return name == NULL || name[0] == '\0' ? "U_ZERO_ERROR" : name;
+}
+
+static int ptn_icu_grapheme_boundaries(const char *data, size_t len, size_t **boundaries_out, size_t *count_out) {
+    *boundaries_out = NULL;
+    *count_out = 0;
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || api->u_strFromUTF8 == NULL || api->ubrk_open == NULL ||
+        api->ubrk_close == NULL || api->ubrk_first == NULL || api->ubrk_next == NULL ||
+        len > (size_t)INT32_MAX) {
+        return 0;
+    }
+
+    int32_t utf16_capacity = (int32_t)len + 1;
+    PtnIcuUChar *utf16 = malloc(sizeof(PtnIcuUChar) * (size_t)utf16_capacity);
+    if (utf16 == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int32_t utf16_len = 0;
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    api->u_strFromUTF8(utf16, utf16_capacity, &utf16_len, data, (int32_t)len, &status);
+    if (ptn_icu_failure(status)) {
+        free(utf16);
+        return 0;
+    }
+
+    size_t *byte_for_utf16 = calloc((size_t)utf16_len + 1, sizeof(size_t));
+    if (byte_for_utf16 == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t utf16_index = 0;
+    byte_for_utf16[0] = 0;
+    for (size_t offset = 0; offset < len;) {
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (!ptn_json_utf8_decode((const unsigned char *)data + offset, len - offset, &codepoint, &consumed) || consumed == 0) {
+            free(byte_for_utf16);
+            free(utf16);
+            return 0;
+        }
+        size_t units = codepoint > 0xffff ? 2 : 1;
+        for (size_t i = 1; i < units && utf16_index + i <= (size_t)utf16_len; i++) {
+            byte_for_utf16[utf16_index + i] = offset + consumed;
+        }
+        utf16_index += units;
+        if (utf16_index <= (size_t)utf16_len) {
+            byte_for_utf16[utf16_index] = offset + consumed;
+        }
+        offset += consumed;
+    }
+
+    status = PTN_ICU_ZERO_ERROR;
+    PtnIcuBreakIterator *iterator = api->ubrk_open(
+        PTN_ICU_UBRK_CHARACTER,
+        "",
+        utf16,
+        utf16_len,
+        &status
+    );
+    if (iterator == NULL || ptn_icu_failure(status)) {
+        free(byte_for_utf16);
+        free(utf16);
+        return 0;
+    }
+
+    PtnGraphemeBoundaryList list;
+    ptn_grapheme_boundary_list_init(&list);
+    int32_t boundary = api->ubrk_first(iterator);
+    while (boundary != PTN_ICU_UBRK_DONE) {
+        if (boundary >= 0 && boundary <= utf16_len) {
+            ptn_grapheme_boundary_list_append(&list, byte_for_utf16[boundary]);
+        }
+        boundary = api->ubrk_next(iterator);
+    }
+    api->ubrk_close(iterator);
+    free(byte_for_utf16);
+    free(utf16);
+    if (list.len == 0 || list.items[list.len - 1] != len) {
+        ptn_grapheme_boundary_list_append(&list, len);
+    }
+    *boundaries_out = list.items;
+    *count_out = list.len;
+    return 1;
+}
+
+static int ptn_grapheme_collator_compare(
+    const char *left,
+    size_t left_len,
+    const char *right,
+    size_t right_len,
+    const char *locale,
+    int case_insensitive,
+    int *valid_locale_out
+) {
+    if (valid_locale_out != NULL) {
+        *valid_locale_out = 1;
+    }
+    PtnIcuApi *api = ptn_icu_load();
+    if (api == NULL || api->ucol_open == NULL || api->ucol_strcollUTF8 == NULL) {
+        size_t common_len = left_len < right_len ? left_len : right_len;
+        int cmp = common_len == 0 ? 0 : memcmp(left, right, common_len);
+        if (cmp == 0 && left_len != right_len) {
+            cmp = left_len < right_len ? -1 : 1;
+        }
+        return cmp < 0 ? -1 : (cmp > 0 ? 1 : 0);
+    }
+    int32_t status = PTN_ICU_ZERO_ERROR;
+    PtnIcuCollator *collator = api->ucol_open(locale == NULL ? "" : locale, &status);
+    if (collator == NULL || ptn_icu_failure(status)) {
+        if (collator != NULL && api->ucol_close != NULL) {
+            api->ucol_close(collator);
+        }
+        if (valid_locale_out != NULL) {
+            *valid_locale_out = 0;
+        }
+        return 1;
+    }
+    if (case_insensitive && api->ucol_setStrength != NULL) {
+        api->ucol_setStrength(collator, PTN_ICU_SECONDARY);
+    }
+    status = PTN_ICU_ZERO_ERROR;
+    int32_t compared = api->ucol_strcollUTF8(
+        collator,
+        left,
+        left_len > (size_t)INT32_MAX ? INT32_MAX : (int32_t)left_len,
+        right,
+        right_len > (size_t)INT32_MAX ? INT32_MAX : (int32_t)right_len,
+        &status
+    );
+    api->ucol_close(collator);
+    if (ptn_icu_failure(status)) {
+        return 1;
+    }
+    return compared < 0 ? -1 : (compared > 0 ? 1 : 0);
 }
 
 static char *ptn_icu_converter_canonical_name(const char *name) {
@@ -86791,6 +87646,9 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "ASSERT_BAIL", 3);
     ptn_get_defined_constants_add_int(table, "ASSERT_WARNING", 4);
     ptn_get_defined_constants_add_int(table, "ASSERT_EXCEPTION", 5);
+    ptn_get_defined_constants_add_int(table, "GRAPHEME_EXTR_COUNT", PTN_GRAPHEME_EXTR_COUNT);
+    ptn_get_defined_constants_add_int(table, "GRAPHEME_EXTR_MAXBYTES", PTN_GRAPHEME_EXTR_MAXBYTES);
+    ptn_get_defined_constants_add_int(table, "GRAPHEME_EXTR_MAXCHARS", PTN_GRAPHEME_EXTR_MAXCHARS);
     return table;
 }
 
@@ -135238,13 +136096,16 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
         { "gmmktime", 1, 6, ptn_internal_gmmktime },
         { "grapheme_extract", 2, 5, ptn_internal_grapheme_extract },
+        { "grapheme_levenshtein", 2, 6, ptn_internal_grapheme_levenshtein },
         { "grapheme_strlen", 1, 1, ptn_internal_grapheme_strlen },
-        { "grapheme_stripos", 2, 3, ptn_internal_grapheme_stripos },
-        { "grapheme_stristr", 2, 3, ptn_internal_grapheme_stristr },
-        { "grapheme_strpos", 2, 3, ptn_internal_grapheme_strpos },
-        { "grapheme_strripos", 2, 3, ptn_internal_grapheme_strripos },
-        { "grapheme_strrpos", 2, 3, ptn_internal_grapheme_strrpos },
-        { "grapheme_strstr", 2, 3, ptn_internal_grapheme_strstr },
+        { "grapheme_str_split", 1, 2, ptn_internal_grapheme_str_split },
+        { "grapheme_stripos", 2, 4, ptn_internal_grapheme_stripos },
+        { "grapheme_stristr", 2, 4, ptn_internal_grapheme_stristr },
+        { "grapheme_strpos", 2, 4, ptn_internal_grapheme_strpos },
+        { "grapheme_strrev", 1, 1, ptn_internal_grapheme_strrev },
+        { "grapheme_strripos", 2, 4, ptn_internal_grapheme_strripos },
+        { "grapheme_strrpos", 2, 4, ptn_internal_grapheme_strrpos },
+        { "grapheme_strstr", 2, 4, ptn_internal_grapheme_strstr },
         { "grapheme_substr", 2, 3, ptn_internal_grapheme_substr },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
