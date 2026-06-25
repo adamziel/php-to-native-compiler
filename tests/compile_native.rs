@@ -44356,6 +44356,108 @@ foreach ([':current(div)', ':required', ':optional'] as $selector) {
 }
 
 #[test]
+fn compile_modern_dom_selector_attribute_combinators_and_structural_pseudos_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-selector-expanded-subset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-selector-expanded-subset.php");
+    let output = root.join("modern-dom-selector-expanded-subset-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = Dom\XMLDocument::createFromString(<<<'XML'
+<container>
+    <a title="http://example.com" lang="en-us"/>
+    <a title="http://example.be"/>
+    <a title="ftp://example.be" lang="nl-be" tokens="abc def ghi"/>
+    <wrap><p>only</p></wrap>
+    <wrap><p>one</p><p>two</p></wrap>
+</container>
+XML);
+
+foreach ([
+    'a[title]' => 3,
+    'a[title^="http"][title$=".be"]' => 1,
+    'a[lang|="nl"]' => 1,
+    'a[tokens~="def"]' => 1,
+    ':root' => 1,
+    'wrap > p:only-child' => 1,
+] as $selector => $expected) {
+    echo $selector, '=', count($xml->querySelectorAll($selector)), '/', $expected, "\n";
+}
+
+$html = Dom\HTMLDocument::createFromString(<<<'HTML'
+<!DOCTYPE html>
+<html>
+    <body>
+        <p>First p</p>
+        <p>Second p</p>
+        <img src="1.png">
+        <div class="">
+            <p>Third p</p>
+            <img src="2.png">
+            <img src="3.png">
+            <div class="foo bar baz"><p>Fourth p</p></div>
+        </div>
+        <article title="foo" class="bar"><p class="bar">Fifth p</p></article>
+    </body>
+</html>
+HTML);
+
+foreach ([
+    'p, img' => 8,
+    'body div p' => 2,
+    'div > p + img' => 1,
+    'div > p ~ img' => 2,
+    'article[title].bar p' => 1,
+    ':root' => 1,
+] as $selector => $expected) {
+    echo $selector, '=', count($html->querySelectorAll($selector)), '/', $expected, "\n";
+}
+
+try {
+    $html->querySelectorAll('col.selected||td');
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "a[title]=3/3\n",
+            "a[title^=\"http\"][title$=\".be\"]=1/1\n",
+            "a[lang|=\"nl\"]=1/1\n",
+            "a[tokens~=\"def\"]=1/1\n",
+            ":root=1/1\n",
+            "wrap > p:only-child=1/1\n",
+            "p, img=8/8\n",
+            "body div p=2/2\n",
+            "div > p + img=1/1\n",
+            "div > p ~ img=2/2\n",
+            "article[title].bar p=1/1\n",
+            ":root=1/1\n",
+            "Dom\\Document::querySelectorAll(): Argument #1 ($selectors) contains an unsupported selector\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_selector_sequence_matches"));
+    assert!(c_source.contains("ptn_dom_selector_attribute_matches"));
+}
+
+#[test]
 fn compile_modern_dom_character_data_index_rules_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-character-data-index-rules");
     fs::create_dir_all(&root).unwrap();
