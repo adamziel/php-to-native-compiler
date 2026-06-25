@@ -4789,6 +4789,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 typedef struct PtnPharArchiveState PtnPharArchiveState;
 static void ptn_phar_archive_clone_path(const char *source_path, const char *dest_path);
+static char *ptn_phar_take_last_stream_error(void);
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
 static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out);
 static int ptn_phar_uri_stat(const char *uri, struct stat *info);
@@ -7004,6 +7005,7 @@ struct PtnPharArchiveState {
     PtnPharArchiveEntry *entries;
     size_t entry_count;
     size_t entry_capacity;
+    size_t object_refcount;
     struct PtnPharArchiveState *next;
 };
 
@@ -51285,6 +51287,17 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return php_stream;
     }
+    char *phar_detail = strncmp(path, "phar://", 7) == 0
+        ? ptn_phar_take_last_stream_error()
+        : NULL;
+    if (phar_detail != NULL) {
+        ptn_emit_file_warning(runtime, "fopen", path, phar_detail, line);
+        free(phar_detail);
+        free(uri);
+        free(mode);
+        free(path);
+        return ptn_bool(0);
+    }
     if (ptn_try_open_user_stream_wrapper(runtime, path, mode, ptn_effective_stream_context(argc, args), line, &php_stream)) {
         free(uri);
         free(mode);
@@ -54211,17 +54224,25 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             free(data);
             return ptn_bool(0);
         }
-        char detail[192];
-        int needed = snprintf(
-            detail,
-            sizeof(detail),
-            "Failed to open stream: %s",
-            strerror(errno)
-        );
-        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
-            ptn_abort_out_of_memory();
+        char *phar_detail = strncmp(path, "phar://", 7) == 0
+            ? ptn_phar_take_last_stream_error()
+            : NULL;
+        if (phar_detail != NULL) {
+            ptn_emit_file_warning(runtime, "file_get_contents", path, phar_detail, line);
+            free(phar_detail);
+        } else {
+            char detail[192];
+            int needed = snprintf(
+                detail,
+                sizeof(detail),
+                "Failed to open stream: %s",
+                strerror(errno)
+            );
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
         }
-        ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
         free(opened_path);
         free(path);
         free(data);
@@ -125278,6 +125299,18 @@ enum {
 };
 
 static PtnPharArchiveState *ptn_phar_archives = NULL;
+static char *ptn_phar_last_stream_error = NULL;
+
+static void ptn_phar_clear_last_stream_error(void) {
+    free(ptn_phar_last_stream_error);
+    ptn_phar_last_stream_error = NULL;
+}
+
+static char *ptn_phar_take_last_stream_error(void) {
+    char *message = ptn_phar_last_stream_error;
+    ptn_phar_last_stream_error = NULL;
+    return message;
+}
 
 static uint32_t ptn_phar_read_u32_le(const unsigned char *data) {
     return ((uint32_t)data[0]) |
@@ -126290,6 +126323,31 @@ static PtnPharArchiveState *ptn_phar_archive_find_alias_excluding(
     return NULL;
 }
 
+static int ptn_phar_archive_has_open_entries(PtnPharArchiveState *archive) {
+    if (archive == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        if (archive->entries[i].open_count != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_phar_archive_alias_conflict_is_active(PtnPharArchiveState *archive) {
+    return archive != NULL &&
+        (archive->object_refcount != 0 || ptn_phar_archive_has_open_entries(archive));
+}
+
+static PtnPharArchiveState *ptn_phar_archive_find_active_alias_excluding(
+    const char *alias,
+    PtnPharArchiveState *excluded
+) {
+    PtnPharArchiveState *conflict = ptn_phar_archive_find_alias_excluding(alias, excluded);
+    return ptn_phar_archive_alias_conflict_is_active(conflict) ? conflict : NULL;
+}
+
 static void ptn_phar_throw_alias_overload(
     PtnRuntime *runtime,
     const char *alias,
@@ -126407,10 +126465,13 @@ static void ptn_phar_throw_invalid_alias(
     free(message);
 }
 
-static void ptn_phar_throw_alias_in_use(PtnRuntime *runtime, const char *path) {
-    const char *format = ptn_phar_archive_path_format(path) == PTN_PHAR_FORMAT_ZIP
-        ? "phar error: Unable to add zip-based phar \"%s\" with implicit alias, alias is already in use"
-        : "Cannot open archive \"%s\", alias is already in use by existing archive";
+static char *ptn_phar_format_alias_in_use_message(const char *path) {
+    const char *format = "Cannot open archive \"%s\", alias is already in use by existing archive";
+    if (ptn_phar_archive_path_format(path) == PTN_PHAR_FORMAT_ZIP) {
+        format = "phar error: Unable to add zip-based phar \"%s\" with implicit alias, alias is already in use";
+    } else if (ptn_phar_archive_path_format(path) == PTN_PHAR_FORMAT_TAR) {
+        format = "phar error: Unable to add tar-based phar \"%s\", alias is already in use";
+    }
     int needed = snprintf(
         NULL,
         0,
@@ -126434,7 +126495,19 @@ static void ptn_phar_throw_alias_in_use(PtnRuntime *runtime, const char *path) {
         free(message);
         ptn_abort_out_of_memory();
     }
+    return message;
+}
+
+static void ptn_phar_throw_alias_in_use(PtnRuntime *runtime, const char *path) {
+    char *message = ptn_phar_format_alias_in_use_message(path);
     ptn_throw_exception(runtime, "UnexpectedValueException", message);
+    free(message);
+}
+
+static void ptn_phar_set_last_alias_in_use_stream_error(const char *path) {
+    char *message = ptn_phar_format_alias_in_use_message(path);
+    ptn_phar_clear_last_stream_error();
+    ptn_phar_last_stream_error = ptn_duplicate_open_stream_detail(message);
     free(message);
 }
 
@@ -126446,7 +126519,7 @@ static int ptn_phar_archive_validate_loaded_alias(
     if (ptn_phar_archive_alias_is_default_path(archive)) {
         return 1;
     }
-    if (ptn_phar_archive_find_alias_excluding(archive->alias, archive) != NULL) {
+    if (ptn_phar_archive_find_active_alias_excluding(archive->alias, archive) != NULL) {
         ptn_phar_throw_alias_in_use(runtime, path);
         return 0;
     }
@@ -126466,7 +126539,7 @@ static int ptn_phar_archive_apply_constructor_alias(
         ptn_phar_throw_invalid_alias(runtime, alias, path);
         return 0;
     }
-    PtnPharArchiveState *conflict = ptn_phar_archive_find_alias_excluding(alias, archive);
+    PtnPharArchiveState *conflict = ptn_phar_archive_find_active_alias_excluding(alias, archive);
     if (conflict != NULL) {
         ptn_phar_throw_alias_overload(runtime, alias, conflict->path, path);
         return 0;
@@ -126490,7 +126563,7 @@ static int ptn_phar_archive_set_alias(
         ptn_phar_throw_invalid_alias(runtime, alias, archive == NULL ? "" : archive->path);
         return 0;
     }
-    PtnPharArchiveState *conflict = ptn_phar_archive_find_alias_excluding(alias, archive);
+    PtnPharArchiveState *conflict = ptn_phar_archive_find_active_alias_excluding(alias, archive);
     if (conflict != NULL) {
         ptn_phar_throw_alias_used_for_other_archive(runtime, alias, conflict->path);
         return 0;
@@ -127361,6 +127434,15 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
         free(path);
         return ptn_null();
     }
+    if (data->archive != NULL) {
+        if (data->archive->object_refcount == SIZE_MAX) {
+            free(requested_alias);
+            free(data);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        data->archive->object_refcount++;
+    }
     data->position = 0;
     free(requested_alias);
     free(path);
@@ -127516,6 +127598,12 @@ static PtnValue ptn_phar_object_from_archive(
     data->archive = archive;
     data->position = 0;
     data->info_class = info_class == NULL ? NULL : ptn_duplicate_string(info_class);
+    if (archive != NULL) {
+        if (archive->object_refcount == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        archive->object_refcount++;
+    }
     PtnValue object = ptn_object_new_shell(runtime, "Phar");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_phar_object_data_free;
@@ -128512,6 +128600,7 @@ static int ptn_phar_uri_archive_and_entry_mode(
     PtnPharArchiveState **archive_out,
     char **entry_out
 ) {
+    ptn_phar_clear_last_stream_error();
     if (archive_out != NULL) {
         *archive_out = NULL;
     }
@@ -128539,6 +128628,12 @@ static int ptn_phar_uri_archive_and_entry_mode(
             }
         }
         if (archive != NULL) {
+            if (!ptn_phar_archive_alias_is_default_path(archive) &&
+                ptn_phar_archive_find_active_alias_excluding(archive->alias, archive) != NULL) {
+                ptn_phar_set_last_alias_in_use_stream_error(archive->path);
+                free(archive_path);
+                return 0;
+            }
             if (archive_out != NULL) {
                 *archive_out = archive;
             }
@@ -159596,6 +159691,9 @@ static void ptn_phar_object_data_free(void *data) {
     PtnPharObjectData *phar_data = (PtnPharObjectData *)data;
     if (phar_data == NULL) {
         return;
+    }
+    if (phar_data->archive != NULL && phar_data->archive->object_refcount != 0) {
+        phar_data->archive->object_refcount--;
     }
     free(phar_data->info_class);
     free(phar_data);

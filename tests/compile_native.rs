@@ -48343,6 +48343,80 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_alias_lifecycle_conflicts_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-alias-lifecycle-conflicts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-alias-lifecycle.php");
+    let output = root.join("phar-alias-lifecycle-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/alias-unset.phar.php';
+$fname2 = __DIR__ . '/alias-unset.2.phar.php';
+
+$phar = new Phar($fname);
+$phar->setAlias('first');
+$phar['file1.txt'] = 'hi';
+unset($phar);
+
+$phar2 = new Phar($fname2);
+var_dump($phar2->setAlias('first'));
+$phar2['file1.txt'] = 'hi';
+unset($phar2);
+
+$handle = fopen('phar://' . $fname . '/file1.txt', 'r');
+try {
+    new Phar($fname2);
+} catch (Throwable $e) {
+    echo "open-conflict:", $e->getMessage(), "\n";
+}
+fclose($handle);
+
+$phar2 = new Phar($fname2);
+echo "alias:", $phar2->getAlias(), "\n";
+unset($phar2);
+
+$tar = __DIR__ . '/alias-acrobatics.phar.tar';
+$tar2 = __DIR__ . '/alias-acrobatics.2.phar.tar';
+$archive = new Phar($tar);
+$archive->setAlias('foo');
+$archive['unused'] = 'hi';
+copy($tar, $tar2);
+
+try {
+    new Phar($tar2);
+} catch (Throwable $e) {
+    echo "tar-conflict:", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "bool(true)\nopen-conflict:Cannot open archive \"{}\", alias is already in use by existing archive\nalias:first\ntar-conflict:phar error: Unable to add tar-based phar \"{}\", alias is already in use\n",
+            root.join("alias-unset.2.phar.php").display(),
+            root.join("alias-acrobatics.2.phar.tar").display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_find_active_alias_excluding"));
+    assert!(c_source.contains("ptn_phar_archive_has_open_entries"));
+}
+
+#[test]
 fn compile_phar_build_from_iterator_filesystem_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-phar-build-from-iterator-filesystem");
     fs::create_dir_all(&root).unwrap();
