@@ -131497,6 +131497,8 @@ typedef struct {
     int has_simple_content;
     int is_extension;
     int array_rank;
+    size_t array_second_dimension;
+    int array_use_xsd_item_name;
 } PtnSoapType;
 
 typedef struct {
@@ -131832,6 +131834,8 @@ static PtnSoapType *ptn_soap_type_list_add(PtnSoapType **types, size_t *count, s
     type->has_simple_content = 0;
     type->is_extension = 0;
     type->array_rank = 0;
+    type->array_second_dimension = 0;
+    type->array_use_xsd_item_name = 0;
     return type;
 }
 
@@ -131946,6 +131950,47 @@ static int ptn_soap_array_rank_from_wsdl_array_type(const char *array_type) {
     return rank;
 }
 
+static int ptn_soap_array_rank_from_wsdl_array_size(const char *array_size) {
+    if (array_size == NULL || array_size[0] == '\0') {
+        return 0;
+    }
+    int rank = 0;
+    const char *cursor = array_size;
+    while (*cursor != '\0') {
+        while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        rank++;
+        while (*cursor != '\0' && !isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+    }
+    return rank == 0 ? 1 : rank;
+}
+
+static size_t ptn_soap_array_second_dimension_from_wsdl_array_size(const char *array_size) {
+    if (array_size == NULL) {
+        return 0;
+    }
+    const char *cursor = array_size;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    while (*cursor != '\0' && !isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == '\0' || *cursor == '*') {
+        return 0;
+    }
+    return (size_t)strtoull(cursor, NULL, 10);
+}
+
 static char *ptn_soap_array_item_type_from_wsdl_array_type(const char *array_type) {
     if (array_type == NULL) {
         return ptn_duplicate_string("string");
@@ -132055,8 +132100,26 @@ static void ptn_soap_parse_complex_type_in_range(
         if (array_type == NULL) {
             array_type = ptn_soap_first_attr_in_range(start, end, "attribute", "arrayType");
         }
+        char *array_size = ptn_soap_first_attr_in_range(start, end, "attribute", "wsdl:arraySize");
+        if (array_size == NULL) {
+            array_size = ptn_soap_first_attr_in_range(start, end, "attribute", "arraySize");
+        }
+        char *item_type = ptn_soap_first_attr_in_range(start, end, "attribute", "wsdl:itemType");
+        if (item_type == NULL) {
+            item_type = ptn_soap_first_attr_in_range(start, end, "attribute", "itemType");
+        }
         type->array_item_type = ptn_soap_array_item_type_from_wsdl_array_type(array_type);
         type->array_rank = ptn_soap_array_rank_from_wsdl_array_type(array_type);
+        if (item_type != NULL) {
+            free(type->array_item_type);
+            type->array_item_type = ptn_soap_local_name_dup(item_type);
+            type->array_use_xsd_item_name = 1;
+        }
+        int size_rank = ptn_soap_array_rank_from_wsdl_array_size(array_size);
+        if (size_rank > type->array_rank) {
+            type->array_rank = size_rank;
+        }
+        type->array_second_dimension = ptn_soap_array_second_dimension_from_wsdl_array_size(array_size);
         const char *cursor = start;
         while (cursor < end) {
             const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
@@ -132073,6 +132136,7 @@ static void ptn_soap_parse_complex_type_in_range(
                 if (name != NULL) {
                     free(type->array_item_name);
                     type->array_item_name = name;
+                    type->array_use_xsd_item_name = 0;
                     name = NULL;
                 }
                 if (field_type != NULL) {
@@ -132092,6 +132156,8 @@ static void ptn_soap_parse_complex_type_in_range(
             type->array_rank = 1;
         }
         free(array_type);
+        free(array_size);
+        free(item_type);
         return;
     }
 
@@ -132906,7 +132972,9 @@ static void ptn_soap_append_array_items(
             }
             continue;
         }
-        int use_xsd_item_name = document_literal && ptn_ascii_case_equal(item_name, "item");
+        int use_xsd_item_name =
+            (document_literal || type->array_use_xsd_item_name) &&
+            ptn_ascii_case_equal(item_name, "item");
         ptn_string_buffer_append_char(buffer, '<');
         if (use_xsd_item_name) {
             ptn_string_buffer_append(buffer, "xsd:");
@@ -134426,6 +134494,9 @@ static PtnValue ptn_soap_decode_default_arg(
                 return result;
             }
             size_t inner_len = ptn_soap_encoded_array_second_dimension(node);
+            if (inner_len == 0) {
+                inner_len = schema_type->array_second_dimension;
+            }
             if (inner_len == 0) {
                 inner_len = 1;
             }
