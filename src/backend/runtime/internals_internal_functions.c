@@ -105590,6 +105590,31 @@ static void ptn_xml_append_parsed_text_span(
             pos = semi + 1;
             continue;
         }
+        const char *decoded_entity = NULL;
+        size_t decoded_entity_len = 0;
+        if (name_len == 3 && memcmp(data + name_start, "amp", 3) == 0) {
+            decoded_entity = "&";
+            decoded_entity_len = 1;
+        } else if (name_len == 2 && memcmp(data + name_start, "lt", 2) == 0) {
+            decoded_entity = "<";
+            decoded_entity_len = 1;
+        } else if (name_len == 2 && memcmp(data + name_start, "gt", 2) == 0) {
+            decoded_entity = ">";
+            decoded_entity_len = 1;
+        } else if (name_len == 4 && memcmp(data + name_start, "quot", 4) == 0) {
+            decoded_entity = "\"";
+            decoded_entity_len = 1;
+        } else if (name_len == 4 && memcmp(data + name_start, "apos", 4) == 0) {
+            decoded_entity = "'";
+            decoded_entity_len = 1;
+        }
+        if (decoded_entity != NULL) {
+            ptn_xml_append_text_span(runtime, parent, data + chunk_start, pos - chunk_start);
+            ptn_xml_append_text_span(runtime, parent, decoded_entity, decoded_entity_len);
+            pos = semi + 1;
+            chunk_start = pos;
+            continue;
+        }
         char *entity_name = ptn_duplicate_string_len(data + name_start, name_len);
         int declared = ptn_xml_document_has_entity_name(document, entity_name);
         if (!declared) {
@@ -108251,7 +108276,27 @@ static int ptn_xml_node_has_non_text_children(PtnXmlNode *node) {
     }
     for (size_t i = 0; i < node->child_count; i++) {
         int type = node->children[i]->type;
-        if (type == PTN_XML_NODE_ELEMENT || type == PTN_XML_NODE_COMMENT || type == PTN_XML_NODE_CDATA) {
+        if (type == PTN_XML_NODE_ELEMENT ||
+            type == PTN_XML_NODE_COMMENT ||
+            type == PTN_XML_NODE_PROCESSING_INSTRUCTION) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_xml_node_has_mixed_text_children(PtnXmlNode *node) {
+    if (node == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (child->type == PTN_XML_NODE_CDATA ||
+            child->type == PTN_XML_NODE_ENTITY_REFERENCE) {
+            return 1;
+        }
+        if (child->type == PTN_XML_NODE_TEXT &&
+            !ptn_xml_node_is_document_whitespace(child)) {
             return 1;
         }
     }
@@ -108612,12 +108657,20 @@ static void ptn_xml_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, in
         return;
     }
     ptn_string_buffer_append_char(buffer, '>');
-    int multiline = pretty && ptn_xml_node_has_non_text_children(node);
+    int multiline = pretty &&
+        ptn_xml_node_has_non_text_children(node) &&
+        !ptn_xml_node_has_mixed_text_children(node);
     if (multiline) {
         ptn_string_buffer_append_char(buffer, '\n');
     }
     for (size_t i = 0; i < node->child_count; i++) {
-        ptn_xml_serialize_node(buffer, node->children[i], pretty, depth + 1);
+        if (multiline && ptn_xml_node_is_document_whitespace(node->children[i])) {
+            continue;
+        }
+        if (multiline && node->children[i]->type != PTN_XML_NODE_ELEMENT) {
+            ptn_string_buffer_append_indent(buffer, (depth + 1) * 2);
+        }
+        ptn_xml_serialize_node(buffer, node->children[i], multiline, depth + 1);
         if (multiline) {
             ptn_string_buffer_append_char(buffer, '\n');
         }
@@ -109359,6 +109412,13 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
         ptn_html_serialize_node(buffer, node->children[i], pretty, inject_meta);
     }
     if (multiline) {
+        ptn_string_buffer_append_char(buffer, '\n');
+    }
+    if (ptn_ascii_case_equal(name, "body") &&
+        node->child_count > 0 &&
+        ptn_xml_node_is_document_whitespace(node->children[node->child_count - 1]) &&
+        buffer->len > 0 &&
+        buffer->data[buffer->len - 1] != '\n') {
         ptn_string_buffer_append_char(buffer, '\n');
     }
     ptn_string_buffer_append(buffer, "</");
@@ -112810,6 +112870,37 @@ static int ptn_dom_html_direct_element_named(PtnXmlNode *node, const char *name)
         ptn_ascii_case_equal(ptn_xml_local_name(node->name == NULL ? "" : node->name), name);
 }
 
+static int ptn_dom_html_raw_text_element(PtnXmlNode *node) {
+    return node != NULL &&
+        node->type == PTN_XML_NODE_ELEMENT &&
+        ptn_html_raw_text_element_name(ptn_xml_local_name(node->name == NULL ? "" : node->name));
+}
+
+static size_t ptn_dom_html_raw_text_end(
+    const char *data,
+    size_t len,
+    size_t start,
+    const char *name
+) {
+    size_t name_len = strlen(name);
+    for (size_t pos = start; pos + name_len + 2 <= len; pos++) {
+        if (data[pos] != '<' || data[pos + 1] != '/') {
+            continue;
+        }
+        if (!ptn_ascii_case_equal_n(data + pos + 2, name, name_len)) {
+            continue;
+        }
+        size_t after_name = pos + 2 + name_len;
+        if (after_name >= len ||
+            data[after_name] == '>' ||
+            data[after_name] == '/' ||
+            isspace((unsigned char)data[after_name])) {
+            return pos;
+        }
+    }
+    return len;
+}
+
 static PtnXmlNode *ptn_dom_html_direct_child_named(PtnXmlNode *node, const char *name) {
     for (size_t i = 0; node != NULL && i < node->child_count; i++) {
         if (ptn_dom_html_direct_element_named(node->children[i], name)) {
@@ -112831,7 +112922,6 @@ static void ptn_dom_html_normalize_root_whitespace(PtnXmlNode *document) {
 
     int seen_head = 0;
     int seen_body = 0;
-    size_t body_insert_index = 0;
     for (size_t i = 0; i < html->child_count;) {
         PtnXmlNode *child = html->children[i];
         if (ptn_dom_html_direct_element_named(child, "head")) {
@@ -112846,9 +112936,6 @@ static void ptn_dom_html_normalize_root_whitespace(PtnXmlNode *document) {
         }
         if (ptn_xml_node_is_document_whitespace(child)) {
             if (seen_head && !seen_body) {
-                PtnXmlNode *body_text = ptn_xml_node_alloc(PTN_XML_NODE_TEXT, NULL, child->value == NULL ? "" : child->value);
-                body_text->owner_document = ptn_xml_document_for_node(body);
-                ptn_xml_insert_child_at(body, body_text, body_insert_index++);
                 i++;
                 continue;
             }
@@ -112916,13 +113003,24 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
     ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, document);
     size_t pos = 0;
     while (pos < len) {
+        PtnXmlNode *parent = stack[stack_len - 1];
+        if (html_mode && ptn_dom_html_raw_text_element(parent)) {
+            const char *parent_name = ptn_xml_local_name(parent->name == NULL ? "" : parent->name);
+            size_t end = ptn_dom_html_raw_text_end(data, len, pos, parent_name);
+            if (end > pos) {
+                ptn_xml_append_text_span(runtime, parent, data + pos, end - pos);
+            }
+            pos = end;
+            if (pos >= len) {
+                break;
+            }
+        }
         if (data[pos] != '<') {
             size_t start = pos;
             while (pos < len && data[pos] != '<') {
                 pos++;
             }
             if (pos > start) {
-                PtnXmlNode *parent = stack[stack_len - 1];
                 int whitespace_only = ptn_xml_bytes_are_whitespace(data + start, pos - start);
                 if (((parent->type == PTN_XML_NODE_DOCUMENT && !html_mode) || !ptn_xml_document_preserve_whitespace(document)) && whitespace_only) {
                     continue;
