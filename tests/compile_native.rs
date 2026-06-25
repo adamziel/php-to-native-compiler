@@ -45341,6 +45341,53 @@ try {
 }
 
 #[test]
+fn compile_dom_html_document_file_parser_warning_sets_libxml_last_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-document-file-parser-warning-last-error");
+    fs::create_dir_all(&root).unwrap();
+    let fixture = root.join("parser-warning.html");
+    fs::write(&fixture, "<title>foo</title>\n<p>error</><!DOCTYPE HTML>\n").unwrap();
+    let input = root.join("dom-html-document-file-parser-warning-last-error.php");
+    let output = root.join("dom-html-document-file-parser-warning-last-error-bin");
+    let fixture_path = fixture.to_string_lossy().into_owned();
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+libxml_use_internal_errors(true);
+$dom = Dom\HTMLDocument::createFromFile({});
+$error = libxml_get_last_error();
+var_dump($error->level, $error->code, $error->column, $error->line, $error->file === {});
+echo $error->message, "\n";
+"#,
+            php_string_literal(&fixture),
+            php_string_literal(&fixture)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "int(2)\nint(1)\nint(2)\nint(1)\nbool(true)\ntree error unexpected-token-in-initial-mode in {}, line: 1, column: 2-6\n",
+            fixture_path
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_store_modeled_parser_errors"));
+}
+
+#[test]
 fn compile_dom_html_document_encoding_bom_override_and_eof_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-document-encoding-bom-override-eof");
     fs::create_dir_all(&root).unwrap();

@@ -101729,6 +101729,22 @@ static int ptn_xml_line_map_line_for_offset(const PtnXmlLineMap *map, size_t off
     return (int)lo + 1;
 }
 
+static int ptn_xml_line_map_column_for_offset(const PtnXmlLineMap *map, size_t offset) {
+    size_t lo = 0;
+    size_t hi = map == NULL ? 0 : map->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (map->newlines[mid] < offset) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    size_t line_start = lo == 0 ? 0 : map->newlines[lo - 1] + 1;
+    size_t column = offset >= line_start ? offset - line_start + 1 : 1;
+    return column > (size_t)INT_MAX ? INT_MAX : (int)column;
+}
+
 static PtnValue ptn_xml_node_value(PtnXmlNode *node) {
     if (node == NULL || node->object == NULL) {
         return ptn_null();
@@ -105968,8 +105984,15 @@ static void ptn_libxml_clear_error_buffer(void) {
     ptn_libxml_error_capacity = 0;
 }
 
-static void ptn_libxml_store_structured_error(const PtnLibxml2Error *error) {
-    if (error == NULL || error->message == NULL || !ptn_libxml_internal_errors) {
+static void ptn_libxml_store_error_fields(
+    int level,
+    int code,
+    int column,
+    int line,
+    const char *message,
+    const char *file
+) {
+    if (message == NULL || !ptn_libxml_internal_errors) {
         return;
     }
     if (ptn_libxml_error_count == ptn_libxml_error_capacity) {
@@ -105988,12 +106011,26 @@ static void ptn_libxml_store_structured_error(const PtnLibxml2Error *error) {
         ptn_libxml_error_capacity = new_capacity;
     }
     PtnLibxmlStoredError *stored = &ptn_libxml_error_buffer[ptn_libxml_error_count++];
-    stored->level = error->level;
-    stored->code = error->code;
-    stored->column = error->int2;
-    stored->line = error->line;
-    stored->message = ptn_duplicate_string(error->message);
-    stored->file = error->file == NULL ? ptn_duplicate_string("") : ptn_duplicate_string(error->file);
+    stored->level = level;
+    stored->code = code;
+    stored->column = column;
+    stored->line = line;
+    stored->message = ptn_duplicate_string(message);
+    stored->file = file == NULL ? ptn_duplicate_string("") : ptn_duplicate_string(file);
+}
+
+static void ptn_libxml_store_structured_error(const PtnLibxml2Error *error) {
+    if (error == NULL || error->message == NULL) {
+        return;
+    }
+    ptn_libxml_store_error_fields(
+        error->level,
+        error->code,
+        error->int2,
+        error->line,
+        error->message,
+        error->file == NULL ? "" : error->file
+    );
 }
 
 static PtnValue ptn_libxml_error_object(PtnRuntime *runtime, const PtnLibxmlStoredError *error) {
@@ -106005,6 +106042,167 @@ static PtnValue ptn_libxml_error_object(PtnRuntime *runtime, const PtnLibxmlStor
     ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("file"), ptn_owned_string(ptn_duplicate_string(error == NULL || error->file == NULL ? "" : error->file)));
     ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("line"), ptn_int(error == NULL ? 0 : error->line));
     return object;
+}
+
+static void ptn_dom_html_store_parser_error(
+    const char *error_kind,
+    const char *error_name,
+    const char *display_uri,
+    int line,
+    int column_start,
+    int column_end
+) {
+    if (!ptn_libxml_internal_errors) {
+        return;
+    }
+    const char *uri = display_uri == NULL || display_uri[0] == '\0' ? "Entity" : display_uri;
+    int needed = column_end > column_start
+        ? snprintf(
+            NULL,
+            0,
+            "%s error %s in %s, line: %d, column: %d-%d",
+            error_kind,
+            error_name,
+            uri,
+            line,
+            column_start,
+            column_end
+        )
+        : snprintf(
+            NULL,
+            0,
+            "%s error %s in %s, line: %d, column: %d",
+            error_kind,
+            error_name,
+            uri,
+            line,
+            column_start
+        );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = column_end > column_start
+        ? snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s error %s in %s, line: %d, column: %d-%d",
+            error_kind,
+            error_name,
+            uri,
+            line,
+            column_start,
+            column_end
+        )
+        : snprintf(
+            message,
+            (size_t)needed + 1,
+            "%s error %s in %s, line: %d, column: %d",
+            error_kind,
+            error_name,
+            uri,
+            line,
+            column_start
+        );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_libxml_store_error_fields(2, 1, column_start, line, message, uri);
+    free(message);
+}
+
+static size_t ptn_dom_html_find_doctype_offset(const char *data, size_t len) {
+    for (size_t i = 0; i + 9 <= len; i++) {
+        if (data[i] == '<' && data[i + 1] == '!' &&
+            ptn_ascii_case_equal_n(data + i + 2, "doctype", 7)) {
+            return i;
+        }
+    }
+    return len;
+}
+
+static void ptn_dom_html_store_modeled_parser_errors(
+    const char *data,
+    size_t len,
+    const char *display_uri,
+    int options
+) {
+    if (!ptn_libxml_internal_errors ||
+        (options & (PTN_LIBXML_NOERROR | PTN_LIBXML_NOWARNING)) != 0 ||
+        data == NULL ||
+        len == 0) {
+        return;
+    }
+    PtnXmlLineMap line_map;
+    ptn_xml_line_map_init(&line_map, data, len);
+
+    size_t doctype_offset = ptn_dom_html_find_doctype_offset(data, len);
+    for (size_t i = 0; i + 2 < len; i++) {
+        if (data[i] == '<' && data[i + 1] == '/' && data[i + 2] == '>') {
+            int line = ptn_xml_line_map_line_for_offset(&line_map, i + 2);
+            int column = ptn_xml_line_map_column_for_offset(&line_map, i + 2);
+            ptn_dom_html_store_parser_error(
+                "tokenizer",
+                "missing-end-tag-name",
+                display_uri,
+                line,
+                column,
+                column
+            );
+        }
+    }
+
+    size_t first = 0;
+    ptn_xml_skip_ws(data, len, &first);
+    if (first < len && first != doctype_offset) {
+        size_t range_start = first;
+        size_t range_end = first;
+        if (data[first] == '<' && first + 1 < len &&
+            data[first + 1] != '/' &&
+            data[first + 1] != '!' &&
+            data[first + 1] != '?') {
+            size_t name_start = first + 1;
+            size_t name_end = name_start;
+            while (name_end < len && ptn_xml_name_char((unsigned char)data[name_end])) {
+                name_end++;
+            }
+            if (name_end > name_start) {
+                range_start = name_start;
+                range_end = name_end - 1;
+            } else {
+                ptn_dom_html_store_parser_error(
+                    "tokenizer",
+                    "invalid-first-character-of-tag-name",
+                    display_uri,
+                    ptn_xml_line_map_line_for_offset(&line_map, first + 1),
+                    ptn_xml_line_map_column_for_offset(&line_map, first + 1),
+                    ptn_xml_line_map_column_for_offset(&line_map, first + 1)
+                );
+                range_end = doctype_offset == len || doctype_offset == 0 ? first : doctype_offset - 1;
+            }
+        } else {
+            range_end = doctype_offset == len || doctype_offset == 0 ? first : doctype_offset - 1;
+        }
+        int line = ptn_xml_line_map_line_for_offset(&line_map, range_start);
+        int column_start = ptn_xml_line_map_column_for_offset(&line_map, range_start);
+        int column_end = ptn_xml_line_map_line_for_offset(&line_map, range_end) == line
+            ? ptn_xml_line_map_column_for_offset(&line_map, range_end)
+            : column_start;
+        ptn_dom_html_store_parser_error(
+            "tree",
+            "unexpected-token-in-initial-mode",
+            display_uri,
+            line,
+            column_start,
+            column_end
+        );
+    }
+
+    ptn_xml_line_map_free(&line_map);
 }
 
 static void ptn_libxml_source_line_span(
@@ -112341,6 +112539,9 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
     }
     int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_source, parse_len, html_document);
     free(parse_data);
+    if (html_document) {
+        ptn_dom_html_store_modeled_parser_errors(source.data, source.len, "Entity", (int)options);
+    }
     ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
     ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
     ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
@@ -112537,6 +112738,7 @@ static PtnValue ptn_dom_load_file_method(PtnRuntime *runtime, PtnValue receiver,
         char *parse_data = ptn_dom_html_prepare_source_for_parse(document, (const char *)data, data_len, !has_override_encoding, &parse_len);
         int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_data, parse_len, 1);
         free(parse_data);
+        ptn_dom_html_store_modeled_parser_errors((const char *)data, data_len, path, (int)options);
         ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
         ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
         ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
