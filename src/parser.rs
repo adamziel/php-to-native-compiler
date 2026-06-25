@@ -136,6 +136,7 @@ fn parse_with_options(
         active_type_scope: None,
         anonymous_function_depth: 0,
         allow_unscoped_relative_types: 0,
+        allow_unscoped_constant_relative_class_member_fetch: 0,
         allow_void_cast_expression: 0,
         array_literal_depth: 0,
         return_by_ref_stack: Vec::new(),
@@ -211,6 +212,7 @@ struct Parser<'a> {
     active_type_scope: Option<ActiveTypeScope>,
     anonymous_function_depth: usize,
     allow_unscoped_relative_types: usize,
+    allow_unscoped_constant_relative_class_member_fetch: usize,
     allow_void_cast_expression: usize,
     array_literal_depth: usize,
     return_by_ref_stack: Vec<bool>,
@@ -5248,6 +5250,7 @@ impl Parser<'_> {
         if self.active_type_scope.is_some()
             || self.anonymous_function_depth > 0
             || self.allow_unscoped_relative_types > 0
+            || self.allow_unscoped_constant_relative_class_member_fetch > 0
         {
             return None;
         }
@@ -7608,7 +7611,8 @@ impl Parser<'_> {
     }
 
     fn parse_const_context_expr(&mut self) -> Result<Expr> {
-        self.parse_expr().map_err(|error| {
+        self.allow_unscoped_constant_relative_class_member_fetch += 1;
+        let expr = self.parse_expr().map_err(|error| {
             if error.message == CLASS_CONSTANT_FETCH_UNSUPPORTED {
                 Diagnostic::new(
                     "Dynamic class names are not allowed in compile-time class constant references",
@@ -7617,7 +7621,9 @@ impl Parser<'_> {
             } else {
                 error
             }
-        })
+        });
+        self.allow_unscoped_constant_relative_class_member_fetch -= 1;
+        expr
     }
 
     fn parse_expr_allowing_append_array_read(&mut self) -> Result<Expr> {
@@ -8995,6 +9001,8 @@ impl Parser<'_> {
             active_type_scope: self.active_type_scope.clone(),
             anonymous_function_depth: self.anonymous_function_depth,
             allow_unscoped_relative_types: self.allow_unscoped_relative_types,
+            allow_unscoped_constant_relative_class_member_fetch: self
+                .allow_unscoped_constant_relative_class_member_fetch,
             array_literal_depth: self.array_literal_depth,
             return_by_ref_stack: self.return_by_ref_stack.clone(),
             property_hook_body_depth: self.property_hook_body_depth,

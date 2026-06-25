@@ -179205,19 +179205,81 @@ static int ptn_eval_parse_dynamic_class_constant_fetch(
         free(receiver_variable_name);
         return 0;
     }
-    if (!ptn_eval_consume_char(code, len, &cursor, '{')) {
-        free(literal_class_name);
-        free(receiver_variable_name);
-        return 0;
-    }
-
     char *class_name = NULL;
     if (literal_class_name != NULL) {
-        const char *resolved = ptn_runtime_resolve_class_alias(
-            runtime,
-            ptn_symbol_name_without_leading_slash(literal_class_name)
-        );
-        class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
+        const char *lookup_class_name = ptn_symbol_name_without_leading_slash(literal_class_name);
+        if (ptn_ascii_case_equal(lookup_class_name, "self")) {
+            if (runtime == NULL || runtime->current_class_name == NULL) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Cannot use \"self\" when no class scope is active",
+                    runtime != NULL ? runtime->source_path : NULL,
+                    line
+                );
+                free(literal_class_name);
+                free(receiver_variable_name);
+                *out = ptn_null();
+                *pos = cursor;
+                return 1;
+            }
+            class_name = ptn_duplicate_string(runtime->current_class_name);
+        } else if (ptn_ascii_case_equal(lookup_class_name, "static")) {
+            const char *scope = runtime == NULL
+                ? NULL
+                : (runtime->current_called_class_name != NULL
+                    ? runtime->current_called_class_name
+                    : runtime->current_class_name);
+            if (scope == NULL) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Cannot use \"static\" when no class scope is active",
+                    runtime != NULL ? runtime->source_path : NULL,
+                    line
+                );
+                free(literal_class_name);
+                free(receiver_variable_name);
+                *out = ptn_null();
+                *pos = cursor;
+                return 1;
+            }
+            class_name = ptn_duplicate_string(scope);
+        } else if (ptn_ascii_case_equal(lookup_class_name, "parent")) {
+            if (runtime == NULL || runtime->current_class_name == NULL) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Cannot use \"parent\" when no class scope is active",
+                    runtime != NULL ? runtime->source_path : NULL,
+                    line
+                );
+                free(literal_class_name);
+                free(receiver_variable_name);
+                *out = ptn_null();
+                *pos = cursor;
+                return 1;
+            }
+            const char *parent_name = ptn_declared_class_parent_name(runtime->current_class_name);
+            if (parent_name == NULL) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Cannot use \"parent\" when current class scope has no parent",
+                    runtime != NULL ? runtime->source_path : NULL,
+                    line
+                );
+                free(literal_class_name);
+                free(receiver_variable_name);
+                *out = ptn_null();
+                *pos = cursor;
+                return 1;
+            }
+            class_name = ptn_duplicate_string(parent_name);
+        } else {
+            const char *resolved = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
+            class_name = ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
+        }
     } else {
         PtnValue receiver = ptn_value_clone_deref(
             ptn_eval_read_variable(runtime, receiver_variable_name, line)
@@ -179244,20 +179306,24 @@ static int ptn_eval_parse_dynamic_class_constant_fetch(
     free(literal_class_name);
     free(receiver_variable_name);
 
-    PtnValue constant_name_value = ptn_null();
-    if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &constant_name_value)) {
-        free(class_name);
-        return 0;
-    }
-    if (!ptn_eval_consume_char(code, len, &cursor, '}')) {
+    char *constant_name = NULL;
+    if (ptn_eval_consume_char(code, len, &cursor, '{')) {
+        PtnValue constant_name_value = ptn_null();
+        if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &constant_name_value)) {
+            free(class_name);
+            return 0;
+        }
+        if (!ptn_eval_consume_char(code, len, &cursor, '}')) {
+            ptn_value_destroy(&constant_name_value);
+            free(class_name);
+            return 0;
+        }
+        constant_name = ptn_runtime_dynamic_class_constant_name(runtime, constant_name_value, line);
         ptn_value_destroy(&constant_name_value);
+    } else if (!ptn_eval_parse_identifier_name(code, len, &cursor, &constant_name)) {
         free(class_name);
         return 0;
     }
-
-    char *constant_name =
-        ptn_runtime_dynamic_class_constant_name(runtime, constant_name_value, line);
-    ptn_value_destroy(&constant_name_value);
     if (constant_name == NULL || runtime->exceptions->active_exception != NULL) {
         free(constant_name);
         free(class_name);
@@ -180251,6 +180317,61 @@ static int ptn_dynamic_execute_unset_statement(
     return 1;
 }
 
+static int ptn_dynamic_execute_const_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (!ptn_eval_keyword_at(code, len, cursor, "const")) {
+        return 0;
+    }
+    cursor += strlen("const");
+    while (1) {
+        char *name = NULL;
+        if (!ptn_eval_parse_identifier_name(code, len, &cursor, &name)) {
+            return 0;
+        }
+        size_t name_len = strlen(name);
+        if (!ptn_eval_consume_char(code, len, &cursor, '=')) {
+            free(name);
+            return 0;
+        }
+        PtnValue value = ptn_null();
+        if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &value)) {
+            free(name);
+            return 0;
+        }
+        if (runtime != NULL && runtime->exceptions->active_exception == NULL) {
+            (void)ptn_runtime_define_constant_if_absent_len(
+                runtime,
+                name,
+                name_len,
+                value,
+                line
+            );
+        }
+        ptn_value_destroy(&value);
+        free(name);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            *pos = cursor;
+            return 1;
+        }
+        cursor = ptn_eval_skip_ws(code, len, cursor);
+        if (cursor < len && code[cursor] == ',') {
+            cursor++;
+            continue;
+        }
+        if (cursor < len && code[cursor] == ';') {
+            *pos = cursor + 1;
+            return 1;
+        }
+        return 0;
+    }
+}
+
 static int ptn_dynamic_parse_catch_header(
     const char *code,
     size_t len,
@@ -180551,6 +180672,7 @@ static int ptn_dynamic_execute_statements_range(
         *pos = statement_pos;
         if (ptn_dynamic_execute_echo_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_var_dump_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line)) {
             if (ptn_runtime_has_active_exception(runtime)) {
@@ -180682,6 +180804,9 @@ static int ptn_eval_execute_supported_statements(
         }
         pos = statement_pos;
         if (
+            ptn_dynamic_execute_const_statement(runtime, code, len, &pos, line) ||
+            ptn_dynamic_execute_echo_statement(runtime, code, len, &pos, line) ||
+            ptn_dynamic_execute_var_dump_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_assignment_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_unset_statement(runtime, code, len, &pos, line) ||
             ptn_eval_execute_array_mutator_statement(runtime, code, len, &pos, line)

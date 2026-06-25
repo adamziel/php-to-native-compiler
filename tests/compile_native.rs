@@ -54096,6 +54096,45 @@ function test() {
 }
 
 #[test]
+fn compile_top_level_const_self_class_fatal_preserves_statement_order_to_native_binary() {
+    let root = temp_dir("ptn-native-top-level-const-self-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("top-level-const-self-order.php");
+    let output = root.join("top-level-const-self-order-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EvalConstScopeTest {
+    public function run() {
+        eval('const EVAL_SCOPE_CONST = self::class; var_dump(EVAL_SCOPE_CONST);');
+    }
+}
+(new EvalConstScopeTest)->run();
+
+const AFTER_EVAL_SCOPE_CONST = self::class;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(18) \"EvalConstScopeTest\"\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Cannot use \"self\" when no class scope is active in {}:9\nStack trace:\n#0 {{main}}\n  thrown in {} on line 9\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_unscoped_self_access_in_closure_errors_at_runtime() {
     let root = temp_dir("ptn-native-unscoped-self-closure");
     fs::create_dir_all(&root).unwrap();

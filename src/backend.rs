@@ -36959,10 +36959,13 @@ impl ValueEmitter {
                 return None;
             }
             let Some(current_class_name) = &self.current_class_name else {
-                return Some(format!(
-                    "Cannot use \"{}\" in the global scope",
-                    class_name.to_ascii_lowercase()
-                ));
+                let lowered = class_name.to_ascii_lowercase();
+                if lowered == "self" || lowered == "static" {
+                    return Some(format!(
+                        "Cannot use \"{lowered}\" when no class scope is active"
+                    ));
+                }
+                return Some(format!("Cannot use \"{lowered}\" in the global scope"));
             };
             if class_name.eq_ignore_ascii_case("parent")
                 && self
