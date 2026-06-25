@@ -11901,11 +11901,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         return ptn_reference_value(entry->reference);
     }
     if (entry->slot == NULL && entry->retained_object != NULL) {
-        PtnReference *reference = ptn_unserialize_reference_new_owned(
-            ptn_value_clone(ptn_object(entry->retained_object))
-        );
-        entry->reference = reference;
-        return ptn_reference_value(reference);
+        return ptn_value_clone(ptn_object(entry->retained_object));
     }
     if (entry->slot == NULL) {
         ptn_unserialize_fail(state);
@@ -11914,6 +11910,10 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     if (entry->slot->type == PTN_REFERENCE) {
         entry->reference = entry->slot->as.reference;
         return ptn_value_clone(*entry->slot);
+    }
+    PtnValue resolved = ptn_value_deref(*entry->slot);
+    if (resolved.type == PTN_OBJECT) {
+        return ptn_value_clone(resolved);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
@@ -12408,6 +12408,66 @@ static PtnValue ptn_unserialize_new_internal_exception_shell(
         ? "Error"
         : "Exception";
     PtnValue object = ptn_object_new_shell(runtime, canonical_name);
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "message",
+        base_class,
+        PTN_PROPERTY_PROTECTED,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "string",
+        base_class,
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "code",
+        base_class,
+        PTN_PROPERTY_PROTECTED,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "file",
+        base_class,
+        PTN_PROPERTY_PROTECTED,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        line
+    );
+    ptn_unserialize_declare_internal_property_metadata(
+        runtime,
+        object,
+        "line",
+        base_class,
+        PTN_PROPERTY_PROTECTED,
+        PTN_PROPERTY_TYPE_INT,
+        NULL,
+        "int",
+        0,
+        line
+    );
     ptn_unserialize_declare_internal_property_metadata(
         runtime,
         object,

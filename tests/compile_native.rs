@@ -16545,6 +16545,50 @@ var_dump(unserialize($poc));
 }
 
 #[test]
+fn compile_unserialize_object_reference_overwrite_preserves_root_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-object-reference-overwrite");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-object-reference-overwrite.php");
+    let output = root.join("unserialize-object-reference-overwrite-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class TestUntyped { public $prop; }
+class TestTyped { public ?object $prop; }
+
+var_dump(unserialize('O:11:"TestUntyped":2:{s:4:"prop";R:1;s:4:"prop";i:0;}'));
+var_dump(unserialize('O:9:"TestTyped":2:{s:4:"prop";R:1;s:4:"prop";N;}'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(TestUntyped)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(TestTyped)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  NULL\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_interval_unserialize_overwrites_internal_properties_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-unserialize-properties");
     fs::create_dir_all(&root).unwrap();
@@ -16715,6 +16759,41 @@ foreach ($examples as $name => $example) {
             "Error(Exception()): Error previous Exception\n",
             "Exception(Error()): Exception previous Error\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exception_unserialize_declared_payload_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-unserialize-declared-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-unserialize-declared-properties.php");
+    let output = root.join("exception-unserialize-declared-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    unserialize('O:9:"Exception":7:{s:10:"' . "\0" . '*' . "\0" . 'message";s:1:"x";s:17:"' . "\0" . 'Exception' . "\0" . 'string";s:1:"A";s:7:"' . "\0" . '*' . "\0" . 'code";i:0;s:7:"' . "\0" . '*' . "\0" . 'file";s:1:"a";s:7:"' . "\0" . '*' . "\0" . 'line";i:1337;s:16:"' . "\0" . 'Exception' . "\0" . 'trace";a:0:{}s:19:"' . "\0" . 'Exception' . "\0" . 'previous";i:10;}');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot assign int to property Exception::$previous of type ?Throwable\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
