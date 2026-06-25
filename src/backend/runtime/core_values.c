@@ -1595,6 +1595,9 @@ struct PtnRuntime {
     const char *pending_generator_assignment_name;
     PtnGenerator *pending_yield_from_generator;
     size_t pending_yield_from_line;
+    int implicit_generator_foreach_rewind;
+    const char *implicit_generator_foreach_source_path;
+    size_t implicit_generator_foreach_line;
     int generator_aborted_after_yield;
     int generator_aborted_rethrow_on_rewind;
     int generator_chained_exception_during_unwind;
@@ -1784,6 +1787,7 @@ static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue recei
 static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED void ptn_generator_trace_set_file_line(PtnValue frame, const char *file, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);

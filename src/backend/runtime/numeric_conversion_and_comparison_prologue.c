@@ -219,6 +219,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->pending_yield_from_generator =
         caller_runtime->pending_yield_from_generator;
     runtime->pending_yield_from_line = caller_runtime->pending_yield_from_line;
+    runtime->implicit_generator_foreach_rewind =
+        caller_runtime->implicit_generator_foreach_rewind;
+    runtime->implicit_generator_foreach_source_path =
+        caller_runtime->implicit_generator_foreach_source_path;
+    runtime->implicit_generator_foreach_line =
+        caller_runtime->implicit_generator_foreach_line;
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
@@ -2496,7 +2502,17 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
         runtime->current_generator != NULL &&
         !runtime->generator_aborted_after_yield
     ) {
+        int implicit_foreach_rewind = runtime->implicit_generator_foreach_rewind;
+        const char *foreach_source_path = runtime->implicit_generator_foreach_source_path != NULL
+            ? runtime->implicit_generator_foreach_source_path
+            : runtime->source_path;
+        size_t foreach_line = runtime->implicit_generator_foreach_line != 0
+            ? runtime->implicit_generator_foreach_line
+            : runtime->call_site_line;
         PtnValue generator_frame = ptn_array_from_literal_entries(0, NULL);
+        if (implicit_foreach_rewind || runtime->suppress_generator_rewind_trace_frame) {
+            ptn_generator_trace_set_file_line(generator_frame, foreach_source_path, foreach_line);
+        }
         ptn_array_set_entry(
             generator_frame.as.array,
             ptn_array_string_key("function"),
@@ -2508,24 +2524,14 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
             ptn_array_from_literal_entries(0, NULL)
         );
         if (runtime->suppress_generator_rewind_trace_frame) {
-            if (runtime->source_path != NULL) {
-                ptn_array_set_entry(
-                    generator_frame.as.array,
-                    ptn_array_string_key("file"),
-                    ptn_owned_string(ptn_duplicate_string(runtime->source_path))
-                );
-            }
-            if (runtime->call_site_line <= (size_t)INT64_MAX) {
-                ptn_array_set_entry(
-                    generator_frame.as.array,
-                    ptn_array_string_key("line"),
-                    ptn_int((int64_t)runtime->call_site_line)
-                );
-            }
             ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);
             return trace;
         }
         ptn_array_set_entry(trace.as.array, ptn_array_int_key(0), generator_frame);
+
+        if (implicit_foreach_rewind) {
+            return trace;
+        }
 
         PtnValue method_frame = ptn_array_from_literal_entries(0, NULL);
         if (runtime->source_path != NULL) {

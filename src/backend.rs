@@ -27309,6 +27309,9 @@ fn emit_instruction(
             let suppress_generator_rewind_trace_temp = values.next_temp();
             let suppress_generator_rewind_trace_frame_temp = values.next_temp();
             let suppress_generator_rewind_trace_frame_active_temp = values.next_temp();
+            let implicit_generator_foreach_rewind_temp = values.next_temp();
+            let implicit_generator_foreach_source_path_temp = values.next_temp();
+            let implicit_generator_foreach_line_temp = values.next_temp();
             out.push_str("    PtnArrayIterator ");
             out.push_str(&iterator_temp);
             out.push_str(";\n");
@@ -27335,6 +27338,15 @@ fn emit_instruction(
             out.push_str("    int ");
             out.push_str(&suppress_generator_rewind_trace_temp);
             out.push_str(" = runtime.suppress_generator_rewind_trace_frame;\n");
+            out.push_str("    int ");
+            out.push_str(&implicit_generator_foreach_rewind_temp);
+            out.push_str(" = runtime.implicit_generator_foreach_rewind;\n");
+            out.push_str("    const char *");
+            out.push_str(&implicit_generator_foreach_source_path_temp);
+            out.push_str(" = runtime.implicit_generator_foreach_source_path;\n");
+            out.push_str("    size_t ");
+            out.push_str(&implicit_generator_foreach_line_temp);
+            out.push_str(" = runtime.implicit_generator_foreach_line;\n");
             out.push_str("    PtnTryFrame ");
             out.push_str(&suppress_generator_rewind_trace_frame_temp);
             out.push_str(";\n");
@@ -27357,10 +27369,26 @@ fn emit_instruction(
             out.push_str("            runtime.suppress_generator_rewind_trace_frame = ");
             out.push_str(&suppress_generator_rewind_trace_temp);
             out.push_str(";\n");
+            out.push_str("            runtime.implicit_generator_foreach_rewind = ");
+            out.push_str(&implicit_generator_foreach_rewind_temp);
+            out.push_str(";\n");
+            out.push_str("            runtime.implicit_generator_foreach_source_path = ");
+            out.push_str(&implicit_generator_foreach_source_path_temp);
+            out.push_str(";\n");
+            out.push_str("            runtime.implicit_generator_foreach_line = ");
+            out.push_str(&implicit_generator_foreach_line_temp);
+            out.push_str(";\n");
             out.push_str("            ptn_rethrow_exception(&runtime);\n");
             out.push_str("        }\n");
             out.push_str("    }\n");
             out.push_str("    runtime.suppress_generator_rewind_trace_frame = 1;\n");
+            out.push_str("    runtime.implicit_generator_foreach_rewind = 1;\n");
+            out.push_str("    runtime.implicit_generator_foreach_source_path = \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\";\n");
+            out.push_str("    runtime.implicit_generator_foreach_line = ");
+            out.push_str(&line.to_string());
+            out.push_str(";\n");
             let value_list_has_reference = matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
             let iterator_needs_reference = *value_by_ref || value_list_has_reference;
             let iterable_temp = if iterator_needs_reference {
@@ -27460,6 +27488,15 @@ fn emit_instruction(
             };
             out.push_str("    runtime.suppress_generator_rewind_trace_frame = ");
             out.push_str(&suppress_generator_rewind_trace_temp);
+            out.push_str(";\n");
+            out.push_str("    runtime.implicit_generator_foreach_rewind = ");
+            out.push_str(&implicit_generator_foreach_rewind_temp);
+            out.push_str(";\n");
+            out.push_str("    runtime.implicit_generator_foreach_source_path = ");
+            out.push_str(&implicit_generator_foreach_source_path_temp);
+            out.push_str(";\n");
+            out.push_str("    runtime.implicit_generator_foreach_line = ");
+            out.push_str(&implicit_generator_foreach_line_temp);
             out.push_str(";\n");
             out.push_str("    if (");
             out.push_str(&suppress_generator_rewind_trace_frame_active_temp);
@@ -28062,6 +28099,9 @@ fn emit_try(
         out.push_str(&saved_called_class_override_temp);
         out.push_str(";\n");
         out.push_str("                runtime.warn_by_ref_argument_mismatch = 0;\n");
+        out.push_str("                runtime.implicit_generator_foreach_rewind = 0;\n");
+        out.push_str("                runtime.implicit_generator_foreach_source_path = NULL;\n");
+        out.push_str("                runtime.implicit_generator_foreach_line = 0;\n");
         out.push_str("                runtime.throw_argument_count_errors = 0;\n");
         emit_exceptional_finally_and_rethrow(
             out,
@@ -28119,6 +28159,9 @@ fn emit_try(
     out.push_str(&saved_called_class_override_temp);
     out.push_str(";\n");
     out.push_str("            runtime.warn_by_ref_argument_mismatch = 0;\n");
+    out.push_str("            runtime.implicit_generator_foreach_rewind = 0;\n");
+    out.push_str("            runtime.implicit_generator_foreach_source_path = NULL;\n");
+    out.push_str("            runtime.implicit_generator_foreach_line = 0;\n");
     out.push_str("            runtime.throw_argument_count_errors = 0;\n");
     out.push_str("            ");
     out.push_str(&caught_temp);

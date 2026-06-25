@@ -2583,6 +2583,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->pending_generator_assignment_name = NULL;
     runtime->pending_yield_from_generator = NULL;
     runtime->pending_yield_from_line = 0;
+    runtime->implicit_generator_foreach_rewind = 0;
+    runtime->implicit_generator_foreach_source_path = NULL;
+    runtime->implicit_generator_foreach_line = 0;
     runtime->generator_aborted_after_yield = 0;
     runtime->generator_aborted_rethrow_on_rewind = 0;
     runtime->generator_chained_exception_during_unwind = 0;
