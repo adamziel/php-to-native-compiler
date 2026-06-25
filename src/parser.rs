@@ -23406,6 +23406,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "gztell"
             | "gzwrite"
             | "hash"
+            | "hash_algos"
             | "hash_copy"
             | "hash_equals"
             | "hash_file"

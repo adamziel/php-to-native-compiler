@@ -10605,6 +10605,13 @@ static int ptn_serialize_object_is_plain_root_user_class(PtnSerializeState *stat
 }
 
 static int ptn_serialize_append_uri_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state);
+static PtnValue ptn_hash_context_serialize_payload(PtnRuntime *runtime, PtnObject *object, size_t line);
+static void ptn_serialize_append_object_payload(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnValue payload,
+    PtnSerializeState *state
+);
 static int ptn_date_value_is_uninitialized_descendant(PtnValue value, const char *ancestor);
 static void ptn_date_throw_uninitialized_object_error(
     PtnRuntime *runtime,
@@ -10742,6 +10749,23 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     if (ptn_serialize_append_uri_object(buffer, object, state)) {
         return 1;
     }
+    if (object != NULL && ptn_internal_class_name_is_hash_context(object->class_name)) {
+        PtnValue payload = ptn_hash_context_serialize_payload(
+            state == NULL ? NULL : state->runtime,
+            object,
+            state == NULL ? 0 : state->line
+        );
+        if (state != NULL &&
+            state->runtime != NULL &&
+            state->runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&payload);
+            ptn_string_buffer_append(buffer, "N;");
+            return 0;
+        }
+        ptn_serialize_append_object_payload(buffer, object, payload, state);
+        ptn_value_destroy(&payload);
+        return 1;
+    }
     int handled_magic_serialize = 0;
     int magic_serialize_referenceable =
         ptn_serialize_append_magic_serialize_object(buffer, object, state, &handled_magic_serialize);
@@ -10813,6 +10837,32 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     ptn_serialize_append_regular_object(buffer, object, state);
     return 1;
+}
+
+static void ptn_serialize_append_object_payload(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnValue payload,
+    PtnSerializeState *state
+) {
+    PtnValue payload_value = ptn_value_deref(payload);
+    if (object == NULL || payload_value.type != PTN_ARRAY) {
+        ptn_string_buffer_append(buffer, "N;");
+        return;
+    }
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        payload_value.as.array->len
+    );
+    for (size_t i = 0; i < payload_value.as.array->len; i++) {
+        PtnArrayEntry *entry = &payload_value.as.array->entries[i];
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_string_buffer_append_char(buffer, '}');
 }
 
 static int ptn_serialize_append_value_with_id(
@@ -13230,6 +13280,9 @@ static int ptn_unserialize_declared_magic_method_exists(
     }
     if (ptn_internal_class_name_is_bcmath_number(resolved.as.object->class_name)) {
         return ptn_internal_class_method_exists("BcMath\\Number", "__unserialize");
+    }
+    if (ptn_internal_class_name_is_hash_context(resolved.as.object->class_name)) {
+        return ptn_internal_class_method_exists("HashContext", "__unserialize");
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
@@ -62302,6 +62355,23 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
         ptn_text_operand_ascii_case_equal(algo, "adler32");
 }
 
+static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
+    "md5",
+    "sha1",
+    "crc32",
+    "crc32b",
+    "adler32",
+};
+
+static int ptn_hash_algorithm_name_is_supported(const char *algo) {
+    for (size_t i = 0; i < sizeof(PTN_HASH_SUPPORTED_ALGOS) / sizeof(PTN_HASH_SUPPORTED_ALGOS[0]); i++) {
+        if (ptn_ascii_case_equal(algo, PTN_HASH_SUPPORTED_ALGOS[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
     return ptn_ascii_case_equal(algo, "md5") ||
         ptn_ascii_case_equal(algo, "sha1");
@@ -62335,6 +62405,278 @@ static void ptn_hash_throw_invalid_crypto_algorithm(PtnRuntime *runtime, const c
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
+static PtnArrayEntry *ptn_hash_context_payload_entry(PtnArray *payload, int64_t key) {
+    return ptn_array_entry_for_key(payload, ptn_array_int_key(key));
+}
+
+static void ptn_hash_context_throw_serialize_error(PtnRuntime *runtime, const char *message) {
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static void ptn_hash_context_throw_ill_formed(PtnRuntime *runtime) {
+    ptn_hash_context_throw_serialize_error(runtime, "Incomplete or ill-formed serialization data");
+}
+
+static void ptn_hash_context_throw_ill_formed_code(PtnRuntime *runtime, const char *algo, int code) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Incomplete or ill-formed serialization data (\"%s\" code %d)",
+        algo,
+        code
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_hash_context_throw_serialize_error(runtime, message);
+}
+
+static PtnValue ptn_hash_context_serialize_payload(PtnRuntime *runtime, PtnObject *object, size_t line) {
+    (void)line;
+    if (object == NULL || !ptn_internal_class_name_is_hash_context(object->class_name)) {
+        return ptn_null();
+    }
+    PtnHashContextData *data = (PtnHashContextData *)object->native_data;
+    if (data == NULL || data->finalized) {
+        ptn_throw_exception(runtime, "ValueError", "HashContext is not a valid, non-finalized HashContext");
+        return ptn_null();
+    }
+    if (data->hmac) {
+        ptn_hash_context_throw_serialize_error(runtime, "HashContext with HASH_HMAC option cannot be serialized");
+        return ptn_null();
+    }
+
+    PtnValue state = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(state.as.array, ptn_array_int_key(0), ptn_string("ptn"));
+    ptn_array_set_entry(
+        state.as.array,
+        ptn_array_int_key(1),
+        ptn_owned_string_len(
+            ptn_duplicate_string_len((const char *)data->data, data->data_len),
+            data->data_len
+        )
+    );
+
+    PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        payload.as.array,
+        ptn_array_int_key(0),
+        ptn_owned_string(ptn_duplicate_string(data->algo))
+    );
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(1), ptn_int(0));
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(2), state);
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(3), ptn_int(2));
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(4), ptn_array_from_literal_entries(0, NULL));
+    return payload;
+}
+
+static int ptn_hash_context_payload_string(
+    PtnArray *payload,
+    int64_t key,
+    PtnStringOperand *string_out
+) {
+    PtnArrayEntry *entry = ptn_hash_context_payload_entry(payload, key);
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_STRING) {
+        return 0;
+    }
+    *string_out = (PtnStringOperand){
+        (const char *)value.as.string.data,
+        NULL,
+        value.as.string.len
+    };
+    return 1;
+}
+
+static int ptn_hash_context_payload_int(PtnArray *payload, int64_t key, int64_t *int_out) {
+    PtnArrayEntry *entry = ptn_hash_context_payload_entry(payload, key);
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_INT) {
+        return 0;
+    }
+    *int_out = value.as.integer;
+    return 1;
+}
+
+static int ptn_hash_context_unserialize_payload(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue payload_value
+) {
+    receiver = ptn_value_deref(receiver);
+    payload_value = ptn_value_deref(payload_value);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_hash_context(receiver.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid HashContext object");
+        return 0;
+    }
+    if (receiver.as.object->native_data != NULL) {
+        ptn_hash_context_throw_serialize_error(runtime, "HashContext::__unserialize called on initialized object");
+        return 0;
+    }
+    if (payload_value.type != PTN_ARRAY) {
+        ptn_hash_context_throw_ill_formed(runtime);
+        return 0;
+    }
+
+    PtnArray *payload = payload_value.as.array;
+    PtnStringOperand algo_operand = { 0 };
+    if (!ptn_hash_context_payload_string(payload, 0, &algo_operand)) {
+        ptn_hash_context_throw_ill_formed(runtime);
+        return 0;
+    }
+    char *algo = ptn_duplicate_string_len(algo_operand.data, algo_operand.len);
+
+    int64_t flags = 0;
+    if (!ptn_hash_context_payload_int(payload, 1, &flags)) {
+        free(algo);
+        ptn_hash_context_throw_ill_formed(runtime);
+        return 0;
+    }
+    if ((flags & PTN_HASH_HMAC) != 0) {
+        free(algo);
+        ptn_hash_context_throw_serialize_error(runtime, "HashContext with HASH_HMAC option cannot be serialized");
+        return 0;
+    }
+
+    if (!ptn_hash_algorithm_name_is_supported(algo)) {
+        int known_but_unimplemented = ptn_ascii_case_equal(algo, "xxh32") ||
+            ptn_ascii_case_equal(algo, "xxh64") ||
+            ptn_ascii_case_equal(algo, "sha256");
+        if (!known_but_unimplemented) {
+            free(algo);
+            ptn_hash_context_throw_serialize_error(runtime, "Unknown hash algorithm");
+            return 0;
+        }
+    }
+
+    int64_t magic = 0;
+    if (!ptn_hash_context_payload_int(payload, 3, &magic) || magic != 2) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, -1);
+        free(algo);
+        return 0;
+    }
+
+    PtnArrayEntry *state_entry = ptn_hash_context_payload_entry(payload, 2);
+    if (state_entry == NULL) {
+        ptn_hash_context_throw_ill_formed(runtime);
+        free(algo);
+        return 0;
+    }
+    PtnValue state = ptn_value_deref(state_entry->value);
+    if (state.type != PTN_ARRAY) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, -1);
+        free(algo);
+        return 0;
+    }
+    if (ptn_ascii_case_equal(algo, "xxh32") || ptn_ascii_case_equal(algo, "xxh64")) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, -2000);
+        free(algo);
+        return 0;
+    }
+
+    PtnStringOperand marker = { 0 };
+    if (!ptn_hash_context_payload_string(state.as.array, 0, &marker) ||
+        marker.len != 3 ||
+        memcmp(marker.data, "ptn", 3) != 0) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, -1024);
+        free(algo);
+        return 0;
+    }
+    PtnStringOperand buffered = { 0 };
+    if (!ptn_hash_context_payload_string(state.as.array, 1, &buffered)) {
+        ptn_hash_context_throw_ill_formed_code(runtime, algo, -1024);
+        free(algo);
+        return 0;
+    }
+
+    PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->algo = algo;
+    data->hmac = 0;
+    data->key = NULL;
+    data->key_len = 0;
+    data->data = buffered.len == 0
+        ? NULL
+        : (unsigned char *)ptn_duplicate_string_len(buffered.data, buffered.len);
+    data->data_len = buffered.len;
+    data->data_capacity = buffered.len;
+    data->finalized = 0;
+    receiver.as.object->native_data = data;
+    receiver.as.object->native_data_free = ptn_hash_context_data_free;
+    ptn_array_set_entry(
+        receiver.as.object->properties,
+        ptn_array_string_key("algo"),
+        ptn_owned_string(ptn_duplicate_string(algo))
+    );
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_hash_context_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "HashContext::__serialize() expects exactly 0 arguments, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        return receiver.type == PTN_OBJECT
+            ? ptn_hash_context_serialize_payload(runtime, receiver.as.object, line)
+            : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "HashContext::__unserialize() expects exactly 1 argument, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        ptn_hash_context_unserialize_payload(runtime, receiver, args[0]);
+        return ptn_null();
+    }
+    ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_hash_algos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(PTN_HASH_SUPPORTED_ALGOS) / sizeof(PTN_HASH_SUPPORTED_ALGOS[0]); i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_string(PTN_HASH_SUPPORTED_ALGOS[i])
+        );
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_init", 1, "algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -62352,7 +62694,8 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         }
     }
     char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
-    if (!ptn_hash_algorithm_is_supported(algo)) {
+    if (!ptn_hash_algorithm_is_supported(algo) &&
+        !ptn_text_operand_ascii_case_equal(algo, "sha256")) {
         ptn_string_operand_free(algo);
         ptn_string_operand_free(key);
         ptn_hash_throw_invalid_algorithm(runtime, "hash_init");
@@ -140068,6 +140411,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "inflate_init", 1, 2, ptn_internal_inflate_init },
         { "hash", 2, 3, ptn_internal_hash },
+        { "hash_algos", 0, 0, ptn_internal_hash_algos },
         { "hash_copy", 1, 1, ptn_internal_hash_copy },
         { "hash_equals", 2, 2, ptn_internal_hash_equals },
         { "hash_file", 2, 4, ptn_internal_hash_file },
@@ -144247,6 +144591,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "round")
             || ptn_ascii_case_equal(method_name, "compare");
     }
+    if (ptn_internal_class_name_is_hash_context(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__unserialize");
+    }
     if (ptn_internal_class_name_is_session_handler(class_name)) {
         return ptn_session_handler_method_exists(method_name);
     }
@@ -145398,6 +145746,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "round",
             "compare",
         };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_hash_context(class_name)) {
+        static const char *const names[] = { "__serialize", "__unserialize" };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }

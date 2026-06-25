@@ -2228,6 +2228,14 @@ static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED PtnValue ptn_hash_context_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name);
 static PTN_UNUSED int ptn_runtime_interface_exists(
     PtnRuntime *runtime,
