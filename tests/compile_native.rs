@@ -4122,6 +4122,66 @@ fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() 
             }
         )
     ));
+
+    let program = parser::parse("<?php ++$value > 2; $value-- > 2; $items[$key]++ > 2;").unwrap();
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Expression {
+            expression:
+                Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left,
+                    ..
+                },
+            ..
+        } if matches!(
+            left.as_ref(),
+            Expr::IncDec {
+                op: IncDecOp::Increment,
+                result: IncDecResult::Pre,
+                ..
+            }
+        )
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Expression {
+            expression:
+                Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left,
+                    ..
+                },
+            ..
+        } if matches!(
+            left.as_ref(),
+            Expr::IncDec {
+                op: IncDecOp::Decrement,
+                result: IncDecResult::Post,
+                ..
+            }
+        )
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Expression {
+            expression:
+                Expr::Binary {
+                    op: BinaryOp::Greater,
+                    left,
+                    ..
+                },
+            ..
+        } if matches!(
+            left.as_ref(),
+            Expr::IncDec {
+                target: IncDecTarget::ArrayDim(_),
+                op: IncDecOp::Increment,
+                result: IncDecResult::Post,
+                ..
+            }
+        )
+    ));
 }
 
 #[test]
@@ -68313,6 +68373,42 @@ fn compile_increment_and_decrement_expression_results_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "2:2\n2:3\n2:2\n2:1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_inc_dec_object_operand_comparison_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-inc-dec-object-comparison-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("inc-dec-object-comparison-errors.php");
+    let output = root.join("inc-dec-object-comparison-errors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Foo {\n\
+    public function preInc() { ++$this > 42; }\n\
+    public function preDec() { --$this > 42; }\n\
+    public function postInc() { $this++ > 42; }\n\
+    public function postDec() { $this-- > 42; }\n\
+}\n\
+$foo = new Foo();\n\
+foreach ([\"pre\", \"post\"] as $prePost) {\n\
+    foreach ([\"inc\", \"dec\"] as $incDec) {\n\
+        try { $foo->{$prePost . ucfirst($incDec)}(); }\n\
+        catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    }\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot increment Foo\nCannot decrement Foo\nCannot increment Foo\nCannot decrement Foo\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -5269,27 +5269,35 @@ impl Parser<'_> {
         match self.peek().kind {
             TokenKind::PlusPlus => {
                 self.advance();
-                self.expect_statement_terminator()?;
-                return Ok(Statement::Increment {
-                    target: IncDecTarget::Variable {
-                        name,
+                if self.peek_is_statement_terminator() {
+                    self.expect_statement_terminator()?;
+                    return Ok(Statement::Increment {
+                        target: IncDecTarget::Variable {
+                            name,
+                            span: token.span,
+                        },
+                        op: IncDecOp::Increment,
                         span: token.span,
-                    },
-                    op: IncDecOp::Increment,
-                    span: token.span,
-                });
+                    });
+                }
+                self.index = start;
+                return self.parse_expression_statement();
             }
             TokenKind::MinusMinus => {
                 self.advance();
-                self.expect_statement_terminator()?;
-                return Ok(Statement::Increment {
-                    target: IncDecTarget::Variable {
-                        name,
+                if self.peek_is_statement_terminator() {
+                    self.expect_statement_terminator()?;
+                    return Ok(Statement::Increment {
+                        target: IncDecTarget::Variable {
+                            name,
+                            span: token.span,
+                        },
+                        op: IncDecOp::Decrement,
                         span: token.span,
-                    },
-                    op: IncDecOp::Decrement,
-                    span: token.span,
-                });
+                    });
+                }
+                self.index = start;
+                return self.parse_expression_statement();
             }
             _ => {}
         }
@@ -5298,25 +5306,33 @@ impl Parser<'_> {
             match self.peek().kind {
                 TokenKind::PlusPlus => {
                     self.advance();
-                    self.expect_statement_terminator()?;
                     let target = IncDecTarget::ArrayDim(target);
                     reject_append_array_read_in_inc_dec_target(&target)?;
-                    return Ok(Statement::Increment {
-                        target,
-                        op: IncDecOp::Increment,
-                        span: token.span,
-                    });
+                    if self.peek_is_statement_terminator() {
+                        self.expect_statement_terminator()?;
+                        return Ok(Statement::Increment {
+                            target,
+                            op: IncDecOp::Increment,
+                            span: token.span,
+                        });
+                    }
+                    self.index = start;
+                    return self.parse_expression_statement();
                 }
                 TokenKind::MinusMinus => {
                     self.advance();
-                    self.expect_statement_terminator()?;
                     let target = IncDecTarget::ArrayDim(target);
                     reject_append_array_read_in_inc_dec_target(&target)?;
-                    return Ok(Statement::Increment {
-                        target,
-                        op: IncDecOp::Decrement,
-                        span: token.span,
-                    });
+                    if self.peek_is_statement_terminator() {
+                        self.expect_statement_terminator()?;
+                        return Ok(Statement::Increment {
+                            target,
+                            op: IncDecOp::Decrement,
+                            span: token.span,
+                        });
+                    }
+                    self.index = start;
+                    return self.parse_expression_statement();
                 }
                 _ => {}
             }
@@ -5480,20 +5496,27 @@ impl Parser<'_> {
     }
 
     fn parse_prefix_increment_statement(&mut self) -> Result<Statement> {
-        let op_token = self.advance().clone();
-        let op = match op_token.kind {
-            TokenKind::PlusPlus => IncDecOp::Increment,
-            TokenKind::MinusMinus => IncDecOp::Decrement,
-            _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
-        };
-        let target = inc_dec_target_from_expr(self.parse_postfix_expr()?, op_token.span)?;
-        reject_append_array_read_in_inc_dec_target(&target)?;
+        let expression = self.parse_expr()?;
+        let span = expression.span();
+        if matches!(self.peek().kind, TokenKind::Question) {
+            return self.reject_unsupported_ternary_expression();
+        }
+        if self.peek_is_assignment_op() {
+            return Err(Diagnostic::new(
+                "expected assignment",
+                Some(self.peek().span),
+            ));
+        }
         self.expect_statement_terminator()?;
-        Ok(Statement::Increment {
-            target,
-            op,
-            span: op_token.span,
-        })
+        match expression {
+            Expr::IncDec {
+                target,
+                op,
+                result: IncDecResult::Pre,
+                ..
+            } => Ok(Statement::Increment { target, op, span }),
+            expression => Ok(Statement::Expression { expression, span }),
+        }
     }
 
     fn parse_echo(&mut self) -> Result<Statement> {
