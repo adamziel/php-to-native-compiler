@@ -2513,6 +2513,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->property_hook_set = NULL;
     runtime->active_property_hook_class = NULL;
     runtime->active_property_hook_property = NULL;
+    runtime->active_property_hook_object = NULL;
     runtime->class_constant_initializer = NULL;
     runtime->static_property_initializer = NULL;
     runtime->new_instance_without_constructor = NULL;

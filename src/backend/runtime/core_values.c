@@ -1533,6 +1533,7 @@ struct PtnRuntime {
     PtnPropertyHookSetHandler property_hook_set;
     const char *active_property_hook_class;
     const char *active_property_hook_property;
+    PtnObject *active_property_hook_object;
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnStaticPropertyInitializerHandler static_property_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;

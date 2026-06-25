@@ -14615,6 +14615,7 @@ fn emit_property_hook_get_helper(
             out.push_str("        runtime.active_property_hook_property = \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\";\n");
+            out.push_str("        runtime.active_property_hook_object = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object : NULL;\n");
 
             let mut values = ValueEmitter::new_with_scope(
                 source_file,
@@ -14869,6 +14870,7 @@ fn emit_property_hook_set_helper(
             out.push_str("        runtime.active_property_hook_property = \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\";\n");
+            out.push_str("        runtime.active_property_hook_object = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object : NULL;\n");
 
             let mut values = ValueEmitter::new_with_scope(
                 source_file,
@@ -20496,6 +20498,32 @@ fn inherited_property_with_hook<'a>(
                 } else {
                     candidate.hook_has_set
                 }
+        }) {
+            return Some((parent.name.as_str(), property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn inherited_backing_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a str, &'a crate::ir::PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name == property_name
+                && !candidate.is_virtual
         }) {
             return Some((parent.name.as_str(), property));
         }
@@ -43771,6 +43799,10 @@ impl ValueEmitter {
                 .and_then(|class| effective_property_hook(class, &property, &self.classes, "get"));
             let effective_hook_set = hook_metadata_class
                 .and_then(|class| effective_property_hook(class, &property, &self.classes, "set"));
+            let has_inherited_backing_property = hook_metadata_class
+                .and_then(|class| inherited_backing_property(class, &property.name, &self.classes))
+                .is_some();
+            let runtime_is_virtual = property.is_virtual && !has_inherited_backing_property;
             let effective_hook_has_get = effective_hook_get.is_some() || property.hook_has_get;
             let effective_hook_has_set = effective_hook_set.is_some() || property.hook_has_set;
             let hook_get_declaring_class = effective_hook_get
@@ -43805,7 +43837,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if property.has_hooks { "1" } else { "0" });
             out.push_str(", ");
-            out.push_str(if property.is_virtual { "1" } else { "0" });
+            out.push_str(if runtime_is_virtual { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(if effective_hook_has_get { "1" } else { "0" });
             out.push_str(", ");
@@ -43843,7 +43875,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(if property.has_hooks && property.is_virtual {
+            out.push_str(if property.has_hooks && runtime_is_virtual {
                 "0"
             } else if property.type_hint.is_some()
                 && property.value.is_none()

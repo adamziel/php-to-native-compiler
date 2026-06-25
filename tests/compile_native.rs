@@ -76185,6 +76185,128 @@ var_dump($default->prop);
 }
 
 #[test]
+fn compile_property_hook_inherited_backing_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-inherited-backing-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-inherited-backing-defaults.php");
+    let output = root.join("property-hook-inherited-backing-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public $prop;
+}
+
+class B extends A {
+    public $prop {
+        set {}
+    }
+}
+
+$b = new B;
+var_dump($b->prop);
+
+class P {
+    public $a = 1;
+    public int $b = 1;
+    public $c = 1;
+    public int $d = 1;
+}
+
+class C extends P {
+    public $a { get => parent::$a::get(); }
+    public int $b { get => parent::$b::get(); }
+    public $c = 2 { get => parent::$c::get(); }
+    public int $d = 2 { get => parent::$d::get(); }
+}
+
+class GC extends C {
+    public $a { get => parent::$a::get(); }
+    public int $b { get => parent::$b::get(); }
+    public $c { get => parent::$c::get(); }
+    public int $d { get => parent::$d::get(); }
+}
+
+function dump_defaults(P $p) {
+    var_dump($p->a);
+    try {
+        var_dump($p->b);
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+    var_dump($p->c);
+    try {
+        var_dump($p->d);
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+dump_defaults(new C);
+dump_defaults(new GC);
+
+class OtherReceiver {
+    public $switch;
+
+    public $prop = 42 {
+        get {
+            echo __METHOD__, \"\\n\";
+            if ($this->switch) {
+                $other = new OtherReceiver();
+                $other->switch = false;
+            } else {
+                $other = $this;
+            }
+            var_dump($other->prop);
+            return 1;
+        }
+        set => $this->prop;
+    }
+}
+
+$other = new OtherReceiver();
+$other->switch = true;
+var_dump($other->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "NULL\n",
+            "Typed property C::$b must not be accessed before initialization\n",
+            "int(2)\n",
+            "int(2)\n",
+            "NULL\n",
+            "Typed property GC::$b must not be accessed before initialization\n",
+            "NULL\n",
+            "Typed property GC::$d must not be accessed before initialization\n",
+            "OtherReceiver::$prop::get\n",
+            "OtherReceiver::$prop::get\n",
+            "int(42)\n",
+            "int(1)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("active_property_hook_object"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+}
+
+#[test]
 fn compile_property_hook_field_backing_reference_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-field-reference");
     fs::create_dir_all(&root).unwrap();
