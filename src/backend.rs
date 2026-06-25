@@ -18994,6 +18994,7 @@ fn emit_class_method_signature_compatibility_validation(
         class,
         classes,
         functions,
+        class_index,
         source_path,
     );
 }
@@ -19061,6 +19062,7 @@ fn emit_tentative_internal_return_signature_deprecations(
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    class_index: usize,
     _source_path: &str,
 ) {
     for method in &class.methods {
@@ -19121,6 +19123,15 @@ fn emit_tentative_internal_return_signature_deprecations(
             tentative_method.class_name,
             tentative_method.signature
         );
+        out.push_str(
+            "        if (runtime.declared_user_classes != NULL && runtime.declared_user_classes[",
+        );
+        out.push_str(&class_index.to_string());
+        out.push_str("] == 2) {\n");
+        out.push_str("            runtime.declared_user_classes[");
+        out.push_str(&class_index.to_string());
+        out.push_str("] = 1;\n");
+        out.push_str("        }\n");
         out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", \"");
@@ -19736,18 +19747,50 @@ fn runtime_object_compatibility_class_names(
     if !type_hint_accepts_object_directly(target) {
         return Vec::new();
     }
-    if let TypeHint::Intersection(types) = candidate {
-        if types
-            .iter()
-            .any(|member| runtime_type_hint_has_available_object_member(member, classes))
-        {
-            return Vec::new();
-        }
-    }
     let mut seen = HashSet::new();
     let mut names = Vec::new();
-    collect_runtime_variance_type_names(candidate, &mut seen, &mut names);
+    collect_runtime_object_compatibility_class_names(candidate, classes, &mut seen, &mut names);
     names
+}
+
+fn collect_runtime_object_compatibility_class_names(
+    candidate: &TypeHint,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    match candidate {
+        TypeHint::Nullable(inner) => {
+            collect_runtime_object_compatibility_class_names(inner, classes, seen, names)
+        }
+        TypeHint::Union(types) => {
+            for member in types {
+                collect_runtime_object_compatibility_class_names(member, classes, seen, names);
+            }
+        }
+        TypeHint::Intersection(types)
+            if types
+                .iter()
+                .any(|member| runtime_type_hint_has_available_object_member(member, classes)) => {}
+        TypeHint::Intersection(_) | TypeHint::Class(_) => {
+            collect_runtime_variance_type_names(candidate, seen, names);
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Callable
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static => {}
+    }
 }
 
 fn runtime_type_hint_has_available_object_member(
@@ -20073,6 +20116,12 @@ fn runtime_type_hint_static_subtype(
                     classes,
                 )
         }
+        (TypeHint::Iterable, _) => runtime_iterable_static_subtype(target, current_class, classes),
+        (_, TypeHint::Iterable) => {
+            let traversable = TypeHint::Class("Traversable".to_string());
+            runtime_type_hint_static_subtype(candidate, &TypeHint::Array, current_class, classes)
+                || runtime_type_hint_static_subtype(candidate, &traversable, current_class, classes)
+        }
         (TypeHint::Union(types), _) => types
             .iter()
             .all(|member| runtime_type_hint_static_subtype(member, target, current_class, classes)),
@@ -20085,12 +20134,6 @@ fn runtime_type_hint_static_subtype(
         (TypeHint::Intersection(types), _) => types
             .iter()
             .any(|member| runtime_type_hint_static_subtype(member, target, current_class, classes)),
-        (TypeHint::Iterable, _) => runtime_iterable_static_subtype(target, current_class, classes),
-        (_, TypeHint::Iterable) => {
-            let traversable = TypeHint::Class("Traversable".to_string());
-            runtime_type_hint_static_subtype(candidate, &TypeHint::Array, current_class, classes)
-                || runtime_type_hint_static_subtype(candidate, &traversable, current_class, classes)
-        }
         (TypeHint::True | TypeHint::False, TypeHint::Bool) => true,
         (TypeHint::Class(candidate_name), TypeHint::Callable)
             if candidate_name

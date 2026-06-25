@@ -11310,6 +11310,15 @@ class StringChild extends StringParent {
 }
 
 #[test]
+fn parser_reports_intersection_property_null_default_with_property_name() {
+    let error = parser::parse("<?php class Test { public X&Y $y = null; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot use null as default value for property Test::$y of type X&Y"
+    );
+}
+
+#[test]
 fn parser_rejects_invalid_property_hook_contracts() {
     let cases = [
         (
@@ -93288,6 +93297,30 @@ class ObjectChild extends ObjectParent {
     public function method3(): MissingX&Y {}
 }
 
+class IterableVarianceParent {
+    public function method1(): mixed {}
+    public function method2(): array|object {}
+    public function method3(iterable $x) {}
+    public function method4(iterable $x) {}
+}
+class IterableVarianceChild extends IterableVarianceParent {
+    public function method1(): iterable {}
+    public function method2(): iterable {}
+    public function method3(mixed $x) {}
+    public function method4(array|object $x) {}
+}
+
+class ObjectDnfUnionParent {
+    public function method1(): object {}
+    public function method2(): object|int {}
+    public function method3(): Y|int {}
+}
+class ObjectDnfUnionChild extends ObjectDnfUnionParent {
+    public function method1(): (MissingValidX&Y)|Countable {}
+    public function method2(): (MissingValidX&Y)|int {}
+    public function method3(): (MissingValidX&Y)|int {}
+}
+
 abstract class MyIterator implements Traversable {}
 class IterableParent {
     public function method(): iterable {}
@@ -93315,6 +93348,89 @@ echo "===DONE===\n";
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_literal_eval_static_return_incompatibility_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-eval-static-return-lsp");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-eval-static-return-lsp.php");
+    let output = root.join("literal-eval-static-return-lsp-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A {
+    public function duplicate(): static {}
+}
+
+class C {
+    public static function generate() {
+        eval('class B extends A { public function duplicate(): A {} }');
+    }
+}
+
+C::generate();
+echo "unreached\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Declaration of B::duplicate(): A must be compatible with A::duplicate(): static"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("eval()'d code on line "), "{stderr}");
+}
+
+#[test]
+fn compile_tentative_return_deprecation_exception_keeps_declared_class_to_native_binary() {
+    let root = temp_dir("ptn-native-tentative-return-deprecation-catch-declared");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tentative-return-deprecation-catch-declared.php");
+    let output = root.join("tentative-return-deprecation-catch-declared-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $message) {
+    throw new Exception($message);
+});
+
+try {
+    class C extends DateTime {
+        public function getTimezone() {}
+        public function getTimestamp() {}
+    };
+} catch (Exception $e) {
+    echo $e::class, "\n";
+}
+
+var_dump(class_exists('C', false));
+var_dump(new C() instanceof C);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception\nbool(true)\nbool(true)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

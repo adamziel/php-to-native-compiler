@@ -1866,6 +1866,7 @@ impl Parser<'_> {
         let span = combine_spans(declaration_start_span, right_span);
         Ok(ClassDecl {
             name: class_name,
+            source_file: None,
             parent_name,
             interfaces,
             trait_uses,
@@ -2079,6 +2080,7 @@ impl Parser<'_> {
         let right_span = self.expect_right_brace()?;
         Ok(ClassDecl {
             name: class_name,
+            source_file: None,
             parent_name: None,
             interfaces,
             trait_uses,
@@ -6592,9 +6594,14 @@ impl Parser<'_> {
             starts_class_alias_call || source_contains_ascii_keyword(&lower_source, "class_alias");
         let starts_typed_property_class =
             starts_class && source_may_contain_class_property_declaration(&lower_source);
+        let starts_class_needing_declaration_validation = starts_class
+            && (source_contains_ascii_keyword(&lower_source, "extends")
+                || source_contains_ascii_keyword(&lower_source, "implements")
+                || source_contains_ascii_keyword(&lower_source, "function"));
         if starts_class
             && !source_contains_ascii_keyword(&lower_source, "use")
             && !starts_typed_property_class
+            && !starts_class_needing_declaration_validation
             && !may_contain_class_alias_call
         {
             return Ok(None);
@@ -6612,7 +6619,7 @@ impl Parser<'_> {
             &self.runtime_class_aliases,
             &self.eval_visible_classes,
             &self.eval_visible_traits,
-            self.validate_method_signatures,
+            false,
         )?;
         for statement in &eval_program.statements {
             self.note_runtime_class_alias_statement(statement);
@@ -6691,7 +6698,13 @@ impl Parser<'_> {
                     .static_properties
                     .iter()
                     .any(|property| property.type_hint.is_some());
-            if class.trait_uses.is_empty() && !has_typed_property {
+            let needs_runtime_declaration_validation = class.parent_name.is_some()
+                || !class.interfaces.is_empty()
+                || !class.methods.is_empty();
+            if class.trait_uses.is_empty()
+                && !has_typed_property
+                && !needs_runtime_declaration_validation
+            {
                 return Ok(None);
             }
             let source = eval_program
@@ -6703,6 +6716,7 @@ impl Parser<'_> {
                 })
                 .unwrap_or_else(|| eval_source.to_string());
             class.is_conditionally_declared = true;
+            class.source_file = Some("__PTN_EVAL_CODE__".to_string());
             let name = class.name.clone();
             self.eval_visible_classes.push(class.clone());
             self.anonymous_classes.push(class);
@@ -9799,6 +9813,7 @@ impl Parser<'_> {
             .to_string();
         self.anonymous_classes.push(ClassDecl {
             name: class_name.clone(),
+            source_file: None,
             parent_name,
             interfaces,
             trait_uses,
@@ -11494,6 +11509,14 @@ fn validate_property_default_value_type(
     }
     let declared_type = property_type_hint_display(type_hint);
     if default_type == "null" {
+        if declared_type.contains('&') {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use null as default value for property {class_name}::${property_name} of type {declared_type}"
+                ),
+                Some(value.span()),
+            ));
+        }
         let nullable_type = nullable_property_type_suggestion(&declared_type);
         return Err(Diagnostic::new(
             format!(
@@ -14578,6 +14601,7 @@ fn import_trait_method_into_method_list(
     let mut imported_method_names = own_method_names.clone();
     let mut pseudo_class = ClassDecl {
         name: trait_decl.name.clone(),
+        source_file: None,
         parent_name: None,
         interfaces: Vec::new(),
         trait_uses: Vec::new(),

@@ -1260,6 +1260,14 @@ fn class_runtime_declaration_key(source_file: &str, name: &str) -> (String, Stri
     (source_file.to_string(), name.to_ascii_lowercase())
 }
 
+fn ast_class_source_file(default_source_file: &str, source_file: Option<&str>) -> String {
+    match source_file {
+        Some("__PTN_EVAL_CODE__") => format!("{default_source_file} : eval()'d code"),
+        Some(source_file) => source_file.to_string(),
+        None => default_source_file.to_string(),
+    }
+}
+
 impl<'a> LoweringContext<'a> {
     fn new(
         program: &Program,
@@ -1319,9 +1327,13 @@ impl<'a> LoweringContext<'a> {
         context
     }
 
-    fn source_file_for_method(&self, method: &crate::ast::MethodDecl) -> String {
+    fn source_file_for_method(
+        &self,
+        method: &crate::ast::MethodDecl,
+        default_source_file: &str,
+    ) -> String {
         let Some(trait_name) = method.trait_name.as_ref() else {
-            return self.source_file.clone();
+            return default_source_file.to_string();
         };
         let trait_method_name = method.trait_method_name.as_ref().unwrap_or(&method.name);
         self.include_trait_method_sources
@@ -1330,7 +1342,7 @@ impl<'a> LoweringContext<'a> {
                 trait_method_name.to_ascii_lowercase(),
             ))
             .cloned()
-            .unwrap_or_else(|| self.source_file.clone())
+            .unwrap_or_else(|| default_source_file.to_string())
     }
 
     fn declare_include_class_names(&mut self, include_sources: &[IncludeSource]) {
@@ -1983,6 +1995,8 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
+        let class_source_file =
+            ast_class_source_file(&self.source_file, class.source_file.as_deref());
         let parent_name = class.parent_name.as_deref();
         let class_attributes =
             self.lower_class_scoped_attribute_metadata(&class.attributes, &class.name, parent_name);
@@ -2188,7 +2202,7 @@ impl<'a> LoweringContext<'a> {
                     class.parent_name.as_deref(),
                     Some(&class_constant_values),
                 );
-                let method_source_file = self.source_file_for_method(method);
+                let method_source_file = self.source_file_for_method(method, &class_source_file);
                 let function_index = self.functions.len();
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
@@ -2252,7 +2266,7 @@ impl<'a> LoweringContext<'a> {
             .collect();
         ClassDecl {
             name: class.name.clone(),
-            source_file: self.source_file.clone(),
+            source_file: class_source_file,
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
             trait_uses: lower_trait_uses(&class.trait_uses),

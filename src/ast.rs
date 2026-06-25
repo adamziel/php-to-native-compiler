@@ -28,6 +28,7 @@ pub enum CompileWarningKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
+    pub source_file: Option<String>,
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
