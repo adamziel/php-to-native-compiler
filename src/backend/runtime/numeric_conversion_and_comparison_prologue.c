@@ -94,6 +94,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_closures = NULL;
     runtime->live_closures_len = 0;
     runtime->live_closures_capacity = 0;
+    runtime->first_class_callable_cache_values = NULL;
+    runtime->first_class_callable_cache_names = NULL;
+    runtime->first_class_callable_cache_len = 0;
+    runtime->first_class_callable_cache_capacity = 0;
     runtime->live_arrays = NULL;
     runtime->live_arrays_len = 0;
     runtime->live_arrays_capacity = 0;
@@ -1071,6 +1075,16 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_closures = NULL;
         runtime->live_closures_len = 0;
         runtime->live_closures_capacity = 0;
+        for (size_t i = 0; i < runtime->first_class_callable_cache_len; i++) {
+            free(runtime->first_class_callable_cache_names[i]);
+            ptn_value_destroy(&runtime->first_class_callable_cache_values[i]);
+        }
+        free(runtime->first_class_callable_cache_names);
+        free(runtime->first_class_callable_cache_values);
+        runtime->first_class_callable_cache_names = NULL;
+        runtime->first_class_callable_cache_values = NULL;
+        runtime->first_class_callable_cache_len = 0;
+        runtime->first_class_callable_cache_capacity = 0;
         free(runtime->live_arrays);
         runtime->live_arrays = NULL;
         runtime->live_arrays_len = 0;

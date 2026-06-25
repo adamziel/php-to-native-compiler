@@ -1420,6 +1420,43 @@ echo new \\ReflectionMethod(Child::class, 'defaults');\n",
 }
 
 #[test]
+fn compile_reflection_method_internal_closure_invoke_parameter_class_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-internal-closure-invoke-parameter-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-internal-closure-invoke-parameter-class.php");
+    let output = root.join("reflection-internal-closure-invoke-parameter-class-bin");
+    fs::write(
+        &input,
+        "<?php
+$closure = (new ReflectionFunction('iterator_to_array'))->getClosure();
+$method = new ReflectionMethod($closure, '__invoke');
+echo $method->getParameters()[0]->getClass()->getName(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout
+        .contains("Deprecated: Method ReflectionParameter::getClass() is deprecated since 8.0"));
+    assert!(stdout.ends_with("Traversable\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS"));
+    assert!(c_source.contains("ptn_reflection_method_object_from_closure"));
+}
+
+#[test]
 fn compile_reflection_default_properties_skip_uninitialized_typed_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-default-typed-properties");
     fs::create_dir_all(&root).unwrap();
@@ -57890,6 +57927,60 @@ var_dump($factory);
 }
 
 #[test]
+fn compile_closure_static_local_unresolved_constant_preview_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-static-local-unresolved-constant-preview");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-static-local-unresolved-constant-preview.php");
+    let output = root.join("closure-static-local-unresolved-constant-preview-bin");
+    fs::write(
+        &input,
+        "<?php
+$closure = function () {
+    static $var = STATIC_PREVIEW_CONST;
+};
+
+var_dump($closure);
+try {
+    $closure();
+} catch (Error $error) {
+    echo $error->getMessage(), \"\\n\";
+}
+
+const STATIC_PREVIEW_CONST = 'foo';
+$closure();
+var_dump($closure);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("[\"var\"]=>\n    NULL"), "{stdout}");
+    assert!(
+        stdout.contains("Undefined constant \"STATIC_PREVIEW_CONST\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"var\"]=>\n    string(3) \"foo\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_read_static_variable_preview_constant"));
+    assert!(c_source.contains("STATIC_PREVIEW_CONST"));
+}
+
+#[test]
 fn compile_closure_object_edges_to_native_binary() {
     let root = temp_dir("ptn-native-closure-object-edges");
     fs::create_dir_all(&root).unwrap();
@@ -74001,6 +74092,52 @@ try {
 }
 
 #[test]
+fn compile_closure_invoke_method_suppresses_type_error_call_site_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-invoke-suppresses-type-error-call-site");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-invoke-suppresses-type-error-call-site.php");
+    let output = root.join("closure-invoke-suppresses-type-error-call-site-bin");
+    fs::write(
+        &input,
+        "<?php
+class InvokeTypeA {}
+class InvokeTypeB {}
+
+$closure = function (InvokeTypeA $value) {};
+$bad = new InvokeTypeB();
+
+foreach ([
+    function () use ($closure, $bad) { $closure($bad); },
+    function () use ($closure, $bad) { $closure->__invoke($bad); },
+    function () use ($closure, $bad) { call_user_func([$closure, '__invoke'], $bad); },
+] as $runner) {
+    try {
+        $runner();
+    } catch (TypeError $error) {
+        echo $error->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert!(lines[0].contains("called in"), "{stdout}");
+    assert!(!lines[1].contains("called in"), "{stdout}");
+    assert!(!lines[2].contains("called in"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("previous_suppress_user_call_frame_location"));
+}
+
+#[test]
 fn compile_closure_from_callable_invocation_and_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-closure-from-callable-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -74723,6 +74860,30 @@ class SecretBox {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_sensitive_parameters"));
     assert!(c_source.contains("ptn_sensitive_parameter_value_new"));
+}
+
+#[test]
+fn compile_first_class_callable_global_function_identity_cache_to_native_binary() {
+    let root = temp_dir("ptn-native-first-class-callable-identity-cache");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-identity-cache.php");
+    let output = root.join("first-class-callable-identity-cache-bin");
+    fs::write(&input, "<?php var_dump(strlen(...) === strlen(...));").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_first_class_callable_wrap_cached_named_function"));
 }
 
 #[test]

@@ -1489,6 +1489,10 @@ struct PtnRuntime {
     PtnClosure **live_closures;
     size_t live_closures_len;
     size_t live_closures_capacity;
+    PtnValue *first_class_callable_cache_values;
+    char **first_class_callable_cache_names;
+    size_t first_class_callable_cache_len;
+    size_t first_class_callable_cache_capacity;
     PtnArray **live_arrays;
     size_t live_arrays_len;
     size_t live_arrays_capacity;

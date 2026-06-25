@@ -141,6 +141,19 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 
+static PTN_UNUSED PtnValue ptn_read_static_variable_preview_constant(PtnRuntime *runtime, const char *name) {
+    if (runtime == NULL) {
+        return ptn_null();
+    }
+    PtnValue value;
+    if (!ptn_runtime_constant_value(runtime, name, &value)) {
+        return ptn_null();
+    }
+    PtnValue copy = ptn_value_clone_deref(value);
+    ptn_value_destroy(&value);
+    return copy;
+}
+
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime);
 static char *ptn_output_buffer_name(PtnOutputBuffer *buffer);
 static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
@@ -142232,6 +142245,10 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "seconds", "int", "?int", 1, 1, 0, 0, 1, NULL, NULL, NULL },
         { "microseconds", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS[] = {
+        { "iterator", "Traversable", "Traversable|array", 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "preserve_keys", "bool", "bool", 0, 1, 0, 0, 1, "true", NULL, NULL },
+    };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",
@@ -142339,6 +142356,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             "int|false",
             0,
             0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "iterator_to_array")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS) /
+                sizeof(PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS,
+            0,
+            "array",
+            "array",
+            0,
+            1
         );
     }
     if (ptn_ascii_case_equal(function->name, "array_slice")) {
@@ -142824,6 +142857,58 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_wrap(PtnRuntime *runtime, Pt
     return ptn_closure_wrap_callable(runtime, callable, metadata);
 }
 
+static PTN_UNUSED PtnValue ptn_first_class_callable_wrap_cached_named_function(
+    PtnRuntime *runtime,
+    PtnValue callable,
+    const char *name
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || (runtime != NULL && runtime->has_current_receiver)) {
+        return ptn_first_class_callable_wrap(runtime, callable);
+    }
+
+    PtnFunctionMetadata metadata = ptn_find_callable_metadata(runtime, callable);
+    const char *cache_name = metadata.found && metadata.name != NULL ? metadata.name : name;
+    for (size_t i = 0; i < root->first_class_callable_cache_len; i++) {
+        if (ptn_ascii_case_equal(root->first_class_callable_cache_names[i], cache_name)) {
+            return ptn_value_clone(root->first_class_callable_cache_values[i]);
+        }
+    }
+
+    PtnValue closure = ptn_closure_wrap_callable(runtime, callable, metadata);
+    if (root->first_class_callable_cache_len == root->first_class_callable_cache_capacity) {
+        size_t new_capacity = root->first_class_callable_cache_capacity == 0
+            ? 8
+            : root->first_class_callable_cache_capacity * 2;
+        if (new_capacity < root->first_class_callable_cache_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnValue) ||
+            new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue *new_values = realloc(
+            root->first_class_callable_cache_values,
+            new_capacity * sizeof(PtnValue)
+        );
+        if (new_values == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_names = realloc(
+            root->first_class_callable_cache_names,
+            new_capacity * sizeof(char *)
+        );
+        if (new_names == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->first_class_callable_cache_values = new_values;
+        root->first_class_callable_cache_names = new_names;
+        root->first_class_callable_cache_capacity = new_capacity;
+    }
+    size_t index = root->first_class_callable_cache_len++;
+    root->first_class_callable_cache_names[index] = ptn_duplicate_string(cache_name);
+    root->first_class_callable_cache_values[index] = ptn_value_clone(closure);
+    return closure;
+}
+
 static void ptn_first_class_callable_throw_error(PtnRuntime *runtime, size_t line, const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -142872,7 +142957,8 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
         char *separator = strstr(name, "::");
         if (separator == NULL) {
             if (ptn_callable_is_valid(runtime, resolved, 0)) {
-                PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
+                PtnValue result =
+                    ptn_first_class_callable_wrap_cached_named_function(runtime, resolved, name);
                 free(name);
                 return result;
             }

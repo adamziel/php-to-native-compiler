@@ -6846,7 +6846,10 @@ fn emit_function_static_variable_providers(
             out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
             out.push_str(&c_string(name));
             out.push_str("\"), ");
-            out.push_str(&c_property_default_value_for_class(value, declaring_class));
+            out.push_str(&c_static_variable_preview_value_for_class(
+                value,
+                declaring_class,
+            ));
             out.push_str(");\n");
         }
         out.push_str("    return result;\n");
@@ -22884,8 +22887,11 @@ fn emit_method_dispatch(
     if needs_closure_invoke_dispatch {
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("            const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
+        out.push_str("            int previous_suppress_user_call_frame_location = runtime->suppress_user_call_frame_location;\n");
         out.push_str("            runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
+        out.push_str("            runtime->suppress_user_call_frame_location = 1;\n");
         out.push_str("            PtnValue result = ptn_call_callable_named(runtime, resolved, argc, args, runtime->next_call_arg_names, line, 0);\n");
+        out.push_str("            runtime->suppress_user_call_frame_location = previous_suppress_user_call_frame_location;\n");
         out.push_str(
             "            runtime->by_ref_argument_function_name_override = previous_name;\n",
         );
@@ -24238,8 +24244,11 @@ fn emit_callable_dispatch(
         out.push_str("                char *method_name = ptn_value_to_string(method);\n");
         out.push_str("                if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("                    const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
+        out.push_str("                    int previous_suppress_user_call_frame_location = runtime->suppress_user_call_frame_location;\n");
         out.push_str("                    runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
+        out.push_str("                    runtime->suppress_user_call_frame_location = 1;\n");
         out.push_str("                    PtnValue result = ptn_call_callable(runtime, receiver, argc, args, line, from_call_user_func);\n");
+        out.push_str("                    runtime->suppress_user_call_frame_location = previous_suppress_user_call_frame_location;\n");
         out.push_str("                    runtime->by_ref_argument_function_name_override = previous_name;\n");
         out.push_str("                    free(method_name);\n");
         out.push_str("                    return result;\n");
@@ -54501,6 +54510,93 @@ fn c_property_default_value_for_class(
         c_string(&declaring_class.name),
         line
     )
+}
+
+fn c_static_variable_preview_value_for_class(
+    value: Option<&ValueExpr>,
+    declaring_class: Option<&ClassDecl>,
+) -> String {
+    match value {
+        Some(ValueExpr::Constant { name, .. }) => format!(
+            "ptn_read_static_variable_preview_constant(runtime, \"{}\")",
+            c_string(name.trim_start_matches('\\'))
+        ),
+        Some(ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        }) => {
+            let lookup_class_name = if class_name.eq_ignore_ascii_case("self")
+                || class_name.eq_ignore_ascii_case("static")
+            {
+                declaring_class.map(|class| class.name.as_str())
+            } else if class_name.eq_ignore_ascii_case("parent") {
+                declaring_class.and_then(|class| class.parent_name.as_deref())
+            } else {
+                Some(class_name.trim_start_matches('\\'))
+            };
+            let Some(lookup_class_name) = lookup_class_name else {
+                return "ptn_null()".to_string();
+            };
+            if name.eq_ignore_ascii_case("class") {
+                return format!("ptn_string(\"{}\")", c_string(lookup_class_name));
+            }
+            format!(
+                "ptn_read_static_variable_preview_constant(runtime, \"{}::{}\")",
+                c_string(lookup_class_name),
+                c_string(name)
+            )
+        }
+        Some(ValueExpr::Array(elements)) => {
+            c_static_variable_preview_array_value_for_class(elements, declaring_class)
+                .unwrap_or_else(|| "ptn_null()".to_string())
+        }
+        Some(ValueExpr::Binary {
+            op, left, right, ..
+        }) => c_property_default_binary_value(*op, left, right)
+            .unwrap_or_else(|| "ptn_null()".to_string()),
+        Some(ValueExpr::String(_))
+        | Some(ValueExpr::Int(_))
+        | Some(ValueExpr::Float(_))
+        | Some(ValueExpr::Bool(_))
+        | Some(ValueExpr::Null)
+        | None => c_property_default_value(value),
+        _ => "ptn_null()".to_string(),
+    }
+}
+
+fn c_static_variable_preview_array_value_for_class(
+    elements: &[IrArrayElement],
+    declaring_class: Option<&ClassDecl>,
+) -> Option<String> {
+    if elements.is_empty() {
+        return Some("ptn_array_from_literal_entries(0, NULL)".to_string());
+    }
+    let mut entries = Vec::with_capacity(elements.len());
+    for element in elements {
+        let (has_key, key) = match &element.key {
+            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
+            Some(ValueExpr::Constant { .. }) | Some(ValueExpr::ClassConstantFetch { .. }) => (
+                "1",
+                c_static_variable_preview_value_for_class(element.key.as_ref(), declaring_class),
+            ),
+            Some(_) => return None,
+            None => ("0", "ptn_null()".to_string()),
+        };
+        let IrArrayElementValue::Value(value) = &element.value else {
+            return None;
+        };
+        entries.push(format!(
+            "{{ {}, {}, {} }}",
+            has_key,
+            key,
+            c_static_variable_preview_value_for_class(Some(value), declaring_class)
+        ));
+    }
+    Some(format!(
+        "ptn_array_from_literal_entries({}, (PtnArrayLiteralEntry[]){{ {} }})",
+        entries.len(),
+        entries.join(", ")
+    ))
 }
 
 fn c_property_default_binary_value(
