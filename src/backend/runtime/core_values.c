@@ -998,7 +998,9 @@ struct PtnGenerator {
     PtnArray *delegate_sources;
     PtnArray *output_chunks;
     PtnArray *send_call_positions;
+    PtnArray *send_call_kinds;
     PtnArray *send_call_names;
+    PtnArray *send_call_receivers;
     PtnArray *send_call_arguments;
     PtnArray *send_call_yield_indexes;
     PtnArray *send_call_lines;
@@ -1747,6 +1749,9 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
 static PTN_UNUSED int ptn_generator_capture_pending_exception(PtnRuntime *runtime, PtnGenerator *generator);
 static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED void ptn_generator_register_send_call(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
+static PTN_UNUSED void ptn_generator_register_send_nested_call(PtnRuntime *runtime, const char *outer_function_name, const char *inner_function_name, size_t argc, const PtnValue *args, size_t yield_argc, const size_t *yield_indexes, size_t line);
 static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue receiver, PtnValue sent_value, size_t line);
 static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_throw(PtnRuntime *runtime, PtnValue receiver, PtnValue exception, size_t line);
@@ -1780,6 +1785,7 @@ static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *fram
 static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
+static PTN_UNUSED PtnValue ptn_call_declared_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line);
 #endif
 static PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name);
 static void ptn_symbols_free(PtnSymbolTable *symbols);

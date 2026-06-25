@@ -34574,6 +34574,26 @@ fn direct_yield_argument_indexes(arguments: &[ValueExpr]) -> Option<Vec<usize>> 
     }
 }
 
+fn nested_direct_yield_internal_call(
+    arguments: &[ValueExpr],
+) -> Option<(&str, &[ValueExpr], Vec<usize>)> {
+    let [ValueExpr::InternalCall {
+        name,
+        arguments,
+        argument_names,
+        argument_unpacks,
+        ..
+    }] = arguments
+    else {
+        return None;
+    };
+    if argument_names.iter().any(Option::is_some) || argument_unpacks.iter().any(|unpack| *unpack) {
+        return None;
+    }
+    let yield_indexes = direct_yield_argument_indexes(arguments)?;
+    Some((name, arguments, yield_indexes))
+}
+
 fn generator_resume_method_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("send")
         || name.eq_ignore_ascii_case("next")
@@ -50777,6 +50797,18 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> Option<String> {
+        if let Some((inner_name, inner_arguments, yield_indexes)) =
+            nested_direct_yield_internal_call(arguments)
+        {
+            return self.emit_generator_send_deferred_nested_internal_call(
+                out,
+                name,
+                inner_name,
+                inner_arguments,
+                &yield_indexes,
+                line,
+            );
+        }
         let yield_indexes = direct_yield_argument_indexes(arguments)?;
         let resolved_name = self.resolved_function_call_name(name);
         let mut temps = Vec::with_capacity(arguments.len());
@@ -50797,17 +50829,7 @@ impl ValueEmitter {
         }
         out.push_str(" };\n");
 
-        let yield_indexes_temp = self.next_temp();
-        out.push_str("    const size_t ");
-        out.push_str(&yield_indexes_temp);
-        out.push_str("[] = { ");
-        for (index, yield_index) in yield_indexes.iter().enumerate() {
-            if index > 0 {
-                out.push_str(", ");
-            }
-            out.push_str(&yield_index.to_string());
-        }
-        out.push_str(" };\n");
+        let yield_indexes_temp = self.emit_yield_indexes_array(out, &yield_indexes, "    ");
 
         out.push_str("    ptn_generator_register_send_call(&runtime, \"");
         out.push_str(&c_string(&resolved_name));
@@ -50835,6 +50857,213 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_null();\n");
         Some(result_temp)
+    }
+
+    fn emit_yield_indexes_array(
+        &mut self,
+        out: &mut String,
+        yield_indexes: &[usize],
+        indent: &str,
+    ) -> String {
+        let yield_indexes_temp = self.next_temp();
+        out.push_str(indent);
+        out.push_str("const size_t ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str("[] = { ");
+        for (index, yield_index) in yield_indexes.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&yield_index.to_string());
+        }
+        out.push_str(" };\n");
+        yield_indexes_temp
+    }
+
+    fn emit_generator_send_deferred_nested_internal_call(
+        &mut self,
+        out: &mut String,
+        outer_name: &str,
+        inner_name: &str,
+        inner_arguments: &[ValueExpr],
+        yield_indexes: &[usize],
+        line: usize,
+    ) -> Option<String> {
+        let resolved_outer_name = self.resolved_function_call_name(outer_name);
+        let resolved_inner_name = self.resolved_function_call_name(inner_name);
+        let mut temps = Vec::with_capacity(inner_arguments.len());
+        for (argument_index, argument) in inner_arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, inner_name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+
+        out.push_str("    ptn_generator_register_send_nested_call(&runtime, \"");
+        out.push_str(&c_string(&resolved_outer_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&resolved_inner_name));
+        out.push_str("\", ");
+        out.push_str(&inner_arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&yield_indexes.len().to_string());
+        out.push_str(", ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        Some(result_temp)
+    }
+
+    fn emit_generator_send_deferred_method_call(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        arguments: &[ValueExpr],
+        yield_indexes: &[usize],
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+
+        out.push_str("    ptn_generator_register_send_method(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&yield_indexes.len().to_string());
+        out.push_str(", ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        emit_value_cleanup(out, "    ", &receiver_temp);
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        result_temp
+    }
+
+    fn emit_generator_send_deferred_callable_call(
+        &mut self,
+        out: &mut String,
+        callee: &ValueExpr,
+        arguments: &[ValueExpr],
+        yield_indexes: &[usize],
+        line: usize,
+    ) -> String {
+        let callee_temp = self.emit_materialized_value(out, callee);
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_runtime_callable_call_argument(
+                out,
+                &callee_temp,
+                argument_index,
+                argument,
+                line,
+            ));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let yield_indexes_temp = self.emit_yield_indexes_array(out, yield_indexes, "    ");
+
+        out.push_str("    ptn_generator_register_send_callable(&runtime, ");
+        out.push_str(&callee_temp);
+        out.push_str(", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&yield_indexes.len().to_string());
+        out.push_str(", ");
+        out.push_str(&yield_indexes_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        emit_value_cleanup(out, "    ", &callee_temp);
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        result_temp
     }
 
     fn emit_declared_enum_static_method_call(
@@ -51536,6 +51765,21 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &pipe_input_temp);
                 emit_value_cleanup(out, "    ", &callee_temp);
                 return result_temp;
+            }
+        }
+        if discarded
+            && self.current_function_is_generator
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+        {
+            if let Some(yield_indexes) = direct_yield_argument_indexes(arguments) {
+                return self.emit_generator_send_deferred_callable_call(
+                    out,
+                    callee,
+                    arguments,
+                    &yield_indexes,
+                    line,
+                );
             }
         }
         let callee_temp = self.emit_materialized_value(out, callee);
@@ -52702,6 +52946,22 @@ impl ValueEmitter {
                         result_temp
                     }
                 };
+            }
+        }
+        if discarded
+            && self.current_function_is_generator
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+        {
+            if let Some(yield_indexes) = direct_yield_argument_indexes(arguments) {
+                return self.emit_generator_send_deferred_method_call(
+                    out,
+                    receiver,
+                    name,
+                    arguments,
+                    &yield_indexes,
+                    line,
+                );
             }
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);

@@ -9521,8 +9521,14 @@ static PTN_UNUSED void ptn_generator_data_free(void *data) {
     if (generator->send_call_positions != NULL) {
         ptn_array_free(generator->send_call_positions);
     }
+    if (generator->send_call_kinds != NULL) {
+        ptn_array_free(generator->send_call_kinds);
+    }
     if (generator->send_call_names != NULL) {
         ptn_array_free(generator->send_call_names);
+    }
+    if (generator->send_call_receivers != NULL) {
+        ptn_array_free(generator->send_call_receivers);
     }
     if (generator->send_call_arguments != NULL) {
         ptn_array_free(generator->send_call_arguments);
@@ -9568,7 +9574,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     PtnValue delegate_sources = ptn_array_from_literal_entries(0, NULL);
     PtnValue output_chunks = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_positions = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_kinds = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_names = ptn_array_from_literal_entries(0, NULL);
+    PtnValue send_call_receivers = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_arguments = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_yield_indexes = ptn_array_from_literal_entries(0, NULL);
     PtnValue send_call_lines = ptn_array_from_literal_entries(0, NULL);
@@ -9581,7 +9589,9 @@ static PTN_UNUSED PtnValue ptn_generator_new(PtnRuntime *runtime, int yields_by_
     generator->delegate_sources = delegate_sources.as.array;
     generator->output_chunks = output_chunks.as.array;
     generator->send_call_positions = send_call_positions.as.array;
+    generator->send_call_kinds = send_call_kinds.as.array;
     generator->send_call_names = send_call_names.as.array;
+    generator->send_call_receivers = send_call_receivers.as.array;
     generator->send_call_arguments = send_call_arguments.as.array;
     generator->send_call_yield_indexes = send_call_yield_indexes.as.array;
     generator->send_call_lines = send_call_lines.as.array;
@@ -10231,6 +10241,63 @@ static PTN_UNUSED void ptn_generator_rewrite_pending_exception_trace(
     exception->trace = trace;
 }
 
+static PTN_UNUSED void ptn_generator_rewrite_throw_unwind_exception_trace(
+    PtnRuntime *runtime,
+    PtnGenerator *generator,
+    PtnException *exception,
+    size_t line
+) {
+    if (exception == NULL) {
+        return;
+    }
+    PtnValue existing = ptn_value_deref(exception->trace);
+    if (existing.type != PTN_ARRAY || existing.as.array == NULL || existing.as.array->len == 0) {
+        return;
+    }
+
+    PtnValue trace = ptn_array_from_literal_entries(0, NULL);
+    size_t index = 0;
+    ptn_generator_trace_append(
+        trace,
+        &index,
+        ptn_value_clone_deref(existing.as.array->entries[0].value)
+    );
+    ptn_generator_trace_append(
+        trace,
+        &index,
+        ptn_generator_trace_function_frame(generator, NULL, 0)
+    );
+    PtnValue resume_frame = ptn_generator_trace_resume_frame(runtime, "throw", line);
+    PtnValue resume_args = ptn_array_from_literal_entries(0, NULL);
+    PtnValue previous = ptn_value_deref(exception->previous);
+    if (previous.type == PTN_EXCEPTION) {
+        ptn_array_set_entry(
+            resume_args.as.array,
+            ptn_array_int_key(0),
+            ptn_value_clone_deref(exception->previous)
+        );
+    }
+    ptn_array_set_entry(
+        resume_frame.as.array,
+        ptn_array_string_key("args"),
+        resume_args
+    );
+    ptn_generator_trace_append(
+        trace,
+        &index,
+        resume_frame
+    );
+    for (size_t i = 1; i < existing.as.array->len; i++) {
+        ptn_generator_trace_append(
+            trace,
+            &index,
+            ptn_value_clone_deref(existing.as.array->entries[i].value)
+        );
+    }
+    ptn_value_destroy(&exception->trace);
+    exception->trace = trace;
+}
+
 static PTN_UNUSED void ptn_generator_throw_pending_exception_value(
     PtnRuntime *runtime,
     PtnValue pending,
@@ -10376,6 +10443,31 @@ static PTN_UNUSED void ptn_generator_close(PtnGenerator *generator) {
     generator->position = generator->values->len;
 }
 
+static PTN_UNUSED void ptn_generator_close_for_throw(PtnRuntime *runtime, PtnGenerator *generator) {
+    if (generator == NULL || generator->values == NULL) {
+        return;
+    }
+    generator->started = 1;
+    size_t start = generator->position;
+    if (generator->delegate_sources != NULL) {
+        for (size_t i = 0; i < generator->delegate_sources->len; i++) {
+            PtnGenerator *source = ptn_generator_delegate_source(generator, i);
+            if (source != NULL) {
+                ptn_generator_close_for_throw(runtime, source);
+            }
+        }
+    }
+    for (size_t i = start; i < generator->values->len; i++) {
+        size_t yield_line = ptn_generator_yield_line_at(generator, i);
+        ptn_value_destroy_with_runtime_scope_at(
+            runtime,
+            &generator->values->entries[i].value,
+            yield_line
+        );
+    }
+    generator->position = generator->values->len;
+}
+
 static PTN_UNUSED const char *ptn_generator_throw_given_name(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->class_name != NULL) {
@@ -10435,8 +10527,64 @@ static PTN_UNUSED PtnValue ptn_generator_throw(
         return ptn_null();
     }
 
-    ptn_generator_close(generator);
     PtnValue thrown = ptn_value_clone_deref(resolved_exception);
+    PtnValue resolved_thrown = ptn_value_deref(thrown);
+    if (
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        resolved_thrown.type == PTN_EXCEPTION
+    ) {
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = resolved_thrown.as.exception;
+        ptn_exception_retain(runtime->exceptions->active_exception);
+        if (runtime->exceptions->active_exception->path == NULL) {
+            runtime->exceptions->active_exception->path = runtime->source_path;
+            runtime->exceptions->active_exception->line = line;
+        }
+        ptn_value_destroy(&thrown);
+
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        int previous_defer_uncaught_exception_emit = root == NULL
+            ? 0
+            : root->defer_uncaught_exception_emit;
+        if (root != NULL) {
+            root->defer_uncaught_exception_emit = 1;
+        }
+        PtnTryFrame close_frame;
+        int close_frame_active = 0;
+        if (runtime->exceptions != NULL) {
+            ptn_try_frame_push(runtime, &close_frame);
+            close_frame_active = 1;
+            if (setjmp(close_frame.jump) != 0) {
+                ptn_try_frame_pop(runtime, &close_frame);
+                if (root != NULL) {
+                    root->defer_uncaught_exception_emit = previous_defer_uncaught_exception_emit;
+                }
+                ptn_generator_rewrite_throw_unwind_exception_trace(
+                    runtime,
+                    generator,
+                    runtime->exceptions->active_exception,
+                    line
+                );
+                ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+                ptn_runtime_shutdown_before_exit(runtime);
+                exit(255);
+                return ptn_null();
+            }
+        }
+        ptn_generator_close_for_throw(runtime, generator);
+        if (close_frame_active) {
+            ptn_try_frame_pop(runtime, &close_frame);
+        }
+        if (root != NULL) {
+            root->defer_uncaught_exception_emit = previous_defer_uncaught_exception_emit;
+        }
+        ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+        ptn_runtime_shutdown_before_exit(runtime);
+        exit(255);
+        return ptn_null();
+    }
+    ptn_generator_close(generator);
     return ptn_throw_value(
         runtime,
         thrown,
@@ -10557,9 +10705,18 @@ static PTN_UNUSED int ptn_generator_entry_matches_position(PtnArray *positions, 
     return value.type == PTN_INT && value.as.integer >= 0 && (size_t)value.as.integer == position;
 }
 
-static PTN_UNUSED void ptn_generator_register_send_call(
+enum {
+    PTN_GENERATOR_SEND_CALL_FUNCTION = 0,
+    PTN_GENERATOR_SEND_CALL_CALLABLE = 1,
+    PTN_GENERATOR_SEND_CALL_METHOD = 2,
+    PTN_GENERATOR_SEND_CALL_NESTED_FUNCTION = 3
+};
+
+static PTN_UNUSED void ptn_generator_register_send_call_entry(
     PtnRuntime *runtime,
+    int kind,
     const char *function_name,
+    PtnValue receiver,
     size_t argc,
     const PtnValue *args,
     size_t yield_argc,
@@ -10571,7 +10728,9 @@ static PTN_UNUSED void ptn_generator_register_send_call(
         generator == NULL ||
         generator->values == NULL ||
         generator->send_call_positions == NULL ||
+        generator->send_call_kinds == NULL ||
         generator->send_call_names == NULL ||
+        generator->send_call_receivers == NULL ||
         generator->send_call_arguments == NULL ||
         generator->send_call_yield_indexes == NULL ||
         generator->send_call_lines == NULL ||
@@ -10581,7 +10740,9 @@ static PTN_UNUSED void ptn_generator_register_send_call(
     }
     if (
         !ptn_array_append_key_available(runtime, generator->send_call_positions) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_kinds) ||
         !ptn_array_append_key_available(runtime, generator->send_call_names) ||
+        !ptn_array_append_key_available(runtime, generator->send_call_receivers) ||
         !ptn_array_append_key_available(runtime, generator->send_call_arguments) ||
         !ptn_array_append_key_available(runtime, generator->send_call_yield_indexes) ||
         !ptn_array_append_key_available(runtime, generator->send_call_lines)
@@ -10605,9 +10766,19 @@ static PTN_UNUSED void ptn_generator_register_send_call(
         ptn_int((int64_t)(generator->values->len - 1))
     );
     ptn_array_set_entry(
+        generator->send_call_kinds,
+        ptn_array_int_key(generator->send_call_kinds->next_auto_key),
+        ptn_int((int64_t)kind)
+    );
+    ptn_array_set_entry(
         generator->send_call_names,
         ptn_array_int_key(generator->send_call_names->next_auto_key),
-        ptn_string(function_name)
+        ptn_string(function_name == NULL ? "" : function_name)
+    );
+    ptn_array_set_entry(
+        generator->send_call_receivers,
+        ptn_array_int_key(generator->send_call_receivers->next_auto_key),
+        ptn_value_clone(receiver)
     );
     ptn_array_set_entry(
         generator->send_call_arguments,
@@ -10624,6 +10795,98 @@ static PTN_UNUSED void ptn_generator_register_send_call(
         ptn_array_int_key(generator->send_call_lines->next_auto_key),
         ptn_int((int64_t)line)
     );
+}
+
+static PTN_UNUSED void ptn_generator_register_send_call(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t yield_argc,
+    const size_t *yield_indexes,
+    size_t line
+) {
+    ptn_generator_register_send_call_entry(
+        runtime,
+        PTN_GENERATOR_SEND_CALL_FUNCTION,
+        function_name,
+        ptn_null(),
+        argc,
+        args,
+        yield_argc,
+        yield_indexes,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_generator_register_send_callable(
+    PtnRuntime *runtime,
+    PtnValue callable,
+    size_t argc,
+    const PtnValue *args,
+    size_t yield_argc,
+    const size_t *yield_indexes,
+    size_t line
+) {
+    ptn_generator_register_send_call_entry(
+        runtime,
+        PTN_GENERATOR_SEND_CALL_CALLABLE,
+        "",
+        callable,
+        argc,
+        args,
+        yield_argc,
+        yield_indexes,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_generator_register_send_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t yield_argc,
+    const size_t *yield_indexes,
+    size_t line
+) {
+    ptn_generator_register_send_call_entry(
+        runtime,
+        PTN_GENERATOR_SEND_CALL_METHOD,
+        method_name,
+        receiver,
+        argc,
+        args,
+        yield_argc,
+        yield_indexes,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_generator_register_send_nested_call(
+    PtnRuntime *runtime,
+    const char *outer_function_name,
+    const char *inner_function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t yield_argc,
+    const size_t *yield_indexes,
+    size_t line
+) {
+    PtnValue inner_name = ptn_string(inner_function_name == NULL ? "" : inner_function_name);
+    ptn_generator_register_send_call_entry(
+        runtime,
+        PTN_GENERATOR_SEND_CALL_NESTED_FUNCTION,
+        outer_function_name,
+        inner_name,
+        argc,
+        args,
+        yield_argc,
+        yield_indexes,
+        line
+    );
+    ptn_value_destroy(&inner_name);
 }
 
 static PTN_UNUSED void ptn_generator_apply_sent_value_to_call_args(
@@ -10697,12 +10960,18 @@ static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue rece
             if (!ptn_generator_entry_matches_position(generator->send_call_positions, i, generator->position)) {
                 continue;
             }
+            PtnValue kind_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_kinds, i));
             PtnValue name_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_names, i));
+            PtnValue receiver_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_receivers, i));
             PtnValue arguments_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_arguments, i));
             PtnValue indexes_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_yield_indexes, i));
             PtnValue line_value = ptn_value_deref(ptn_generator_array_entry_value(generator->send_call_lines, i));
             if (name_value.type != PTN_STRING || arguments_value.type != PTN_ARRAY || indexes_value.type != PTN_ARRAY) {
                 continue;
+            }
+            int kind = PTN_GENERATOR_SEND_CALL_FUNCTION;
+            if (kind_value.type == PTN_INT) {
+                kind = (int)kind_value.as.integer;
             }
             size_t call_line = line;
             if (line_value.type == PTN_INT && line_value.as.integer >= 0) {
@@ -10724,7 +10993,24 @@ static PTN_UNUSED PtnValue ptn_generator_send(PtnRuntime *runtime, PtnValue rece
                 }
             }
             char *function_name = ptn_value_to_string(name_value);
-            PtnValue call_result = ptn_call_function(runtime, function_name, argc, call_args, call_line);
+            PtnValue call_result = ptn_null();
+            if (kind == PTN_GENERATOR_SEND_CALL_CALLABLE) {
+                call_result = ptn_call_callable(runtime, receiver_value, argc, call_args, call_line, 0);
+            } else if (kind == PTN_GENERATOR_SEND_CALL_METHOD) {
+                call_result = ptn_call_declared_method(runtime, receiver_value, function_name, argc, call_args, call_line);
+            } else if (kind == PTN_GENERATOR_SEND_CALL_NESTED_FUNCTION) {
+                char *inner_function_name = ptn_value_to_string(receiver_value);
+                PtnValue inner_result = ptn_call_function(runtime, inner_function_name, argc, call_args, call_line);
+                free(inner_function_name);
+                if (runtime == NULL || runtime->exceptions->active_exception == NULL) {
+                    PtnValue outer_args[] = { ptn_value_share(inner_result) };
+                    call_result = ptn_call_function(runtime, function_name, 1, outer_args, call_line);
+                    ptn_value_drop(&outer_args[0]);
+                }
+                ptn_value_destroy(&inner_result);
+            } else {
+                call_result = ptn_call_function(runtime, function_name, argc, call_args, call_line);
+            }
             free(function_name);
             ptn_value_destroy(&call_result);
             for (size_t arg_index = 0; arg_index < argc; arg_index++) {
