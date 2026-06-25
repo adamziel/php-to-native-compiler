@@ -37460,6 +37460,11 @@ impl ValueEmitter {
             }
             let Some(current_class_name) = &self.current_class_name else {
                 let lowered = class_name.to_ascii_lowercase();
+                if self.in_const_declaration {
+                    return Some(format!(
+                        "Cannot use \"{lowered}\" when no class scope is active"
+                    ));
+                }
                 return Some(format!("Cannot use \"{lowered}\" in the global scope"));
             };
             if class_name.eq_ignore_ascii_case("parent")
