@@ -150643,6 +150643,113 @@ static int ptn_reflection_closure_invoke_matches_method_filter(
     return (filter & 1) != 0;
 }
 
+static const char *ptn_reflection_method_new_trace_name(int deprecate_one_arg_constructor) {
+    return deprecate_one_arg_constructor
+        ? "ReflectionMethod->__construct"
+        : "ReflectionMethod::createFromMethodName";
+}
+
+static PtnValue ptn_reflection_method_throw_owned_with_trace(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        class_name,
+        message,
+        runtime->source_path,
+        line,
+        trace_name,
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
+    return ptn_null();
+}
+
+static PtnValue ptn_reflection_method_throw_with_trace(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_reflection_method_throw_owned_with_trace(
+        runtime,
+        class_name,
+        ptn_duplicate_string(message),
+        trace_name,
+        argc,
+        args,
+        line
+    );
+}
+
+static PtnValue ptn_reflection_method_throw_missing_class_with_trace(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "Class \"%s\" does not exist", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Class \"%s\" does not exist", name);
+    return ptn_reflection_method_throw_owned_with_trace(
+        runtime,
+        "ReflectionException",
+        message,
+        trace_name,
+        argc,
+        args,
+        line
+    );
+}
+
+static PtnValue ptn_reflection_method_throw_missing_with_trace(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "Method %s::%s() does not exist", class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Method %s::%s() does not exist", class_name, method_name);
+    return ptn_reflection_method_throw_owned_with_trace(
+        runtime,
+        "ReflectionException",
+        message,
+        trace_name,
+        argc,
+        args,
+        line
+    );
+}
+
 static PtnValue ptn_reflection_method_throw_missing(PtnRuntime *runtime, const char *class_name, const char *method_name) {
     int needed = snprintf(NULL, 0, "Method %s::%s() does not exist", class_name, method_name);
     if (needed < 0) {
@@ -150692,6 +150799,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
     const char *first_parameter_name,
     int deprecate_one_arg_constructor
 ) {
+    const char *trace_name = ptn_reflection_method_new_trace_name(deprecate_one_arg_constructor);
     if (argc != 1 && argc != 2) {
         char message[160];
         int written = snprintf(
@@ -150705,12 +150813,22 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
+        return ptn_reflection_method_throw_with_trace(
+            runtime,
+            "ArgumentCountError",
+            message,
+            trace_name,
+            argc,
+            args,
+            line
+        );
     }
 
     char *class_name = NULL;
     char *method_name = NULL;
+    char *single_arg_trace = NULL;
+    PtnValue trace_args[2] = { ptn_null(), ptn_null() };
+    const PtnValue *exception_args = args;
     int has_closure_arg = 0;
     PtnValue closure_arg = ptn_null();
     if (argc == 1) {
@@ -150736,10 +150854,20 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "TypeError", message);
-            return ptn_null();
+            return ptn_reflection_method_throw_with_trace(
+                runtime,
+                "TypeError",
+                message,
+                trace_name,
+                argc,
+                exception_args,
+                line
+            );
         }
         char *qualified_name = ptn_value_to_string(args[0]);
+        single_arg_trace = ptn_duplicate_string(qualified_name);
+        trace_args[0] = ptn_string(single_arg_trace);
+        exception_args = trace_args;
         char *separator = strstr(qualified_name, "::");
         if (separator == NULL) {
             char message[192];
@@ -150753,9 +150881,15 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "ReflectionException", message);
-            free(qualified_name);
-            return ptn_null();
+            return ptn_reflection_method_throw_with_trace(
+                runtime,
+                "ReflectionException",
+                message,
+                trace_name,
+                argc,
+                exception_args,
+                line
+            );
         }
         *separator = '\0';
         class_name = ptn_duplicate_string(qualified_name);
@@ -150783,11 +150917,24 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "TypeError", message);
-            return ptn_null();
+            return ptn_reflection_method_throw_with_trace(
+                runtime,
+                "TypeError",
+                message,
+                trace_name,
+                argc,
+                exception_args,
+                line
+            );
         } else {
             class_name = ptn_value_to_string(class_arg);
         }
+        trace_args[0] =
+            (class_arg.type == PTN_OBJECT || class_arg.type == PTN_EXCEPTION || class_arg.type == PTN_CLOSURE)
+                ? args[0]
+                : ptn_string(class_name);
+        trace_args[1] = args[1];
+        exception_args = trace_args;
         PtnValue method_arg = ptn_value_deref(args[1]);
         if (!ptn_reflection_method_argument_allows_string_coercion(method_arg)) {
             const char *actual_type = ptn_property_exists_target_type_name(method_arg);
@@ -150801,17 +150948,25 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "TypeError", message);
-            free(class_name);
-            return ptn_null();
+            return ptn_reflection_method_throw_with_trace(
+                runtime,
+                "TypeError",
+                message,
+                trace_name,
+                argc,
+                exception_args,
+                line
+            );
         }
         method_name = ptn_value_to_string(args[1]);
+        trace_args[1] = ptn_string(method_name);
     }
 
     if (has_closure_arg && ptn_ascii_case_equal(method_name, "__invoke")) {
         PtnValue method = ptn_reflection_method_object_from_closure(runtime, closure_arg);
         free(method_name);
         free(class_name);
+        free(single_arg_trace);
         return method;
     }
 
@@ -150826,12 +150981,17 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         if (runtime->exceptions->active_exception != NULL) {
             free(method_name);
             free(class_name);
+            free(single_arg_trace);
             return ptn_null();
         }
-        ptn_reflection_class_throw_missing_class(runtime, lookup_class_name);
-        free(method_name);
-        free(class_name);
-        return ptn_null();
+        return ptn_reflection_method_throw_missing_class_with_trace(
+            runtime,
+            lookup_class_name,
+            trace_name,
+            argc,
+            exception_args,
+            line
+        );
     }
 
     if (ptn_declared_class_exists(resolved_class_name) ||
@@ -150841,6 +151001,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         if (ptn_value_deref(method).type != PTN_NULL) {
             free(method_name);
             free(class_name);
+            free(single_arg_trace);
             return method;
         }
         if (ptn_internal_class_method_exists(resolved_class_name, method_name)) {
@@ -150852,6 +151013,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             );
             free(method_name);
             free(class_name);
+            free(single_arg_trace);
             return internal_method;
         }
         const char *parent_class_name = ptn_declared_class_parent_name(resolved_class_name);
@@ -150865,6 +151027,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
                 );
                 free(method_name);
                 free(class_name);
+                free(single_arg_trace);
                 return inherited_method;
             }
             parent_class_name = ptn_declared_class_parent_name(parent_class_name);
@@ -150878,12 +151041,22 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
         );
         free(method_name);
         free(class_name);
+        free(single_arg_trace);
         return method;
     }
 
-    PtnValue result = ptn_reflection_method_throw_missing(runtime, resolved_class_name, method_name);
+    PtnValue result = ptn_reflection_method_throw_missing_with_trace(
+        runtime,
+        resolved_class_name,
+        method_name,
+        trace_name,
+        argc,
+        exception_args,
+        line
+    );
     free(method_name);
     free(class_name);
+    free(single_arg_trace);
     return result;
 }
 
@@ -162432,7 +162605,7 @@ static PtnValue ptn_reflection_parameter_declaring_function(
                 data->metadata,
                 data->closure_function_index,
                 data->closure_scope_class_name,
-                1
+                0
             );
         }
         return ptn_reflection_method_object_from_name(
