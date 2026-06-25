@@ -76526,6 +76526,112 @@ array_walk($items, \"needs_type\");
 }
 
 #[test]
+fn compile_array_walk_exception_previous_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-exception-previous-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-exception-previous-reference.php");
+    let output = root.join("array-walk-exception-previous-reference-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$re = new TypeError();
+array_walk($re, function (&$item, $key) {
+    if ($key === "\x00Error\x00previous") {
+        $item = new Exception();
+    }
+});
+echo get_class($re->getPrevious()), "\n";
+echo strpos($re->getTraceAsString(), "#0 {main}") !== false ? "trace\n" : "missing-trace\n";
+echo strpos((string)$re, "Next TypeError") !== false ? "chain\n" : "missing-chain\n";
+"##,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception\ntrace\nchain\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_call_user_func_by_ref_warning_uses_internal_handler_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-by-ref-internal-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-by-ref-internal-frame.php");
+    let output = root.join("call-user-func-by-ref-internal-frame-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function ($type, $msg) {
+    throw new Exception($msg);
+});
+call_user_func(function (array &$ref) { var_dump("xxx"); }, "not_an_array_variable");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("must be passed by reference, value given"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("\n#0 [internal function]: {closure:"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn compile_array_union_noop_preserves_by_ref_foreach_progress_to_native_binary() {
+    let root = temp_dir("ptn-native-array-union-noop-by-ref-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-union-noop-by-ref-foreach.php");
+    let output = root.join("array-union-noop-by-ref-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$all = ["test"];
+foreach ($all as &$item) {
+    $all += [$item];
+}
+var_dump($all);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new("timeout")
+        .arg("30s")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  &string(4) \"test\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_walk_callback_class_type_error_location_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-callback-class-type-error-location");
     fs::create_dir_all(&root).unwrap();

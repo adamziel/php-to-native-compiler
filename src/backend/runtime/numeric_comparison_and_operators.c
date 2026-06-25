@@ -13,6 +13,17 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
 );
 
 static PTN_UNUSED PtnValue ptn_array_union(PtnArray *left, PtnArray *right) {
+    int right_adds_key = 0;
+    for (size_t i = 0; i < right->len; i++) {
+        if (ptn_array_find_key(left, right->entries[i].key) >= left->len) {
+            right_adds_key = 1;
+            break;
+        }
+    }
+    if (!right_adds_key) {
+        return ptn_value_clone(ptn_array(left));
+    }
+
     PtnValue union_value = ptn_array_from_literal_entries(0, NULL);
     PtnArray *union_array = union_value.as.array;
 

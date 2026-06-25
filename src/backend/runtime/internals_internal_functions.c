@@ -21581,6 +21581,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_property(
     return result;
 }
 
+static PtnValue ptn_reflection_exception_property_value(
+    PtnException *exception,
+    const char *property_name
+);
+static PtnValue ptn_reflection_exception_write_property(
+    PtnException *exception,
+    const char *property_name,
+    PtnValue value
+);
+
 static PtnArray *ptn_array_walk_slot_array_for_write(
     PtnRuntime *runtime,
     const char *function_name,
@@ -21687,6 +21697,176 @@ static PtnValue ptn_array_walk_property_key_value(PtnObject *object, PtnArrayKey
     storage[declaring_len + 1] = '\0';
     memcpy(storage + declaring_len + 2, metadata->display_name, display_len);
     return ptn_owned_string_len(storage, key_len);
+}
+
+static const char *ptn_array_walk_exception_base_class(PtnException *exception) {
+    const char *class_name = exception == NULL || exception->class_name == NULL
+        ? "Exception"
+        : exception->class_name;
+    return ptn_exception_type_matches_name(class_name, "Error") ? "Error" : "Exception";
+}
+
+static PtnArrayKey ptn_array_walk_exception_property_key(
+    const char *declaring_class,
+    const char *display_name
+) {
+    size_t display_len = strlen(display_name);
+    if (declaring_class == NULL) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t key_len = display_len + 3;
+        char *storage = malloc(key_len);
+        if (storage == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        storage[0] = '\0';
+        storage[1] = '*';
+        storage[2] = '\0';
+        memcpy(storage + 3, display_name, display_len);
+        PtnArrayKey key;
+        key.type = PTN_ARRAY_KEY_STRING;
+        key.string_len = key_len;
+        key.as.string = storage;
+        return key;
+    }
+
+    size_t declaring_len = strlen(declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t key_len = declaring_len + display_len + 2;
+    char *storage = malloc(key_len);
+    if (storage == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    storage[0] = '\0';
+    memcpy(storage + 1, declaring_class, declaring_len);
+    storage[declaring_len + 1] = '\0';
+    memcpy(storage + declaring_len + 2, display_name, display_len);
+    PtnArrayKey key;
+    key.type = PTN_ARRAY_KEY_STRING;
+    key.string_len = key_len;
+    key.as.string = storage;
+    return key;
+}
+
+static void ptn_array_walk_exception_add_property(
+    PtnArray *array,
+    PtnException *exception,
+    const char *declaring_class,
+    const char *display_name
+) {
+    ptn_array_set_entry(
+        array,
+        ptn_array_walk_exception_property_key(declaring_class, display_name),
+        ptn_reflection_exception_property_value(exception, display_name)
+    );
+}
+
+static PtnValue ptn_array_walk_exception_properties(PtnException *exception) {
+    const char *base_class = ptn_array_walk_exception_base_class(exception);
+    PtnValue properties = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = properties.as.array;
+
+    ptn_array_walk_exception_add_property(array, exception, NULL, "message");
+    ptn_array_walk_exception_add_property(array, exception, base_class, "string");
+    ptn_array_walk_exception_add_property(array, exception, NULL, "code");
+    ptn_array_walk_exception_add_property(array, exception, NULL, "file");
+    ptn_array_walk_exception_add_property(array, exception, NULL, "line");
+    ptn_array_walk_exception_add_property(array, exception, base_class, "trace");
+    ptn_array_walk_exception_add_property(array, exception, base_class, "previous");
+
+    if (
+        exception != NULL &&
+        exception->class_name != NULL &&
+        ptn_exception_name_equal(exception->class_name, "ErrorException")
+    ) {
+        ptn_array_walk_exception_add_property(array, exception, "ErrorException", "severity");
+    }
+
+    if (exception != NULL) {
+        PtnValue dynamic_properties = ptn_value_deref(exception->dynamic_properties);
+        if (dynamic_properties.type == PTN_ARRAY && dynamic_properties.as.array != NULL) {
+            PtnArray *dynamic_array = dynamic_properties.as.array;
+            for (size_t i = 0; i < dynamic_array->len; i++) {
+                ptn_array_set_entry(
+                    array,
+                    ptn_array_key_clone(dynamic_array->entries[i].key),
+                    ptn_value_clone_deref(dynamic_array->entries[i].value)
+                );
+            }
+        }
+    }
+
+    return properties;
+}
+
+static void ptn_array_walk_exception_sync_property(
+    PtnException *exception,
+    PtnArray *array,
+    const char *declaring_class,
+    const char *display_name
+) {
+    PtnArrayKey key = ptn_array_walk_exception_property_key(declaring_class, display_name);
+    size_t index = ptn_array_find_key(array, key);
+    ptn_array_key_free(key);
+    if (index >= array->len) {
+        return;
+    }
+    PtnValue written = ptn_reflection_exception_write_property(
+        exception,
+        display_name,
+        array->entries[index].value
+    );
+    ptn_value_destroy(&written);
+}
+
+static void ptn_array_walk_exception_sync_dynamic_properties(
+    PtnException *exception,
+    PtnArray *array
+) {
+    if (exception == NULL) {
+        return;
+    }
+    PtnValue dynamic_properties = ptn_value_deref(exception->dynamic_properties);
+    if (dynamic_properties.type != PTN_ARRAY || dynamic_properties.as.array == NULL) {
+        return;
+    }
+    PtnArray *dynamic_array = dynamic_properties.as.array;
+    for (size_t i = 0; i < dynamic_array->len; i++) {
+        PtnArrayKey key = ptn_array_key_clone(dynamic_array->entries[i].key);
+        size_t index = ptn_array_find_key(array, key);
+        if (index < array->len) {
+            ptn_array_set_entry(
+                dynamic_array,
+                key,
+                ptn_value_clone_deref(array->entries[index].value)
+            );
+            continue;
+        }
+        ptn_array_key_free(key);
+    }
+}
+
+static void ptn_array_walk_exception_sync(PtnException *exception, PtnArray *array) {
+    const char *base_class = ptn_array_walk_exception_base_class(exception);
+    ptn_array_walk_exception_sync_property(exception, array, NULL, "message");
+    ptn_array_walk_exception_sync_property(exception, array, base_class, "string");
+    ptn_array_walk_exception_sync_property(exception, array, NULL, "code");
+    ptn_array_walk_exception_sync_property(exception, array, NULL, "file");
+    ptn_array_walk_exception_sync_property(exception, array, NULL, "line");
+    ptn_array_walk_exception_sync_property(exception, array, base_class, "trace");
+    ptn_array_walk_exception_sync_property(exception, array, base_class, "previous");
+
+    if (
+        exception != NULL &&
+        exception->class_name != NULL &&
+        ptn_exception_name_equal(exception->class_name, "ErrorException")
+    ) {
+        ptn_array_walk_exception_sync_property(exception, array, "ErrorException", "severity");
+    }
+    ptn_array_walk_exception_sync_dynamic_properties(exception, array);
 }
 
 static void ptn_array_walk_call_function(
@@ -21800,6 +21980,42 @@ static void ptn_array_walk_free_snapshot_keys(PtnArrayKey *keys, size_t count) {
     free(keys);
 }
 
+static PtnValue ptn_array_walk_exception(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    PtnValue callback,
+    int has_userdata,
+    PtnValue userdata,
+    size_t line
+) {
+    PtnValue properties = ptn_array_walk_exception_properties(exception);
+    PtnArray *array = properties.as.array;
+    PtnArrayKey *snapshot_keys = NULL;
+    size_t snapshot_count = 0;
+    snapshot_keys = ptn_array_walk_snapshot_keys(array, &snapshot_count);
+    for (size_t i = 0; i < snapshot_count; i++) {
+        PtnArrayKey key = ptn_array_key_clone(snapshot_keys[i]);
+        size_t entry_index = ptn_array_find_key(array, key);
+        ptn_array_key_free(key);
+        if (entry_index < array->len) {
+            ptn_array_walk_call_function(
+                runtime,
+                callback,
+                array,
+                NULL,
+                entry_index,
+                has_userdata,
+                userdata,
+                line
+            );
+        }
+    }
+    ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
+    ptn_array_walk_exception_sync(exception, array);
+    ptn_value_destroy(&properties);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_array_walk_slot(
     PtnRuntime *runtime,
     const char *name,
@@ -21814,6 +22030,20 @@ static PtnValue ptn_array_walk_slot(
     PtnArrayKey *snapshot_keys = NULL;
     size_t snapshot_count = 0;
     size_t snapshot_index = 0;
+
+    PtnValue *initial_slot = ptn_array_walk_current_slot(runtime, name, local_slot);
+    PtnValue initial_value = initial_slot == NULL ? value : *initial_slot;
+    PtnValue initial_resolved = ptn_value_deref(initial_value);
+    if (initial_resolved.type == PTN_EXCEPTION && initial_resolved.as.exception != NULL) {
+        return ptn_array_walk_exception(
+            runtime,
+            initial_resolved.as.exception,
+            callback,
+            has_userdata,
+            userdata,
+            line
+        );
+    }
 
     for (;;) {
         PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
