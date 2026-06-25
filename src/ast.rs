@@ -698,6 +698,12 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    DynamicPropertyArrayDim {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     StaticPropertyArrayDim {
         class_name: String,
         name: String,

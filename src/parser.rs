@@ -12524,6 +12524,20 @@ fn collect_arrow_captures_from_assignment_target(
                 }
             }
         }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
@@ -21595,6 +21609,16 @@ fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) ->
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
@@ -21821,6 +21845,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::DynamicArrayDim { .. } => return Ok(()),
         AssignmentTarget::ArrayDim(target) => &target.array,
         AssignmentTarget::PropertyArrayDim { .. } => return Ok(()),
+        AssignmentTarget::DynamicPropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::StaticPropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => return Ok(()),
         AssignmentTarget::ValueArrayDim { .. } => return Ok(()),
@@ -22108,7 +22133,9 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
 
 fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) -> Result<()> {
     match expr {
-        Expr::Variable(_, _) | Expr::PropertyFetch { .. } => Ok(()),
+        Expr::Variable(_, _) | Expr::PropertyFetch { .. } | Expr::DynamicPropertyFetch { .. } => {
+            Ok(())
+        }
         Expr::Grouped { expr, .. } => validate_array_reference_lvalue_expr(expr, temporary_message),
         Expr::ArrayAccess { array, index, span } => {
             if let Some(index) = index {
@@ -22117,6 +22144,7 @@ fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) ->
             match array.as_ref() {
                 Expr::Variable(_, _)
                 | Expr::PropertyFetch { .. }
+                | Expr::DynamicPropertyFetch { .. }
                 | Expr::Call { .. }
                 | Expr::DynamicCall { .. }
                 | Expr::MethodCall { .. }
@@ -22125,6 +22153,7 @@ fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) ->
                 Expr::Grouped { expr, .. } => match expr.as_ref() {
                     Expr::Variable(_, _)
                     | Expr::PropertyFetch { .. }
+                    | Expr::DynamicPropertyFetch { .. }
                     | Expr::Call { .. }
                     | Expr::DynamicCall { .. }
                     | Expr::MethodCall { .. }
@@ -22718,6 +22747,16 @@ fn assignment_target_contains_yield(target: &AssignmentTarget) -> bool {
         | AssignmentTarget::DynamicStaticProperty { receiver, .. } => expr_contains_yield(receiver),
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            expr_contains_yield(receiver)
+                || expr_contains_yield(name)
+                || dimensions.iter().flatten().any(expr_contains_yield)
         }
         AssignmentTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         AssignmentTarget::List(list) => list_assignment_target_contains_yield(list),
@@ -25809,6 +25848,21 @@ fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget>
                     span: combine_spans(property_span, span),
                 });
             }
+            Expr::DynamicPropertyFetch {
+                receiver,
+                name,
+                span: property_span,
+                ..
+            } => {
+                reject_temporary_property_write_receiver(&receiver)?;
+                dimensions.reverse();
+                return Ok(AssignmentTarget::DynamicPropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
             Expr::StaticPropertyFetch {
                 class_name,
                 name,
@@ -25879,6 +25933,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::DynamicVariable { span, .. }
         | AssignmentTarget::DynamicArrayDim { span, .. }
         | AssignmentTarget::PropertyArrayDim { span, .. }
+        | AssignmentTarget::DynamicPropertyArrayDim { span, .. }
         | AssignmentTarget::StaticPropertyArrayDim { span, .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { span, .. }
         | AssignmentTarget::DynamicStaticPropertyName { span, .. }
@@ -25993,7 +26048,8 @@ fn validate_coalesce_assignment_target(
             }
             Ok(())
         }
-        AssignmentTarget::PropertyArrayDim { .. } => Err(Diagnostic::new(
+        AssignmentTarget::PropertyArrayDim { .. }
+        | AssignmentTarget::DynamicPropertyArrayDim { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
@@ -26157,6 +26213,7 @@ fn validate_expression_assignment_target(
         AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::DynamicArrayDim { .. }
         | AssignmentTarget::PropertyArrayDim { .. }
+        | AssignmentTarget::DynamicPropertyArrayDim { .. }
         | AssignmentTarget::StaticPropertyArrayDim { .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { .. } => Ok(()),
         AssignmentTarget::ValueArrayDim { dimensions, .. } => {
@@ -26232,6 +26289,12 @@ fn validate_reference_assignment_target_source(
             }
         }
         AssignmentTarget::PropertyArrayDim { .. } => {}
+        AssignmentTarget::DynamicPropertyArrayDim { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
         AssignmentTarget::StaticPropertyArrayDim { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
@@ -27096,6 +27159,16 @@ fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> R
             ..
         } => {
             reject_append_array_read(receiver)?;
+            reject_append_array_read_in_optional_exprs(dimensions)?;
+        }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
+            reject_append_array_read(name)?;
             reject_append_array_read_in_optional_exprs(dimensions)?;
         }
         AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
@@ -28407,6 +28480,19 @@ fn assignment_target_uses_this_property(target: &AssignmentTarget, property_name
         } => {
             receiver_is_this_property(receiver, name, property_name)
                 || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        AssignmentTarget::DynamicPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
                 || dimensions
                     .iter()
                     .flatten()

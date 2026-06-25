@@ -102019,23 +102019,66 @@ static void ptn_date_period_declare_value_property(
     PtnValue value,
     size_t line
 ) {
-    PtnValue assigned = ptn_object_declare_property(
-        runtime,
-        object,
+    if (object.type != PTN_OBJECT || object.as.object == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+
+    ptn_object_register_property_metadata(
+        object.as.object,
         name,
         "DatePeriod",
         PTN_PROPERTY_PUBLIC,
         PTN_PROPERTY_PUBLIC,
+        1,
         0,
+        0,
+        0,
+        0,
+        0,
+        NULL,
+        NULL,
         PTN_PROPERTY_TYPE_NONE,
         NULL,
         NULL,
-        0,
+        0
+    );
+
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        object.as.object,
+        name,
+        "DatePeriod",
+        PTN_PROPERTY_ACCESS_WRITE,
         1,
-        value,
         line
     );
-    ptn_value_destroy(&assigned);
+    if (storage_key == NULL) {
+        ptn_value_destroy(&value);
+        return;
+    }
+
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object.as.object->properties, key);
+    PtnObjectPropertyMetadata *metadata =
+        ptn_object_mutable_property_metadata(object.as.object, storage_key);
+    PtnValue stored = ptn_value_clone_deref(value);
+
+    if (metadata != NULL) {
+        metadata->is_unset = 0;
+        ptn_object_metadata_remember_value_type(metadata, stored);
+    }
+    if (entry != NULL && entry->value.type == PTN_REFERENCE) {
+        ptn_array_update_next_auto_key(object.as.object->properties, key);
+        ptn_reference_assign_publish_first(runtime, entry->value.as.reference, stored);
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+    } else {
+        ptn_array_set_entry_publish_first(object.as.object->properties, key, stored);
+    }
+    ptn_lazy_object_sync_proxy_instance_properties(object.as.object);
+    free(storage_key);
+    ptn_value_destroy(&value);
 }
 
 static int ptn_date_period_has_end(PtnDatePeriodData *data) {

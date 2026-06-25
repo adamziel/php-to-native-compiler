@@ -25432,6 +25432,48 @@ var_dump($exportReturn);\n",
 }
 
 #[test]
+fn compile_date_period_internal_properties_are_readonly_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-readonly-internal-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-readonly-internal-properties.php");
+    let output = root.join("date-period-readonly-internal-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$period = new DatePeriod(\n\
+    new DateTimeImmutable('2023-01-01'),\n\
+    new DateInterval('P1D'),\n\
+    new DateTimeImmutable('2023-01-03')\n\
+);\n\
+foreach (['recurrences', 'interval'] as $property) {\n\
+    try { $period->$property = 'new'; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    try { $period->$property[] = 'extra'; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+}\n\
+try { $ref =& $period->interval; } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+class MyDatePeriod extends DatePeriod { public int $prop = 3; }\n\
+$sub = new MyDatePeriod(new DateTimeImmutable('2023-01-01'), new DateInterval('P1D'), 1);\n\
+try { unset($sub->start); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot modify readonly property DatePeriod::$recurrences\n",
+            "Cannot modify readonly property DatePeriod::$recurrences\n",
+            "Cannot modify readonly property DatePeriod::$interval\n",
+            "Cannot modify readonly property DatePeriod::$interval\n",
+            "Cannot modify readonly property DatePeriod::$interval\n",
+            "Cannot unset MyDatePeriod::$start\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_period_special_relative_interval_serializes_numeric_interval_to_native_binary() {
     let root = temp_dir("ptn-native-date-period-special-relative-serialize");
     fs::create_dir_all(&root).unwrap();

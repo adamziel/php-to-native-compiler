@@ -4700,6 +4700,54 @@ static PTN_UNUSED void ptn_throw_readonly_property_unset_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED int ptn_date_period_internal_property_name(const char *property) {
+    return property != NULL &&
+        (strcmp(property, "start") == 0 ||
+         strcmp(property, "current") == 0 ||
+         strcmp(property, "end") == 0 ||
+         strcmp(property, "interval") == 0 ||
+         strcmp(property, "recurrences") == 0 ||
+         strcmp(property, "include_start_date") == 0 ||
+         strcmp(property, "include_end_date") == 0);
+}
+
+static PTN_UNUSED int ptn_object_property_is_date_period_internal(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return object != NULL &&
+        metadata != NULL &&
+        metadata->is_readonly &&
+        ptn_ascii_case_equal(metadata->declaring_class, "DatePeriod") &&
+        ptn_date_period_internal_property_name(metadata->display_name) &&
+        ptn_runtime_declared_class_is_same_or_descendant(
+            runtime,
+            object->class_name,
+            "DatePeriod"
+        );
+}
+
+static PTN_UNUSED void ptn_throw_date_period_internal_property_unset_error(
+    PtnRuntime *runtime,
+    const char *object_class_name,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot unset %s::$%s",
+        object_class_name == NULL ? "DatePeriod" : object_class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_readonly_property_reference_error(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -6860,6 +6908,18 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         property
     );
     if (metadata != NULL && metadata->is_readonly) {
+        if (ptn_object_property_is_date_period_internal(runtime, receiver.as.object, metadata)) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_readonly_property_error(
+                runtime,
+                receiver.as.object->class_name,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_null();
+        }
         if (entry != NULL) {
             PtnValue current = ptn_value_clone_deref(entry->value);
             if (current.type == PTN_OBJECT) {
@@ -8099,6 +8159,19 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode_len_impl(
     }
     int readonly_clone_reinit = 0;
     if (metadata != NULL && metadata->is_readonly && indirect_write) {
+        if (ptn_object_property_is_date_period_internal(runtime, receiver.as.object, metadata)) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            PTN_OBJECT_WRITE_CLEANUP_LAZY_VALUE();
+            ptn_throw_readonly_property_error(
+                runtime,
+                receiver.as.object->class_name,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_null();
+        }
         if (entry != NULL) {
             PtnValue current = ptn_value_deref(entry->value);
             PtnValue assigned = ptn_value_deref(value);
@@ -9029,6 +9102,18 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         }
     }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        if (ptn_object_property_is_date_period_internal(runtime, receiver.as.object, metadata)) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_readonly_property_error(
+                runtime,
+                receiver.as.object->class_name,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
         if (ptn_ascii_case_equal(receiver.as.object->class_name, "BcMath\\Number")) {
             PtnValue current = ptn_value_clone_deref(entry->value);
             ptn_array_key_free(key);
@@ -9272,6 +9357,17 @@ static PTN_UNUSED void ptn_object_unset_property_len(
         ptn_array_key_free(key);
         free(storage_key);
         ptn_throw_hooked_property_unset_error(runtime, mutable_metadata, line);
+        return;
+    }
+    if (ptn_object_property_is_date_period_internal(runtime, receiver.as.object, mutable_metadata)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_date_period_internal_property_unset_error(
+            runtime,
+            receiver.as.object->class_name,
+            mutable_metadata->display_name,
+            line
+        );
         return;
     }
     if (mutable_metadata != NULL && mutable_metadata->is_readonly && entry != NULL) {
