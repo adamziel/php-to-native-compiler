@@ -151058,6 +151058,13 @@ static PtnValue ptn_reflection_type_object_from_metadata(
     int allows_null,
     int is_builtin
 );
+static PtnValue ptn_reflection_named_type_object_from_metadata(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *display_name,
+    int allows_null,
+    int is_builtin
+);
 static PtnValue ptn_reflection_function_size_result(size_t value);
 static PtnValue ptn_reflection_parameter_object_from_metadata(
     PtnRuntime *runtime,
@@ -162285,6 +162292,32 @@ static const char *ptn_reflection_type_class_name(PtnReflectionTypeKind kind) {
     }
 }
 
+static PtnValue ptn_reflection_named_type_object_from_metadata(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *display_name,
+    int allows_null,
+    int is_builtin
+) {
+    if (name == NULL || display_name == NULL) {
+        return ptn_null();
+    }
+    PtnReflectionTypeData *data = malloc(sizeof(PtnReflectionTypeData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->kind = PTN_REFLECTION_TYPE_NAMED;
+    data->name = ptn_duplicate_string(name);
+    data->display_name = ptn_duplicate_string(display_name);
+    data->allows_null = allows_null;
+    data->is_builtin = is_builtin;
+
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionNamedType");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_type_data_free;
+    return object;
+}
+
 static PtnValue ptn_reflection_type_object_from_metadata(
     PtnRuntime *runtime,
     const char *name,
@@ -162298,6 +162331,15 @@ static PtnValue ptn_reflection_type_object_from_metadata(
     PtnReflectionTypeKind kind = ptn_reflection_type_kind_from_display(display_name);
     if (kind == PTN_REFLECTION_TYPE_NAMED && name == NULL) {
         return ptn_null();
+    }
+    if (kind == PTN_REFLECTION_TYPE_NAMED) {
+        return ptn_reflection_named_type_object_from_metadata(
+            runtime,
+            name,
+            display_name,
+            allows_null,
+            is_builtin
+        );
     }
     PtnReflectionTypeData *data = malloc(sizeof(PtnReflectionTypeData));
     if (data == NULL) {
