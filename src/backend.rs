@@ -7785,6 +7785,7 @@ fn emit_class_metadata_helpers(
         "IntlIterator",
         "MessageFormatter",
         "IntlListFormatter",
+        "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
         "IntlNumberRangeFormatter",
@@ -8638,6 +8639,7 @@ fn emit_class_metadata_helpers(
         "IntlIterator",
         "MessageFormatter",
         "IntlListFormatter",
+        "IntlDatePatternGenerator",
         "Locale",
         "NumberFormatter",
         "IntlNumberRangeFormatter",
@@ -21457,6 +21459,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intliterator" => Some("IntlIterator"),
         "messageformatter" => Some("MessageFormatter"),
         "intllistformatter" => Some("IntlListFormatter"),
+        "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
@@ -23130,9 +23133,24 @@ fn emit_method_dispatch(
         "        return ptn_intl_message_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_list_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_date_pattern_generator(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_date_pattern_generator_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_number_formatter(class_name)) {\n");
     out.push_str(
         "        return ptn_intl_number_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_number_range_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_collator(class_name)) {\n");
@@ -31391,6 +31409,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlIterator")
                 || class_name.eq_ignore_ascii_case("MessageFormatter")
                 || class_name.eq_ignore_ascii_case("IntlListFormatter")
+                || class_name.eq_ignore_ascii_case("IntlDatePatternGenerator")
                 || class_name.eq_ignore_ascii_case("Locale")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
                 || class_name.eq_ignore_ascii_case("IntlNumberRangeFormatter")

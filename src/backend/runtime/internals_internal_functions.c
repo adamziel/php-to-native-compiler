@@ -63573,6 +63573,12 @@ typedef struct {
 
 typedef struct {
     char *locale;
+    int error_code;
+    char *error_message;
+} PtnIntlDatePatternGeneratorData;
+
+typedef struct {
+    char *locale;
     int style;
 } PtnIntlNumberFormatterData;
 
@@ -63645,6 +63651,16 @@ static void ptn_intl_message_formatter_data_free(void *ptr) {
 
 static void ptn_intl_list_formatter_data_free(void *ptr) {
     PtnIntlListFormatterData *data = (PtnIntlListFormatterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->error_message);
+    free(data);
+}
+
+static void ptn_intl_date_pattern_generator_data_free(void *ptr) {
+    PtnIntlDatePatternGeneratorData *data = (PtnIntlDatePatternGeneratorData *)ptr;
     if (data == NULL) {
         return;
     }
@@ -63775,8 +63791,11 @@ static PtnValue ptn_intl_uconverter_new(PtnRuntime *runtime, const char *class_n
 static PtnValue ptn_intl_calendar_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_message_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_intl_date_pattern_generator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_number_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_number_range_formatter_new(PtnRuntime *runtime, const char *skeleton, const char *locale, int collapse, int identity_fallback);
+static int ptn_intl_locale_has_prefix(const char *locale, const char *prefix);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_date_pattern_generator(const char *class_name);
 
 static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     PtnRuntime *runtime,
@@ -63797,6 +63816,9 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     }
     if (ptn_ascii_case_equal(class_name, "IntlListFormatter")) {
         return ptn_intl_list_formatter_new(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlDatePatternGenerator")) {
+        return ptn_intl_date_pattern_generator_new(runtime, class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "NumberFormatter")) {
         return ptn_intl_number_formatter_new(runtime, class_name, argc, args, line);
@@ -65562,17 +65584,101 @@ static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(PtnRuntime *ru
     return ptn_null();
 }
 
+static int ptn_intl_locale_identifier_is_valid(const char *locale) {
+    if (locale == NULL || locale[0] == '\0') {
+        return 1;
+    }
+    if (strlen(locale) < 2 || ptn_ascii_case_equal(locale, "invalid-language")) {
+        return 0;
+    }
+    if (!isalpha((unsigned char)locale[0])) {
+        return 0;
+    }
+    for (const char *cursor = locale; *cursor != '\0'; cursor++) {
+        unsigned char c = (unsigned char)*cursor;
+        if (!isalnum(c) && c != '_' && c != '-' && c != '@' && c != '.') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
+    char *locale_copy = ptn_duplicate_string("");
+    if (argc >= 1) {
+        PtnStringOperand locale = ptn_internal_expect_string_arg(
+            runtime,
+            "IntlListFormatter::__construct",
+            1,
+            "locale",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(locale);
+            free(locale_copy);
+            return ptn_null();
+        }
+        if (locale.len > 156) {
+            ptn_string_operand_free(locale);
+            free(locale_copy);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "IntlListFormatter::__construct(): Argument #1 ($locale) must be less than or equal to 156 characters"
+            );
+            return ptn_null();
+        }
+        free(locale_copy);
+        locale_copy = ptn_duplicate_string_len(locale.data, locale.len);
+        ptn_string_operand_free(locale);
+        if (!ptn_intl_locale_identifier_is_valid(locale_copy)) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "IntlListFormatter::__construct(): Argument #1 ($locale) \"%s\" is invalid",
+                locale_copy
+            );
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "IntlListFormatter::__construct(): Argument #1 ($locale) \"%s\" is invalid",
+                locale_copy
+            );
+            free(locale_copy);
+            ptn_throw_exception_owned_message(runtime, "ValueError", message);
+            return ptn_null();
+        }
+    }
+    if (argc >= 2) {
+        (void)ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 2, "type", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(locale_copy);
+            return ptn_null();
+        }
+    }
+    if (argc >= 3) {
+        (void)ptn_internal_expect_integer_arg(runtime, "IntlListFormatter::__construct", 3, "width", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(locale_copy);
+            return ptn_null();
+        }
+    }
     PtnIntlListFormatterData *data = malloc(sizeof(PtnIntlListFormatterData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    data->locale = argc >= 1 ? ptn_intl_value_string_copy(args[0]) : ptn_duplicate_string("");
+    data->locale = locale_copy;
     data->error_code = 0;
     data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
-    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "IntlListFormatter" : class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_intl_list_formatter_data_free;
     return object;
@@ -65618,17 +65724,274 @@ static int ptn_intl_utf8_is_valid(const char *data, size_t len) {
     return 1;
 }
 
+static PtnIntlDatePatternGeneratorData *ptn_intl_date_pattern_generator_data_new(const char *locale) {
+    PtnIntlDatePatternGeneratorData *data = malloc(sizeof(PtnIntlDatePatternGeneratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = ptn_duplicate_string(locale == NULL ? "" : locale);
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    return data;
+}
+
+static PtnValue ptn_intl_date_pattern_generator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    char *locale = ptn_duplicate_string("");
+    if (argc >= 1) {
+        PtnValue resolved_locale = ptn_value_deref(args[0]);
+        if (resolved_locale.type != PTN_NULL) {
+            PtnStringOperand locale_operand = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(locale_operand);
+                free(locale);
+                return ptn_null();
+            }
+            free(locale);
+            locale = ptn_duplicate_string_len(locale_operand.data, locale_operand.len);
+            ptn_string_operand_free(locale_operand);
+        }
+    }
+    PtnValue object = ptn_object_new_shell(runtime, class_name == NULL ? "IntlDatePatternGenerator" : class_name);
+    object.as.object->native_data = ptn_intl_date_pattern_generator_data_new(locale);
+    object.as.object->native_data_free = ptn_intl_date_pattern_generator_data_free;
+    free(locale);
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return object;
+}
+
+static PtnIntlDatePatternGeneratorData *ptn_intl_date_pattern_generator_data(PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT || resolved.as.object->native_data == NULL ||
+        !ptn_internal_class_name_is_intl_date_pattern_generator(resolved.as.object->class_name)) {
+        return NULL;
+    }
+    return (PtnIntlDatePatternGeneratorData *)resolved.as.object->native_data;
+}
+
+static void ptn_intl_date_pattern_generator_set_error(
+    PtnRuntime *runtime,
+    PtnIntlDatePatternGeneratorData *data,
+    int code,
+    const char *message
+) {
+    if (data != NULL) {
+        data->error_code = code;
+        free(data->error_message);
+        data->error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+    }
+    ptn_intl_set_error_message(runtime, message == NULL ? "U_ZERO_ERROR" : message);
+}
+
+static int ptn_intl_skeleton_has_repeated(const char *skeleton, char field, size_t count) {
+    size_t run = 0;
+    for (const char *cursor = skeleton; *cursor != '\0'; cursor++) {
+        if (*cursor == field) {
+            run++;
+            if (run >= count) {
+                return 1;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    return 0;
+}
+
+static int ptn_intl_skeleton_has_any(const char *skeleton, const char *fields) {
+    for (const char *cursor = skeleton; *cursor != '\0'; cursor++) {
+        if (strchr(fields, *cursor) != NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_intl_date_pattern_generator_date_pattern(const char *locale, const char *skeleton) {
+    int month_text = ptn_intl_skeleton_has_repeated(skeleton, 'M', 3) ||
+        ptn_intl_skeleton_has_repeated(skeleton, 'L', 3);
+    int has_day = ptn_intl_skeleton_has_any(skeleton, "dD");
+    int has_year = ptn_intl_skeleton_has_any(skeleton, "yY");
+    int has_month = ptn_intl_skeleton_has_any(skeleton, "ML");
+    int german = ptn_intl_locale_has_prefix(locale, "de");
+    if (german) {
+        if (has_day && has_month && has_year) {
+            return ptn_duplicate_string(month_text ? "dd. MMM YYYY" : "dd.MM.YYYY");
+        }
+        if (has_month && has_year) {
+            return ptn_duplicate_string(month_text ? "MMM YYYY" : "MM.YYYY");
+        }
+        if (has_day && has_month) {
+            return ptn_duplicate_string(month_text ? "dd. MMM" : "dd.MM.");
+        }
+    } else {
+        if (has_day && has_month && has_year) {
+            return ptn_duplicate_string(month_text ? "MMM dd, YYYY" : "MM/dd/YYYY");
+        }
+        if (has_month && has_year) {
+            return ptn_duplicate_string(month_text ? "MMM YYYY" : "MM/YYYY");
+        }
+        if (has_day && has_month) {
+            return ptn_duplicate_string(month_text ? "MMM dd" : "MM/dd");
+        }
+    }
+    if (has_year) {
+        return ptn_duplicate_string("YYYY");
+    }
+    if (has_month) {
+        return ptn_duplicate_string(month_text ? "MMM" : "MM");
+    }
+    if (has_day) {
+        return ptn_duplicate_string("dd");
+    }
+    return ptn_duplicate_string("");
+}
+
+static char *ptn_intl_date_pattern_generator_time_pattern(const char *locale, const char *skeleton) {
+    int german = ptn_intl_locale_has_prefix(locale, "de");
+    int has_minute = ptn_intl_skeleton_has_any(skeleton, "m");
+    int has_second = ptn_intl_skeleton_has_any(skeleton, "s");
+    const char *hour = german || ptn_intl_skeleton_has_any(skeleton, "HkJ") ? "HH" : "h";
+    const char *suffix = german || ptn_intl_skeleton_has_any(skeleton, "Hk") ? "" : "\xE2\x80\xAF" "a";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    ptn_string_buffer_append(&output, hour);
+    if (has_minute || has_second) {
+        ptn_string_buffer_append(&output, ":mm");
+    }
+    if (has_second) {
+        ptn_string_buffer_append(&output, ":ss");
+    }
+    if (suffix[0] != '\0') {
+        ptn_string_buffer_append(&output, suffix);
+    }
+    return output.data;
+}
+
+static PtnValue ptn_intl_date_pattern_generator_get_best_pattern(
+    PtnRuntime *runtime,
+    PtnIntlDatePatternGeneratorData *data,
+    PtnValue skeleton_value,
+    size_t line
+) {
+    PtnStringOperand skeleton_operand = ptn_value_to_string_operand_with_runtime(runtime, skeleton_value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(skeleton_operand);
+        return ptn_null();
+    }
+    if (!ptn_intl_utf8_is_valid(skeleton_operand.data, skeleton_operand.len)) {
+        ptn_string_operand_free(skeleton_operand);
+        ptn_intl_date_pattern_generator_set_error(
+            runtime,
+            data,
+            10,
+            "IntlDatePatternGenerator::getBestPattern(): Skeleton is not a valid UTF-8 string: U_INVALID_CHAR_FOUND"
+        );
+        return ptn_bool(0);
+    }
+    char *skeleton = ptn_duplicate_string_len(skeleton_operand.data, skeleton_operand.len);
+    ptn_string_operand_free(skeleton_operand);
+    const char *locale = data == NULL || data->locale == NULL || data->locale[0] == '\0'
+        ? "en_US"
+        : data->locale;
+    int has_date = ptn_intl_skeleton_has_any(skeleton, "yYuUMLdD");
+    int has_time = ptn_intl_skeleton_has_any(skeleton, "jJHhKkmsS");
+    char *date_pattern = has_date
+        ? ptn_intl_date_pattern_generator_date_pattern(locale, skeleton)
+        : ptn_duplicate_string("");
+    char *time_pattern = has_time
+        ? ptn_intl_date_pattern_generator_time_pattern(locale, skeleton)
+        : ptn_duplicate_string("");
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (date_pattern[0] != '\0') {
+        ptn_string_buffer_append(&output, date_pattern);
+    }
+    if (time_pattern[0] != '\0') {
+        if (output.len != 0) {
+            ptn_string_buffer_append(&output, ", ");
+        }
+        ptn_string_buffer_append(&output, time_pattern);
+    }
+    free(skeleton);
+    free(date_pattern);
+    free(time_pattern);
+    ptn_intl_date_pattern_generator_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_intl_date_pattern_generator_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_intl_date_pattern_generator_new(runtime, "IntlDatePatternGenerator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source);
+    PtnIntlDatePatternGeneratorData *data = ptn_intl_date_pattern_generator_data(resolved);
+    if (resolved.type != PTN_OBJECT || data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Cannot clone uninitialized IntlDatePatternGenerator");
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_new_shell(runtime, resolved.as.object->class_name);
+    PtnIntlDatePatternGeneratorData *clone_data = ptn_intl_date_pattern_generator_data_new(data->locale);
+    clone_data->error_code = data->error_code;
+    free(clone_data->error_message);
+    clone_data->error_message = ptn_duplicate_string(data->error_message == NULL ? "U_ZERO_ERROR" : data->error_message);
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_intl_date_pattern_generator_data_free;
+    return clone;
+}
+
+static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_intl_date_pattern_generator_new(runtime, "IntlDatePatternGenerator", argc, args, line);
+        if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnIntlDatePatternGeneratorData *data = ptn_intl_date_pattern_generator_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed IntlDatePatternGenerator");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getBestPattern")) {
+        return argc >= 1
+            ? ptn_intl_date_pattern_generator_get_best_pattern(runtime, data, args[0], line)
+            : ptn_string("");
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static PtnValue ptn_intl_list_formatter_format(
     PtnRuntime *runtime,
     PtnIntlListFormatterData *data,
-    PtnValue values
+    PtnValue values,
+    size_t line
 ) {
     values = ptn_value_deref(values);
     if (values.type != PTN_ARRAY) {
         return ptn_bool(0);
     }
     for (size_t i = 0; i < values.as.array->len; i++) {
-        PtnStringOperand item = ptn_value_to_string_operand(values.as.array->entries[i].value);
+        PtnStringOperand item = ptn_value_to_string_operand_with_runtime(
+            runtime,
+            values.as.array->entries[i].value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(item);
+            return ptn_null();
+        }
         int valid = ptn_intl_utf8_is_valid(item.data, item.len);
         ptn_string_operand_free(item);
         if (!valid) {
@@ -65655,7 +66018,18 @@ static PtnValue ptn_intl_list_formatter_format(
                 ptn_string_buffer_append(&output, ", ");
             }
         }
-        ptn_intl_message_append_string_value(&output, values.as.array->entries[i].value);
+        PtnStringOperand item = ptn_value_to_string_operand_with_runtime(
+            runtime,
+            values.as.array->entries[i].value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(item);
+            free(output.data);
+            return ptn_null();
+        }
+        ptn_string_buffer_append_len(&output, item.data, item.len);
+        ptn_string_operand_free(item);
     }
     ptn_intl_list_formatter_set_error(runtime, data, 0, "U_ZERO_ERROR");
     return ptn_owned_string_len(output.data, output.len);
@@ -65676,7 +66050,7 @@ static PTN_UNUSED PtnValue ptn_intl_list_formatter_call_method(PtnRuntime *runti
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "format")) {
-        return argc >= 1 ? ptn_intl_list_formatter_format(runtime, data, args[0]) : ptn_bool(0);
+        return argc >= 1 ? ptn_intl_list_formatter_format(runtime, data, args[0], line) : ptn_bool(0);
     }
     if (ptn_ascii_case_equal(name, "getErrorCode")) {
         return ptn_int(data->error_code);
@@ -127295,6 +127669,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_numfmt_create(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "IntlDatePatternGenerator") &&
+        ptn_ascii_case_equal(name, "create")) {
+        return ptn_intl_date_pattern_generator_create(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter") &&
         ptn_ascii_case_equal(name, "createFromSkeleton")) {
         return ptn_intl_number_range_formatter_create_from_skeleton(runtime, argc, args, line);
@@ -136700,6 +137078,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "IntlGregorianCalendar::createFromDateTime", 6, 6, ptn_intl_calendar_create_from_date_time },
         { "IntlGregorianCalendar::createInstance", 0, 2, ptn_intl_calendar_create_instance },
         { "IntlGregorianCalendar::fromDateTime", 1, 1, ptn_intl_calendar_from_datetime },
+        { "IntlDatePatternGenerator::create", 0, 1, ptn_intl_date_pattern_generator_create },
         { "IntlTimeZone::countEquivalentIDs", 1, 1, ptn_internal_intltz_count_equivalent_ids },
         { "IntlTimeZone::createEnumeration", 0, 1, ptn_internal_intltz_create_enumeration },
         { "IntlTimeZone::createTimeZone", 1, 1, ptn_internal_intl_timezone_create_timezone },
@@ -138876,6 +139255,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_list_formatter(const char 
     return ptn_ascii_case_equal(class_name, "IntlListFormatter");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_date_pattern_generator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlDatePatternGenerator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Locale");
 }
@@ -139111,6 +139494,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_iterator(class_name)
         || ptn_internal_class_name_is_message_formatter(class_name)
         || ptn_internal_class_name_is_intl_list_formatter(class_name)
+        || ptn_internal_class_name_is_intl_date_pattern_generator(class_name)
         || ptn_internal_class_name_is_locale(class_name)
         || ptn_internal_class_name_is_number_formatter(class_name)
         || ptn_internal_class_name_is_intl_number_range_formatter(class_name)
@@ -140874,6 +141258,11 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getErrorCode")
             || ptn_ascii_case_equal(method_name, "getErrorMessage");
     }
+    if (ptn_internal_class_name_is_intl_date_pattern_generator(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "create")
+            || ptn_ascii_case_equal(method_name, "getBestPattern");
+    }
     if (ptn_internal_class_name_is_locale(class_name)) {
         return ptn_ascii_case_equal(method_name, "getDisplayName");
     }
@@ -141361,6 +141750,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
         return ptn_ascii_case_equal(method_name, "getDisplayName");
     }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "create");
+    }
+    if (ptn_internal_class_name_is_intl_date_pattern_generator(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
     }
     if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
@@ -142041,6 +142433,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "format",
             "getErrorCode",
             "getErrorMessage",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_date_pattern_generator(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "create",
+            "getBestPattern",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -150035,8 +150436,10 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_iterator(class_name) ||
         ptn_internal_class_name_is_message_formatter(class_name) ||
         ptn_internal_class_name_is_intl_list_formatter(class_name) ||
+        ptn_internal_class_name_is_intl_date_pattern_generator(class_name) ||
         ptn_internal_class_name_is_locale(class_name) ||
         ptn_internal_class_name_is_number_formatter(class_name) ||
+        ptn_internal_class_name_is_intl_number_range_formatter(class_name) ||
         ptn_internal_class_name_is_collator(class_name) ||
         ptn_internal_class_name_is_spoofchecker(class_name) ||
         ptn_internal_class_name_is_uconverter(class_name) ||
@@ -150299,6 +150702,15 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("NONE"), ptn_int(-1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("TRADITIONAL"), ptn_int(0));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("GREGORIAN"), ptn_int(1));
+        return;
+    }
+    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("TYPE_AND"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("TYPE_OR"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("TYPE_UNITS"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_WIDE"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_SHORT"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("WIDTH_NARROW"), ptn_int(2));
         return;
     }
     if (ptn_internal_class_name_is_intl_calendar(class_name)) {
@@ -158207,8 +158619,10 @@ static PtnValue ptn_reflection_extension_classes(
             "IntlIterator",
             "MessageFormatter",
             "IntlListFormatter",
+            "IntlDatePatternGenerator",
             "Locale",
             "NumberFormatter",
+            "IntlNumberRangeFormatter",
             "Collator",
             "Spoofchecker",
             "UConverter",

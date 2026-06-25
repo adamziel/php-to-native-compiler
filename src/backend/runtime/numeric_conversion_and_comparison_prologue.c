@@ -5065,6 +5065,14 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlListFormatter")) {
+        if (strcmp(constant, "TYPE_AND") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "TYPE_OR") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "TYPE_UNITS") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "WIDTH_WIDE") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "WIDTH_SHORT") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "WIDTH_NARROW") == 0) { *out = ptn_int(2); return 1; }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlCalendar") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlGregorianCalendar")) {
         if (strcmp(constant, "FIELD_ERA") == 0) { *out = ptn_int(0); return 1; }

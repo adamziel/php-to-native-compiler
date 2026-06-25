@@ -43061,6 +43061,68 @@ string(66) \"locale_get_display_name(): name too long: U_ILLEGAL_ARGUMENT_ERROR\
 }
 
 #[test]
+fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-list-formatter-date-pattern-generator.php");
+    let output = root.join("intl-list-formatter-date-pattern-generator-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dtpg = new IntlDatePatternGenerator('de_DE');\n\
+echo $dtpg->getBestPattern('YYYYMMMddjjmm'), \"\\n\";\n\
+$dtpgClone = clone $dtpg;\n\
+echo $dtpgClone->getBestPattern('YYYYMMMddjjmm'), \"\\n\";\n\
+$defaultDtpg = IntlDatePatternGenerator::create();\n\
+echo $defaultDtpg->getBestPattern('jjmm'), \"\\n\";\n\
+var_dump($defaultDtpg->getBestPattern(\"jjmm\\x80\"));\n\
+var_dump(intl_get_error_message());\n\
+try {\n\
+    new IntlListFormatter('f', IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_WIDE);\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    new IntlListFormatter(str_repeat('a', 157), IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_WIDE);\n\
+} catch (Throwable $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+$formatter = new IntlListFormatter('ro', IntlListFormatter::TYPE_AND, IntlListFormatter::WIDTH_WIDE);\n\
+foreach ([[new stdClass()], [1, 2, new stdClass(), 4]] as $values) {\n\
+    try {\n\
+        $formatter->format($values);\n\
+    } catch (Throwable $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "dd. MMM YYYY, HH:mm\n\
+dd. MMM YYYY, HH:mm\n\
+h:mm\u{202f}a\n\
+bool(false)\n\
+string(102) \"IntlDatePatternGenerator::getBestPattern(): Skeleton is not a valid UTF-8 string: U_INVALID_CHAR_FOUND\"\n\
+IntlListFormatter::__construct(): Argument #1 ($locale) \"f\" is invalid\n\
+IntlListFormatter::__construct(): Argument #1 ($locale) must be less than or equal to 156 characters\n\
+Object of class stdClass could not be converted to string\n\
+Object of class stdClass could not be converted to string\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_intl_date_pattern_generator_call_method"));
+    assert!(c_source.contains("ptn_intl_list_formatter_call_method"));
+    assert!(c_source.contains("IntlListFormatter"));
+}
+
+#[test]
 fn compile_intl_calendar_unconstructed_subclass_debug_to_native_binary() {
     let root = temp_dir("ptn-native-intl-calendar-unconstructed-debug");
     fs::create_dir_all(&root).unwrap();

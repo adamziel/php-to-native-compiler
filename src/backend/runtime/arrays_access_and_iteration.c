@@ -324,6 +324,12 @@ static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
     PtnValue source,
     size_t line
 );
+static PTN_UNUSED int ptn_internal_class_name_is_intl_date_pattern_generator(const char *class_name);
+static PTN_UNUSED PtnValue ptn_intl_date_pattern_generator_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1156,6 +1162,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_intl_iterator(lookup_class_name) ||
         ptn_internal_class_name_is_message_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_list_formatter(lookup_class_name) ||
+        ptn_internal_class_name_is_intl_date_pattern_generator(lookup_class_name) ||
         ptn_internal_class_name_is_locale(lookup_class_name) ||
         ptn_internal_class_name_is_number_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_number_range_formatter(lookup_class_name) ||
@@ -1783,6 +1790,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         }
         ptn_throw_exception(runtime, "Error", message);
         return ptn_null();
+    }
+    if (ptn_internal_class_name_is_intl_date_pattern_generator(source->class_name)) {
+        return ptn_intl_date_pattern_generator_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplDoublyLinkedList")) {
         return ptn_spl_doubly_linked_list_clone(runtime, resolved, line);
