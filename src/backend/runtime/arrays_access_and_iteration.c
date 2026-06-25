@@ -4059,6 +4059,51 @@ static PTN_UNUSED void ptn_reference_adopt_property_type(
     reference->property_name = ptn_duplicate_string(metadata->display_name);
 }
 
+static PTN_UNUSED void ptn_reference_remember_property_identity(
+    PtnReference *reference,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (reference == NULL || metadata == NULL) {
+        return;
+    }
+    if (reference->property_declaring_class != NULL || reference->property_name != NULL) {
+        return;
+    }
+    reference->property_declaring_class = ptn_duplicate_string(metadata->declaring_class);
+    reference->property_name = ptn_duplicate_string(metadata->display_name);
+}
+
+static PTN_UNUSED const char *ptn_reference_property_storage_key_for_object(
+    PtnObject *object,
+    PtnReference *reference
+) {
+    if (object == NULL ||
+        reference == NULL ||
+        reference->property_declaring_class == NULL ||
+        reference->property_name == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (strcmp(metadata->declaring_class, reference->property_declaring_class) == 0 &&
+            strcmp(metadata->display_name, reference->property_name) == 0) {
+            return metadata->storage_name;
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_reference_created_in_active_property_hook(
+    PtnRuntime *runtime,
+    PtnObject *receiver
+) {
+    return runtime != NULL &&
+        receiver != NULL &&
+        runtime->active_property_hook_object == receiver &&
+        runtime->active_property_hook_class != NULL &&
+        runtime->active_property_hook_property != NULL;
+}
+
 static PTN_UNUSED void ptn_reference_adopt_property_type_clone_source(
     PtnReference *reference,
     const PtnObjectPropertyMetadata *metadata
@@ -6038,6 +6083,9 @@ static PTN_UNUSED int ptn_lazy_object_property_access_uses_local_slot(
         free(storage_key);
         if (metadata_out != NULL) {
             *metadata_out = metadata;
+        }
+        if (access_mode == PTN_PROPERTY_ACCESS_UNSET && metadata != NULL && metadata->has_hooks) {
+            return 1;
         }
         return metadata != NULL &&
             metadata->lazy_skip &&
@@ -8778,6 +8826,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
                         read_entry->value = ptn_reference_value(ptn_reference_new_owned(current));
                     }
                     ptn_reference_adopt_property_type(read_entry->value.as.reference, read_metadata);
+                    if (ptn_reference_created_in_active_property_hook(runtime, receiver.as.object)) {
+                        ptn_reference_remember_property_identity(
+                            read_entry->value.as.reference,
+                            read_metadata
+                        );
+                    }
                     PtnValue reference = ptn_value_clone(read_entry->value);
                     ptn_lazy_object_sync_forwarded_proxy_property_reference(
                         original_receiver,
@@ -8860,6 +8914,19 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             ptn_array_key_free(key);
             free(storage_key);
             if (hook_value.type == PTN_REFERENCE) {
+                const char *forwarded_storage_key =
+                    ptn_reference_property_storage_key_for_object(
+                        receiver.as.object,
+                        hook_value.as.reference
+                    );
+                if (forwarded_storage_key != NULL) {
+                    ptn_lazy_object_sync_forwarded_proxy_property_reference(
+                        original_receiver,
+                        receiver,
+                        forwarded_storage_key,
+                        hook_value
+                    );
+                }
                 return hook_value;
             }
             ptn_value_destroy(&hook_value);
@@ -9020,6 +9087,9 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         PtnValue reference = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         if (metadata != NULL) {
             ptn_reference_adopt_property_type(reference.as.reference, metadata);
+            if (ptn_reference_created_in_active_property_hook(runtime, receiver.as.object)) {
+                ptn_reference_remember_property_identity(reference.as.reference, metadata);
+            }
         }
         ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
         PtnObjectPropertyMetadata *mutable_metadata =
@@ -9045,6 +9115,9 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     }
     if (metadata != NULL) {
         ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
+        if (ptn_reference_created_in_active_property_hook(runtime, receiver.as.object)) {
+            ptn_reference_remember_property_identity(entry->value.as.reference, metadata);
+        }
     }
     ptn_lazy_object_sync_forwarded_proxy_property_reference(
         original_receiver,
@@ -13849,6 +13922,24 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
             iterator->access_scope,
             iterator->line
         );
+        if (
+            reference.type == PTN_REFERENCE &&
+            iterator->watched_slot != NULL &&
+            entry->key.type == PTN_ARRAY_KEY_STRING
+        ) {
+            PtnValue watched = ptn_value_deref(*iterator->watched_slot);
+            const char *forwarded_storage_key =
+                ptn_reference_property_storage_key_for_object(
+                    receiver.as.object,
+                    reference.as.reference
+                );
+            ptn_lazy_object_sync_forwarded_proxy_property_reference(
+                watched,
+                receiver,
+                forwarded_storage_key != NULL ? forwarded_storage_key : entry->key.as.string,
+                reference
+            );
+        }
         free(property_name);
         return reference;
     }

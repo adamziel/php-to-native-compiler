@@ -2591,7 +2591,9 @@ static PtnValue ptn_lazy_object_proxy_sync_property_value_clone(PtnValue value) 
         value.as.reference != NULL &&
         value.as.reference->refcount <= 2 &&
         value.as.reference->property_type_kind == PTN_PROPERTY_TYPE_NONE &&
-        value.as.reference->property_type_source_len == 0) {
+        value.as.reference->property_type_source_len == 0 &&
+        value.as.reference->property_declaring_class == NULL &&
+        value.as.reference->property_name == NULL) {
         return ptn_value_clone_deref(value);
     }
     return ptn_value_clone(value);
