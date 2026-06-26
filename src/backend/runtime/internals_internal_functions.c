@@ -139998,7 +139998,7 @@ static PtnValue ptn_zlib_transform_string_value_limited(
         decompress,
         encoding,
         level,
-        decompress && max_length > 0,
+        decompress && max_length > 0 && data.len > 0,
         &transformed,
         &transformed_len
     );
@@ -140086,6 +140086,47 @@ static PtnValue ptn_zlib_transform_context_string_value(
         return ptn_bool(0);
     }
     return ptn_owned_string_len((char *)transformed, transformed_len);
+}
+
+static int ptn_zlib_max_length_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    size_t *max_length_out
+) {
+    *max_length_out = 0;
+    if (argc < 2 || ptn_value_deref(args[1]).type == PTN_NULL) {
+        return 1;
+    }
+    int64_t max_length = ptn_internal_expect_integer_arg(
+        runtime,
+        function_name,
+        2,
+        "max_length",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (max_length < 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($max_length) must be greater than or equal to 0",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *max_length_out = (size_t)max_length;
+    return 1;
 }
 
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -140210,38 +140251,6 @@ static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
-static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzuncompress", 1, "data", args[0], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    int64_t max_length = 0;
-    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
-        max_length = ptn_internal_expect_integer_arg(runtime, "gzuncompress", 2, "max_length", args[1], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(data);
-            return ptn_null();
-        }
-        if (max_length < 0) {
-            ptn_string_operand_free(data);
-            ptn_throw_exception(runtime, "ValueError", "gzuncompress(): Argument #2 ($max_length) must be greater than or equal to 0");
-            return ptn_null();
-        }
-    }
-    PtnValue result = ptn_zlib_transform_string_value_limited(
-        runtime,
-        "gzuncompress",
-        data,
-        1,
-        PTN_ZLIB_ENCODING_DEFLATE,
-        -1,
-        max_length,
-        line
-    );
-    ptn_string_operand_free(data);
-    return result;
-}
-
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "zlib_encode", 1, "data", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -140285,9 +140294,13 @@ static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const
 }
 
 static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzdecode", 1, "data", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    size_t max_length = 0;
+    if (!ptn_zlib_max_length_arg(runtime, "gzdecode", argc, args, line, &max_length)) {
+        ptn_string_operand_free(data);
         return ptn_null();
     }
     PtnValue result = ptn_zlib_transform_string_value(
@@ -140297,7 +140310,7 @@ static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const Pt
         1,
         PTN_ZLIB_ENCODING_GZIP,
         -1,
-        0,
+        max_length,
         line
     );
     ptn_string_operand_free(data);
@@ -140309,18 +140322,10 @@ static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const P
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    int64_t max_length = 0;
-    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
-        max_length = ptn_internal_expect_integer_arg(runtime, "gzinflate", 2, "max_length", args[1], line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(data);
-            return ptn_null();
-        }
-        if (max_length < 0) {
-            ptn_string_operand_free(data);
-            ptn_throw_exception(runtime, "ValueError", "gzinflate(): Argument #2 ($max_length) must be greater than or equal to 0");
-            return ptn_null();
-        }
+    size_t max_length = 0;
+    if (!ptn_zlib_max_length_arg(runtime, "gzinflate", argc, args, line, &max_length)) {
+        ptn_string_operand_free(data);
+        return ptn_null();
     }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
@@ -140328,6 +140333,30 @@ static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const P
         data,
         1,
         PTN_ZLIB_ENCODING_RAW,
+        -1,
+        max_length,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
+static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzuncompress", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    size_t max_length = 0;
+    if (!ptn_zlib_max_length_arg(runtime, "gzuncompress", argc, args, line, &max_length)) {
+        ptn_string_operand_free(data);
+        return ptn_null();
+    }
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzuncompress",
+        data,
+        1,
+        PTN_ZLIB_ENCODING_DEFLATE,
         -1,
         max_length,
         line
@@ -140539,6 +140568,13 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         ptn_emit_warning(&runtime->diagnostics, "gzopen(): Argument #2 ($mode) must not contain any null bytes", line);
         free(path);
         return ptn_bool(0);
+    }
+    if (argc >= 3 && ptn_is_truthy(args[2])) {
+        char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
+        if (resolved_path != NULL) {
+            free(path);
+            path = resolved_path;
+        }
     }
     PtnValue stream;
     int opened = ptn_try_open_zlib_path_stream(path, path, mode, &stream);
@@ -157014,9 +157050,9 @@ static PtnValue ptn_internal_gzread(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_gzrewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gztell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
-static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -157464,7 +157500,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gzfile", 1, 2, ptn_internal_gzfile },
         { "gzgets", 1, 2, ptn_internal_gzgets },
         { "gzinflate", 1, 2, ptn_internal_gzinflate },
-        { "gzopen", 2, 2, ptn_internal_gzopen },
+        { "gzopen", 2, 3, ptn_internal_gzopen },
         { "gzpassthru", 1, 1, ptn_internal_gzpassthru },
         { "gzread", 2, 2, ptn_internal_gzread },
         { "gzrewind", 1, 1, ptn_internal_gzrewind },

@@ -28218,10 +28218,15 @@ $truncated = __DIR__ . "/zlib-truncate.gz";
 $constants = get_defined_constants(true);
 var_dump(ZLIB_ENCODING_DEFLATE, FORCE_GZIP, $constants["zlib"]["ZLIB_ENCODING_GZIP"]);
 var_dump(bin2hex(substr(gzencode("abc"), 0, 2)));
-var_dump(bin2hex(substr(gzcompress("abc"), 0, 2)));
+$packed = gzcompress("abc");
+var_dump(bin2hex(substr($packed, 0, 2)));
 $gzcompressed = gzcompress($data);
 var_dump(gzuncompress($gzcompressed) === $data);
 var_dump(strlen(gzuncompress($gzcompressed, strlen($data))));
+var_dump(gzuncompress($packed));
+var_dump(gzuncompress($packed, 3));
+var_dump(gzuncompress($packed, 2));
+try { gzuncompress($packed, -1); } catch (ValueError $e) { echo "max-error\n"; }
 
 $h = gzopen($path, "w");
 var_dump(gzwrite($h, "ignored", 0));
@@ -28233,7 +28238,7 @@ $write_only = gzopen(__DIR__ . "/zlib-write-only.gz", "w");
 var_dump(gzread($write_only, 1));
 gzclose($write_only);
 
-$h = gzopen($path, "r");
+$h = gzopen($path, "r", false);
 var_dump(gzread($h, 5));
 var_dump(gzseek($h, 6));
 var_dump(gzread($h, 4));
@@ -28316,7 +28321,11 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
     assert!(stdout.contains("Warning: ftruncate(): Can't truncate this stream!"));
     let stdout_without_warnings = stdout
         .lines()
-        .filter(|line| !line.is_empty() && !line.contains("Warning: ftruncate()"))
+        .filter(|line| {
+            !line.is_empty()
+                && !line.contains("Warning: ftruncate()")
+                && !line.contains("Warning: gzuncompress(): insufficient memory")
+        })
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
@@ -28329,6 +28338,10 @@ string(4) \"1f8b\"\n\
 string(4) \"789c\"\n\
 bool(true)\n\
 int(16)\n\
+string(3) \"abc\"\n\
+string(3) \"abc\"\n\
+bool(false)\n\
+max-error\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
@@ -28359,6 +28372,7 @@ option-error\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_gzwrite"));
+    assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_gzseek"));
     assert!(c_source.contains("ptn_internal_zlib_encode"));
     assert!(c_source.contains("ptn_internal_inflate_get_status"));
