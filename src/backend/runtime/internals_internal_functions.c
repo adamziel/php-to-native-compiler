@@ -118905,6 +118905,40 @@ static void ptn_dom_html_normalize_body_misnested_wrappers(PtnXmlNode *node) {
     }
 }
 
+static void ptn_dom_html_preserve_modern_body_closing_whitespace(PtnXmlNode *body) {
+    PtnXmlNode *document = ptn_xml_document_for_node(body);
+    if (!ptn_dom_html_direct_element_named(body, "body") ||
+        document == NULL ||
+        !document->modern_dom ||
+        !document->html_document ||
+        body->child_count == 0) {
+        return;
+    }
+    PtnXmlNode *tail = body->children[body->child_count - 1];
+    if (tail == NULL ||
+        tail->type != PTN_XML_NODE_TEXT ||
+        tail->value == NULL ||
+        tail->value_len == 0 ||
+        !ptn_xml_bytes_are_whitespace(tail->value, tail->value_len) ||
+        (memchr(tail->value, '\n', tail->value_len) == NULL &&
+            memchr(tail->value, '\r', tail->value_len) == NULL)) {
+        return;
+    }
+    if (tail->value_len >= 2 &&
+        tail->value[tail->value_len - 1] == '\n' &&
+        tail->value[tail->value_len - 2] == '\n') {
+        return;
+    }
+    char *value = realloc(tail->value, tail->value_len + 2);
+    if (value == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    value[tail->value_len] = '\n';
+    value[tail->value_len + 1] = '\0';
+    tail->value = value;
+    tail->value_len++;
+}
+
 static int ptn_xml_html_void_element_name(const char *name) {
     return ptn_ascii_case_equal(name, "area") ||
         ptn_ascii_case_equal(name, "base") ||
@@ -119123,6 +119157,10 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
                     }
                 }
                 if (matched_stack_index < stack_len) {
+                    if (html_mode &&
+                        ptn_ascii_case_equal(ptn_xml_local_name(closing_name), "body")) {
+                        ptn_dom_html_preserve_modern_body_closing_whitespace(stack[matched_stack_index]);
+                    }
                     stack_len = matched_stack_index;
                 } else if (!html_mode) {
                     stack_len--;

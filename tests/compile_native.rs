@@ -47196,6 +47196,66 @@ foreach ([':current(div)', ':required', ':optional'] as $selector) {
 }
 
 #[test]
+fn compile_modern_html_document_body_append_preserves_closing_whitespace_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-html-body-append-closing-whitespace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-html-body-append-closing-whitespace.php");
+    let output = root.join("modern-html-body-append-closing-whitespace-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function append_nodes($dom): string {
+    $body = $dom->getElementsByTagName('body')[0];
+    $body->appendChild($dom->createElementNS(NULL, 'p', 'content 1'));
+    $body->appendChild($dom->createElementNS('', 'p', 'content 2'));
+    $body->appendChild($dom->createElementNS('http://www.w3.org/2000/svg', 'svg:svg', 'content 3'));
+    return bin2hex($body->textContent);
+}
+
+$html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+</head>
+<body>
+    <p>Hello World</p>
+</body>
+</html>
+HTML;
+
+echo append_nodes(Dom\HTMLDocument::createFromString($html)), "\n";
+
+$legacy = new DOMDocument();
+$legacy->loadHTML($html);
+echo append_nodes($legacy), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "0a2020202048656c6c6f20576f726c640a0a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
+            "0a2020202048656c6c6f20576f726c640a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_html_preserve_modern_body_closing_whitespace"));
+}
+
+#[test]
 fn compile_modern_dom_selector_attribute_combinators_and_structural_pseudos_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-selector-expanded-subset");
     fs::create_dir_all(&root).unwrap();

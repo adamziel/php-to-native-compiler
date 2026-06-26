@@ -1,0 +1,15 @@
+# ptn-w17z.922 exact DOM/libxml node and selector current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T164812Z.tsv
+
+ext/dom/tests/bug67081.phpt
+ext/dom/tests/gh16356.phpt
+ext/dom/tests/bug79852.phpt
+ext/dom/tests/bug54382.phpt
+ext/dom/tests/bug81433.phpt
+ext/dom/tests/not_unserializable.phpt
+ext/dom/tests/register_node_class.phpt
+ext/dom/tests/bug69679.phpt
+ext/dom/tests/gh11347.phpt
+ext/dom/tests/gh16316.phpt
+ext/dom/tests/modern/css_selectors/pseudo_classes_only_child.phpt
+ext/dom/tests/modern/spec/Document_getElementsByTagNameNS.phpt
