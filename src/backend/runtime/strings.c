@@ -2129,6 +2129,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(15);
         return 1;
     }
+    if (strcmp(name, "XSD_NAMESPACE") == 0) {
+        *out = ptn_string("http://www.w3.org/2001/XMLSchema");
+        return 1;
+    }
+    if (strcmp(name, "XSD_1999_NAMESPACE") == 0) {
+        *out = ptn_string("http://www.w3.org/1999/XMLSchema");
+        return 1;
+    }
     static const struct {
         const char *name;
         int value;
@@ -2150,6 +2158,8 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         { "SOAP_COMPRESSION_DEFLATE", 16 },
         { "SOAP_AUTHENTICATION_BASIC", 0 },
         { "SOAP_AUTHENTICATION_DIGEST", 1 },
+        { "SOAP_SINGLE_ELEMENT_ARRAYS", 1 },
+        { "SOAP_WAIT_ONE_WAY_CALLS", 2 },
         { "SOAP_USE_XSI_ARRAY_TYPE", 4 },
         { "UNKNOWN_TYPE", 999998 },
         { "SOAP_ENC_ARRAY", 300 },
@@ -2198,6 +2208,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         { "XSD_UNSIGNEDBYTE", 142 },
         { "XSD_POSITIVEINTEGER", 143 },
         { "XSD_NMTOKENS", 144 },
+        { "XSD_ANYTYPE", 145 },
+        { "XSD_ANYXML", 147 },
+        { "APACHE_MAP", 200 },
+        { "XSD_1999_TIMEINSTANT", 401 },
+        { "WSDL_CACHE_NONE", 0 },
+        { "WSDL_CACHE_DISK", 1 },
+        { "WSDL_CACHE_MEMORY", 2 },
+        { "WSDL_CACHE_BOTH", 3 },
+        { "SOAP_SSL_METHOD_TLS", 0 },
+        { "SOAP_SSL_METHOD_SSLv2", 1 },
+        { "SOAP_SSL_METHOD_SSLv3", 2 },
+        { "SOAP_SSL_METHOD_SSLv23", 3 },
     };
     for (size_t i = 0; i < sizeof(soap_constants) / sizeof(soap_constants[0]); i++) {
         if (strcmp(name, soap_constants[i].name) == 0) {

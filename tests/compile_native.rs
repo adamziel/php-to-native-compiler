@@ -50393,6 +50393,183 @@ var_dump($sf->headerfault);
 }
 
 #[test]
+fn compile_soap_extension_constant_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-extension-constant-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-extension-constant-metadata.php");
+    let output = root.join("soap-extension-constant-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(
+    SOAP_SINGLE_ELEMENT_ARRAYS,
+    SOAP_WAIT_ONE_WAY_CALLS,
+    SOAP_USE_XSI_ARRAY_TYPE,
+    XSD_ANYTYPE,
+    XSD_ANYXML,
+    APACHE_MAP,
+    SOAP_ENC_ARRAY,
+    SOAP_ENC_OBJECT,
+    XSD_1999_TIMEINSTANT,
+    XSD_NAMESPACE,
+    XSD_1999_NAMESPACE,
+    WSDL_CACHE_NONE,
+    WSDL_CACHE_DISK,
+    WSDL_CACHE_MEMORY,
+    WSDL_CACHE_BOTH,
+    SOAP_SSL_METHOD_TLS,
+    SOAP_SSL_METHOD_SSLv2,
+    SOAP_SSL_METHOD_SSLv3,
+    SOAP_SSL_METHOD_SSLv23
+);
+
+$constants = (new ReflectionExtension('soap'))->getConstants();
+var_dump(
+    $constants['SOAP_SINGLE_ELEMENT_ARRAYS'],
+    $constants['XSD_ANYXML'],
+    $constants['APACHE_MAP'],
+    $constants['XSD_NAMESPACE'],
+    $constants['SOAP_SSL_METHOD_TLS']
+);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "int(145)\n",
+            "int(147)\n",
+            "int(200)\n",
+            "int(300)\n",
+            "int(301)\n",
+            "int(401)\n",
+            "string(32) \"http://www.w3.org/2001/XMLSchema\"\n",
+            "string(32) \"http://www.w3.org/1999/XMLSchema\"\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "int(147)\n",
+            "int(200)\n",
+            "string(32) \"http://www.w3.org/2001/XMLSchema\"\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SOAP_SINGLE_ELEMENT_ARRAYS"));
+    assert!(c_source.contains("XSD_1999_NAMESPACE"));
+    assert!(c_source.contains("SOAP_SSL_METHOD_SSLv23"));
+}
+
+#[test]
+fn compile_soap_anyxml_request_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-anyxml-request");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-anyxml-request.php");
+    let output = root.join("soap-anyxml-request-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class TestSoapClient extends SoapClient {
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        exit(0);
+    }
+}
+
+$client = new TestSoapClient(null, ['location' => 'test://', 'uri' => 'test://']);
+$client->AnyFunction(new SoapVar('<array><item/><item/><item/></array>', XSD_ANYXML));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" ",
+            "xmlns:ns1=\"test://\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" ",
+            "xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" ",
+            "SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">",
+            "<SOAP-ENV:Body><ns1:AnyFunction><array><item/><item/><item/></array>",
+            "</ns1:AnyFunction></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("XSD_ANYXML"));
+    assert!(c_source.contains("ptn_soap_append_request_value_element"));
+}
+
+#[test]
+fn compile_soap_ssl_method_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-ssl-method-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-ssl-method-deprecation.php");
+    let output = root.join("soap-ssl-method-deprecation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+new SoapClient(null, [
+    'location' => 'foo',
+    'uri' => 'bar',
+    'ssl_method' => SOAP_SSL_METHOD_TLS,
+]);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: SoapClient::__construct(): The \"ssl_method\" option is deprecated. Use \"ssl\" stream context options instead in ptn on line 2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ssl_method"));
+    assert!(c_source.contains("SOAP_SSL_METHOD_TLS"));
+}
+
+#[test]
 fn compile_phar_manifest_cow_cache_list_state_to_native_binary() {
     fn push_u16(bytes: &mut Vec<u8>, value: u16) {
         bytes.extend_from_slice(&value.to_le_bytes());
