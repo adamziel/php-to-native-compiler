@@ -26910,6 +26910,8 @@ $vprintf_text = ob_get_clean();\n\
 var_dump($vprintf_text === $resource_text, $vprintf_len === strlen($resource_text));\n\
 var_dump(fprintf($fp, \"%s=%d\\n\", \"a\", 5));\n\
 var_dump(vfprintf($fp, \"%s=%X\\n\", [\"b\", 15]));\n\
+var_dump(fprintf($fp, \"%s\\n\", $fp));\n\
+var_dump(vfprintf($fp, \"%s\\n\", [$fp]));\n\
 fclose($fp);\n\
 echo file_get_contents(\"{}\");\n\
 try {{ vsprintf(\"%s\", \"x\"); }} catch (TypeError $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
@@ -26942,8 +26944,12 @@ bool(true)\n\
 bool(true)\n\
 int(4)\n\
 int(4)\n\
+int(9)\n\
+int(9)\n\
 a=5\n\
 b=F\n\
+Resource\n\
+Resource\n\
 vsprintf(): Argument #2 ($values) must be of type array, string given\n\
 fprintf(): supplied resource is not a valid stream resource\n"
     );
