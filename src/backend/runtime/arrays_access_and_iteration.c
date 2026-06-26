@@ -5160,6 +5160,13 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     size_t line,
     PtnValue *value_out
 );
+static PTN_UNUSED int ptn_internal_date_interval_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
 static PTN_UNUSED int ptn_internal_xml_property_write(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -6415,6 +6422,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &date_interval_value
+    )) {
+        return date_interval_value;
+    }
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
         runtime,
@@ -6813,6 +6830,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &date_interval_value
+    )) {
+        return date_interval_value;
+    }
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
         runtime,
@@ -7134,6 +7161,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
         return ptn_null();
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &date_interval_value
+    )) {
+        return date_interval_value;
+    }
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
         runtime,
@@ -7195,6 +7232,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &date_interval_value
+    )) {
+        return date_interval_value;
+    }
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
         runtime,
@@ -7463,6 +7510,16 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &date_interval_value
+    )) {
+        return ptn_lookup_found(date_interval_value);
+    }
     PtnValue internal_xml_value = ptn_null();
     if (ptn_internal_xml_property_read(
         runtime,
@@ -7749,6 +7806,12 @@ static PTN_UNUSED int ptn_object_property_is_set(
     int simplexml_isset = 0;
     if (ptn_simplexml_property_is_set(receiver, property, &simplexml_isset)) {
         result = simplexml_isset;
+        goto done;
+    }
+    PtnValue date_interval_value = ptn_null();
+    if (ptn_internal_date_interval_property_read(runtime, receiver, property, line, &date_interval_value)) {
+        result = ptn_value_deref(date_interval_value).type != PTN_NULL;
+        ptn_value_destroy(&date_interval_value);
         goto done;
     }
     PtnValue internal_value = ptn_null();

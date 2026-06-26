@@ -25606,6 +25606,8 @@ fn compile_date_interval_create_from_date_string_to_native_binary() {
 $interval = DateInterval::createFromDateString(\"tomorrow\");\n\
 var_dump($interval instanceof DateInterval);\n\
 var_dump($interval->__serialize());\n\
+var_dump($interval->d, isset($interval->d), property_exists($interval, \"d\"));\n\
+var_dump(get_object_vars($interval));\n\
 echo $interval->format(\"%R%y %m %d %h %i %s %f %a\"), \"\\n\";\n\
 foreach ([\"yesterday\", \"+2 weeks\", \"-3 hours\", \"next month\", \"1 year\", \"30 seconds\"] as $text) {\n\
     $relative = DateInterval::createFromDateString($text);\n\
@@ -25659,6 +25661,15 @@ try {\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(true)\n",
+            "  [\"date_string\"]=>\n",
+            "  string(8) \"tomorrow\"\n",
+            "}\n",
+            "int(1)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "array(2) {\n",
             "  [\"from_string\"]=>\n",

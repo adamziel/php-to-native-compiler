@@ -101939,6 +101939,62 @@ static int ptn_date_interval_serialized_key_is_internal(PtnArrayKey key) {
         ptn_array_key_is_string_literal(key, "days");
 }
 
+static int ptn_date_interval_internal_property_known(const char *property) {
+    return strcmp(property, "y") == 0 ||
+        strcmp(property, "m") == 0 ||
+        strcmp(property, "d") == 0 ||
+        strcmp(property, "h") == 0 ||
+        strcmp(property, "i") == 0 ||
+        strcmp(property, "s") == 0 ||
+        strcmp(property, "f") == 0 ||
+        strcmp(property, "invert") == 0 ||
+        strcmp(property, "days") == 0;
+}
+
+static PTN_UNUSED int ptn_internal_date_interval_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+) {
+    (void)runtime;
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        receiver.as.object->native_data == NULL ||
+        !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "DateInterval") ||
+        !ptn_date_interval_internal_property_known(property)) {
+        return 0;
+    }
+
+    PtnDateIntervalData *data = (PtnDateIntervalData *)receiver.as.object->native_data;
+    if (!data->from_string) {
+        return 0;
+    }
+    if (strcmp(property, "y") == 0) {
+        *value_out = ptn_int(data->years);
+    } else if (strcmp(property, "m") == 0) {
+        *value_out = ptn_int(data->months);
+    } else if (strcmp(property, "d") == 0) {
+        *value_out = ptn_int(data->days);
+    } else if (strcmp(property, "h") == 0) {
+        *value_out = ptn_int(data->hours);
+    } else if (strcmp(property, "i") == 0) {
+        *value_out = ptn_int(data->minutes);
+    } else if (strcmp(property, "s") == 0) {
+        *value_out = ptn_int(data->seconds);
+    } else if (strcmp(property, "f") == 0) {
+        *value_out = ptn_float(data->fraction);
+    } else if (strcmp(property, "invert") == 0) {
+        *value_out = ptn_int(data->invert);
+    } else {
+        *value_out = data->has_total_days ? ptn_int(data->total_days) : ptn_bool(0);
+    }
+    return 1;
+}
+
 static int ptn_date_unserialize_extra_string_properties(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -151795,6 +151851,12 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
             || ptn_ascii_case_equal(property_name, "text")
             || ptn_ascii_case_equal(property_name, "line")
             || ptn_ascii_case_equal(property_name, "pos");
+    }
+    if (ptn_internal_class_name_is_date_interval(class_name) ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DateInterval")) {
+        return ptn_date_interval_internal_property_known(property_name) ||
+            ptn_ascii_case_equal(property_name, "from_string") ||
+            ptn_ascii_case_equal(property_name, "date_string");
     }
     if (ptn_internal_class_name_is_attribute(class_name)) {
         return ptn_ascii_case_equal(property_name, "flags");
