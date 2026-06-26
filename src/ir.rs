@@ -1117,19 +1117,22 @@ pub fn lower_with_source_and_includes(
         collect_include_trait_method_sources(&include_sources),
         include_resolutions,
     );
-    let include_function_ranges = context.declare_include_functions(&include_sources);
+    let include_function_indices = context.declare_include_functions(&include_sources);
     context.declare_include_class_names(&include_sources);
-    for (index, function) in program.functions.iter().enumerate() {
+    for function in &program.functions {
         let previous_function_display_name = std::mem::replace(
             &mut context.current_function_display_name,
             Some(function.name.clone()),
         );
         let body = context.lower_statements(&function.body);
         context.current_function_display_name = previous_function_display_name;
-        context.functions[index].body = body;
+        let function_index = context
+            .function_index_by_name(&function.name)
+            .expect("declared function should have an IR function entry");
+        context.functions[function_index].body = body;
     }
-    for (include, start_index) in include_sources.iter().zip(include_function_ranges.iter()) {
-        context.lower_include_functions(include, *start_index);
+    for (include, function_indices) in include_sources.iter().zip(include_function_indices.iter()) {
+        context.lower_include_functions(include, function_indices);
     }
     let mut classes: Vec<_> = program
         .classes
@@ -1416,8 +1419,8 @@ impl<'a> LoweringContext<'a> {
         lowered
     }
 
-    fn declare_include_functions(&mut self, include_sources: &[IncludeSource]) -> Vec<usize> {
-        let mut starts = Vec::with_capacity(include_sources.len());
+    fn declare_include_functions(&mut self, include_sources: &[IncludeSource]) -> Vec<Vec<usize>> {
+        let mut indices = Vec::with_capacity(include_sources.len());
         for include in include_sources {
             let previous_source_file =
                 std::mem::replace(&mut self.source_file, include.source_file.clone());
@@ -1427,21 +1430,22 @@ impl<'a> LoweringContext<'a> {
                 std::mem::replace(&mut self.strict_types, include.program.strict_types);
             let previous_ticks_enabled =
                 std::mem::replace(&mut self.ticks_enabled, include.program.ticks);
-            starts.push(self.functions.len());
+            let mut include_indices = Vec::with_capacity(include.program.functions.len());
             for function in &include.program.functions {
-                let function_index = self.functions.len();
-                self.declare_function(function);
+                let function_index = self.declare_function(function);
                 self.functions[function_index].initially_declared = false;
+                include_indices.push(function_index);
             }
+            indices.push(include_indices);
             self.source_file = previous_source_file;
             self.source_dir = previous_source_dir;
             self.strict_types = previous_strict_types;
             self.ticks_enabled = previous_ticks_enabled;
         }
-        starts
+        indices
     }
 
-    fn lower_include_functions(&mut self, include: &IncludeSource, start_index: usize) {
+    fn lower_include_functions(&mut self, include: &IncludeSource, function_indices: &[usize]) {
         let previous_source_file =
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
@@ -1457,7 +1461,8 @@ impl<'a> LoweringContext<'a> {
             );
             let body = self.lower_statements(&function.body);
             self.current_function_display_name = previous_function_display_name;
-            self.functions[start_index + offset].body = body;
+            let function_index = function_indices[offset];
+            self.functions[function_index].body = body;
         }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
@@ -1512,7 +1517,7 @@ impl<'a> LoweringContext<'a> {
         traits
     }
 
-    fn declare_function(&mut self, function: &AstFunctionDecl) {
+    fn declare_function(&mut self, function: &AstFunctionDecl) -> usize {
         let parameters = function
             .parameters
             .iter()
@@ -1525,6 +1530,7 @@ impl<'a> LoweringContext<'a> {
         let attributes = self.annotate_attribute_metadata(&function.attributes);
         self.current_function_display_name = previous_function_display_name;
         let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
+        let function_index = self.functions.len();
         self.functions.push(FunctionDecl {
             name: function.name.clone(),
             display_name: function.name.clone(),
@@ -1551,6 +1557,7 @@ impl<'a> LoweringContext<'a> {
             initially_declared: !function.is_conditionally_declared,
             body: Vec::new(),
         });
+        function_index
     }
 
     fn function_index_by_name(&self, name: &str) -> Option<usize> {
@@ -1923,7 +1930,6 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_anonymous_function(&mut self, function: &AstAnonymousFunction) -> ValueExpr {
-        let function_index = self.functions.len();
         let current_class_name = self.current_class_name.clone();
         let current_class_parent_name = self.current_class_parent_name.clone();
         let parameters = function
@@ -1966,6 +1972,7 @@ impl<'a> LoweringContext<'a> {
             format!("{{closure:{}:{}}}", self.source_file, function.span.line)
         };
         let nested_display_name = display_name.clone();
+        let function_index = self.functions.len();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             display_name,

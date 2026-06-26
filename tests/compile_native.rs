@@ -60298,6 +60298,10 @@ var_dump($closure);
         stdout.contains("[\"var\"]=>\n    string(3) \"foo\""),
         "{stdout}"
     );
+    assert!(
+        !stdout.contains("[\"var\"]=>\n    &string(3) \"foo\""),
+        "{stdout}"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
@@ -77542,6 +77546,50 @@ try {
     assert!(c_source.contains("ptn_runtime_emit_static_trait_method_deprecation"));
     assert!(c_source.contains("suppress_wrapped_callable_deprecation"));
     assert!(c_source.contains("FccTraitCallable::myMethod"));
+}
+
+#[test]
+fn compile_closure_default_argument_preserves_declared_function_body_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-default-argument-body");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-default-argument-body.php");
+    let output = root.join("closure-default-argument-body-bin");
+    fs::write(
+        &input,
+        "<?php
+function test(Closure $name = static function () {
+    echo \"default\", PHP_EOL;
+}) {
+    $name();
+}
+
+test();
+test(function () {
+    echo \"explicit\", PHP_EOL;
+});
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("default\n", "explicit\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure("));
+    assert!(c_source.contains("ptn_user_function_"));
 }
 
 #[test]
