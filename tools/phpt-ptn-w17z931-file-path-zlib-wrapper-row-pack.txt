@@ -1,0 +1,12 @@
+ext/standard/tests/file/tempnam_variation4-0.phpt
+ext/standard/tests/file/popen_pclose_error.phpt
+ext/standard/tests/file/fscanf_variation37.phpt
+ext/standard/tests/file/auto_detect_line_endings_2.phpt
+ext/standard/tests/file/fscanf_variation32.phpt
+ext/standard/tests/file/rename_variation8.phpt
+ext/standard/tests/file/mkdir_rmdir_variation2.phpt
+ext/standard/tests/file/fgets_socket_variation2.phpt
+ext/standard/tests/dir/scandir_basic.phpt
+ext/zlib/tests/gzseek_basic.phpt
+ext/zlib/tests/gzrewind_basic.phpt
+ext/zlib/tests/zlib_scheme_fopen_variation1.phpt

@@ -2371,6 +2371,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_SORT_FLAG_CASE);
         return 1;
     }
+    if (strcmp(name, "SCANDIR_SORT_ASCENDING") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_ASCENDING);
+        return 1;
+    }
+    if (strcmp(name, "SCANDIR_SORT_DESCENDING") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_DESCENDING);
+        return 1;
+    }
+    if (strcmp(name, "SCANDIR_SORT_NONE") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_NONE);
+        return 1;
+    }
     if (strcmp(name, "PHP_ROUND_HALF_UP") == 0) {
         *out = ptn_int(PTN_PHP_ROUND_HALF_UP);
         return 1;

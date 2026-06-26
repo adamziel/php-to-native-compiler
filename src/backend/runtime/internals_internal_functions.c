@@ -57430,9 +57430,6 @@ static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnV
         free(source);
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
     free(dest);
@@ -58630,13 +58627,29 @@ static int ptn_scandir_name_compare(const void *left, const void *right) {
 }
 
 static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "scandir", 1, "directory", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "scandir(): Filename contains null byte", line);
-        return ptn_bool(0);
+        return ptn_null();
+    }
+    int64_t sorting_order = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "scandir", 2, "sorting_order", args[1], line)
+        : PTN_SCANDIR_SORT_ASCENDING;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        return ptn_null();
+    }
+    if (
+        sorting_order != PTN_SCANDIR_SORT_ASCENDING &&
+        sorting_order != PTN_SCANDIR_SORT_DESCENDING &&
+        sorting_order != PTN_SCANDIR_SORT_NONE
+    ) {
+        free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "scandir(): Argument #2 ($sorting_order) must be one of SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE"
+        );
+        return ptn_null();
     }
     if (path[0] == '\0') {
         free(path);
@@ -58647,25 +58660,6 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
         );
         return ptn_null();
     }
-    int64_t sorting_order = argc >= 2
-        ? ptn_internal_expect_integer_arg(runtime, "scandir", 2, "sorting_order", args[1], line)
-        : PTN_SCANDIR_SORT_ASCENDING;
-    if (runtime->exceptions->active_exception != NULL) {
-        free(path);
-        return ptn_null();
-    }
-    if (sorting_order != PTN_SCANDIR_SORT_ASCENDING &&
-        sorting_order != PTN_SCANDIR_SORT_DESCENDING &&
-        sorting_order != PTN_SCANDIR_SORT_NONE) {
-        free(path);
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "scandir(): Argument #2 ($sorting_order) must be SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE"
-        );
-        return ptn_null();
-    }
-
 #if defined(_WIN32)
     ptn_emit_file_warning(runtime, "scandir", path, "directory scanning is unsupported on this platform", line);
     free(path);
@@ -59023,12 +59017,9 @@ static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnVa
 }
 
 static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "mkdir", 1, "directory", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "mkdir(): Filename contains null byte", line);
-        return ptn_bool(0);
+        return ptn_null();
     }
 
     int64_t mode = 0777;
@@ -59063,12 +59054,9 @@ static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnVa
 
 static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "rmdir", 1, "directory", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "rmdir(): Filename contains null byte", line);
-        return ptn_bool(0);
+        return ptn_null();
     }
 
     if (strncmp(path, "phar://", 7) == 0 ? ptn_phar_uri_rmdir(path) : rmdir(path) == 0) {
@@ -100450,6 +100438,9 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SORT_LOCALE_STRING", PTN_SORT_LOCALE_STRING);
     ptn_get_defined_constants_add_int(table, "SORT_NATURAL", PTN_SORT_NATURAL);
     ptn_get_defined_constants_add_int(table, "SORT_FLAG_CASE", PTN_SORT_FLAG_CASE);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_ASCENDING", PTN_SCANDIR_SORT_ASCENDING);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_DESCENDING", PTN_SCANDIR_SORT_DESCENDING);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_NONE", PTN_SCANDIR_SORT_NONE);
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_UP", PTN_PHP_ROUND_HALF_UP);
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_DOWN", PTN_PHP_ROUND_HALF_DOWN);
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_EVEN", PTN_PHP_ROUND_HALF_EVEN);
@@ -100973,6 +100964,9 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "SORT_LOCALE_STRING",
         "SORT_NATURAL",
         "SORT_FLAG_CASE",
+        "SCANDIR_SORT_ASCENDING",
+        "SCANDIR_SORT_DESCENDING",
+        "SCANDIR_SORT_NONE",
         "ARRAY_FILTER_USE_BOTH",
         "ARRAY_FILTER_USE_KEY",
         "FILTER_VALIDATE_REGEXP",

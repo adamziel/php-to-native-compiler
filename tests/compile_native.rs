@@ -27397,6 +27397,77 @@ done\n"
 }
 
 #[test]
+fn compile_scandir_sort_constants_and_directory_value_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-scandir-sort-path-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scandir-sort-path-errors.php");
+    let output = root.join("scandir-sort-path-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dir = __DIR__ . "/scan";
+mkdir($dir);
+file_put_contents($dir . "/a.txt", "a");
+file_put_contents($dir . "/c.txt", "c");
+file_put_contents($dir . "/b.txt", "b");
+var_dump(SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, SCANDIR_SORT_NONE);
+var_dump(scandir($dir, SCANDIR_SORT_DESCENDING));
+$constants = get_defined_constants(true);
+var_dump($constants["standard"]["SCANDIR_SORT_DESCENDING"]);
+try { mkdir($dir . chr(0)); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { rmdir($dir . chr(0)); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+unlink($dir . "/a.txt");
+unlink($dir . "/b.txt");
+unlink($dir . "/c.txt");
+rmdir($dir);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\n\
+int(1)\n\
+int(2)\n\
+array(5) {\n  [0]=>\n  string(5) \"c.txt\"\n  [1]=>\n  string(5) \"b.txt\"\n  [2]=>\n  string(5) \"a.txt\"\n  [3]=>\n  string(2) \"..\"\n  [4]=>\n  string(1) \".\"\n}\n\
+int(1)\n\
+mkdir(): Argument #1 ($directory) must not contain any null bytes\n\
+rmdir(): Argument #1 ($directory) must not contain any null bytes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_rename_missing_path_warning_spacing_to_native_binary() {
+    let root = temp_dir("ptn-native-rename-warning-spacing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("rename-warning-spacing.php");
+    let output = root.join("rename-warning-spacing-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+var_dump(rename(__DIR__ . '/missing-src', __DIR__ . '/missing-dest'));\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("before\n\nWarning: rename("));
+    assert!(!stdout.starts_with("before\n\n\nWarning: rename("));
+    assert!(stdout.ends_with("bool(false)\nafter\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_stat_metadata_internals_to_native_binary() {
     let root = temp_dir("ptn-native-file-stat-metadata-internals");
     fs::create_dir_all(&root).unwrap();
@@ -27829,6 +27900,10 @@ var_dump(bin2hex(fread($h, 2)));
 fclose($h);
 copy("compress.zlib://$compressed", $plain);
 var_dump(file_get_contents($plain));
+$fileUri = "file://$compressed";
+$h = fopen("compress.zlib://$fileUri", "r");
+var_dump(stream_get_contents($h));
+fclose($h);
 copy("compress.zlib://$compressed", "compress.zlib://$round");
 $h = gzopen($round, "r");
 var_dump(gzread($h, 4096));
@@ -27852,6 +27927,8 @@ string(1) \"a\"\n\
 string(19) \"hello zlib\n\
 line two\"\n\
 string(4) \"1f8b\"\n\
+string(19) \"hello zlib\n\
+line two\"\n\
 string(19) \"hello zlib\n\
 line two\"\n\
 string(19) \"hello zlib\n\
