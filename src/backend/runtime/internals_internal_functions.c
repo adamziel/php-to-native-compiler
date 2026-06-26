@@ -56163,6 +56163,42 @@ static int ptn_stream_error_store_keeps(PtnStreamErrorStore store, int terminati
         (store == PTN_STREAM_ERROR_STORE_TERMINATING && terminating);
 }
 
+static void ptn_stream_context_dispatch_error_handler(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *path,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *detail,
+    int terminating,
+    size_t line
+) {
+    PtnValue *handler_option = ptn_stream_context_option(context, "stream", "error_handler");
+    if (runtime == NULL || handler_option == NULL) {
+        return;
+    }
+    PtnValue handler = ptn_value_clone_deref(*handler_option);
+    PtnValue errors = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        errors.as.array,
+        ptn_array_int_key(0),
+        ptn_stream_error_value(
+            runtime,
+            detail,
+            wrapper_name,
+            code_name,
+            path,
+            PTN_E_WARNING,
+            terminating
+        )
+    );
+    PtnValue callback_args[1] = { ptn_value_borrow(errors) };
+    PtnValue result = ptn_call_callable(runtime, handler, 1, callback_args, line, 0);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&errors);
+    ptn_value_destroy(&handler);
+}
+
 static PtnValue ptn_stream_open_failure_result(
     PtnRuntime *runtime,
     PtnResource *context,
@@ -56185,6 +56221,19 @@ static PtnValue ptn_stream_open_failure_result(
         ptn_stream_store_single_error(detail, wrapper_name, code_name, path, PTN_E_WARNING, terminating);
     } else {
         ptn_stream_clear_last_errors();
+    }
+    ptn_stream_context_dispatch_error_handler(
+        runtime,
+        context,
+        path,
+        wrapper_name,
+        code_name,
+        detail,
+        terminating,
+        line
+    );
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
         ptn_throw_stream_exception_at(
@@ -163266,6 +163315,7 @@ static int ptn_zlib_resolve_dictionary_option(
                 ptn_value_destroy(&dictionary);
                 return 0;
             }
+            ptn_string_buffer_append_len(&buffer, "\0", 1);
         }
     } else {
         PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, resolved, line);
@@ -163598,9 +163648,22 @@ static PtnValue ptn_zlib_transform_context_string_value(
     );
     if (ok <= 0) {
         char detail[192];
-        int written = decompress
-            ? snprintf(detail, sizeof(detail), "%s(): data error", function_name)
-            : snprintf(detail, sizeof(detail), "%s(): compression failed", function_name);
+        int written;
+        if (decompress && context->dictionary_len > 0) {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                "%s(): Dictionary does not match expected dictionary (incorrect adler32 hash)",
+                function_name
+            );
+        } else {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                decompress ? "%s(): data error" : "%s(): compression failed",
+                function_name
+            );
+        }
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             ptn_abort_out_of_memory();
         }
@@ -164037,12 +164100,22 @@ static PtnValue ptn_zlib_inflate_context_string_value(
     }
     if (ok <= 0) {
         char detail[192];
-        int written = snprintf(
-            detail,
-            sizeof(detail),
-            "%s(): data error failed",
-            function_name
-        );
+        int written;
+        if (context->dictionary != NULL && context->dictionary_len != 0) {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                "%s(): Dictionary does not match expected dictionary (incorrect adler32 hash)",
+                function_name
+            );
+        } else {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                "%s(): data error failed",
+                function_name
+            );
+        }
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             ptn_abort_out_of_memory();
         }

@@ -30696,6 +30696,18 @@ $sync = deflate_init(ZLIB_ENCODING_RAW);
 $syncChunk = deflate_add($sync, str_repeat("x", 128), ZLIB_SYNC_FLUSH);
 var_dump(bin2hex(substr($syncChunk, -4)));
 
+$dict = range("a", "z");
+$arrayDeflate = deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => $dict]);
+$arrayCompressed = deflate_add($arrayDeflate, "abdcde", ZLIB_FINISH);
+$stringDeflate = deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => implode("\0", $dict) . "\0"]);
+var_dump(deflate_add($stringDeflate, "abdcde", ZLIB_FINISH) === $arrayCompressed);
+$arrayInflate = inflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => $dict]);
+var_dump(inflate_add($arrayInflate, $arrayCompressed, ZLIB_FINISH));
+set_error_handler(function($code, $message) { echo "inflate-warning:$message\n"; });
+$wrongInflate = inflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => ["8"] + range("a", "z")]);
+var_dump(inflate_add($wrongInflate, $arrayCompressed, ZLIB_FINISH));
+restore_error_handler();
+
 $stream = fopen("php://temp", "w+");
 stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE);
 stream_filter_append($stream, "convert.base64-encode", STREAM_FILTER_WRITE);
@@ -30744,6 +30756,10 @@ from inc2\n\
 from inc1\n\
 bool(true)\n\
 string(8) \"0000ffff\"\n\
+bool(true)\n\
+string(6) \"abdcde\"\n\
+inflate-warning:inflate_add(): Dictionary does not match expected dictionary (incorrect adler32 hash)\n\
+bool(false)\n\
 string(11) \"filter text\"\n\
 deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
@@ -31139,6 +31155,20 @@ fopen('php://nonexistent3', 'r', false, $context3);
 $errors3 = stream_last_errors();
 echo "SILENT mode AUTO: " . (!empty($errors3) ? "has error" : "no error") . "\n";
 
+$handlerCalled = false;
+$context4 = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Silent,
+        'error_handler' => function(array $errors) use (&$handlerCalled) {
+            $handlerCalled = true;
+            $error = $errors[0];
+            echo "HANDLER: " . $error->wrapperName . ":" . $error->code->name . ":" . $error->message . ":" . $error->param . ":" . ($error->terminating ? "yes" : "no") . "\n";
+        },
+    ],
+]);
+fopen('php://nonexistent4', 'r', false, $context4);
+var_dump($handlerCalled);
+
 @unlink($nested . DIRECTORY_SEPARATOR . 'file');
 @rmdir($nested);
 @unlink($includePath . DIRECTORY_SEPARATOR . 'file');
@@ -31163,7 +31193,9 @@ bool(true)\n\
 array(1) {\n  [\"http\"]=>\n  array(2) {\n    [\"protocol_version\"]=>\n    float(1.1)\n    [\"user_agent\"]=>\n    string(10) \"PHPT Agent\"\n  }\n}\n\
 ERROR mode AUTO: no error\n\
 EXCEPTION mode AUTO: no error\n\
-SILENT mode AUTO: has error\n"
+SILENT mode AUTO: has error\n\
+HANDLER: PHP:OpenFailed:Failed to open stream: operation failed:php://nonexistent4:yes\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

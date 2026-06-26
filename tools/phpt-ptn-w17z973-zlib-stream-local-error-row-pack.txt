@@ -1,0 +1,15 @@
+# ptn-w17z.973 focused zlib/PHAR/stream seek/local/error row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T231925Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/zlib/tests/gzseek_variation2.phpt
+ext/phar/tests/zf_test.phpt
+ext/standard/tests/streams/bug77664.phpt
+ext/zlib/tests/gzgetc_basic_1.phpt
+ext/zlib/tests/gzencode_error1.phpt
+ext/zlib/tests/dictionary_usage.phpt
+ext/standard/tests/streams/stream_errors_silent_with_handler.phpt
+ext/standard/tests/streams/bug72771.phpt
+ext/standard/tests/streams/stream_is_local.phpt
+ext/phar/tests/tar/phar_buildfromiterator4.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_variation1.phpt
+ext/standard/tests/streams/bug64166.phpt
