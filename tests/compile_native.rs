@@ -52054,6 +52054,355 @@ $server->handle($request);
 }
 
 #[test]
+fn compile_soap_server_handle_soapfault_responses_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-server-handle-soapfaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-server-handle-soapfaults.php");
+    let output = root.join("soap-server-handle-soapfaults-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test1() {
+  throw new SoapFault("Server", "test1");
+}
+function test2() {
+  return new SoapFault("Server", "test2");
+}
+
+$server = new SoapServer(null, ['uri' => "http://testuri.org"]);
+$server->addFunction(["test1", "test2"]);
+
+$request = <<<XML
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<SOAP-ENV:Envelope
+  SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:si="http://soapinterop.org/xsd">
+  <SOAP-ENV:Body>
+    <ns1:test1 xmlns:ns1="http://testuri.org" />
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+XML;
+$server->handle($request);
+
+$request = <<<XML
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<SOAP-ENV:Envelope
+  SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
+  xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:si="http://soapinterop.org/xsd">
+  <SOAP-ENV:Body>
+    <ns1:test2 xmlns:ns1="http://testuri.org" />
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+XML;
+$server->handle($request);
+echo "ok\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>test1</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\"><SOAP-ENV:Body><SOAP-ENV:Fault><faultcode>SOAP-ENV:Server</faultcode><faultstring>test2</faultstring></SOAP-ENV:Fault></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+            "ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_emit_exception_fault_response"));
+    assert!(c_source.contains("ptn_try_frame_push"));
+}
+
+#[test]
+fn compile_soap_document_literal_optional_null_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-optional-null");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("bug41004.wsdl"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+	xmlns:tns="urn:Formation" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+	xmlns:xsd="http://www.w3.org/2001/XMLSchema" name="Formation"
+	targetNamespace="urn:Formation">
+	<wsdl:types>
+		<xsd:schema targetNamespace="urn:Formation">
+			<xsd:element name="echo">
+				<xsd:complexType>
+					<xsd:sequence>
+						<xsd:element name="in" type="tns:EchoBean"></xsd:element>
+					</xsd:sequence>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:element name="echoResponse">
+				<xsd:complexType>
+					<xsd:sequence>
+						<xsd:element name="out" type="tns:EchoBean"></xsd:element>
+					</xsd:sequence>
+				</xsd:complexType>
+			</xsd:element>
+			<xsd:simpleType name="Product1Type">
+				<xsd:restriction base="xsd:string">
+					<xsd:enumeration value="REV"></xsd:enumeration>
+					<xsd:enumeration value="CLA"></xsd:enumeration>
+				</xsd:restriction>
+			</xsd:simpleType>
+
+			<xsd:complexType name="EchoBean">
+				<xsd:sequence>
+					<xsd:element name="mandatoryElement"
+						type="tns:Product1Type">
+					</xsd:element>
+					<xsd:element name="optionalElement"
+						type="tns:Product1Type" maxOccurs="1" minOccurs="0">
+					</xsd:element>
+				</xsd:sequence>
+			</xsd:complexType>
+		</xsd:schema>
+	</wsdl:types>
+	<wsdl:message name="echoRequest">
+		<wsdl:part name="parameters" element="tns:echo"></wsdl:part>
+	</wsdl:message>
+	<wsdl:message name="echoResponse">
+		<wsdl:part name="parameters" element="tns:echoResponse"></wsdl:part>
+	</wsdl:message>
+	<wsdl:portType name="Formation">
+		<wsdl:operation name="echo">
+			<wsdl:input message="tns:echoRequest"></wsdl:input>
+			<wsdl:output message="tns:echoResponse"></wsdl:output>
+		</wsdl:operation>
+	</wsdl:portType>
+	<wsdl:binding name="FormationServiceV1" type="tns:Formation">
+		<soap:binding style="document"
+			transport="http://schemas.xmlsoap.org/soap/http" />
+		<wsdl:operation name="echo">
+			<soap:operation soapAction="urn:Formation/echo" />
+			<wsdl:input>
+				<soap:body use="literal" />
+			</wsdl:input>
+			<wsdl:output>
+				<soap:body use="literal" />
+			</wsdl:output>
+		</wsdl:operation>
+	</wsdl:binding>
+	<wsdl:service name="Formation">
+		<wsdl:port binding="tns:FormationServiceV1"
+			name="FormationSOAP">
+			<soap:address
+				location="http://localhost:8080/webapp/services/FormationServiceV1" />
+		</wsdl:port>
+	</wsdl:service>
+</wsdl:definitions>
+"#,
+    )
+    .unwrap();
+    let input = root.join("soap-document-literal-optional-null.php");
+    let output = root.join("soap-document-literal-optional-null-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EchoBean {
+    public $mandatoryElement;
+    public $optionalElement;
+}
+
+class EchoRequest {
+    public $in;
+}
+
+class EchoResponse {
+    public $out;
+}
+
+$wsdl = __DIR__ . "/bug41004.wsdl";
+$classmap = ['EchoBean' => 'EchoBean', 'echo' => 'EchoRequest', 'echoResponse' => 'EchoResponse'];
+$client = new SoapClient($wsdl, ['location' => 'test://', 'classmap' => $classmap, 'exceptions' => 0, 'trace' => 1]);
+$echo = new EchoRequest();
+$in = new EchoBean();
+$in->mandatoryElement = "REV";
+$in->optionalElement = null;
+$echo->in = $in;
+$client->echo($echo);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:Formation\"><SOAP-ENV:Body><ns1:echo><in><mandatoryElement>REV</mandatoryElement></in></ns1:echo></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_schema_element_type_dup"));
+    assert!(c_source.contains("ptn_soap_append_type_elements"));
+}
+
+#[test]
+fn compile_soap_gettypes_reports_encoded_arrays_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-gettypes-encoded-arrays");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("bug68361.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="TestServer" targetNamespace="http://foo.bar/testserver" xmlns:tns="http://foo.bar/testserver" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:ns="http://foo.bar/testserver/types">
+  <types>
+    <xsd:schema targetNamespace="http://foo.bar/testserver/types" xmlns="http://foo.bar/testserver/types">
+      <xsd:complexType name="ArrayOfEmployeeReturn">
+        <xsd:complexContent>
+          <xsd:restriction base="soapenc:Array">
+            <xsd:attribute ref="soapenc:arrayType" arrayType="ns:Employee[]"/>
+          </xsd:restriction>
+        </xsd:complexContent>
+      </xsd:complexType>
+      <xsd:complexType name="Employee">
+        <xsd:sequence>
+          <xsd:element name="id" type="xsd:int"/>
+          <xsd:element name="department" type="xsd:string"/>
+          <xsd:element name="name" type="xsd:string"/>
+          <xsd:element name="age" type="xsd:int"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="Employee" nillable="true" type="ns:Employee"/>
+      <xsd:complexType name="User">
+        <xsd:sequence>
+          <xsd:element name="name" type="xsd:string"/>
+          <xsd:element name="age" type="xsd:int"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="User" nillable="true" type="ns:User"/>
+    </xsd:schema>
+  </types>
+  <message name="getEmployeeRequest">
+    <part name="name" type="xsd:name"/>
+  </message>
+  <message name="getEmployeeResponse">
+    <part name="employeeReturn" type="ns:ArrayOfEmployeeReturn"/>
+  </message>
+  <message name="getUserRequest">
+    <part name="id" type="xsd:id"/>
+  </message>
+  <message name="getUserResponse">
+    <part name="userReturn" element="ns:User"/>
+  </message>
+  <portType name="TestServerPortType">
+    <operation name="getEmployee">
+      <input message="tns:getEmployeeRequest"/>
+      <output message="tns:getEmployeeResponse"/>
+    </operation>
+    <operation name="getUser">
+      <input message="tns:getUserRequest"/>
+      <output message="tns:getUserResponse"/>
+    </operation>
+  </portType>
+  <binding name="TestServerBinding" type="tns:TestServerPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="getEmployee">
+      <soap:operation soapAction="http://foo.bar/testserver/#getEmployee"/>
+      <input>
+        <soap:body use="literal" namespace="http://foo.bar/testserver"/>
+      </input>
+      <output>
+        <soap:body use="literal" namespace="http://foo.bar/testserver"/>
+      </output>
+    </operation>
+    <operation name="getUser">
+      <soap:operation soapAction="http://foo.bar/testserver/#getUser"/>
+      <input>
+        <soap:body use="literal" namespace="http://foo.bar/testserver"/>
+      </input>
+      <output>
+        <soap:body use="literal" namespace="http://foo.bar/testserver"/>
+      </output>
+    </operation>
+  </binding>
+  <service name="TestServerService">
+    <port name="TestServerPort" binding="tns:TestServerBinding">
+      <soap:address location="http://localhost/wsdl-creator/TestClass.php"/>
+    </port>
+  </service>
+</definitions>
+"#,
+    )
+    .unwrap();
+    let input = root.join("soap-gettypes-encoded-arrays.php");
+    let output = root.join("soap-gettypes-encoded-arrays-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$client = new SoapClient(__DIR__ . "/bug68361.xml");
+print_r($client->__getTypes());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Array\n",
+            "(\n",
+            "    [0] => anyType ArrayOfEmployeeReturn[]\n",
+            "    [1] => struct Employee {\n",
+            " int id;\n",
+            " string department;\n",
+            " string name;\n",
+            " int age;\n",
+            "}\n",
+            "    [2] => struct User {\n",
+            " string name;\n",
+            " int age;\n",
+            "}\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("anyType %s[]"));
+    assert!(c_source.contains("is_array"));
+}
+
+#[test]
 fn compile_soap_server_setclass_constructor_and_setobject_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-service-binding");
     fs::create_dir_all(&root).unwrap();
