@@ -1657,6 +1657,58 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "OPENSSL_VERSION_NUMBER") == 0) {
+        *out = ptn_int(PTN_OPENSSL_VERSION_NUMBER);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_VERSION_TEXT") == 0) {
+        *out = ptn_string(PTN_OPENSSL_VERSION_TEXT);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_SHA1") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_MD5") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_SHA224") == 0) {
+        *out = ptn_int(6);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_SHA256") == 0) {
+        *out = ptn_int(7);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_SHA384") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ALGO_SHA512") == 0) {
+        *out = ptn_int(9);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ENCODING_DER") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ENCODING_SMIME") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ENCODING_PEM") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_RAW_DATA") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "OPENSSL_ZERO_PADDING") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
     if (strcmp(name, "LIBXML_DOTTED_VERSION") == 0) {
         *out = ptn_string(ptn_libxml_version_info_load()->dotted);
         return 1;

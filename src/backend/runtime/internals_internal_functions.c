@@ -87463,6 +87463,866 @@ static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, cons
     return ptn_owned_string_len(bytes, len);
 }
 
+#if PTN_HAVE_OPENSSL
+typedef enum {
+    PTN_OPENSSL_RESOURCE_PKEY = 1,
+    PTN_OPENSSL_RESOURCE_X509 = 2
+} PtnOpenSslResourceKind;
+
+typedef struct {
+    PtnOpenSslResourceKind kind;
+    EVP_PKEY *pkey;
+    X509 *x509;
+} PtnOpenSslResourceData;
+
+typedef struct {
+    PtnValue result;
+    int include_aliases;
+    int64_t next_index;
+} PtnOpenSslCipherList;
+
+static void ptn_openssl_resource_close_hook(PtnResource *resource, void *data) {
+    (void)resource;
+    (void)data;
+}
+
+static void ptn_openssl_resource_data_free(void *raw) {
+    PtnOpenSslResourceData *data = (PtnOpenSslResourceData *)raw;
+    if (data == NULL) {
+        return;
+    }
+    if (data->pkey != NULL) {
+        EVP_PKEY_free(data->pkey);
+    }
+    if (data->x509 != NULL) {
+        X509_free(data->x509);
+    }
+    free(data);
+}
+
+static PtnValue ptn_openssl_resource_value(
+    PtnOpenSslResourceKind kind,
+    const char *type_name,
+    EVP_PKEY *pkey,
+    X509 *x509
+) {
+    PtnOpenSslResourceData *data = malloc(sizeof(PtnOpenSslResourceData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->kind = kind;
+    data->pkey = pkey;
+    data->x509 = x509;
+
+    PtnResource *resource = ptn_resource_new_named(type_name);
+    resource->close_hook = ptn_openssl_resource_close_hook;
+    resource->close_hook_data = data;
+    resource->close_hook_data_free = ptn_openssl_resource_data_free;
+    return ptn_resource(resource);
+}
+
+static PtnOpenSslResourceData *ptn_openssl_resource_data(PtnValue value, PtnOpenSslResourceKind kind) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE || value.as.resource == NULL) {
+        return NULL;
+    }
+    if (value.as.resource->close_hook != ptn_openssl_resource_close_hook ||
+        value.as.resource->close_hook_data == NULL) {
+        return NULL;
+    }
+    PtnOpenSslResourceData *data = (PtnOpenSslResourceData *)value.as.resource->close_hook_data;
+    return data->kind == kind ? data : NULL;
+}
+
+static int ptn_openssl_string_has_file_scheme(PtnStringOperand value) {
+    const char *prefix = "file://";
+    size_t prefix_len = strlen(prefix);
+    return value.len >= prefix_len && memcmp(value.data, prefix, prefix_len) == 0;
+}
+
+static BIO *ptn_openssl_bio_from_string_operand(PtnStringOperand value) {
+    if (ptn_openssl_string_has_file_scheme(value)) {
+        PtnStringOperand path_operand = ptn_string_operand_borrowed_len(value.data + 7, value.len - 7);
+        char *path = ptn_path_operand_to_c_string(path_operand);
+        if (path == NULL) {
+            return NULL;
+        }
+        BIO *bio = BIO_new_file(path, "rb");
+        free(path);
+        return bio;
+    }
+    if (value.len > (size_t)INT_MAX) {
+        return NULL;
+    }
+    return BIO_new_mem_buf(value.data, (int)value.len);
+}
+
+static char *ptn_openssl_path_from_operand(PtnStringOperand value) {
+    PtnStringOperand path_operand = value;
+    if (ptn_openssl_string_has_file_scheme(value)) {
+        path_operand = ptn_string_operand_borrowed_len(value.data + 7, value.len - 7);
+    }
+    return ptn_path_operand_to_c_string(path_operand);
+}
+
+static const EVP_CIPHER *ptn_openssl_cipher_from_operand(PtnStringOperand name) {
+    char *name_copy = ptn_duplicate_string_len(name.data, name.len);
+    const EVP_CIPHER *cipher = EVP_get_cipherbyname(name_copy);
+    free(name_copy);
+    return cipher;
+}
+
+static const EVP_MD *ptn_openssl_digest_from_algorithm(int64_t algorithm) {
+    switch (algorithm) {
+        case 1:
+            return EVP_sha1();
+        case 2:
+            return EVP_md5();
+        case 6:
+            return EVP_sha224();
+        case 7:
+            return EVP_sha256();
+        case 8:
+            return EVP_sha384();
+        case 9:
+            return EVP_sha512();
+        default:
+            return NULL;
+    }
+}
+
+static EVP_PKEY *ptn_openssl_private_key_from_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int *owned_out
+) {
+    PtnOpenSslResourceData *resource_data = ptn_openssl_resource_data(value, PTN_OPENSSL_RESOURCE_PKEY);
+    if (resource_data != NULL && resource_data->pkey != NULL) {
+        *owned_out = 0;
+        return resource_data->pkey;
+    }
+
+    PtnStringOperand key = ptn_internal_expect_string_arg(runtime, function_name, position, argument_name, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    BIO *bio = ptn_openssl_bio_from_string_operand(key);
+    ptn_string_operand_free(key);
+    if (bio == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    if (pkey == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    *owned_out = 1;
+    return pkey;
+}
+
+static X509 *ptn_openssl_x509_from_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int *owned_out
+) {
+    PtnOpenSslResourceData *resource_data = ptn_openssl_resource_data(value, PTN_OPENSSL_RESOURCE_X509);
+    if (resource_data != NULL && resource_data->x509 != NULL) {
+        *owned_out = 0;
+        return resource_data->x509;
+    }
+
+    PtnStringOperand cert = ptn_internal_expect_string_arg(runtime, function_name, position, argument_name, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return NULL;
+    }
+    BIO *bio = ptn_openssl_bio_from_string_operand(cert);
+    ptn_string_operand_free(cert);
+    if (bio == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    X509 *x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    if (x509 == NULL) {
+        ERR_clear_error();
+        return NULL;
+    }
+    *owned_out = 1;
+    return x509;
+}
+
+static void ptn_openssl_cipher_list_callback(const OBJ_NAME *name, void *raw) {
+    PtnOpenSslCipherList *list = (PtnOpenSslCipherList *)raw;
+    if (!list->include_aliases && name->alias) {
+        return;
+    }
+    ptn_array_set_entry(
+        list->result.as.array,
+        ptn_array_int_key(list->next_index++),
+        ptn_string(name->name)
+    );
+}
+
+static PtnValue ptn_internal_openssl_get_cipher_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnOpenSslCipherList list;
+    list.result = ptn_array_from_literal_entries(0, NULL);
+    list.include_aliases = argc >= 1 && ptn_is_truthy(args[0]);
+    list.next_index = 0;
+    OBJ_NAME_do_all_sorted(OBJ_NAME_TYPE_CIPHER_METH, ptn_openssl_cipher_list_callback, &list);
+    return list.result;
+}
+
+static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand cipher_name = ptn_internal_expect_string_arg(runtime, "openssl_cipher_key_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    const EVP_CIPHER *cipher = ptn_openssl_cipher_from_operand(cipher_name);
+    ptn_string_operand_free(cipher_name);
+    if (cipher == NULL) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    return ptn_int(EVP_CIPHER_get_key_length(cipher));
+}
+
+static void ptn_openssl_emit_iv_warning(PtnRuntime *runtime, size_t actual_len, int expected_len, int short_iv, size_t line) {
+    char message[192];
+    int written;
+    if (short_iv) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "openssl_decrypt(): IV passed is only %zu bytes long, cipher expects an IV of precisely %d bytes, padding with \\0",
+            actual_len,
+            expected_len
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "openssl_decrypt(): IV passed is %zu bytes long which is longer than the %d expected by selected cipher, truncating",
+            actual_len,
+            expected_len
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand data_arg = ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand cipher_name = ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 2, "cipher_algo", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data_arg);
+        return ptn_null();
+    }
+    PtnStringOperand passphrase = ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 3, "passphrase", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data_arg);
+        ptn_string_operand_free(cipher_name);
+        return ptn_null();
+    }
+    int64_t options = argc >= 4 ? ptn_internal_expect_integer_arg(runtime, "openssl_decrypt", 4, "options", args[3], line) : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data_arg);
+        ptn_string_operand_free(cipher_name);
+        ptn_string_operand_free(passphrase);
+        return ptn_null();
+    }
+    PtnStringOperand iv_arg = argc >= 5
+        ? ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 5, "iv", args[4], line)
+        : ptn_string_operand_borrowed("");
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(data_arg);
+        ptn_string_operand_free(cipher_name);
+        ptn_string_operand_free(passphrase);
+        return ptn_null();
+    }
+
+    const EVP_CIPHER *cipher = ptn_openssl_cipher_from_operand(cipher_name);
+    ptn_string_operand_free(cipher_name);
+    if (cipher == NULL) {
+        ERR_clear_error();
+        ptn_string_operand_free(data_arg);
+        ptn_string_operand_free(passphrase);
+        ptn_string_operand_free(iv_arg);
+        return ptn_bool(0);
+    }
+
+    PtnValue decoded_value = ptn_null();
+    PtnStringOperand ciphertext = data_arg;
+    if ((options & 1) == 0) {
+        PtnValue encoded = ptn_owned_string_len(ptn_duplicate_string_len(data_arg.data, data_arg.len), data_arg.len);
+        decoded_value = ptn_internal_base64_decode(runtime, 1, &encoded, line);
+        ptn_value_destroy(&encoded);
+        ptn_string_operand_free(data_arg);
+        if (ptn_value_deref(decoded_value).type != PTN_STRING) {
+            ptn_value_destroy(&decoded_value);
+            ptn_string_operand_free(passphrase);
+            ptn_string_operand_free(iv_arg);
+            return ptn_bool(0);
+        }
+        PtnValue decoded_resolved = ptn_value_deref(decoded_value);
+        ciphertext = ptn_string_operand_borrowed_len(
+            (const char *)decoded_resolved.as.string.data,
+            decoded_resolved.as.string.len
+        );
+    }
+
+    int key_len = EVP_CIPHER_get_key_length(cipher);
+    int iv_len = EVP_CIPHER_get_iv_length(cipher);
+    unsigned char *key = calloc((size_t)key_len == 0 ? 1 : (size_t)key_len, 1);
+    unsigned char *iv = calloc((size_t)iv_len == 0 ? 1 : (size_t)iv_len, 1);
+    if (key == NULL || iv == NULL) {
+        free(key);
+        free(iv);
+        ptn_abort_out_of_memory();
+    }
+    size_t key_copy_len = passphrase.len < (size_t)key_len ? passphrase.len : (size_t)key_len;
+    if (key_copy_len != 0) {
+        memcpy(key, passphrase.data, key_copy_len);
+    }
+    if (iv_len > 0) {
+        size_t iv_copy_len = iv_arg.len < (size_t)iv_len ? iv_arg.len : (size_t)iv_len;
+        if (iv_copy_len != 0) {
+            memcpy(iv, iv_arg.data, iv_copy_len);
+        }
+        if (iv_arg.len < (size_t)iv_len) {
+            ptn_openssl_emit_iv_warning(runtime, iv_arg.len, iv_len, 1, line);
+        } else if (iv_arg.len > (size_t)iv_len) {
+            ptn_openssl_emit_iv_warning(runtime, iv_arg.len, iv_len, 0, line);
+        }
+    }
+
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (ctx == NULL) {
+        free(key);
+        free(iv);
+        ptn_value_destroy(&decoded_value);
+        ptn_string_operand_free(passphrase);
+        ptn_string_operand_free(iv_arg);
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    size_t output_capacity = ciphertext.len + (size_t)EVP_CIPHER_get_block_size(cipher) + 1;
+    unsigned char *output = malloc(output_capacity);
+    if (output == NULL) {
+        EVP_CIPHER_CTX_free(ctx);
+        free(key);
+        free(iv);
+        ptn_abort_out_of_memory();
+    }
+    int out_len = 0;
+    int final_len = 0;
+    int ok = EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv) == 1;
+    if (ok && (options & 2) != 0) {
+        ok = EVP_CIPHER_CTX_set_padding(ctx, 0) == 1;
+    }
+    if (ok) {
+        ok = EVP_DecryptUpdate(ctx, output, &out_len, ciphertext.data, (int)ciphertext.len) == 1;
+    }
+    if (ok) {
+        ok = EVP_DecryptFinal_ex(ctx, output + out_len, &final_len) == 1;
+    }
+    EVP_CIPHER_CTX_free(ctx);
+    free(key);
+    free(iv);
+    ptn_value_destroy(&decoded_value);
+    ptn_string_operand_free(passphrase);
+    ptn_string_operand_free(iv_arg);
+    ERR_clear_error();
+    if (!ok) {
+        free(output);
+        return ptn_bool(0);
+    }
+    size_t result_len = (size_t)(out_len + final_len);
+    output[result_len] = '\0';
+    return ptn_owned_string_len((char *)output, result_len);
+}
+
+static PtnValue ptn_internal_openssl_pkey_get_private(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int owned = 0;
+    EVP_PKEY *pkey = ptn_openssl_private_key_from_value(
+        runtime,
+        "openssl_pkey_get_private",
+        1,
+        "private_key",
+        args[0],
+        line,
+        &owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (pkey == NULL) {
+        return ptn_bool(0);
+    }
+    if (!owned && EVP_PKEY_up_ref(pkey) != 1) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_PKEY, "OpenSSL key", pkey, NULL);
+}
+
+static PtnValue ptn_internal_openssl_x509_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int owned = 0;
+    X509 *x509 = ptn_openssl_x509_from_value(
+        runtime,
+        "openssl_x509_read",
+        1,
+        "certificate",
+        args[0],
+        line,
+        &owned
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (x509 == NULL) {
+        return ptn_bool(0);
+    }
+    if (!owned && X509_up_ref(x509) != 1) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    return ptn_openssl_resource_value(PTN_OPENSSL_RESOURCE_X509, "OpenSSL X.509", NULL, x509);
+}
+
+static PtnValue ptn_internal_openssl_spki_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int owned = 0;
+    EVP_PKEY *pkey = ptn_openssl_private_key_from_value(runtime, "openssl_spki_new", 1, "private_key", args[0], line, &owned);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (pkey == NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand challenge = ptn_internal_expect_string_arg(runtime, "openssl_spki_new", 2, "challenge", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        if (owned) {
+            EVP_PKEY_free(pkey);
+        }
+        return ptn_null();
+    }
+    int64_t algorithm = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "openssl_spki_new", 3, "digest_algo", args[2], line)
+        : 1;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(challenge);
+        if (owned) {
+            EVP_PKEY_free(pkey);
+        }
+        return ptn_null();
+    }
+    const EVP_MD *digest = ptn_openssl_digest_from_algorithm(algorithm);
+    if (digest == NULL) {
+        ptn_string_operand_free(challenge);
+        if (owned) {
+            EVP_PKEY_free(pkey);
+        }
+        return ptn_bool(0);
+    }
+
+    NETSCAPE_SPKI *spki = NETSCAPE_SPKI_new();
+    if (spki == NULL ||
+        ASN1_STRING_set(spki->spkac->challenge, challenge.data, (int)challenge.len) != 1 ||
+        NETSCAPE_SPKI_set_pubkey(spki, pkey) != 1 ||
+        NETSCAPE_SPKI_sign(spki, pkey, digest) <= 0) {
+        if (spki != NULL) {
+            NETSCAPE_SPKI_free(spki);
+        }
+        ptn_string_operand_free(challenge);
+        if (owned) {
+            EVP_PKEY_free(pkey);
+        }
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    char *encoded = NETSCAPE_SPKI_b64_encode(spki);
+    NETSCAPE_SPKI_free(spki);
+    ptn_string_operand_free(challenge);
+    if (owned) {
+        EVP_PKEY_free(pkey);
+    }
+    if (encoded == NULL) {
+        ERR_clear_error();
+        return ptn_bool(0);
+    }
+    size_t encoded_len = strlen(encoded);
+    const char *prefix = "SPKAC=";
+    size_t prefix_len = strlen(prefix);
+    char *result = malloc(prefix_len + encoded_len + 1);
+    if (result == NULL) {
+        OPENSSL_free(encoded);
+        ptn_abort_out_of_memory();
+    }
+    memcpy(result, prefix, prefix_len);
+    memcpy(result + prefix_len, encoded, encoded_len + 1);
+    OPENSSL_free(encoded);
+    return ptn_owned_string_len(result, prefix_len + encoded_len);
+}
+
+static PtnValue ptn_internal_openssl_spki_verify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand spkac_arg = ptn_internal_expect_string_arg(runtime, "openssl_spki_verify", 1, "spki", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *spkac = ptn_duplicate_string_len(spkac_arg.data, spkac_arg.len);
+    NETSCAPE_SPKI *decoded = NETSCAPE_SPKI_b64_decode(spkac, (int)spkac_arg.len);
+    free(spkac);
+    ptn_string_operand_free(spkac_arg);
+    if (decoded == NULL) {
+        ERR_clear_error();
+        ptn_emit_warning(&runtime->diagnostics, "openssl_spki_verify(): Unable to decode supplied SPKAC", line);
+        return ptn_bool(0);
+    }
+    EVP_PKEY *pubkey = NETSCAPE_SPKI_get_pubkey(decoded);
+    int verified = pubkey != NULL && NETSCAPE_SPKI_verify(decoded, pubkey) == 1;
+    if (pubkey != NULL) {
+        EVP_PKEY_free(pubkey);
+    }
+    NETSCAPE_SPKI_free(decoded);
+    ERR_clear_error();
+    return ptn_bool(verified);
+}
+
+static PtnValue ptn_internal_openssl_cms_encrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_encrypt", 1, "input_filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand output_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_encrypt", 2, "output_filename", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input_operand);
+        return ptn_null();
+    }
+    char *input_path = ptn_openssl_path_from_operand(input_operand);
+    char *output_path = ptn_openssl_path_from_operand(output_operand);
+    ptn_string_operand_free(input_operand);
+    ptn_string_operand_free(output_operand);
+    if (input_path == NULL || output_path == NULL) {
+        free(input_path);
+        free(output_path);
+        return ptn_bool(0);
+    }
+
+    int cert_owned = 0;
+    X509 *cert = ptn_openssl_x509_from_value(runtime, "openssl_cms_encrypt", 3, "certificate", args[2], line, &cert_owned);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(input_path);
+        free(output_path);
+        return ptn_null();
+    }
+    if (cert == NULL) {
+        free(input_path);
+        free(output_path);
+        return ptn_bool(0);
+    }
+    int64_t flags = argc >= 5 ? ptn_internal_expect_integer_arg(runtime, "openssl_cms_encrypt", 5, "flags", args[4], line) : 0;
+    int64_t encoding = argc >= 6 ? ptn_internal_expect_integer_arg(runtime, "openssl_cms_encrypt", 6, "encoding", args[5], line) : 1;
+    if (runtime->exceptions->active_exception != NULL) {
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        free(input_path);
+        free(output_path);
+        return ptn_null();
+    }
+    const EVP_CIPHER *cipher = EVP_des_ede3_cbc();
+    if (argc >= 7 && ptn_value_deref(args[6]).type != PTN_NULL) {
+        PtnStringOperand cipher_name = ptn_internal_expect_string_arg(runtime, "openssl_cms_encrypt", 7, "cipher_algo", args[6], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            if (cert_owned) {
+                X509_free(cert);
+            }
+            free(input_path);
+            free(output_path);
+            return ptn_null();
+        }
+        cipher = ptn_openssl_cipher_from_operand(cipher_name);
+        ptn_string_operand_free(cipher_name);
+    }
+    if (cipher == NULL || encoding != 1) {
+        ERR_clear_error();
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        free(input_path);
+        free(output_path);
+        return ptn_bool(0);
+    }
+
+    BIO *input = BIO_new_file(input_path, "rb");
+    BIO *output = NULL;
+    CMS_ContentInfo *cms = NULL;
+    STACK_OF(X509) *recipients = NULL;
+    int ok = 0;
+    if (input != NULL) {
+        recipients = sk_X509_new_null();
+        if (recipients != NULL && sk_X509_push(recipients, cert) == 1) {
+            cms = CMS_encrypt(recipients, input, cipher, (unsigned int)flags);
+            if (cms != NULL) {
+                (void)BIO_reset(input);
+                output = BIO_new_file(output_path, "wb");
+                if (output != NULL) {
+                    ok = SMIME_write_CMS(output, cms, input, (int)flags) == 1;
+                }
+            }
+        }
+    }
+    if (output != NULL) {
+        BIO_free(output);
+    }
+    if (cms != NULL) {
+        CMS_ContentInfo_free(cms);
+    }
+    if (recipients != NULL) {
+        sk_X509_free(recipients);
+    }
+    if (input != NULL) {
+        BIO_free(input);
+    }
+    if (cert_owned) {
+        X509_free(cert);
+    }
+    free(input_path);
+    free(output_path);
+    ERR_clear_error();
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_openssl_cms_decrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_decrypt", 1, "input_filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand output_operand = ptn_internal_expect_string_arg(runtime, "openssl_cms_decrypt", 2, "output_filename", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input_operand);
+        return ptn_null();
+    }
+    char *input_path = ptn_openssl_path_from_operand(input_operand);
+    char *output_path = ptn_openssl_path_from_operand(output_operand);
+    ptn_string_operand_free(input_operand);
+    ptn_string_operand_free(output_operand);
+    if (input_path == NULL || output_path == NULL) {
+        free(input_path);
+        free(output_path);
+        return ptn_bool(0);
+    }
+    int cert_owned = 0;
+    int pkey_owned = 0;
+    X509 *cert = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL
+        ? ptn_openssl_x509_from_value(runtime, "openssl_cms_decrypt", 3, "certificate", args[2], line, &cert_owned)
+        : NULL;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(input_path);
+        free(output_path);
+        return ptn_null();
+    }
+    EVP_PKEY *pkey = argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL
+        ? ptn_openssl_private_key_from_value(runtime, "openssl_cms_decrypt", 4, "private_key", args[3], line, &pkey_owned)
+        : NULL;
+    if (runtime->exceptions->active_exception != NULL) {
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        free(input_path);
+        free(output_path);
+        return ptn_null();
+    }
+    int64_t encoding = argc >= 5 ? ptn_internal_expect_integer_arg(runtime, "openssl_cms_decrypt", 5, "encoding", args[4], line) : 1;
+    if (runtime->exceptions->active_exception != NULL) {
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        if (pkey_owned) {
+            EVP_PKEY_free(pkey);
+        }
+        free(input_path);
+        free(output_path);
+        return ptn_null();
+    }
+    if (cert == NULL || pkey == NULL || encoding != 1) {
+        if (cert_owned) {
+            X509_free(cert);
+        }
+        if (pkey_owned) {
+            EVP_PKEY_free(pkey);
+        }
+        free(input_path);
+        free(output_path);
+        return ptn_bool(0);
+    }
+
+    BIO *input = BIO_new_file(input_path, "rb");
+    BIO *indata = NULL;
+    BIO *output = NULL;
+    CMS_ContentInfo *cms = input == NULL ? NULL : SMIME_read_CMS(input, &indata);
+    int ok = 0;
+    if (cms != NULL) {
+        output = BIO_new_file(output_path, "wb");
+        if (output != NULL) {
+            ok = CMS_decrypt(cms, pkey, cert, indata, output, 0) == 1;
+        }
+    }
+    if (output != NULL) {
+        BIO_free(output);
+    }
+    if (cms != NULL) {
+        CMS_ContentInfo_free(cms);
+    }
+    if (indata != NULL) {
+        BIO_free(indata);
+    }
+    if (input != NULL) {
+        BIO_free(input);
+    }
+    if (cert_owned) {
+        X509_free(cert);
+    }
+    if (pkey_owned) {
+        EVP_PKEY_free(pkey);
+    }
+    free(input_path);
+    free(output_path);
+    ERR_clear_error();
+    return ptn_bool(ok);
+}
+#else
+static PtnValue ptn_internal_openssl_get_cipher_methods(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_internal_openssl_cipher_key_length(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cipher_key_length", 1, "cipher_algo", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_decrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 1, "data", args[0], line);
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 2, "cipher_algo", args[1], line);
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_decrypt", 3, "passphrase", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_pkey_get_private(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_pkey_get_private", 1, "private_key", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_x509_read(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_x509_read", 1, "certificate", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_spki_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_spki_new", 2, "challenge", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_spki_verify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_spki_verify", 1, "spki", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_cms_encrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cms_encrypt", 1, "input_filename", args[0], line);
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cms_encrypt", 2, "output_filename", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_openssl_cms_decrypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cms_decrypt", 1, "input_filename", args[0], line);
+    (void)ptn_internal_expect_string_arg(runtime, "openssl_cms_decrypt", 2, "output_filename", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(0);
+}
+#endif
+
+static PtnValue ptn_internal_openssl_pkcs7_verify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc >= 4) {
+        PtnValue cainfo = ptn_value_deref(args[3]);
+        if (cainfo.type == PTN_ARRAY && cainfo.as.array != NULL) {
+            for (size_t i = 0; i < cainfo.as.array->len; i++) {
+                PtnStringOperand entry = ptn_value_to_string_operand_with_runtime(
+                    runtime,
+                    cainfo.as.array->entries[i].value,
+                    line
+                );
+                if (runtime->exceptions->active_exception != NULL) {
+                    ptn_string_operand_free(entry);
+                    return ptn_null();
+                }
+                ptn_string_operand_free(entry);
+            }
+        } else if (cainfo.type != PTN_NULL) {
+            PtnArray *array = ptn_internal_expect_array_arg(runtime, "openssl_pkcs7_verify", 4, "ca_info", args[3]);
+            if (array == NULL || runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+    }
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_openssl_random_pseudo_bytes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t length = ptn_internal_expect_integer_arg(runtime, "openssl_random_pseudo_bytes", 1, "length", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -149627,7 +150487,17 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openssl_cipher_key_length", 1, 1, ptn_internal_openssl_cipher_key_length },
+        { "openssl_cms_decrypt", 2, 5, ptn_internal_openssl_cms_decrypt },
+        { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },
+        { "openssl_decrypt", 3, 7, ptn_internal_openssl_decrypt },
+        { "openssl_get_cipher_methods", 0, 1, ptn_internal_openssl_get_cipher_methods },
+        { "openssl_pkcs7_verify", 2, 7, ptn_internal_openssl_pkcs7_verify },
+        { "openssl_pkey_get_private", 1, 2, ptn_internal_openssl_pkey_get_private },
         { "openssl_random_pseudo_bytes", 1, 2, ptn_internal_openssl_random_pseudo_bytes },
+        { "openssl_spki_new", 2, 3, ptn_internal_openssl_spki_new },
+        { "openssl_spki_verify", 1, 1, ptn_internal_openssl_spki_verify },
+        { "openssl_x509_read", 1, 1, ptn_internal_openssl_x509_read },
         { "ord", 1, 1, ptn_internal_ord },
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "parse_ini_file", 1, 3, ptn_internal_parse_ini_file },

@@ -49,6 +49,21 @@
 #include "ada_c.h"
 #endif
 
+#ifndef PTN_HAVE_OPENSSL
+#define PTN_HAVE_OPENSSL 0
+#endif
+#if PTN_HAVE_OPENSSL
+#include <openssl/asn1.h>
+#include <openssl/bio.h>
+#include <openssl/cms.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/objects.h>
+#include <openssl/opensslv.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#endif
+
 #if !defined(_WIN32)
 extern char *realpath(const char *path, char *resolved_path);
 extern char *strptime(const char *s, const char *format, struct tm *tm);
@@ -132,6 +147,13 @@ typedef struct {
 #define PTN_PHP_OS "Unknown"
 #define PTN_PHP_OS_FAMILY "Unknown"
 #define PTN_PHP_SHLIB_SUFFIX "so"
+#endif
+#if PTN_HAVE_OPENSSL
+#define PTN_OPENSSL_VERSION_NUMBER OPENSSL_VERSION_NUMBER
+#define PTN_OPENSSL_VERSION_TEXT OPENSSL_VERSION_TEXT
+#else
+#define PTN_OPENSSL_VERSION_NUMBER 0
+#define PTN_OPENSSL_VERSION_TEXT ""
 #endif
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16

@@ -1,0 +1,12 @@
+ext/openssl/tests/bug48182.phpt
+ext/openssl/tests/openssl_cms_encrypt_auth_env.phpt
+ext/openssl/tests/bug61124.phpt
+ext/openssl/tests/tls_psk_client_callback_null.phpt
+ext/openssl/tests/openssl_spki_verify_basic.phpt
+ext/openssl/tests/openssl_get_cipher_methods.phpt
+ext/openssl/tests/tls_wrapper_with_tls_v1.3.phpt
+ext/openssl/tests/bug65538_001.phpt
+ext/openssl/tests/memory_leak_x509_store.phpt
+ext/openssl/tests/stream_crypto_flags_004.phpt
+ext/openssl/tests/sni_server_key_cert.phpt
+ext/openssl/tests/openssl_cipher_key_length_basic.phpt

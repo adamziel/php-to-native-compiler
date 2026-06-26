@@ -36071,6 +36071,36 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: None,
         },
     ];
+    static OPENSSL_CMS_ENCRYPT_PARAMETERS: [InternalParameterSpec; 7] = [
+        InternalParameterSpec {
+            name: "input_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "output_filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "certificate",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "headers",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "cipher_algo",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static UNPACK_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "format",
@@ -36433,6 +36463,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&HASH_FILE_PARAMETERS)
     } else if name.eq_ignore_ascii_case("crypt") {
         Some(&CRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("openssl_cms_encrypt") {
+        Some(&OPENSSL_CMS_ENCRYPT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("count_chars") {
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {
@@ -37743,12 +37775,22 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     })?;
     let optimization_args = cc_optimization_args(c_source.len())?;
     let warning_args = cc_warning_args(c_source.len())?;
+    let openssl_config = discover_openssl_compile_config();
     if c_source_uses_ada_url(c_source) {
-        return compile_c_with_ada_url(&c_path, output, &optimization_args, &warning_args);
+        return compile_c_with_ada_url(
+            &c_path,
+            output,
+            &optimization_args,
+            &warning_args,
+            openssl_config.as_ref(),
+        );
     }
     let mut command = Command::new("cc");
     command.arg("-std=c11");
     add_pcre2_default_library_define(&mut command);
+    if let Some(config) = openssl_config.as_ref() {
+        add_openssl_compile_args(&mut command, config);
+    }
     for arg in warning_args {
         command.arg(arg);
     }
@@ -37764,6 +37806,12 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
         } else {
             &[]
         })
+        .args(
+            openssl_config
+                .as_ref()
+                .map(openssl_link_args)
+                .unwrap_or_default(),
+        )
         .arg("-lm")
         .status()
         .map_err(|error| Diagnostic::new(format!("failed to launch cc: {error}"), None))?;
@@ -37786,6 +37834,7 @@ fn compile_c_with_ada_url(
     output: &Path,
     optimization_args: &[&str],
     warning_args: &[&str],
+    openssl_config: Option<&OpenSslCompileConfig>,
 ) -> Result<()> {
     let ada_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("third_party/ada-url-3.4.5");
     let ada_cpp = ada_dir.join("ada.cpp");
@@ -37795,6 +37844,9 @@ fn compile_c_with_ada_url(
     let mut c_command = Command::new("cc");
     c_command.arg("-std=c11");
     add_pcre2_default_library_define(&mut c_command);
+    if let Some(config) = openssl_config {
+        add_openssl_compile_args(&mut c_command, config);
+    }
     for arg in warning_args {
         c_command.arg(arg);
     }
@@ -37858,6 +37910,9 @@ fn compile_c_with_ada_url(
     if cfg!(target_os = "linux") {
         link_command.arg("-ldl");
     }
+    if let Some(config) = openssl_config {
+        link_command.args(openssl_link_args(config));
+    }
     let link_status = link_command
         .arg("-lm")
         .status()
@@ -37876,6 +37931,174 @@ fn compile_c_with_ada_url(
             None,
         ))
     }
+}
+
+#[derive(Debug)]
+struct OpenSslCompileConfig {
+    include_dir: PathBuf,
+    lib_dir: PathBuf,
+}
+
+fn add_openssl_compile_args(command: &mut Command, config: &OpenSslCompileConfig) {
+    command
+        .arg("-DPTN_HAVE_OPENSSL=1")
+        .arg("-I")
+        .arg(&config.include_dir);
+}
+
+fn openssl_link_args(config: &OpenSslCompileConfig) -> Vec<String> {
+    vec![
+        "-L".to_string(),
+        config.lib_dir.to_string_lossy().into_owned(),
+        format!("-Wl,-rpath,{}", config.lib_dir.to_string_lossy()),
+        "-lcrypto".to_string(),
+    ]
+}
+
+fn discover_openssl_compile_config() -> Option<OpenSslCompileConfig> {
+    if let Some(config) = discover_openssl_from_env() {
+        return Some(config);
+    }
+    if let Some(config) = discover_openssl_from_nix_store() {
+        return Some(config);
+    }
+
+    let include_dir = PathBuf::from("/usr/include");
+    let lib_dir = PathBuf::from("/usr/lib");
+    if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+        return Some(OpenSslCompileConfig {
+            include_dir,
+            lib_dir,
+        });
+    }
+    let lib_dir = PathBuf::from("/usr/lib64");
+    if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+        return Some(OpenSslCompileConfig {
+            include_dir,
+            lib_dir,
+        });
+    }
+    let lib_dir = PathBuf::from("/usr/lib/x86_64-linux-gnu");
+    if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+        return Some(OpenSslCompileConfig {
+            include_dir,
+            lib_dir,
+        });
+    }
+    None
+}
+
+fn discover_openssl_from_env() -> Option<OpenSslCompileConfig> {
+    let include_dir = env::var_os("OPENSSL_INCLUDE_DIR").map(PathBuf::from);
+    let lib_dir = env::var_os("OPENSSL_LIB_DIR").map(PathBuf::from);
+    if let (Some(include_dir), Some(lib_dir)) = (include_dir, lib_dir) {
+        if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+            return Some(OpenSslCompileConfig {
+                include_dir,
+                lib_dir,
+            });
+        }
+    }
+    let root = env::var_os("OPENSSL_DIR").map(PathBuf::from)?;
+    let include_dir = root.join("include");
+    let lib_dir = root.join("lib");
+    if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+        return Some(OpenSslCompileConfig {
+            include_dir,
+            lib_dir,
+        });
+    }
+    None
+}
+
+fn discover_openssl_from_nix_store() -> Option<OpenSslCompileConfig> {
+    let entries = fs::read_dir("/nix/store").ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.contains("-openssl-") || !name.ends_with("-dev") {
+            continue;
+        }
+        let dev_dir = entry.path();
+        if let Some(config) =
+            openssl_config_from_pc_file(&dev_dir.join("lib/pkgconfig/libcrypto.pc"))
+        {
+            return Some(config);
+        }
+        let include_dir = dev_dir.join("include");
+        if !openssl_include_dir_is_valid(&include_dir) {
+            continue;
+        }
+        if let Ok(propagated) =
+            fs::read_to_string(dev_dir.join("nix-support/propagated-build-inputs"))
+        {
+            for item in propagated.split_whitespace() {
+                let lib_dir = PathBuf::from(item).join("lib");
+                if openssl_lib_dir_is_valid(&lib_dir) {
+                    return Some(OpenSslCompileConfig {
+                        include_dir,
+                        lib_dir,
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+fn openssl_config_from_pc_file(path: &Path) -> Option<OpenSslCompileConfig> {
+    let contents = fs::read_to_string(path).ok()?;
+    let mut variables: HashMap<String, String> = HashMap::new();
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("Name:") {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        let expanded = expand_pc_variables(value.trim(), &variables);
+        variables.insert(name.trim().to_string(), expanded);
+    }
+    let include_dir = variables.get("includedir").map(PathBuf::from)?;
+    let lib_dir = variables.get("libdir").map(PathBuf::from)?;
+    if openssl_include_dir_is_valid(&include_dir) && openssl_lib_dir_is_valid(&lib_dir) {
+        Some(OpenSslCompileConfig {
+            include_dir,
+            lib_dir,
+        })
+    } else {
+        None
+    }
+}
+
+fn expand_pc_variables(value: &str, variables: &HashMap<String, String>) -> String {
+    let mut expanded = value.to_string();
+    for _ in 0..8 {
+        let mut changed = false;
+        for (name, replacement) in variables {
+            let pattern = format!("${{{name}}}");
+            if expanded.contains(&pattern) {
+                expanded = expanded.replace(&pattern, replacement);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    expanded
+}
+
+fn openssl_include_dir_is_valid(path: &Path) -> bool {
+    path.join("openssl/evp.h").is_file() && path.join("openssl/cms.h").is_file()
+}
+
+fn openssl_lib_dir_is_valid(path: &Path) -> bool {
+    path.join("libcrypto.so").exists()
+        || path.join("libcrypto.so.3").exists()
+        || path.join("libcrypto.dylib").exists()
+        || path.join("libcrypto.a").exists()
 }
 
 fn add_pcre2_default_library_define(command: &mut Command) {
