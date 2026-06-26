@@ -54108,6 +54108,12 @@ static int ptn_stream_read_line(
     size_t line
 ) {
     ptn_string_buffer_init(buffer);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *auto_detect_line_endings =
+        root == NULL || root->auto_detect_line_endings == NULL
+            ? "0"
+            : root->auto_detect_line_endings;
+    int detect_carriage_return = ptn_runtime_ini_bool(auto_detect_line_endings, 0);
     while (!has_max_len || buffer->len < max_len) {
         errno = 0;
         int byte = ptn_stream_getc_filtered(resource);
@@ -54124,7 +54130,7 @@ static int ptn_stream_read_line(
             break;
         }
         ptn_string_buffer_append_char(buffer, (char)(unsigned char)byte);
-        if (byte == '\n') {
+        if (byte == '\n' || (detect_carriage_return && byte == '\r')) {
             break;
         }
     }
@@ -54206,7 +54212,7 @@ static PtnValue ptn_internal_fscanf(PtnRuntime *runtime, size_t argc, const PtnV
         argc > 2 ? argc - 2 : 0,
         argc > 2 ? args + 2 : NULL,
         1,
-        0,
+        1,
         line
     );
     free(buffer.data);
@@ -88816,6 +88822,15 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_ini_int_string(ptn_runtime_config_root(runtime)->bcmath_scale);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "auto_detect_line_endings")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        *out = ptn_owned_string(ptn_duplicate_string(
+            root == NULL || root->auto_detect_line_endings == NULL
+                ? "0"
+                : root->auto_detect_line_endings
+        ));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         *out = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         return 1;
@@ -89328,6 +89343,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "auto_detect_line_endings")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        ptn_runtime_set_ini_string(&root->auto_detect_line_endings, "0");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
         ptn_runtime_set_arg_separator_input(runtime, "&");
         ptn_string_operand_free(option);
@@ -89648,6 +89669,22 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_open_basedir(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "auto_detect_line_endings")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(
+            root == NULL || root->auto_detect_line_endings == NULL
+                ? "0"
+                : root->auto_detect_line_endings
+        ));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_emit_deprecation(&runtime->diagnostics, "auto_detect_line_endings is deprecated", line);
+        ptn_runtime_set_ini_string(&root->auto_detect_line_endings, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);

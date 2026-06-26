@@ -23489,6 +23489,46 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_auto_detect_line_endings_ini_affects_fgets() {
+    let root = temp_dir("ptn-native-auto-detect-line-endings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("auto-detect-line-endings.php");
+    let output = root.join("auto-detect-line-endings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_set('auto_detect_line_endings', 'on'));\n\
+var_dump(ini_get('auto_detect_line_endings'));\n\
+$path = __DIR__ . '/cr-lines.txt';\n\
+file_put_contents($path, \"fooBar1\\rfooBar2\\rfooBar3\");\n\
+$fp = fopen($path, 'r');\n\
+var_dump(fgets($fp));\n\
+var_dump(fgets($fp));\n\
+var_dump(fgets($fp));\n\
+fclose($fp);\n\
+unlink($path);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: auto_detect_line_endings is deprecated in ptn on line 2\n",
+            "string(1) \"0\"\n",
+            "string(2) \"on\"\n",
+            "string(8) \"fooBar1\r\"\n",
+            "string(8) \"fooBar2\r\"\n",
+            "string(7) \"fooBar3\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scanf_and_fscanf_string_edges_to_native_binary() {
     let root = temp_dir("ptn-native-scanf-fscanf-string-edges");
     fs::create_dir_all(&root).unwrap();

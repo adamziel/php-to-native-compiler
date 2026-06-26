@@ -286,6 +286,7 @@ struct RuntimeIni {
     assert_callback: Option<String>,
     assert_exception: Option<String>,
     assert_warning: Option<String>,
+    auto_detect_line_endings: Option<String>,
     disable_functions: Option<String>,
     display_errors: Option<String>,
     html_errors: Option<String>,
@@ -472,6 +473,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.assert_callback = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("assert.warning") {
         ini.assert_warning = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("auto_detect_line_endings") {
+        ini.auto_detect_line_endings = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("disable_functions") {
         ini.disable_functions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("date.timezone") {
@@ -1053,6 +1056,7 @@ fn compile_and_run(
         assert_callback: ini.assert_callback.clone(),
         assert_exception: ini.assert_exception.clone(),
         assert_warning: ini.assert_warning.clone(),
+        auto_detect_line_endings: ini.auto_detect_line_endings.clone(),
         disable_functions: ini.disable_functions.clone(),
         display_errors: ini.display_errors.clone(),
         html_errors: ini.html_errors.clone(),
@@ -1209,6 +1213,9 @@ fn compile_and_run(
     }
     if let Some(assert_warning) = &ini.assert_warning {
         command.env("PTN_ASSERT_WARNING", assert_warning);
+    }
+    if let Some(auto_detect_line_endings) = &ini.auto_detect_line_endings {
+        command.env("PTN_AUTO_DETECT_LINE_ENDINGS", auto_detect_line_endings);
     }
     if let Some(disable_functions) = &ini.disable_functions {
         command.env("PTN_DISABLE_FUNCTIONS", disable_functions);

@@ -1,0 +1,12 @@
+ext/standard/tests/file/userdirstream.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/streams/stream_select_preserve_keys.phpt
+ext/standard/tests/streams/stream_select_filtered_base64_buffered.phpt
+ext/standard/tests/streams/stream_set_timeout_error.phpt
+ext/standard/tests/file/popen_pclose_error.phpt
+ext/standard/tests/file/fscanf_variation37.phpt
+ext/standard/tests/file/auto_detect_line_endings_2.phpt
+ext/standard/tests/streams/bug60602.phpt
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/standard/tests/streams/opendir-004.phpt
+ext/standard/tests/file/userstreams_002.phpt

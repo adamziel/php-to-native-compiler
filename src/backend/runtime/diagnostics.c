@@ -2676,6 +2676,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    const char *configured_auto_detect_line_endings = getenv("PTN_AUTO_DETECT_LINE_ENDINGS");
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
     const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");
@@ -2732,6 +2733,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_user_agent = getenv("PTN_USER_AGENT");
     const char *configured_unserialize_callback_func =
         getenv("PTN_UNSERIALIZE_CALLBACK_FUNC");
+    runtime->auto_detect_line_endings = ptn_duplicate_string(
+        configured_auto_detect_line_endings == NULL ? "0" : configured_auto_detect_line_endings
+    );
     runtime->default_charset = ptn_duplicate_string(
         configured_default_charset == NULL ? "UTF-8" : configured_default_charset
     );

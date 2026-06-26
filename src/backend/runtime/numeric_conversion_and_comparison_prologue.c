@@ -955,6 +955,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);
         runtime->max_memory_limit = NULL;
+        free(runtime->auto_detect_line_endings);
+        runtime->auto_detect_line_endings = NULL;
         free(runtime->default_charset);
         runtime->default_charset = NULL;
         free(runtime->arg_separator_input);
