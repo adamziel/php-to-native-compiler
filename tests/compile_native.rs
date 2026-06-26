@@ -94100,6 +94100,7 @@ $randomizer = new Randomizer(new Mt19937(1234));
 [$methodOne] = $randomizer->pickArrayKeys($map, 1);
 $methodTwo = $randomizer->pickArrayKeys($map, 2);
 var_dump($one === $methodOne, $two === $methodTwo);
+var_dump(strlen($randomizer->getBytes(8)));
 
 $engine = new Secure();
 var_dump(
@@ -94155,6 +94156,7 @@ try {
             "int(0)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "int(8)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -94171,8 +94173,63 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_random_engine_new"));
+    assert!(c_source.contains("ptn_random_engine_call_method"));
     assert!(c_source.contains("ptn_random_randomizer_pick_array_keys"));
     assert!(c_source.contains("ptn_random_randomizer_shuffle_array"));
+}
+
+#[test]
+fn compile_random_engine_serialization_and_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-random-engine-serialization-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("random-engine-serialization-validation.php");
+    let output = root.join("random-engine-serialization-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Engine\Xoshiro256StarStar;
+
+echo serialize(new PcgOneseq128XslRr64(1234)), "\n";
+
+try {
+    unserialize('O:32:"Random\Engine\Xoshiro256StarStar":2:{i:0;a:0:{}i:1;a:4:{i:0;s:16:"0000000000000000";i:1;s:16:"0000000000000000";i:2;s:16:"0000000000000000";i:3;s:16:"0000000000000000";}}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('O:17:"Random\Randomizer":1:{i:0;a:2:{s:3:"foo";N;s:6:"engine";O:32:"Random\Engine\Xoshiro256StarStar":2:{i:0;a:0:{}i:1;a:4:{i:0;s:16:"7520fbc2d6f8de46";i:1;s:16:"84d2d2b9d7ba0a34";i:2;s:16:"d975f36db6490b32";i:3;s:16:"c19991ee16785b94";}}}}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:33:\"Random\\Engine\\PcgOneseq128XslRr64\":2:{i:0;a:0:{}i:1;a:2:{i:0;s:16:\"c6d571c37c41a8d1\";i:1;s:16:\"345e7e82265d6e27\";}}\n",
+            "Invalid serialization data for Random\\Engine\\Xoshiro256StarStar object\n",
+            "Invalid serialization data for Random\\Randomizer object\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_random_engine_serialize"));
+    assert!(c_source.contains("ptn_random_engine_unserialize"));
+    assert!(c_source.contains("ptn_random_randomizer_unserialize"));
 }
 
 #[test]

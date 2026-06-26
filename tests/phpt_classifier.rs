@@ -2506,6 +2506,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let random_function = classify_at_relative_path(
+        "--TEST--\nrandom int\n--EXTENSIONS--\nrandom\n--FILE--\n<?php\nvar_dump(random_int(1, 2));\n--EXPECT--\n",
+        "ext/random/tests/01_functions/random_int.phpt",
+    );
+    assert_eq!(
+        random_function.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let random_engine = classify_at_relative_path(
+        "--TEST--\nrandom engine\n--EXTENSIONS--\nrandom\n--FILE--\n<?php\nuse Random\\Engine\\Mt19937;\necho serialize(new Mt19937(1234));\n--EXPECT--\n",
+        "ext/random/tests/02_engine/mt19937_serialize.phpt",
+    );
+    assert_eq!(
+        random_engine.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let serialize_precision = classify(
         "--TEST--\nserialize precision ini\n--INI--\nserialize_precision=-1\n--FILE--\n<?php\necho ini_get('serialize_precision'), \"\\n\";\n--EXPECT--\n-1\n",
     );

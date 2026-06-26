@@ -10518,7 +10518,10 @@ static int ptn_serialize_declared_magic_method_exists(
         state->runtime != NULL &&
         state->runtime->method_dispatch != NULL &&
         object != NULL &&
-        ptn_declared_class_method_exists(object->class_name, method_name);
+        (ptn_declared_class_method_exists(object->class_name, method_name) ||
+            ((ptn_internal_class_name_is_random_engine(object->class_name) ||
+                 ptn_internal_class_name_is_random_randomizer(object->class_name)) &&
+                ptn_internal_class_method_exists(object->class_name, method_name)));
 }
 
 static PtnArrayEntry *ptn_serialize_object_property_entry_for_name(
@@ -13569,6 +13572,11 @@ static int ptn_unserialize_declared_magic_method_exists(
     }
     if (!ptn_ascii_case_equal(method_name, "__unserialize")) {
         return 0;
+    }
+    if ((ptn_internal_class_name_is_random_engine(resolved.as.object->class_name) ||
+            ptn_internal_class_name_is_random_randomizer(resolved.as.object->class_name)) &&
+        ptn_internal_class_method_exists(resolved.as.object->class_name, "__unserialize")) {
+        return 1;
     }
     if (ptn_runtime_declared_class_is_same_or_descendant(
             runtime,
@@ -85106,8 +85114,11 @@ static PtnValue ptn_internal_random_int(PtnRuntime *runtime, size_t argc, const 
         ptn_throw_exception(runtime, "ValueError", "random_int(): Argument #1 ($min) must be less than or equal to argument #2 ($max)");
         return ptn_null();
     }
-    uint64_t span = (uint64_t)(max - min) + 1;
-    int64_t value = min + (int64_t)((uint64_t)rand() % span);
+    uint64_t span = (uint64_t)max - (uint64_t)min + 1ULL;
+    uint64_t offset = span == 0
+        ? ptn_mt19937_range64(&ptn_global_mt19937_state, UINT64_MAX)
+        : ptn_mt19937_range64(&ptn_global_mt19937_state, span - 1ULL);
+    int64_t value = (int64_t)((uint64_t)min + offset);
     return ptn_int(value);
 }
 
@@ -85199,6 +85210,939 @@ static void ptn_random_engine_mt19937_data_free(void *data) {
     free(data);
 }
 
+typedef struct {
+    __uint128_t state;
+} PtnRandomPcgState;
+
+typedef struct {
+    uint64_t state[4];
+} PtnRandomXoshiroState;
+
+static __uint128_t ptn_random_u128(uint64_t hi, uint64_t lo) {
+    return ((__uint128_t)hi << 64) + (__uint128_t)lo;
+}
+
+static uint64_t ptn_random_pcg_hi(__uint128_t value) {
+    return (uint64_t)(value >> 64);
+}
+
+static uint64_t ptn_random_pcg_lo(__uint128_t value) {
+    return (uint64_t)value;
+}
+
+static uint64_t ptn_random_rotl64(uint64_t value, int shift) {
+    return (value << shift) | (value >> (64 - shift));
+}
+
+static void ptn_random_store_u32_le(char *buffer, uint32_t value) {
+    for (size_t i = 0; i < sizeof(uint32_t); i++) {
+        buffer[i] = (char)((value >> (8 * i)) & 0xffU);
+    }
+}
+
+static void ptn_random_store_u64_le(char *buffer, uint64_t value) {
+    for (size_t i = 0; i < sizeof(uint64_t); i++) {
+        buffer[i] = (char)((value >> (8 * i)) & 0xffU);
+    }
+}
+
+static char *ptn_random_hex_le_u32(uint32_t value) {
+    static const char digits[] = "0123456789abcdef";
+    char *hex = malloc(9);
+    if (hex == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < sizeof(uint32_t); i++) {
+        unsigned byte = (unsigned)((value >> (8 * i)) & 0xffU);
+        hex[(i * 2)] = digits[byte >> 4];
+        hex[(i * 2) + 1] = digits[byte & 0x0fU];
+    }
+    hex[8] = '\0';
+    return hex;
+}
+
+static char *ptn_random_hex_le_u64(uint64_t value) {
+    static const char digits[] = "0123456789abcdef";
+    char *hex = malloc(17);
+    if (hex == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < sizeof(uint64_t); i++) {
+        unsigned byte = (unsigned)((value >> (8 * i)) & 0xffU);
+        hex[(i * 2)] = digits[byte >> 4];
+        hex[(i * 2) + 1] = digits[byte & 0x0fU];
+    }
+    hex[16] = '\0';
+    return hex;
+}
+
+static int ptn_random_hex_digit_value(unsigned char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return (int)(digit - '0');
+    }
+    if (digit >= 'a' && digit <= 'f') {
+        return (int)(digit - 'a' + 10);
+    }
+    if (digit >= 'A' && digit <= 'F') {
+        return (int)(digit - 'A' + 10);
+    }
+    return -1;
+}
+
+static int ptn_random_parse_hex_le_u32(PtnValue value, uint32_t *out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING || value.as.string.len != 8) {
+        return 0;
+    }
+    uint32_t parsed = 0;
+    for (size_t i = 0; i < sizeof(uint32_t); i++) {
+        int hi = ptn_random_hex_digit_value(value.as.string.data[(i * 2)]);
+        int lo = ptn_random_hex_digit_value(value.as.string.data[(i * 2) + 1]);
+        if (hi < 0 || lo < 0) {
+            return 0;
+        }
+        parsed |= (uint32_t)((hi << 4) | lo) << (8 * i);
+    }
+    *out = parsed;
+    return 1;
+}
+
+static int ptn_random_parse_hex_le_u64(PtnValue value, uint64_t *out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING || value.as.string.len != 16) {
+        return 0;
+    }
+    uint64_t parsed = 0;
+    for (size_t i = 0; i < sizeof(uint64_t); i++) {
+        int hi = ptn_random_hex_digit_value(value.as.string.data[(i * 2)]);
+        int lo = ptn_random_hex_digit_value(value.as.string.data[(i * 2) + 1]);
+        if (hi < 0 || lo < 0) {
+            return 0;
+        }
+        parsed |= (uint64_t)((hi << 4) | lo) << (8 * i);
+    }
+    *out = parsed;
+    return 1;
+}
+
+static uint64_t ptn_random_bytes_to_u64_le(const unsigned char *bytes) {
+    uint64_t value = 0;
+    for (size_t i = 0; i < sizeof(uint64_t); i++) {
+        value |= ((uint64_t)bytes[i]) << (8 * i);
+    }
+    return value;
+}
+
+static int ptn_random_string_seed_u64(PtnValue value, size_t offset, uint64_t *out) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_STRING || value.as.string.len < offset + sizeof(uint64_t)) {
+        return 0;
+    }
+    *out = ptn_random_bytes_to_u64_le(value.as.string.data + offset);
+    return 1;
+}
+
+static void ptn_random_pcg_step(PtnRandomPcgState *state) {
+    state->state = state->state *
+        ptn_random_u128(2549297995355413924ULL, 4865540595714422341ULL) +
+        ptn_random_u128(6364136223846793005ULL, 1442695040888963407ULL);
+}
+
+static void ptn_random_pcg_seed128(PtnRandomPcgState *state, uint64_t hi, uint64_t lo) {
+    state->state = ptn_random_u128(0, 0);
+    ptn_random_pcg_step(state);
+    state->state += ptn_random_u128(hi, lo);
+    ptn_random_pcg_step(state);
+}
+
+static uint64_t ptn_random_pcg_generate(PtnRandomPcgState *state) {
+    ptn_random_pcg_step(state);
+    uint64_t mixed = ptn_random_pcg_hi(state->state) ^ ptn_random_pcg_lo(state->state);
+    unsigned int rotate = (unsigned int)(state->state >> 122U);
+    return (mixed >> rotate) | (mixed << ((-rotate) & 63U));
+}
+
+static void ptn_random_pcg_advance(PtnRandomPcgState *state, uint64_t advance) {
+    __uint128_t cur_mult = ptn_random_u128(2549297995355413924ULL, 4865540595714422341ULL);
+    __uint128_t cur_plus = ptn_random_u128(6364136223846793005ULL, 1442695040888963407ULL);
+    __uint128_t acc_mult = ptn_random_u128(0, 1);
+    __uint128_t acc_plus = ptn_random_u128(0, 0);
+    while (advance > 0) {
+        if ((advance & 1U) != 0) {
+            acc_mult *= cur_mult;
+            acc_plus = acc_plus * cur_mult + cur_plus;
+        }
+        cur_plus = (cur_mult + ptn_random_u128(0, 1)) * cur_plus;
+        cur_mult *= cur_mult;
+        advance /= 2;
+    }
+    state->state = acc_mult * state->state + acc_plus;
+}
+
+static uint64_t ptn_random_splitmix64(uint64_t *seed) {
+    uint64_t result = (*seed += 0x9e3779b97f4a7c15ULL);
+    result = (result ^ (result >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    result = (result ^ (result >> 27)) * 0x94d049bb133111ebULL;
+    return result ^ (result >> 31);
+}
+
+static void ptn_random_xoshiro_seed64(PtnRandomXoshiroState *state, uint64_t seed) {
+    state->state[0] = ptn_random_splitmix64(&seed);
+    state->state[1] = ptn_random_splitmix64(&seed);
+    state->state[2] = ptn_random_splitmix64(&seed);
+    state->state[3] = ptn_random_splitmix64(&seed);
+}
+
+static int ptn_random_xoshiro_is_zero(const PtnRandomXoshiroState *state) {
+    return state->state[0] == 0 &&
+        state->state[1] == 0 &&
+        state->state[2] == 0 &&
+        state->state[3] == 0;
+}
+
+static uint64_t ptn_random_xoshiro_generate(PtnRandomXoshiroState *state) {
+    uint64_t result = ptn_random_rotl64(state->state[1] * 5ULL, 7) * 9ULL;
+    uint64_t t = state->state[1] << 17;
+    state->state[2] ^= state->state[0];
+    state->state[3] ^= state->state[1];
+    state->state[1] ^= state->state[2];
+    state->state[0] ^= state->state[3];
+    state->state[2] ^= t;
+    state->state[3] = ptn_random_rotl64(state->state[3], 45);
+    return result;
+}
+
+static void ptn_random_xoshiro_jump_with(PtnRandomXoshiroState *state, const uint64_t *jump) {
+    uint64_t s0 = 0;
+    uint64_t s1 = 0;
+    uint64_t s2 = 0;
+    uint64_t s3 = 0;
+    for (uint32_t i = 0; i < 4; i++) {
+        for (uint32_t bit = 0; bit < 64; bit++) {
+            if ((jump[i] & (1ULL << bit)) != 0) {
+                s0 ^= state->state[0];
+                s1 ^= state->state[1];
+                s2 ^= state->state[2];
+                s3 ^= state->state[3];
+            }
+            (void)ptn_random_xoshiro_generate(state);
+        }
+    }
+    state->state[0] = s0;
+    state->state[1] = s1;
+    state->state[2] = s2;
+    state->state[3] = s3;
+}
+
+static void ptn_random_engine_throw_invalid_serialization(PtnRuntime *runtime, const char *class_name) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Invalid serialization data for %s object",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static PtnArrayEntry *ptn_random_array_int_entry(PtnArray *array, int64_t key) {
+    if (array == NULL) {
+        return NULL;
+    }
+    return ptn_array_entry_for_key(array, ptn_array_int_key(key));
+}
+
+static int ptn_random_value_is_empty_array(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_ARRAY && value.as.array->len == 0;
+}
+
+static int ptn_random_engine_payload_parts(
+    PtnValue payload,
+    PtnArray **members_out,
+    PtnArray **state_out
+) {
+    payload = ptn_value_deref(payload);
+    if (payload.type != PTN_ARRAY || payload.as.array->len != 2) {
+        return 0;
+    }
+    PtnArrayEntry *members_entry = ptn_random_array_int_entry(payload.as.array, 0);
+    PtnArrayEntry *state_entry = ptn_random_array_int_entry(payload.as.array, 1);
+    if (members_entry == NULL || state_entry == NULL) {
+        return 0;
+    }
+    PtnValue members = ptn_value_deref(members_entry->value);
+    PtnValue state = ptn_value_deref(state_entry->value);
+    if (members.type != PTN_ARRAY || members.as.array->len != 0 || state.type != PTN_ARRAY) {
+        return 0;
+    }
+    *members_out = members.as.array;
+    *state_out = state.as.array;
+    return 1;
+}
+
+static PtnValue ptn_random_engine_state_payload(PtnRuntime *runtime, PtnObject *object);
+
+static int ptn_random_mt19937_state_from_array(PtnArray *array, PtnMt19937State *state) {
+    if (array == NULL || array->len != PTN_MT19937_N + 2) {
+        return 0;
+    }
+    memset(state, 0, sizeof(PtnMt19937State));
+    for (uint32_t i = 0; i < PTN_MT19937_N; i++) {
+        PtnArrayEntry *entry = ptn_random_array_int_entry(array, (int64_t)i);
+        if (entry == NULL || !ptn_random_parse_hex_le_u32(entry->value, &state->state[i])) {
+            return 0;
+        }
+    }
+    PtnArrayEntry *count_entry = ptn_random_array_int_entry(array, PTN_MT19937_N);
+    PtnArrayEntry *mode_entry = ptn_random_array_int_entry(array, PTN_MT19937_N + 1);
+    PtnValue count = count_entry == NULL ? ptn_null() : ptn_value_deref(count_entry->value);
+    PtnValue mode = mode_entry == NULL ? ptn_null() : ptn_value_deref(mode_entry->value);
+    if (count.type != PTN_INT || mode.type != PTN_INT) {
+        return 0;
+    }
+    if (count.as.integer < 0 || count.as.integer > PTN_MT19937_N) {
+        return 0;
+    }
+    if (mode.as.integer != PTN_MT_RAND_MT19937 && mode.as.integer != PTN_MT_RAND_PHP) {
+        return 0;
+    }
+    state->count = (uint32_t)count.as.integer;
+    state->mode = (int)mode.as.integer;
+    state->seeded = 1;
+    return 1;
+}
+
+static int ptn_random_pcg_state_from_array(PtnArray *array, PtnRandomPcgState *state) {
+    if (array == NULL || array->len != 2) {
+        return 0;
+    }
+    PtnArrayEntry *hi_entry = ptn_random_array_int_entry(array, 0);
+    PtnArrayEntry *lo_entry = ptn_random_array_int_entry(array, 1);
+    uint64_t hi = 0;
+    uint64_t lo = 0;
+    if (hi_entry == NULL || lo_entry == NULL ||
+        !ptn_random_parse_hex_le_u64(hi_entry->value, &hi) ||
+        !ptn_random_parse_hex_le_u64(lo_entry->value, &lo)) {
+        return 0;
+    }
+    state->state = ptn_random_u128(hi, lo);
+    return 1;
+}
+
+static int ptn_random_xoshiro_state_from_array(PtnArray *array, PtnRandomXoshiroState *state) {
+    if (array == NULL || array->len != 4) {
+        return 0;
+    }
+    for (uint32_t i = 0; i < 4; i++) {
+        PtnArrayEntry *entry = ptn_random_array_int_entry(array, (int64_t)i);
+        if (entry == NULL || !ptn_random_parse_hex_le_u64(entry->value, &state->state[i])) {
+            return 0;
+        }
+    }
+    return !ptn_random_xoshiro_is_zero(state);
+}
+
+static int ptn_random_engine_initialize_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure")) {
+        if (argc != 0) {
+            char message[144];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Random\\Engine\\Secure::__construct() expects exactly 0 arguments, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return 0;
+        }
+        ptn_unserialize_replace_native_data(object, NULL, NULL);
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937")) {
+        if (argc > 2) {
+            char message[144];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Random\\Engine\\Mt19937::__construct() expects at most 2 arguments, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return 0;
+        }
+
+        int seed_is_null = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
+        int64_t seed = 0;
+        if (!seed_is_null) {
+            seed = ptn_internal_expect_integer_arg(
+                runtime,
+                "Random\\Engine\\Mt19937::__construct",
+                1,
+                "seed",
+                args[0],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return 0;
+            }
+        }
+
+        int64_t mode = PTN_MT_RAND_MT19937;
+        if (argc >= 2) {
+            mode = ptn_internal_expect_integer_arg(
+                runtime,
+                "Random\\Engine\\Mt19937::__construct",
+                2,
+                "mode",
+                args[1],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return 0;
+            }
+        }
+        if (mode == PTN_MT_RAND_PHP) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "The MT_RAND_PHP variant of Mt19937 is deprecated",
+                line
+            );
+        }
+
+        PtnMt19937State *state = malloc(sizeof(PtnMt19937State));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memset(state, 0, sizeof(PtnMt19937State));
+        state->count = PTN_MT19937_N;
+        state->mode = mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937;
+        if (seed_is_null) {
+            ptn_mt19937_seed_default(state);
+        } else {
+            ptn_mt19937_seed32(state, (uint32_t)seed, state->mode);
+        }
+        ptn_unserialize_replace_native_data(object, state, ptn_random_engine_mt19937_data_free);
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64")) {
+        if (argc > 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Random\\Engine\\PcgOneseq128XslRr64::__construct() expects at most 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return 0;
+        }
+        PtnRandomPcgState *state = malloc(sizeof(PtnRandomPcgState));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int seed_is_null = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
+        if (seed_is_null) {
+            unsigned char seed[16];
+            if (!ptn_random_bytes_fill(seed, sizeof(seed))) {
+                free(state);
+                ptn_throw_exception(runtime, "Random\\RandomException", "Failed to generate a random seed");
+                return 0;
+            }
+            ptn_random_pcg_seed128(
+                state,
+                ptn_random_bytes_to_u64_le(seed),
+                ptn_random_bytes_to_u64_le(seed + 8)
+            );
+        } else {
+            PtnValue seed = ptn_value_deref(args[0]);
+            if (seed.type == PTN_STRING) {
+                if (seed.as.string.len != 16) {
+                    free(state);
+                    ptn_throw_exception(
+                        runtime,
+                        "ValueError",
+                        "Random\\Engine\\PcgOneseq128XslRr64::__construct(): Argument #1 ($seed) must be a 16 byte (128 bit) string"
+                    );
+                    return 0;
+                }
+                uint64_t hi = 0;
+                uint64_t lo = 0;
+                (void)ptn_random_string_seed_u64(seed, 0, &hi);
+                (void)ptn_random_string_seed_u64(seed, 8, &lo);
+                ptn_random_pcg_seed128(state, hi, lo);
+            } else if (seed.type == PTN_INT) {
+                ptn_random_pcg_seed128(state, 0, (uint64_t)seed.as.integer);
+            } else {
+                free(state);
+                ptn_throw_exception(
+                    runtime,
+                    "TypeError",
+                    "Random\\Engine\\PcgOneseq128XslRr64::__construct(): Argument #1 ($seed) must be of type string|int|null"
+                );
+                return 0;
+            }
+        }
+        ptn_unserialize_replace_native_data(object, state, ptn_random_engine_mt19937_data_free);
+        return 1;
+    }
+
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+        if (argc > 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Random\\Engine\\Xoshiro256StarStar::__construct() expects at most 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return 0;
+        }
+        PtnRandomXoshiroState *state = malloc(sizeof(PtnRandomXoshiroState));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int seed_is_null = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
+        if (seed_is_null) {
+            do {
+                if (!ptn_random_bytes_fill((unsigned char *)state->state, sizeof(state->state))) {
+                    free(state);
+                    ptn_throw_exception(runtime, "Random\\RandomException", "Failed to generate a random seed");
+                    return 0;
+                }
+            } while (ptn_random_xoshiro_is_zero(state));
+        } else {
+            PtnValue seed = ptn_value_deref(args[0]);
+            if (seed.type == PTN_STRING) {
+                if (seed.as.string.len != 32) {
+                    free(state);
+                    ptn_throw_exception(
+                        runtime,
+                        "ValueError",
+                        "Random\\Engine\\Xoshiro256StarStar::__construct(): Argument #1 ($seed) must be a 32 byte (256 bit) string"
+                    );
+                    return 0;
+                }
+                for (size_t i = 0; i < 4; i++) {
+                    (void)ptn_random_string_seed_u64(seed, i * 8, &state->state[i]);
+                }
+                if (ptn_random_xoshiro_is_zero(state)) {
+                    free(state);
+                    ptn_throw_exception(
+                        runtime,
+                        "ValueError",
+                        "Random\\Engine\\Xoshiro256StarStar::__construct(): Argument #1 ($seed) must not consist entirely of NUL bytes"
+                    );
+                    return 0;
+                }
+            } else if (seed.type == PTN_INT) {
+                ptn_random_xoshiro_seed64(state, (uint64_t)seed.as.integer);
+            } else {
+                free(state);
+                ptn_throw_exception(
+                    runtime,
+                    "TypeError",
+                    "Random\\Engine\\Xoshiro256StarStar::__construct(): Argument #1 ($seed) must be of type string|int|null"
+                );
+                return 0;
+            }
+        }
+        ptn_unserialize_replace_native_data(object, state, ptn_random_engine_mt19937_data_free);
+        return 1;
+    }
+
+    ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine class");
+    return 0;
+}
+
+static PtnValue ptn_random_engine_serialize(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__serialize() expects exactly 0 arguments, %zu given",
+            object->class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Secure")) {
+        ptn_throw_exception(runtime, "Exception", "Serialization of 'Random\\Engine\\Secure' is not allowed");
+        return ptn_null();
+    }
+    PtnValue payload = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(0), ptn_array_from_literal_entries(0, NULL));
+    ptn_array_set_entry(payload.as.array, ptn_array_int_key(1), ptn_random_engine_state_payload(runtime, object));
+    return payload;
+}
+
+static PtnValue ptn_random_engine_unserialize(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT || !ptn_internal_class_name_is_random_engine(resolved.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+        return ptn_null();
+    }
+    const char *class_name = resolved.as.object->class_name;
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__unserialize() expects exactly 1 argument, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure")) {
+        ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    PtnArray *members = NULL;
+    PtnArray *state_payload = NULL;
+    if (!ptn_random_engine_payload_parts(args[0], &members, &state_payload)) {
+        ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+        return ptn_null();
+    }
+    (void)members;
+
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937")) {
+        PtnMt19937State *state = malloc(sizeof(PtnMt19937State));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_random_mt19937_state_from_array(state_payload, state)) {
+            free(state);
+            ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+            return ptn_null();
+        }
+        ptn_unserialize_replace_native_data(resolved.as.object, state, ptn_random_engine_mt19937_data_free);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64")) {
+        PtnRandomPcgState *state = malloc(sizeof(PtnRandomPcgState));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_random_pcg_state_from_array(state_payload, state)) {
+            free(state);
+            ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+            return ptn_null();
+        }
+        ptn_unserialize_replace_native_data(resolved.as.object, state, ptn_random_engine_mt19937_data_free);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+        PtnRandomXoshiroState *state = malloc(sizeof(PtnRandomXoshiroState));
+        if (state == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_random_xoshiro_state_from_array(state_payload, state)) {
+            free(state);
+            ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+            return ptn_null();
+        }
+        ptn_unserialize_replace_native_data(resolved.as.object, state, ptn_random_engine_mt19937_data_free);
+        return ptn_null();
+    }
+    ptn_random_engine_throw_invalid_serialization(runtime, class_name);
+    return ptn_null();
+}
+
+static PtnValue ptn_random_engine_state_payload(PtnRuntime *runtime, PtnObject *object) {
+    if (object == NULL || object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+        return ptn_null();
+    }
+    PtnValue state = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Mt19937")) {
+        PtnMt19937State *mt = (PtnMt19937State *)object->native_data;
+        for (uint32_t i = 0; i < PTN_MT19937_N; i++) {
+            ptn_array_set_entry(
+                state.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_owned_string_len(ptn_random_hex_le_u32(mt->state[i]), 8)
+            );
+        }
+        ptn_array_set_entry(state.as.array, ptn_array_int_key(PTN_MT19937_N), ptn_int(mt->count));
+        ptn_array_set_entry(state.as.array, ptn_array_int_key(PTN_MT19937_N + 1), ptn_int(mt->mode));
+        return state;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\PcgOneseq128XslRr64")) {
+        PtnRandomPcgState *pcg = (PtnRandomPcgState *)object->native_data;
+        ptn_array_set_entry(
+            state.as.array,
+            ptn_array_int_key(0),
+            ptn_owned_string_len(ptn_random_hex_le_u64(ptn_random_pcg_hi(pcg->state)), 16)
+        );
+        ptn_array_set_entry(
+            state.as.array,
+            ptn_array_int_key(1),
+            ptn_owned_string_len(ptn_random_hex_le_u64(ptn_random_pcg_lo(pcg->state)), 16)
+        );
+        return state;
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+        PtnRandomXoshiroState *xoshiro = (PtnRandomXoshiroState *)object->native_data;
+        for (uint32_t i = 0; i < 4; i++) {
+            ptn_array_set_entry(
+                state.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_owned_string_len(ptn_random_hex_le_u64(xoshiro->state[i]), 16)
+            );
+        }
+        return state;
+    }
+    ptn_value_destroy(&state);
+    ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+    return ptn_null();
+}
+
+static PtnValue ptn_random_engine_generate(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::generate() expects exactly 0 arguments, %zu given",
+            object->class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Secure")) {
+        char *bytes = malloc(9);
+        if (bytes == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_random_bytes_fill((unsigned char *)bytes, 8)) {
+            free(bytes);
+            ptn_throw_exception(runtime, "Random\\RandomException", "Failed to retrieve random bytes");
+            return ptn_null();
+        }
+        bytes[8] = '\0';
+        return ptn_owned_string_len(bytes, 8);
+    }
+    if (object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Mt19937")) {
+        char *bytes = malloc(5);
+        if (bytes == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_random_store_u32_le(bytes, ptn_mt19937_generate((PtnMt19937State *)object->native_data));
+        bytes[4] = '\0';
+        return ptn_owned_string_len(bytes, 4);
+    }
+    uint64_t generated = 0;
+    if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\PcgOneseq128XslRr64")) {
+        generated = ptn_random_pcg_generate((PtnRandomPcgState *)object->native_data);
+    } else if (ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+        generated = ptn_random_xoshiro_generate((PtnRandomXoshiroState *)object->native_data);
+    } else {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+        return ptn_null();
+    }
+    char *bytes = malloc(9);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_random_store_u64_le(bytes, generated);
+    bytes[8] = '\0';
+    return ptn_owned_string_len(bytes, 8);
+}
+
+static PTN_UNUSED PtnValue ptn_random_engine_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_random_engine(resolved.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Engine object");
+        return ptn_null();
+    }
+    PtnObject *object = resolved.as.object;
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        (void)ptn_random_engine_initialize_object(runtime, object, object->class_name, argc, args, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        return ptn_random_engine_unserialize(runtime, resolved, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "generate")) {
+        return ptn_random_engine_generate(runtime, object, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        return ptn_random_engine_serialize(runtime, object, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "__debugInfo")) {
+        if (argc != 0) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::__debugInfo() expects exactly 0 arguments, %zu given",
+                object->class_name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        return ptn_random_engine_state_payload(runtime, object);
+    }
+    if (ptn_ascii_case_equal(name, "jump") &&
+        ptn_ascii_case_equal(object->class_name, "Random\\Engine\\PcgOneseq128XslRr64")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Random\\Engine\\PcgOneseq128XslRr64::jump() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        int64_t advance = ptn_internal_expect_integer_arg(
+            runtime,
+            "Random\\Engine\\PcgOneseq128XslRr64::jump",
+            1,
+            "advance",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (advance < 0) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "Random\\Engine\\PcgOneseq128XslRr64::jump(): Argument #1 ($advance) must be greater than or equal to 0"
+            );
+            return ptn_null();
+        }
+        if (object->native_data != NULL) {
+            ptn_random_pcg_advance((PtnRandomPcgState *)object->native_data, (uint64_t)advance);
+        }
+        return ptn_null();
+    }
+    if ((ptn_ascii_case_equal(name, "jump") || ptn_ascii_case_equal(name, "jumpLong")) &&
+        ptn_ascii_case_equal(object->class_name, "Random\\Engine\\Xoshiro256StarStar")) {
+        if (argc != 0) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::%s() expects exactly 0 arguments, %zu given",
+                object->class_name,
+                name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (object->native_data != NULL) {
+            static const uint64_t jump[] = {
+                0x180ec6d33cfd0abaULL,
+                0xd5a61266f0c9392cULL,
+                0xa9582618e03fc9aaULL,
+                0x39abdc4529b1661cULL
+            };
+            static const uint64_t jump_long[] = {
+                0x76e15d3efefdcbbfULL,
+                0xc5004e441c522fb3ULL,
+                0x77710069854ee241ULL,
+                0x39109bb02acbe635ULL
+            };
+            ptn_random_xoshiro_jump_with(
+                (PtnRandomXoshiroState *)object->native_data,
+                ptn_ascii_case_equal(name, "jumpLong") ? jump_long : jump
+            );
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method Random\\Engine");
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_random_engine_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -85211,79 +86155,11 @@ static PTN_UNUSED PtnValue ptn_random_engine_new(
         return ptn_null();
     }
 
-    if (!ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937")) {
-        return ptn_object_new_shell(runtime, class_name);
-    }
-
-    if (argc > 2) {
-        char message[144];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "Random\\Engine\\Mt19937::__construct() expects at most 2 arguments, %zu given",
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    if (!ptn_random_engine_initialize_object(runtime, object.as.object, class_name, argc, args, line)) {
+        ptn_value_destroy(&object);
         return ptn_null();
     }
-
-    int seed_is_null = argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL;
-    int64_t seed = 0;
-    if (!seed_is_null) {
-        seed = ptn_internal_expect_integer_arg(
-            runtime,
-            "Random\\Engine\\Mt19937::__construct",
-            1,
-            "seed",
-            args[0],
-            line
-        );
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
-        }
-    }
-
-    int64_t mode = PTN_MT_RAND_MT19937;
-    if (argc >= 2) {
-        mode = ptn_internal_expect_integer_arg(
-            runtime,
-            "Random\\Engine\\Mt19937::__construct",
-            2,
-            "mode",
-            args[1],
-            line
-        );
-        if (runtime->exceptions->active_exception != NULL) {
-            return ptn_null();
-        }
-    }
-    if (mode == PTN_MT_RAND_PHP) {
-        ptn_emit_deprecation(
-            &runtime->diagnostics,
-            "The MT_RAND_PHP variant of Mt19937 is deprecated",
-            line
-        );
-    }
-
-    PtnMt19937State *state = malloc(sizeof(PtnMt19937State));
-    if (state == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    memset(state, 0, sizeof(PtnMt19937State));
-    state->count = PTN_MT19937_N;
-    state->mode = mode == PTN_MT_RAND_PHP ? PTN_MT_RAND_PHP : PTN_MT_RAND_MT19937;
-    if (seed_is_null) {
-        ptn_mt19937_seed_default(state);
-    } else {
-        ptn_mt19937_seed32(state, (uint32_t)seed, state->mode);
-    }
-
-    PtnValue object = ptn_object_new_shell(runtime, "Random\\Engine\\Mt19937");
-    object.as.object->native_data = state;
-    object.as.object->native_data_free = ptn_random_engine_mt19937_data_free;
     return object;
 }
 
@@ -85379,6 +86255,11 @@ static int ptn_random_randomizer_set_engine(
     }
     native->native_data = data;
     native->native_data_free = ptn_random_randomizer_data_free;
+    ptn_array_set_entry(
+        native->properties,
+        ptn_array_string_key("engine"),
+        ptn_value_clone_deref(engine)
+    );
     return 1;
 }
 
@@ -85430,6 +86311,62 @@ static PtnValue ptn_random_randomizer_serialize(
     PtnValue payload = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(payload.as.array, ptn_array_int_key(0), state);
     return payload;
+}
+
+static PtnValue ptn_random_randomizer_unserialize(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (resolved.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_random_randomizer(resolved.as.object->class_name)) {
+        ptn_throw_exception(runtime, "Error", "Invalid Random\\Randomizer object");
+        return ptn_null();
+    }
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::__unserialize() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue payload = ptn_value_deref(args[0]);
+    if (payload.type != PTN_ARRAY || payload.as.array->len != 1) {
+        ptn_throw_exception(runtime, "Exception", "Invalid serialization data for Random\\Randomizer object");
+        return ptn_null();
+    }
+    PtnArrayEntry *members_entry = ptn_random_array_int_entry(payload.as.array, 0);
+    PtnValue members = members_entry == NULL ? ptn_null() : ptn_value_deref(members_entry->value);
+    if (members.type != PTN_ARRAY || members.as.array->len != 1) {
+        ptn_throw_exception(runtime, "Exception", "Invalid serialization data for Random\\Randomizer object");
+        return ptn_null();
+    }
+    PtnArrayEntry *engine_entry = &members.as.array->entries[0];
+    if (engine_entry->key.type != PTN_ARRAY_KEY_STRING ||
+        engine_entry->key.string_len != strlen("engine") ||
+        memcmp(engine_entry->key.as.string, "engine", strlen("engine")) != 0 ||
+        !ptn_random_engine_value_is_valid(engine_entry->value)) {
+        ptn_throw_exception(runtime, "Exception", "Invalid serialization data for Random\\Randomizer object");
+        return ptn_null();
+    }
+
+    PtnValue engine_arg = engine_entry->value;
+    if (!ptn_random_randomizer_set_engine(runtime, resolved, 1, &engine_arg, line)) {
+        return ptn_null();
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_random_randomizer_get_bytes(
@@ -85688,6 +86625,9 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     if (ptn_ascii_case_equal(name, "__construct")) {
         ptn_random_randomizer_set_engine(runtime, resolved, argc, args, line);
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        return ptn_random_randomizer_unserialize(runtime, resolved, argc, args, line);
     }
 
     PtnRandomRandomizerData *data = ptn_random_randomizer_data(runtime, resolved);
@@ -148603,9 +149543,26 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_random_randomizer(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__unserialize")
             || ptn_ascii_case_equal(method_name, "getBytes")
             || ptn_ascii_case_equal(method_name, "pickArrayKeys")
             || ptn_ascii_case_equal(method_name, "shuffleArray");
+    }
+    if (ptn_internal_class_name_is_random_engine(class_name)) {
+        if (ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure")) {
+            return ptn_ascii_case_equal(method_name, "__construct")
+                || ptn_ascii_case_equal(method_name, "generate");
+        }
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__unserialize")
+            || ptn_ascii_case_equal(method_name, "__debugInfo")
+            || ptn_ascii_case_equal(method_name, "generate")
+            || (ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64") &&
+                ptn_ascii_case_equal(method_name, "jump"))
+            || (ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar") &&
+                (ptn_ascii_case_equal(method_name, "jump") ||
+                    ptn_ascii_case_equal(method_name, "jumpLong")));
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
