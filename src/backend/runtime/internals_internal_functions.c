@@ -90314,6 +90314,57 @@ static void ptn_phpcredits_write(PtnRuntime *runtime, int64_t flags) {
     }
 }
 
+static void ptn_phpinfo_write_general(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n\n");
+    ptn_output_write_cstr(runtime, "System => " PTN_PHP_OS "\n");
+    ptn_output_write_cstr(runtime, "Build Date => PTN native build\n");
+    ptn_output_write_cstr(runtime, "Configure Command => ptn\n");
+    ptn_output_write_cstr(runtime, "Server API => Command Line Interface\n");
+    ptn_output_write_cstr(runtime, "Virtual Directory Support => disabled\n");
+    ptn_output_write_cstr(runtime, "Configuration File (php.ini) Path => (none)\n");
+    ptn_output_write_cstr(runtime, "Loaded Configuration File => (none)\n");
+    ptn_output_write_cstr(runtime, "Scan this dir for additional .ini files => (none)\n");
+    ptn_output_write_cstr(runtime, "Additional .ini files parsed => (none)\n");
+    ptn_output_write_cstr(runtime, "PHP API => 20240924\n");
+    ptn_output_write_cstr(runtime, "PHP Extension => 20240924\n");
+    ptn_output_write_cstr(runtime, "Zend Extension => 420240924\n");
+    ptn_output_write_cstr(runtime, "Zend Extension Build => API420240924,NTS\n");
+    ptn_output_write_cstr(runtime, "PHP Extension Build => API20240924,NTS\n");
+    ptn_output_write_cstr(runtime, "PHP Integer Size => 64 bits\n");
+    ptn_output_write_cstr(runtime, "Debug Build => no\n");
+    ptn_output_write_cstr(runtime, "Thread Safety => disabled\n");
+    ptn_output_write_cstr(runtime, "Zend Signal Handling => disabled\n");
+    ptn_output_write_cstr(runtime, "Zend Memory Manager => enabled\n");
+    ptn_output_write_cstr(runtime, "Zend Multibyte Support => disabled\n");
+    ptn_output_write_cstr(runtime, "Zend Max Execution Timers => disabled\n");
+    ptn_output_write_cstr(runtime, "IPv6 Support => enabled\n");
+    ptn_output_write_cstr(runtime, "DTrace Support => disabled\n\n");
+    ptn_output_write_cstr(runtime, "Registered PHP Streams => php, file, glob, data, http, ftp\n");
+    ptn_output_write_cstr(runtime, "Registered Stream Socket Transports => tcp, udp, unix, udg\n");
+    ptn_output_write_cstr(runtime, "Registered Stream Filters => string.rot13, string.toupper, string.tolower, convert.*\n");
+}
+
+static void ptn_phpinfo_write_configuration(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "\n _______________________________________________________________________\n\n\n");
+    ptn_output_write_cstr(runtime, "Configuration\n\n");
+    ptn_output_write_cstr(runtime, "Core\n\n");
+    ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n");
+    ptn_output_write_cstr(runtime, "include_path => .\n");
+}
+
+static void ptn_phpinfo_write_modules(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "\nAdditional Modules\n\n");
+}
+
+static void ptn_phpinfo_write_environment(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "\nEnvironment\n\n");
+}
+
+static void ptn_phpinfo_write_license(PtnRuntime *runtime) {
+    ptn_output_write_cstr(runtime, "\nLicense\n\n");
+    ptn_output_write_cstr(runtime, "This program is free software; you can redistribute it and/or modify it under the terms of the PHP License.\n");
+}
+
 static PtnValue ptn_internal_phpcredits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int64_t flags = PTN_CREDITS_ALL;
     if (argc >= 1) {
@@ -90336,17 +90387,28 @@ static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const Ptn
     }
     ptn_output_write_cstr(runtime, "phpinfo()\n");
     if ((flags & PTN_INFO_GENERAL) != 0) {
-        ptn_output_write_cstr(runtime, "\nPHP Version => " PTN_PHP_VERSION "\n");
-        ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+        ptn_phpinfo_write_general(runtime);
     }
     if ((flags & PTN_INFO_CREDITS) != 0) {
         ptn_output_write_cstr(runtime, "\n");
         ptn_phpcredits_write(runtime, PTN_CREDITS_ALL & ~PTN_CREDITS_FULLPAGE);
     }
+    if ((flags & PTN_INFO_CONFIGURATION) != 0) {
+        ptn_phpinfo_write_configuration(runtime);
+    }
+    if ((flags & PTN_INFO_MODULES) != 0) {
+        ptn_phpinfo_write_modules(runtime);
+    }
+    if ((flags & PTN_INFO_ENVIRONMENT) != 0) {
+        ptn_phpinfo_write_environment(runtime);
+    }
     if ((flags & PTN_INFO_VARIABLES) != 0) {
         ptn_output_write_cstr(runtime, "\nPHP Variables\n\n");
         ptn_output_write_cstr(runtime, "Variable => Value\n");
         ptn_phpinfo_write_variables(runtime);
+    }
+    if ((flags & PTN_INFO_LICENSE) != 0) {
+        ptn_phpinfo_write_license(runtime);
     }
     return ptn_bool(1);
 }
@@ -97411,6 +97473,15 @@ static PtnValue ptn_internal_unregister_tick_function(PtnRuntime *runtime, size_
         args[0]
     );
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (root->tick_functions_running) {
+        ptn_value_destroy(&callback);
+        ptn_throw_exception(
+            runtime,
+            "Error",
+            "Registered tick function cannot be unregistered while it is being executed"
+        );
         return ptn_null();
     }
     for (size_t i = 0; i < root->tick_functions_len; i++) {

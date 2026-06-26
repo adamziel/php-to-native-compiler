@@ -14622,6 +14622,45 @@ var_dump($i === $before);\n",
 }
 
 #[test]
+fn compile_tick_function_cannot_unregister_while_running_to_native_binary() {
+    let root = temp_dir("ptn-native-tick-function-unregister-running");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tick-function-unregister-running.php");
+    let output = root.join("tick-function-unregister-running-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function a() {\n\
+    echo \"hello\\n\";\n\
+    try {\n\
+        unregister_tick_function('a');\n\
+    } catch (Error $exception) {\n\
+        echo $exception->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+declare (ticks=1) {\n\
+    register_tick_function('a');\n\
+    echo \"Done\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hello\n\
+Registered tick function cannot be unregistered while it is being executed\n\
+Done\n\
+hello\n\
+Registered tick function cannot be unregistered while it is being executed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_declare_ticks_block_dispatches_noop_statement_and_callback_arguments_to_native_binary() {
     let root = temp_dir("ptn-native-declare-ticks-block");
     fs::create_dir_all(&root).unwrap();
@@ -45243,6 +45282,41 @@ Variable => Value\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("PTN_INFO_VARIABLES"));
     assert!(c_source.contains("ptn_internal_phpinfo"));
+}
+
+#[test]
+fn compile_phpinfo_general_license_and_zero_masks_to_native_binary() {
+    let root = temp_dir("ptn-native-phpinfo-general-license-zero");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phpinfo-general-license-zero.php");
+    let output = root.join("phpinfo-general-license-zero-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(phpinfo(INFO_GENERAL | INFO_CONFIGURATION | INFO_MODULES | INFO_ENVIRONMENT | INFO_LICENSE));\n\
+echo \"--\\n\";\n\
+var_dump(phpinfo(0));\n\
+echo \"--\\n\";\n\
+var_dump(phpinfo(INFO_LICENSE));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("phpinfo()\nPHP Version => 8.4.0\n\nSystem => "));
+    assert!(stdout.contains("Server API => Command Line Interface\n"));
+    assert!(stdout.contains("Registered PHP Streams => "));
+    assert!(stdout.contains("\n _______________________________________________________________________\n\n\nConfiguration\n"));
+    assert!(stdout.contains("\nCore\n\nPHP Version => 8.4.0\n"));
+    assert!(stdout.contains("\nAdditional Modules\n"));
+    assert!(stdout.contains("\nEnvironment\n"));
+    assert!(stdout.contains("\nLicense\n\nThis program is free software;"));
+    assert!(stdout.contains("bool(true)\n--\nphpinfo()\nbool(true)\n--\nphpinfo()\n\nLicense\n"));
+    assert!(!stdout.contains("PHP Variables\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
