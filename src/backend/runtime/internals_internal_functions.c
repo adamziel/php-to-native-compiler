@@ -57282,6 +57282,9 @@ static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size
     if (!ptn_stream_context_params_validate_notifications(runtime, params)) {
         return ptn_null();
     }
+    if (!ptn_stream_context_apply_params(runtime, context, params, line)) {
+        return ptn_null();
+    }
     ptn_value_destroy(&context->context_params);
     context->context_params = ptn_stream_context_options_snapshot_value(params, 0);
     return ptn_bool(1);
@@ -103225,6 +103228,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+    ptn_get_defined_constants_add_int(table, "STREAM_OOB", PTN_STREAM_OOB);
+    ptn_get_defined_constants_add_int(table, "STREAM_PEEK", PTN_STREAM_PEEK);
     ptn_get_defined_constants_add_int(table, "STREAM_PF_UNIX", PTN_STREAM_PF_UNIX);
     ptn_get_defined_constants_add_int(table, "STREAM_SOCK_STREAM", PTN_STREAM_SOCK_STREAM);
     ptn_get_defined_constants_add_int(table, "STREAM_IPPROTO_IP", PTN_STREAM_IPPROTO_IP);
@@ -103751,6 +103756,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_READ",
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
+        "STREAM_OOB",
+        "STREAM_PEEK",
         "STREAM_PF_UNIX",
         "STREAM_SOCK_STREAM",
         "STREAM_IPPROTO_IP",
@@ -139278,6 +139285,85 @@ static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t 
     return ptn_bool(0);
 }
 
+static void ptn_stream_socket_recvfrom_assign_address(PtnRuntime *runtime, size_t argc, const PtnValue *args, PtnValue value) {
+    if (argc >= 4 && args[3].type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, args[3].as.reference, value);
+    }
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_recvfrom", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "stream_socket_recvfrom", 2, "length", args[1], line);
+    int64_t flags = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "stream_socket_recvfrom", 3, "flags", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length < 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_socket_recvfrom(): Argument #2 ($length) must be greater than or equal to 0"
+        );
+        return ptn_null();
+    }
+    if (length == 0) {
+        ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_string(""));
+        return ptn_string("");
+    }
+#if defined(_WIN32)
+    (void)resource;
+    (void)flags;
+    ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_null());
+    return ptn_bool(0);
+#else
+    if (resource->stream == NULL) {
+        ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_null());
+        return ptn_bool(0);
+    }
+    int descriptor = fileno(resource->stream);
+    if (descriptor < 0) {
+        ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_null());
+        return ptn_bool(0);
+    }
+    size_t buffer_len = (size_t)length;
+    if ((int64_t)buffer_len != length) {
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc(buffer_len);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int recv_flags = 0;
+#if defined(MSG_OOB)
+    if ((flags & PTN_STREAM_OOB) != 0) {
+        recv_flags |= MSG_OOB;
+    }
+#endif
+#if defined(MSG_PEEK)
+    if ((flags & PTN_STREAM_PEEK) != 0) {
+        recv_flags |= MSG_PEEK;
+    }
+#endif
+    ssize_t received;
+    do {
+        received = recv(descriptor, buffer, buffer_len, recv_flags);
+    } while (received < 0 && errno == EINTR);
+    if (received < 0) {
+        free(buffer);
+        ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_null());
+        return ptn_bool(0);
+    }
+    ptn_stream_socket_recvfrom_assign_address(runtime, argc, args, ptn_string(""));
+    return ptn_owned_string_len(buffer, (size_t)received);
+#endif
+}
+
 static PtnValue ptn_internal_stream_socket_pair(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     int64_t domain = ptn_internal_expect_integer_arg(runtime, "stream_socket_pair", 1, "domain", args[0], line);
@@ -157308,6 +157394,7 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -158262,6 +158349,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
+        { "stream_socket_recvfrom", 2, 4, ptn_internal_stream_socket_recvfrom },
         { "stream_socket_server", 1, 5, ptn_internal_stream_socket_server },
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },
         { "stream_register_wrapper", 2, 3, ptn_internal_stream_register_wrapper },

@@ -3219,6 +3219,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_FILTER_ALL);
         return 1;
     }
+    if (strcmp(name, "STREAM_OOB") == 0) {
+        *out = ptn_int(PTN_STREAM_OOB);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_PEEK") == 0) {
+        *out = ptn_int(PTN_STREAM_PEEK);
+        return 1;
+    }
     if (strcmp(name, "ZLIB_ENCODING_RAW") == 0) {
         *out = ptn_int(PTN_ZLIB_ENCODING_RAW);
         return 1;

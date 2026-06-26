@@ -1,0 +1,15 @@
+# ptn-w17z.965 focused PHAR stream metadata/extract row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T220915Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/bug77022.phpt
+ext/phar/tests/phar_buildfromiterator9.phpt
+ext/phar/tests/tar/truncated.phpt
+ext/standard/tests/streams/stream_get_meta_data_process_basic.phpt
+ext/phar/tests/tar/gh16695_3.phpt
+ext/phar/tests/delete_in_phar_confirm.phpt
+ext/standard/tests/streams/bug44712.phpt
+ext/standard/tests/streams/bug72857.phpt
+ext/phar/tests/phar_extract2.phpt
+ext/phar/tests/phar_oo_compressallgz.phpt
+ext/phar/tests/phar_construct_invalidurl.phpt
+ext/phar/tests/tar/frontcontroller18.phar.phpt

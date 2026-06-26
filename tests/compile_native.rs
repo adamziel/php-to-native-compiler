@@ -28732,8 +28732,20 @@ try {
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
+try {
+    stream_context_set_params($ctx, ["options" => 1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
 
 var_dump(STREAM_IPPROTO_IP);
+var_dump(STREAM_PEEK);
+$path = __DIR__ . DIRECTORY_SEPARATOR . "recvfrom.tmp";
+$file = fopen($path, "w");
+$address = "A";
+var_dump(stream_socket_recvfrom($file, 10, STREAM_PEEK, $address), $address);
+fclose($file);
+unlink($path);
 $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 stream_set_blocking($sockets[0], false);
 var_dump(fread($sockets[0], 100));
@@ -28753,14 +28765,20 @@ Array\n\
 (\n\
 )\n\
 TypeError: stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"fn_not_exist\" not found or invalid function name\n\
+Invalid stream/context parameter\n\
 int(0)\n\
+int(2)\n\
+bool(false)\n\
+NULL\n\
 string(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_stream_context_set_params"));
+    assert!(c_source.contains("ptn_internal_stream_socket_recvfrom"));
     assert!(c_source.contains("PTN_STREAM_IPPROTO_IP"));
+    assert!(c_source.contains("PTN_STREAM_PEEK"));
 }
 
 #[test]
