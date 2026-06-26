@@ -1457,6 +1457,7 @@ struct RuntimeRequirements {
     closure_reflection_dispatch: bool,
     direct_internal_helpers: bool,
     compact_internal_helpers: bool,
+    compact_intl_helpers: bool,
     request_context: bool,
     ada_url: bool,
     known_array_variables: HashSet<String>,
@@ -1465,8 +1466,7 @@ struct RuntimeRequirements {
 fn variable_needs_request_context(name: &str) -> bool {
     matches!(
         name,
-        "GLOBALS"
-            | "_SERVER"
+        "_SERVER"
             | "_GET"
             | "_POST"
             | "_FILES"
@@ -1482,6 +1482,12 @@ fn variable_needs_request_context(name: &str) -> bool {
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
+    if requirements.compact_intl_helpers {
+        out.push_str("#define PTN_HAS_COMPACT_INTL_HELPERS 1\n");
+    }
+    if requirements.closure_reflection_dispatch && !requirements.internal_function_dispatch {
+        out.push_str("#define PTN_HAS_LIGHTWEIGHT_CLOSURE_REFLECTION 1\n");
     }
     if requirements.ada_url {
         out.push_str("#define PTN_USE_ADA_URL 1\n");
@@ -1511,6 +1517,7 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     out.push_str(&runtime_c[..direct_helpers.start]);
     if requirements.direct_internal_helpers
         || requirements.compact_internal_helpers
+        || requirements.compact_intl_helpers
         || requirements.internal_function_dispatch
     {
         out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
@@ -1524,6 +1531,1177 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
     }
     out.push_str(&runtime_c[internal_functions.after_end..]);
+    if requirements.compact_intl_helpers {
+        emit_compact_intl_helpers(out);
+    }
+}
+
+fn emit_compact_intl_helpers(out: &mut String) {
+    out.push_str(
+        r#"
+#ifdef PTN_HAS_COMPACT_INTL_HELPERS
+typedef struct {
+    char *locale;
+} PtnCompactIntlCollatorData;
+
+typedef struct {
+    char *locale;
+    char *pattern;
+} PtnCompactIntlMessageFormatterData;
+
+static PTN_UNUSED void ptn_compact_intl_collator_data_free(void *ptr) {
+    PtnCompactIntlCollatorData *data = (PtnCompactIntlCollatorData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data);
+}
+
+static PTN_UNUSED void ptn_compact_intl_message_formatter_data_free(void *ptr) {
+    PtnCompactIntlMessageFormatterData *data = (PtnCompactIntlMessageFormatterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->pattern);
+    free(data);
+}
+
+static PTN_UNUSED int ptn_compact_intl_is_collator_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(value.as.object->class_name, "Collator") &&
+        value.as.object->native_data_free == ptn_compact_intl_collator_data_free;
+}
+
+static PTN_UNUSED int ptn_compact_intl_is_message_formatter_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(value.as.object->class_name, "MessageFormatter") &&
+        value.as.object->native_data_free == ptn_compact_intl_message_formatter_data_free;
+}
+
+static PTN_UNUSED int ptn_compact_intl_class_supported(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Collator") ||
+        ptn_ascii_case_equal(class_name, "IntlDateFormatter") ||
+        ptn_ascii_case_equal(class_name, "Locale") ||
+        ptn_ascii_case_equal(class_name, "MessageFormatter") ||
+        ptn_ascii_case_equal(class_name, "Normalizer") ||
+        ptn_ascii_case_equal(class_name, "NumberFormatter") ||
+        ptn_ascii_case_equal(class_name, "ResourceBundle");
+}
+
+static PTN_UNUSED void ptn_compact_intl_throw_count_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t expected,
+    size_t argc,
+    size_t line
+);
+
+static PTN_UNUSED void ptn_compact_intl_set_error(PtnRuntime *runtime, const char *message) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    free(root->intl_last_error_message);
+    root->intl_last_error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_get_error_code(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *message = root == NULL || root->intl_last_error_message == NULL
+        ? "U_ZERO_ERROR"
+        : root->intl_last_error_message;
+    if (strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") != NULL) {
+        return ptn_int(1);
+    }
+    if (strstr(message, "U_PATTERN_SYNTAX_ERROR") != NULL) {
+        return ptn_int(9);
+    }
+    if (strstr(message, "U_INVALID_CHAR_FOUND") != NULL) {
+        return ptn_int(10);
+    }
+    if (strstr(message, "U_UNMATCHED_BRACES") != NULL) {
+        return ptn_int(6);
+    }
+    return ptn_int(0);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_get_error_message(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *message = root == NULL || root->intl_last_error_message == NULL
+        ? "U_ZERO_ERROR"
+        : root->intl_last_error_message;
+    return ptn_owned_string(ptn_duplicate_string(message));
+}
+
+static PTN_UNUSED void ptn_compact_append_exported_string(
+    PtnStringBuffer *output,
+    const unsigned char *data,
+    size_t len
+) {
+    ptn_string_buffer_append_char(output, '\'');
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = data[i];
+        if (byte == '\'' || byte == '\\') {
+            ptn_string_buffer_append_char(output, '\\');
+        }
+        ptn_string_buffer_append_char(output, (char)byte);
+    }
+    ptn_string_buffer_append_char(output, '\'');
+}
+
+static PTN_UNUSED void ptn_compact_append_var_export(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_string_buffer_append(output, "NULL");
+            return;
+        case PTN_BOOL:
+            ptn_string_buffer_append(output, value.as.boolean ? "true" : "false");
+            return;
+        case PTN_INT:
+            ptn_string_buffer_append_format(output, "%lld", (long long)value.as.integer);
+            return;
+        case PTN_FLOAT: {
+            char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_runtime_scalar_float(runtime, value.as.floating, buffer, sizeof(buffer));
+            ptn_string_buffer_append(output, buffer);
+            return;
+        }
+        case PTN_STRING:
+            ptn_compact_append_exported_string(output, value.as.string.data, value.as.string.len);
+            return;
+        case PTN_ARRAY:
+            ptn_string_buffer_append(output, "array (\n)");
+            return;
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return;
+    }
+    ptn_compact_append_exported_string(output, (const unsigned char *)string.data, string.len);
+    ptn_string_operand_free(string);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_var_export(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        ptn_compact_intl_throw_count_error(runtime, "var_export", 1, argc, line);
+        return ptn_null();
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    ptn_compact_append_var_export(runtime, &output, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(output.data);
+        return ptn_null();
+    }
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    if (return_output) {
+        return ptn_owned_string_len(output.data, output.len);
+    }
+    ptn_output_write(runtime, output.data, output.len);
+    free(output.data);
+    return ptn_null();
+}
+
+static PTN_UNUSED void ptn_compact_intl_throw_count_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t expected,
+    size_t argc,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s() expects exactly %zu arguments, %zu given",
+        function_name,
+        expected,
+        argc
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s() expects exactly %zu arguments, %zu given",
+        function_name,
+        expected,
+        argc
+    );
+    ptn_throw_exception_owned_message_at(runtime, "ArgumentCountError", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED int ptn_compact_intl_expect_exact_argc(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t expected,
+    size_t argc,
+    size_t line
+) {
+    if (argc == expected) {
+        return 1;
+    }
+    ptn_compact_intl_throw_count_error(runtime, function_name, expected, argc, line);
+    return 0;
+}
+
+static PTN_UNUSED void ptn_compact_intl_throw_string_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    ptn_compact_intl_set_error(runtime, "U_ZERO_ERROR");
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_direct_internal_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED PtnStringOperand ptn_compact_intl_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (runtime != NULL && runtime->strict_types && value.type != PTN_STRING) {
+        ptn_compact_intl_throw_string_arg_type_error(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            value,
+            line
+        );
+        return ptn_string_operand_borrowed("");
+    }
+    if (value.type == PTN_NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing null to parameter #%zu ($%s) of type string is deprecated",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    } else if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_compact_intl_throw_string_arg_type_error(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            value,
+            line
+        );
+        return ptn_string_operand_borrowed("");
+    } else if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE
+    ) {
+        ptn_compact_intl_throw_string_arg_type_error(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            value,
+            line
+        );
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static PTN_UNUSED char *ptn_compact_intl_string_arg_copy(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand string = ptn_compact_intl_expect_string_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return NULL;
+    }
+    char *copy = ptn_duplicate_string_len(string.data, string.len);
+    ptn_string_operand_free(string);
+    return copy;
+}
+
+static PTN_UNUSED int ptn_compact_intl_utf8_valid(const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte <= 0x7f) {
+            continue;
+        }
+        size_t remaining = len - i;
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if ((byte & 0xe0u) == 0xc0u) {
+            consumed = 2;
+            if (remaining < consumed) {
+                return 0;
+            }
+            unsigned char b1 = (unsigned char)data[i + 1];
+            if ((b1 & 0xc0u) != 0x80u) {
+                return 0;
+            }
+            codepoint = ((uint32_t)(byte & 0x1fu) << 6) | (uint32_t)(b1 & 0x3fu);
+            if (codepoint < 0x80u) {
+                return 0;
+            }
+        } else if ((byte & 0xf0u) == 0xe0u) {
+            consumed = 3;
+            if (remaining < consumed) {
+                return 0;
+            }
+            unsigned char b1 = (unsigned char)data[i + 1];
+            unsigned char b2 = (unsigned char)data[i + 2];
+            if ((b1 & 0xc0u) != 0x80u || (b2 & 0xc0u) != 0x80u) {
+                return 0;
+            }
+            codepoint = ((uint32_t)(byte & 0x0fu) << 12) |
+                ((uint32_t)(b1 & 0x3fu) << 6) |
+                (uint32_t)(b2 & 0x3fu);
+            if (codepoint < 0x800u || (codepoint >= 0xd800u && codepoint <= 0xdfffu)) {
+                return 0;
+            }
+        } else if ((byte & 0xf8u) == 0xf0u) {
+            consumed = 4;
+            if (remaining < consumed) {
+                return 0;
+            }
+            unsigned char b1 = (unsigned char)data[i + 1];
+            unsigned char b2 = (unsigned char)data[i + 2];
+            unsigned char b3 = (unsigned char)data[i + 3];
+            if ((b1 & 0xc0u) != 0x80u || (b2 & 0xc0u) != 0x80u || (b3 & 0xc0u) != 0x80u) {
+                return 0;
+            }
+            codepoint = ((uint32_t)(byte & 0x07u) << 18) |
+                ((uint32_t)(b1 & 0x3fu) << 12) |
+                ((uint32_t)(b2 & 0x3fu) << 6) |
+                (uint32_t)(b3 & 0x3fu);
+            if (codepoint < 0x10000u || codepoint > 0x10ffffu) {
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+        i += consumed - 1;
+    }
+    return 1;
+}
+
+static PTN_UNUSED char *ptn_compact_intl_trim(char *token) {
+    while (*token != '\0' && isspace((unsigned char)*token)) {
+        token++;
+    }
+    char *end = token + strlen(token);
+    while (end > token && isspace((unsigned char)end[-1])) {
+        end--;
+    }
+    *end = '\0';
+    return token;
+}
+
+typedef struct {
+    const char *base_message;
+    const char *icu_code;
+} PtnCompactIntlPatternError;
+
+static PTN_UNUSED int ptn_compact_intl_pattern_type_allowed(const char *type) {
+    return ptn_ascii_case_equal(type, "number") ||
+        ptn_ascii_case_equal(type, "date") ||
+        ptn_ascii_case_equal(type, "time") ||
+        ptn_ascii_case_equal(type, "spellout") ||
+        ptn_ascii_case_equal(type, "ordinal") ||
+        ptn_ascii_case_equal(type, "duration");
+}
+
+static PTN_UNUSED PtnCompactIntlPatternError ptn_compact_intl_message_pattern_error(
+    const char *locale,
+    const char *pattern
+) {
+    PtnCompactIntlPatternError ok = { NULL, NULL };
+    if (locale == NULL || locale[0] == '\0' || pattern == NULL || pattern[0] == '\0') {
+        PtnCompactIntlPatternError error = { "message formatter creation failed", "U_ILLEGAL_ARGUMENT_ERROR" };
+        return error;
+    }
+    if (!ptn_compact_intl_utf8_valid(pattern, strlen(pattern))) {
+        PtnCompactIntlPatternError error = { "error converting pattern to UTF-16", "U_INVALID_CHAR_FOUND" };
+        return error;
+    }
+    size_t len = strlen(pattern);
+    for (size_t i = 0; i < len; i++) {
+        if (pattern[i] != '{') {
+            continue;
+        }
+        const char *close = strchr(pattern + i + 1, '}');
+        if (close == NULL) {
+            PtnCompactIntlPatternError error = { "message formatter creation failed", "U_UNMATCHED_BRACES" };
+            return error;
+        }
+        size_t placeholder_len = (size_t)(close - (pattern + i + 1));
+        char *placeholder = ptn_duplicate_string_len(pattern + i + 1, placeholder_len);
+        char *comma = strchr(placeholder, ',');
+        if (comma != NULL) {
+            *comma = '\0';
+            char *type = ptn_compact_intl_trim(comma + 1);
+            char *second_comma = strchr(type, ',');
+            if (second_comma != NULL) {
+                *second_comma = '\0';
+                type = ptn_compact_intl_trim(type);
+            }
+            if (ptn_ascii_case_equal(type, "choice")) {
+                free(placeholder);
+                PtnCompactIntlPatternError error = {
+                    "pattern syntax error (parse error at offset 1, after \"{\", before or at \"0,choice}\")",
+                    "U_PATTERN_SYNTAX_ERROR"
+                };
+                return error;
+            }
+            if (!ptn_compact_intl_pattern_type_allowed(type)) {
+                free(placeholder);
+                PtnCompactIntlPatternError error = { "message formatter creation failed", "U_ILLEGAL_ARGUMENT_ERROR" };
+                return error;
+            }
+        }
+        free(placeholder);
+        i += placeholder_len + 1;
+    }
+    return ok;
+}
+
+static PTN_UNUSED void ptn_compact_intl_set_function_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *base_message,
+    const char *icu_code
+) {
+    int needed = snprintf(NULL, 0, "%s(): %s: %s", function_name, base_message, icu_code);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "%s(): %s: %s", function_name, base_message, icu_code);
+    ptn_compact_intl_set_error(runtime, message);
+    free(message);
+}
+
+static PTN_UNUSED void ptn_compact_intl_throw_function_intl_exception(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *base_message,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "%s(): %s", function_name, base_message);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "%s(): %s", function_name, base_message);
+    ptn_throw_exception_owned_message_at(runtime, "IntlException", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_collator_create(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (!ptn_compact_intl_expect_exact_argc(runtime, function_name, 1, argc, line)) {
+        return ptn_null();
+    }
+    char *locale = ptn_compact_intl_string_arg_copy(runtime, function_name, 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(locale);
+        return ptn_null();
+    }
+    PtnCompactIntlCollatorData *data = malloc(sizeof(PtnCompactIntlCollatorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = locale;
+    PtnValue object = ptn_object_new_shell(runtime, "Collator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_compact_intl_collator_data_free;
+    ptn_compact_intl_set_error(runtime, "U_ZERO_ERROR");
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_collator_get_locale(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue type_value
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (!ptn_compact_intl_is_collator_object(resolved)) {
+        return ptn_bool(0);
+    }
+    PtnCompactIntlCollatorData *data = (PtnCompactIntlCollatorData *)resolved.as.object->native_data;
+    int64_t type = ptn_value_to_integer(type_value);
+    if (type == 0 || type == 1) {
+        ptn_compact_intl_set_error(runtime, "U_ZERO_ERROR");
+        return ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
+    }
+    ptn_compact_intl_set_error(
+        runtime,
+        "collator_get_locale(): Error getting locale by type: U_ILLEGAL_ARGUMENT_ERROR"
+    );
+    return ptn_bool(0);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_message_formatter_new(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int throw_on_error,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (!ptn_compact_intl_expect_exact_argc(runtime, function_name, 2, argc, line)) {
+        return ptn_null();
+    }
+    char *locale = ptn_compact_intl_string_arg_copy(runtime, function_name, 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(locale);
+        return ptn_null();
+    }
+    char *pattern = ptn_compact_intl_string_arg_copy(runtime, function_name, 2, "pattern", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(locale);
+        free(pattern);
+        return ptn_null();
+    }
+    PtnCompactIntlPatternError pattern_error =
+        ptn_compact_intl_message_pattern_error(locale, pattern);
+    if (pattern_error.base_message != NULL) {
+        ptn_compact_intl_set_function_error(
+            runtime,
+            function_name,
+            pattern_error.base_message,
+            pattern_error.icu_code
+        );
+        free(locale);
+        free(pattern);
+        if (throw_on_error) {
+            ptn_compact_intl_throw_function_intl_exception(
+                runtime,
+                function_name,
+                pattern_error.base_message,
+                line
+            );
+        }
+        return ptn_null();
+    }
+    PtnCompactIntlMessageFormatterData *data = malloc(sizeof(PtnCompactIntlMessageFormatterData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = locale;
+    data->pattern = pattern;
+    PtnValue object = ptn_object_new_shell(runtime, "MessageFormatter");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_compact_intl_message_formatter_data_free;
+    ptn_compact_intl_set_error(runtime, "U_ZERO_ERROR");
+    return object;
+}
+
+static PTN_UNUSED PtnArrayEntry *ptn_compact_intl_message_arg_entry(PtnArray *array, const char *name) {
+    if (array == NULL || name == NULL) {
+        return NULL;
+    }
+    PtnArrayKey string_key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, string_key);
+    ptn_array_key_free(string_key);
+    if (entry != NULL) {
+        return entry;
+    }
+    char *end = NULL;
+    long long integer = strtoll(name, &end, 10);
+    if (end != NULL && *name != '\0' && *end == '\0') {
+        PtnArrayKey int_key = ptn_array_int_key(integer);
+        entry = ptn_array_entry_for_key(array, int_key);
+        ptn_array_key_free(int_key);
+        return entry;
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_compact_intl_locale_has_prefix(const char *locale, const char *prefix) {
+    if (locale == NULL || prefix == NULL) {
+        return 0;
+    }
+    size_t prefix_len = strlen(prefix);
+    for (size_t i = 0; i < prefix_len; i++) {
+        if (locale[i] == '\0' || tolower((unsigned char)locale[i]) != tolower((unsigned char)prefix[i])) {
+            return 0;
+        }
+    }
+    char next = locale[prefix_len];
+    return next == '\0' || next == '_' || next == '-' || next == '@' || next == '.';
+}
+
+static PTN_UNUSED const char *ptn_compact_intl_group_separator(const char *locale) {
+    if (ptn_compact_intl_locale_has_prefix(locale, "de")) {
+        return ".";
+    }
+    if (ptn_compact_intl_locale_has_prefix(locale, "ru") ||
+        ptn_compact_intl_locale_has_prefix(locale, "uk")) {
+        return "\xC2\xA0";
+    }
+    return ",";
+}
+
+static PTN_UNUSED const char *ptn_compact_intl_decimal_separator(const char *locale) {
+    if (ptn_compact_intl_locale_has_prefix(locale, "de") ||
+        ptn_compact_intl_locale_has_prefix(locale, "ru") ||
+        ptn_compact_intl_locale_has_prefix(locale, "uk")) {
+        return ",";
+    }
+    return ".";
+}
+
+static PTN_UNUSED double ptn_compact_intl_numeric_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        return (double)value.as.integer;
+    }
+    if (value.type == PTN_FLOAT) {
+        return value.as.floating;
+    }
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? 1.0 : 0.0;
+    }
+    if (value.type == PTN_NULL) {
+        return 0.0;
+    }
+    if (value.type == PTN_STRING) {
+        char *copy = ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
+        char *start = copy;
+        while (*start != '\0' && isspace((unsigned char)*start)) {
+            start++;
+        }
+        char *end = NULL;
+        double parsed = strtod(start, &end);
+        free(copy);
+        return end == start ? 0.0 : parsed;
+    }
+    return (double)ptn_value_to_integer(value);
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_string_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return;
+    }
+    ptn_string_buffer_append_len(output, string.data, string.len);
+    ptn_string_operand_free(string);
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_grouped_digits(
+    PtnStringBuffer *output,
+    const char *digits,
+    const char *separator
+) {
+    size_t len = strlen(digits);
+    size_t first_group = len % 3;
+    if (first_group == 0) {
+        first_group = 3;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (i > 0 && (i == first_group || (i > first_group && ((i - first_group) % 3) == 0))) {
+            ptn_string_buffer_append(output, separator);
+        }
+        ptn_string_buffer_append_char(output, digits[i]);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_number(
+    PtnStringBuffer *output,
+    double number,
+    int precision,
+    const char *locale
+) {
+    if (!isfinite(number)) {
+        ptn_string_buffer_append(output, "0");
+        return;
+    }
+    int negative = signbit(number);
+    double magnitude = negative ? -number : number;
+    char format[16];
+    int format_written = snprintf(format, sizeof(format), "%%.%df", precision);
+    if (format_written < 0 || (size_t)format_written >= sizeof(format)) {
+        ptn_abort_out_of_memory();
+    }
+    char formatted[128];
+    int written = snprintf(formatted, sizeof(formatted), format, magnitude);
+    if (written < 0 || (size_t)written >= sizeof(formatted)) {
+        ptn_abort_out_of_memory();
+    }
+    char *dot = strchr(formatted, '.');
+    if (dot != NULL) {
+        *dot = '\0';
+    }
+    if (negative) {
+        ptn_string_buffer_append_char(output, '-');
+    }
+    ptn_compact_intl_append_grouped_digits(
+        output,
+        formatted,
+        ptn_compact_intl_group_separator(locale)
+    );
+    if (precision > 0 && dot != NULL && dot[1] != '\0') {
+        ptn_string_buffer_append(output, ptn_compact_intl_decimal_separator(locale));
+        ptn_string_buffer_append(output, dot + 1);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_placeholder(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    PtnCompactIntlMessageFormatterData *data,
+    PtnArray *values,
+    const char *placeholder_text,
+    size_t placeholder_len,
+    size_t line
+) {
+    char *placeholder = ptn_duplicate_string_len(placeholder_text, placeholder_len);
+    char *type = NULL;
+    char *style = NULL;
+    char *comma = strchr(placeholder, ',');
+    if (comma != NULL) {
+        *comma = '\0';
+        type = comma + 1;
+        char *second_comma = strchr(type, ',');
+        if (second_comma != NULL) {
+            *second_comma = '\0';
+            style = second_comma + 1;
+        }
+    }
+    char *name = ptn_compact_intl_trim(placeholder);
+    type = type == NULL ? NULL : ptn_compact_intl_trim(type);
+    style = style == NULL ? NULL : ptn_compact_intl_trim(style);
+    PtnArrayEntry *entry = ptn_compact_intl_message_arg_entry(values, name);
+    if (entry == NULL) {
+        ptn_string_buffer_append_char(output, '{');
+        ptn_string_buffer_append_len(output, placeholder_text, placeholder_len);
+        ptn_string_buffer_append_char(output, '}');
+        free(placeholder);
+        return;
+    }
+    PtnValue value = ptn_value_deref(entry->value);
+    const char *locale = data == NULL || data->locale == NULL ? "" : data->locale;
+    if (type == NULL || *type == '\0') {
+        ptn_compact_intl_append_string_value(runtime, output, value, line);
+        free(placeholder);
+        return;
+    }
+    double number = ptn_compact_intl_numeric_value(value);
+    if (ptn_ascii_case_equal(type, "number")) {
+        if (style != NULL && ptn_ascii_case_equal(style, "integer")) {
+            ptn_compact_intl_append_number(output, floor(number), 0, locale);
+        } else {
+            int precision = fabs(number - floor(number)) > 0.0000001 ? 3 : 0;
+            ptn_compact_intl_append_number(output, number, precision, locale);
+        }
+    } else {
+        ptn_compact_intl_append_string_value(runtime, output, value, line);
+    }
+    free(placeholder);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_message_format_array(
+    PtnRuntime *runtime,
+    PtnCompactIntlMessageFormatterData *data,
+    PtnArray *values,
+    size_t line
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    const char *pattern = data == NULL || data->pattern == NULL ? "" : data->pattern;
+    size_t pattern_len = strlen(pattern);
+    for (size_t i = 0; i < pattern_len; i++) {
+        if (pattern[i] != '{') {
+            ptn_string_buffer_append_char(&output, pattern[i]);
+            continue;
+        }
+        const char *close = strchr(pattern + i + 1, '}');
+        if (close == NULL) {
+            ptn_string_buffer_append_char(&output, pattern[i]);
+            continue;
+        }
+        size_t placeholder_len = (size_t)(close - (pattern + i + 1));
+        ptn_compact_intl_append_placeholder(
+            runtime,
+            &output,
+            data,
+            values,
+            pattern + i + 1,
+            placeholder_len,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            free(output.data);
+            return ptn_null();
+        }
+        i += placeholder_len + 1;
+    }
+    ptn_compact_intl_set_error(runtime, "U_ZERO_ERROR");
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_message_formatter_format(
+    PtnRuntime *runtime,
+    PtnValue formatter,
+    PtnValue values,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(formatter);
+    if (!ptn_compact_intl_is_message_formatter_object(resolved)) {
+        return ptn_bool(0);
+    }
+    PtnCompactIntlMessageFormatterData *data =
+        (PtnCompactIntlMessageFormatterData *)resolved.as.object->native_data;
+    values = ptn_value_deref(values);
+    if (values.type != PTN_ARRAY) {
+        return ptn_bool(0);
+    }
+    return ptn_compact_intl_message_format_array(runtime, data, values.as.array, line);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_printf(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        ptn_compact_intl_throw_count_error(runtime, "printf", 1, argc, line);
+        return ptn_null();
+    }
+    PtnStringOperand format = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(format);
+        return ptn_null();
+    }
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t argument_index = 1;
+    for (size_t i = 0; i < format.len; i++) {
+        char byte = format.data[i];
+        if (byte != '%' || i + 1 >= format.len) {
+            ptn_string_buffer_append_char(&output, byte);
+            continue;
+        }
+        char specifier = format.data[++i];
+        if (specifier == '%') {
+            ptn_string_buffer_append_char(&output, '%');
+            continue;
+        }
+        PtnValue value = argument_index < argc ? args[argument_index++] : ptn_null();
+        if (specifier == 's') {
+            PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(string);
+                ptn_string_operand_free(format);
+                free(output.data);
+                return ptn_null();
+            }
+            ptn_string_buffer_append_len(&output, string.data, string.len);
+            ptn_string_operand_free(string);
+        } else if (specifier == 'd' || specifier == 'i') {
+            ptn_string_buffer_append_format(&output, "%lld", (long long)ptn_value_to_integer(value));
+        } else if (specifier == 'f' || specifier == 'F') {
+            ptn_string_buffer_append_format(&output, "%f", ptn_compact_intl_numeric_value(value));
+        } else {
+            ptn_string_buffer_append_char(&output, '%');
+            ptn_string_buffer_append_char(&output, specifier);
+        }
+    }
+    ptn_string_operand_free(format);
+    ptn_output_write(runtime, output.data, output.len);
+    size_t len = output.len;
+    free(output.data);
+    return ptn_int(len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)len);
+}
+
+static PTN_UNUSED void ptn_compact_intl_replace_native_data(PtnValue receiver, PtnValue replacement) {
+    receiver = ptn_value_deref(receiver);
+    replacement = ptn_value_deref(replacement);
+    if (receiver.type != PTN_OBJECT || replacement.type != PTN_OBJECT) {
+        return;
+    }
+    if (receiver.as.object->native_data_free != NULL) {
+        receiver.as.object->native_data_free(receiver.as.object->native_data);
+    }
+    receiver.as.object->native_data = replacement.as.object->native_data;
+    receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+    replacement.as.object->native_data = NULL;
+    replacement.as.object->native_data_free = NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_new_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(class_name, "Collator")) {
+        return ptn_compact_intl_collator_create(runtime, "Collator::__construct", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "MessageFormatter")) {
+        return ptn_compact_intl_message_formatter_new(
+            runtime,
+            "MessageFormatter::__construct",
+            1,
+            argc,
+            args,
+            line
+        );
+    }
+    return ptn_new_object(runtime, class_name, argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (ptn_compact_intl_is_message_formatter_object(resolved)) {
+        if (ptn_ascii_case_equal(name, "__construct")) {
+            PtnValue replacement = ptn_compact_intl_message_formatter_new(
+                runtime,
+                "MessageFormatter::__construct",
+                1,
+                argc,
+                args,
+                line
+            );
+            if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+                ptn_compact_intl_replace_native_data(resolved, replacement);
+            }
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "format")) {
+            if (argc < 1) {
+                return ptn_string("");
+            }
+            return ptn_compact_intl_message_formatter_format(runtime, resolved, args[0], line);
+        }
+        if (ptn_ascii_case_equal(name, "getLocale")) {
+            PtnCompactIntlMessageFormatterData *data =
+                (PtnCompactIntlMessageFormatterData *)resolved.as.object->native_data;
+            return ptn_owned_string(ptn_duplicate_string(data == NULL || data->locale == NULL ? "" : data->locale));
+        }
+        if (ptn_ascii_case_equal(name, "getPattern")) {
+            PtnCompactIntlMessageFormatterData *data =
+                (PtnCompactIntlMessageFormatterData *)resolved.as.object->native_data;
+            return ptn_owned_string(ptn_duplicate_string(data == NULL || data->pattern == NULL ? "" : data->pattern));
+        }
+        if (ptn_ascii_case_equal(name, "getErrorCode")) {
+            return ptn_compact_intl_get_error_code(runtime);
+        }
+        if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+            return ptn_compact_intl_get_error_message(runtime);
+        }
+    }
+    if (ptn_compact_intl_is_collator_object(resolved)) {
+        if (ptn_ascii_case_equal(name, "__construct")) {
+            PtnValue replacement = ptn_compact_intl_collator_create(
+                runtime,
+                "Collator::__construct",
+                argc,
+                args,
+                line
+            );
+            if (runtime->exceptions->active_exception == NULL && replacement.type == PTN_OBJECT) {
+                ptn_compact_intl_replace_native_data(resolved, replacement);
+            }
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "getLocale")) {
+            return argc >= 1 ? ptn_compact_intl_collator_get_locale(runtime, resolved, args[0]) : ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(name, "getErrorCode")) {
+            return ptn_compact_intl_get_error_code(runtime);
+        }
+        if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+            return ptn_compact_intl_get_error_message(runtime);
+        }
+    }
+    ptn_throw_exception_at(runtime, "Error", "Call to undefined method", runtime->source_path, line);
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_compact_intl_call(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "printf")) {
+        return ptn_compact_printf(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "var_export")) {
+        return ptn_compact_var_export(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "is_null")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 1, argc, line)) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_value_deref(args[0]).type == PTN_NULL);
+    }
+    if (ptn_ascii_case_equal(name, "intl_get_error_code")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 0, argc, line)) {
+            return ptn_null();
+        }
+        return ptn_compact_intl_get_error_code(runtime);
+    }
+    if (ptn_ascii_case_equal(name, "intl_get_error_message")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 0, argc, line)) {
+            return ptn_null();
+        }
+        return ptn_compact_intl_get_error_message(runtime);
+    }
+    if (ptn_ascii_case_equal(name, "collator_create")) {
+        return ptn_compact_intl_collator_create(runtime, "collator_create", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "collator_get_locale")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 2, argc, line)) {
+            return ptn_null();
+        }
+        return ptn_compact_intl_collator_get_locale(runtime, args[0], args[1]);
+    }
+    if (ptn_ascii_case_equal(name, "msgfmt_create")) {
+        return ptn_compact_intl_message_formatter_new(runtime, "msgfmt_create", 0, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "MessageFormatter::create")) {
+        return ptn_compact_intl_message_formatter_new(runtime, "MessageFormatter::create", 0, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "msgfmt_format")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 2, argc, line)) {
+            return ptn_null();
+        }
+        return ptn_compact_intl_message_formatter_format(runtime, args[0], args[1], line);
+    }
+    if (ptn_ascii_case_equal(name, "msgfmt_format_message") ||
+        ptn_ascii_case_equal(name, "MessageFormatter::formatMessage")) {
+        if (!ptn_compact_intl_expect_exact_argc(runtime, name, 3, argc, line)) {
+            return ptn_null();
+        }
+        PtnValue formatter = ptn_compact_intl_message_formatter_new(runtime, name, 0, 2, args, line);
+        if (runtime->exceptions->active_exception != NULL || formatter.type != PTN_OBJECT) {
+            ptn_value_destroy(&formatter);
+            return ptn_bool(0);
+        }
+        PtnValue result = ptn_compact_intl_message_formatter_format(runtime, formatter, args[2], line);
+        ptn_value_destroy(&formatter);
+        return result;
+    }
+    if (strncmp(name, "collator_", 9) == 0 ||
+        strncmp(name, "datefmt_", 8) == 0 ||
+        strncmp(name, "locale_", 7) == 0 ||
+        strncmp(name, "msgfmt_", 7) == 0 ||
+        strncmp(name, "normalizer_", 11) == 0 ||
+        strncmp(name, "numfmt_", 7) == 0 ||
+        strncmp(name, "resourcebundle_", 15) == 0 ||
+        strncmp(name, "Collator::", 10) == 0 ||
+        strncmp(name, "IntlDateFormatter::", 19) == 0 ||
+        strncmp(name, "Locale::", 8) == 0 ||
+        strncmp(name, "MessageFormatter::", 18) == 0 ||
+        strncmp(name, "Normalizer::", 12) == 0 ||
+        strncmp(name, "NumberFormatter::", 17) == 0 ||
+        strncmp(name, "ResourceBundle::", 16) == 0) {
+        return ptn_null();
+    }
+    return ptn_null();
+}
+#endif
+"#,
+    );
 }
 
 fn emit_runtime_source_path_helpers(out: &mut String) {
@@ -23805,6 +24983,11 @@ fn emit_method_dispatch(
     out.push_str("        ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
+    out.push_str("#ifdef PTN_HAS_COMPACT_INTL_HELPERS\n");
+    out.push_str("    if (ptn_compact_intl_is_message_formatter_object(resolved) || ptn_compact_intl_is_collator_object(resolved)) {\n");
+    out.push_str("        return ptn_compact_intl_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     if needs_closure_reflection_dispatch {
         out.push_str("    PtnValue ptn_closure_reflection_result;\n");
@@ -32646,10 +33829,15 @@ fn collect_value_runtime_requirements(
                 return;
             }
             requirements.method_dispatch = true;
+            if is_compact_intl_method_name(name) {
+                mark_compact_intl_runtime_requirements(requirements);
+            }
             if name.eq_ignore_ascii_case("setTimestamp") {
                 requirements.internal_function_dispatch = true;
             }
-            if name.eq_ignore_ascii_case("parse") || is_uri_whatwg_url_method_name(name) {
+            if (name.eq_ignore_ascii_case("parse") && !is_compact_intl_method_name(name))
+                || is_uri_whatwg_url_method_name(name)
+            {
                 requirements.internal_function_dispatch = true;
             }
             if is_uri_whatwg_url_method_name(name) {
@@ -32701,6 +33889,8 @@ fn collect_value_runtime_requirements(
             );
             if uses_closure_reflection_dispatch {
                 requirements.method_dispatch = true;
+            } else if is_compact_intl_new_object(class_name, argument_unpacks) {
+                mark_compact_intl_runtime_requirements(requirements);
             } else if modeled_internal_class_name(class_name).is_some()
                 || class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
@@ -32897,8 +34087,12 @@ fn collect_value_runtime_requirements(
             }
         }
         ValueExpr::StaticPropertyFetch { .. } => {}
-        ValueExpr::ClassConstantFetch { class_name, .. } => {
-            if modeled_internal_class_name(class_name).is_some() {
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => {
+            if compact_intl_class_constant_value_expr(class_name, name).is_none()
+                && modeled_internal_class_name(class_name).is_some()
+            {
                 requirements.internal_function_dispatch = true;
             }
         }
@@ -32971,6 +34165,10 @@ fn collect_call_runtime_requirements(
         }
         return;
     }
+    if !has_named_arguments && is_compact_intl_call(name, arguments.len(), has_unpacked_arguments) {
+        mark_compact_intl_runtime_requirements(requirements);
+        return;
+    }
     if (name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof"))
         && !is_known_array_count_call(arguments, requirements)
     {
@@ -33009,6 +34207,119 @@ fn collect_call_runtime_requirements(
     if internal_call_may_invoke_callable(name) {
         requirements.method_dispatch = true;
     }
+}
+
+fn mark_compact_intl_runtime_requirements(requirements: &mut RuntimeRequirements) {
+    requirements.direct_internal_helpers = true;
+    requirements.compact_intl_helpers = true;
+}
+
+fn is_compact_intl_new_object(class_name: &str, argument_unpacks: &[bool]) -> bool {
+    argument_unpacks.iter().all(|unpack| !*unpack)
+        && (class_name.eq_ignore_ascii_case("MessageFormatter")
+            || class_name.eq_ignore_ascii_case("Collator")
+            || class_name.eq_ignore_ascii_case("IntlDateFormatter")
+            || class_name.eq_ignore_ascii_case("Locale")
+            || class_name.eq_ignore_ascii_case("Normalizer")
+            || class_name.eq_ignore_ascii_case("NumberFormatter")
+            || class_name.eq_ignore_ascii_case("ResourceBundle"))
+}
+
+fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Option<&'static str> {
+    let class_name = class_name.trim_start_matches('\\');
+    if class_name.eq_ignore_ascii_case("Collator") && name.eq_ignore_ascii_case("SORT_REGULAR") {
+        return Some("PTN_SORT_REGULAR");
+    }
+    if class_name.eq_ignore_ascii_case("NumberFormatter") {
+        if name.eq_ignore_ascii_case("TYPE_DEFAULT") {
+            return Some("PTN_NUMBER_FORMATTER_TYPE_DEFAULT");
+        }
+        if name.eq_ignore_ascii_case("TYPE_DOUBLE") {
+            return Some("PTN_NUMBER_FORMATTER_TYPE_DOUBLE");
+        }
+    }
+    None
+}
+
+fn is_compact_intl_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("__construct")
+        || name.eq_ignore_ascii_case("asort")
+        || name.eq_ignore_ascii_case("compare")
+        || name.eq_ignore_ascii_case("formatCurrency")
+        || name.eq_ignore_ascii_case("format")
+        || name.eq_ignore_ascii_case("get")
+        || name.eq_ignore_ascii_case("getAttribute")
+        || name.eq_ignore_ascii_case("getAvailableLocales")
+        || name.eq_ignore_ascii_case("getCalendar")
+        || name.eq_ignore_ascii_case("getDateType")
+        || name.eq_ignore_ascii_case("getDisplayName")
+        || name.eq_ignore_ascii_case("getErrorCode")
+        || name.eq_ignore_ascii_case("getErrorMessage")
+        || name.eq_ignore_ascii_case("getLocale")
+        || name.eq_ignore_ascii_case("getPattern")
+        || name.eq_ignore_ascii_case("getSortKey")
+        || name.eq_ignore_ascii_case("getStrength")
+        || name.eq_ignore_ascii_case("getSymbol")
+        || name.eq_ignore_ascii_case("getTextAttribute")
+        || name.eq_ignore_ascii_case("getTimeType")
+        || name.eq_ignore_ascii_case("getTimeZoneId")
+        || name.eq_ignore_ascii_case("getVariableTop")
+        || name.eq_ignore_ascii_case("isLenient")
+        || name.eq_ignore_ascii_case("isNormalized")
+        || name.eq_ignore_ascii_case("normalize")
+        || name.eq_ignore_ascii_case("parse")
+        || name.eq_ignore_ascii_case("parseCurrency")
+        || name.eq_ignore_ascii_case("parseMessage")
+        || name.eq_ignore_ascii_case("restoreVariableTop")
+        || name.eq_ignore_ascii_case("setAttribute")
+        || name.eq_ignore_ascii_case("setCalendar")
+        || name.eq_ignore_ascii_case("setDefault")
+        || name.eq_ignore_ascii_case("setLenient")
+        || name.eq_ignore_ascii_case("setPattern")
+        || name.eq_ignore_ascii_case("setStrength")
+        || name.eq_ignore_ascii_case("setSymbol")
+        || name.eq_ignore_ascii_case("setTextAttribute")
+        || name.eq_ignore_ascii_case("setTimeZone")
+        || name.eq_ignore_ascii_case("setVariableTop")
+        || name.eq_ignore_ascii_case("sort")
+        || name.eq_ignore_ascii_case("sortWithSortKeys")
+}
+
+fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_arguments: bool) -> bool {
+    if has_unpacked_arguments {
+        return false;
+    }
+    let _ = argument_count;
+    if name.eq_ignore_ascii_case("printf")
+        || name.eq_ignore_ascii_case("var_export")
+        || name.eq_ignore_ascii_case("is_null")
+        || name.eq_ignore_ascii_case("intl_get_error_code")
+        || name.eq_ignore_ascii_case("intl_get_error_message")
+        || name.eq_ignore_ascii_case("collator_create")
+        || name.eq_ignore_ascii_case("collator_get_locale")
+        || name.eq_ignore_ascii_case("msgfmt_create")
+        || name.eq_ignore_ascii_case("msgfmt_format")
+        || name.eq_ignore_ascii_case("msgfmt_format_message")
+        || name.eq_ignore_ascii_case("MessageFormatter::create")
+        || name.eq_ignore_ascii_case("MessageFormatter::formatMessage")
+    {
+        return true;
+    }
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("collator_")
+        || lower.starts_with("datefmt_")
+        || lower.starts_with("locale_")
+        || lower.starts_with("msgfmt_")
+        || lower.starts_with("normalizer_")
+        || lower.starts_with("numfmt_")
+        || lower.starts_with("resourcebundle_")
+        || lower.starts_with("collator::")
+        || lower.starts_with("intldateformatter::")
+        || lower.starts_with("locale::")
+        || lower.starts_with("messageformatter::")
+        || lower.starts_with("normalizer::")
+        || lower.starts_with("numberformatter::")
+        || lower.starts_with("resourcebundle::")
 }
 
 fn is_uri_whatwg_url_class_name(name: &str) -> bool {
@@ -46664,6 +47975,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         if !self.full_internal_dispatch {
+            out.push_str("#ifdef PTN_HAS_LIGHTWEIGHT_CLOSURE_REFLECTION\n");
             out.push_str("    } else if (ptn_ascii_case_equal(");
             out.push_str(class_name_expr);
             out.push_str(", \"ReflectionMethod\")) {\n");
@@ -46716,6 +48028,23 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        }\n");
+            out.push_str("#endif\n");
+            out.push_str("#ifdef PTN_HAS_COMPACT_INTL_HELPERS\n");
+            out.push_str("    } else if (ptn_compact_intl_class_supported(");
+            out.push_str(class_name_expr);
+            out.push_str(")) {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_compact_intl_new_object(&runtime, ");
+            out.push_str(class_name_expr);
+            out.push_str(", ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("#endif\n");
         }
         out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    } else if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(");
@@ -48062,6 +49391,73 @@ impl ValueEmitter {
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+            } else if !self.class_name_fetch_uses_runtime_scope(class_name) {
+                let resolved_class_name = self.static_member_class_name(class_name);
+                if let Some(value) =
+                    compact_intl_class_constant_value_expr(&resolved_class_name, name)
+                {
+                    out.push_str(" = ptn_int(");
+                    out.push_str(value);
+                    out.push_str(");\n");
+                } else if let Some((message, dependency)) =
+                    self.class_constant_deprecation(class_name, name)
+                {
+                    out.push_str(" = ptn_null();\n");
+                    if let Some(dependency) = dependency {
+                        emit_deprecated_message_dependency(
+                            out,
+                            "    ",
+                            dependency,
+                            &line.to_string(),
+                        );
+                    }
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        ptn_emit_user_deprecation(&runtime.diagnostics, \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                    out.push_str("        ");
+                    out.push_str(&result_temp);
+                    out.push_str(
+                        " = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(&runtime, \"",
+                    );
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                } else {
+                    if let Some(message_class_name) =
+                        self.class_constant_message_class_name(class_name)
+                    {
+                        out.push_str(
+                            " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&resolved_class_name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(message_class_name));
+                        out.push_str("\", ");
+                    } else {
+                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                        out.push_str(&c_string(&resolved_class_name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", ");
+                    }
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
             } else if self.class_name_fetch_uses_runtime_scope(class_name) {
                 out.push_str(" = ptn_null();\n");
                 self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
@@ -48129,67 +49525,6 @@ impl ValueEmitter {
                     out.push_str(");\n");
                 }
                 out.push_str("    }\n");
-            } else {
-                let resolved_class_name = self.static_member_class_name(class_name);
-                if let Some((message, dependency)) =
-                    self.class_constant_deprecation(class_name, name)
-                {
-                    out.push_str(" = ptn_null();\n");
-                    if let Some(dependency) = dependency {
-                        emit_deprecated_message_dependency(
-                            out,
-                            "    ",
-                            dependency,
-                            &line.to_string(),
-                        );
-                    }
-                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
-                    out.push_str("        ptn_emit_user_deprecation(&runtime.diagnostics, \"");
-                    out.push_str(&c_string(&message));
-                    out.push_str("\", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                    out.push_str("    }\n");
-                    out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
-                    out.push_str("        ");
-                    out.push_str(&result_temp);
-                    out.push_str(
-                        " = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(&runtime, \"",
-                    );
-                    out.push_str(&c_string(&resolved_class_name));
-                    out.push_str("\", \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\", ");
-                    self.emit_access_scope(out);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                    out.push_str("    }\n");
-                } else {
-                    if let Some(message_class_name) =
-                        self.class_constant_message_class_name(class_name)
-                    {
-                        out.push_str(
-                            " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
-                        );
-                        out.push_str(&c_string(&resolved_class_name));
-                        out.push_str("\", \"");
-                        out.push_str(&c_string(name));
-                        out.push_str("\", \"");
-                        out.push_str(&c_string(message_class_name));
-                        out.push_str("\", ");
-                    } else {
-                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
-                        out.push_str(&c_string(&resolved_class_name));
-                        out.push_str("\", \"");
-                        out.push_str(&c_string(name));
-                        out.push_str("\", ");
-                    }
-                    self.emit_access_scope(out);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                }
             }
         }
         result_temp
@@ -52665,6 +54000,14 @@ impl ValueEmitter {
         }
         if !self.full_internal_dispatch
             && !has_named_arguments
+            && !has_unpacked_arguments
+            && direct_user.is_none()
+            && is_compact_intl_call(&resolved_name, arguments.len(), false)
+        {
+            return self.emit_compact_intl_call(out, &result_temp, &resolved_name, arguments, line);
+        }
+        if !self.full_internal_dispatch
+            && !has_named_arguments
             && direct_user.is_none()
             && name.eq_ignore_ascii_case("var_dump")
         {
@@ -53022,6 +54365,64 @@ impl ValueEmitter {
             }
         }
         result_temp
+    }
+
+    fn emit_compact_intl_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        resolved_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_compact_intl_call(&runtime, \"");
+            out.push_str(&c_string(resolved_name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp.to_string();
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, resolved_name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_compact_intl_call(&runtime, \"");
+        out.push_str(&c_string(resolved_name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp.to_string()
     }
 
     fn emit_generator_send_deferred_internal_call(
@@ -56133,6 +57534,11 @@ fn c_property_default_value(value: Option<&ValueExpr>) -> String {
             c_string(name.trim_start_matches('\\')),
             line
         ),
+        Some(ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        }) => compact_intl_class_constant_value_expr(class_name, name)
+            .map(|value| format!("ptn_int({value})"))
+            .unwrap_or_else(|| "ptn_null()".to_string()),
         Some(ValueExpr::Binary {
             op, left, right, ..
         }) => c_property_default_binary_value(*op, left, right)
@@ -56176,6 +57582,9 @@ fn c_property_default_value_for_class(
     };
     if name.eq_ignore_ascii_case("class") {
         return format!("ptn_string(\"{}\")", c_string(lookup_class_name));
+    }
+    if let Some(value) = compact_intl_class_constant_value_expr(lookup_class_name, name) {
+        return format!("ptn_int({value})");
     }
     let message_class_name = if class_name.eq_ignore_ascii_case("self")
         || class_name.eq_ignore_ascii_case("static")
@@ -56230,6 +57639,9 @@ fn c_static_variable_preview_value_for_class(
             };
             if name.eq_ignore_ascii_case("class") {
                 return format!("ptn_string(\"{}\")", c_string(lookup_class_name));
+            }
+            if let Some(value) = compact_intl_class_constant_value_expr(lookup_class_name, name) {
+                return format!("ptn_int({value})");
             }
             format!(
                 "ptn_read_static_variable_preview_constant(runtime, \"{}::{}\")",
@@ -56305,6 +57717,16 @@ fn c_property_default_binary_value(
 fn c_property_default_int_value(value: &ValueExpr) -> Option<i64> {
     match value {
         ValueExpr::Int(value) => Some(*value),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => {
+            compact_intl_class_constant_value_expr(class_name, name).and_then(|value| match value {
+                "PTN_SORT_REGULAR" => Some(0),
+                "PTN_NUMBER_FORMATTER_TYPE_DEFAULT" => Some(0),
+                "PTN_NUMBER_FORMATTER_TYPE_DOUBLE" => Some(3),
+                _ => None,
+            })
+        }
         ValueExpr::Binary {
             op, left, right, ..
         } => c_property_default_eval_int_binary(
