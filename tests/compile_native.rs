@@ -29194,6 +29194,44 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_stream_get_filters_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-get-filters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-get-filters.php");
+    let output = root.join("stream-get-filters-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filters = stream_get_filters();\n\
+var_dump(function_exists('stream_get_filters'));\n\
+var_dump(in_array('string.rot13', $filters, true));\n\
+var_dump(in_array('zlib.inflate', $filters, true));\n\
+var_dump(in_array('missing.filter', $filters, true));\n\
+$readonly = fopen('php://temp', 'rb');\n\
+var_dump(fwrite($readonly, 'x'));\n\
+fclose($readonly);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_get_filters"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();
@@ -29390,6 +29428,14 @@ try {
 } catch (TypeError $e) {
     echo $e->getMessage(), \"\\n\";
 }
+$closed = fopen('php://temp', 'w+');
+$closedFilter = stream_filter_append($closed, 'string.rot13', STREAM_FILTER_WRITE);
+fclose($closed);
+try {
+    stream_filter_remove($closedFilter);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -29406,6 +29452,7 @@ bool(true)\n\
 int(4)\n\
 sbb\n\
 bar\n\
+stream_filter_remove(): supplied resource is not a valid stream filter resource\n\
 stream_filter_remove(): supplied resource is not a valid stream filter resource\n\
 stream_filter_remove(): supplied resource is not a valid stream filter resource\n"
     );

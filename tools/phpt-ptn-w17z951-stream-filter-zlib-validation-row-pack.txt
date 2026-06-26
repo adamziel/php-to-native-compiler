@@ -1,0 +1,15 @@
+# ptn-w17z.951 stream filter/zlib validation current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T202842Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+ext/standard/tests/filters/bug46164-2.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid.phpt
+ext/standard/tests/filters/stream_filter_register_mock_class_filter_incorect_return_type.phpt
+ext/standard/tests/filters/stream_filter_register.phpt
+ext/zlib/tests/zlib_filter_inflate2.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_filtername_prop_type.phpt
+ext/zlib/tests/003.phpt
+ext/zlib/tests/inflate_add_error.phpt
+ext/standard/tests/streams/user_streams_context_001.phpt
+ext/zlib/tests/zlib_filter_deflate2.phpt
+ext/standard/tests/filters/bug79468.phpt
+ext/standard/tests/filters/bug35916.phpt

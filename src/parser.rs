@@ -23732,6 +23732,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_filter_append"
             | "stream_filter_prepend"
             | "stream_filter_remove"
+            | "stream_get_filters"
             | "stream_get_contents"
             | "stream_get_line"
             | "stream_isatty"

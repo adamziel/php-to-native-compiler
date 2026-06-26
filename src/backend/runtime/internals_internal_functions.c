@@ -53587,6 +53587,8 @@ static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_null();
 }
 
+static void ptn_stream_filter_invalidate_resources_for_stream(PtnResource *stream);
+
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue value = ptn_value_deref(args[0]);
@@ -53616,6 +53618,7 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(0);
     }
     ptn_phar_commit_writable_stream(value.as.resource);
+    ptn_stream_filter_invalidate_resources_for_stream(value.as.resource);
     ptn_resource_close(value.as.resource);
     return ptn_bool(1);
 }
@@ -54042,6 +54045,29 @@ static void ptn_stream_filter_resource_close(PtnResource *resource, void *opaque
     data->read_filter = NULL;
     data->write_filter = NULL;
     data->removed = 1;
+}
+
+static void ptn_stream_filter_invalidate_resources_for_stream(PtnResource *stream) {
+    if (stream == NULL) {
+        return;
+    }
+    for (PtnResource *resource = ptn_resource_registry_head; resource != NULL; resource = resource->registry_next) {
+        if (resource == stream ||
+            resource->type_name == NULL ||
+            strcmp(resource->type_name, "stream filter") != 0 ||
+            resource->close_hook_data == NULL) {
+            continue;
+        }
+        PtnStreamFilterResource *data = (PtnStreamFilterResource *)resource->close_hook_data;
+        if (data->stream != stream) {
+            continue;
+        }
+        data->stream = NULL;
+        data->read_filter = NULL;
+        data->write_filter = NULL;
+        data->removed = 1;
+        ptn_resource_release(stream);
+    }
 }
 
 static void ptn_stream_filter_resource_data_free(void *opaque) {
@@ -55032,6 +55058,30 @@ static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_stream_filter_attach(runtime, "stream_filter_prepend", argc, args, line, 1);
+}
+
+static PtnValue ptn_internal_stream_get_filters(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    static const char *filters[] = {
+        "string.rot13",
+        "string.toupper",
+        "string.tolower",
+        "convert.base64-encode",
+        "convert.base64-decode",
+        "convert.quoted-printable-encode",
+        "convert.quoted-printable-decode",
+        "dechunk",
+        "zlib.deflate",
+        "zlib.inflate",
+    };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(filters) / sizeof(filters[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_string(filters[i]));
+    }
+    return result;
 }
 
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -156197,6 +156247,7 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_get_filters(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -157144,6 +157195,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
         { "stream_filter_prepend", 2, 4, ptn_internal_stream_filter_prepend },
         { "stream_filter_remove", 1, 1, ptn_internal_stream_filter_remove },
+        { "stream_get_filters", 0, 0, ptn_internal_stream_get_filters },
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },

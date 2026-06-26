@@ -679,6 +679,17 @@ fn phpt_classifier_models_inactive_windows_symlink_helper_blocks() {
 }
 
 #[test]
+fn phpt_classifier_models_stream_filter_availability_skipif() {
+    let filter_available = "--TEST--\nstream filter available\n--SKIPIF--\n<?php\n$filters = stream_get_filters();\nif (! in_array(\"string.rot13\", $filters)) die(\"skip rot13 filter not available.\");\n?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(filter_available, true);
+    assert!(
+        classification.starts_with("runnable\t")
+            && classification.contains("stream-filter-availability"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_models_env_and_cleanup_harness_sections() {
     let env = "--TEST--\nenv\n--ENV--\nPTN_ENV_FROM_PHPT=present\n--FILE--\n<?php echo getenv('PTN_ENV_FROM_PHPT'), \"\\n\"; ?>\n--EXPECT--\npresent\n";
     let env_classification = classify(env);

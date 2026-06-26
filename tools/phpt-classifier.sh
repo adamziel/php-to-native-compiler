@@ -577,7 +577,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|in_array|stream_get_filters|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
@@ -596,6 +596,8 @@ ptn_phpt_modeled_skipif_precondition() {
     local php_zts_count
     local setlocale_count
     local defined_count
+    local in_array_count
+    local stream_get_filters_count
     local include_count
     if_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])if[[:space:]]*\(' "$code_without_strings")
     output_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(die|exit|echo|print)([[:space:]]*\(|[[:space:]])' "$code_without_strings")
@@ -608,6 +610,8 @@ ptn_phpt_modeled_skipif_precondition() {
     php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
     defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
+    in_array_count=$(ptn_phpt_count_matches 'in_array[[:space:]]*\(' "$code_without_strings")
+    stream_get_filters_count=$(ptn_phpt_count_matches 'stream_get_filters[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
 
     local env_probe_lines
@@ -876,6 +880,46 @@ ptn_phpt_modeled_skipif_precondition() {
     fi
     [[ "$defined_count" -eq "$parsed_defined_count" ]] || return 1
 
+    local parsed_stream_filter_count=0
+    if [[ "$stream_get_filters_count" -gt 0 || "$in_array_count" -gt 0 ]]; then
+        [[ "$stream_get_filters_count" -eq 1 && "$in_array_count" -eq 1 ]] || return 1
+
+        local squashed_code
+        local stream_filter_var
+        squashed_code=$(printf '%s\n' "$code" | ptn_phpt_squash_ws)
+        stream_filter_var=$(printf '%s\n' "$squashed_code" \
+            | sed -nE 's/.*\$([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*stream_get_filters[[:space:]]*\([[:space:]]*\)[[:space:]]*;.*/\1/p')
+        [[ -n "$stream_filter_var" ]] || return 1
+
+        local stream_filter_guard_lines
+        local stream_filter_var_pattern="\\\$$stream_filter_var"
+        stream_filter_guard_lines=$(printf '%s\n' "$squashed_code" \
+            | grep -Eo "!?[[:space:]]*in_array[[:space:]]*\\([[:space:]]*['\"][^'\"]+['\"][[:space:]]*,[[:space:]]*$stream_filter_var_pattern([[:space:]]*,[[:space:]]*(true|false))?[[:space:]]*\\)" \
+            || true)
+        [[ -n "$stream_filter_guard_lines" ]] || return 1
+
+        local guard
+        while IFS= read -r guard; do
+            local filter_name
+            filter_name=$(printf '%s\n' "$guard" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            case "$filter_name" in
+                string.rot13|string.toupper|string.tolower|convert.base64-encode|convert.base64-decode|convert.quoted-printable-encode|convert.quoted-printable-decode|dechunk|zlib.deflate|zlib.inflate)
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            parsed_stream_filter_count=$((parsed_stream_filter_count + 1))
+            if ! printf '%s\n' "$guard" | grep -Eq '^[[:space:]]*!'; then
+                printf 'skipif-precondition\tmodeled static --SKIPIF-- stream filter availability guard skips when %s is present\n' "$filter_name"
+                return 0
+            fi
+        done <<< "$stream_filter_guard_lines"
+        modeled_families+=("stream-filter-availability")
+    fi
+    [[ "$stream_get_filters_count" -eq "$parsed_stream_filter_count" ]] || return 1
+    [[ "$in_array_count" -eq "$parsed_stream_filter_count" ]] || return 1
+
     local root_helper_lines
     local parsed_include_count=0
     root_helper_lines=$(printf '%s\n' "$code" \
@@ -903,7 +947,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count))
+    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count + parsed_stream_filter_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1
