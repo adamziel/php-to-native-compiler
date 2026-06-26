@@ -28013,6 +28013,58 @@ print_r(stream_context_get_options($context));
 }
 
 #[test]
+fn compile_stream_context_params_and_socket_protocol_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-params-socket-protocol");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-params-socket-protocol.php");
+    let output = root.join("stream-context-params-socket-protocol-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo() {}
+
+$ctx = stream_context_create();
+var_dump(function_exists('stream_context_set_params'));
+var_dump(stream_context_set_params($ctx, ["notification" => "foo"]));
+print_r(stream_context_get_options($ctx));
+
+try {
+    stream_context_set_params($ctx, ["notification" => "fn_not_exist"]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+var_dump(STREAM_IPPROTO_IP);
+$sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+stream_set_blocking($sockets[0], false);
+var_dump(fread($sockets[0], 100));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+Array\n\
+(\n\
+)\n\
+TypeError: stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"fn_not_exist\" not found or invalid function name\n\
+int(0)\n\
+string(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_set_params"));
+    assert!(c_source.contains("PTN_STREAM_IPPROTO_IP"));
+}
+
+#[test]
 fn compile_file_get_contents_uri_parser_context_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
     fs::create_dir_all(&root).unwrap();
@@ -28069,6 +28121,34 @@ foreach ([
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_file_get_contents_validate_uri_parser_context"));
     assert!(c_source.contains("#define PTN_USE_ADA_URL 1"));
+}
+
+#[test]
+fn compile_file_put_contents_data_wrapper_reports_not_writable_to_native_binary() {
+    let root = temp_dir("ptn-native-file-put-contents-data-wrapper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-put-contents-data-wrapper.php");
+    let output = root.join("file-put-contents-data-wrapper-bin");
+    fs::write(
+        &input,
+        "<?php\nvar_dump(file_put_contents('data://text/plain,cccc', 'data'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Notice: file_put_contents(): Stream is not writable in "),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("file_put_contents(): Stream is not writable"));
 }
 
 #[test]

@@ -3191,6 +3191,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_SOCK_STREAM);
         return 1;
     }
+    if (strcmp(name, "STREAM_IPPROTO_IP") == 0) {
+        *out = ptn_int(PTN_STREAM_IPPROTO_IP);
+        return 1;
+    }
     if (strcmp(name, "STREAM_SHUT_WR") == 0) {
         *out = ptn_int(PTN_STREAM_SHUT_WR);
         return 1;

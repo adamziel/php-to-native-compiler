@@ -306,6 +306,11 @@ typedef struct {
 #else
 #define PTN_STREAM_SOCK_STREAM 1
 #endif
+#if defined(IPPROTO_IP)
+#define PTN_STREAM_IPPROTO_IP IPPROTO_IP
+#else
+#define PTN_STREAM_IPPROTO_IP 0
+#endif
 #if defined(SHUT_WR)
 #define PTN_STREAM_SHUT_WR SHUT_WR
 #else
@@ -1254,6 +1259,7 @@ struct PtnResource {
     int persistent;
     int closed;
     PtnValue context_options;
+    PtnValue context_params;
     PtnValue curl_options;
     PtnResource *registry_prev;
     PtnResource *registry_next;
@@ -4228,6 +4234,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->context_params = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
@@ -4269,6 +4276,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->context_params = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
@@ -4307,6 +4315,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->context_params = ptn_null();
     resource->curl_options = ptn_null();
     ptn_resource_register(resource);
     resource->manual_close_forbidden = 0;
@@ -4340,6 +4349,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->persistent = 0;
     resource->closed = 0;
     resource->context_options = ptn_null();
+    resource->context_params = ptn_null();
     resource->curl_options = ptn_null();
     resource->manual_close_forbidden = 0;
     resource->object_id = 0;
@@ -4766,6 +4776,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     free(resource->stream_uri);
     free(resource->stream_mode);
     ptn_value_destroy(&resource->context_options);
+    ptn_value_destroy(&resource->context_params);
     ptn_value_destroy(&resource->curl_options);
     if (resource->object_id != 0) {
         ptn_runtime_release_object_id(resource->object_id_runtime, resource->object_id);
