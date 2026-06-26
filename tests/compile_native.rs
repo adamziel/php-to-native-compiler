@@ -25076,6 +25076,51 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_unknown_stream_wrapper_local_fallback_to_native_binary() {
+    let root = temp_dir("ptn-native-unknown-wrapper-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unknown-wrapper-fallback.php");
+    let output = root.join("unknown-wrapper-fallback-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+file_put_contents(__DIR__ . '/bug76857_data.txt', 'test data');\n\
+chdir(__DIR__);\n\
+$path = 'foobar://google.com/../../bug76857_data.txt';\n\
+var_dump(file_exists($path));\n\
+var_dump(file_get_contents($path, false, null, 0, 10));\n\
+$stays_virtual = 'foobar://google.com/../bug76857_data.txt';\n\
+var_dump(file_get_contents($stays_virtual, false, null, 0, 10));\n\
+@unlink(__DIR__ . '/bug76857_data.txt');\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Warning: file_exists(): Unable to find the wrapper \"foobar\" - did you forget to enable it when you configured PHP? in ptn on line 5\nbool(true)\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: file_get_contents(): Unable to find the wrapper \"foobar\" - did you forget to enable it when you configured PHP? in ptn on line 6\nstring(9) \"test data\"\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: file_get_contents(): Unable to find the wrapper \"foobar\" - did you forget to enable it when you configured PHP? in ptn on line 8\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: file_get_contents(foobar://google.com/../bug76857_data.txt): Failed to open stream: No such file or directory in "
+    ));
+    assert!(stdout.contains(" on line 8\nbool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_unknown_wrapper_local_fallback_path"));
+    assert!(c_source.contains("ptn_emit_unknown_stream_wrapper_warning"));
+}
+
+#[test]
 fn compile_file_path_validation_and_flock_to_native_binary() {
     let root = temp_dir("ptn-native-file-path-validation-flock");
     fs::create_dir_all(&root).unwrap();
@@ -28406,6 +28451,12 @@ var_dump(fread($memory, 3));
 $memory_meta = stream_get_meta_data($memory);
 var_dump($memory_meta["wrapper_type"], $memory_meta["stream_type"], $memory_meta["mode"], $memory_meta["eof"]);
 
+$rw_memory = fopen("php://memory", "rw");
+var_dump(stream_get_meta_data($rw_memory)["mode"]);
+var_dump(fwrite($rw_memory, "bar"));
+rewind($rw_memory);
+var_dump(stream_get_contents($rw_memory));
+
 var_dump(fclose($temp));
 var_dump(is_resource($temp), gettype($temp));
 try {
@@ -28448,6 +28499,9 @@ string(3) \"PHP\"\n\
 string(6) \"MEMORY\"\n\
 string(3) \"w+b\"\n\
 bool(false)\n\
+string(3) \"w+b\"\n\
+int(3)\n\
+string(3) \"bar\"\n\
 bool(true)\n\
 bool(false)\n\
 string(17) \"resource (closed)\"\n\
@@ -28834,6 +28888,69 @@ stream_filter_remove(): supplied resource is not a valid stream filter resource\
 }
 
 #[test]
+fn compile_quoted_printable_write_stream_filter_options_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-stream-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-stream-filter.php");
+    let output = root.join("quoted-printable-stream-filter-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_qp_filter($data) {\n\
+    $fd = fopen('php://temp', 'w+');\n\
+    $filter = stream_filter_append($fd, 'convert.quoted-printable-encode', STREAM_FILTER_WRITE, [\n\
+        'line-break-chars' => \"\\n\",\n\
+        'line-length' => 74,\n\
+    ]);\n\
+    var_dump(is_resource($filter));\n\
+    fwrite($fd, $data);\n\
+    rewind($fd);\n\
+    var_dump(stream_get_contents($fd, -1, 0));\n\
+    stream_filter_remove($filter);\n\
+    rewind($fd);\n\
+    stream_filter_append($fd, 'convert.quoted-printable-encode', STREAM_FILTER_WRITE, [\n\
+        'line-break-chars' => \"\\n\",\n\
+        'line-length' => 6,\n\
+    ]);\n\
+    fwrite($fd, $data);\n\
+    rewind($fd);\n\
+    var_dump(stream_get_contents($fd, -1, 0));\n\
+}\n\
+dump_qp_filter(\"FIRST \\nSECOND\");\n\
+dump_qp_filter(\"FIRST  \\nSECOND\");\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(15) \"FIRST=20\n\
+SECOND\"\n\
+string(19) \"FIRST=\n\
+=20\n\
+SECON=\n\
+D\"\n\
+bool(true)\n\
+string(18) \"FIRST=20=20\n\
+SECOND\"\n\
+string(24) \"FIRST=\n\
+=20=\n\
+=20\n\
+SECON=\n\
+D\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE"));
+    assert!(c_source.contains("ptn_stream_apply_quoted_printable_encode_filter_alloc"));
+}
+
+#[test]
 fn compile_stream_isatty_handles_filtered_streams_to_native_binary() {
     let root = temp_dir("ptn-native-stream-isatty-filtered");
     fs::create_dir_all(&root).unwrap();
@@ -28957,6 +29074,46 @@ if (is_resource($server)) {
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_DECODE"));
     assert!(c_source.contains("ptn_internal_stream_socket_server"));
     assert!(c_source.contains("ptn_stream_select_selected_array"));
+}
+
+#[test]
+fn compile_unix_stream_socket_client_and_get_name_to_native_binary() {
+    let root = temp_dir("ptn-native-unix-stream-socket-client-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unix-stream-socket-client-name.php");
+    let output = root.join("unix-stream-socket-client-name-bin");
+    let socket_path = root.join("stream.sock");
+    let php = format!(
+        "<?php\n\
+$sock = '{}';\n\
+$server = stream_socket_server('unix://' . $sock);\n\
+$client = stream_socket_client('unix://' . $sock);\n\
+var_dump(is_resource($server), is_resource($client));\n\
+var_dump(stream_socket_get_name($server, true));\n\
+var_dump(stream_socket_get_name($client, false));\n\
+fclose($client);\n\
+fclose($server);\n\
+@unlink($sock);\n",
+        socket_path.display()
+    );
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_socket_client"));
+    assert!(c_source.contains("ptn_internal_stream_socket_get_name"));
 }
 
 #[test]

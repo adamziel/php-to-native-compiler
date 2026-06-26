@@ -43489,6 +43489,7 @@ static PtnValue ptn_html_escape_value(
     PtnHtmlEscapeMode mode,
     PtnHtmlEncoding encoding
 ) {
+    static const char hex[] = "0123456789ABCDEF";
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     int ok = encoding == PTN_HTML_ENCODING_UTF8
@@ -51669,7 +51670,10 @@ static int ptn_parse_php_temp_max_memory(const char *path, size_t *max_memory) {
 
 static const char *ptn_php_memory_stream_mode(const char *mode, int *writable, int *append) {
     *append = mode[0] == 'a' || mode[0] == 'A';
-    if ((mode[0] == 'r' || mode[0] == 'R') && strchr(mode, '+') == NULL) {
+    if ((mode[0] == 'r' || mode[0] == 'R') &&
+        strchr(mode, '+') == NULL &&
+        strchr(mode, 'w') == NULL &&
+        strchr(mode, 'W') == NULL) {
         *writable = 0;
         return "rb";
     }
@@ -53591,6 +53595,12 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->dechunk_size = 0;
     filter->dechunk_size_seen = 0;
     filter->dechunk_state = 0;
+    if (kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE) {
+        free(filter->filter_line_break);
+        filter->filter_line_break = ptn_duplicate_string_len("\r\n", 2);
+        filter->filter_line_break_len = 2;
+        filter->filter_line_length = 76;
+    }
     filter->zlib_window = zlib_window;
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
@@ -53647,7 +53657,11 @@ static void ptn_stream_filter_apply_options(PtnStreamFilter *filter, PtnValue op
     PtnValue line_length = ptn_null();
     if (ptn_stream_filter_option(options, "line-length", &line_length)) {
         int64_t requested = ptn_value_to_integer(line_length);
-        filter->filter_line_length = requested > 0 ? (size_t)requested : 0;
+        if (requested > 0) {
+            filter->filter_line_length = (size_t)requested;
+        } else if (filter->kind != PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE) {
+            filter->filter_line_length = 0;
+        }
     }
     ptn_value_destroy(&line_length);
 
@@ -54033,6 +54047,68 @@ static int ptn_stream_filter_line_break_at(PtnStreamFilter *filter, const char *
         memcmp(data + offset, filter->filter_line_break, filter->filter_line_break_len) == 0;
 }
 
+static int ptn_stream_qp_matches_line_break(PtnStreamFilter *filter, const char *data, size_t len, size_t offset) {
+    return filter != NULL &&
+        filter->filter_line_break_len != 0 &&
+        offset <= len &&
+        filter->filter_line_break_len <= len - offset &&
+        memcmp(data + offset, filter->filter_line_break, filter->filter_line_break_len) == 0;
+}
+
+static void ptn_stream_qp_append_soft_break(PtnStreamFilter *filter, PtnStringBuffer *output) {
+    ptn_string_buffer_append_char(output, '=');
+    if (filter->filter_line_break_len != 0) {
+        ptn_string_buffer_append_len(output, filter->filter_line_break, filter->filter_line_break_len);
+    }
+}
+
+static void ptn_stream_qp_append_token(
+    PtnStreamFilter *filter,
+    PtnStringBuffer *output,
+    const char *token,
+    size_t token_len,
+    size_t *line_len
+) {
+    if (filter->filter_line_length > 1) {
+        size_t content_limit = filter->filter_line_length - 1;
+        if (*line_len != 0 && token_len != 0 && *line_len + token_len > content_limit) {
+            ptn_stream_qp_append_soft_break(filter, output);
+            *line_len = 0;
+        }
+    }
+    ptn_string_buffer_append_len(output, token, token_len);
+    *line_len += token_len;
+}
+
+static int ptn_stream_qp_whitespace_is_trailing(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t offset
+) {
+    unsigned char byte = (unsigned char)data[offset];
+    if (byte != ' ' && byte != '\t') {
+        return 0;
+    }
+    size_t cursor = offset + 1;
+    while (cursor < len) {
+        unsigned char current = (unsigned char)data[cursor];
+        if (current != ' ' && current != '\t') {
+            break;
+        }
+        cursor++;
+    }
+    return cursor == len || ptn_stream_qp_matches_line_break(filter, data, len, cursor);
+}
+
+static int ptn_stream_qp_should_escape(unsigned char byte, int trailing_whitespace) {
+    return byte < 32 ||
+        byte == 127 ||
+        (byte & 0x80) != 0 ||
+        byte == '=' ||
+        ((byte == ' ' || byte == '\t') && trailing_whitespace);
+}
+
 static char *ptn_stream_apply_quoted_printable_decode_filter_alloc(
     PtnStreamFilter *filter,
     const char *data,
@@ -54080,16 +54156,30 @@ static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
     size_t len,
     size_t *out_len
 ) {
+    static const char hex[] = "0123456789ABCDEF";
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t line_len = filter->filter_line_position;
     for (size_t i = 0; i < len; i++) {
+        if (ptn_stream_qp_matches_line_break(filter, data, len, i)) {
+            ptn_string_buffer_append_len(&output, filter->filter_line_break, filter->filter_line_break_len);
+            i += filter->filter_line_break_len - 1;
+            line_len = 0;
+            continue;
+        }
+
         unsigned char byte = (unsigned char)data[i];
-        unsigned char next = i + 1 < len ? (unsigned char)data[i + 1] : '\0';
-        if (ptn_quoted_printable_encode_should_escape(byte, next)) {
-            ptn_quoted_printable_encode_append_escape(&output, byte, &line_len);
+        int trailing_whitespace = ptn_stream_qp_whitespace_is_trailing(filter, data, len, i);
+        if (ptn_stream_qp_should_escape(byte, trailing_whitespace)) {
+            char escaped[3] = {
+                '=',
+                hex[(byte >> 4) & 0x0f],
+                hex[byte & 0x0f]
+            };
+            ptn_stream_qp_append_token(filter, &output, escaped, sizeof(escaped), &line_len);
         } else {
-            ptn_quoted_printable_encode_append_literal(&output, byte, &line_len);
+            char literal = (char)byte;
+            ptn_stream_qp_append_token(filter, &output, &literal, 1, &line_len);
         }
     }
     filter->filter_line_position = line_len;
@@ -54822,6 +54912,17 @@ static void ptn_emit_stream_write_notice(
     ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
+static int ptn_stream_write_failure_is_silent(PtnResource *resource) {
+    return resource != NULL &&
+        resource->memory_stream != NULL &&
+        (
+            resource->stream_backend == PTN_STREAM_BACKEND_MEMORY ||
+            resource->stream_backend == PTN_STREAM_BACKEND_TEMP ||
+            resource->stream_backend == PTN_STREAM_BACKEND_INPUT
+        ) &&
+        !resource->memory_stream->writable;
+}
+
 static PtnValue ptn_internal_fwrite_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -54865,7 +54966,9 @@ static PtnValue ptn_internal_fwrite_named(
     size_t written = ptn_stream_write_filtered(runtime, function_name, resource, data.data, length, line);
     ptn_string_operand_free(data);
     if (written != length && ptn_stream_error(resource)) {
-        ptn_emit_stream_write_notice(runtime, function_name, length, line);
+        if (!ptn_stream_write_failure_is_silent(resource)) {
+            ptn_emit_stream_write_notice(runtime, function_name, length, line);
+        }
         ptn_stream_clear_error(resource);
         return ptn_bool(0);
     }
@@ -56523,6 +56626,124 @@ static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
         ptn_ascii_case_equal(scheme, "https");
 }
 
+static char *ptn_unknown_stream_wrapper_scheme(const char *path) {
+    char *scheme = ptn_user_stream_scheme_copy(path);
+    if (scheme == NULL) {
+        return NULL;
+    }
+    if (ptn_stream_wrapper_builtin_scheme(scheme) ||
+        ptn_user_stream_wrapper_find_scheme(scheme) != NULL) {
+        free(scheme);
+        return NULL;
+    }
+    return scheme;
+}
+
+static void ptn_emit_unknown_stream_wrapper_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *scheme,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Unable to find the wrapper \"%s\" - did you forget to enable it when you configured PHP?",
+        function_name,
+        scheme
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Unable to find the wrapper \"%s\" - did you forget to enable it when you configured PHP?",
+        function_name,
+        scheme
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static char *ptn_unknown_wrapper_local_fallback_path(const char *path) {
+    const char *authority = strstr(path, "://");
+    if (authority == NULL) {
+        return NULL;
+    }
+    const char *cursor = authority + 3;
+    size_t stack_len = 0;
+    size_t output_len = 0;
+    size_t output_capacity = 0;
+    char *output = NULL;
+    int escaped_authority = 0;
+
+    while (*cursor != '\0') {
+        while (*cursor == '/') {
+            cursor++;
+        }
+        const char *segment = cursor;
+        while (*cursor != '\0' && *cursor != '/') {
+            cursor++;
+        }
+        size_t segment_len = (size_t)(cursor - segment);
+        if (segment_len == 0 ||
+            (segment_len == 1 && segment[0] == '.')) {
+            continue;
+        }
+        if (segment_len == 2 && segment[0] == '.' && segment[1] == '.') {
+            if (stack_len > 0) {
+                stack_len--;
+            } else {
+                escaped_authority = 1;
+            }
+            continue;
+        }
+        if (!escaped_authority) {
+            stack_len++;
+            continue;
+        }
+        size_t required = output_len + segment_len + (output_len == 0 ? 0 : 1);
+        if (required > output_capacity) {
+            size_t new_capacity = output_capacity == 0 ? 64 : output_capacity;
+            while (new_capacity < required + 1) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    free(output);
+                    ptn_abort_out_of_memory();
+                }
+                new_capacity *= 2;
+            }
+            char *new_output = realloc(output, new_capacity);
+            if (new_output == NULL) {
+                free(output);
+                ptn_abort_out_of_memory();
+            }
+            output = new_output;
+            output_capacity = new_capacity;
+        }
+        if (output_len != 0) {
+            output[output_len++] = '/';
+        }
+        memcpy(output + output_len, segment, segment_len);
+        output_len += segment_len;
+        output[output_len] = '\0';
+    }
+
+    if (!escaped_authority || output_len == 0) {
+        free(output);
+        return NULL;
+    }
+    return output;
+}
+
 static PtnValue ptn_internal_stream_wrapper_register_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -57273,25 +57494,31 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     size_t data_len = 0;
     char *opened_path = NULL;
     char *data_url_detail = NULL;
-    int data_url_result = ptn_try_read_data_url_bytes_with_detail(
-        path,
-        &data,
-        &data_len,
-        &data_url_detail
-    );
+    char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
+    char *fallback_path = NULL;
+    if (unknown_scheme != NULL) {
+        ptn_emit_unknown_stream_wrapper_warning(runtime, "file_get_contents", unknown_scheme, line);
+        fallback_path = ptn_unknown_wrapper_local_fallback_path(path);
+        free(unknown_scheme);
+    }
+    const char *read_path = fallback_path == NULL ? path : fallback_path;
+    int data_url_result = fallback_path == NULL
+        ? ptn_try_read_data_url_bytes_with_detail(path, &data, &data_len, &data_url_detail)
+        : 0;
     const char *zlib_path = NULL;
     int read_result = data_url_result != 0
         ? data_url_result
-        : strncmp(path, "phar://", 7) == 0
+        : fallback_path == NULL && strncmp(path, "phar://", 7) == 0
         ? ptn_phar_uri_read_entry(path, &data, &data_len)
-        : ptn_zlib_uri_path(path, &zlib_path)
+        : fallback_path == NULL && ptn_zlib_uri_path(path, &zlib_path)
         ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
-        : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
+        : ptn_read_file_bytes_with_search(runtime, read_path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
         if (data_url_detail != NULL) {
             ptn_emit_file_warning(runtime, "file_get_contents", path, data_url_detail, line);
             free(data_url_detail);
             free(opened_path);
+            free(fallback_path);
             free(path);
             free(data);
             return ptn_bool(0);
@@ -57299,6 +57526,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         if (read_result < 0) {
             ptn_emit_file_read_failure_notice(runtime, "file_get_contents", path, opened_path, line);
             free(opened_path);
+            free(fallback_path);
             free(path);
             free(data);
             return ptn_bool(0);
@@ -57323,12 +57551,14 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
         }
         free(opened_path);
+        free(fallback_path);
         free(path);
         free(data);
         return ptn_bool(0);
     }
     free(data_url_detail);
     free(opened_path);
+    free(fallback_path);
     free(path);
 
     int64_t start_offset = offset;
@@ -58632,7 +58862,6 @@ static PtnValue ptn_path_predicate(
     size_t line,
     int (*predicate)(const char *)
 ) {
-    (void)line;
     PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
@@ -58653,15 +58882,24 @@ static PtnValue ptn_path_predicate(
         return ptn_bool(result);
     }
 
-    int result = predicate(path);
-    if (!result && ptn_current_source_snapshot_matches(runtime, path) &&
-        ptn_current_source_path_missing(path)) {
+    char *unknown_scheme = ptn_unknown_stream_wrapper_scheme(path);
+    char *fallback_path = NULL;
+    if (unknown_scheme != NULL) {
+        ptn_emit_unknown_stream_wrapper_warning(runtime, function_name, unknown_scheme, line);
+        fallback_path = ptn_unknown_wrapper_local_fallback_path(path);
+        free(unknown_scheme);
+    }
+    const char *predicate_path = fallback_path == NULL ? path : fallback_path;
+    int result = predicate(predicate_path);
+    if (!result && ptn_current_source_snapshot_matches(runtime, predicate_path) &&
+        ptn_current_source_path_missing(predicate_path)) {
         if (ptn_ascii_case_equal(function_name, "file_exists") ||
             ptn_ascii_case_equal(function_name, "is_file") ||
             ptn_ascii_case_equal(function_name, "is_readable")) {
             result = 1;
         }
     }
+    free(fallback_path);
     free(path);
     return ptn_bool(result);
 }
@@ -137258,11 +137496,98 @@ static void ptn_stream_socket_client_assign_reference(PtnRuntime *runtime, PtnVa
     ptn_value_destroy(&value);
 }
 
+static int ptn_stream_socket_address_is_unix(PtnStringOperand address) {
+    const char *prefix = "unix://";
+    size_t prefix_len = strlen(prefix);
+    return address.len >= prefix_len && memcmp(address.data, prefix, prefix_len) == 0;
+}
+
+static int ptn_stream_socket_server_path_limit(int abstract);
+
 static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand address = ptn_internal_expect_string_arg(runtime, "stream_socket_client", 1, "address", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+#if !defined(_WIN32)
+    if (ptn_stream_socket_address_is_unix(address)) {
+        const char *prefix = "unix://";
+        size_t prefix_len = strlen(prefix);
+        const char *socket_path = address.data + prefix_len;
+        size_t socket_path_len = address.len - prefix_len;
+        int abstract = socket_path_len > 0 && socket_path[0] == '\0';
+        int max_len = ptn_stream_socket_server_path_limit(abstract);
+        if (max_len <= 0 || socket_path_len > (size_t)max_len) {
+            ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to connect to unix socket", line);
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string("unix socket path is invalid"));
+            ptn_string_operand_free(address);
+            return ptn_bool(0);
+        }
+
+        int descriptor = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (descriptor < 0) {
+            int error_code = errno;
+            ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to create unix socket", line);
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(error_code));
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_owned_string(ptn_duplicate_string(strerror(error_code))));
+            ptn_string_operand_free(address);
+            return ptn_bool(0);
+        }
+
+        struct sockaddr_un unix_addr;
+        memset(&unix_addr, 0, sizeof(unix_addr));
+        unix_addr.sun_family = AF_UNIX;
+        memcpy(unix_addr.sun_path, socket_path, socket_path_len);
+        socklen_t connect_len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + socket_path_len);
+        if (!abstract) {
+            unix_addr.sun_path[socket_path_len] = '\0';
+            connect_len++;
+        }
+        if (connect(descriptor, (struct sockaddr *)&unix_addr, connect_len) != 0) {
+            int error_code = errno;
+            char detail[256];
+            int written = snprintf(
+                detail,
+                sizeof(detail),
+                "stream_socket_client(): Unable to connect to %.*s (%s)",
+                (int)address.len,
+                address.data,
+                strerror(error_code)
+            );
+            if (written < 0 || (size_t)written >= sizeof(detail)) {
+                close(descriptor);
+                ptn_string_operand_free(address);
+                ptn_abort_out_of_memory();
+            }
+            close(descriptor);
+            ptn_emit_warning(&runtime->diagnostics, detail, line);
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(error_code));
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_owned_string(ptn_duplicate_string(strerror(error_code))));
+            ptn_string_operand_free(address);
+            return ptn_bool(0);
+        }
+
+        FILE *stream = fdopen(descriptor, "r+");
+        if (stream == NULL) {
+            int error_code = errno;
+            close(descriptor);
+            ptn_emit_warning(&runtime->diagnostics, "stream_socket_client(): unable to open socket stream", line);
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(error_code));
+            ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_owned_string(ptn_duplicate_string(strerror(error_code))));
+            ptn_string_operand_free(address);
+            return ptn_bool(0);
+        }
+
+        char *uri = ptn_duplicate_string_len(address.data, address.len);
+        PtnValue result = ptn_resource(ptn_resource_new_stream(stream, uri, "r+"));
+        free(uri);
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 2 ? args[1] : ptn_null(), ptn_int(0));
+        ptn_stream_socket_client_assign_reference(runtime, argc >= 3 ? args[2] : ptn_null(), ptn_string(""));
+        ptn_string_operand_free(address);
+        return result;
+    }
+#endif
     int message_needed = snprintf(
         NULL,
         0,
@@ -137334,6 +137659,17 @@ static PtnValue ptn_internal_stream_socket_client(PtnRuntime *runtime, size_t ar
     }
     free(parse_message);
     ptn_string_operand_free(address);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_socket_get_name", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (argc >= 2) {
+        (void)ptn_is_truthy(args[1]);
+    }
     return ptn_bool(0);
 }
 
@@ -154433,6 +154769,7 @@ static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc
 static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -155370,6 +155707,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_select", 4, 5, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
+        { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
         { "stream_socket_server", 1, 5, ptn_internal_stream_socket_server },
         { "stream_socket_shutdown", 2, 2, ptn_internal_stream_socket_shutdown },

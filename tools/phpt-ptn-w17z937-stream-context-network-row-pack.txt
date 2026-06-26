@@ -1,0 +1,16 @@
+# ptn-w17z.937 stream context/network/opendir current-red row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T184835Z.tsv
+# All selected rows were listed as FAIL in that artifact.
+ext/standard/tests/streams/bug44818.phpt
+ext/standard/tests/streams/bug77680.phpt
+ext/standard/tests/streams/stream_context_tcp_nodelay_server.phpt
+ext/standard/tests/streams/ghsa-3cr5-j632-f35r.phpt
+ext/standard/tests/streams/bug76943.phpt
+ext/standard/tests/streams/bug78326_1.phpt
+ext/standard/tests/streams/bug76857.phpt
+ext/standard/tests/streams/bug74556.phpt
+ext/standard/tests/streams/bug61115-1.phpt
+ext/standard/tests/streams/bug70198.phpt
+ext/standard/tests/streams/opendir-001.phpt
+ext/standard/tests/streams/bug64166_3.phpt
