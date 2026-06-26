@@ -1,0 +1,13 @@
+# ptn-w17z.938 stream filter validation/seek row pack.
+ext/standard/tests/filters/stream_filter_register_class_private_filtername_prop.phpt
+ext/standard/tests/filters/bug46164-1.phpt
+ext/standard/tests/filters/filter_errors_zlib_inflate.phpt
+ext/standard/tests/filters/gh20370_private_stream_property.phpt
+ext/standard/tests/filters/stream_multi_filters_close.phpt
+ext/standard/tests/filters/user_filter_seek_02.phpt
+ext/standard/tests/filters/stream_filter_register_class_completely_invalid_no_dynamic_props.phpt
+ext/standard/tests/filters/convert_filter_write_seek_modes.phpt
+ext/standard/tests/filters/bug78506.phpt
+ext/standard/tests/filters/gh20370.phpt
+ext/standard/tests/filters/bug50363.phpt
+ext/standard/tests/filters/bug72941.phpt

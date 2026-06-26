@@ -53253,6 +53253,10 @@ static PtnResource *ptn_internal_expect_open_directory_arg(
     return value.as.resource;
 }
 
+#define PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE 0
+#define PTN_STREAM_FILTER_WRITE_SEEK_RESET 1
+#define PTN_STREAM_FILTER_WRITE_SEEK_STRICT 2
+
 static int ptn_stream_filter_name_equals(PtnStringOperand name, const char *literal) {
     size_t literal_len = strlen(literal);
     if (name.len != literal_len) {
@@ -53316,7 +53320,8 @@ static PtnStreamFilter *ptn_stream_filter_new(
     PtnStreamFilterKind kind,
     PtnStringOperand name,
     int64_t zlib_window,
-    int64_t zlib_level
+    int64_t zlib_level,
+    int write_seek_mode
 ) {
     PtnStreamFilter *filter = malloc(sizeof(PtnStreamFilter));
     if (filter == NULL) {
@@ -53339,6 +53344,7 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->zlib_window = zlib_window;
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
+    filter->write_seek_mode = write_seek_mode;
     filter->next = NULL;
     return filter;
 }
@@ -53367,7 +53373,7 @@ static int ptn_stream_filter_kind_is_zlib(PtnStreamFilterKind kind) {
 static int ptn_hex_nibble(unsigned char byte);
 static int ptn_zlib_level_is_valid(int64_t level);
 
-static int ptn_stream_filter_zlib_option(PtnValue options, const char *name, PtnValue *out) {
+static int ptn_stream_filter_option(PtnValue options, const char *name, PtnValue *out) {
     options = ptn_value_deref(options);
     if (options.type == PTN_ARRAY && options.as.array != NULL) {
         PtnArrayKey key = ptn_array_string_key(name);
@@ -53389,14 +53395,14 @@ static int ptn_stream_filter_zlib_option(PtnValue options, const char *name, Ptn
 
 static void ptn_stream_filter_apply_options(PtnStreamFilter *filter, PtnValue options) {
     PtnValue line_length = ptn_null();
-    if (ptn_stream_filter_zlib_option(options, "line-length", &line_length)) {
+    if (ptn_stream_filter_option(options, "line-length", &line_length)) {
         int64_t requested = ptn_value_to_integer(line_length);
         filter->filter_line_length = requested > 0 ? (size_t)requested : 0;
     }
     ptn_value_destroy(&line_length);
 
     PtnValue line_break = ptn_null();
-    if (ptn_stream_filter_zlib_option(options, "line-break-chars", &line_break)) {
+    if (ptn_stream_filter_option(options, "line-break-chars", &line_break)) {
         PtnStringOperand line_break_string = ptn_value_to_string_operand(line_break);
         free(filter->filter_line_break);
         filter->filter_line_break = ptn_duplicate_string_len(line_break_string.data, line_break_string.len);
@@ -53405,6 +53411,58 @@ static void ptn_stream_filter_apply_options(PtnStreamFilter *filter, PtnValue op
         ptn_string_operand_free(line_break_string);
     }
     ptn_value_destroy(&line_break);
+}
+
+static int ptn_stream_filter_write_seek_mode(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options,
+    size_t line,
+    int *valid_out
+) {
+    *valid_out = 1;
+    PtnValue value = ptn_null();
+    if (!ptn_stream_filter_option(options, "write_seek_mode", &value)) {
+        return PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE;
+    }
+
+    PtnValue resolved = ptn_value_deref(value);
+    int mode = PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE;
+    if (resolved.type == PTN_STRING) {
+        PtnString string = resolved.as.string;
+        PtnStringOperand operand = {
+            .data = string.data == NULL ? "" : (const char *)string.data,
+            .owned = NULL,
+            .len = string.len,
+        };
+        if (ptn_stream_filter_name_equals(operand, "preserve")) {
+            mode = PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE;
+        } else if (ptn_stream_filter_name_equals(operand, "reset")) {
+            mode = PTN_STREAM_FILTER_WRITE_SEEK_RESET;
+        } else if (ptn_stream_filter_name_equals(operand, "strict")) {
+            mode = PTN_STREAM_FILTER_WRITE_SEEK_STRICT;
+        } else {
+            *valid_out = 0;
+        }
+    } else {
+        *valid_out = 0;
+    }
+
+    ptn_value_destroy(&value);
+    if (!*valid_out) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): \"write_seek_mode\" filter parameter must be one of \"preserve\", \"reset\", or \"strict\"",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+    return mode;
 }
 
 static void ptn_stream_filter_zlib_options(
@@ -53420,13 +53478,13 @@ static void ptn_stream_filter_zlib_options(
     }
 
     PtnValue window = ptn_null();
-    if (ptn_stream_filter_zlib_option(options, "window", &window)) {
+    if (ptn_stream_filter_option(options, "window", &window)) {
         *window_out = ptn_value_to_integer(window);
     }
     ptn_value_destroy(&window);
 
     PtnValue level = ptn_null();
-    if (ptn_stream_filter_zlib_option(options, "level", &level)) {
+    if (ptn_stream_filter_option(options, "level", &level)) {
         int64_t requested = ptn_value_to_integer(level);
         if (ptn_zlib_level_is_valid(requested)) {
             *level_out = requested;
@@ -53527,6 +53585,71 @@ static void ptn_throw_invalid_stream_filter_resource(PtnRuntime *runtime) {
         "TypeError",
         "stream_filter_remove(): supplied resource is not a valid stream filter resource"
     );
+}
+
+static void ptn_stream_filter_emit_unable_to_create(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand name,
+    size_t line
+) {
+    char *filter_name = ptn_duplicate_string_len(name.data, name.len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Unable to create or locate filter \"%s\"",
+        function_name,
+        filter_name
+    );
+    if (needed < 0) {
+        free(filter_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(filter_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Unable to create or locate filter \"%s\"",
+        function_name,
+        filter_name
+    );
+    free(filter_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_stream_filter_reset_state(PtnStreamFilter *filter) {
+    if (filter == NULL) {
+        return;
+    }
+    memset(filter->base64_values, 0, sizeof(filter->base64_values));
+    filter->base64_value_count = 0;
+    filter->zlib_error = 0;
+}
+
+static int ptn_stream_filter_chain_has_strict_write_seek(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->write_seek_mode == PTN_STREAM_FILTER_WRITE_SEEK_STRICT) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_stream_filter_chain_reset_on_seek(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->write_seek_mode == PTN_STREAM_FILTER_WRITE_SEEK_RESET) {
+            ptn_stream_filter_reset_state(filter);
+        }
+    }
 }
 
 static void ptn_stream_apply_filter_in_place(PtnStreamFilterKind kind, unsigned char *data, size_t len) {
@@ -53916,6 +54039,10 @@ static void ptn_emit_zlib_data_notice(PtnRuntime *runtime, const char *function_
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
     ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
@@ -54044,6 +54171,10 @@ static char *ptn_stream_read_filtered_bytes(
     while (ptn_stream_filtered_read_pending_available(resource) < length) {
         errno = 0;
         size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
+        if (filter_error) {
+            ptn_emit_zlib_data_notice(runtime, function_name, line);
+        }
         if (read_len == 0) {
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
@@ -54091,6 +54222,73 @@ static void ptn_emit_stream_filter_invalid_sequence_warning(
         "%s(): Stream filter (%s): invalid byte sequence",
         function_name,
         filter_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_stream_filter_probe_prebuffered_zlib(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    PtnStreamFilter *filter,
+    size_t line
+) {
+    if (filter == NULL || filter->kind != PTN_STREAM_FILTER_ZLIB_INFLATE) {
+        return;
+    }
+    int64_t position = ptn_stream_tell(resource);
+    if (position <= 0) {
+        return;
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    unsigned char chunk[4096];
+    for (;;) {
+        size_t read_len = ptn_stream_read_bytes(resource, chunk, sizeof(chunk));
+        if (read_len != 0) {
+            ptn_string_buffer_append_len(&buffer, (const char *)chunk, read_len);
+        }
+        if (read_len < sizeof(chunk)) {
+            break;
+        }
+    }
+    ptn_stream_clear_error(resource);
+    (void)ptn_stream_seek(resource, position, SEEK_SET);
+
+    if (buffer.len == 0) {
+        free(buffer.data);
+        return;
+    }
+
+    unsigned char *transformed = NULL;
+    size_t transformed_len = 0;
+    int ok = ptn_zlib_transform_bytes(
+        (const unsigned char *)buffer.data,
+        buffer.len,
+        1,
+        filter->zlib_window,
+        filter->zlib_level,
+        &transformed,
+        &transformed_len
+    );
+    free(buffer.data);
+    free(transformed);
+    if (ok > 0) {
+        return;
+    }
+
+    filter->zlib_error = 0;
+    ptn_emit_zlib_data_notice(runtime, function_name, line);
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Filter failed to process pre-buffered data",
+        function_name
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -54205,40 +54403,7 @@ static PtnValue ptn_internal_stream_filter_attach(
 
     PtnStreamFilterKind kind;
     if (!ptn_stream_filter_kind_from_name(name, &kind)) {
-        char *filter_name = ptn_duplicate_string_len(name.data, name.len);
-        int needed = snprintf(
-            NULL,
-            0,
-            "%s(): Unable to create or locate filter \"%s\"",
-            function_name,
-            filter_name
-        );
-        if (needed < 0) {
-            free(filter_name);
-            ptn_string_operand_free(name);
-            ptn_abort_out_of_memory();
-        }
-        char *message = malloc((size_t)needed + 1);
-        if (message == NULL) {
-            free(filter_name);
-            ptn_string_operand_free(name);
-            ptn_abort_out_of_memory();
-        }
-        int written = snprintf(
-            message,
-            (size_t)needed + 1,
-            "%s(): Unable to create or locate filter \"%s\"",
-            function_name,
-            filter_name
-        );
-        free(filter_name);
-        if (written < 0 || written != needed) {
-            free(message);
-            ptn_string_operand_free(name);
-            ptn_abort_out_of_memory();
-        }
-        ptn_emit_warning(&runtime->diagnostics, message, line);
-        free(message);
+        ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
         ptn_string_operand_free(name);
         return ptn_bool(0);
     }
@@ -54250,6 +54415,19 @@ static PtnValue ptn_internal_stream_filter_attach(
     int64_t zlib_level = -1;
     PtnValue filter_params = argc >= 4 ? args[3] : ptn_null();
     ptn_stream_filter_zlib_options(kind, filter_params, &zlib_window, &zlib_level);
+    int write_seek_mode_valid = 1;
+    int write_seek_mode = ptn_stream_filter_write_seek_mode(
+        runtime,
+        function_name,
+        filter_params,
+        line,
+        &write_seek_mode_valid
+    );
+    if (!write_seek_mode_valid) {
+        ptn_stream_filter_emit_unable_to_create(runtime, function_name, name, line);
+        ptn_string_operand_free(name);
+        return ptn_bool(0);
+    }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filtered_read_pending_clear(stream);
     }
@@ -54257,19 +54435,26 @@ static PtnValue ptn_internal_stream_filter_attach(
         ptn_stream_filter_chain_remove_zlib(&stream->read_filters);
     }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
-        read_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
+        read_filter = ptn_stream_filter_new(
+            kind,
+            name,
+            zlib_window,
+            zlib_level,
+            PTN_STREAM_FILTER_WRITE_SEEK_PRESERVE
+        );
         ptn_stream_filter_apply_options(read_filter, filter_params);
         ptn_stream_filter_chain_insert(
             &stream->read_filters,
             read_filter,
             prepend
         );
+        ptn_stream_filter_probe_prebuffered_zlib(runtime, function_name, stream, read_filter, line);
     }
     if (ptn_stream_filter_kind_is_zlib(kind) && (mode & PTN_STREAM_FILTER_WRITE) != 0) {
         ptn_stream_filter_chain_remove_zlib(&stream->write_filters);
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
-        write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
+        write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level, write_seek_mode);
         ptn_stream_filter_apply_options(write_filter, filter_params);
         ptn_stream_filter_chain_insert(
             &stream->write_filters,
@@ -54662,8 +54847,7 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
     if (seek_whence != SEEK_SET && seek_whence != SEEK_CUR && seek_whence != SEEK_END) {
         return ptn_int(-1);
     }
-    if (ptn_stream_filter_chain_has_convert(resource->read_filters) ||
-        ptn_stream_filter_chain_has_convert(resource->write_filters)) {
+    if (ptn_stream_filter_chain_has_convert(resource->read_filters)) {
         if (offset != 0 || seek_whence != SEEK_SET) {
             ptn_emit_warning(
                 &runtime->diagnostics,
@@ -54673,10 +54857,13 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
             return ptn_int(-1);
         }
     }
+    if (ptn_stream_filter_chain_has_strict_write_seek(resource->write_filters)) {
+        return ptn_int(-1);
+    }
     if (ptn_stream_seek(resource, offset, seek_whence) == 0) {
         ptn_stream_filtered_read_pending_clear(resource);
         ptn_stream_filter_chain_reset(resource->read_filters);
-        ptn_stream_filter_chain_reset(resource->write_filters);
+        ptn_stream_filter_chain_reset_on_seek(resource->write_filters);
         return ptn_int(0);
     }
     return ptn_int(-1);
@@ -55289,8 +55476,12 @@ static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const P
                 read_len,
                 &filtered_len
             );
+            int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
             fwrite(filtered, 1, filtered_len, stdout);
             free(filtered);
+            if (filter_error) {
+                ptn_emit_zlib_data_notice(runtime, "fpassthru", line);
+            }
             if (filtered_len > (size_t)(INT64_MAX - total)) {
                 ptn_abort_out_of_memory();
             }
@@ -55366,6 +55557,10 @@ static PtnValue ptn_stream_read_remaining(
         }
         errno = 0;
         size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
+        if (filter_error) {
+            ptn_emit_zlib_data_notice(runtime, function_name, line);
+        }
         if (read_len == 0) {
             if (ptn_stream_error(resource)) {
                 ptn_emit_stream_read_notice(runtime, function_name, 8192, line);

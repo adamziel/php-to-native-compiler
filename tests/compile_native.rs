@@ -28557,6 +28557,73 @@ string(12) \"Hello, World\"\n"
 }
 
 #[test]
+fn compile_stream_convert_filters_and_write_seek_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-convert-filter-seek-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-convert-filter-seek-modes.php");
+    let output = root.join("stream-convert-filter-seek-modes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$encoded = \"Sauvegarder=C3=A9ussi(e) n=C3=A3o N=C3=83O\\n\";\n\
+$encoded .= \"Sauvegarder=c3=a9ussi(e) n=c3=a3o N=c3=83O\\n\";\n\
+$fp = fopen('php://temp', 'w+');\n\
+stream_filter_append($fp, 'convert.quoted-printable-decode', STREAM_FILTER_WRITE);\n\
+fwrite($fp, $encoded);\n\
+rewind($fp);\n\
+fpassthru($fp);\n\
+fclose($fp);\n\
+\n\
+foreach (['convert.base64-encode', 'convert.quoted-printable-encode'] as $name) {\n\
+    $fp = fopen('php://memory', 'w+');\n\
+    stream_filter_append($fp, $name, STREAM_FILTER_WRITE, ['write_seek_mode' => 'preserve']);\n\
+    fwrite($fp, 'Hello');\n\
+    var_dump(fseek($fp, 0, SEEK_SET) === 0);\n\
+    var_dump(fseek($fp, 100, SEEK_SET) === 0);\n\
+    fclose($fp);\n\
+\n\
+    $fp = fopen('php://memory', 'w+');\n\
+    stream_filter_append($fp, $name, STREAM_FILTER_WRITE, ['write_seek_mode' => 'strict']);\n\
+    fwrite($fp, 'Hello');\n\
+    var_dump(fseek($fp, 0, SEEK_SET) === -1);\n\
+    fclose($fp);\n\
+}\n\
+\n\
+$fp = fopen('php://memory', 'w+');\n\
+stream_filter_append($fp, 'convert.base64-encode', STREAM_FILTER_WRITE, ['write_seek_mode' => 42]);\n\
+fclose($fp);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "Sauvegarderéussi(e) não NÃO\n\
+Sauvegarderéussi(e) não NÃO\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    ));
+    assert!(stdout.contains(
+        "stream_filter_append(): \"write_seek_mode\" filter parameter must be one of \"preserve\", \"reset\", or \"strict\""
+    ));
+    assert!(stdout.contains(
+        "stream_filter_append(): Unable to create or locate filter \"convert.base64-encode\""
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE"));
+    assert!(c_source.contains("ptn_stream_filter_write_seek_mode"));
+}
+
+#[test]
 fn compile_fpassthru_write_only_filtered_stream_reports_php_read_size_to_native_binary() {
     let root = temp_dir("ptn-native-fpassthru-write-only-filtered-read-size");
     fs::create_dir_all(&root).unwrap();

@@ -1322,6 +1322,7 @@ struct PtnStreamFilter {
     int64_t zlib_window;
     int64_t zlib_level;
     int zlib_error;
+    int write_seek_mode;
     PtnStreamFilter *next;
 };
 
