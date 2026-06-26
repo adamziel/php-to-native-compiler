@@ -1,0 +1,15 @@
+# ptn-w17z.933 focused PHAR stream/archive row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T175828Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/zip/frontcontroller20.phar.phpt
+ext/phar/tests/013.phpt
+ext/phar/tests/tar/phar_stub_error.phpt
+ext/phar/tests/zip/rmdir.phpt
+ext/phar/tests/zip/phar_oo_compressallgz.phpt
+ext/phar/tests/phar_extract3.phpt
+ext/phar/tests/delete.phpt
+ext/phar/tests/rename_dir.phpt
+ext/phar/tests/gh20882.phpt
+ext/phar/tests/tar/phar_convert_phar4.phpt
+ext/phar/tests/bug79503.phpt
+ext/phar/tests/bug65414.phpt

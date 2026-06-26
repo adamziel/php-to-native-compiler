@@ -51953,6 +51953,78 @@ echo $result['inline.txt']->getContent(), "\n";
 }
 
 #[test]
+fn compile_phar_data_dispatch_and_entry_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-data-entry-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-data-entry-validation.php");
+    let output = root.join("phar-data-entry-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$workdir = __DIR__ . '/phar_data_paths';
+mkdir($workdir, recursive: true);
+
+$tar = new PharData($workdir . '/data.tar');
+$tar->addFromString('plain.txt', 'plain');
+var_dump(get_class($tar), isset($tar['plain.txt']));
+
+$phar = new Phar($workdir . '/files.phar');
+$phar->addFromString('file.txt', 'contents');
+$phar->compressFiles(Phar::GZ);
+var_dump(
+    $phar['file.txt']->isCompressed(),
+    $phar['file.txt']->isCompressed(Phar::GZ),
+    $phar['file.txt']->isCompressed(Phar::BZ2)
+);
+
+foreach (['dir//file.txt', '.phar/file.txt'] as $name) {
+    try {
+        $phar->addFromString($name, 'blocked');
+    } catch (Throwable $e) {
+        echo get_class($e), ':', $e->getMessage(), "\n";
+    }
+}
+
+try {
+    $phar['.phar/also.txt'] = 'blocked';
+} catch (Throwable $e) {
+    echo 'offset:', get_class($e), ':', $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"PharData\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "BadMethodCallException:Entry dir//file.txt does not exist and cannot be created: phar error: invalid path \"dir//file.txt\" contains double slash\n",
+            "BadMethodCallException:Cannot create any files in magic \".phar\" directory\n",
+            "offset:BadMethodCallException:Cannot create any files in magic \".phar\" directory\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_class_name_is_phar_archive"));
+    assert!(c_source.contains("ptn_phar_validate_entry_create"));
+    assert!(c_source.contains("PharFileInfo::isCompressed"));
+}
+
+#[test]
 fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
     fs::create_dir_all(&root).unwrap();
