@@ -1,0 +1,12 @@
+ext/session/tests/015.phpt
+ext/session/tests/rfc1867_invalid_settings_2.phpt
+ext/session/tests/bug42596.phpt
+ext/session/tests/020.phpt
+ext/session/tests/session_ini_set.phpt
+ext/session/tests/session_set_cookie_params_variation8.phpt
+ext/session/tests/gh13856.phpt
+ext/session/tests/bug71683.phpt
+ext/session/tests/gh13891.phpt
+ext/session/tests/session_str_settings_null_byte.phpt
+ext/session/tests/session_save_path_variation2.phpt
+ext/session/tests/session_name_variation1.phpt

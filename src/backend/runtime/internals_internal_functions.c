@@ -90157,6 +90157,17 @@ static PtnValue ptn_internal_set_include_path(PtnRuntime *runtime, size_t argc, 
     return ptn_owned_string(previous);
 }
 
+static int ptn_session_name_bytes_are_valid(const char *data, size_t len);
+static void ptn_session_emit_invalid_name_warning(PtnRuntime *runtime, const char *function_name, PtnStringOperand name, size_t line);
+static int ptn_session_ini_operand_must_not_contain_null_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *ini_name,
+    PtnStringOperand value,
+    size_t line
+);
+static int ptn_session_ini_null_bytes_are_rejected(const char *ini_name);
+
 static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand option = ptn_internal_expect_string_arg(runtime, "ini_restore", 1, "option", args[0], line);
@@ -90641,6 +90652,21 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (session_ini != NULL) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, session_ini->name)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        if (ptn_ascii_case_equal(session_ini->name, "session.name") &&
+            !ptn_session_name_bytes_are_valid(value.data, value.len)) {
+            ptn_session_emit_invalid_name_warning(runtime, "ini_set", value, line);
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
+        if (ptn_session_ini_null_bytes_are_rejected(session_ini->name) &&
+            !ptn_session_ini_operand_must_not_contain_null_bytes(runtime, "ini_set", session_ini->name, value, line)) {
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         if (ptn_ascii_case_equal(session_ini->name, "session.save_handler") &&
             ptn_string_operand_ascii_case_equal(value, "user")) {
             ptn_emit_runtime_warning(
@@ -91745,12 +91771,26 @@ static int ptn_session_prefix_is_valid(PtnStringOperand prefix) {
     return 1;
 }
 
-static int ptn_session_name_is_valid(const char *name) {
-    if (name == NULL) {
-        return 1;
+static int ptn_session_name_is_numeric_bytes(const char *data, size_t len) {
+    if (len == 0) {
+        return 0;
     }
-    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
-        switch (*cursor) {
+    for (size_t i = 0; i < len; i++) {
+        if (!isdigit((unsigned char)data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_session_name_bytes_are_valid(const char *data, size_t len) {
+    if (data == NULL || len == 0 || ptn_session_name_is_numeric_bytes(data, len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)data[i];
+        switch (c) {
+            case '\0':
             case '=':
             case ',':
             case ';':
@@ -91768,6 +91808,109 @@ static int ptn_session_name_is_valid(const char *name) {
         }
     }
     return 1;
+}
+
+static int ptn_session_name_is_valid(const char *name) {
+    if (name == NULL) {
+        return 0;
+    }
+    return ptn_session_name_bytes_are_valid(name, strlen(name));
+}
+
+static void ptn_session_emit_invalid_name_warning(PtnRuntime *runtime, const char *function_name, PtnStringOperand name, size_t line) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): session.name \"%.*s\" must not be numeric, empty, contain null bytes or any of the following characters \"=,;.[ \\t\\r\\n\\013\\014\"",
+        function_name,
+        (int)name.len,
+        name.data
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): session.name \"%.*s\" must not be numeric, empty, contain null bytes or any of the following characters \"=,;.[ \\t\\r\\n\\013\\014\"",
+        function_name,
+        (int)name.len,
+        name.data
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static int ptn_session_ini_operand_must_not_contain_null_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *ini_name,
+    PtnStringOperand value,
+    size_t line
+) {
+    if (memchr(value.data, '\0', value.len) == NULL) {
+        return 1;
+    }
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): \"%s\" must not contain null bytes",
+        function_name,
+        ini_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): \"%s\" must not contain null bytes",
+        function_name,
+        ini_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+    return 0;
+}
+
+static int ptn_session_ini_null_bytes_are_rejected(const char *ini_name) {
+    return ptn_ascii_case_equal(ini_name, "session.cookie_path") ||
+        ptn_ascii_case_equal(ini_name, "session.cookie_domain") ||
+        ptn_ascii_case_equal(ini_name, "session.cache_limiter");
+}
+
+static int ptn_session_cookie_lifetime_is_valid(int64_t lifetime) {
+    return lifetime >= 0 && lifetime <= INT_MAX;
+}
+
+static void ptn_session_emit_cookie_lifetime_warning(PtnRuntime *runtime, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "session_set_cookie_params(): session.cookie_lifetime must be between 0 and %d",
+        INT_MAX
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
+static int ptn_session_cookie_lifetime_value_is_valid(PtnValue value, int64_t *lifetime_out) {
+    int64_t lifetime = ptn_value_to_integer(value);
+    if (lifetime_out != NULL) {
+        *lifetime_out = lifetime;
+    }
+    return ptn_session_cookie_lifetime_is_valid(lifetime);
 }
 
 static char *ptn_session_create_id_string(PtnRuntime *runtime, const char *prefix) {
@@ -91835,6 +91978,77 @@ static char *ptn_session_file_path(PtnRuntime *runtime, const char *id) {
     path[offset + id_len] = '\0';
     free(dir);
     return path;
+}
+
+static int ptn_session_start_files_storage(PtnRuntime *runtime, const char *id, size_t line) {
+    char *path = ptn_session_file_path(runtime, id);
+    if (path == NULL) {
+        return 1;
+    }
+    FILE *file = fopen(path, "a+b");
+    if (file != NULL) {
+        fclose(file);
+        free(path);
+        return 1;
+    }
+    int error_code = errno;
+    int needed = snprintf(
+        NULL,
+        0,
+        "session_start(): open(%s, O_RDWR) failed: %s (%d)",
+        path,
+        strerror(error_code),
+        error_code
+    );
+    if (needed < 0) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "session_start(): open(%s, O_RDWR) failed: %s (%d)",
+        path,
+        strerror(error_code),
+        error_code
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+
+    char *dir = ptn_session_storage_dir(runtime);
+    int read_needed = snprintf(
+        NULL,
+        0,
+        "session_start(): Failed to read session data: files (path: %s)",
+        dir
+    );
+    if (read_needed < 0) {
+        free(path);
+        free(dir);
+        ptn_abort_out_of_memory();
+    }
+    char *read_message = malloc((size_t)read_needed + 1);
+    if (read_message == NULL) {
+        free(path);
+        free(dir);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        read_message,
+        (size_t)read_needed + 1,
+        "session_start(): Failed to read session data: files (path: %s)",
+        dir
+    );
+    ptn_emit_runtime_warning(runtime, read_message, line);
+    free(read_message);
+    free(dir);
+    free(path);
+    return 0;
 }
 
 static int ptn_session_file_exists(PtnRuntime *runtime, const char *id) {
@@ -93302,11 +93516,19 @@ static PtnValue ptn_internal_session_id(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnValue ptn_internal_session_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     const char *name = ptn_runtime_session_ini(runtime, "session.name");
     PtnValue previous = ptn_owned_string(ptn_duplicate_string(name));
     if (argc >= 1) {
         PtnStringOperand value = ptn_value_to_string_operand(args[0]);
+        if (!ptn_session_name_bytes_are_valid(value.data, value.len)) {
+            ptn_session_emit_invalid_name_warning(runtime, "session_name", value, line);
+            ptn_string_operand_free(value);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&previous);
+                return ptn_null();
+            }
+            return previous;
+        }
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_session_ini(runtime, "session.name", next);
         free(next);
@@ -93500,6 +93722,10 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     ptn_session_choose_start_id(runtime, line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    if (!ptn_session_has_user_handler(runtime) &&
+        !ptn_session_start_files_storage(runtime, ptn_session_id_current(runtime), line)) {
+        return ptn_bool(0);
     }
     PtnValue session_data = ptn_array_from_literal_entries(0, NULL);
     size_t file_len = 0;
@@ -93819,11 +94045,45 @@ static PtnValue ptn_internal_session_get_cookie_params(PtnRuntime *runtime, size
 }
 
 static void ptn_session_set_cookie_param_from_value(PtnRuntime *runtime, const char *ini_name, PtnValue value) {
+    if (ptn_value_deref(value).type == PTN_NULL) {
+        return;
+    }
     PtnStringOperand operand = ptn_value_to_string_operand(value);
     char *next = ptn_duplicate_string_len(operand.data, operand.len);
     ptn_runtime_set_session_ini(runtime, ini_name, next);
     free(next);
     ptn_string_operand_free(operand);
+}
+
+static int ptn_session_validate_cookie_lifetime_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    int64_t lifetime = 0;
+    if (!ptn_session_cookie_lifetime_value_is_valid(value, &lifetime)) {
+        (void)lifetime;
+        ptn_session_emit_cookie_lifetime_warning(runtime, line);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_session_validate_cookie_string_value(
+    PtnRuntime *runtime,
+    const char *ini_name,
+    PtnValue value,
+    size_t line
+) {
+    if (ptn_value_deref(value).type == PTN_NULL) {
+        return 1;
+    }
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    int ok = ptn_session_ini_operand_must_not_contain_null_bytes(
+        runtime,
+        "session_set_cookie_params",
+        ini_name,
+        operand,
+        line
+    );
+    ptn_string_operand_free(operand);
+    return ok;
 }
 
 static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -93838,6 +94098,22 @@ static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size
     if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_ARRAY) {
         PtnArray *options = ptn_value_deref(args[0]).as.array;
         PtnArrayEntry *entry;
+        if ((entry = ptn_session_array_string_entry(options, "lifetime")) != NULL &&
+            !ptn_session_validate_cookie_lifetime_value(runtime, entry->value, line)) {
+            return ptn_bool(0);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "path")) != NULL &&
+            !ptn_session_validate_cookie_string_value(runtime, "session.cookie_path", entry->value, line)) {
+            return ptn_bool(0);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "domain")) != NULL &&
+            !ptn_session_validate_cookie_string_value(runtime, "session.cookie_domain", entry->value, line)) {
+            return ptn_bool(0);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "samesite")) != NULL &&
+            !ptn_session_validate_cookie_string_value(runtime, "session.cookie_samesite", entry->value, line)) {
+            return ptn_bool(0);
+        }
         if ((entry = ptn_session_array_string_entry(options, "lifetime")) != NULL) {
             ptn_session_set_cookie_param_from_value(runtime, "session.cookie_lifetime", entry->value);
         }
@@ -93860,6 +94136,15 @@ static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size
             ptn_runtime_set_session_ini(runtime, "session.cookie_partitioned", ptn_is_truthy(entry->value) ? "1" : "0");
         }
         return ptn_bool(1);
+    }
+    if (argc >= 1 && !ptn_session_validate_cookie_lifetime_value(runtime, args[0], line)) {
+        return ptn_bool(0);
+    }
+    if (argc >= 2 && !ptn_session_validate_cookie_string_value(runtime, "session.cookie_path", args[1], line)) {
+        return ptn_bool(0);
+    }
+    if (argc >= 3 && !ptn_session_validate_cookie_string_value(runtime, "session.cookie_domain", args[2], line)) {
+        return ptn_bool(0);
     }
     if (argc >= 1) {
         ptn_session_set_cookie_param_from_value(runtime, "session.cookie_lifetime", args[0]);

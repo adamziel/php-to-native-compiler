@@ -19120,6 +19120,95 @@ var_dump(session_start());
 }
 
 #[test]
+fn compile_session_ini_cookie_and_save_path_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-session-ini-cookie-save-path-validation");
+    fs::create_dir_all(&root).unwrap();
+    let missing_save_path = root.join("missing-session-dir");
+    let input = root.join("session-ini-cookie-save-path-validation.php");
+    let output = root.join("session-ini-cookie-save-path-validation-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ob_start();
+var_dump(session_name("\t"));
+var_dump(session_name());
+var_dump(ini_set('session.cookie_path', "/path\0evil"));
+var_dump(ini_set('session.cookie_domain', "example\0evil.com"));
+var_dump(ini_set('session.cache_limiter', "nocache\0evil"));
+var_dump(session_set_cookie_params(["lifetime" => -10]));
+var_dump(session_set_cookie_params(0, "/path\0evil"));
+var_dump(session_set_cookie_params(0, null, "example\0evil.com"));
+ini_set('session.save_path', '{}');
+var_dump(session_start());
+var_dump(session_destroy());
+ob_end_flush();
+"#,
+            missing_save_path.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_name(): session.name \"\t\" must not be numeric, empty, contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(9) \"PHPSESSID\"\nstring(9) \"PHPSESSID\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: ini_set(): \"session.cookie_path\" must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("Warning: ini_set(): \"session.cookie_domain\" must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout
+            .contains("Warning: ini_set(): \"session.cache_limiter\" must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: session_set_cookie_params(): session.cookie_lifetime must be between 0 and "
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_set_cookie_params(): \"session.cookie_path\" must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_set_cookie_params(): \"session.cookie_domain\" must not contain null bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_start(): Failed to read session data: files (path: "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_destroy(): Trying to destroy uninitialized session"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 8, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_session_user_save_handler_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-session-user-save-handler");
     fs::create_dir_all(&root).unwrap();

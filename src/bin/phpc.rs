@@ -1002,6 +1002,25 @@ fn session_save_handler_startup_warning(ini: &RuntimeIni) -> Option<String> {
         })
 }
 
+fn session_startup_deprecations(ini: &RuntimeIni) -> Vec<&'static str> {
+    let mut warnings = Vec::new();
+    if ini
+        .session
+        .iter()
+        .rev()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("session.use_only_cookies")
+                .then_some(value)
+        })
+        .is_some_and(|value| !ini_scalar_truthy(value))
+    {
+        warnings.push(
+            "Deprecated: PHP Startup: Disabling session.use_only_cookies INI setting is deprecated in Unknown on line 0",
+        );
+    }
+    warnings
+}
+
 fn assert_ini_bool_differs_from_default(value: Option<&str>, default: bool) -> bool {
     value.is_some_and(|value| ini_scalar_truthy(value) != default)
 }
@@ -1117,6 +1136,7 @@ fn compile_and_run(
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let zend_script_encoding_warning = invalid_zend_script_encoding_warning(&ini);
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
+    let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
     let source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
@@ -1373,6 +1393,7 @@ fn compile_and_run(
     let startup_warning_emitted = memory_limit_warning.is_some()
         || zend_script_encoding_warning.is_some()
         || session_save_handler_warning.is_some()
+        || !session_startup_deprecations.is_empty()
         || !assert_startup_deprecations.is_empty()
         || ini.mbstring_internal_encoding.is_some()
         || ini.mbstring_http_input.is_some()
@@ -1387,6 +1408,9 @@ fn compile_and_run(
         println!("{warning}");
     }
     if let Some(warning) = session_save_handler_warning {
+        println!("{warning}");
+    }
+    for warning in &session_startup_deprecations {
         println!("{warning}");
     }
     for (index, warning) in assert_startup_deprecations.iter().enumerate() {
