@@ -52853,6 +52853,8 @@ var_dump(
     Phar::canCompress(),
     Phar::canCompress(Phar::GZ),
     Phar::canCompress(Phar::BZ2),
+    Phar::PHP,
+    Phar::PHPS,
     Phar::GZ,
     Phar::BZ2,
     ZipArchive::CREATE
@@ -52872,12 +52874,19 @@ var_dump(
 );
 
 $rc = new ReflectionClass('SoapClient');
+$pharClass = new ReflectionClass('Phar');
+$pharDataClass = new ReflectionClass('PharData');
+$pharConstants = $pharClass->getConstants();
+$pharDataConstants = $pharDataClass->getConstants();
 var_dump(
     $rc->getExtensionName(),
     method_exists('SoapClient', '__construct'),
     class_exists('ZipArchive'),
     method_exists('ZipArchive', 'registerCancelCallback'),
-    method_exists('Phar', 'apiVersion')
+    method_exists('Phar', 'apiVersion'),
+    $pharConstants['PHP'],
+    $pharConstants['PHPS'],
+    array_key_exists('PHP', $pharDataConstants)
 );
 
 function &zip_cancel_ref_notice() {}
@@ -52919,12 +52928,12 @@ var_dump($sf->headerfault);
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    let expected_notice_52 = format!(
-        "\nNotice: Only variable references should be returned by reference in {} on line 52\n",
+    let expected_notice_61 = format!(
+        "\nNotice: Only variable references should be returned by reference in {} on line 61\n",
         input.display()
     );
-    let expected_notice_53 = format!(
-        "\nNotice: Only variable references should be returned by reference in {} on line 53\n",
+    let expected_notice_62 = format!(
+        "\nNotice: Only variable references should be returned by reference in {} on line 62\n",
         input.display()
     );
     assert_eq!(
@@ -52945,6 +52954,8 @@ var_dump($sf->headerfault);
                 "bool(true)\n",
                 "bool(true)\n",
                 "bool(false)\n",
+                "int(0)\n",
+                "int(1)\n",
                 "int(4096)\n",
                 "int(8192)\n",
                 "int(1)\n",
@@ -52963,10 +52974,13 @@ var_dump($sf->headerfault);
                 "bool(true)\n",
                 "bool(true)\n",
                 "bool(true)\n",
+                "int(0)\n",
+                "int(1)\n",
+                "bool(false)\n",
             ),
-            expected_notice_52,
-            expected_notice_52,
-            expected_notice_53,
+            expected_notice_61,
+            expected_notice_61,
+            expected_notice_62,
             concat!(
                 "bool(true)\n",
                 "bool(true)\n",

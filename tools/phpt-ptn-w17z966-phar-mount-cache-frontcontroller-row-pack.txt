@@ -1,0 +1,15 @@
+# ptn-w17z.966 focused PHAR mount/cache/frontcontroller row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T223921Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/phar_mount.phpt
+ext/phar/tests/bug76584.phpt
+ext/phar/tests/gh14603.phpt
+ext/zlib/tests/gzopen_variation7.phpt
+ext/phar/tests/gh20302.phpt
+ext/phar/tests/zip/delete_in_phar_b.phpt
+ext/standard/tests/streams/proc_open_bug64438.phpt
+ext/phar/tests/019b.phpt
+ext/phar/tests/zip/corrupt_009.phpt
+ext/phar/tests/cache_list/frontcontroller30.phpt
+ext/phar/tests/webphar_compilefail.phpt
+ext/phar/tests/phar_oo_003.phpt

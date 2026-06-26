@@ -173430,7 +173430,9 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC"), ptn_int(32));
         return;
     }
-    if (ptn_internal_class_name_is_phar_archive(class_name)) {
+    if (ptn_internal_class_name_is_phar(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("PHP"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("PHPS"), ptn_int(1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("PHAR"), ptn_int(PTN_PHAR_FORMAT_PHAR));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("TAR"), ptn_int(PTN_PHAR_FORMAT_TAR));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ZIP"), ptn_int(PTN_PHAR_FORMAT_ZIP));
