@@ -5605,6 +5605,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 typedef struct PtnPharArchiveState PtnPharArchiveState;
+typedef struct PtnPharDirectoryData PtnPharDirectoryData;
 static void ptn_phar_archive_clone_path(const char *source_path, const char *dest_path);
 static char *ptn_phar_take_last_stream_error(void);
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
@@ -5620,6 +5621,9 @@ static int ptn_phar_uri_archive_and_entry_mode(
     char **entry_out
 );
 static int ptn_phar_uri_archive_and_entry(const char *uri, PtnPharArchiveState **archive_out, char **entry_out);
+static int ptn_phar_uri_open_directory(const char *uri, PtnPharDirectoryData **directory_out);
+static const char *ptn_phar_directory_next(PtnPharDirectoryData *directory);
+static void ptn_phar_directory_rewind(PtnPharDirectoryData *directory);
 static int ptn_phar_uri_chmod(const char *uri, int64_t permissions);
 static int ptn_phar_uri_unlink(PtnRuntime *runtime, const char *uri, size_t line);
 static int ptn_include_phar_plain_entry(PtnRuntime *runtime, const char *uri, PtnValue *result_out);
@@ -7796,6 +7800,7 @@ typedef struct {
 #if !defined(_WIN32)
     DIR *directory;
 #endif
+    PtnPharDirectoryData *phar_directory;
     char **glob_paths;
     size_t glob_count;
     size_t glob_index;
@@ -7870,11 +7875,19 @@ typedef struct {
     int writeback;
 } PtnPharStreamData;
 
+struct PtnPharDirectoryData {
+    char **entries;
+    size_t count;
+    size_t capacity;
+    size_t index;
+};
+
 static int ptn_phar_archive_find_entry_index(
     PtnPharArchiveState *archive,
     const char *name,
     size_t *index_out
 );
+static void ptn_phar_directory_data_free(void *data);
 static int ptn_phar_archive_entry_is_dir(PtnPharArchiveEntry *entry);
 static void ptn_phar_archive_set_entry(
     PtnPharArchiveState *archive,
@@ -53284,6 +53297,25 @@ static void ptn_emit_directory_null_deprecation(PtnRuntime *runtime, const char 
     ptn_emit_runtime_deprecation(runtime, message, line);
 }
 
+static void ptn_phar_directory_resource_close_hook(PtnResource *resource, void *data) {
+    if (resource != NULL && resource->directory == data) {
+        resource->directory = NULL;
+    }
+    ptn_phar_directory_data_free(data);
+}
+
+static PtnValue ptn_phar_directory_resource_value(PtnRuntime *runtime, const char *path) {
+    PtnPharDirectoryData *directory = NULL;
+    if (!ptn_phar_uri_open_directory(path, &directory)) {
+        return ptn_bool(0);
+    }
+    PtnResource *directory_resource = ptn_resource_new_directory(directory, path);
+    directory_resource->close_hook = ptn_phar_directory_resource_close_hook;
+    directory_resource->close_hook_data = directory;
+    ptn_runtime_set_last_directory(runtime, directory_resource);
+    return ptn_resource(directory_resource);
+}
+
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
@@ -53292,6 +53324,15 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "opendir(): Filename contains null byte", line);
         return ptn_bool(0);
+    }
+
+    if (strncmp(path, "phar://", 7) == 0) {
+        PtnValue resource = ptn_phar_directory_resource_value(runtime, path);
+        if (!ptn_is_truthy(resource)) {
+            ptn_emit_directory_open_warning(runtime, "opendir", path, strerror(errno), line);
+        }
+        free(path);
+        return resource;
     }
 
 #if defined(_WIN32)
@@ -53370,6 +53411,18 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "dir(): Filename contains null byte", line);
         return ptn_bool(0);
+    }
+
+    if (strncmp(path, "phar://", 7) == 0) {
+        PtnValue handle = ptn_phar_directory_resource_value(runtime, path);
+        if (!ptn_is_truthy(handle)) {
+            ptn_emit_directory_open_warning(runtime, "dir", path, strerror(errno), line);
+            free(path);
+            return ptn_bool(0);
+        }
+        PtnValue object = ptn_directory_object_from_resource(runtime, handle, path, line);
+        free(path);
+        return object;
     }
 
 #if defined(_WIN32)
@@ -56251,6 +56304,10 @@ static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const Ptn
     if (resource == NULL) {
         return ptn_null();
     }
+    if (resource->close_hook == ptn_phar_directory_resource_close_hook) {
+        const char *entry = ptn_phar_directory_next((PtnPharDirectoryData *)resource->directory);
+        return entry == NULL ? ptn_bool(0) : ptn_owned_string(ptn_duplicate_string(entry));
+    }
 #if defined(_WIN32)
     return ptn_bool(0);
 #else
@@ -56266,6 +56323,10 @@ static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const Ptn
 static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnResource *resource = ptn_internal_expect_open_directory_arg(runtime, "rewinddir", argc, args, line);
     if (resource == NULL) {
+        return ptn_null();
+    }
+    if (resource->close_hook == ptn_phar_directory_resource_close_hook) {
+        ptn_phar_directory_rewind((PtnPharDirectoryData *)resource->directory);
         return ptn_null();
     }
 #if !defined(_WIN32)
@@ -143153,6 +143214,269 @@ static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out) {
     return 0;
 }
 
+static PtnPharDirectoryData *ptn_phar_directory_data_new(void) {
+    PtnPharDirectoryData *directory = malloc(sizeof(PtnPharDirectoryData));
+    if (directory == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    directory->entries = NULL;
+    directory->count = 0;
+    directory->capacity = 0;
+    directory->index = 0;
+    return directory;
+}
+
+static void ptn_phar_directory_data_free(void *data) {
+    PtnPharDirectoryData *directory = (PtnPharDirectoryData *)data;
+    if (directory == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < directory->count; i++) {
+        free(directory->entries[i]);
+    }
+    free(directory->entries);
+    free(directory);
+}
+
+static int ptn_phar_directory_contains(PtnPharDirectoryData *directory, const char *name) {
+    if (directory == NULL || name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < directory->count; i++) {
+        if (strcmp(directory->entries[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_phar_directory_add_unique(PtnPharDirectoryData *directory, const char *name, size_t len) {
+    if (directory == NULL || name == NULL || len == 0) {
+        return;
+    }
+    char *entry = ptn_duplicate_string_len(name, len);
+    if (ptn_phar_directory_contains(directory, entry)) {
+        free(entry);
+        return;
+    }
+    if (directory->count == directory->capacity) {
+        size_t new_capacity = directory->capacity == 0 ? 4 : directory->capacity * 2;
+        if (new_capacity < directory->capacity) {
+            free(entry);
+            ptn_abort_out_of_memory();
+        }
+        char **new_entries = realloc(directory->entries, new_capacity * sizeof(char *));
+        if (new_entries == NULL) {
+            free(entry);
+            ptn_abort_out_of_memory();
+        }
+        directory->entries = new_entries;
+        directory->capacity = new_capacity;
+    }
+    size_t insert_at = directory->count;
+    while (insert_at > 0 && strcmp(directory->entries[insert_at - 1], entry) > 0) {
+        directory->entries[insert_at] = directory->entries[insert_at - 1];
+        insert_at--;
+    }
+    directory->entries[insert_at] = entry;
+    directory->count++;
+}
+
+static const char *ptn_phar_directory_next(PtnPharDirectoryData *directory) {
+    if (directory == NULL || directory->index >= directory->count) {
+        return NULL;
+    }
+    return directory->entries[directory->index++];
+}
+
+static void ptn_phar_directory_rewind(PtnPharDirectoryData *directory) {
+    if (directory != NULL) {
+        directory->index = 0;
+    }
+}
+
+static PtnPharArchiveState *ptn_phar_archive_find_path_or_alias_len(const char *name, size_t len) {
+    PtnPharArchiveState *archive = ptn_phar_archive_find_path_len(name, len);
+    if (archive != NULL) {
+        return archive;
+    }
+    for (archive = ptn_phar_archives; archive != NULL; archive = archive->next) {
+        if (archive->alias == NULL) {
+            continue;
+        }
+        size_t alias_len = strlen(archive->alias);
+        if (alias_len == len && strncmp(archive->alias, name, len) == 0) {
+            return archive;
+        }
+    }
+    return NULL;
+}
+
+static PtnPharArchiveState *ptn_phar_archive_resolve_path_or_alias_len(const char *name, size_t len) {
+    PtnPharArchiveState *archive = ptn_phar_archive_find_path_or_alias_len(name, len);
+    if (archive != NULL) {
+        return archive;
+    }
+    char *archive_path = ptn_duplicate_string_len(name, len);
+    if (ptn_phar_path_looks_like_archive(archive_path) && ptn_path_exists_c(archive_path)) {
+        archive = ptn_phar_archive_for_path(archive_path);
+    }
+    free(archive_path);
+    return archive;
+}
+
+static int ptn_phar_uri_archive_and_directory(
+    const char *uri,
+    PtnPharArchiveState **archive_out,
+    char **entry_out
+) {
+    if (archive_out != NULL) {
+        *archive_out = NULL;
+    }
+    if (entry_out != NULL) {
+        *entry_out = NULL;
+    }
+    if (uri == NULL || strncmp(uri, "phar://", 7) != 0) {
+        return 0;
+    }
+    const char *body = uri + 7;
+    if (body[0] == '\0') {
+        return 0;
+    }
+    for (size_t i = 1; body[i] != '\0'; i++) {
+        if (!ptn_path_is_separator(body[i])) {
+            continue;
+        }
+        PtnPharArchiveState *archive = ptn_phar_archive_resolve_path_or_alias_len(body, i);
+        if (archive == NULL) {
+            continue;
+        }
+        if (archive_out != NULL) {
+            *archive_out = archive;
+        }
+        if (entry_out != NULL) {
+            *entry_out = ptn_duplicate_string(body + i + 1);
+        }
+        return 1;
+    }
+    size_t body_len = strlen(body);
+    PtnPharArchiveState *archive = ptn_phar_archive_resolve_path_or_alias_len(body, body_len);
+    if (archive == NULL) {
+        return 0;
+    }
+    if (archive_out != NULL) {
+        *archive_out = archive;
+    }
+    if (entry_out != NULL) {
+        *entry_out = ptn_duplicate_string("");
+    }
+    return 1;
+}
+
+static char *ptn_phar_directory_prefix(const char *entry_name) {
+    if (entry_name == NULL || entry_name[0] == '\0' || strcmp(entry_name, "/") == 0) {
+        return ptn_duplicate_string("");
+    }
+    while (*entry_name == '/' || *entry_name == '\\') {
+        entry_name++;
+    }
+    size_t len = strlen(entry_name);
+    while (len > 0 && (entry_name[len - 1] == '/' || entry_name[len - 1] == '\\')) {
+        len--;
+    }
+    if (len == 0) {
+        return ptn_duplicate_string("");
+    }
+    char *prefix = malloc(len + 2);
+    if (prefix == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(prefix, entry_name, len);
+    prefix[len] = '/';
+    prefix[len + 1] = '\0';
+    return prefix;
+}
+
+static int ptn_phar_archive_directory_exists(PtnPharArchiveState *archive, const char *entry_name, const char *prefix) {
+    if (archive == NULL) {
+        return 0;
+    }
+    if (prefix == NULL || prefix[0] == '\0') {
+        return 1;
+    }
+    size_t index = 0;
+    if (entry_name != NULL &&
+        ptn_phar_archive_find_entry_index(archive, entry_name, &index) &&
+        ptn_phar_archive_entry_is_dir(&archive->entries[index])) {
+        return 1;
+    }
+    if (prefix != NULL &&
+        ptn_phar_archive_find_entry_index(archive, prefix, &index) &&
+        ptn_phar_archive_entry_is_dir(&archive->entries[index])) {
+        return 1;
+    }
+    size_t prefix_len = strlen(prefix);
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        const char *name = archive->entries[i].name;
+        if (name != NULL && strncmp(name, prefix, prefix_len) == 0 && name[prefix_len] != '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_phar_uri_open_directory(const char *uri, PtnPharDirectoryData **directory_out) {
+    if (directory_out != NULL) {
+        *directory_out = NULL;
+    }
+    PtnPharArchiveState *archive = NULL;
+    char *entry_name = NULL;
+    if (!ptn_phar_uri_archive_and_directory(uri, &archive, &entry_name)) {
+        errno = ENOENT;
+        return 0;
+    }
+    char *prefix = ptn_phar_directory_prefix(entry_name);
+    if (!ptn_phar_archive_directory_exists(archive, entry_name, prefix)) {
+        free(prefix);
+        free(entry_name);
+        errno = ENOENT;
+        return 0;
+    }
+    PtnPharDirectoryData *directory = ptn_phar_directory_data_new();
+    size_t prefix_len = strlen(prefix);
+    for (size_t i = 0; i < archive->entry_count; i++) {
+        const char *name = archive->entries[i].name;
+        if (name == NULL) {
+            continue;
+        }
+        const char *remainder = name;
+        if (prefix_len != 0) {
+            if (strncmp(name, prefix, prefix_len) != 0) {
+                continue;
+            }
+            remainder = name + prefix_len;
+        }
+        if (remainder[0] == '\0') {
+            continue;
+        }
+        size_t child_len = 0;
+        while (remainder[child_len] != '\0' &&
+            remainder[child_len] != '/' &&
+            remainder[child_len] != '\\') {
+            child_len++;
+        }
+        ptn_phar_directory_add_unique(directory, remainder, child_len);
+    }
+    free(prefix);
+    free(entry_name);
+    if (directory_out != NULL) {
+        *directory_out = directory;
+    } else {
+        ptn_phar_directory_data_free(directory);
+    }
+    return 1;
+}
+
 static mode_t ptn_phar_archive_entry_mode(PtnPharArchiveEntry *entry) {
     int is_dir = ptn_phar_archive_entry_is_dir(entry);
     mode_t permissions = entry == NULL ? 0 : (mode_t)(entry->flags & 0777);
@@ -175138,6 +175462,7 @@ static void ptn_directory_iterator_data_free(void *data) {
         closedir(iterator_data->directory);
     }
 #endif
+    ptn_phar_directory_data_free(iterator_data->phar_directory);
     if (iterator_data->glob_paths != NULL) {
         for (size_t i = 0; i < iterator_data->glob_count; i++) {
             free(iterator_data->glob_paths[i]);
@@ -188990,6 +189315,17 @@ static void ptn_directory_iterator_read_current(
         );
         return;
     }
+    if (data != NULL && data->phar_directory != NULL) {
+        const char *entry = ptn_phar_directory_next(data->phar_directory);
+        if (entry == NULL) {
+            data->valid = 0;
+            free(data->current_name);
+            data->current_name = NULL;
+            return;
+        }
+        ptn_directory_iterator_set_current(runtime, object, data, entry, line);
+        return;
+    }
     if (data == NULL || data->directory == NULL) {
         if (data != NULL) {
             data->valid = 0;
@@ -189067,6 +189403,7 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
         ptn_abort_out_of_memory();
     }
     data->directory_path = ptn_duplicate_string(path);
+    data->phar_directory = NULL;
     data->glob_paths = NULL;
     data->glob_count = 0;
     data->glob_index = 0;
@@ -189090,6 +189427,10 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
             }
         }
         globfree(&matches);
+    } else if (strncmp(path, "phar://", 7) == 0) {
+        if (!ptn_phar_uri_open_directory(path, &data->phar_directory)) {
+            open_errno = errno;
+        }
     } else {
         data->directory = opendir(path);
         open_errno = errno;
@@ -189106,7 +189447,7 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     ptn_throw_exception(runtime, "UnexpectedValueException", "DirectoryIterator::__construct(): Failed to open directory: directory streams are unsupported on this platform");
     return ptn_null();
 #else
-    if (!glob_iterator && data->directory == NULL) {
+    if (!glob_iterator && data->directory == NULL && data->phar_directory == NULL) {
         char message[512];
         int written = snprintf(
             message,
@@ -189154,10 +189495,6 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    PtnDirectoryIteratorData *data = ptn_directory_iterator_data(runtime, receiver);
-    if (data == NULL) {
-        return ptn_null();
-    }
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue resolved_receiver = ptn_value_deref(receiver);
         const char *receiver_class = resolved_receiver.type == PTN_OBJECT
@@ -189187,6 +189524,10 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
             );
         }
         ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data(runtime, receiver);
+    if (data == NULL) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
@@ -189244,6 +189585,9 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
             rewinddir(data->directory);
         }
 #endif
+        if (data->phar_directory != NULL) {
+            ptn_phar_directory_rewind(data->phar_directory);
+        }
         data->key = 0;
         data->glob_index = 0;
         ptn_directory_iterator_read_current(runtime, receiver, data, line);

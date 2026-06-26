@@ -52828,6 +52828,104 @@ try {
 }
 
 #[test]
+fn compile_phar_directory_wrapper_iteration_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-directory-wrapper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-directory-wrapper.php");
+    let output = root.join("phar-directory-wrapper-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/dir-wrapper.phar.php';
+$phar = new Phar($fname);
+$phar->setAlias('hio');
+$phar['a'] = 'a';
+$phar['b/a'] = 'b';
+$phar['b/c/d'] = 'c';
+$phar['bad/c'] = 'd';
+
+$root = opendir('phar://hio/');
+while (false !== ($entry = readdir($root))) {
+    echo "root:", $entry, "\n";
+}
+rewinddir($root);
+echo "again:", readdir($root), "\n";
+closedir($root);
+
+$nested = opendir('phar://hio/b');
+while (false !== ($entry = readdir($nested))) {
+    echo "b:", $entry, "\n";
+}
+closedir($nested);
+
+$it = new DirectoryIterator('phar://hio/b/c');
+foreach ($it as $entry) {
+    echo "it:", $entry->getFilename(), "\n";
+}
+
+class MyDirectoryIterator extends DirectoryIterator
+{
+    function __construct($dir)
+    {
+        echo "construct\n";
+        parent::__construct($dir);
+    }
+
+    function rewind(): void
+    {
+        parent::rewind();
+    }
+
+    function valid(): bool
+    {
+        return parent::valid();
+    }
+
+    function key(): mixed
+    {
+        return parent::key();
+    }
+
+    function current(): mixed
+    {
+        return parent::current();
+    }
+
+    function next(): void
+    {
+        parent::next();
+    }
+}
+
+$subclass = new MyDirectoryIterator('phar://hio/b');
+foreach ($subclass as $entry) {
+    echo "sub:", $entry->getFilename(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "root:a\nroot:b\nroot:bad\nagain:a\nb:a\nb:c\nit:d\nconstruct\nsub:a\nsub:c\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_uri_open_directory"));
+    assert!(c_source.contains("ptn_phar_directory_next"));
+}
+
+#[test]
 fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
     fs::create_dir_all(&root).unwrap();
