@@ -140012,6 +140012,71 @@ static int ptn_zlib_option_value(PtnValue options, const char *name, PtnValue *v
     return 0;
 }
 
+static void ptn_zlib_throw_option_range_value_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *option_name,
+    int64_t min,
+    int64_t max
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): \"%s\" option must be between %lld and %lld",
+        function_name,
+        option_name,
+        (long long)min,
+        (long long)max
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_zlib_option_integer(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options,
+    const char *option_name,
+    int64_t min,
+    int64_t max,
+    int64_t *out
+) {
+    PtnValue option = ptn_null();
+    if (!ptn_stream_filter_option(options, option_name, &option)) {
+        return 1;
+    }
+
+    PtnValue resolved = ptn_value_deref(option);
+    if (resolved.type != PTN_INT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($options) the value for option \"%s\" must be of type int, %s given",
+            function_name,
+            option_name,
+            ptn_offset_container_type_name(resolved)
+        );
+        ptn_value_destroy(&option);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    if (resolved.as.integer < min || resolved.as.integer > max) {
+        ptn_value_destroy(&option);
+        ptn_zlib_throw_option_range_value_error(runtime, function_name, option_name, min, max);
+        return 0;
+    }
+    *out = resolved.as.integer;
+    ptn_value_destroy(&option);
+    return 1;
+}
+
 static int ptn_zlib_option_int(
     PtnRuntime *runtime,
     const char *function_name,
@@ -140192,20 +140257,32 @@ static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, cons
         return ptn_null();
     }
     int64_t level_value = -1;
+    int64_t memory_value = 8;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
-        int found_level = 0;
-        int64_t level = -1;
-        if (!ptn_zlib_option_int(runtime, "deflate_init", "level", args[1], &level, &found_level)) {
+        if (!ptn_zlib_option_integer(
+            runtime,
+            "deflate_init",
+            args[1],
+            "level",
+            -1,
+            9,
+            &level_value
+        )) {
             return ptn_null();
         }
-        if (found_level && !ptn_zlib_level_is_valid(level)) {
-            ptn_zlib_throw_level_value_error(runtime, "deflate_init");
+        if (!ptn_zlib_option_integer(
+            runtime,
+            "deflate_init",
+            args[1],
+            "memory",
+            1,
+            9,
+            &memory_value
+        )) {
             return ptn_null();
-        }
-        if (found_level) {
-            level_value = level;
         }
     }
+    (void)memory_value;
     unsigned char *dictionary = NULL;
     size_t dictionary_len = 0;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL &&

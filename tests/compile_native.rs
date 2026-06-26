@@ -28340,6 +28340,10 @@ echo "reset-status:", inflate_get_status($ctx), "\n";
 try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
 try { inflate_init(ZLIB_ENCODING_DEFLATE, ["window" => []]); } catch (TypeError $e) { echo "window-option\n"; }
 try { gzdeflate("x", 99); } catch (ValueError $e) { echo "level-error\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => 42]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => -2]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["memory" => 0]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["memory" => 10]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
 
 @unlink($path);
@@ -28411,6 +28415,10 @@ reset-status:0\n\
 inflate-error\n\
 window-option\n\
 level-error\n\
+deflate_init(): \"level\" option must be between -1 and 9\n\
+deflate_init(): \"level\" option must be between -1 and 9\n\
+deflate_init(): \"memory\" option must be between 1 and 9\n\
+deflate_init(): \"memory\" option must be between 1 and 9\n\
 option-error\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

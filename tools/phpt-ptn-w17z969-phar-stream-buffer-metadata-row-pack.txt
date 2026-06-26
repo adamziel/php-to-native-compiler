@@ -1,0 +1,15 @@
+# ptn-w17z.969 focused PHAR/zlib/stream buffer/build/metadata row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T225921Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/standard/tests/streams/set_file_buffer.phpt
+ext/phar/tests/phar_buildfromiterator4.phpt
+ext/zlib/tests/bug75299.phpt
+ext/phar/tests/tar/frontcontroller19.phar.phpt
+ext/phar/tests/tar/tar_nostub.phpt
+ext/phar/tests/create_new_phar_b.phpt
+ext/phar/tests/bug70019.phpt
+ext/phar/tests/metadata_read.phpt
+ext/zlib/tests/deflate_init_error.phpt
+ext/phar/tests/phar_decompress.phpt
+ext/phar/tests/phar_oo_compressed_002.phpt
+ext/phar/tests/metadata_write.phpt
