@@ -23679,6 +23679,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "fnmatch"
             | "fclose"
             | "feof"
+            | "fdatasync"
             | "fflush"
             | "fgetc"
             | "fgetcsv"

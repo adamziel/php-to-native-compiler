@@ -51581,6 +51581,7 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
+static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime);
 static int ptn_try_read_data_url_bytes_with_detail(
     const char *path,
     unsigned char **data_out,
@@ -52450,13 +52451,37 @@ static char *ptn_duplicate_open_stream_detail(const char *detail) {
 static int ptn_try_open_php_fd_stream(const char *path, PtnValue *out, char **detail_out) {
     const char *prefix = "php://fd/";
     size_t prefix_len = strlen(prefix);
+    if (path != NULL && ptn_ascii_case_equal(path, "php://fd")) {
+        if (detail_out != NULL) {
+            *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+        }
+        return -1;
+    }
     if (path == NULL || !ptn_ascii_case_has_prefix(path, prefix)) {
         return 0;
     }
     const char *digits = path + prefix_len;
     if (*digits == '\0') {
         if (detail_out != NULL) {
-            *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+            *detail_out = ptn_duplicate_open_stream_detail(
+                "php://fd/ stream must be specified in the form php://fd/<orig fd>"
+            );
+        }
+        return -1;
+    }
+    if (*digits == '-') {
+        if (detail_out != NULL) {
+            char detail[128];
+            int needed = snprintf(
+                detail,
+                sizeof(detail),
+                "The file descriptors must be non-negative numbers smaller than %d",
+                INT_MAX
+            );
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            *detail_out = ptn_duplicate_open_stream_detail(detail);
         }
         return -1;
     }
@@ -52465,14 +52490,26 @@ static int ptn_try_open_php_fd_stream(const char *path, PtnValue *out, char **de
         unsigned char byte = (unsigned char)*cursor;
         if (byte < '0' || byte > '9') {
             if (detail_out != NULL) {
-                *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+                *detail_out = ptn_duplicate_open_stream_detail(
+                    "php://fd/ stream must be specified in the form php://fd/<orig fd>"
+                );
             }
             return -1;
         }
         int64_t digit = (int64_t)(byte - '0');
         if (parsed > (INT_MAX - digit) / 10) {
             if (detail_out != NULL) {
-                *detail_out = ptn_duplicate_open_stream_detail("operation failed");
+                char detail[128];
+                int needed = snprintf(
+                    detail,
+                    sizeof(detail),
+                    "The file descriptors must be non-negative numbers smaller than %d",
+                    INT_MAX
+                );
+                if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                    ptn_abort_out_of_memory();
+                }
+                *detail_out = ptn_duplicate_open_stream_detail(detail);
             }
             return -1;
         }
@@ -55171,6 +55208,37 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static int ptn_stream_file_descriptor(FILE *stream);
+
+static PtnValue ptn_internal_fdatasync(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fdatasync", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (resource->stream_backend == PTN_STREAM_BACKEND_OUTPUT) {
+        return ptn_bool(0);
+    }
+    if (resource->stream_backend != PTN_STREAM_BACKEND_FILE || resource->stream == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "fdatasync(): Can't fsync this stream!", line);
+        return ptn_bool(0);
+    }
+    if (fflush(resource->stream) != 0) {
+        return ptn_bool(0);
+    }
+    int descriptor = ptn_stream_file_descriptor(resource->stream);
+    if (descriptor < 0) {
+        return ptn_bool(0);
+    }
+#if defined(_WIN32)
+    return ptn_bool(_commit(descriptor) == 0);
+#elif defined(_POSIX_SYNCHRONIZED_IO) && _POSIX_SYNCHRONIZED_IO > 0
+    return ptn_bool(fdatasync(descriptor) == 0);
+#else
+    return ptn_bool(fsync(descriptor) == 0);
+#endif
+}
+
 static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fgetc", args[0], line);
@@ -55786,14 +55854,142 @@ static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, si
     return resolved == NULL ? ptn_bool(0) : ptn_owned_string(resolved);
 }
 
+static char *ptn_open_basedir_absolute_normalized_path(const char *path) {
+    if (path == NULL || path[0] == '\0' || ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return ptn_duplicate_string(path == NULL ? "" : path);
+    }
+    if (ptn_path_string_is_absolute(path)) {
+        return ptn_normalize_filesystem_path(path, strlen(path));
+    }
+
+    char cwd[4096];
+#if defined(_WIN32)
+    char *cwd_result = _getcwd(cwd, sizeof(cwd));
+#else
+    char *cwd_result = getcwd(cwd, sizeof(cwd));
+#endif
+    if (cwd_result == NULL) {
+        return ptn_normalize_filesystem_path(path, strlen(path));
+    }
+    char *joined = ptn_path_join_alloc(cwd, path);
+    char *normalized = ptn_normalize_filesystem_path(joined, strlen(joined));
+    free(joined);
+    return normalized;
+}
+
+static int ptn_open_basedir_path_prefix_matches(const char *path, const char *base) {
+    size_t base_len = strlen(base);
+    if (base_len == 0) {
+        return 0;
+    }
+    size_t path_len = strlen(path);
+    if (strcmp(base, "/") == 0) {
+        return path_len > 0 && path[0] == '/';
+    }
+#if defined(_WIN32)
+    if (base_len == 3 && isalpha((unsigned char)base[0]) && base[1] == ':' && ptn_path_is_separator(base[2])) {
+        return path_len >= 3 &&
+            tolower((unsigned char)path[0]) == tolower((unsigned char)base[0]) &&
+            path[1] == ':' &&
+            ptn_path_is_separator(path[2]);
+    }
+#endif
+    if (path_len < base_len || memcmp(path, base, base_len) != 0) {
+        return 0;
+    }
+    return path_len == base_len || ptn_path_is_separator(path[base_len]);
+}
+
+static int ptn_open_basedir_allows_path(PtnRuntime *runtime, const char *path) {
+    const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
+    if (open_basedir == NULL || open_basedir[0] == '\0') {
+        return 1;
+    }
+    char *normalized_path = ptn_open_basedir_absolute_normalized_path(path);
+    const char separator =
+#if defined(_WIN32)
+        ';';
+#else
+        ':';
+#endif
+    const char *segment = open_basedir;
+    while (segment != NULL) {
+        const char *end = strchr(segment, separator);
+        size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
+        if (segment_len > 0) {
+            char *base = ptn_duplicate_string_len(segment, segment_len);
+            char *normalized_base = ptn_open_basedir_absolute_normalized_path(base);
+            free(base);
+            int allowed = ptn_open_basedir_path_prefix_matches(normalized_path, normalized_base);
+            free(normalized_base);
+            if (allowed) {
+                free(normalized_path);
+                return 1;
+            }
+        }
+        if (end == NULL) {
+            break;
+        }
+        segment = end + 1;
+    }
+    free(normalized_path);
+    return 0;
+}
+
+static void ptn_emit_open_basedir_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line
+) {
+    const char *open_basedir = ptn_runtime_current_open_basedir(runtime);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): open_basedir restriction in effect. File(%s) is not within the allowed path(s): (%s)",
+        function_name,
+        path,
+        open_basedir
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): open_basedir restriction in effect. File(%s) is not within the allowed path(s): (%s)",
+        function_name,
+        path,
+        open_basedir
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
+    const char *function_name,
     const char *path,
     int use_include_path,
     unsigned char **data_out,
     size_t *len_out,
-    char **opened_path_out
+    char **opened_path_out,
+    size_t line
 ) {
+    if (!ptn_open_basedir_allows_path(runtime, path)) {
+        ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+        errno = EPERM;
+        *opened_path_out = ptn_duplicate_string(path);
+        return 0;
+    }
     int result = ptn_read_file_bytes(path, data_out, len_out);
     if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
         result = 1;
@@ -55882,9 +56078,6 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     if (path == NULL) {
         return ptn_null();
     }
-    char *normalized_path = ptn_normalize_filesystem_path(path, strlen(path));
-    free(path);
-    path = normalized_path;
 
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     const int64_t valid_flags = PTN_FILE_USE_INCLUDE_PATH |
@@ -55910,7 +56103,7 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     const char *zlib_path = NULL;
     int read_result = ptn_zlib_uri_path(path, &zlib_path)
         ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
-        : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
+        : ptn_read_file_bytes_with_search(runtime, "file", path, use_include_path, &data, &data_len, &opened_path, line);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(
@@ -55969,7 +56162,7 @@ static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const Pt
     const char *zlib_path = NULL;
     int read_result = ptn_zlib_uri_path(path, &zlib_path)
         ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
-        : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
+        : ptn_read_file_bytes_with_search(runtime, "readfile", path, use_include_path, &data, &data_len, &opened_path, line);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(
@@ -57891,7 +58084,16 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         ? ptn_phar_uri_read_entry(path, &data, &data_len)
         : fallback_path == NULL && ptn_zlib_uri_path(path, &zlib_path)
         ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
-        : ptn_read_file_bytes_with_search(runtime, read_path, use_include_path, &data, &data_len, &opened_path);
+        : ptn_read_file_bytes_with_search(
+            runtime,
+            "file_get_contents",
+            read_path,
+            use_include_path,
+            &data,
+            &data_len,
+            &opened_path,
+            line
+        );
     if (read_result <= 0) {
         if (data_url_detail != NULL) {
             ptn_emit_file_warning(runtime, "file_get_contents", path, data_url_detail, line);
@@ -91506,7 +91708,7 @@ static PtnValue ptn_internal_parse_ini_file(PtnRuntime *runtime, size_t argc, co
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
-    int read_result = ptn_read_file_bytes_with_search(runtime, path, 1, &data, &data_len, &opened_path);
+    int read_result = ptn_read_file_bytes_with_search(runtime, "parse_ini_file", path, 1, &data, &data_len, &opened_path, line);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
@@ -155857,6 +156059,7 @@ static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnVa
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fdatasync(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -156224,6 +156427,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "extension_loaded", 1, 1, ptn_internal_extension_loaded },
         { "extract", 1, 3, ptn_internal_extract },
         { "fclose", 1, 1, ptn_internal_fclose },
+        { "fdatasync", 1, 1, ptn_internal_fdatasync },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "feof", 1, 1, ptn_internal_feof },
         { "fflush", 1, 1, ptn_internal_fflush },

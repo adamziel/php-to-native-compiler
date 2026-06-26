@@ -28898,6 +28898,200 @@ string(27) \"Failed to parse address \"[\"\"\n"
 }
 
 #[test]
+fn compile_fdatasync_file_and_non_file_streams_to_native_binary() {
+    let root = temp_dir("ptn-native-fdatasync-streams");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fdatasync-streams.php");
+    let output = root.join("fdatasync-streams-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/sync.txt";
+$file = fopen($path, "w");
+var_dump(fwrite($file, "abc"));
+var_dump(fdatasync($file));
+var_dump(file_get_contents($path));
+$memory = fopen("php://memory", "w");
+var_dump(fdatasync($memory));
+@unlink($path);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("int(3)\nbool(true)\nstring(3) \"abc\"\n\nWarning: fdatasync(): Can't fsync this stream!"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_fdatasync"));
+}
+
+#[test]
+fn compile_php_fd_bad_syntax_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-php-fd-bad-syntax");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-fd-bad-syntax.php");
+    let output = root.join("php-fd-bad-syntax-bin");
+    fs::write(
+        &input,
+        r#"<?php
+fopen("php://fd", "w");
+fopen("php://fd/", "w");
+fopen("php://fd/-2", "w");
+fopen("php://fd/1/", "w");
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("fopen(php://fd): Failed to open stream: operation failed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "fopen(php://fd/): Failed to open stream: php://fd/ stream must be specified in the form php://fd/<orig fd>"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("fopen(php://fd/-2): Failed to open stream: The file descriptors must be non-negative numbers smaller than"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "fopen(php://fd/1/): Failed to open stream: php://fd/ stream must be specified in the form php://fd/<orig fd>"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_open_basedir_blocks_outside_file_get_contents_to_native_binary() {
+    let root = temp_dir("ptn-native-open-basedir-file-get-contents");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("open-basedir.php");
+    let output = root.join("open-basedir-bin");
+    fs::write(
+        &input,
+        r#"<?php
+ini_set("open_basedir", getcwd());
+var_dump(file_get_contents("/some/path/outside/open/basedir"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).current_dir(&root).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("file_get_contents(): open_basedir restriction in effect."),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("File(/some/path/outside/open/basedir) is not within the allowed path(s):"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "file_get_contents(/some/path/outside/open/basedir): Failed to open stream: Operation not permitted"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_parse_ini_file_normal_boolean_values_to_native_binary() {
+    let root = temp_dir("ptn-native-parse-ini-file-booleans");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parse-ini-file-booleans.php");
+    let output = root.join("parse-ini-file-booleans-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/values.ini";
+file_put_contents($path, "[section]\nyes=yes\non=on\ntrue=true\nno=no\noff=off\nfalse=false\nnull=null\nempty=\n");
+$values = parse_ini_file($path, true);
+var_dump(
+    $values["section"]["yes"],
+    $values["section"]["on"],
+    $values["section"]["true"],
+    $values["section"]["no"],
+    $values["section"]["off"],
+    $values["section"]["false"],
+    $values["section"]["null"],
+    $values["section"]["empty"]
+);
+@unlink($path);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"1\"\n\
+string(1) \"1\"\n\
+string(1) \"1\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_file_warning_preserves_unresolved_path_to_native_binary() {
+    let root = temp_dir("ptn-native-file-warning-unresolved-path");
+    fs::create_dir_all(root.join("main/sub")).unwrap();
+    let input = root.join("file-warning-unresolved-path.php");
+    let output = root.join("file-warning-unresolved-path-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$path = __DIR__ . "/main/sub/..///sub//..//../sub/missing.txt";
+var_dump(file($path));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("/main/sub/..///sub//..//../sub/missing.txt): Failed to open stream: No such file or directory"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_string_filters_to_native_binary() {
     let root = temp_dir("ptn-native-stream-string-filters");
     fs::create_dir_all(&root).unwrap();

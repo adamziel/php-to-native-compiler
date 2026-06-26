@@ -1,0 +1,19 @@
+# Full-corpus ext/standard file/path row pack for ptn-w17z.949.
+#
+# Paths are relative to PHP_SRC_PHPT.
+#
+# Run:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-w17z949-file-fnmatch-fdatasync-path-row-pack.txt
+
+ext/standard/tests/file/fnmatch_variation.phpt
+ext/standard/tests/file/fdatasync.phpt
+ext/standard/tests/file/open_basedir_cwd_resolve.phpt
+ext/standard/tests/file/file_variation8.phpt
+ext/standard/tests/file/file_error.phpt
+ext/standard/tests/file/fnmatch_maxpathlen.phpt
+ext/standard/tests/file/parse_ini_file_variation2.phpt
+ext/standard/tests/file/userstreams_005.phpt
+ext/standard/tests/file/php_fd_wrapper_03.phpt
+ext/standard/tests/file/realpath_bug77484.phpt
+ext/standard/tests/file/proc_open_with_wrong_resource_type.phpt
+ext/standard/tests/file/rename_variation13.phpt
