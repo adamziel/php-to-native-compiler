@@ -24979,6 +24979,7 @@ $cases = [\n\
     'instance of classWithoutToString' => new WithoutToString(),\n\
 ];\n\
 foreach ($cases as $label => $value) {\n\
+    file_put_contents($path, '');\n\
     file_put_contents($path, $value);\n\
     echo $label, ':', file_get_contents($path), \"\\n\";\n\
 }\n\
@@ -25008,6 +25009,59 @@ foreach ($cases as $label => $value) {\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_file_put_contents_data_operand"));
     assert!(c_source.contains("ptn_try_object_to_string_operand"));
+}
+
+#[test]
+fn compile_file_put_contents_resource_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-file-put-contents-resource-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-put-contents-resource-validation.php");
+    let output = root.join("file-put-contents-resource-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class foo { function __toString() { return __METHOD__; } }\n\
+$file = __DIR__ . '/file-put-contents.txt';\n\
+$copy = __DIR__ . '/file-put-contents-copy.txt';\n\
+$context = stream_context_create();\n\
+try {\n\
+    var_dump(file_put_contents($file, $context));\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(file_put_contents($file, new stdClass));\n\
+var_dump(file_put_contents($file, new foo));\n\
+$fp = fopen($file, 'r');\n\
+fread($fp, 1);\n\
+var_dump(file_put_contents($copy, $fp));\n\
+var_dump(file_get_contents($copy));\n\
+try {\n\
+    var_dump(file_put_contents($file, 'string', 0, $fp));\n\
+} catch (TypeError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+fclose($fp);\n\
+@unlink($file);\n\
+@unlink($copy);\n\
+echo \"Done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "file_put_contents(): supplied resource is not a valid stream resource\n\
+bool(false)\n\
+int(15)\n\
+int(14)\n\
+string(14) \"oo::__toString\"\n\
+file_put_contents(): supplied resource is not a valid Stream-Context resource\n\
+Done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -94454,6 +94508,39 @@ bool(true)\n\
 bool(false)\n\
 string(4) \"abcx\"\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_file_stream_reads_observe_concurrent_appends_to_native_binary() {
+    let root = temp_dir("ptn-native-file-stream-concurrent-append-read");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-stream-concurrent-append-read.php");
+    let output = root.join("file-stream-concurrent-append-read-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filename = __DIR__ . '/concurrent.txt';\n\
+@unlink($filename);\n\
+$writer = fopen($filename, 'wt');\n\
+$reader = fopen($filename, 'r');\n\
+fread($reader, 1);\n\
+fwrite($writer, 'foo');\n\
+if (strlen(fread($reader, 10)) > 0) {\n\
+    echo \"OK\\n\";\n\
+}\n\
+fclose($writer);\n\
+fclose($reader);\n\
+@unlink($filename);\n\
+echo \"Done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "OK\nDone\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

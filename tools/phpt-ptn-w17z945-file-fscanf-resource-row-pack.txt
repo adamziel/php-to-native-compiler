@@ -1,0 +1,12 @@
+ext/standard/tests/file/userstreams_004.phpt
+ext/standard/tests/file/bug41815.phpt
+ext/standard/tests/file/rename_variation12.phpt
+ext/standard/tests/file/fscanf_variation44.phpt
+ext/standard/tests/file/file_put_contents.phpt
+ext/standard/tests/file/fscanf_variation24.phpt
+ext/standard/tests/file/fscanf_variation7.phpt
+ext/standard/tests/file/fscanf_variation14.phpt
+ext/standard/tests/file/bug38450_2.phpt
+ext/standard/tests/file/bug22414.phpt
+ext/standard/tests/file/popen_pclose_basic.phpt
+ext/standard/tests/file/bug68532.phpt

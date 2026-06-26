@@ -4520,6 +4520,10 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
             return 0;
         }
         size_t read_len = fread(buffer, 1, len, resource->stream);
+        if (read_len == 0 && feof(resource->stream) && len != 0) {
+            clearerr(resource->stream);
+            read_len = fread(buffer, 1, len, resource->stream);
+        }
         if (read_len == 0 && ferror(resource->stream) && ptn_stream_errno_would_block(errno)) {
             clearerr(resource->stream);
         }

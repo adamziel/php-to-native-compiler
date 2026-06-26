@@ -57007,7 +57007,8 @@ static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, con
 static PtnStringOperand ptn_file_put_contents_value_operand(
     PtnRuntime *runtime,
     PtnValue value,
-    size_t line
+    size_t line,
+    int *ok
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE) {
@@ -57015,6 +57016,7 @@ static PtnStringOperand ptn_file_put_contents_value_operand(
         if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
             return object_string;
         }
+        *ok = 0;
         return ptn_string_operand_borrowed("");
     }
     if (value.type == PTN_ARRAY) {
@@ -57023,14 +57025,70 @@ static PtnStringOperand ptn_file_put_contents_value_operand(
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
 
+static PtnStringOperand ptn_file_put_contents_stream_operand(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    size_t line,
+    int *ok
+) {
+    if (resource == NULL ||
+        strcmp(resource->type_name, "stream") != 0 ||
+        !ptn_stream_resource_is_open(resource)) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "file_put_contents(): supplied resource is not a valid stream resource"
+        );
+        *ok = 0;
+        return ptn_string_operand_borrowed("");
+    }
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (;;) {
+        size_t chunk_len = 0;
+        int read_ok = 0;
+        char *chunk = ptn_stream_read_filtered_bytes(
+            runtime,
+            "file_put_contents",
+            resource,
+            8192,
+            line,
+            &chunk_len,
+            &read_ok
+        );
+        if (!read_ok) {
+            free(chunk);
+            free(buffer.data);
+            *ok = 0;
+            return ptn_string_operand_borrowed("");
+        }
+        if (chunk_len == 0) {
+            free(chunk);
+            break;
+        }
+        ptn_string_buffer_append_len(&buffer, chunk, chunk_len);
+        free(chunk);
+        if (chunk_len < 8192) {
+            break;
+        }
+    }
+    return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+}
+
 static PtnStringOperand ptn_file_put_contents_data_operand(
     PtnRuntime *runtime,
     PtnValue value,
-    size_t line
+    size_t line,
+    int *ok
 ) {
     value = ptn_value_deref(value);
+    *ok = 1;
+    if (value.type == PTN_RESOURCE) {
+        return ptn_file_put_contents_stream_operand(runtime, value.as.resource, line, ok);
+    }
     if (value.type != PTN_ARRAY) {
-        return ptn_file_put_contents_value_operand(runtime, value, line);
+        return ptn_file_put_contents_value_operand(runtime, value, line, ok);
     }
 
     PtnStringBuffer buffer;
@@ -57039,12 +57097,56 @@ static PtnStringOperand ptn_file_put_contents_data_operand(
         PtnStringOperand entry = ptn_file_put_contents_value_operand(
             runtime,
             value.as.array->entries[i].value,
-            line
+            line,
+            ok
         );
+        if (!*ok) {
+            ptn_string_operand_free(entry);
+            free(buffer.data);
+            return ptn_string_operand_borrowed("");
+        }
         ptn_string_buffer_append_len(&buffer, entry.data, entry.len);
         ptn_string_operand_free(entry);
     }
     return (PtnStringOperand) { buffer.data, buffer.data, buffer.len };
+}
+
+static int ptn_file_put_contents_validate_context_arg(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type != PTN_RESOURCE) {
+        const char *given = value.type == PTN_OBJECT
+            ? value.as.object->class_name
+            : ptn_offset_container_type_name(value);
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "file_put_contents(): Argument #4 ($context) must be of type resource or null, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        (void)line;
+        return 0;
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "file_put_contents(): supplied resource is not a valid Stream-Context resource"
+        );
+        return 0;
+    }
+    return 1;
 }
 
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -57060,7 +57162,13 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    PtnStringOperand data = ptn_file_put_contents_data_operand(runtime, args[1], line);
+    int data_ok = 0;
+    PtnStringOperand data = ptn_file_put_contents_data_operand(runtime, args[1], line, &data_ok);
+    if (!data_ok || runtime->exceptions->active_exception != NULL) {
+        free(path);
+        ptn_string_operand_free(data);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
     int64_t flags = 0;
     if (argc >= 3) {
         flags = ptn_internal_expect_integer_arg(runtime, "file_put_contents", 3, "flags", args[2], line);
@@ -57069,6 +57177,11 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
             ptn_string_operand_free(data);
             return ptn_null();
         }
+    }
+    if (argc >= 4 && !ptn_file_put_contents_validate_context_arg(runtime, args[3], line)) {
+        free(path);
+        ptn_string_operand_free(data);
+        return ptn_null();
     }
     if (strncmp(path, "phar://", 7) == 0) {
         unsigned char *write_data = (unsigned char *)data.data;
