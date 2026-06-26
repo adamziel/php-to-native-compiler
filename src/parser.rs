@@ -26210,6 +26210,7 @@ fn modeled_internal_may_return_string(name: &str) -> bool {
             | "hash_pbkdf2"
             | "hex2bin"
             | "gzcompress"
+            | "gzuncompress"
             | "html_entity_decode"
             | "htmlentities"
             | "iconv"

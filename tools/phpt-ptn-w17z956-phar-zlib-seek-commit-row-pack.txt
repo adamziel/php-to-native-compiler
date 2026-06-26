@@ -1,0 +1,12 @@
+ext/phar/tests/gh17518.phpt
+ext/zlib/tests/bug71417.phpt
+ext/phar/tests/fseek_outside_bounds.phpt
+ext/zlib/tests/gzuncompress_basic1.phpt
+ext/phar/tests/rename.phpt
+ext/phar/tests/bug48377.2.phpt
+ext/phar/tests/test_signaturealgos.phpt
+ext/zlib/tests/gzread_basic.phpt
+ext/phar/tests/zip/phar_commitwrite.phpt
+ext/phar/tests/phar_metadata_read.phpt
+ext/phar/tests/tar/delete_in_phar.phpt
+ext/phar/tests/phar-is-link-intercept.phpt

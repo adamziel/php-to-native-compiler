@@ -28219,6 +28219,9 @@ $constants = get_defined_constants(true);
 var_dump(ZLIB_ENCODING_DEFLATE, FORCE_GZIP, $constants["zlib"]["ZLIB_ENCODING_GZIP"]);
 var_dump(bin2hex(substr(gzencode("abc"), 0, 2)));
 var_dump(bin2hex(substr(gzcompress("abc"), 0, 2)));
+$gzcompressed = gzcompress($data);
+var_dump(gzuncompress($gzcompressed) === $data);
+var_dump(strlen(gzuncompress($gzcompressed, strlen($data))));
 
 $h = gzopen($path, "w");
 var_dump(gzwrite($h, "ignored", 0));
@@ -28262,6 +28265,26 @@ $z = fopen("compress.zlib://$truncated", "w");
 var_dump(ftruncate($z, 0));
 fclose($z);
 
+$plain = "The quick brown fox jumps over the lazy dog.";
+$encoded = gzencode($plain);
+$truncated_gzip = substr($encoded, 0, strlen($encoded) - 20);
+$mem = fopen("php://temp", "w+");
+fwrite($mem, $truncated_gzip);
+rewind($mem);
+stream_filter_append($mem, "zlib.inflate", STREAM_FILTER_READ, ["window" => 15 + 16]);
+var_dump(fread($mem, 100));
+fclose($mem);
+
+$encoded[strlen($encoded) - 5] = "X";
+$mem = fopen("php://temp", "w+");
+fwrite($mem, $encoded);
+rewind($mem);
+stream_filter_append($mem, "zlib.inflate", STREAM_FILTER_READ, ["window" => 15 + 16]);
+$old_reporting = error_reporting(0);
+var_dump(fread($mem, 100));
+error_reporting($old_reporting);
+fclose($mem);
+
 try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
 try { gzdeflate("x", 99); } catch (ValueError $e) { echo "level-error\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
@@ -28293,6 +28316,8 @@ int(31)\n\
 int(31)\n\
 string(4) \"1f8b\"\n\
 string(4) \"789c\"\n\
+bool(true)\n\
+int(16)\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
@@ -28309,6 +28334,8 @@ bool(true)\n\
 int(16)\n\
 string(4) \"1f8b\"\n\
 bool(false)\n\
+string(32) \"The quick brown fox jumps over t\"\n\
+bool(false)\n\
 inflate-error\n\
 level-error\n\
 option-error\n"
@@ -28316,6 +28343,7 @@ option-error\n"
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_gzwrite"));
     assert!(c_source.contains("ptn_internal_gzseek"));
     assert!(c_source.contains("ptn_internal_stream_filter_remove"));
