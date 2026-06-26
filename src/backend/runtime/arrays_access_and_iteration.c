@@ -13184,6 +13184,22 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_method_exists("RegexIterator", method_name)) {
         return 1;
     }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "FilterIterator") &&
+        ptn_internal_class_method_exists("FilterIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "IteratorIterator") &&
+        ptn_internal_class_method_exists("IteratorIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "InfiniteIterator") &&
+        ptn_internal_class_method_exists("InfiniteIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "NoRewindIterator") &&
+        ptn_internal_class_method_exists("NoRewindIterator", method_name)) {
+        return 1;
+    }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") &&
         ptn_internal_class_method_exists("RecursiveArrayIterator", method_name)) {
         return 1;

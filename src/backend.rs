@@ -16951,6 +16951,18 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_method_exists(class_name, method_name)) {\n");
+    out.push_str("        return ptn_reflection_method_object_from_name_with_reflected(\n");
+    out.push_str("            runtime,\n");
+    out.push_str(
+        "            ptn_reflection_method_internal_declaring_class(class_name, method_name),\n",
+    );
+    out.push_str("            method_name,\n");
+    out.push_str("            class_name\n");
+    out.push_str("        );\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return ptn_null();\n");
     out.push_str("}\n");
 

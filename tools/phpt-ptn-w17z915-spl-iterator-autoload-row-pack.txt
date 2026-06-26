@@ -1,0 +1,12 @@
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/iterator_048.phpt
+ext/spl/tests/SplTempFileObject_constructor_memory_lt1_variation.phpt
+ext/spl/tests/iterator_028.phpt
+ext/spl/tests/spl_007.phpt
+ext/spl/tests/bug47534.phpt
+ext/spl/tests/ArrayObject/bug54323.phpt
+ext/spl/tests/gh9883-extra.phpt
+ext/spl/tests/bug37457.phpt
+ext/spl/tests/bug70303.phpt

@@ -1835,6 +1835,106 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_filter_iterator_accept_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-filter-iterator-accept-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filter-iterator-accept-exception.php");
+    let output = root.join("filter-iterator-accept-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Collection implements Iterator
+{
+    protected $array, $valid = false;
+
+    public function __construct(array $a)
+    {
+        echo __METHOD__ . "\n";
+        $this->array = $a;
+    }
+
+    public function current(): mixed
+    {
+        echo __METHOD__ . "\n";
+        return current($this->array);
+    }
+
+    public function key(): mixed
+    {
+        echo __METHOD__ . "\n";
+        return key($this->array);
+    }
+
+    public function next(): void
+    {
+        echo __METHOD__ . "\n";
+        $this->valid = (false !== next($this->array));
+    }
+
+    public function valid(): bool
+    {
+        echo __METHOD__ . "\n";
+        return $this->valid;
+    }
+
+    public function rewind(): void
+    {
+        echo __METHOD__ . "\n";
+        $this->valid = (false !== reset($this->array));
+    }
+}
+
+class TestFilter extends FilterIterator
+{
+    public function accept(): bool
+    {
+        echo __METHOD__ . "\n";
+        throw new Exception("Failure in Accept");
+    }
+}
+
+$test = new TestFilter(new Collection(array(0)));
+
+try {
+    foreach ($test as $item) {
+        echo $item;
+    }
+} catch (Exception $e) {
+    var_dump($e->getMessage());
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_filter_iterator_skip_rejected"));
+    assert!(c_source.contains("ptn_iterator_iterator_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Collection::__construct\n",
+            "Collection::rewind\n",
+            "Collection::valid\n",
+            "Collection::current\n",
+            "Collection::key\n",
+            "TestFilter::accept\n",
+            "string(17) \"Failure in Accept\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_regex_iterator_replace_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-regex-iterator-replace-reference");
     fs::create_dir_all(&root).unwrap();
@@ -20040,6 +20140,41 @@ try {
             "ArrayObject::__construct(): Argument #3 ($iteratorClass) must be a class name derived from ArrayIterator, stdClass given\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_object_constructor_reflection_optional_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-constructor-reflection-optional");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-constructor-reflection-optional.php");
+    let output = root.join("array-object-constructor-reflection-optional-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$f = new ReflectionClass('ArrayObject');
+$c = $f->getConstructor();
+$params = $c->getParameters();
+$param = $params[0];
+var_dump($param->isOptional());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ArrayObject::__construct"));
+    assert!(c_source.contains("PTN_INTERNAL_ARRAY_OBJECT_CONSTRUCT_PARAMETERS"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(true)\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
