@@ -105012,6 +105012,7 @@ static void ptn_xml_skip_ws(const char *data, size_t len, size_t *pos);
 static int ptn_xml_name_char(unsigned char byte);
 static int ptn_xml_name_is_valid_span(const char *data, size_t len);
 static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos);
+static int ptn_dom_document_is_html(PtnXmlNode *node);
 static size_t ptn_xml_node_list_length(PtnXmlNodeListData *list);
 static PtnXmlNode *ptn_xml_node_list_item(PtnXmlNodeListData *list, size_t index);
 static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node);
@@ -109733,12 +109734,23 @@ static int ptn_html_raw_text_element_name(const char *name) {
         ptn_ascii_case_equal(name, "plaintext");
 }
 
+static int ptn_html_element_uses_html_rules(PtnXmlNode *node) {
+    if (node == NULL || node->type != PTN_XML_NODE_ELEMENT) {
+        return 0;
+    }
+    const char *uri = node->namespace_uri == NULL ? "" : node->namespace_uri;
+    if (strcmp(uri, ptn_dom_xhtml_namespace_uri()) == 0) {
+        return 1;
+    }
+    return uri[0] == '\0' && ptn_dom_document_is_html(node);
+}
+
 static void ptn_html_append_escaped_text(PtnStringBuffer *buffer, PtnXmlNode *node) {
     const char *value = node == NULL || node->value == NULL ? "" : node->value;
     size_t value_len = node == NULL ? 0 : node->value_len;
     PtnXmlNode *parent = node == NULL ? NULL : node->parent;
     const char *parent_name = parent == NULL ? "" : ptn_xml_local_name(parent->name == NULL ? "" : parent->name);
-    if (ptn_dom_node_is_html_namespace_element(parent) && ptn_html_raw_text_element_name(parent_name)) {
+    if (ptn_html_element_uses_html_rules(parent) && ptn_html_raw_text_element_name(parent_name)) {
         ptn_string_buffer_append_len(buffer, value, value_len);
         return;
     }
@@ -109895,7 +109907,7 @@ static void ptn_html_serialize_node(PtnStringBuffer *buffer, PtnXmlNode *node, i
         }
         ptn_string_buffer_append(buffer, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">");
     }
-    if (ptn_dom_node_is_html_namespace_element(node) && ptn_html_void_element_name(name)) {
+    if (ptn_html_element_uses_html_rules(node) && ptn_html_void_element_name(name)) {
         return;
     }
 

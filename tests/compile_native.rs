@@ -47166,6 +47166,105 @@ echo $roundtrip->saveHtml($roundtrip->getElementsByTagName("container")[0]), "\n
 }
 
 #[test]
+fn compile_dom_html_serializer_current_red_pack_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-html-serializer-current-red-pack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-html-serializer-current-red-pack.php");
+    let output = root.join("dom-html-serializer-current-red-pack-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = Dom\XMLDocument::createEmpty();
+$cdata = $xml->createCDATASection("foobar" . hex2bin("c3a9") . "\"<>-&");
+$html = Dom\HTMLDocument::createEmpty();
+$container = $html->appendChild($html->createElement("container"));
+$container->appendChild($html->importNode($cdata));
+echo "CDATA=", $html->saveHtml(), "\n";
+
+$namespaces = Dom\HTMLDocument::createEmpty();
+$root = $namespaces->appendChild($namespaces->createElement("root"));
+$root->appendChild($namespaces->createElementNS("http://php.net", "noprefix"));
+$root->appendChild($namespaces->createElementNS("http://php.net", "with:prefix"));
+$root->appendChild($namespaces->createElementNS("http://www.w3.org/1999/xhtml", "xhtml:br"));
+$root->appendChild($namespaces->createElementNS("http://www.w3.org/2000/svg", "s:svg"));
+$root->appendChild($namespaces->createElementNS("http://www.w3.org/1998/Math/MathML", "m:math"));
+echo "NS=", $namespaces->saveHtml(), "\n";
+
+$full = Dom\HTMLDocument::createFromString('<!DOCTYPE HTML><html><head><style>x < y && y > z</style><script>if (x < y && y > z) {}</script><meta></head><body><img src="x"><br><test:test xmlns:test="urn:test">T</test:test></body></html>');
+echo "FULL=", $full->saveHtml(), "\n";
+
+$foreignText = Dom\HTMLDocument::createEmpty();
+foreach (["style", "script", "xmp", "iframe", "noembed", "noframes", "plaintext", "noscript"] as $tag) {
+    $element = $foreignText->createElementNS("some:ns", $tag);
+    $element->textContent = "&\"<>" . hex2bin("c2a0") . "foobar";
+    echo "TEXT=", $foreignText->saveHtml($element), "\n";
+}
+
+$voids = Dom\HTMLDocument::createEmpty();
+foreach (["area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr"] as $tag) {
+    $element = $voids->createElement($tag);
+    $element->textContent = "foo";
+    echo "VOID=", $voids->saveHtml($element), "\n";
+}
+$foreignVoid = $voids->createElementNS("http://php.net/foo", "x:br");
+$foreignVoid->textContent = "foo";
+echo "VOID=", $voids->saveHtml($foreignVoid), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "CDATA=<container>foobaré\"&lt;&gt;-&amp;</container>\n",
+            "NS=<root><noprefix></noprefix><with:prefix></with:prefix><br><svg></svg><math></math></root>\n",
+            "FULL=<!DOCTYPE html><html><head><style>x < y && y > z</style><script>if (x < y && y > z) {}</script><meta></head><body><img src=\"x\"><br><test:test xmlns:test=\"urn:test\">T</test:test></body></html>\n",
+            "TEXT=<style>&amp;\"&lt;&gt;&nbsp;foobar</style>\n",
+            "TEXT=<script>&amp;\"&lt;&gt;&nbsp;foobar</script>\n",
+            "TEXT=<xmp>&amp;\"&lt;&gt;&nbsp;foobar</xmp>\n",
+            "TEXT=<iframe>&amp;\"&lt;&gt;&nbsp;foobar</iframe>\n",
+            "TEXT=<noembed>&amp;\"&lt;&gt;&nbsp;foobar</noembed>\n",
+            "TEXT=<noframes>&amp;\"&lt;&gt;&nbsp;foobar</noframes>\n",
+            "TEXT=<plaintext>&amp;\"&lt;&gt;&nbsp;foobar</plaintext>\n",
+            "TEXT=<noscript>&amp;\"&lt;&gt;&nbsp;foobar</noscript>\n",
+            "VOID=<area>\n",
+            "VOID=<base>\n",
+            "VOID=<basefont>\n",
+            "VOID=<bgsound>\n",
+            "VOID=<br>\n",
+            "VOID=<col>\n",
+            "VOID=<embed>\n",
+            "VOID=<frame>\n",
+            "VOID=<hr>\n",
+            "VOID=<img>\n",
+            "VOID=<input>\n",
+            "VOID=<keygen>\n",
+            "VOID=<link>\n",
+            "VOID=<meta>\n",
+            "VOID=<param>\n",
+            "VOID=<source>\n",
+            "VOID=<track>\n",
+            "VOID=<wbr>\n",
+            "VOID=<x:br>foo</x:br>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_html_element_uses_html_rules"));
+    assert!(c_source.contains("ptn_html_element_serialized_name"));
+}
+
+#[test]
 fn compile_libxml_streams_context_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-streams-context");
     fs::create_dir_all(&root).unwrap();
