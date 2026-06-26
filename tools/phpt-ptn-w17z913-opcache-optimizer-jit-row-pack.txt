@@ -1,0 +1,18 @@
+# Focused PHPT row pack for ptn-w17z.913.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z913-opcache-optimizer-jit-row-pack.txt
+#
+# bucket: opcache-optimizer-jit rows=12
+ext/opcache/tests/opt/dce_003.phpt
+ext/opcache/tests/match/002.phpt
+ext/opcache/tests/jit/shift_right_004.phpt
+ext/opcache/tests/opt/nullsafe_002.phpt
+ext/opcache/tests/opt/sccp_031.phpt
+ext/opcache/tests/opt/sccp_011.phpt
+ext/opcache/tests/opt/inference_frameless.phpt
+ext/opcache/tests/opt/sccp_001.phpt
+ext/opcache/tests/jit/init_fcall_004.phpt
+ext/opcache/tests/opt/sccp_exception2.phpt
+ext/opcache/tests/jit/bug80634.phpt
+ext/opcache/tests/opt/type_inference_class_consts3.phpt

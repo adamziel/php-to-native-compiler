@@ -91453,6 +91453,7 @@ static PtnValue ptn_internal_version_compare(PtnRuntime *runtime, size_t argc, c
         return ptn_null();
     }
     int result = 0;
+    int matched = 1;
     if (ptn_text_operand_ascii_case_equal(op, "<") || ptn_text_operand_ascii_case_equal(op, "lt")) {
         result = compared < 0;
     } else if (ptn_text_operand_ascii_case_equal(op, "<=") || ptn_text_operand_ascii_case_equal(op, "le")) {
@@ -91467,8 +91468,18 @@ static PtnValue ptn_internal_version_compare(PtnRuntime *runtime, size_t argc, c
     } else if (ptn_text_operand_ascii_case_equal(op, "!=") || ptn_text_operand_ascii_case_equal(op, "<>") ||
                ptn_text_operand_ascii_case_equal(op, "ne")) {
         result = compared != 0;
+    } else {
+        matched = 0;
     }
     ptn_string_operand_free(op);
+    if (!matched) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "version_compare(): Argument #3 ($operator) must be a valid comparison operator"
+        );
+        return ptn_null();
+    }
     return ptn_bool(result);
 }
 
@@ -94460,6 +94471,27 @@ static PtnValue ptn_internal_opcache_reset(PtnRuntime *runtime, size_t argc, con
     (void)args;
     (void)line;
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_opcache_jit_blacklist(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue closure = ptn_value_deref(args[0]);
+    if (closure.type != PTN_CLOSURE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "opcache_jit_blacklist(): Argument #1 ($closure) must be of type Closure, %s given",
+            ptn_direct_internal_string_arg_type_name(closure)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -148018,6 +148050,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_get_status", 0, 1, ptn_internal_opcache_get_status },
         { "opcache_invalidate", 1, 2, ptn_internal_opcache_invalidate },
         { "opcache_is_script_cached", 1, 1, ptn_internal_opcache_is_script_cached },
+        { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
         { "openssl_random_pseudo_bytes", 1, 2, ptn_internal_openssl_random_pseudo_bytes },

@@ -70667,7 +70667,7 @@ fn phpc_opcache_metadata_surface_is_runtime_visible() {
         "<?php\n\
 var_dump(extension_loaded('Zend OPcache'), extension_loaded('opcache'), phpversion('Zend OPcache') !== false, phpversion('opcache'));\n\
 $funcs = get_extension_funcs('Zend OPcache');\n\
-var_dump(in_array('opcache_get_status', $funcs, true), get_extension_funcs('opcache'));\n\
+var_dump(in_array('opcache_get_status', $funcs, true), in_array('opcache_jit_blacklist', $funcs, true), function_exists('opcache_jit_blacklist'), get_extension_funcs('opcache'));\n\
 $config = opcache_get_configuration();\n\
 var_dump($config['directives']['opcache.enable'], $config['directives']['opcache.enable_cli'], $config['directives']['opcache.file_cache_only'], $config['directives']['opcache.optimization_level']);\n\
 $status = opcache_get_status();\n\
@@ -70676,12 +70676,14 @@ $interned = $status['interned_strings_usage'];\n\
 var_dump($interned['used_memory'] + $interned['free_memory'], $interned['buffer_size']);\n\
 $tmp = __DIR__ . '/opcache-runtime.inc.php';\n\
 var_dump(opcache_is_script_cached($tmp), opcache_compile_file($tmp), opcache_invalidate($tmp, true));\n\
+opcache_jit_blacklist(function () {});\n\
+echo \"blacklist-ok\\n\";\n\
 $value = require $tmp;\n\
 var_dump($value, count(opcache_get_status()['scripts']));\n\
 $ext = new ReflectionExtension('Zend OPcache');\n\
 $inis = $ext->getINIEntries();\n\
 $functions = $ext->getFunctions();\n\
-var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcache.enable_cli'], $inis['opcache.optimization_level']);",
+var_dump($ext->getName(), isset($functions['opcache_get_status']), isset($functions['opcache_jit_blacklist']), $inis['opcache.enable_cli'], $inis['opcache.optimization_level']);",
     )
     .unwrap();
 
@@ -70709,6 +70711,8 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -70721,13 +70725,47 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "blacklist-ok\n",
             "int(42)\n",
             "int(1)\n",
             "string(12) \"Zend OPcache\"\n",
             "bool(true)\n",
+            "bool(true)\n",
             "string(1) \"1\"\n",
             "string(2) \"-1\"\n",
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_version_compare_rejects_invalid_operator_to_native_binary() {
+    let root = temp_dir("ptn-native-version-compare-invalid-operator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("version-compare-invalid-operator.php");
+    let output = root.join("version-compare-invalid-operator-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(version_compare('1.2', '2.1'));\n\
+var_dump(version_compare('1.2', '2.1', '<'));\n\
+try {\n\
+    version_compare('1.2', '2.1', '??');\n\
+} catch (ValueError $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(-1)\n\
+bool(true)\n\
+ValueError: version_compare(): Argument #3 ($operator) must be a valid comparison operator\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
