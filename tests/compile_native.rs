@@ -46211,6 +46211,67 @@ var_dump(get_class($test), $test instanceof SimpleXMLIterator, count($test), cou
 }
 
 #[test]
+fn compile_simplexml_iterator_var_dump_preserves_property_view_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-iterator-var-dump-property-view");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-iterator-var-dump-property-view.php");
+    let output = root.join("simplexml-iterator-var-dump-property-view-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<XML
+<container>
+    <first><foo/></first>
+</container>
+XML;
+
+$sxe = simplexml_load_string($xml);
+
+echo "--- var_dump ---\n";
+$first = $sxe->first;
+$first->rewind();
+var_dump($first->current()->getName());
+var_dump($first);
+var_dump($first->current()->getName());
+
+echo "--- empty ---\n";
+$first = $sxe->first;
+$first->rewind();
+var_dump($first->current()->getName());
+var_dump(empty($first));
+var_dump($first->current()->getName());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "--- var_dump ---\n",
+            "string(5) \"first\"\n",
+            "object(SimpleXMLElement)#2 (1) {\n",
+            "  [0]=>\n",
+            "  object(SimpleXMLElement)#4 (1) {\n",
+            "    [\"foo\"]=>\n",
+            "    object(SimpleXMLElement)#5 (0) {\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "string(5) \"first\"\n",
+            "--- empty ---\n",
+            "string(5) \"first\"\n",
+            "bool(false)\n",
+            "string(5) \"first\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_simplexml_children_iteration_filters_non_elements_to_native_binary() {
     let root = temp_dir("ptn-native-simplexml-children-filter-non-elements");
     fs::create_dir_all(&root).unwrap();

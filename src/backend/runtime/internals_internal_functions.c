@@ -104720,6 +104720,9 @@ typedef struct {
     char *property_namespace_uri;
     int property_namespace_active;
     int collection_view;
+    PtnValue iterator_current_cache;
+    size_t iterator_current_cache_position;
+    int has_iterator_current_cache;
 } PtnSimpleXmlData;
 
 typedef struct {
@@ -166937,6 +166940,9 @@ static void ptn_simplexml_data_free(void *native_data) {
     if (data == NULL) {
         return;
     }
+    if (data->has_iterator_current_cache) {
+        ptn_value_destroy(&data->iterator_current_cache);
+    }
     for (size_t i = 0; i < data->xpath_namespace_count; i++) {
         free(data->xpath_namespaces[i].prefix);
         free(data->xpath_namespaces[i].uri);
@@ -166948,6 +166954,16 @@ static void ptn_simplexml_data_free(void *native_data) {
     free(data->pending_parents);
     free(data->pending_property);
     free(data);
+}
+
+static void ptn_simplexml_clear_iterator_current_cache(PtnSimpleXmlData *data) {
+    if (data == NULL || !data->has_iterator_current_cache) {
+        return;
+    }
+    ptn_value_destroy(&data->iterator_current_cache);
+    data->iterator_current_cache = ptn_null();
+    data->iterator_current_cache_position = 0;
+    data->has_iterator_current_cache = 0;
 }
 
 static const char *ptn_simplexml_default_class_name(const char *class_name) {
@@ -167853,6 +167869,26 @@ static PTN_UNUSED int ptn_simplexml_debug_properties(
         return 1;
     }
     if (data->item_count == 0) {
+        *properties_out = result;
+        return 1;
+    }
+
+    if (data->iterator_initialized && data->property_view && !data->attributes) {
+        for (size_t i = 0; i < data->item_count; i++) {
+            PtnXmlNode *item = data->items[i];
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key((int64_t)i),
+                ptn_simplexml_debug_scalar_or_object(
+                    runtime,
+                    ptn_simplexml_data_class_name(data),
+                    item,
+                    data->item_count,
+                    data->property_namespace_active,
+                    data->property_namespace_uri
+                )
+            );
+        }
         *properties_out = result;
         return 1;
     }
@@ -169382,6 +169418,7 @@ static PtnValue ptn_simplexml_offset_unset_method(
     if (data->position > data->item_count) {
         data->position = data->item_count;
     }
+    ptn_simplexml_clear_iterator_current_cache(data);
     (void)runtime;
     (void)line;
     return ptn_null();
@@ -169600,12 +169637,17 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->position = 0;
         data->iterator_initialized = 1;
+        ptn_simplexml_clear_iterator_current_cache(data);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
         return ptn_bool(data->iterator_initialized && data->position < ptn_simplexml_iterator_count(data));
     }
     if (ptn_ascii_case_equal(name, "current")) {
+        if (data->has_iterator_current_cache &&
+            data->iterator_current_cache_position == data->position) {
+            return ptn_value_clone(data->iterator_current_cache);
+        }
         PtnXmlNode *node = ptn_simplexml_iterator_node_at(data, data->position);
         if (node == NULL) {
             ptn_throw_exception(runtime, "Error", "Iterator not initialized or already consumed");
@@ -169619,6 +169661,10 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
             data->property_view
         );
         ptn_simplexml_value_set_namespace_view(current, data->property_namespace_active, data->property_namespace_uri);
+        ptn_simplexml_clear_iterator_current_cache(data);
+        data->iterator_current_cache = ptn_value_clone(current);
+        data->iterator_current_cache_position = data->position;
+        data->has_iterator_current_cache = 1;
         return current;
     }
     if (ptn_ascii_case_equal(name, "hasChildren")) {
@@ -169681,6 +169727,7 @@ static PTN_UNUSED PtnValue ptn_simplexml_call_method(
         if (data->position < ptn_simplexml_iterator_count(data)) {
             data->position++;
         }
+        ptn_simplexml_clear_iterator_current_cache(data);
         return ptn_null();
     }
     ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
