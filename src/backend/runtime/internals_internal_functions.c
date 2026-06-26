@@ -52619,6 +52619,27 @@ static int ptn_fopen_mode_has_char(const char *mode, char needle) {
     return 0;
 }
 
+static int ptn_fopen_mode_has_valid_primary(const char *mode) {
+    if (mode == NULL || mode[0] == '\0') {
+        return 0;
+    }
+    switch (mode[0]) {
+        case 'r':
+        case 'R':
+        case 'w':
+        case 'W':
+        case 'a':
+        case 'A':
+        case 'x':
+        case 'X':
+        case 'c':
+        case 'C':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 static FILE *ptn_fopen_create_no_truncate(const char *path, const char *mode) {
     int update = strchr(mode, '+') != NULL;
     int binary = ptn_fopen_mode_has_char(mode, 'b');
@@ -53112,6 +53133,41 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     if (mode == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Argument #2 ($mode) must not contain any null bytes", line);
         free(uri);
+        free(path);
+        return ptn_bool(0);
+    }
+    if (!ptn_fopen_mode_has_valid_primary(mode)) {
+        int needed = snprintf(NULL, 0, "Failed to open stream: `%s' is not a valid mode for fopen", mode);
+        if (needed < 0) {
+            free(uri);
+            free(mode);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        char *detail = malloc((size_t)needed + 1);
+        if (detail == NULL) {
+            free(uri);
+            free(mode);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            detail,
+            (size_t)needed + 1,
+            "Failed to open stream: `%s' is not a valid mode for fopen",
+            mode
+        );
+        if (written < 0 || written != needed) {
+            free(detail);
+            free(uri);
+            free(mode);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        free(detail);
+        free(uri);
+        free(mode);
         free(path);
         return ptn_bool(0);
     }
@@ -55795,9 +55851,6 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
         ptn_path_contains_scheme_separator(path, strlen(path))) {
         return NULL;
     }
-    if (ptn_existing_file_or_current_source_snapshot(runtime, path)) {
-        return ptn_duplicate_string(path);
-    }
 
     const char *include_path = ptn_runtime_current_include_path(runtime);
     const char separator =
@@ -55828,6 +55881,10 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
             return candidate;
         }
         free(candidate);
+    }
+
+    if (ptn_existing_file_or_current_source_snapshot(runtime, path)) {
+        return ptn_duplicate_string(path);
     }
 
     return NULL;
@@ -55984,17 +56041,18 @@ static int ptn_read_file_bytes_with_search(
     char **opened_path_out,
     size_t line
 ) {
-    if (!ptn_open_basedir_allows_path(runtime, path)) {
-        ptn_emit_open_basedir_warning(runtime, function_name, path, line);
-        errno = EPERM;
-        *opened_path_out = ptn_duplicate_string(path);
-        return 0;
-    }
-    int result = ptn_read_file_bytes(path, data_out, len_out);
-    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
-        result = 1;
-    }
-    if (result != 0 || !use_include_path || ptn_path_string_is_absolute(path)) {
+    int result = 0;
+    if (!use_include_path || ptn_path_string_is_absolute(path)) {
+        if (!ptn_open_basedir_allows_path(runtime, path)) {
+            ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+            errno = EPERM;
+            *opened_path_out = ptn_duplicate_string(path);
+            return 0;
+        }
+        result = ptn_read_file_bytes(path, data_out, len_out);
+        if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
+            result = 1;
+        }
         *opened_path_out = ptn_duplicate_string(path);
         return result;
     }
@@ -56013,10 +56071,15 @@ static int ptn_read_file_bytes_with_search(
         char *directory = ptn_duplicate_string_len(segment, segment_len);
         char *candidate = ptn_path_join_alloc(directory, path);
         free(directory);
-        result = ptn_read_file_bytes(candidate, data_out, len_out);
-        if (result != 0) {
-            *opened_path_out = candidate;
-            return result;
+        if (ptn_open_basedir_allows_path(runtime, candidate)) {
+            result = ptn_read_file_bytes(candidate, data_out, len_out);
+            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
+                result = 1;
+            }
+            if (result != 0) {
+                *opened_path_out = candidate;
+                return result;
+            }
         }
         free(candidate);
         segment = end == NULL ? NULL : end + 1;
@@ -56026,12 +56089,32 @@ static int ptn_read_file_bytes_with_search(
     if (source_dir != NULL) {
         char *candidate = ptn_path_join_alloc(source_dir, path);
         free(source_dir);
-        result = ptn_read_file_bytes(candidate, data_out, len_out);
-        if (result != 0) {
-            *opened_path_out = candidate;
-            return result;
+        if (ptn_open_basedir_allows_path(runtime, candidate)) {
+            result = ptn_read_file_bytes(candidate, data_out, len_out);
+            if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, candidate, data_out, len_out)) {
+                result = 1;
+            }
+            if (result != 0) {
+                *opened_path_out = candidate;
+                return result;
+            }
         }
         free(candidate);
+    }
+
+    if (!ptn_open_basedir_allows_path(runtime, path)) {
+        ptn_emit_open_basedir_warning(runtime, function_name, path, line);
+        errno = EPERM;
+        *opened_path_out = ptn_duplicate_string(path);
+        return 0;
+    }
+    result = ptn_read_file_bytes(path, data_out, len_out);
+    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
+        result = 1;
+    }
+    if (result != 0) {
+        *opened_path_out = ptn_duplicate_string(path);
+        return result;
     }
 
     *opened_path_out = ptn_duplicate_string(path);
@@ -57988,24 +58071,6 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    int uri_parser_operation_failed = 0;
-    if (!ptn_file_get_contents_validate_uri_parser_context(
-            runtime,
-            path,
-            has_context,
-            has_context ? args[context_index] : ptn_null(),
-            line,
-            &uri_parser_operation_failed
-        )) {
-        free(path);
-        return ptn_null();
-    }
-    if (uri_parser_operation_failed) {
-        ptn_emit_file_warning(runtime, "file_get_contents", path, "Failed to open stream: operation failed", line);
-        free(path);
-        return ptn_bool(0);
-    }
-
     int use_include_path = has_use_include_path && ptn_is_truthy(args[use_include_path_index]);
     int64_t offset = has_offset
         ? ptn_internal_expect_integer_arg(runtime, "file_get_contents", 4, "offset", args[offset_index], line)
@@ -58032,6 +58097,24 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             return ptn_null();
         }
         has_length = 1;
+    }
+
+    int uri_parser_operation_failed = 0;
+    if (!ptn_file_get_contents_validate_uri_parser_context(
+            runtime,
+            path,
+            has_context,
+            has_context ? args[context_index] : ptn_null(),
+            line,
+            &uri_parser_operation_failed
+        )) {
+        free(path);
+        return ptn_null();
+    }
+    if (uri_parser_operation_failed) {
+        ptn_emit_file_warning(runtime, "file_get_contents", path, "Failed to open stream: operation failed", line);
+        free(path);
+        return ptn_bool(0);
     }
 
     if (ptn_ascii_case_equal(path, "php://input")) {

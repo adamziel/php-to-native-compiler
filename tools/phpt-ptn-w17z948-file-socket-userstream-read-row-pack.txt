@@ -1,0 +1,12 @@
+ext/standard/tests/file/fgets_socket_variation1.phpt
+ext/standard/tests/file/userstreams_003.phpt
+ext/standard/tests/file/fopen_variation8.phpt
+ext/standard/tests/file/stream_001.phpt
+ext/standard/tests/file/bug71287.phpt
+ext/standard/tests/file/fscanf_variation43.phpt
+ext/standard/tests/file/file_get_contents_error.phpt
+ext/standard/tests/file/fscanf_variation6.phpt
+ext/standard/tests/file/fscanf_variation13.phpt
+ext/standard/tests/file/bug38450_1.phpt
+ext/standard/tests/file/bug76735.phpt
+ext/standard/tests/file/bug69442.phpt

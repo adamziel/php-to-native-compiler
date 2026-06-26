@@ -25125,6 +25125,13 @@ try {\n\
 } catch (ValueError $e) {\n\
     echo $e->getMessage(), \"\\n\";\n\
 }\n\
+$context_candidate = fopen($filename, 'r');\n\
+try {\n\
+    file_get_contents($filename, false, $context_candidate, 0, -5);\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+fclose($context_candidate);\n\
 var_dump(function_exists(\"file_get_contents\"), function_exists(\"FILE_GET_CONTENTS\"));\n\
 @unlink($filename);\n\
 file_get_contents($filename);\n\
@@ -25141,11 +25148,21 @@ echo \"done\\n\";\n",
     assert!(stdout.contains(
         "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0\n"
     ));
+    assert_eq!(
+        stdout
+            .matches(
+                "file_get_contents(): Argument #5 ($length) must be greater than or equal to 0\n"
+            )
+            .count(),
+        2
+    );
     assert!(stdout.contains("bool(true)\nbool(true)\n"));
     assert!(stdout.contains("Warning: file_get_contents("));
-    assert!(stdout.contains(
-        "read.dat): Failed to open stream: No such file or directory in ptn on line 17\n"
-    ));
+    assert!(stdout.contains("read.dat): Failed to open stream: No such file or directory in "));
+    assert!(
+        stdout.contains("file-get-contents.php on line 24\n"),
+        "{stdout:?}"
+    );
     assert!(stdout.ends_with("done\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -75709,6 +75726,63 @@ echo file_get_contents('include.txt', true), \"\\n\";\n",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_read_file_bytes_with_search"));
+}
+
+#[test]
+fn compile_fopen_include_path_priority_and_invalid_mode_to_native_binary() {
+    let root = temp_dir("ptn-native-fopen-include-path-priority");
+    let cwd = root.join("cwd");
+    let include_one = root.join("inc1");
+    let include_two = root.join("inc2");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::create_dir_all(&include_one).unwrap();
+    fs::create_dir_all(&include_two).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("fopen-include-path-priority-bin");
+    fs::write(include_two.join("sample.txt"), "include2").unwrap();
+    let include_path = format!("{}:{}", include_one.display(), include_two.display());
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+chdir({:?});\n\
+set_include_path({:?});\n\
+$h = fopen('sample.txt', 'r', true); fpassthru($h); fclose($h); echo \"\\n\";\n\
+file_put_contents({:?}, 'include1');\n\
+file_put_contents('sample.txt', 'cwd');\n\
+$h = fopen('sample.txt', 'r', true); fpassthru($h); fclose($h); echo \"\\n\";\n\
+unlink({:?});\n\
+unlink({:?});\n\
+$h = fopen('sample.txt', 'r', true); fpassthru($h); fclose($h); echo \"\\n\";\n\
+file_put_contents(__DIR__ . '/sample.txt', 'source');\n\
+$h = fopen('sample.txt', 'r', true); fpassthru($h); fclose($h); echo \"\\n\";\n\
+unlink(__DIR__ . '/sample.txt');\n\
+unlink('sample.txt');\n\
+var_dump(fopen(__FILE__, 'Q'));\n",
+            cwd.to_string_lossy(),
+            include_path,
+            include_one.join("sample.txt").to_string_lossy(),
+            include_one.join("sample.txt").to_string_lossy(),
+            include_two.join("sample.txt").to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("include2\ninclude1\ncwd\nsource\n"));
+    assert!(stdout.contains("Warning: fopen("));
+    assert!(stdout.contains("): Failed to open stream: `Q' is not a valid mode for fopen in "));
+    assert!(stdout.contains("main.php on line 15\n"), "{stdout:?}");
+    assert!(stdout.ends_with("bool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_resolve_existing_include_path"));
+    assert!(c_source.contains("ptn_fopen_mode_has_valid_primary"));
 }
 
 #[test]
