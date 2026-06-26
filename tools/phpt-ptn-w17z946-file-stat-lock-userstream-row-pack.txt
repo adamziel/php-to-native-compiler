@@ -1,0 +1,12 @@
+ext/standard/tests/file/bug43216.phpt
+ext/standard/tests/file/statpage.phpt
+ext/standard/tests/file/bug45303.phpt
+ext/standard/tests/file/flock_basic.phpt
+ext/standard/tests/file/tempnam_variation3.phpt
+ext/standard/tests/file/fsync.phpt
+ext/standard/tests/file/userstreams_006.phpt
+ext/standard/tests/file/userstreams.phpt
+ext/standard/tests/file/rename_variation.phpt
+ext/standard/tests/file/rename_variation5.phpt
+ext/standard/tests/file/bug68335.phpt
+ext/standard/tests/file/clearstatcache_001.phpt

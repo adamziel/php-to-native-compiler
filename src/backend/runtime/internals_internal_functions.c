@@ -51504,6 +51504,9 @@ static char *ptn_path_operand_to_c_string(PtnStringOperand path) {
     if (memchr(path.data, '\0', path.len) != NULL) {
         return NULL;
     }
+    if (path.len >= 8 && ptn_ascii_case_equal_n(path.data, "file:///", 8)) {
+        return ptn_duplicate_string_len(path.data + 7, path.len - 7);
+    }
     return ptn_duplicate_string_len(path.data, path.len);
 }
 
@@ -55253,6 +55256,10 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
             return ptn_int(-1);
         }
     }
+    if (resource->stream_backend == PTN_STREAM_BACKEND_OUTPUT) {
+        ptn_emit_warning(&runtime->diagnostics, "fseek(): Stream does not support seeking", line);
+        return ptn_int(-1);
+    }
     if (ptn_stream_filter_chain_has_strict_write_seek(resource->write_filters)) {
         return ptn_int(-1);
     }
@@ -55346,8 +55353,19 @@ static void ptn_internal_flock_assign_would_block(
 }
 
 static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "flock", args[0], line);
-    if (resource == NULL) {
+    PtnValue stream_value = ptn_value_deref(args[0]);
+    if (stream_value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "flock(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(stream_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
     int64_t operation = ptn_internal_expect_integer_arg(runtime, "flock", 2, "operation", args[1], line);
@@ -55360,6 +55378,19 @@ static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnVa
             runtime,
             "ValueError",
             "flock(): Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN"
+        );
+        return ptn_null();
+    }
+    PtnResource *resource = stream_value.as.resource;
+    if (resource->directory != NULL) {
+        ptn_internal_flock_assign_would_block(runtime, argc, args, 0);
+        return ptn_bool(0);
+    }
+    if (!ptn_stream_resource_is_open(resource)) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "flock(): Argument #1 ($stream) must be an open stream resource"
         );
         return ptn_null();
     }
@@ -55395,6 +55426,46 @@ static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnVa
 #endif
     ptn_internal_flock_assign_would_block(runtime, argc, args, would_block);
     return ptn_bool(0);
+#endif
+}
+
+static int ptn_stream_resource_is_standard_stream(PtnResource *resource) {
+    if (resource == NULL || resource->stream_uri == NULL) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(resource->stream_uri, "php://stdin") ||
+        ptn_ascii_case_equal(resource->stream_uri, "php://stdout") ||
+        ptn_ascii_case_equal(resource->stream_uri, "php://stderr") ||
+        ptn_ascii_case_equal(resource->stream_uri, "php://output");
+}
+
+static PtnValue ptn_internal_fsync(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fsync", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (ptn_stream_resource_is_standard_stream(resource)) {
+        return ptn_bool(0);
+    }
+    if (resource->memory_stream != NULL || resource->stream_backend != PTN_STREAM_BACKEND_FILE) {
+        ptn_emit_warning(&runtime->diagnostics, "fsync(): Can't fsync this stream!", line);
+        return ptn_bool(0);
+    }
+    if (resource->stream == NULL) {
+        return ptn_bool(0);
+    }
+    if (fflush(resource->stream) != 0) {
+        return ptn_bool(0);
+    }
+    int descriptor = ptn_stream_file_descriptor(resource->stream);
+    if (descriptor < 0) {
+        return ptn_bool(0);
+    }
+#if defined(_WIN32)
+    return ptn_bool(_commit(descriptor) == 0);
+#else
+    return ptn_bool(fsync(descriptor) == 0);
 #endif
 }
 
@@ -56982,6 +57053,42 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
         );
     }
     return result;
+}
+
+static int ptn_stream_uri_is_local(const char *uri, size_t uri_len) {
+    if (!ptn_path_contains_scheme_separator(uri, uri_len)) {
+        return 1;
+    }
+    return (uri_len >= 7 && ptn_ascii_case_equal_n(uri, "file://", 7)) ||
+        (uri_len >= 6 && ptn_ascii_case_equal_n(uri, "php://", 6));
+}
+
+static PtnValue ptn_internal_stream_is_local(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_RESOURCE) {
+        PtnResource *resource = value.as.resource;
+        if (resource == NULL || !ptn_resource_is_open(resource)) {
+            return ptn_bool(0);
+        }
+        if (resource->stream_uri != NULL) {
+            return ptn_bool(ptn_stream_uri_is_local(resource->stream_uri, strlen(resource->stream_uri)));
+        }
+        return ptn_bool(resource->stream_backend == PTN_STREAM_BACKEND_FILE ||
+            resource->stream_backend == PTN_STREAM_BACKEND_MEMORY ||
+            resource->stream_backend == PTN_STREAM_BACKEND_INPUT ||
+            resource->stream_backend == PTN_STREAM_BACKEND_TEMP ||
+            resource->stream_backend == PTN_STREAM_BACKEND_OUTPUT);
+    }
+
+    PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, "stream_is_local", 1, "stream", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(uri);
+        return ptn_null();
+    }
+    int result = ptn_stream_uri_is_local(uri.data, uri.len);
+    ptn_string_operand_free(uri);
+    return ptn_bool(result);
 }
 
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -95046,6 +95153,53 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #else
     return ptn_int((int64_t)getpid());
 #endif
+}
+
+static int ptn_current_script_stat(PtnRuntime *runtime, struct stat *info) {
+    if (runtime == NULL || runtime->source_path == NULL || runtime->source_path[0] == '\0') {
+        return 0;
+    }
+    return stat(runtime->source_path, info) == 0;
+}
+
+static PtnValue ptn_internal_getlastmod(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    struct stat info;
+    return ptn_current_script_stat(runtime, &info)
+        ? ptn_int(ptn_stat_field_value(&info, PTN_STAT_FIELD_MTIME))
+        : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_getmyinode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    struct stat info;
+    return ptn_current_script_stat(runtime, &info)
+        ? ptn_int(ptn_stat_field_value(&info, PTN_STAT_FIELD_INO))
+        : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_getmyuid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    struct stat info;
+    return ptn_current_script_stat(runtime, &info)
+        ? ptn_int(ptn_stat_field_value(&info, PTN_STAT_FIELD_UID))
+        : ptn_bool(0);
+}
+
+static PtnValue ptn_internal_getmygid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    struct stat info;
+    return ptn_current_script_stat(runtime, &info)
+        ? ptn_int(ptn_stat_field_value(&info, PTN_STAT_FIELD_GID))
+        : ptn_bool(0);
 }
 
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal) {
@@ -155733,6 +155887,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fread", 2, 2, ptn_internal_fread },
         { "fseek", 2, 3, ptn_internal_fseek },
         { "fstat", 1, 1, ptn_internal_fstat },
+        { "fsync", 1, 1, ptn_internal_fsync },
         { "ftell", 1, 1, ptn_internal_ftell },
         { "ftruncate", 2, 2, ptn_internal_ftruncate },
         { "fnmatch", 2, 3, ptn_internal_fnmatch },
@@ -155768,6 +155923,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
+        { "getlastmod", 0, 0, ptn_internal_getlastmod },
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
         { "get_mangled_object_vars", 1, 1, ptn_internal_get_mangled_object_vars },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
@@ -155780,7 +155936,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
         { "getenv", 0, 2, ptn_internal_getenv },
+        { "getmygid", 0, 0, ptn_internal_getmygid },
+        { "getmyinode", 0, 0, ptn_internal_getmyinode },
         { "getmypid", 0, 0, ptn_internal_getmypid },
+        { "getmyuid", 0, 0, ptn_internal_getmyuid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
@@ -156322,6 +156481,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_is_local", 1, 1, ptn_internal_stream_is_local },
         { "stream_isatty", 1, 1, ptn_internal_stream_isatty },
         { "stream_last_errors", 0, 0, ptn_internal_stream_last_errors },
         { "stream_resolve_include_path", 1, 1, ptn_internal_stream_resolve_include_path },

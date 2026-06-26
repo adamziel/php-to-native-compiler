@@ -25293,6 +25293,115 @@ flock(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_file_uri_stream_sync_and_script_stat_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-file-uri-stream-sync-script-stat");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-uri-stream-sync-script-stat.php");
+    let output = root.join("file-uri-stream-sync-script-stat-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(
+    function_exists("stream_is_local"),
+    function_exists("fsync"),
+    function_exists("getlastmod"),
+    function_exists("getmyinode"),
+    function_exists("getmyuid"),
+    function_exists("getmygid")
+);
+var_dump(
+    stream_is_local("file://"),
+    stream_is_local("file://" . __DIR__ . "/local-file-uri-dir"),
+    stream_is_local(__DIR__),
+    stream_is_local("php://memory"),
+    stream_is_local("data://text/plain,hi")
+);
+$dir = "file://" . __DIR__ . "/local-file-uri-dir";
+var_dump(mkdir($dir));
+var_dump(is_dir($dir));
+var_dump(rmdir($dir));
+var_dump(is_dir($dir));
+var_dump(
+    is_int(getlastmod()),
+    is_int(getmyinode()),
+    is_int(getmyuid()),
+    is_int(getmygid()),
+    is_int(getmypid())
+);
+$file = __DIR__ . "/sync-target.txt";
+$h = fopen($file, "w");
+var_dump(fwrite($h, "abc"));
+var_dump(fsync($h));
+fclose($h);
+echo file_get_contents($file), "\n";
+unlink($file);
+$mem = fopen("php://memory", "w");
+var_dump(fsync($mem));
+fclose($mem);
+$out = fopen("php://stdout", "a");
+var_dump(fseek($out, 1, SEEK_SET));
+fclose($out);
+$lockDir = __DIR__ . "/lock-dir";
+mkdir($lockDir);
+$dh = opendir($lockDir);
+var_dump(flock($dh, LOCK_SH | LOCK_NB), flock($dh, LOCK_UN));
+closedir($dh);
+rmdir($lockDir);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(false)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(3)\n\
+bool(true)\n\
+abc\n"
+    ));
+    assert!(
+        stdout.contains("\nWarning: fsync(): Can't fsync this stream! in ptn on line "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("\nWarning: fseek(): Stream does not support seeking in ptn on line "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("int(-1)\nbool(false)\nbool(false)\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_is_local"));
+    assert!(c_source.contains("ptn_internal_fsync"));
+    assert!(c_source.contains("ptn_current_script_stat"));
+}
+
+#[test]
 fn compile_get_meta_tags_file_scan_to_native_binary() {
     let root = temp_dir("ptn-native-get-meta-tags");
     fs::create_dir_all(&root).unwrap();
