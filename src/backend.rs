@@ -142,6 +142,8 @@ pub fn emit_c(module: &Module) -> String {
     }
     let needs_lightweight_closure_reflection = runtime_requirements.closure_reflection_dispatch
         && !runtime_requirements.internal_function_dispatch;
+    let emits_lightweight_closure_reflection_helpers =
+        !runtime_requirements.internal_function_dispatch;
     let needs_magic_property_read = module.classes.iter().any(|class| {
         class_magic_get_method(class, &module.classes).is_some()
             || class_magic_isset_method(class, &module.classes).is_some()
@@ -271,7 +273,7 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
-    if needs_lightweight_closure_reflection {
+    if emits_lightweight_closure_reflection_helpers {
         emit_closure_reflection_helpers(&mut out);
     }
     if needs_method_dispatch {
