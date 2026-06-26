@@ -46835,6 +46835,135 @@ try {
 }
 
 #[test]
+fn compile_modern_dom_selector_html_pseudo_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-modern-dom-selector-html-pseudo-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("modern-dom-selector-html-pseudo-edges.php");
+    let output = root.join("modern-dom-selector-html-pseudo-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function report_count($dom, string $selector) {
+    try {
+        echo $selector, '=', count($dom->querySelectorAll($selector)), "\n";
+    } catch (DOMException $e) {
+        echo 'ERR:', $e->getCode(), ':', $e->getMessage(), "\n";
+    }
+}
+
+$html = Dom\HTMLDocument::createFromString('<html><head><meta charset="Windows-1252"></head></html>', LIBXML_NOERROR);
+$foreign = $html->head->appendChild($html->createElementNS('urn:x', 'meta'));
+$foreign->setAttribute('charset', 'x');
+report_count($html, 'meta[charseT]');
+report_count($html, 'meta[charset]');
+report_count($html, 'meta[charseT="windows-1252"]');
+
+$blankBody = Dom\HTMLDocument::createFromString("<html><body>\n</body></html>", LIBXML_NOERROR);
+echo 'blank-body-html=', bin2hex($blankBody->saveHtml()), "\n";
+
+$links = Dom\XMLDocument::createFromString(<<<'XML'
+<container>
+    <a href="http://example.com"/>
+    <a xmlns="http://www.w3.org/1999/xhtml" href="http://example.com"/>
+    <A xmlns="http://www.w3.org/1999/xhtml" href="http://example.com"/>
+    <area xmlns="http://www.w3.org/1999/xhtml" href="http://example.com"/>
+</container>
+XML);
+report_count($links, ':any-link');
+report_count($links, ':link');
+report_count($links, 'a:not(:any-link)');
+report_count($links, ':not(:any-link)');
+
+$nth = Dom\XMLDocument::createFromString('<container><h2 class="hi">1</h2><h2>2</h2><h2 class="hi">3</h2><h2 class="hi">4</h2><h2>5</h2><h2 class="hi">6</h2></container>');
+report_count($nth, 'h2:nth-child(even of .hi)');
+report_count($nth, 'h2:nth-last-child(odd of .hi)');
+report_count($nth, 'h2:nth-child(2n + 1)');
+
+$states = Dom\XMLDocument::createFromString(<<<'XML'
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <input type="text" readonly="" />
+    <textarea readonly="" />
+    <input type="text" disabled="" />
+    <textarea disabled="" />
+    <input type="text" xmlns="" />
+    <textarea xmlns="" />
+    <input type="text" />
+    <textarea />
+    <p contenteditable="" />
+    <p contenteditable="false" />
+</html>
+XML);
+report_count($states, ':read-write');
+report_count($states, ':read-only');
+foreach ($states->querySelectorAll(':read-write') as $node) {
+    echo 'rw-xml=', $states->saveXML($node), "\n";
+}
+$foreignInput = $states->getElementsByTagName('input')[2];
+echo 'foreign-input=', $states->saveXML($foreignInput), "\n";
+
+report_count($links, 'a::after');
+report_count($links, ':nth-col(1)');
+
+$quirks = Dom\HTMLDocument::createFromString('<html><div class="HElLoWorLD"/><div id="hI"/></html>', LIBXML_NOERROR);
+report_count($quirks, 'div.helloworld');
+report_count($quirks, '#hi');
+
+$standards = Dom\HTMLDocument::createFromString('<!DOCTYPE html><html><div class="HElLoWorLD"/><div id="hI"/></html>', LIBXML_NOERROR);
+report_count($standards, 'div.helloworld');
+report_count($standards, 'div.HElLoWorLD');
+report_count($standards, '#hi');
+report_count($standards, '#hI');
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "meta[charseT]=1\n",
+            "meta[charset]=2\n",
+            "meta[charseT=\"windows-1252\"]=1\n",
+            "blank-body-html=3c68746d6c3e3c686561643e3c2f686561643e3c626f64793e0a0a3c2f626f64793e3c2f68746d6c3e\n",
+            ":any-link=2\n",
+            ":link=2\n",
+            "a:not(:any-link)=1\n",
+            ":not(:any-link)=3\n",
+            "h2:nth-child(even of .hi)=2\n",
+            "h2:nth-last-child(odd of .hi)=2\n",
+            "h2:nth-child(2n + 1)=3\n",
+            ":read-write=3\n",
+            ":read-only=8\n",
+            "rw-xml=<input xmlns=\"http://www.w3.org/1999/xhtml\" type=\"text\" />\n",
+            "rw-xml=<textarea xmlns=\"http://www.w3.org/1999/xhtml\"></textarea>\n",
+            "rw-xml=<p xmlns=\"http://www.w3.org/1999/xhtml\" contenteditable=\"\"></p>\n",
+            "foreign-input=<input xmlns=\"\" type=\"text\"/>\n",
+            "a::after=ERR:12:Invalid selector (Selectors. Not supported: after)\n",
+            ":nth-col(1)=ERR:12:Invalid selector (Selectors. Not supported: nth-col)\n",
+            "div.helloworld=1\n",
+            "#hi=1\n",
+            "div.helloworld=0\n",
+            "div.HElLoWorLD=1\n",
+            "#hi=0\n",
+            "#hI=1\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_selector_nth_child_matches"));
+    assert!(c_source.contains("ptn_dom_selector_unsupported_feature_name"));
+}
+
+#[test]
 fn compile_modern_dom_character_data_index_rules_to_native_binary() {
     let root = temp_dir("ptn-native-modern-dom-character-data-index-rules");
     fs::create_dir_all(&root).unwrap();
