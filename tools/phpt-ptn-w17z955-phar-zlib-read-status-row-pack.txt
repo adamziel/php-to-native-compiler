@@ -1,0 +1,12 @@
+ext/zlib/tests/inflate_get_status.phpt
+ext/phar/tests/015.phpt
+ext/phar/tests/metadata_write_commit.phpt
+ext/phar/tests/zip/notphar.phpt
+ext/phar/tests/zip/zlib.phpt
+ext/zlib/tests/inflate_init_window_type_error.phpt
+ext/zlib/tests/gzfile_open_gz.phpt
+ext/phar/tests/005.phpt
+ext/phar/tests/bug54289.phpt
+ext/phar/tests/phar_createdefaultstub.phpt
+ext/phar/tests/readfile_edgecases.phpt
+ext/zlib/tests/gzseek_variation3.phpt

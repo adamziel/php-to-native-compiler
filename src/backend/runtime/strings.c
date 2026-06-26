@@ -3247,6 +3247,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_FORCE_DEFLATE);
         return 1;
     }
+    if (strcmp(name, "ZLIB_OK") == 0) {
+        *out = ptn_int(PTN_ZLIB_OK);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_STREAM_END") == 0) {
+        *out = ptn_int(PTN_ZLIB_STREAM_END);
+        return 1;
+    }
     if (strcmp(name, "ZLIB_NO_FLUSH") == 0) {
         *out = ptn_int(PTN_ZLIB_NO_FLUSH);
         return 1;

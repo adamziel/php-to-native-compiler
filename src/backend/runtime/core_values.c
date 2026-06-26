@@ -321,6 +321,8 @@ typedef struct {
 #define PTN_ZLIB_VERNUM 0x1310
 #define PTN_FORCE_GZIP 31
 #define PTN_FORCE_DEFLATE 15
+#define PTN_ZLIB_OK 0
+#define PTN_ZLIB_STREAM_END 1
 #define PTN_ZLIB_NO_FLUSH 0
 #define PTN_ZLIB_PARTIAL_FLUSH 1
 #define PTN_ZLIB_SYNC_FLUSH 2

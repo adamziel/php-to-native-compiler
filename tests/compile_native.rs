@@ -28285,7 +28285,18 @@ var_dump(fread($mem, 100));
 error_reporting($old_reporting);
 fclose($mem);
 
+$encoded = zlib_encode("Hello world.", ZLIB_ENCODING_DEFLATE);
+$ctx = inflate_init(ZLIB_ENCODING_DEFLATE);
+$inflated = "";
+for ($i = 0; inflate_get_status($ctx) === ZLIB_OK; $i++) {
+    $inflated .= inflate_add($ctx, substr($encoded, $i, 1));
+}
+echo "inflate:", $inflated, ":", inflate_get_status($ctx), "\n";
+inflate_add($ctx, substr($encoded, 0, 4));
+echo "reset-status:", inflate_get_status($ctx), "\n";
+
 try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
+try { inflate_init(ZLIB_ENCODING_DEFLATE, ["window" => []]); } catch (TypeError $e) { echo "window-option\n"; }
 try { gzdeflate("x", 99); } catch (ValueError $e) { echo "level-error\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
 
@@ -28336,7 +28347,10 @@ string(4) \"1f8b\"\n\
 bool(false)\n\
 string(32) \"The quick brown fox jumps over t\"\n\
 bool(false)\n\
+inflate:Hello world.:1\n\
+reset-status:0\n\
 inflate-error\n\
+window-option\n\
 level-error\n\
 option-error\n"
     );
@@ -28346,6 +28360,8 @@ option-error\n"
     assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_gzwrite"));
     assert!(c_source.contains("ptn_internal_gzseek"));
+    assert!(c_source.contains("ptn_internal_zlib_encode"));
+    assert!(c_source.contains("ptn_internal_inflate_get_status"));
     assert!(c_source.contains("ptn_internal_stream_filter_remove"));
     assert!(c_source.contains("ptn_defined_constants_zlib_table"));
 }
