@@ -28243,6 +28243,23 @@ var_dump(gzuncompress($packed));
 var_dump(gzuncompress($packed, 3));
 var_dump(gzuncompress($packed, 2));
 try { gzuncompress($packed, -1); } catch (ValueError $e) { echo "max-error\n"; }
+var_dump(gzuncompress(gzcompress("roundtrip")));
+$deflate = deflate_init(ZLIB_ENCODING_DEFLATE);
+var_dump(gzuncompress(deflate_add($deflate, "stream", ZLIB_FINISH)));
+try { deflate_add(fopen("php://memory", "r+"), "bad"); } catch (TypeError $e) { echo "deflate-type\n"; }
+try { deflate_add($deflate, "bad", 6789); } catch (ValueError $e) { echo "deflate-flush\n"; }
+
+$chain = __DIR__ . "/zlib-chain.gz.gz";
+file_put_contents($chain, gzencode(gzencode(str_repeat("x", 10000))));
+$chainStream = fopen($chain, "rb");
+stream_filter_append($chainStream, "zlib.inflate", STREAM_FILTER_READ, ["window" => 30]);
+stream_filter_append($chainStream, "zlib.inflate", STREAM_FILTER_READ, ["window" => 30]);
+$total = 0;
+while (!feof($chainStream)) {
+    $total += strlen(fread($chainStream, 4096));
+}
+fclose($chainStream);
+var_dump($total);
 
 $h = gzopen($path, "w");
 var_dump(gzwrite($h, "ignored", 0));
@@ -28325,6 +28342,7 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
 @unlink($filtered);
 @unlink($truncated);
 @unlink(__DIR__ . "/zlib-write-only.gz");
+@unlink($chain);
 "#,
     )
     .unwrap();
@@ -28358,6 +28376,11 @@ string(3) \"abc\"\n\
 string(3) \"abc\"\n\
 bool(false)\n\
 max-error\n\
+string(9) \"roundtrip\"\n\
+string(6) \"stream\"\n\
+deflate-type\n\
+deflate-flush\n\
+int(10000)\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
@@ -28389,6 +28412,7 @@ option-error\n"
     assert!(c_source.contains("ptn_internal_gzuncompress"));
     assert!(c_source.contains("ptn_internal_gzwrite"));
     assert!(c_source.contains("ptn_internal_gzuncompress"));
+    assert!(c_source.contains("ptn_internal_deflate_add"));
     assert!(c_source.contains("ptn_internal_gzseek"));
     assert!(c_source.contains("ptn_internal_zlib_encode"));
     assert!(c_source.contains("ptn_internal_inflate_get_status"));

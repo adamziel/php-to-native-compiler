@@ -53625,6 +53625,13 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_bool(0);
     }
 
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        ptn_emit_directory_open_warning(runtime, "opendir", path, "not implemented", line);
+        free(path);
+        return ptn_bool(0);
+    }
+
     if (strncmp(path, "phar://", 7) == 0) {
         PtnValue resource = ptn_phar_directory_resource_value(runtime, path);
         if (!ptn_is_truthy(resource)) {
@@ -53709,6 +53716,13 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "dir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        ptn_emit_directory_open_warning(runtime, "dir", path, "not implemented", line);
+        free(path);
         return ptn_bool(0);
     }
 
@@ -54190,6 +54204,15 @@ static int ptn_stream_filter_chain_has_convert(PtnStreamFilter *filter) {
 static int ptn_stream_filter_chain_has_zlib_inflate(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         if (filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_stream_filter_chain_has_zlib(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (ptn_stream_filter_kind_is_zlib(filter->kind)) {
             return 1;
         }
     }
@@ -54913,6 +54936,42 @@ static size_t ptn_stream_filtered_read_pending_take(PtnResource *resource, char 
 }
 
 static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_t raw_want) {
+    if (ptn_stream_filter_chain_has_zlib(resource->read_filters)) {
+        PtnStringBuffer raw;
+        ptn_string_buffer_init(&raw);
+        unsigned char chunk[8192];
+        size_t total = 0;
+        for (;;) {
+            size_t read_len = ptn_stream_read_bytes(resource, chunk, sizeof(chunk));
+            if (read_len != 0) {
+                ptn_string_buffer_append_len(&raw, (const char *)chunk, read_len);
+                if (read_len > SIZE_MAX - total) {
+                    free(raw.data);
+                    ptn_abort_out_of_memory();
+                }
+                total += read_len;
+            }
+            if (read_len < sizeof(chunk)) {
+                break;
+            }
+        }
+        if (raw.len == 0) {
+            free(raw.data);
+            return 0;
+        }
+        size_t filtered_len = 0;
+        char *filtered = ptn_stream_apply_filter_chain_alloc(
+            resource->read_filters,
+            raw.data,
+            raw.len,
+            &filtered_len
+        );
+        free(raw.data);
+        ptn_stream_filtered_read_pending_append(resource, filtered, filtered_len);
+        free(filtered);
+        return total;
+    }
+
     unsigned char chunk[8192];
     size_t want = raw_want == 0 || raw_want > sizeof(chunk) ? sizeof(chunk) : raw_want;
     size_t read_len = ptn_stream_read_bytes(resource, chunk, want);
@@ -55232,9 +55291,6 @@ static PtnValue ptn_internal_stream_filter_attach(
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filtered_read_pending_clear(stream);
     }
-    if (ptn_stream_filter_kind_is_zlib(kind) && (mode & PTN_STREAM_FILTER_READ) != 0) {
-        ptn_stream_filter_chain_remove_zlib(&stream->read_filters);
-    }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         read_filter = ptn_stream_filter_new(
             kind,
@@ -55250,9 +55306,6 @@ static PtnValue ptn_internal_stream_filter_attach(
             prepend
         );
         ptn_stream_filter_probe_prebuffered_zlib(runtime, function_name, stream, read_filter, line);
-    }
-    if (ptn_stream_filter_kind_is_zlib(kind) && (mode & PTN_STREAM_FILTER_WRITE) != 0) {
-        ptn_stream_filter_chain_remove_zlib(&stream->write_filters);
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
         write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level, write_seek_mode);
@@ -55500,6 +55553,9 @@ static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnVal
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "feof", args[0], line);
     if (resource == NULL) {
         return ptn_null();
+    }
+    if (ptn_stream_filtered_read_pending_available(resource) != 0) {
+        return ptn_bool(0);
     }
     return ptn_bool(ptn_stream_eof(resource));
 }
@@ -61606,6 +61662,11 @@ static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnVa
             }
         }
     }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        free(path);
+        return ptn_bool(0);
+    }
     int created = strncmp(path, "phar://", 7) == 0
         ? ptn_phar_uri_mkdir(path)
         : (recursive ? ptn_mkdir_recursive(path, mode) : ptn_platform_mkdir(path, mode) == 0);
@@ -61624,6 +61685,12 @@ static PtnValue ptn_internal_rmdir(PtnRuntime *runtime, size_t argc, const PtnVa
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "rmdir", 1, "directory", args[0], line);
     if (path == NULL) {
         return ptn_null();
+    }
+
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        free(path);
+        return ptn_bool(0);
     }
 
     if (strncmp(path, "phar://", 7) == 0 ? ptn_phar_uri_rmdir(path) : rmdir(path) == 0) {
@@ -140646,7 +140713,6 @@ static PtnValue ptn_internal_ob_gzhandler(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "gzopen", 1, "filename", args[0], line);
     if (path == NULL) {
         return ptn_null();
@@ -140664,7 +140730,7 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         free(path);
         return ptn_bool(0);
     }
-    if (argc >= 3 && ptn_is_truthy(args[2])) {
+    if (argc >= 3 && ptn_is_truthy(args[2]) && !ptn_phar_stream_mode_can_write(mode)) {
         char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
         if (resolved_path != NULL) {
             free(path);

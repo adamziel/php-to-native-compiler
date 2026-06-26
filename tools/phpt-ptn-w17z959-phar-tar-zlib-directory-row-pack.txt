@@ -1,0 +1,15 @@
+# ptn-w17z.959 focused PHAR tar/zlib directory row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T213902Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/tar/gh16695_1.phpt
+ext/zlib/tests/bug67724.phpt
+ext/zlib/tests/zlib_scheme_dir_basic.phpt
+ext/phar/tests/rename_dir_and_mount.phpt
+ext/phar/tests/fgc_edgecases.phpt
+ext/phar/tests/tar/tar_makegz.phpt
+ext/zlib/tests/deflate_add_error.phpt
+ext/zlib/tests/gzopen_variation5.phpt
+ext/phar/tests/phar_running.phpt
+ext/phar/tests/zip/phar_stub.phpt
+ext/zlib/tests/gzcompress_basic1.phpt
+ext/phar/tests/addfuncs.phpt
