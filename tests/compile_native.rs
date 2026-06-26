@@ -50095,6 +50095,114 @@ try {
 }
 
 #[test]
+fn compile_dom_xpath_node_class_and_html_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xpath-node-class-html-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xpath-node-class-html-edges.php");
+    let output = root.join("dom-xpath-node-class-html-edges-bin");
+    fs::write(
+        &input,
+        "<?php
+echo \"--xpath-query--\\n\";
+class MyXPathCallback {
+    public static function dump(string $var) {
+        var_dump($var);
+        return true;
+    }
+}
+$doc = new DOMDocument();
+$doc->loadHTML('<a href=\"https://php.net\">hello</a>');
+$xpath = new DOMXpath($doc);
+$xpath->registerNamespace('php', 'http://php.net/xpath');
+$xpath->registerPHPFunctions();
+$xpath->query(\"//a[php:function('MyXPathCallback::dump', string(@href))]\");
+echo \"Done\\n\";
+
+echo \"--node-class--\\n\";
+class myElement extends DOMElement {
+    public function testit() { echo \"HELLO Element\\n\"; }
+}
+class myAttribute extends DOMAttr {
+    public function testit() { echo \"HELLO Attribute\\n\"; }
+}
+$doc = new DOMDocument();
+$doc->registerNodeClass('DOMElement', 'myElement');
+$doc->registerNodeClass('DOMAttr', 'myAttribute');
+$doc->appendChild(new DOMElement('root'));
+$attr = $doc->createAttribute('a');
+$doc->documentElement->setAttributeNode($attr);
+echo get_class($doc->documentElement), \"\\n\";
+$doc->documentElement->testit();
+$attr = $doc->documentElement->getAttributeNode('a');
+echo get_class($attr), \"\\n\";
+$attr->testit();
+unset($attr);
+$doc->registerNodeClass('DOMAttr', null);
+$attr = $doc->documentElement->getAttributeNode('a');
+echo get_class($attr), \"\\n\";
+try {
+    $attr->testit();
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+echo \"--xpath-state--\\n\";
+class DemoXPath extends DOMXPath {
+    public function __construct() {}
+}
+$demo = new DemoXPath();
+try {
+    var_dump($demo);
+} catch (DOMException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump($demo->document);
+} catch (DOMException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+echo \"--html-nul--\\n\";
+$doc = new DOMDocument();
+$html = '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body>U+0000 <span>' . chr(0) . '</span></body></html>';
+$doc->loadHTML($html);
+echo $doc->saveHTML();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("--xpath-query--\nstring(15) \"https://php.net\"\nDone\n"));
+    assert!(stdout.contains(
+        "--node-class--\nmyElement\nHELLO Element\nmyAttribute\nHELLO Attribute\nDOMAttr\nCall to undefined method DOMAttr::testit()\n"
+    ));
+    assert!(stdout.contains("--xpath-state--\nobject(DemoXPath)#"));
+    assert!(
+        stdout.contains(
+            "[\"registerNodeNamespaces\"]=>\n  bool(true)\n}\nInvalid State Error\nInvalid State Error\n"
+        )
+    );
+    assert!(stdout.contains(
+        "--html-nul--\n<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\"></head><body>U+0000 <span>&#65533;</span></body></html>\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_register_node_class_method"));
+    assert!(c_source.contains("ptn_dom_xpath_query_method"));
+    assert!(c_source.contains("ptn_dom_html_replace_nuls_with_replacement_alloc"));
+}
+
+#[test]
 fn compile_curl_setopt_callback_option_surface_to_native_binary() {
     let root = temp_dir("ptn-native-curl-setopt-callback-option");
     fs::create_dir_all(&root).unwrap();
