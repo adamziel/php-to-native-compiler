@@ -2250,6 +2250,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_number_range_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_resource_bundle(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spoofchecker(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uconverter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);

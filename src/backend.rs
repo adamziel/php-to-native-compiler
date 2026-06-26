@@ -1743,13 +1743,7 @@ static PTN_UNUSED int ptn_compact_intl_is_message_formatter_object(PtnValue valu
 }
 
 static PTN_UNUSED int ptn_compact_intl_class_supported(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "Collator") ||
-        ptn_ascii_case_equal(class_name, "IntlDateFormatter") ||
-        ptn_ascii_case_equal(class_name, "Locale") ||
-        ptn_ascii_case_equal(class_name, "MessageFormatter") ||
-        ptn_ascii_case_equal(class_name, "Normalizer") ||
-        ptn_ascii_case_equal(class_name, "NumberFormatter") ||
-        ptn_ascii_case_equal(class_name, "ResourceBundle");
+    return ptn_ascii_case_equal(class_name, "MessageFormatter");
 }
 
 static PTN_UNUSED void ptn_compact_intl_throw_count_error(
@@ -3296,6 +3290,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlPartsIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IntlIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ResourceBundle\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str(
@@ -23717,6 +23716,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "numberformatter" => Some("NumberFormatter"),
         "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
         "collator" => Some("Collator"),
+        "resourcebundle" => Some("ResourceBundle"),
         "spoofchecker" => Some("Spoofchecker"),
         "uconverter" => Some("UConverter"),
         _ => None,
@@ -25527,6 +25527,11 @@ fn emit_method_dispatch(
         "        return ptn_intl_iterator_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_resource_bundle(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_resourcebundle_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_message_formatter(class_name)) {\n");
     out.push_str(
         "        return ptn_intl_message_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
@@ -25637,7 +25642,7 @@ fn emit_method_dispatch(
     );
     out.push_str("        while (ptn_modeled_parent != NULL) {\n");
     out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
-    out.push_str("                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_modeled_parent, \"AppendIterator\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFileObject\") || ptn_ascii_case_equal(ptn_modeled_parent, \"RegexIterator\") || ptn_internal_class_name_is_spl_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_modeled_parent) || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTime\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeImmutable\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeZone\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateInterval\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DOMXPath\")) {\n");
+    out.push_str("                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_modeled_parent, \"AppendIterator\") || ptn_ascii_case_equal(ptn_modeled_parent, \"SplFileObject\") || ptn_ascii_case_equal(ptn_modeled_parent, \"RegexIterator\") || ptn_internal_class_name_is_spl_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_modeled_parent) || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTime\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeImmutable\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeZone\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DateInterval\") || ptn_ascii_case_equal(ptn_modeled_parent, \"DOMXPath\") || ptn_internal_class_name_is_collator(ptn_modeled_parent) || ptn_internal_class_name_is_number_formatter(ptn_modeled_parent) || ptn_internal_class_name_is_spoofchecker(ptn_modeled_parent) || ptn_internal_class_name_is_uconverter(ptn_modeled_parent)) {\n");
     out.push_str("                    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("                }\n");
     out.push_str(
@@ -25981,7 +25986,7 @@ fn emit_method_dispatch(
             out.push_str("            const char *ptn_scoped_modeled_parent = ptn_declared_class_parent_name(target_class_name);\n");
             out.push_str("            while (ptn_scoped_modeled_parent != NULL) {\n");
             out.push_str("                if (ptn_internal_class_exists_name(ptn_scoped_modeled_parent) && ptn_internal_class_method_exists(ptn_scoped_modeled_parent, method_name)) {\n");
-            out.push_str("                    if (ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"AppendIterator\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFileObject\") || ptn_internal_class_name_is_spl_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_scoped_modeled_parent) || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTime\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTimeImmutable\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTimeZone\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateInterval\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DOMXPath\")) {\n");
+            out.push_str("                    if (ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplObjectStorage\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFixedArray\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"AppendIterator\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"SplFileObject\") || ptn_internal_class_name_is_spl_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_max_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_min_heap(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spl_priority_queue(ptn_scoped_modeled_parent) || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTime\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTimeImmutable\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateTimeZone\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DateInterval\") || ptn_ascii_case_equal(ptn_scoped_modeled_parent, \"DOMXPath\") || ptn_internal_class_name_is_collator(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_number_formatter(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_spoofchecker(ptn_scoped_modeled_parent) || ptn_internal_class_name_is_uconverter(ptn_scoped_modeled_parent)) {\n");
             out.push_str("                        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
             out.push_str("                        return 1;\n");
             out.push_str("                    }\n");
@@ -34664,13 +34669,7 @@ fn mark_compact_intl_runtime_requirements(requirements: &mut RuntimeRequirements
 
 fn is_compact_intl_new_object(class_name: &str, argument_unpacks: &[bool]) -> bool {
     argument_unpacks.iter().all(|unpack| !*unpack)
-        && (class_name.eq_ignore_ascii_case("MessageFormatter")
-            || class_name.eq_ignore_ascii_case("Collator")
-            || class_name.eq_ignore_ascii_case("IntlDateFormatter")
-            || class_name.eq_ignore_ascii_case("Locale")
-            || class_name.eq_ignore_ascii_case("Normalizer")
-            || class_name.eq_ignore_ascii_case("NumberFormatter")
-            || class_name.eq_ignore_ascii_case("ResourceBundle"))
+        && class_name.eq_ignore_ascii_case("MessageFormatter")
 }
 
 fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Option<&'static str> {
@@ -34682,8 +34681,28 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         if name.eq_ignore_ascii_case("TYPE_DEFAULT") {
             return Some("PTN_NUMBER_FORMATTER_TYPE_DEFAULT");
         }
+        if name.eq_ignore_ascii_case("TYPE_INT32") {
+            return Some("PTN_NUMBER_FORMATTER_TYPE_INT32");
+        }
+        if name.eq_ignore_ascii_case("TYPE_INT64") {
+            return Some("PTN_NUMBER_FORMATTER_TYPE_INT64");
+        }
         if name.eq_ignore_ascii_case("TYPE_DOUBLE") {
             return Some("PTN_NUMBER_FORMATTER_TYPE_DOUBLE");
+        }
+    }
+    if class_name.eq_ignore_ascii_case("Spoofchecker") {
+        if name.eq_ignore_ascii_case("IGNORE_SPACE") {
+            return Some("1");
+        }
+        if name.eq_ignore_ascii_case("CASE_INSENSITIVE") {
+            return Some("2");
+        }
+        if name.eq_ignore_ascii_case("ADD_CASE_MAPPINGS") {
+            return Some("4");
+        }
+        if name.eq_ignore_ascii_case("SIMPLE_CASE_INSENSITIVE") {
+            return Some("6");
         }
     }
     None
@@ -34738,7 +34757,7 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
         return false;
     }
     let _ = argument_count;
-    if name.eq_ignore_ascii_case("printf")
+    name.eq_ignore_ascii_case("printf")
         || name.eq_ignore_ascii_case("var_export")
         || name.eq_ignore_ascii_case("is_null")
         || name.eq_ignore_ascii_case("intl_get_error_code")
@@ -34750,24 +34769,7 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
         || name.eq_ignore_ascii_case("msgfmt_format_message")
         || name.eq_ignore_ascii_case("MessageFormatter::create")
         || name.eq_ignore_ascii_case("MessageFormatter::formatMessage")
-    {
-        return true;
-    }
-    let lower = name.to_ascii_lowercase();
-    lower.starts_with("collator_")
-        || lower.starts_with("datefmt_")
-        || lower.starts_with("locale_")
-        || lower.starts_with("msgfmt_")
-        || lower.starts_with("normalizer_")
-        || lower.starts_with("numfmt_")
-        || lower.starts_with("resourcebundle_")
-        || lower.starts_with("collator::")
-        || lower.starts_with("intldateformatter::")
-        || lower.starts_with("locale::")
-        || lower.starts_with("messageformatter::")
-        || lower.starts_with("normalizer::")
-        || lower.starts_with("numberformatter::")
-        || lower.starts_with("resourcebundle::")
+        || name.to_ascii_lowercase().starts_with("msgfmt_")
 }
 
 fn is_uri_whatwg_url_class_name(name: &str) -> bool {
