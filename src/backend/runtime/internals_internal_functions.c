@@ -65490,7 +65490,7 @@ static const char *ptn_current_timezone_name(void);
 static int ptn_timezone_offset_for_name(const char *name, time_t timestamp);
 static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_timestamp);
 static char *ptn_timezone_canonical_offset_name(const char *name);
-static time_t ptn_datetime_utc_timestamp_for_parts(int year, int month, int day, int hour, int minute, int second);
+static time_t ptn_datetime_utc_timestamp_for_parts(int64_t year, int month, int day, int hour, int minute, int second);
 static PtnValue ptn_datetime_create_object(PtnRuntime *runtime, const char *class_name, time_t timestamp, int microsecond, const char *timezone, size_t line);
 static PtnValue ptn_datetime_zone_create_from_name(PtnRuntime *runtime, const char *class_name, const char *name, size_t line);
 
@@ -96270,9 +96270,21 @@ static int ptn_date_is_leap_year(int year) {
     return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
 }
 
+static int ptn_date_is_leap_year_i64(int64_t year) {
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
 static int ptn_date_days_in_month(int year, int month) {
     static const int days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
     if (month == 2 && ptn_date_is_leap_year(year)) {
+        return 29;
+    }
+    return month >= 1 && month <= 12 ? days[month - 1] : 31;
+}
+
+static int ptn_date_days_in_month_i64(int64_t year, int month) {
+    static const int days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (month == 2 && ptn_date_is_leap_year_i64(year)) {
         return 29;
     }
     return month >= 1 && month <= 12 ? days[month - 1] : 31;
@@ -96643,6 +96655,20 @@ static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_
 static int ptn_datetime_timestamp_dst_month(time_t timestamp);
 static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t timestamp);
 
+typedef struct {
+    int64_t year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    int weekday;
+    int yearday;
+} PtnDateTimeCivilParts;
+
+static int64_t ptn_datetime_clamp_i128_to_i64(__int128 value);
+static void ptn_datetime_break_timestamp(int64_t timestamp, PtnDateTimeCivilParts *out);
+
 static PtnValue ptn_format_date_value_for_timezone(
     PtnRuntime *runtime,
     const char *function_name,
@@ -96656,19 +96682,31 @@ static PtnValue ptn_format_date_value_for_timezone(
     (void)function_name;
     (void)line;
     int64_t offset = ptn_timezone_offset_for_name(timezone, timestamp);
-    time_t wall_timestamp = timestamp + offset;
+    int64_t wall_timestamp = ptn_datetime_clamp_i128_to_i64((__int128)timestamp + (__int128)offset);
+    PtnDateTimeCivilParts civil;
+    ptn_datetime_break_timestamp(wall_timestamp, &civil);
     struct tm parts_storage;
-    struct tm *parts = gmtime(&wall_timestamp);
-    if (parts == NULL) {
-        return ptn_bool(0);
+    memset(&parts_storage, 0, sizeof(parts_storage));
+    if (civil.year - 1900 > INT_MAX) {
+        parts_storage.tm_year = INT_MAX;
+    } else if (civil.year - 1900 < INT_MIN) {
+        parts_storage.tm_year = INT_MIN;
+    } else {
+        parts_storage.tm_year = (int)(civil.year - 1900);
     }
-    parts_storage = *parts;
-    parts = &parts_storage;
+    parts_storage.tm_mon = civil.month - 1;
+    parts_storage.tm_mday = civil.day;
+    parts_storage.tm_hour = civil.hour;
+    parts_storage.tm_min = civil.minute;
+    parts_storage.tm_sec = civil.second;
+    parts_storage.tm_wday = civil.weekday;
+    parts_storage.tm_yday = civil.yearday;
+    struct tm *parts = &parts_storage;
 
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    int year = parts->tm_year + 1900;
-    int month = parts->tm_mon + 1;
+    int64_t year = civil.year;
+    int month = civil.month;
     for (size_t i = 0; i < format.len; i++) {
         char ch = format.data[i];
         if (ch == '\\' && i + 1 < format.len) {
@@ -96709,17 +96747,17 @@ static PtnValue ptn_format_date_value_for_timezone(
                 break;
             }
             case 'c':
-                ptn_string_buffer_append_format(&buffer, "%04d-%02d-%02dT%02d:%02d:%02d", year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
+                ptn_string_buffer_append_format(&buffer, "%04lld-%02d-%02dT%02d:%02d:%02d", (long long)year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 1);
                 break;
             case 'r':
                 ptn_string_buffer_append_format(
                     &buffer,
-                    "%s, %02d %s %04d %02d:%02d:%02d ",
+                    "%s, %02d %s %04lld %02d:%02d:%02d ",
                     ptn_date_weekday_short(parts->tm_wday),
                     parts->tm_mday,
                     ptn_date_month_short(parts->tm_mon),
-                    year,
+                    (long long)year,
                     parts->tm_hour,
                     parts->tm_min,
                     parts->tm_sec
@@ -96733,13 +96771,13 @@ static PtnValue ptn_format_date_value_for_timezone(
                 ptn_string_buffer_append(&buffer, ptn_date_month_short(parts->tm_mon));
                 break;
             case 'Y':
-                ptn_string_buffer_append_format(&buffer, "%04d", year);
+                ptn_string_buffer_append_format(&buffer, "%04lld", (long long)year);
                 break;
             case 'X':
-                ptn_string_buffer_append_format(&buffer, "%+05d", year);
+                ptn_string_buffer_append_format(&buffer, "%+05lld", (long long)year);
                 break;
             case 'y':
-                ptn_string_buffer_append_format(&buffer, "%02d", year % 100);
+                ptn_string_buffer_append_format(&buffer, "%02lld", (long long)(year % 100));
                 break;
             case 'm':
                 ptn_string_buffer_append_format(&buffer, "%02d", month);
@@ -96748,10 +96786,10 @@ static PtnValue ptn_format_date_value_for_timezone(
                 ptn_string_buffer_append_format(&buffer, "%d", month);
                 break;
             case 't':
-                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_days_in_month(year, month));
+                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_days_in_month_i64(year, month));
                 break;
             case 'L':
-                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_is_leap_year(year));
+                ptn_string_buffer_append_format(&buffer, "%d", ptn_date_is_leap_year_i64(year));
                 break;
             case 'd':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_mday);
@@ -97607,24 +97645,80 @@ static int ptn_timezone_uses_z_designator(const char *name) {
         ptn_ascii_case_equal(name, "Etc/Zulu");
 }
 
+static int64_t ptn_datetime_floor_div_i64(int64_t value, int64_t divisor) {
+    int64_t quotient = value / divisor;
+    int64_t remainder = value % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) {
+        quotient--;
+    }
+    return quotient;
+}
+
+static int64_t ptn_datetime_days_from_civil(int64_t year, int month, int day) {
+    year -= month <= 2;
+    int64_t era = ptn_datetime_floor_div_i64(year, 400);
+    unsigned year_of_era = (unsigned)(year - era * 400);
+    unsigned adjusted_month = (unsigned)(month + (month > 2 ? -3 : 9));
+    unsigned day_of_year = (153 * adjusted_month + 2) / 5 + (unsigned)day - 1;
+    unsigned day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    return era * 146097 + (int64_t)day_of_era - 719468;
+}
+
+static int64_t ptn_datetime_clamp_i128_to_i64(__int128 value) {
+    if (value > (__int128)INT64_MAX) {
+        return INT64_MAX;
+    }
+    if (value < (__int128)INT64_MIN) {
+        return INT64_MIN;
+    }
+    return (int64_t)value;
+}
+
 static time_t ptn_datetime_utc_timestamp_for_parts(
-    int year,
+    int64_t year,
     int month,
     int day,
     int hour,
     int minute,
     int second
 ) {
-    struct tm parts;
-    memset(&parts, 0, sizeof(parts));
-    parts.tm_year = year - 1900;
-    parts.tm_mon = month - 1;
-    parts.tm_mday = day;
-    parts.tm_hour = hour;
-    parts.tm_min = minute;
-    parts.tm_sec = second;
-    parts.tm_isdst = -1;
-    return ptn_mktime_in_utc(&parts);
+    int64_t days = ptn_datetime_days_from_civil(year, month, day);
+    __int128 total = (__int128)days * 86400 +
+        (__int128)hour * 3600 +
+        (__int128)minute * 60 +
+        (__int128)second;
+    return (time_t)ptn_datetime_clamp_i128_to_i64(total);
+}
+
+static void ptn_datetime_civil_from_days(int64_t days, int64_t *year_out, int *month_out, int *day_out) {
+    int64_t z = days + 719468;
+    int64_t era = ptn_datetime_floor_div_i64(z, 146097);
+    unsigned day_of_era = (unsigned)(z - era * 146097);
+    unsigned year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365;
+    int64_t year = (int64_t)year_of_era + era * 400;
+    unsigned day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    unsigned month_piece = (5 * day_of_year + 2) / 153;
+    unsigned day = day_of_year - (153 * month_piece + 2) / 5 + 1;
+    int month = (int)month_piece + (month_piece < 10 ? 3 : -9);
+    year += month <= 2;
+    *year_out = year;
+    *month_out = month;
+    *day_out = (int)day;
+}
+
+static void ptn_datetime_break_timestamp(int64_t timestamp, PtnDateTimeCivilParts *out) {
+    int64_t days = ptn_datetime_floor_div_i64(timestamp, 86400);
+    int64_t seconds_of_day = timestamp - days * 86400;
+    ptn_datetime_civil_from_days(days, &out->year, &out->month, &out->day);
+    out->hour = (int)(seconds_of_day / 3600);
+    seconds_of_day %= 3600;
+    out->minute = (int)(seconds_of_day / 60);
+    out->second = (int)(seconds_of_day % 60);
+    out->weekday = (int)((days + 4) % 7);
+    if (out->weekday < 0) {
+        out->weekday += 7;
+    }
+    out->yearday = (int)(days - ptn_datetime_days_from_civil(out->year, 1, 1));
 }
 
 static int ptn_date_weekday_for_ymd(int year, int month, int day) {
@@ -97908,11 +98002,6 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_timezone_parse_offset_literal(name, &literal_offset)) {
         return literal_offset;
     }
-    int system_offset = 0;
-    if (ptn_timezone_system_offset_for_name(name, timestamp, &system_offset)) {
-        return system_offset;
-    }
-    int europe_dst = ptn_datetime_timestamp_europe_dst(timestamp);
     if (ptn_ascii_case_equal(name, "UTC") ||
         ptn_ascii_case_equal(name, "GMT") ||
         ptn_ascii_case_equal(name, "Z") ||
@@ -97923,6 +98012,11 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         ptn_ascii_case_equal(name, "Africa/Abidjan")) {
         return 0;
     }
+    int system_offset = 0;
+    if (ptn_timezone_system_offset_for_name(name, timestamp, &system_offset)) {
+        return system_offset;
+    }
+    int europe_dst = ptn_datetime_timestamp_europe_dst(timestamp);
     if (ptn_ascii_case_equal(name, "Europe/London") ||
         ptn_ascii_case_equal(name, "Europe/Lisbon")) {
         return europe_dst ? 3600 : 0;
@@ -98887,7 +98981,7 @@ static int ptn_datetime_tail_is_space(const char *input, int consumed) {
 }
 
 static int ptn_datetime_components_to_timestamp(
-    int year,
+    int64_t year,
     int month,
     int day,
     int hour,
@@ -98912,18 +99006,9 @@ static int ptn_datetime_components_to_timestamp(
         owned_timezone = ptn_timezone_canonical_offset_name(timezone_suffix);
         timezone = owned_timezone;
     }
-    struct tm parts;
-    memset(&parts, 0, sizeof(parts));
-    parts.tm_year = year - 1900;
-    parts.tm_mon = month - 1;
-    parts.tm_mday = day;
-    parts.tm_hour = hour;
-    parts.tm_min = minute;
-    parts.tm_sec = second;
-    parts.tm_isdst = -1;
-    time_t wall_timestamp = ptn_mktime_in_utc(&parts);
+    time_t wall_timestamp = ptn_datetime_utc_timestamp_for_parts(year, month, day, hour, minute, second);
     int offset = ptn_timezone_offset_for_wall_timestamp(timezone, wall_timestamp);
-    *timestamp_out = wall_timestamp - offset;
+    *timestamp_out = (time_t)ptn_datetime_clamp_i128_to_i64((__int128)wall_timestamp - (__int128)offset);
     if (microsecond_out != NULL) {
         *microsecond_out = microsecond;
     }
@@ -99283,7 +99368,7 @@ static int ptn_datetime_parse_date_string(
         }
         input = normalized;
     }
-    int year = 0;
+    long long year = 0;
     int month = 0;
     int day = 0;
     int hour = 0;
@@ -99295,7 +99380,7 @@ static int ptn_datetime_parse_date_string(
     int consumed = 0;
     int parsed = sscanf(
         input,
-        "%d-%d-%d %d:%d:%d%n",
+        "%lld-%d-%d %d:%d:%d%n",
         &year,
         &month,
         &day,
@@ -99308,7 +99393,7 @@ static int ptn_datetime_parse_date_string(
         consumed = 0;
         parsed = sscanf(
             input,
-            "%d-%d-%d %d:%d%n",
+            "%lld-%d-%d %d:%d%n",
             &year,
             &month,
             &day,
@@ -99374,7 +99459,7 @@ static int ptn_datetime_parse_date_string(
             }
         }
     } else {
-        parsed = sscanf(input, "%d-%d-%d", &year, &month, &day);
+        parsed = sscanf(input, "%lld-%d-%d", &year, &month, &day);
     }
     if (parsed < 3) {
         return ptn_datetime_parse_textual_date_string(input, default_timezone, timestamp_out, microsecond_out, timezone_out);
@@ -99477,6 +99562,15 @@ static void ptn_datetime_split_timestamp(double timestamp, time_t *seconds_out, 
 static int ptn_datetime_parse_timestamp_literal(const char *input, time_t *timestamp_out, int *microsecond_out) {
     if (input == NULL || input[0] != '@') {
         return 0;
+    }
+    char *integer_end = NULL;
+    long long integer_timestamp = strtoll(input + 1, &integer_end, 10);
+    if (integer_end != input + 1 && *integer_end == '\0') {
+        *timestamp_out = (time_t)integer_timestamp;
+        if (microsecond_out != NULL) {
+            *microsecond_out = 0;
+        }
+        return 1;
     }
     char *end = NULL;
     double timestamp = strtod(input + 1, &end);
@@ -104390,7 +104484,39 @@ static PtnValue ptn_internal_strtotime(PtnRuntime *runtime, size_t argc, const P
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    int64_t base_timestamp = argc >= 2 ? ptn_value_to_integer(args[1]) : (int64_t)time(NULL);
+    int64_t base_timestamp = (int64_t)time(NULL);
+    if (argc >= 2) {
+        PtnValue base_arg = ptn_value_deref(args[1]);
+        if (base_arg.type != PTN_NULL) {
+            switch (base_arg.type) {
+                case PTN_BOOL:
+                case PTN_INT:
+                case PTN_FLOAT:
+                case PTN_STRING:
+                    base_timestamp = ptn_internal_expect_integer_arg(runtime, "strtotime", 2, "baseTimestamp", args[1], line);
+                    if (runtime->exceptions->active_exception != NULL) {
+                        ptn_string_operand_free(input);
+                        return ptn_null();
+                    }
+                    break;
+                default: {
+                    char message[192];
+                    int written = snprintf(
+                        message,
+                        sizeof(message),
+                        "strtotime(): Argument #2 ($baseTimestamp) must be of type ?int, %s given",
+                        ptn_arithmetic_operand_type_name(base_arg)
+                    );
+                    if (written < 0 || (size_t)written >= sizeof(message)) {
+                        ptn_abort_out_of_memory();
+                    }
+                    ptn_string_operand_free(input);
+                    ptn_throw_exception(runtime, "TypeError", message);
+                    return ptn_null();
+                }
+            }
+        }
+    }
     char *datetime = ptn_duplicate_string_len(input.data, input.len);
     ptn_string_operand_free(input);
     time_t timestamp = 0;
@@ -104626,6 +104752,116 @@ static int ptn_datetime_try_strptime_format(
 #endif
 }
 
+static int ptn_datetime_parse_fixed_width_number(const char **cursor, int min_digits, int max_digits, int min_value, int max_value, int *value_out) {
+    const char *start = *cursor;
+    int digits = 0;
+    int value = 0;
+    while (digits < max_digits && isdigit((unsigned char)start[digits])) {
+        value = value * 10 + (start[digits] - '0');
+        digits++;
+    }
+    if (digits < min_digits || value < min_value || value > max_value) {
+        return 0;
+    }
+    *cursor = start + digits;
+    if (value_out != NULL) {
+        *value_out = value;
+    }
+    return 1;
+}
+
+static int ptn_datetime_try_unix_timestamp_format(
+    const char *format,
+    const char *datetime,
+    time_t *timestamp_out,
+    int *microsecond_out
+) {
+    if (strchr(format, 'U') == NULL) {
+        return 0;
+    }
+    const char *format_cursor = format;
+    const char *datetime_cursor = datetime;
+    int saw_timestamp = 0;
+    int64_t parsed_timestamp = 0;
+    while (*format_cursor != '\0') {
+        if (*format_cursor == '\\') {
+            format_cursor++;
+            if (*format_cursor == '\0' || *datetime_cursor != *format_cursor) {
+                return 0;
+            }
+            format_cursor++;
+            datetime_cursor++;
+            continue;
+        }
+        if (isspace((unsigned char)*format_cursor)) {
+            if (!isspace((unsigned char)*datetime_cursor)) {
+                return 0;
+            }
+            while (isspace((unsigned char)*format_cursor)) {
+                format_cursor++;
+            }
+            while (isspace((unsigned char)*datetime_cursor)) {
+                datetime_cursor++;
+            }
+            continue;
+        }
+        switch (*format_cursor) {
+            case 'U': {
+                char *end = NULL;
+                long long value = strtoll(datetime_cursor, &end, 10);
+                if (end == datetime_cursor) {
+                    return 0;
+                }
+                parsed_timestamp = (int64_t)value;
+                saw_timestamp = 1;
+                datetime_cursor = end;
+                format_cursor++;
+                break;
+            }
+            case 'H':
+            case 'G': {
+                int ignored = 0;
+                if (!ptn_datetime_parse_fixed_width_number(&datetime_cursor, 1, 2, 0, 23, &ignored)) {
+                    return 0;
+                }
+                format_cursor++;
+                break;
+            }
+            case 'i':
+            case 's': {
+                int ignored = 0;
+                if (!ptn_datetime_parse_fixed_width_number(&datetime_cursor, 1, 2, 0, 59, &ignored)) {
+                    return 0;
+                }
+                format_cursor++;
+                break;
+            }
+            case '!':
+            case '|':
+                format_cursor++;
+                break;
+            default:
+                if (isalpha((unsigned char)*format_cursor) || *datetime_cursor != *format_cursor) {
+                    return 0;
+                }
+                format_cursor++;
+                datetime_cursor++;
+                break;
+        }
+    }
+    while (isspace((unsigned char)*datetime_cursor)) {
+        datetime_cursor++;
+    }
+    if (!saw_timestamp || *datetime_cursor != '\0') {
+        return 0;
+    }
+    *timestamp_out = (time_t)parsed_timestamp;
+    if (microsecond_out != NULL) {
+        *microsecond_out = 0;
+    }
+    return 1;
+}
+
 static int ptn_datetime_format_ends_with_unescaped_char(const char *format, char marker) {
     size_t len = strlen(format);
     if (len == 0 || format[len - 1] != marker) {
@@ -104646,6 +104882,12 @@ static int ptn_datetime_parse_create_from_format(
     int *microsecond_out,
     char **timezone_out
 ) {
+    if (ptn_datetime_try_unix_timestamp_format(format, datetime, timestamp_out, microsecond_out)) {
+        if (timezone_out != NULL) {
+            *timezone_out = NULL;
+        }
+        return 1;
+    }
     if (strchr(format, '#') == NULL) {
         return ptn_datetime_try_strptime_format(
             format,
