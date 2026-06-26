@@ -5604,9 +5604,14 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+static int ptn_dynamic_execute_php_source(PtnRuntime *runtime, const char *code, size_t len, PtnValue *result_out);
+static int ptn_runtime_ini_bool(const char *value, int default_value);
+static const char *ptn_runtime_phar_readonly(PtnRuntime *runtime);
+static char *ptn_duplicate_open_stream_detail(const char *detail);
 typedef struct PtnPharArchiveState PtnPharArchiveState;
 typedef struct PtnPharDirectoryData PtnPharDirectoryData;
 static void ptn_phar_archive_clone_path(const char *source_path, const char *dest_path);
+static void ptn_phar_set_last_stream_open_error(const char *detail);
 static char *ptn_phar_take_last_stream_error(void);
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
 static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out);
@@ -52504,7 +52509,7 @@ static void ptn_phar_stream_close_hook(PtnResource *resource, void *data) {
     ptn_phar_archive_release_entry(stream_data->archive, stream_data->entry_name);
 }
 
-static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue *out) {
+static int ptn_try_open_phar_stream(PtnRuntime *runtime, const char *path, const char *mode, PtnValue *out) {
     if (path == NULL || strncmp(path, "phar://", 7) != 0) {
         return 0;
     }
@@ -52512,6 +52517,13 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
     int can_write = ptn_phar_stream_mode_can_write(mode);
     int truncate = ptn_phar_stream_mode_truncates(mode);
     int append = ptn_phar_stream_mode_appends(mode);
+    if (can_write && ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1)) {
+        ptn_phar_set_last_stream_open_error(
+            "phar error: write operations disabled by the php.ini setting phar.readonly"
+        );
+        errno = EACCES;
+        return 0;
+    }
     PtnPharArchiveState *archive = NULL;
     char *entry_name = NULL;
     if (!ptn_phar_uri_archive_and_entry_mode(path, can_write, &archive, &entry_name)) {
@@ -53404,7 +53416,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return php_stream;
     }
-    if (ptn_try_open_phar_stream(path, mode, &php_stream)) {
+    if (ptn_try_open_phar_stream(runtime, path, mode, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -140881,6 +140893,11 @@ static char *ptn_phar_take_last_stream_error(void) {
     return message;
 }
 
+static void ptn_phar_set_last_stream_open_error(const char *detail) {
+    ptn_phar_clear_last_stream_error();
+    ptn_phar_last_stream_error = ptn_duplicate_open_stream_detail(detail);
+}
+
 static uint32_t ptn_phar_read_u32_le(const unsigned char *data) {
     return ((uint32_t)data[0]) |
         ((uint32_t)data[1] << 8) |
@@ -144907,8 +144924,27 @@ static int ptn_include_phar_plain_entry(PtnRuntime *runtime, const char *uri, Pt
         return 0;
     }
     if (ptn_phar_bytes_contain_php_open_tag(data, data_len)) {
+        const char *saved_source_path = runtime != NULL ? runtime->source_path : NULL;
+        if (runtime != NULL) {
+            runtime->source_path = uri;
+            ptn_runtime_note_included_file(runtime, uri);
+        }
+        PtnValue result = ptn_null();
+        int ok = ptn_dynamic_execute_php_source(runtime, (const char *)data, data_len, &result);
+        if (runtime != NULL) {
+            runtime->source_path = saved_source_path;
+        }
         free(data);
-        return 0;
+        if (!ok) {
+            ptn_value_destroy(&result);
+            return 0;
+        }
+        if (result_out != NULL) {
+            *result_out = result;
+        } else {
+            ptn_value_destroy(&result);
+        }
+        return 1;
     }
     ptn_output_write(runtime, (const char *)data, data_len);
     ptn_runtime_note_included_file(runtime, uri);

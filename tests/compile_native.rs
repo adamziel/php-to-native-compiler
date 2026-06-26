@@ -53346,6 +53346,52 @@ foreach ($subclass as $entry) {
 }
 
 #[test]
+fn compile_phar_readonly_blocks_write_open_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-readonly-write-open");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-readonly-write-open.php");
+    let output = root.join("phar-readonly-write-open-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/readonly-write.phar.tar';
+$alias = 'phar://' . $fname;
+$phar = new Phar($fname);
+$phar->setStub("<?php __HALT_COMPILER(); ?>");
+$phar['b/c.php'] = '<?php echo "This is b/c\n"; ?>';
+$phar->stopBuffering();
+ini_set('phar.readonly', 1);
+var_dump(fopen($alias . '/b/c.php', 'wb'));
+include $alias . '/b/c.php';
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: fopen(phar://{}/readonly-write.phar.tar/b/c.php): Failed to open stream: phar error: write operations disabled by the php.ini setting phar.readonly in {} on line 9\nbool(false)\nThis is b/c\n",
+            root.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_phar_readonly"));
+    assert!(c_source.contains("write operations disabled by the php.ini setting phar.readonly"));
+}
+
+#[test]
 fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
     fs::create_dir_all(&root).unwrap();

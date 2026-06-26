@@ -1,0 +1,15 @@
+# ptn-w17z.958 focused PHAR tar links/open/rmdir and zlib residual row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T211853Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/gh18953.phpt
+ext/phar/tests/tar/links5.phpt
+ext/phar/tests/bug72321.phpt
+ext/phar/tests/rmdir.phpt
+ext/phar/tests/fopen_edgecases.phpt
+ext/phar/tests/010.phpt
+ext/zlib/tests/gh16883.phpt
+ext/phar/tests/tar/open_for_write_existing_c.phpt
+ext/phar/tests/bug72928.phpt
+ext/phar/tests/tar/phar_begin_setstub_commit.phpt
+ext/phar/tests/phar_buildfromiterator7.phpt
+ext/phar/tests/bug71354.phpt
