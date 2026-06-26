@@ -93259,6 +93259,112 @@ echo $stat[\"size\"] === strlen($contents) ? \"fstat-ok\\n\" : \"fstat-bad\\n\";
 }
 
 #[test]
+fn compile_scandir_sort_constants_and_file_flag_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-scandir-and-file-flags");
+    let directory = root.join("scan");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("a.txt"), "").unwrap();
+    fs::write(directory.join("b.txt"), "").unwrap();
+    let lines = root.join("lines.txt");
+    fs::write(&lines, "Line 1\nLine 2").unwrap();
+    let input = root.join("scandir-and-file-flags.php");
+    let output = root.join("scandir-and-file-flags-bin");
+    let directory_path = directory.to_string_lossy();
+    let lines_path = lines.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+echo SCANDIR_SORT_ASCENDING, ':', SCANDIR_SORT_DESCENDING, ':', SCANDIR_SORT_NONE, \"\\n\";\n\
+echo implode('|', scandir(\"{}\", SCANDIR_SORT_DESCENDING)), \"\\n\";\n\
+try {{\n\
+    scandir('');\n\
+}} catch (ValueError $e) {{\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}}\n\
+foreach ([0, 2, 8, 16, 18, 24] as $flags) {{\n\
+    try {{\n\
+        $rows = file(\"{}\", $flags);\n\
+        echo $flags, ':', strlen($rows[0]), ':', strlen($rows[1]), \"\\n\";\n\
+    }} catch (ValueError $e) {{\n\
+        echo $flags, ':', $e->getMessage(), \"\\n\";\n\
+    }}\n\
+}}\n",
+            directory_path, lines_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0:1:2\n\
+b.txt|a.txt|..|.\n\
+scandir(): Argument #1 ($directory) must not be empty\n\
+0:7:6\n\
+2:6:6\n\
+8:file(): Argument #2 ($flags) must be a valid flag value\n\
+16:7:6\n\
+18:6:6\n\
+24:file(): Argument #2 ($flags) must be a valid flag value\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_include_path_and_zlib_wrapper_streams_to_native_binary() {
+    let root = temp_dir("ptn-native-include-path-zlib-streams");
+    fs::create_dir_all(&root).unwrap();
+    let gzip_path = root.join("payload.txt.gz");
+    fs::write(
+        &gzip_path,
+        [
+            31u8, 139, 8, 0, 0, 0, 0, 0, 2, 3, 203, 72, 205, 201, 201, 231, 2, 0, 32, 48, 58, 54,
+            6, 0, 0, 0,
+        ],
+    )
+    .unwrap();
+    let input = root.join("include-path-zlib-streams.php");
+    let output = root.join("include-path-zlib-streams-bin");
+    let gzip_path = gzip_path.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$file = basename(__FILE__);\n\
+$fp = fopen($file, 'r', true);\n\
+var_dump(is_resource($fp));\n\
+fclose($fp);\n\
+$src = 'compress.zlib://{}';\n\
+$read = readfile($src);\n\
+echo \"\\n\", $read, \"\\n\";\n\
+$gz = gzopen(\"{}\", 'r');\n\
+var_dump(fstat($gz));\n\
+fclose($gz);\n",
+            gzip_path, gzip_path
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+hello\n\
+\n\
+6\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_append_modes_track_php_logical_position_to_native_binary() {
     let root = temp_dir("ptn-native-stream-append-mode-position");
     fs::create_dir_all(&root).unwrap();

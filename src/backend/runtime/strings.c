@@ -3099,6 +3099,22 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_FILE_APPEND);
         return 1;
     }
+    if (strcmp(name, "FILE_NO_DEFAULT_CONTEXT") == 0) {
+        *out = ptn_int(PTN_FILE_NO_DEFAULT_CONTEXT);
+        return 1;
+    }
+    if (strcmp(name, "SCANDIR_SORT_ASCENDING") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_ASCENDING);
+        return 1;
+    }
+    if (strcmp(name, "SCANDIR_SORT_DESCENDING") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_DESCENDING);
+        return 1;
+    }
+    if (strcmp(name, "SCANDIR_SORT_NONE") == 0) {
+        *out = ptn_int(PTN_SCANDIR_SORT_NONE);
+        return 1;
+    }
     if (strcmp(name, "LOCK_SH") == 0) {
         *out = ptn_int(PTN_LOCK_SH);
         return 1;

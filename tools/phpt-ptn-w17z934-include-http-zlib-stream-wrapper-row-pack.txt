@@ -1,0 +1,12 @@
+ext/standard/tests/file/include_userstream_001.phpt
+ext/standard/tests/file/include_streams.phpt
+ext/standard/tests/file/stream_rfc2397_006.phpt
+ext/standard/tests/file/fopen_variation1.phpt
+ext/standard/tests/file/file_variation6.phpt
+ext/standard/tests/http/gh11274.phpt
+ext/standard/tests/http/gh16810.phpt
+ext/standard/tests/dir/bug41693.phpt
+ext/standard/tests/dir/scandir_basic.phpt
+ext/zlib/tests/zlib_wrapper_fstat_basic.phpt
+ext/zlib/tests/zlib_scheme_file_read_file_basic.phpt
+ext/phar/tests/phar_ctx_001.phpt
