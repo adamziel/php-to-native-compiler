@@ -10145,6 +10145,23 @@ static PTN_UNUSED void ptn_generator_flush_pending_output(
     generator->pending_output.data[0] = '\0';
 }
 
+static PTN_UNUSED void ptn_generator_flush_pending_output_before_value_drop(
+    PtnRuntime *runtime,
+    PtnValue value
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (
+        !value.owned ||
+        resolved.type != PTN_OBJECT ||
+        resolved.as.object == NULL ||
+        resolved.as.object->refcount != 1 ||
+        !ptn_object_is_generator(resolved.as.object)
+    ) {
+        return;
+    }
+    ptn_generator_flush_pending_output(runtime, ptn_generator_from_value(resolved));
+}
+
 static PTN_UNUSED PtnValue ptn_generator_take_pending_output(PtnGenerator *generator) {
     if (generator == NULL || generator->pending_output.len == 0) {
         return ptn_null();
@@ -11158,6 +11175,8 @@ static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue rece
         ptn_generator_skip_exhausted_delegates(generator);
         if (ptn_generator_position_valid(generator)) {
             ptn_generator_flush_output_chunk(runtime, generator, generator->position);
+        } else {
+            ptn_generator_flush_pending_output(runtime, generator);
         }
     }
     return ptn_null();
@@ -11693,7 +11712,6 @@ static PTN_UNUSED void ptn_generator_set_return_value(PtnRuntime *runtime, PtnGe
     ptn_value_destroy(&generator->return_value);
     generator->return_value = ptn_value_clone_deref(value);
     generator->completed = 1;
-    ptn_generator_flush_pending_output(runtime, generator);
 }
 
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line) {

@@ -31003,7 +31003,7 @@ fn generator_yield_abort_target_for_finally<'a>(
 ) -> Option<&'a str> {
     (values.current_function_is_generator
         && instructions_contain_generator_statement_yield(finally_body))
-    .then_some(return_target)
+    .then_some(return_target.filter(|_| values.exceptional_finally_saved_exception.is_some()))
     .flatten()
 }
 
@@ -37527,6 +37527,14 @@ fn emit_value_cleanup_with_runtime_line(out: &mut String, indent: &str, value: &
     out.push_str(", ");
     out.push_str(line);
     out.push_str(");\n");
+}
+
+fn emit_method_receiver_cleanup(out: &mut String, indent: &str, value: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_generator_flush_pending_output_before_value_drop(&runtime, ");
+    out.push_str(value);
+    out.push_str(");\n");
+    emit_value_cleanup(out, indent, value);
 }
 
 fn emit_push_owned_call_argument_roots(
@@ -57939,7 +57947,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
         let declared_signature =
@@ -57997,7 +58005,7 @@ impl ValueEmitter {
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
         if arguments.is_empty() {
@@ -58020,7 +58028,7 @@ impl ValueEmitter {
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
 
@@ -58114,7 +58122,7 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
-        emit_value_cleanup(out, "    ", &receiver_temp);
+        emit_method_receiver_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 
@@ -58333,7 +58341,7 @@ impl ValueEmitter {
             }
         }
         out.push_str("    }\n");
-        emit_value_cleanup(out, "    ", &receiver_temp);
+        emit_method_receiver_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 
@@ -58552,7 +58560,7 @@ impl ValueEmitter {
             }
         }
         out.push_str("    }\n");
-        emit_value_cleanup(out, "    ", &receiver_temp);
+        emit_method_receiver_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 
@@ -58579,7 +58587,7 @@ impl ValueEmitter {
         out.push_str(&method_value_temp);
         out.push_str(".type != PTN_STRING) {\n");
         emit_value_cleanup(out, "        ", &name_temp);
-        emit_value_cleanup(out, "        ", &receiver_temp);
+        emit_method_receiver_cleanup(out, "        ", &receiver_temp);
         out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"Method name must be a string\", runtime.source_path, ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -58635,7 +58643,7 @@ impl ValueEmitter {
             out.push_str(&method_name_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &name_temp);
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
         if arguments.is_empty() {
@@ -58660,7 +58668,7 @@ impl ValueEmitter {
             out.push_str(&method_name_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &name_temp);
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            emit_method_receiver_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
 
@@ -58728,7 +58736,7 @@ impl ValueEmitter {
         out.push_str(&method_name_temp);
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &name_temp);
-        emit_value_cleanup(out, "    ", &receiver_temp);
+        emit_method_receiver_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 

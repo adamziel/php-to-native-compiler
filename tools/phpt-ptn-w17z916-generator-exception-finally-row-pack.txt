@@ -1,0 +1,13 @@
+# Focused generator exception/finally current-red row pack for ptn-w17z.916.
+Zend/tests/generators/bug66041.phpt
+Zend/tests/generators/gh15330-005.phpt
+Zend/tests/generators/generator_throwing_in_foreach.phpt
+Zend/tests/generators/throw_caught.phpt
+Zend/tests/generators/yield_from_throw_with_throwing_exception.phpt
+Zend/tests/generators/yield_in_finally.phpt
+Zend/tests/generators/bug71441.phpt
+Zend/tests/generators/bug71980.phpt
+Zend/tests/generators/gh15275-001.phpt
+Zend/tests/generators/yield_during_function_call.phpt
+Zend/tests/generators/yield_from_multi_tree_exception.phpt
+Zend/tests/generators/throw_not_an_exception.phpt
