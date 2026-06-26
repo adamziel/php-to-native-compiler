@@ -28160,11 +28160,26 @@ var_dump(file_put_contents("compress.zlib://$put", "\nappended", FILE_APPEND));
 $h = gzopen($put, "r");
 var_dump(gzread($h, 4096));
 gzclose($h);
+
+$levelData = str_repeat(file_get_contents(__FILE__), 10);
+function ptn_zlib_level_size(string $path, string $data, int $level): int {
+    $ctx = stream_context_create(["zlib" => ["level" => $level]]);
+    $stream = fopen("compress.zlib://$path", "w", false, $ctx);
+    fwrite($stream, $data);
+    fclose($stream);
+    return filesize($path);
+}
+$level1 = __DIR__ . "/zlib-level-1.gz";
+$level9 = __DIR__ . "/zlib-level-9.gz";
+var_dump(ptn_zlib_level_size($level9, $levelData, 9) < ptn_zlib_level_size($level1, $levelData, 1));
+
 @unlink($source);
 @unlink($compressed);
 @unlink($plain);
 @unlink($round);
 @unlink($put);
+@unlink($level1);
+@unlink($level9);
 "#,
     )
     .unwrap();
@@ -28190,7 +28205,8 @@ int(19)\n\
 int(9)\n\
 string(28) \"hello zlib\n\
 line two\n\
-appended\"\n"
+appended\"\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -28438,6 +28454,10 @@ $compressed = deflate_add($deflate, "abcabc", ZLIB_FINISH);
 $inflate = inflate_init(ZLIB_ENCODING_RAW, ["dictionary" => $dictionary]);
 var_dump(inflate_add($inflate, $compressed) === "abcabc");
 
+$sync = deflate_init(ZLIB_ENCODING_RAW);
+$syncChunk = deflate_add($sync, str_repeat("x", 128), ZLIB_SYNC_FLUSH);
+var_dump(bin2hex(substr($syncChunk, -4)));
+
 $stream = fopen("php://temp", "w+");
 stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE);
 stream_filter_append($stream, "convert.base64-encode", STREAM_FILTER_WRITE);
@@ -28485,6 +28505,7 @@ string(6) \"first\n\
 from inc2\n\
 from inc1\n\
 bool(true)\n\
+string(8) \"0000ffff\"\n\
 string(11) \"filter text\"\n\
 deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\

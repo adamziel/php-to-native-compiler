@@ -1,0 +1,14 @@
+# ptn-w17z.961 exact PHAR/zlib getcontents current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T214905Z.tsv
+ext/phar/tests/bug46060.phpt
+ext/phar/tests/phar_oo_001.phpt
+ext/zlib/tests/deflate_add_buffer_full.phpt
+ext/phar/tests/bug73035.phpt
+ext/phar/tests/bug77143.phpt
+ext/zlib/tests/zlib_wrapper_level.phpt
+ext/phar/tests/027.phpt
+ext/phar/tests/phar_oo_getcontents.phpt
+ext/phar/tests/007.phpt
+ext/phar/tests/file_get_contents.phpt
+ext/phar/tests/017.phpt
+ext/phar/tests/bug75102.phpt

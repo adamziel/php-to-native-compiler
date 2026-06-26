@@ -52025,6 +52025,7 @@ static int ptn_zlib_transform_bytes(
     int decompress,
     int64_t window_bits,
     int64_t level,
+    int64_t flush_mode,
     const unsigned char *dictionary,
     size_t dictionary_len,
     int allow_truncated_decompress,
@@ -52039,6 +52040,7 @@ static int ptn_zlib_transform_bytes(
     (void)decompress;
     (void)window_bits;
     (void)level;
+    (void)flush_mode;
     (void)dictionary;
     (void)dictionary_len;
     (void)allow_truncated_decompress;
@@ -52057,9 +52059,11 @@ static int ptn_zlib_transform_bytes(
     }
     char window_arg[32];
     char level_arg[32];
+    char flush_arg[32];
     char allow_truncated_arg[8];
     snprintf(window_arg, sizeof(window_arg), "%lld", (long long)window_bits);
     snprintf(level_arg, sizeof(level_arg), "%lld", (long long)level);
+    snprintf(flush_arg, sizeof(flush_arg), "%lld", (long long)flush_mode);
     snprintf(allow_truncated_arg, sizeof(allow_truncated_arg), "%d", allow_truncated_decompress ? 1 : 0);
     const char *script =
         "import sys,zlib\n"
@@ -52067,9 +52071,12 @@ static int ptn_zlib_transform_bytes(
         "wbits=int(sys.argv[2])\n"
         "level=int(sys.argv[3])\n"
         "has_dict=sys.argv[4] == '1'\n"
-        "allow_truncated=bool(int(sys.argv[5]))\n"
+        "flush_mode=int(sys.argv[5])\n"
+        "allow_truncated=bool(int(sys.argv[6]))\n"
         "payload=sys.stdin.buffer.read()\n"
         "zdict=b''\n"
+        "flushes={0:zlib.Z_NO_FLUSH,1:getattr(zlib,'Z_PARTIAL_FLUSH',zlib.Z_SYNC_FLUSH),2:zlib.Z_SYNC_FLUSH,3:zlib.Z_FULL_FLUSH,4:zlib.Z_FINISH,5:getattr(zlib,'Z_BLOCK',zlib.Z_SYNC_FLUSH)}\n"
+        "flush=flushes.get(flush_mode,zlib.Z_FINISH)\n"
         "if has_dict:\n"
         "    if len(payload) < 8:\n"
         "        sys.exit(1)\n"
@@ -52080,20 +52087,22 @@ static int ptn_zlib_transform_bytes(
         "    data=payload\n"
         "try:\n"
         "    if mode == 'd':\n"
-        "        if allow_truncated or has_dict:\n"
-        "            if has_dict:\n"
-        "                d=zlib.decompressobj(wbits,zdict=zdict)\n"
-        "            else:\n"
-        "                d=zlib.decompressobj(wbits)\n"
-        "            out=d.decompress(data)+d.flush()\n"
+        "        if has_dict:\n"
+        "            d=zlib.decompressobj(wbits,zdict=zdict)\n"
+        "            out=d.decompress(data)\n"
         "        else:\n"
-        "            out=zlib.decompress(data,wbits)\n"
+        "            d=zlib.decompressobj(wbits)\n"
+        "            out=d.decompress(data)\n"
+        "        if flush_mode != 0 or allow_truncated:\n"
+        "            out += d.flush()\n"
         "    else:\n"
         "        if has_dict:\n"
         "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,zdict=zdict)\n"
         "        else:\n"
         "            c=zlib.compressobj(level,zlib.DEFLATED,wbits)\n"
-        "        out=c.compress(data)+c.flush()\n"
+        "        out=c.compress(data)\n"
+        "        if flush_mode != 0:\n"
+        "            out += c.flush(flush)\n"
         "    sys.stdout.buffer.write(out)\n"
         "except Exception:\n"
         "    sys.exit(1)\n";
@@ -52126,6 +52135,7 @@ static int ptn_zlib_transform_bytes(
             window_arg,
             level_arg,
             dictionary != NULL && dictionary_len != 0 ? "1" : "0",
+            flush_arg,
             allow_truncated_arg,
             (char *)NULL
         );
@@ -52190,6 +52200,7 @@ static int ptn_zlib_transform_bytes_no_dictionary(
         decompress,
         window_bits,
         level,
+        PTN_ZLIB_FINISH,
         NULL,
         0,
         allow_truncated_decompress,
@@ -52360,7 +52371,7 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
     return ok;
 }
 
-static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len) {
+static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len, int64_t level) {
     unsigned char *compressed = NULL;
     size_t compressed_len = 0;
     int compressed_ok = ptn_zlib_transform_bytes_no_dictionary(
@@ -52368,7 +52379,7 @@ static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data
         len,
         0,
         PTN_ZLIB_ENCODING_GZIP,
-        -1,
+        level,
         0,
         &compressed,
         &compressed_len
@@ -52393,6 +52404,7 @@ static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data
 
 typedef struct {
     char *path;
+    int64_t level;
 } PtnZlibStreamData;
 
 static void ptn_zlib_stream_data_free(void *data) {
@@ -52416,11 +52428,12 @@ static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
     (void)ptn_zlib_write_path_bytes(
         stream_data->path,
         resource->memory_stream->data,
-        resource->memory_stream->len
+        resource->memory_stream->len,
+        stream_data->level
     );
 }
 
-static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, PtnValue *out) {
+static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, int64_t level, PtnValue *out) {
     int can_read = ptn_phar_stream_mode_can_read(mode);
     int can_write = ptn_phar_stream_mode_can_write(mode);
     int truncate = ptn_phar_stream_mode_truncates(mode);
@@ -52477,6 +52490,7 @@ static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, cons
             ptn_abort_out_of_memory();
         }
         stream_data->path = ptn_duplicate_string(path);
+        stream_data->level = level;
         resource->close_hook = ptn_zlib_stream_close_hook;
         resource->close_hook_data = stream_data;
         resource->close_hook_data_free = ptn_zlib_stream_data_free;
@@ -52485,12 +52499,12 @@ static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, cons
     return 1;
 }
 
-static int ptn_try_open_compress_zlib_stream(const char *uri, const char *mode, PtnValue *out) {
+static int ptn_try_open_compress_zlib_stream(const char *uri, const char *mode, int64_t level, PtnValue *out) {
     const char *path = NULL;
     if (!ptn_zlib_uri_path(uri, &path)) {
         return 0;
     }
-    return ptn_try_open_zlib_path_stream(uri, path, mode, out);
+    return ptn_try_open_zlib_path_stream(uri, path, mode, level, out);
 }
 
 static void ptn_phar_stream_close_hook(PtnResource *resource, void *data) {
@@ -53065,6 +53079,15 @@ static PtnValue *ptn_stream_context_option(PtnResource *context, const char *wra
     return option_entry == NULL ? NULL : &option_entry->value;
 }
 
+static int64_t ptn_stream_context_zlib_level(PtnResource *context) {
+    PtnValue *option = ptn_stream_context_option(context, "zlib", "level");
+    if (option == NULL) {
+        return -1;
+    }
+    int64_t level = ptn_value_to_integer(*option);
+    return level >= -1 && level <= 9 ? level : -1;
+}
+
 static int ptn_stream_context_error_mode(PtnRuntime *runtime, PtnResource *context, size_t line) {
     PtnValue *option = ptn_stream_context_option(context, "stream", "error_mode");
     if (option == NULL) {
@@ -53351,6 +53374,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
 
+    PtnResource *context = ptn_effective_stream_context(argc, args);
     PtnValue php_stream;
     if (ptn_try_open_php_input_stream(runtime, path, &php_stream)) {
         free(uri);
@@ -53410,7 +53434,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
-    if (ptn_try_open_compress_zlib_stream(path, mode, &php_stream)) {
+    if (ptn_try_open_compress_zlib_stream(path, mode, ptn_stream_context_zlib_level(context), &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -53433,7 +53457,6 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
-    PtnResource *context = ptn_effective_stream_context(argc, args);
     if (ptn_try_open_user_stream_wrapper(runtime, path, mode, context, line, &php_stream)) {
         free(uri);
         free(mode);
@@ -57928,7 +57951,7 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
             }
             free(existing);
         }
-        int ok = ptn_zlib_write_path_bytes(zlib_path, write_data, write_len);
+        int ok = ptn_zlib_write_path_bytes(zlib_path, write_data, write_len, -1);
         free(combined);
         if (ok <= 0) {
             char detail[192];
@@ -59566,7 +59589,7 @@ static int ptn_copy_read_source_bytes(const char *source, unsigned char **data_o
 static int ptn_copy_write_dest_bytes(const char *dest, const unsigned char *data, size_t len) {
     const char *zlib_path = NULL;
     if (ptn_zlib_uri_path(dest, &zlib_path)) {
-        return ptn_zlib_write_path_bytes(zlib_path, data, len);
+        return ptn_zlib_write_path_bytes(zlib_path, data, len, -1);
     }
     FILE *output = fopen(dest, "wb");
     if (output == NULL) {
@@ -140094,6 +140117,7 @@ static PtnValue ptn_zlib_transform_context_string_value(
     PtnStringOperand data,
     int decompress,
     PtnZlibContext *context,
+    int64_t flush_mode,
     size_t line
 ) {
     unsigned char *transformed = NULL;
@@ -140104,6 +140128,7 @@ static PtnValue ptn_zlib_transform_context_string_value(
         decompress,
         context->encoding,
         context->level,
+        flush_mode,
         context->dictionary,
         context->dictionary_len,
         0,
@@ -140469,6 +140494,7 @@ static PtnValue ptn_internal_deflate_add(PtnRuntime *runtime, size_t argc, const
         data,
         0,
         context,
+        flush_mode,
         line
     );
     ptn_string_operand_free(data);
@@ -140613,7 +140639,7 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         }
     }
     PtnValue stream;
-    int opened = ptn_try_open_zlib_path_stream(path, path, mode, &stream);
+    int opened = ptn_try_open_zlib_path_stream(path, path, mode, -1, &stream);
     if (opened > 0) {
         free(mode);
         free(path);
