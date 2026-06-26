@@ -29491,6 +29491,13 @@ foreach (['convert.base64-encode', 'convert.quoted-printable-encode'] as $name) 
 }\n\
 \n\
 $fp = fopen('php://memory', 'w+');\n\
+stream_filter_append($fp, 'zlib.deflate', STREAM_FILTER_WRITE, ['write_seek_mode' => 'reset']);\n\
+fwrite($fp, 'Hello');\n\
+var_dump(fseek($fp, 0, SEEK_SET) === 0);\n\
+var_dump(fseek($fp, 5, SEEK_SET) === -1);\n\
+fclose($fp);\n\
+\n\
+$fp = fopen('php://memory', 'w+');\n\
 stream_filter_append($fp, 'convert.base64-encode', STREAM_FILTER_WRITE, ['write_seek_mode' => 42]);\n\
 fclose($fp);\n",
     )
@@ -29511,6 +29518,9 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n"
     ));
+    assert!(
+        stdout.contains("fseek(): Stream filter zlib.deflate is seekable only to start position")
+    );
     assert!(stdout.contains(
         "stream_filter_append(): \"write_seek_mode\" filter parameter must be one of \"preserve\", \"reset\", or \"strict\""
     ));

@@ -1,0 +1,16 @@
+# ptn-w17z.960 exact current-red PHAR/zlib read/write row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T213902Z.tsv
+# Rows were selected as FAIL in that artifact.
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+ext/phar/tests/bug70433.phpt
+ext/phar/tests/gh17137.phpt
+ext/zlib/tests/zlib_filter_write_seek_modes.phpt
+ext/phar/tests/bug73768.phpt
+ext/phar/tests/bug69453.phpt
+ext/zlib/tests/bug_34821.phpt
+ext/phar/tests/zip/corrupt_007.phpt
+ext/zlib/tests/gzfile_variation7.phpt
+ext/phar/tests/phar_oo_011.phpt
+ext/phar/tests/readfile.phpt
+ext/phar/tests/bug13727.phpt
+ext/phar/tests/zip/phar_buildfromiterator9.phpt

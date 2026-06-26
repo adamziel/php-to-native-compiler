@@ -54318,6 +54318,15 @@ static int ptn_stream_filter_chain_has_strict_write_seek(PtnStreamFilter *filter
     return 0;
 }
 
+static PtnStreamFilter *ptn_stream_filter_chain_reset_write_seek_filter(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->write_seek_mode == PTN_STREAM_FILTER_WRITE_SEEK_RESET) {
+            return filter;
+        }
+    }
+    return NULL;
+}
+
 static void ptn_stream_filter_chain_reset_on_seek(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         if (filter->write_seek_mode == PTN_STREAM_FILTER_WRITE_SEEK_RESET) {
@@ -55675,6 +55684,21 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_int(-1);
     }
     if (ptn_stream_filter_chain_has_strict_write_seek(resource->write_filters)) {
+        return ptn_int(-1);
+    }
+    PtnStreamFilter *reset_write_filter = ptn_stream_filter_chain_reset_write_seek_filter(resource->write_filters);
+    if (reset_write_filter != NULL && (offset != 0 || seek_whence != SEEK_SET)) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fseek(): Stream filter %s is seekable only to start position",
+            reset_write_filter->name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
         return ptn_int(-1);
     }
     if (ptn_stream_seek(resource, offset, seek_whence) == 0) {
