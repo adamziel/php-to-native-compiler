@@ -78643,6 +78643,11 @@ static void ptn_mb_regex_append_expanded_replacement(
         }
 
         char next = replacement.data[i + 1];
+        if (next == '\\' && i + 2 < replacement.len && isdigit((unsigned char)replacement.data[i + 2])) {
+            ptn_string_buffer_append_char(output, '\\');
+            continue;
+        }
+
         if (isdigit((unsigned char)next)) {
             if (has_named_captures) {
                 ptn_string_buffer_append_char(output, '\\');
@@ -79051,7 +79056,7 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
     size_t cursor = 0;
     size_t search_offset = 0;
     int64_t index = 0;
-    while ((limit <= 0 || index < limit - 1) && search_offset <= prepared_subject.subject_len) {
+    while ((limit < 0 || (limit > 1 && index < limit - 1)) && search_offset <= prepared_subject.subject_len) {
         int match_result = ptn_preg_program_match(runtime, &program, prepared_subject.subject, prepared_subject.subject_len, search_offset, 0, matches);
         if (match_result <= 0) {
             break;

@@ -29310,7 +29310,10 @@ fn compile_mb_split_empty_pattern_to_native_binary() {
 error_reporting(E_ALL & ~E_DEPRECATED);\n\
 var_dump(mb_split(\"\", \"\"));\n\
 var_dump(mb_split(\"\", \"abc\"));\n\
-var_dump(mb_split(\"b\", \"abc\"));\n",
+var_dump(mb_split(\"b\", \"abc\"));\n\
+var_dump(mb_split(\"\\\\d\", \"123\", -1));\n\
+var_dump(mb_split(\"\\\\d\", \"123\", 0));\n\
+var_dump(mb_split(\"\\\\d\", \"123\", 1));\n",
     )
     .unwrap();
 
@@ -29334,6 +29337,24 @@ var_dump(mb_split(\"b\", \"abc\"));\n",
             "  string(1) \"a\"\n",
             "  [1]=>\n",
             "  string(1) \"c\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(0) \"\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "  [3]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"123\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"123\"\n",
             "}\n",
         )
     );
@@ -29368,6 +29389,7 @@ var_dump(mb_ereg('a', 'a'));\n\
 mb_ereg('(?<wsp>\\s*)(?<word>\\w+)', 'x', $emptyCapture);\n\
 var_dump($emptyCapture);\n\
 echo mb_ereg_replace('123', 'def\\\\1ghi', 'abc123'), \"\\n\";\n\
+var_dump(mb_ereg_replace('(%)', '\\\\\\\\1', 'a%c'));\n\
 mb_ereg_search_init('');\n\
 var_dump(mb_ereg_search(''));\n\
 var_dump(mb_ereg_search_getregs());\n\
@@ -29414,6 +29436,7 @@ var_dump(mb_ereg_search_getregs());\n",
             "  string(1) \"x\"\n",
             "}\n",
             "abcdef\\1ghi\n",
+            "string(4) \"a\\%c\"\n",
             "bool(true)\n",
             "array(1) {\n",
             "  [0]=>\n",
