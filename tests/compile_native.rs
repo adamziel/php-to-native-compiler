@@ -30298,6 +30298,63 @@ echo 'illegal=', mb_get_info('illegal_chars') - $before, \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_utf7imap_and_mobile_encoding_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-utf7imap-mobile-encoding-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-utf7imap-mobile-encoding-edges.php");
+    let output = root.join("mb-utf7imap-mobile-encoding-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+mb_substitute_character(0x25);\n\
+var_dump(mb_check_encoding('&-', 'UTF7-IMAP'));\n\
+var_dump(mb_check_encoding('&ACA-', 'UTF7-IMAP'));\n\
+echo bin2hex(mb_convert_encoding('&-', 'UTF-8', 'UTF7-IMAP')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding('&ACA-', 'UTF-8', 'UTF7-IMAP')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding('&A', 'UTF-32BE', 'UTF7-IMAP')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('ee9cb1'), 'UCS-4BE', 'UTF-8-Mobile#DOCOMO')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('000000a9'), 'UTF-8-Mobile#DOCOMO', 'UCS-4BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('0001f1e8'), 'UTF-8-Mobile#SOFTBANK', 'UCS-4BE')), \"\\n\";\n\
+var_dump(mb_check_encoding(hex2bin('f4908080'), 'UTF-8-Mobile#DOCOMO'));\n\
+echo bin2hex(mb_convert_encoding(hex2bin('f4908080'), 'UCS-4BE', 'UTF-8-Mobile#DOCOMO')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1b2849211b2842'), 'UTF-16BE', 'JIS')), \"\\n\";\n\
+var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'JIS'));\n\
+var_dump(mb_check_encoding(hex2bin('1b2849211b2842'), 'ISO-2022-JP'));\n\
+echo bin2hex(mb_convert_encoding(hex2bin('a3'), 'JIS', 'JIS')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('ff61'), 'JIS', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('203e'), 'ISO-2022-JP', 'UTF-16BE')), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "26\n",
+            "25\n",
+            "00000025\n",
+            "000000a9\n",
+            "ee9cb1\n",
+            "25\n",
+            "bool(false)\n",
+            "00000025000000250000002500000025\n",
+            "ff61\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "1b2849231b2842\n",
+            "1b2849211b2842\n",
+            "1b244221311b2842\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_encoding_conversion_row_pack_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-mb-encoding-conversion-row-pack");
     fs::create_dir_all(&root).unwrap();
