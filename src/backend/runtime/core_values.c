@@ -1012,6 +1012,7 @@ struct PtnGenerator {
     PtnValue return_value;
     PtnArray *reference_notice_lines;
     PtnArray *yield_lines;
+    PtnArray *finally_yield_lines;
     PtnArray *delegate_sources;
     PtnArray *output_chunks;
     PtnArray *send_call_positions;

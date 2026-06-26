@@ -29426,6 +29426,7 @@ fn emit_finally_instructions(
         prefix: &label_prefix,
         labels: &labels,
     };
+    values.generator_finally_yield_depth += 1;
     emit_instruction_sequence_with_generator_yield_abort_target(
         out,
         values,
@@ -29437,6 +29438,7 @@ fn emit_finally_instructions(
         Some(&label_scope),
         generator_yield_abort_target,
     );
+    values.generator_finally_yield_depth -= 1;
 }
 
 fn emit_instruction_sequence_with_generator_yield_abort_target(
@@ -36156,6 +36158,7 @@ struct ValueEmitter {
     current_function_is_anonymous: bool,
     current_function_index: Option<usize>,
     generator_yield_abort_target: Option<String>,
+    generator_finally_yield_depth: usize,
     generator_yield_assignment_variables: Vec<String>,
     exceptional_finally_saved_exception: Option<String>,
     user_functions: Vec<FunctionDecl>,
@@ -37907,6 +37910,7 @@ impl ValueEmitter {
             current_function_is_anonymous,
             current_function_index,
             generator_yield_abort_target: None,
+            generator_finally_yield_depth: 0,
             generator_yield_assignment_variables: Vec::new(),
             exceptional_finally_saved_exception: None,
             user_functions: functions.to_vec(),
@@ -51399,6 +51403,12 @@ impl ValueEmitter {
         out.push_str(if value.is_some() { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(if self.generator_finally_yield_depth > 0 {
+            "1"
+        } else {
+            "0"
+        });
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
