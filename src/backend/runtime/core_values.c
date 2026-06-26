@@ -729,6 +729,7 @@ typedef enum {
     PTN_STREAM_FILTER_CONVERT_BASE64_DECODE,
     PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE,
     PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE,
+    PTN_STREAM_FILTER_DECHUNK,
     PTN_STREAM_FILTER_ZLIB_DEFLATE,
     PTN_STREAM_FILTER_ZLIB_INFLATE
 } PtnStreamFilterKind;
@@ -1308,6 +1309,16 @@ struct PtnStreamFilter {
     char *name;
     int base64_values[4];
     size_t base64_value_count;
+    size_t filter_line_length;
+    size_t filter_line_position;
+    char *filter_line_break;
+    size_t filter_line_break_len;
+    int filter_line_break_configured;
+    int quoted_printable_invalid_sequence;
+    size_t dechunk_remaining;
+    size_t dechunk_size;
+    int dechunk_size_seen;
+    int dechunk_state;
     int64_t zlib_window;
     int64_t zlib_level;
     int zlib_error;
@@ -4736,6 +4747,7 @@ static PTN_UNUSED void ptn_stream_filter_chain_free(PtnStreamFilter *filter) {
     while (filter != NULL) {
         PtnStreamFilter *next = filter->next;
         free(filter->name);
+        free(filter->filter_line_break);
         free(filter);
         filter = next;
     }

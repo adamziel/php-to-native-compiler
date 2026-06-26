@@ -527,7 +527,7 @@ static PtnValue ptn_internal_fputcsv(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(eol);
     }
 
-    size_t written = ptn_stream_write_filtered(resource, output.data, output.len);
+    size_t written = ptn_stream_write_filtered(runtime, "fputcsv", resource, output.data, output.len, line);
     if (written != output.len && ptn_stream_error(resource)) {
         ptn_stream_clear_error(resource);
         free(output.data);

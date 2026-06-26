@@ -27960,6 +27960,7 @@ $truncated = __DIR__ . "/zlib-truncate.gz";
 $constants = get_defined_constants(true);
 var_dump(ZLIB_ENCODING_DEFLATE, FORCE_GZIP, $constants["zlib"]["ZLIB_ENCODING_GZIP"]);
 var_dump(bin2hex(substr(gzencode("abc"), 0, 2)));
+var_dump(bin2hex(substr(gzcompress("abc"), 0, 2)));
 
 $h = gzopen($path, "w");
 var_dump(gzwrite($h, "ignored", 0));
@@ -28033,6 +28034,7 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
 int(31)\n\
 int(31)\n\
 string(4) \"1f8b\"\n\
+string(4) \"789c\"\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
@@ -28488,6 +28490,70 @@ bool(true)\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_stream_filter_append"));
     assert!(c_source.contains("ptn_stream_apply_filter_chain_in_place"));
+}
+
+#[test]
+fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-convert-filters-dechunk.php");
+    let output = root.join("stream-convert-filters-dechunk-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fp = tmpfile();\n\
+fwrite($fp, 'Long text that will be wrapped');\n\
+rewind($fp);\n\
+stream_filter_prepend($fp, 'convert.base64-encode', STREAM_FILTER_READ, ['line-length' => 20, 'line-break-chars' => \"\\n\"]);\n\
+echo str_replace(\"\\n\", '|', stream_get_contents($fp)), \"\\n\";\n\
+fclose($fp);\n\
+\n\
+$qp = tmpfile();\n\
+fwrite($qp, \"Line1\\r\\nLine2\");\n\
+rewind($qp);\n\
+stream_filter_prepend($qp, 'convert.quoted-printable-encode', STREAM_FILTER_READ);\n\
+echo stream_get_contents($qp), \"\\n\";\n\
+fclose($qp);\n\
+\n\
+$qpd = tmpfile();\n\
+fwrite($qpd, 'Text=09=0D=0A');\n\
+rewind($qpd);\n\
+stream_filter_prepend($qpd, 'convert.quoted-printable-decode', STREAM_FILTER_READ);\n\
+echo bin2hex(stream_get_contents($qpd)), \"\\n\";\n\
+fclose($qpd);\n\
+\n\
+$buffer = fopen('php://temp', 'w+');\n\
+stream_filter_append($buffer, 'dechunk', STREAM_FILTER_WRITE);\n\
+fwrite($buffer, \"5\\r\\nHello\\r\\n\");\n\
+var_dump(stream_get_contents($buffer, -1, 0));\n\
+fwrite($buffer, \"7\\r\\n, World\\r\\n\");\n\
+var_dump(stream_get_contents($buffer, -1, 0));\n\
+fwrite($buffer, \"0\\r\\n\\r\\n\");\n\
+var_dump(stream_get_contents($buffer, -1, 0));\n\
+fclose($buffer);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TG9uZyB0ZXh0IHRoYXQg|d2lsbCBiZSB3cmFwcGVk\n\
+Line1=0D=0ALine2\n\
+54657874090d0a\n\
+string(5) \"Hello\"\n\
+string(12) \"Hello, World\"\n\
+string(12) \"Hello, World\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE"));
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE"));
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE"));
+    assert!(c_source.contains("PTN_STREAM_FILTER_DECHUNK"));
 }
 
 #[test]

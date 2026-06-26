@@ -38382,7 +38382,14 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static int ptn_stream_mode_is_append(PtnResource *resource);
-static size_t ptn_stream_write_filtered(PtnResource *resource, const char *data, size_t len);
+static size_t ptn_stream_write_filtered(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    const char *data,
+    size_t len,
+    size_t line
+);
 
 static PtnValue ptn_internal_write_formatted_stream(
     PtnRuntime *runtime,
@@ -38433,9 +38440,12 @@ static PtnValue ptn_internal_write_formatted_stream(
         append_position = ptn_stream_tell(stream.as.resource);
     }
     size_t written = ptn_stream_write_filtered(
+        runtime,
+        function_name,
         stream.as.resource,
         (const char *)string_value.as.string.data,
-        string_value.as.string.len
+        string_value.as.string.len,
+        line
     );
     if (written != string_value.as.string.len) {
         ptn_value_drop(&formatted);
@@ -53287,6 +53297,10 @@ static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilt
         *kind = PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE;
         return 1;
     }
+    if (ptn_stream_filter_name_equals(name, "dechunk")) {
+        *kind = PTN_STREAM_FILTER_DECHUNK;
+        return 1;
+    }
     if (ptn_stream_filter_name_equals(name, "zlib.deflate")) {
         *kind = PTN_STREAM_FILTER_ZLIB_DEFLATE;
         return 1;
@@ -53312,6 +53326,16 @@ static PtnStreamFilter *ptn_stream_filter_new(
     filter->name = ptn_duplicate_string_len(name.data, name.len);
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
+    filter->filter_line_length = 0;
+    filter->filter_line_position = 0;
+    filter->filter_line_break = ptn_duplicate_string_len("\n", 1);
+    filter->filter_line_break_len = 1;
+    filter->filter_line_break_configured = 0;
+    filter->quoted_printable_invalid_sequence = 0;
+    filter->dechunk_remaining = 0;
+    filter->dechunk_size = 0;
+    filter->dechunk_size_seen = 0;
+    filter->dechunk_state = 0;
     filter->zlib_window = zlib_window;
     filter->zlib_level = zlib_level;
     filter->zlib_error = 0;
@@ -53340,6 +53364,7 @@ static int ptn_stream_filter_kind_is_zlib(PtnStreamFilterKind kind) {
     return kind == PTN_STREAM_FILTER_ZLIB_DEFLATE || kind == PTN_STREAM_FILTER_ZLIB_INFLATE;
 }
 
+static int ptn_hex_nibble(unsigned char byte);
 static int ptn_zlib_level_is_valid(int64_t level);
 
 static int ptn_stream_filter_zlib_option(PtnValue options, const char *name, PtnValue *out) {
@@ -53360,6 +53385,26 @@ static int ptn_stream_filter_zlib_option(PtnValue options, const char *name, Ptn
     }
     *out = ptn_null();
     return 0;
+}
+
+static void ptn_stream_filter_apply_options(PtnStreamFilter *filter, PtnValue options) {
+    PtnValue line_length = ptn_null();
+    if (ptn_stream_filter_zlib_option(options, "line-length", &line_length)) {
+        int64_t requested = ptn_value_to_integer(line_length);
+        filter->filter_line_length = requested > 0 ? (size_t)requested : 0;
+    }
+    ptn_value_destroy(&line_length);
+
+    PtnValue line_break = ptn_null();
+    if (ptn_stream_filter_zlib_option(options, "line-break-chars", &line_break)) {
+        PtnStringOperand line_break_string = ptn_value_to_string_operand(line_break);
+        free(filter->filter_line_break);
+        filter->filter_line_break = ptn_duplicate_string_len(line_break_string.data, line_break_string.len);
+        filter->filter_line_break_len = line_break_string.len;
+        filter->filter_line_break_configured = 1;
+        ptn_string_operand_free(line_break_string);
+    }
+    ptn_value_destroy(&line_break);
 }
 
 static void ptn_stream_filter_zlib_options(
@@ -53425,6 +53470,7 @@ static void ptn_stream_filter_free(PtnStreamFilter *filter) {
         return;
     }
     free(filter->name);
+    free(filter->filter_line_break);
     free(filter);
 }
 
@@ -53504,6 +53550,7 @@ static void ptn_stream_apply_filter_in_place(PtnStreamFilterKind kind, unsigned 
             case PTN_STREAM_FILTER_CONVERT_BASE64_DECODE:
             case PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE:
             case PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE:
+            case PTN_STREAM_FILTER_DECHUNK:
                 break;
             case PTN_STREAM_FILTER_ZLIB_DEFLATE:
             case PTN_STREAM_FILTER_ZLIB_INFLATE:
@@ -53516,6 +53563,47 @@ static void ptn_stream_apply_filter_chain_in_place(PtnStreamFilter *filter, unsi
     for (; filter != NULL; filter = filter->next) {
         ptn_stream_apply_filter_in_place(filter->kind, data, len);
     }
+}
+
+static void ptn_stream_base64_encode_append_encoded(
+    PtnStreamFilter *filter,
+    PtnStringBuffer *output,
+    const char encoded[4]
+) {
+    if (filter->filter_line_length > 0 &&
+        filter->filter_line_position > 0 &&
+        filter->filter_line_position + 4 > filter->filter_line_length) {
+        ptn_string_buffer_append_len(output, filter->filter_line_break, filter->filter_line_break_len);
+        filter->filter_line_position = 0;
+    }
+    ptn_string_buffer_append_len(output, encoded, 4);
+    if (filter->filter_line_length > 0) {
+        filter->filter_line_position += 4;
+    }
+}
+
+static char *ptn_stream_apply_base64_encode_filter_alloc(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t *out_len
+) {
+    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < len; i += 3) {
+        unsigned int a = (unsigned char)data[i];
+        unsigned int b = i + 1 < len ? (unsigned char)data[i + 1] : 0;
+        unsigned int c = i + 2 < len ? (unsigned char)data[i + 2] : 0;
+        char encoded[4];
+        encoded[0] = alphabet[(a >> 2) & 0x3f];
+        encoded[1] = alphabet[((a << 4) | (b >> 4)) & 0x3f];
+        encoded[2] = i + 1 < len ? alphabet[((b << 2) | (c >> 6)) & 0x3f] : '=';
+        encoded[3] = i + 2 < len ? alphabet[c & 0x3f] : '=';
+        ptn_stream_base64_encode_append_encoded(filter, &output, encoded);
+    }
+    *out_len = output.len;
+    return output.data;
 }
 
 static void ptn_stream_base64_filter_emit(PtnStreamFilter *filter, PtnStringBuffer *output) {
@@ -53565,54 +53653,65 @@ static char *ptn_stream_apply_base64_decode_filter_alloc(
     return output.data;
 }
 
-static char *ptn_stream_apply_base64_encode_filter_alloc(
-    const char *data,
-    size_t len,
-    size_t *out_len
-) {
-    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    if (len > SIZE_MAX - 2) {
-        ptn_abort_out_of_memory();
-    }
-    size_t output_len = ((len + 2) / 3) * 4;
-    if (output_len == SIZE_MAX) {
-        ptn_abort_out_of_memory();
-    }
-    char *output = malloc(output_len + 1);
-    if (output == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    size_t out = 0;
-    for (size_t i = 0; i < len; i += 3) {
-        unsigned int a = (unsigned char)data[i];
-        unsigned int b = i + 1 < len ? (unsigned char)data[i + 1] : 0;
-        unsigned int c = i + 2 < len ? (unsigned char)data[i + 2] : 0;
-        output[out++] = alphabet[(a >> 2) & 0x3f];
-        output[out++] = alphabet[((a << 4) | (b >> 4)) & 0x3f];
-        output[out++] = i + 1 < len ? alphabet[((b << 2) | (c >> 6)) & 0x3f] : '=';
-        output[out++] = i + 2 < len ? alphabet[c & 0x3f] : '=';
-    }
-    output[out] = '\0';
-    *out_len = out;
-    return output;
+static int ptn_stream_filter_line_break_at(PtnStreamFilter *filter, const char *data, size_t len, size_t offset) {
+    return filter->filter_line_break_configured &&
+        filter->filter_line_break_len > 0 &&
+        offset + filter->filter_line_break_len <= len &&
+        memcmp(data + offset, filter->filter_line_break, filter->filter_line_break_len) == 0;
 }
 
-static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
+static char *ptn_stream_apply_quoted_printable_decode_filter_alloc(
+    PtnStreamFilter *filter,
     const char *data,
     size_t len,
     size_t *out_len
 ) {
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
-    size_t line_len = 0;
     for (size_t i = 0; i < len; i++) {
-        unsigned char byte = (unsigned char)data[i];
-        if (byte == '\r' && i + 1 < len && data[i + 1] == '\n') {
-            ptn_string_buffer_append(&output, "\r\n");
-            i++;
-            line_len = 0;
+        if (data[i] != '=') {
+            ptn_string_buffer_append_char(&output, data[i]);
             continue;
         }
+        if (ptn_stream_filter_line_break_at(filter, data, len, i + 1)) {
+            filter->quoted_printable_invalid_sequence = 1;
+            i += filter->filter_line_break_len;
+            continue;
+        }
+        if (!filter->filter_line_break_configured && i + 1 < len && data[i + 1] == '\n') {
+            i += 1;
+            continue;
+        }
+        if (!filter->filter_line_break_configured && i + 2 < len && data[i + 1] == '\r' && data[i + 2] == '\n') {
+            i += 2;
+            continue;
+        }
+        if (i + 2 < len) {
+            int high = ptn_hex_nibble((unsigned char)data[i + 1]);
+            int low = ptn_hex_nibble((unsigned char)data[i + 2]);
+            if (high >= 0 && low >= 0) {
+                ptn_string_buffer_append_char(&output, (char)((high << 4) | low));
+                i += 2;
+                continue;
+            }
+        }
+        filter->quoted_printable_invalid_sequence = 1;
+    }
+    *out_len = output.len;
+    return output.data;
+}
+
+static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t *out_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t line_len = filter->filter_line_position;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
         unsigned char next = i + 1 < len ? (unsigned char)data[i + 1] : '\0';
         if (ptn_quoted_printable_encode_should_escape(byte, next)) {
             ptn_quoted_printable_encode_append_escape(&output, byte, &line_len);
@@ -53620,8 +53719,106 @@ static char *ptn_stream_apply_quoted_printable_encode_filter_alloc(
             ptn_quoted_printable_encode_append_literal(&output, byte, &line_len);
         }
     }
+    filter->filter_line_position = line_len;
     *out_len = output.len;
-    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+    return output.data;
+}
+
+#define PTN_STREAM_DECHUNK_SIZE 0
+#define PTN_STREAM_DECHUNK_DATA 1
+#define PTN_STREAM_DECHUNK_DATA_CRLF 2
+#define PTN_STREAM_DECHUNK_DONE 3
+#define PTN_STREAM_DECHUNK_SIZE_EXT 4
+
+static int ptn_stream_dechunk_hex_value(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return (int)(byte - '0');
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return (int)(byte - 'a') + 10;
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return (int)(byte - 'A') + 10;
+    }
+    return -1;
+}
+
+static char *ptn_stream_apply_dechunk_filter_alloc(
+    PtnStreamFilter *filter,
+    const char *data,
+    size_t len,
+    size_t *out_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        switch (filter->dechunk_state) {
+            case PTN_STREAM_DECHUNK_SIZE: {
+                int hex = ptn_stream_dechunk_hex_value(byte);
+                if (hex >= 0) {
+                    if (filter->dechunk_size > (SIZE_MAX - (size_t)hex) / 16) {
+                        ptn_abort_out_of_memory();
+                    }
+                    filter->dechunk_size = filter->dechunk_size * 16 + (size_t)hex;
+                    filter->dechunk_size_seen = 1;
+                    break;
+                }
+                if (byte == ';') {
+                    filter->dechunk_state = PTN_STREAM_DECHUNK_SIZE_EXT;
+                    break;
+                }
+                if (byte == '\r') {
+                    break;
+                }
+                if (byte == '\n') {
+                    if (!filter->dechunk_size_seen) {
+                        break;
+                    }
+                    filter->dechunk_remaining = filter->dechunk_size;
+                    filter->dechunk_size = 0;
+                    filter->dechunk_size_seen = 0;
+                    filter->dechunk_state = filter->dechunk_remaining == 0
+                        ? PTN_STREAM_DECHUNK_DONE
+                        : PTN_STREAM_DECHUNK_DATA;
+                    break;
+                }
+                filter->dechunk_size = 0;
+                filter->dechunk_size_seen = 0;
+                break;
+            }
+            case PTN_STREAM_DECHUNK_DATA:
+                ptn_string_buffer_append_char(&output, (char)byte);
+                filter->dechunk_remaining--;
+                if (filter->dechunk_remaining == 0) {
+                    filter->dechunk_state = PTN_STREAM_DECHUNK_DATA_CRLF;
+                }
+                break;
+            case PTN_STREAM_DECHUNK_DATA_CRLF:
+                if (byte == '\n') {
+                    filter->dechunk_state = PTN_STREAM_DECHUNK_SIZE;
+                }
+                break;
+            case PTN_STREAM_DECHUNK_DONE:
+                break;
+            case PTN_STREAM_DECHUNK_SIZE_EXT:
+                if (byte == '\n') {
+                    if (!filter->dechunk_size_seen) {
+                        filter->dechunk_state = PTN_STREAM_DECHUNK_SIZE;
+                        break;
+                    }
+                    filter->dechunk_remaining = filter->dechunk_size;
+                    filter->dechunk_size = 0;
+                    filter->dechunk_size_seen = 0;
+                    filter->dechunk_state = filter->dechunk_remaining == 0
+                        ? PTN_STREAM_DECHUNK_DONE
+                        : PTN_STREAM_DECHUNK_DATA;
+                }
+                break;
+        }
+    }
+    *out_len = output.len;
+    return output.data;
 }
 
 static char *ptn_stream_apply_filter_chain_alloc(
@@ -53658,7 +53855,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
             continue;
         }
         if (filter->kind == PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE) {
-            char *transformed = ptn_stream_apply_base64_encode_filter_alloc(output, output_len, &output_len);
+            char *transformed = ptn_stream_apply_base64_encode_filter_alloc(filter, output, output_len, &output_len);
             free(output);
             output = transformed;
             continue;
@@ -53670,13 +53867,19 @@ static char *ptn_stream_apply_filter_chain_alloc(
             continue;
         }
         if (filter->kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE) {
-            char *transformed = ptn_stream_apply_quoted_printable_encode_filter_alloc(output, output_len, &output_len);
+            char *transformed = ptn_stream_apply_quoted_printable_encode_filter_alloc(filter, output, output_len, &output_len);
             free(output);
             output = transformed;
             continue;
         }
         if (filter->kind == PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE) {
-            char *transformed = ptn_quoted_printable_decode_string(output, output_len, &output_len);
+            char *transformed = ptn_stream_apply_quoted_printable_decode_filter_alloc(filter, output, output_len, &output_len);
+            free(output);
+            output = transformed;
+            continue;
+        }
+        if (filter->kind == PTN_STREAM_FILTER_DECHUNK) {
+            char *transformed = ptn_stream_apply_dechunk_filter_alloc(filter, output, output_len, &output_len);
             free(output);
             output = transformed;
             continue;
@@ -53685,6 +53888,16 @@ static char *ptn_stream_apply_filter_chain_alloc(
     }
     *out_len = output_len;
     return output;
+}
+
+static const char *ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->quoted_printable_invalid_sequence) {
+            filter->quoted_printable_invalid_sequence = 0;
+            return filter->name;
+        }
+    }
+    return NULL;
 }
 
 static int ptn_stream_filter_chain_take_zlib_error(PtnStreamFilter *filter) {
@@ -53865,6 +54078,26 @@ static char *ptn_stream_read_filtered_bytes(
     return result;
 }
 
+static void ptn_emit_stream_filter_invalid_sequence_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *filter_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Stream filter (%s): invalid byte sequence",
+        function_name,
+        filter_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
 static int ptn_stream_getc_filtered(PtnResource *resource) {
     if (resource->read_filters != NULL || ptn_stream_filtered_read_pending_available(resource) != 0) {
         while (ptn_stream_filtered_read_pending_available(resource) == 0) {
@@ -53890,15 +54123,22 @@ static int ptn_stream_getc_filtered(PtnResource *resource) {
 }
 
 static size_t ptn_stream_write_filtered(
+    PtnRuntime *runtime,
+    const char *function_name,
     PtnResource *resource,
     const char *data,
-    size_t len
+    size_t len,
+    size_t line
 ) {
     size_t output_len = 0;
     char *output = ptn_stream_apply_filter_chain_alloc(resource->write_filters, data, len, &output_len);
     int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->write_filters);
+    const char *invalid_filter = ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(resource->write_filters);
     size_t written = ptn_stream_write_bytes(resource, output, output_len);
     free(output);
+    if (invalid_filter != NULL) {
+        ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, invalid_filter, line);
+    }
     if (filter_error) {
         return 0;
     }
@@ -54018,6 +54258,7 @@ static PtnValue ptn_internal_stream_filter_attach(
     }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
         read_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
+        ptn_stream_filter_apply_options(read_filter, filter_params);
         ptn_stream_filter_chain_insert(
             &stream->read_filters,
             read_filter,
@@ -54029,6 +54270,7 @@ static PtnValue ptn_internal_stream_filter_attach(
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
         write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
+        ptn_stream_filter_apply_options(write_filter, filter_params);
         ptn_stream_filter_chain_insert(
             &stream->write_filters,
             write_filter,
@@ -54185,7 +54427,7 @@ static PtnValue ptn_internal_fwrite_named(
         append_position = ptn_stream_tell(resource);
     }
     errno = 0;
-    size_t written = ptn_stream_write_filtered(resource, data.data, length);
+    size_t written = ptn_stream_write_filtered(runtime, function_name, resource, data.data, length, line);
     ptn_string_operand_free(data);
     if (written != length && ptn_stream_error(resource)) {
         ptn_emit_stream_write_notice(runtime, function_name, length, line);
@@ -55231,7 +55473,7 @@ static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t a
                 read_len,
                 &filtered_len
             );
-            size_t written = ptn_stream_write_filtered(dest, filtered, filtered_len);
+            size_t written = ptn_stream_write_filtered(runtime, "stream_copy_to_stream", dest, filtered, filtered_len, line);
             free(filtered);
             if (written != filtered_len) {
                 return ptn_bool(0);
@@ -137178,6 +137420,50 @@ static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const Pt
     return result;
 }
 
+static PtnValue ptn_internal_gzcompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzcompress", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t level = -1;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        level = ptn_internal_expect_integer_arg(runtime, "gzcompress", 2, "level", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_level_is_valid(level)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_level_value_error(runtime, "gzcompress");
+        return ptn_null();
+    }
+    int64_t encoding = PTN_ZLIB_ENCODING_DEFLATE;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        encoding = ptn_internal_expect_integer_arg(runtime, "gzcompress", 3, "encoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_encoding_is_valid(encoding)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_encoding_value_error(runtime, "gzcompress", 3, "encoding");
+        return ptn_null();
+    }
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzcompress",
+        data,
+        0,
+        encoding,
+        level,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
 static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzdeflate", 1, "data", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -137447,7 +137733,7 @@ static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const Ptn
             length = (size_t)requested;
         }
     }
-    size_t written = ptn_stream_write_filtered(resource, data.data, length);
+    size_t written = ptn_stream_write_filtered(runtime, "gzwrite", resource, data.data, length, line);
     ptn_string_operand_free(data);
     if (written != length && ptn_stream_error(resource)) {
         ptn_emit_stream_write_notice(runtime, "gzwrite", length, line);
@@ -153476,6 +153762,7 @@ static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_fnmatch(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzcompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -153911,6 +154198,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
         { "gzclose", 1, 1, ptn_internal_gzclose },
+        { "gzcompress", 1, 3, ptn_internal_gzcompress },
         { "gzdecode", 1, 2, ptn_internal_gzdecode },
         { "gzdeflate", 1, 3, ptn_internal_gzdeflate },
         { "gzencode", 1, 3, ptn_internal_gzencode },

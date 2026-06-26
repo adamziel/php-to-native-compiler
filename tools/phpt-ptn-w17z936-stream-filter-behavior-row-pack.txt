@@ -1,0 +1,13 @@
+# bucket: stream-filter-behavior rows=12
+ext/standard/tests/filters/gh17345.phpt
+ext/standard/tests/filters/gh17650.phpt
+ext/standard/tests/filters/gh20370_no_stream_property.phpt
+ext/standard/tests/filters/convert.phpt
+ext/standard/tests/filters/bug78406.phpt
+ext/standard/tests/filters/oss_fuzz_385993744.phpt
+ext/standard/tests/filters/chunked_002.phpt
+ext/standard/tests/filters/bug74267.phpt
+ext/standard/tests/filters/gh17037.phpt
+ext/standard/tests/filters/gh13264.phpt
+ext/standard/tests/filters/bug79984.phpt
+ext/standard/tests/filters/bug21478.phpt
