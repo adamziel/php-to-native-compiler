@@ -1,0 +1,12 @@
+ext/zlib/tests/gzread_error2.phpt
+ext/phar/tests/buildFromIterator_user_overrides/getPathname_wrong_type.phpt
+ext/zlib/tests/gzdeflate_variation1.phpt
+ext/phar/tests/phar_magic.phpt
+ext/zlib/tests/gzfilegzreadfile.phpt
+ext/zlib/tests/zlib_scheme_file_basic.phpt
+ext/zlib/tests/bug61287.phpt
+ext/phar/tests/create_new_phar_c.phpt
+ext/standard/tests/file/fscanf_variation32.phpt
+ext/phar/tests/gh12532.phpt
+ext/standard/tests/file/fscanf_variation22.phpt
+ext/standard/tests/file/fscanf_variation12.phpt

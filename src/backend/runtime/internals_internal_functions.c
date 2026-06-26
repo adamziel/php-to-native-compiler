@@ -37952,7 +37952,14 @@ static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, const char *fun
     spec->precision = max_precision;
 }
 
-static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+static PtnValue ptn_internal_sprintf_named_mode(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int legacy_stream_resource_text
+) {
     PtnStringOperand format = ptn_internal_expect_string_arg(runtime, function_name, 1, "format", args[0], line);
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
@@ -38155,8 +38162,9 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 if (value.type == PTN_ARRAY) {
                     ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
                 }
-                PtnStringOperand string =
-                    ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
+                PtnStringOperand string = legacy_stream_resource_text && value.type == PTN_RESOURCE
+                    ? ptn_string_operand_borrowed("Resource")
+                    : ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
                 ptn_sprintf_append_string(&output, string, &spec);
                 ptn_string_operand_free(string);
                 break;
@@ -38348,6 +38356,10 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_sprintf_named_mode(runtime, function_name, argc, args, line, 0);
+}
+
 static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_sprintf_named(runtime, "sprintf", argc, args, line);
 }
@@ -38449,16 +38461,17 @@ static PtnValue ptn_internal_write_formatted_stream(
 }
 
 static PtnValue ptn_internal_fprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnValue formatted = ptn_internal_sprintf_named(runtime, "fprintf", argc - 1, args + 1, line);
+    PtnValue formatted = ptn_internal_sprintf_named_mode(runtime, "fprintf", argc - 1, args + 1, line, 1);
     return ptn_internal_write_formatted_stream(runtime, "fprintf", args[0], formatted, line);
 }
 
-static PtnValue ptn_internal_vsprintf_named(
+static PtnValue ptn_internal_vsprintf_named_mode(
     PtnRuntime *runtime,
     const char *function_name,
     PtnValue format_value,
     PtnValue values_value,
-    size_t line
+    size_t line,
+    int legacy_stream_resource_text
 ) {
     size_t format_position = strcmp(function_name, "vfprintf") == 0 ? 2 : 1;
     size_t values_position = strcmp(function_name, "vfprintf") == 0 ? 3 : 2;
@@ -38499,9 +38512,26 @@ static PtnValue ptn_internal_vsprintf_named(
     for (size_t i = 0; i < values->len; i++) {
         expanded[i + 1] = values->entries[i].value;
     }
-    PtnValue result = ptn_internal_sprintf_named(runtime, function_name, values->len + 1, expanded, line);
+    PtnValue result = ptn_internal_sprintf_named_mode(
+        runtime,
+        function_name,
+        values->len + 1,
+        expanded,
+        line,
+        legacy_stream_resource_text
+    );
     free(expanded);
     return result;
+}
+
+static PtnValue ptn_internal_vsprintf_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue format_value,
+    PtnValue values_value,
+    size_t line
+) {
+    return ptn_internal_vsprintf_named_mode(runtime, function_name, format_value, values_value, line, 0);
 }
 
 static PtnValue ptn_internal_vsprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -38528,7 +38558,7 @@ static PtnValue ptn_internal_vprintf(PtnRuntime *runtime, size_t argc, const Ptn
 
 static PtnValue ptn_internal_vfprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnValue formatted = ptn_internal_vsprintf_named(runtime, "vfprintf", args[1], args[2], line);
+    PtnValue formatted = ptn_internal_vsprintf_named_mode(runtime, "vfprintf", args[1], args[2], line, 1);
     return ptn_internal_write_formatted_stream(runtime, "vfprintf", args[0], formatted, line);
 }
 
