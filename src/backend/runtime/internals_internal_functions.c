@@ -5467,7 +5467,7 @@ static PtnValue ptn_closure_static_variables(PtnRuntime *runtime, PtnClosure *cl
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_key_clone(entry->key),
-                ptn_value_clone(entry->value)
+                ptn_value_clone_deref(entry->value)
             );
         }
     }
