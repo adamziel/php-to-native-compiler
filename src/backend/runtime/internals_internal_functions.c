@@ -1754,6 +1754,19 @@ static const char *const PTN_DOM_NODE_VAR_DUMP_PROPERTIES[] = {
     "textContent",
 };
 
+static const char *const PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES[] = {
+    "nodeName",
+    "nodeValue",
+    "nodeType",
+    "prefix",
+    "localName",
+    "namespaceURI",
+    "isConnected",
+    "ownerDocument",
+    "parentNode",
+    "parentElement",
+};
+
 static const char *const PTN_DOM_MODERN_DOCUMENT_FRAGMENT_VAR_DUMP_PROPERTIES[] = {
     "children",
     "firstElementChild",
@@ -1982,6 +1995,7 @@ static int ptn_dom_class_name_is_reclassifiable_internal(const char *class_name)
         ptn_ascii_case_equal(class_name, "DOMImplementation") ||
         ptn_ascii_case_equal(class_name, "DOMElement") ||
         ptn_ascii_case_equal(class_name, "DOMAttr") ||
+        ptn_ascii_case_equal(class_name, "DOMNameSpaceNode") ||
         ptn_ascii_case_equal(class_name, "DOMEntity") ||
         ptn_ascii_case_equal(class_name, "DOMNotation") ||
         ptn_ascii_case_equal(class_name, "DOMEntityReference") ||
@@ -2104,6 +2118,10 @@ static const char *ptn_dom_effective_class_name(const char *class_name) {
         ptn_declared_class_is_same_or_descendant(class_name, "DOMAttr")) {
         return "DOMAttr";
     }
+    if (ptn_ascii_case_equal(class_name, "DOMNameSpaceNode") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "DOMNameSpaceNode")) {
+        return "DOMNameSpaceNode";
+    }
     if (ptn_ascii_case_equal(class_name, "DOMEntity") ||
         ptn_declared_class_is_same_or_descendant(class_name, "DOMEntity")) {
         return "DOMEntity";
@@ -2163,6 +2181,7 @@ static int ptn_dom_effective_class_is_modeled(const char *class_name) {
         ptn_ascii_case_equal(effective, "DOMImplementation") ||
         ptn_ascii_case_equal(effective, "DOMElement") ||
         ptn_ascii_case_equal(effective, "DOMAttr") ||
+        ptn_ascii_case_equal(effective, "DOMNameSpaceNode") ||
         ptn_ascii_case_equal(effective, "DOMEntity") ||
         ptn_ascii_case_equal(effective, "DOMNotation") ||
         ptn_ascii_case_equal(effective, "DOMEntityReference") ||
@@ -2212,6 +2231,7 @@ static int ptn_object_is_dom_node_instance(PtnObject *object) {
         ptn_ascii_case_equal(class_name, "DOMDocumentType") ||
         ptn_ascii_case_equal(class_name, "DOMElement") ||
         ptn_ascii_case_equal(class_name, "DOMAttr") ||
+        ptn_ascii_case_equal(class_name, "DOMNameSpaceNode") ||
         ptn_ascii_case_equal(class_name, "DOMEntity") ||
         ptn_ascii_case_equal(class_name, "DOMNotation") ||
         ptn_ascii_case_equal(class_name, "DOMEntityReference") ||
@@ -2230,6 +2250,10 @@ static size_t ptn_dom_var_dump_virtual_property_count(PtnObject *object) {
 #else
     if (ptn_object_is_dom_node_list_instance(object)) {
         return sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES[0]);
+    }
+    if (object != NULL &&
+        ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMNameSpaceNode")) {
+        return sizeof(PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES[0]);
     }
     if (object != NULL &&
         !ptn_dom_class_name_is_modern(object->class_name) &&
@@ -2277,6 +2301,11 @@ static const char *const *ptn_dom_var_dump_virtual_properties(PtnObject *object,
     if (ptn_object_is_dom_node_list_instance(object)) {
         *count_out = sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES[0]);
         return PTN_DOM_NODE_LIST_VAR_DUMP_PROPERTIES;
+    }
+    if (object != NULL &&
+        ptn_ascii_case_equal(ptn_dom_effective_class_name(object->class_name), "DOMNameSpaceNode")) {
+        *count_out = sizeof(PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES) / sizeof(PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES[0]);
+        return PTN_DOM_NAMESPACE_NODE_VAR_DUMP_PROPERTIES;
     }
     if (object != NULL &&
         !ptn_dom_class_name_is_modern(object->class_name) &&
@@ -104462,6 +104491,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_XML_NODE_DOCUMENT_FRAGMENT 11
 #define PTN_XML_NODE_NOTATION 12
 #define PTN_XML_NODE_ENTITY 17
+#define PTN_XML_NODE_NAMESPACE_DECLARATION 18
 
 #define PTN_DOM_DOCUMENT_POSITION_DISCONNECTED 1
 #define PTN_DOM_DOCUMENT_POSITION_PRECEDING 2
@@ -104810,6 +104840,9 @@ static const char *ptn_xml_node_class_name(PtnXmlNode *node) {
         case PTN_XML_NODE_ELEMENT:
             return "DOMElement";
         case PTN_XML_NODE_ATTRIBUTE:
+            if (node->namespace_declaration) {
+                return "DOMNameSpaceNode";
+            }
             return "DOMAttr";
         case PTN_XML_NODE_ENTITY:
             return "DOMEntity";
@@ -105586,6 +105619,9 @@ static PtnXmlNode *ptn_xml_clone_node_recursive(PtnRuntime *runtime, PtnXmlNode 
     clone->namespace_declaration = node->namespace_declaration;
     clone->synthetic_namespace_declaration = node->synthetic_namespace_declaration;
     clone->id_attribute_state = node->id_attribute_state;
+    if (!node->modern_dom && ptn_xml_attribute_is_namespace_declaration(node)) {
+        clone->parent = node->parent;
+    }
     for (size_t i = 0; i < node->attribute_count; i++) {
         PtnXmlNode *attr_clone = ptn_xml_clone_node_recursive(runtime, node->attributes[i], 0);
         ptn_xml_element_add_attribute(clone, attr_clone);
@@ -117319,8 +117355,13 @@ static int ptn_dom_string_offset_index(const char *data, size_t len, int64_t *in
     if (len == 0) {
         return 0;
     }
+    int negative = data[0] == '-';
+    size_t start = negative ? 1 : 0;
+    if (start == len) {
+        return 0;
+    }
     int64_t value = 0;
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = start; i < len; i++) {
         unsigned char byte = (unsigned char)data[i];
         if (!isdigit(byte)) {
             return 0;
@@ -117330,8 +117371,16 @@ static int ptn_dom_string_offset_index(const char *data, size_t len, int64_t *in
         }
         value = value * 10 + (int64_t)(byte - '0');
     }
-    *index_out = value;
+    *index_out = negative ? -value : value;
     return 1;
+}
+
+static int ptn_dom_named_node_map_offset_index_is_in_range(PtnRuntime *runtime, int64_t index) {
+    if (index >= 0 && index <= INT_MAX) {
+        return 1;
+    }
+    ptn_throw_exception(runtime, "ValueError", "must be between 0 and 2147483647");
+    return 0;
 }
 
 static PtnXmlNode *ptn_dom_named_node_map_offset_node(PtnXmlNodeListData *list, PtnValue offset) {
@@ -117374,6 +117423,47 @@ static PtnXmlNode *ptn_dom_named_node_map_offset_node(PtnXmlNodeListData *list, 
     return index < 0 || (size_t)index >= ptn_xml_node_list_length(list)
         ? NULL
         : ptn_xml_node_list_item(list, (size_t)index);
+}
+
+static PtnXmlNode *ptn_dom_named_node_map_offset_get_node(
+    PtnRuntime *runtime,
+    PtnXmlNodeListData *list,
+    PtnValue offset,
+    size_t line
+) {
+    if (list == NULL) {
+        return NULL;
+    }
+    PtnValue key = ptn_value_deref(offset);
+    int64_t index = 0;
+    if (key.type == PTN_STRING) {
+        const char *name = (const char *)key.as.string.data;
+        size_t name_len = key.as.string.len;
+        if (ptn_dom_string_offset_index(name, name_len, &index)) {
+            if (!ptn_dom_named_node_map_offset_index_is_in_range(runtime, index)) {
+                return NULL;
+            }
+            return (size_t)index >= ptn_xml_node_list_length(list)
+                ? NULL
+                : ptn_xml_node_list_item(list, (size_t)index);
+        }
+        return ptn_dom_named_node_map_offset_node(list, offset);
+    }
+    if (key.type == PTN_INT || key.type == PTN_FLOAT) {
+        index = ptn_value_to_integer_with_precision_deprecation_at(
+            runtime == NULL ? NULL : &runtime->diagnostics,
+            key,
+            runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn",
+            line
+        );
+        if (!ptn_dom_named_node_map_offset_index_is_in_range(runtime, index)) {
+            return NULL;
+        }
+        return (size_t)index >= ptn_xml_node_list_length(list)
+            ? NULL
+            : ptn_xml_node_list_item(list, (size_t)index);
+    }
+    return ptn_dom_named_node_map_offset_node(list, offset);
 }
 
 static int ptn_dom_libxml_accepts_document_source(
@@ -119634,7 +119724,21 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         }
         if (ptn_ascii_case_equal(name, "offsetGet")) {
             if (ptn_ascii_case_equal(class_name, "DOMNamedNodeMap")) {
-                return argc >= 1 ? ptn_xml_node_value_for_runtime(runtime, ptn_dom_named_node_map_offset_node(list, args[0])) : ptn_null();
+                if (argc < 1) {
+                    char message[96];
+                    int written = snprintf(
+                        message,
+                        sizeof(message),
+                        "Cannot access %s without offset",
+                        object_class_name == NULL ? "DOMNamedNodeMap" : object_class_name
+                    );
+                    if (written < 0 || (size_t)written >= sizeof(message)) {
+                        ptn_abort_out_of_memory();
+                    }
+                    ptn_throw_exception(runtime, "Error", message);
+                    return ptn_null();
+                }
+                return ptn_xml_node_value_for_runtime(runtime, ptn_dom_named_node_map_offset_get_node(runtime, list, args[0], line));
             }
             int64_t index = 0;
             if (argc >= 1 && !ptn_dom_node_list_offset_index(runtime, object_class_name, args[0], line, &index)) {
@@ -120240,9 +120344,13 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     if (ptn_ascii_case_equal(property, "prefix")) {
         if (ptn_xml_attribute_is_namespace_declaration(node)) {
             const char *declared_prefix = ptn_dom_namespace_declaration_prefix(node);
-            *value_out = declared_prefix == NULL || declared_prefix[0] == '\0'
-                ? ptn_null()
-                : ptn_owned_string(ptn_duplicate_string(declared_prefix));
+            if (!node->modern_dom && declared_prefix != NULL && declared_prefix[0] == '\0') {
+                *value_out = ptn_string("");
+            } else {
+                *value_out = declared_prefix == NULL || declared_prefix[0] == '\0'
+                    ? ptn_null()
+                    : ptn_owned_string(ptn_duplicate_string(declared_prefix));
+            }
             return 1;
         }
         if (node->type == PTN_XML_NODE_ATTRIBUTE &&
@@ -120293,7 +120401,9 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "nodeType")) {
-        *value_out = ptn_int(node->type);
+        *value_out = ptn_int(!node->modern_dom && ptn_xml_attribute_is_namespace_declaration(node)
+            ? PTN_XML_NODE_NAMESPACE_DECLARATION
+            : node->type);
         return 1;
     }
     if (ptn_ascii_case_equal(property, "nodeValue")) {
@@ -144960,6 +145070,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(effective, "DOMImplementation")
         || ptn_ascii_case_equal(effective, "DOMElement")
         || ptn_ascii_case_equal(effective, "DOMAttr")
+        || ptn_ascii_case_equal(effective, "DOMNameSpaceNode")
         || ptn_ascii_case_equal(effective, "DOMEntity")
         || ptn_ascii_case_equal(effective, "DOMNotation")
         || ptn_ascii_case_equal(effective, "DOMEntityReference")
@@ -144982,6 +145093,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "DOMElement")
         || ptn_ascii_case_equal(class_name, "DOM\\Element")
         || ptn_ascii_case_equal(class_name, "DOMAttr")
+        || ptn_ascii_case_equal(class_name, "DOMNameSpaceNode")
         || ptn_ascii_case_equal(class_name, "DOMEntity")
         || ptn_ascii_case_equal(class_name, "DOMNotation")
         || ptn_ascii_case_equal(class_name, "DOMEntityReference")
@@ -156555,6 +156667,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_ascii_case_equal(class_name, "DOMElement") ||
         ptn_ascii_case_equal(class_name, "DOM\\Element") ||
         ptn_ascii_case_equal(class_name, "DOMAttr") ||
+        ptn_ascii_case_equal(class_name, "DOMNameSpaceNode") ||
         ptn_ascii_case_equal(class_name, "DOMEntity") ||
         ptn_ascii_case_equal(class_name, "DOMNotation") ||
         ptn_ascii_case_equal(class_name, "DOMEntityReference") ||

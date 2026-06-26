@@ -7911,6 +7911,7 @@ fn emit_class_metadata_helpers(
         "DOMImplementation",
         "DOMElement",
         "DOMAttr",
+        "DOMNameSpaceNode",
         "DOMEntity",
         "DOMNotation",
         "DOMEntityReference",
@@ -8803,6 +8804,7 @@ fn emit_class_metadata_helpers(
         "DOMImplementation",
         "DOMElement",
         "DOMAttr",
+        "DOMNameSpaceNode",
         "DOMEntity",
         "DOMNotation",
         "DOMEntityReference",
@@ -9405,6 +9407,7 @@ fn emit_class_metadata_helpers(
         ("DOMDocumentType", "DOMNode"),
         ("DOMElement", "DOMNode"),
         ("DOMAttr", "DOMNode"),
+        ("DOMNameSpaceNode", "DOMNode"),
         ("DOMEntity", "DOMNode"),
         ("DOMNotation", "DOMNode"),
         ("DOMEntityReference", "DOMNode"),
@@ -22086,6 +22089,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domimplementation" => Some("DOMImplementation"),
         "domelement" => Some("DOMElement"),
         "domattr" => Some("DOMAttr"),
+        "domnamespacenode" => Some("DOMNameSpaceNode"),
         "domentity" => Some("DOMEntity"),
         "domnotation" => Some("DOMNotation"),
         "domentityreference" => Some("DOMEntityReference"),
@@ -32469,6 +32473,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMImplementation")
                 || class_name.eq_ignore_ascii_case("DOMElement")
                 || class_name.eq_ignore_ascii_case("DOMAttr")
+                || class_name.eq_ignore_ascii_case("DOMNameSpaceNode")
                 || class_name.eq_ignore_ascii_case("DOMEntity")
                 || class_name.eq_ignore_ascii_case("DOMNotation")
                 || class_name.eq_ignore_ascii_case("DOMEntityReference")

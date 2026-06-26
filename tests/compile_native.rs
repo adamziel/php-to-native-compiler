@@ -48888,6 +48888,133 @@ var_dump($copy->prefix, $copy->namespaceURI);
 }
 
 #[test]
+fn compile_dom_named_node_map_offset_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-named-node-map-offset-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-named-node-map-offset-edges.php");
+    let output = root.join("dom-named-node-map-offset-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$document = new DOMDocument();
+$root = $document->createElement('root');
+$document->appendChild($root);
+$root->setAttribute('attrib', 'value');
+
+try {
+    var_dump($root->attributes[-1]);
+} catch (Throwable $exception) {
+    echo get_class($exception), ":", $exception->getMessage(), "\n";
+}
+
+try {
+    var_dump($root->attributes["-1"]);
+} catch (Throwable $exception) {
+    echo get_class($exception), ":", $exception->getMessage(), "\n";
+}
+
+var_dump(isset($root->attributes[-1]));
+
+try {
+    $root->attributes[][] = null;
+} catch (Throwable $exception) {
+    echo get_class($exception), ":", $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError:must be between 0 and 2147483647\n",
+            "ValueError:must be between 0 and 2147483647\n",
+            "bool(false)\n",
+            "Error:Cannot access DOMNamedNodeMap without offset\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_named_node_map_offset_get_node"));
+}
+
+#[test]
+fn compile_dom_legacy_namespace_node_clone_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-legacy-namespace-node-clone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-legacy-namespace-node-clone.php");
+    let output = root.join("dom-legacy-namespace-node-clone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$document = new DOMDocument();
+$document->loadXML('<foo xmlns="http://php.net/test" xmlns:foo="urn:foo" />');
+$attr = $document->documentElement->getAttributeNode('xmlns');
+
+var_dump(
+    get_class($attr),
+    $attr->nodeType,
+    $attr->prefix,
+    $attr->localName,
+    $attr->namespaceURI,
+    $attr->parentNode->nodeName
+);
+
+$clone = clone $attr;
+unset($document, $attr);
+
+var_dump(
+    get_class($clone),
+    $clone->nodeType,
+    $clone->nodeValue,
+    $clone->parentNode->nodeName
+);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(16) \"DOMNameSpaceNode\"\n",
+            "int(18)\n",
+            "string(0) \"\"\n",
+            "string(5) \"xmlns\"\n",
+            "string(19) \"http://php.net/test\"\n",
+            "string(3) \"foo\"\n",
+            "string(16) \"DOMNameSpaceNode\"\n",
+            "int(18)\n",
+            "string(19) \"http://php.net/test\"\n",
+            "string(3) \"foo\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("DOMNameSpaceNode"));
+    assert!(c_source.contains("PTN_XML_NODE_NAMESPACE_DECLARATION"));
+}
+
+#[test]
 fn compile_dom_html_document_parser_interactions_to_native_binary() {
     let root = temp_dir("ptn-native-dom-html-document-parser-interactions");
     fs::create_dir_all(&root).unwrap();
