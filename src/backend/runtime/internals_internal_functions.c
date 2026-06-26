@@ -45263,6 +45263,7 @@ typedef struct {
     void *pcre2_match_data;
     void *pcre2_jit_stack;
     int pcre2_jit_enabled;
+    uint32_t pcre2_match_options;
     int utf_mode;
     PtnPregSimpleKind simple_kind;
     PtnPregCapture *captures;
@@ -46114,6 +46115,12 @@ static PtnPregSimpleKind ptn_preg_pcre2_simple_kind(const char *pattern_data, si
     return PTN_PREG_SIMPLE_NONE;
 }
 
+static int ptn_preg_pcre2_has_leading_no_jit_verb(const char *pattern_data, size_t pattern_len) {
+    const char no_jit[] = "(*NO_JIT)";
+    return pattern_len >= sizeof(no_jit) - 1 &&
+        memcmp(pattern_data, no_jit, sizeof(no_jit) - 1) == 0;
+}
+
 static unsigned long ptn_preg_runtime_backtrack_limit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     const char *raw = root == NULL || root->pcre_backtrack_limit == NULL
@@ -46425,6 +46432,9 @@ static int ptn_preg_compile_pcre2(
     program->pcre2_match_data = match_data;
     program->pcre2_jit_stack = jit_stack;
     program->pcre2_jit_enabled = jit_enabled;
+    program->pcre2_match_options = ptn_preg_pcre2_has_leading_no_jit_verb(pattern_data, pattern_len)
+        ? PTN_PCRE2_NO_JIT_MATCH
+        : 0;
     program->utf_mode = utf_mode;
     program->simple_kind = ptn_preg_pcre2_simple_kind(pattern_data, pattern_len);
     program->captures = captures;
@@ -47004,8 +47014,13 @@ static int ptn_preg_program_match(
             ptn_preg_set_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
             return -1;
         }
-        uint32_t effective_match_options = match_options | (program->utf_mode ? PTN_PCRE2_NO_UTF_CHECK : 0);
-        int rc = program->pcre2_jit_enabled && api->jit_match != NULL
+        uint32_t effective_match_options = match_options |
+            program->pcre2_match_options |
+            (program->utf_mode ? PTN_PCRE2_NO_UTF_CHECK : 0);
+        int use_jit = program->pcre2_jit_enabled &&
+            (program->pcre2_match_options & PTN_PCRE2_NO_JIT_MATCH) == 0 &&
+            api->jit_match != NULL;
+        int rc = use_jit
             ? api->jit_match(
                 program->pcre2_code,
                 (const unsigned char *)subject,

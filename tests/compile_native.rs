@@ -29196,7 +29196,12 @@ $elapsed = microtime(true) - $start;\n\
 var_dump($pos === $input_size);\n\
 var_dump($elapsed < 0.5);\n\
 var_dump(preg_match('/./u', \"a\\xFF\", $bad, 0, 1));\n\
-var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n",
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n\
+var_dump(preg_match('/(*NO_JIT)^(A{1,2}B)+$$/', str_repeat('AB', 128)));\n\
+var_dump(preg_match('~(*NO_JIT)(a)*~', str_repeat('a', 20), $nojit));\n\
+$text = \"VA\\xFF\"; $text .= \"LID\";\n\
+var_dump(preg_match('/\\\\b/u', $text, $word, 0, 4));\n\
+var_dump(preg_last_error() === PREG_NO_ERROR);\n",
     )
     .unwrap();
 
@@ -29223,6 +29228,10 @@ var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(1)\n",
             "bool(true)\n",
         )
     );
