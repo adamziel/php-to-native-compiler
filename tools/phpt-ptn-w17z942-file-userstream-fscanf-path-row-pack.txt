@@ -1,0 +1,19 @@
+# Exact current-red file/user-stream/fscanf/path row pack for ptn-w17z.942.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T190834Z.tsv
+# Evidence at assignment time: selected=12 current FAIL rows.
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=180 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z942-file-userstream-fscanf-path-row-pack.txt
+ext/standard/tests/file/userdirstream.phpt
+ext/standard/tests/file/userstreams_007.phpt
+ext/standard/tests/file/symlink_link_linkinfo_is_link_variation6.phpt
+ext/standard/tests/file/userstreams_002.phpt
+ext/standard/tests/file/fscanf_variation22.phpt
+ext/standard/tests/file/fscanf_variation12.phpt
+ext/standard/tests/file/bug52624.phpt
+ext/standard/tests/file/fscanf_variation49.phpt
+ext/standard/tests/file/bug60120.phpt
+ext/standard/tests/file/tempnam_variation1.phpt
+ext/standard/tests/file/fscanf_variation19.phpt
+ext/standard/tests/file/symlink_link_linkinfo_is_link_variation8.phpt

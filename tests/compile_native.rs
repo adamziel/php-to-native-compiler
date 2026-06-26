@@ -23780,6 +23780,11 @@ file_put_contents($path, \"\\n\");\n\
 $h = fopen($path, \"r\"); var_dump(fscanf($h, \"%[0-9]\")); fclose($h);\n\
 file_put_contents($path, \"\\n\");\n\
 $h = fopen($path, \"r\"); var_dump(fscanf($h, \"%*d\")); fclose($h);\n\
+file_put_contents($path, \"Resource id #6\\n\");\n\
+$h = fopen($path, \"r\"); var_dump(fscanf($h, \"%30c\")); fclose($h);\n\
+file_put_contents($path, \"A B\\n\");\n\
+$h = fopen($path, \"r\"); var_dump(fscanf($h, \"%2c%c\")); fclose($h);\n\
+var_dump(sscanf(\" A\", \"%c %c\"));\n\
 unlink($path);\n",
     )
     .unwrap();
@@ -23831,7 +23836,23 @@ array(1) {\n\
 \x20\x20[0]=>\n\
 \x20\x20NULL\n\
 }\n\
-NULL\n"
+NULL\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(8) \"Resource\"\n\
+}\n\
+array(2) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(1) \"A\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(0) \"\"\n\
+}\n\
+array(2) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(0) \"\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(1) \"A\"\n\
+}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

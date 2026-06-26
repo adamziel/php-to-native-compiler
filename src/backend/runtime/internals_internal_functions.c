@@ -39011,20 +39011,19 @@ static int ptn_scanf_match_value(
         if (width == 0) {
             width = 1;
         }
-        size_t line_available = 0;
+        size_t field_available = 0;
         while (
-            line_available < available
-            && input[*offset + line_available] != '\n'
-            && input[*offset + line_available] != '\r'
+            field_available < available
+            && !isspace((unsigned char)input[*offset + field_available])
         ) {
-            line_available++;
+            field_available++;
         }
-        if (line_available == 0) {
+        if (field_available == 0) {
             *parsed = ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0);
             return 1;
         }
-        if (width > line_available) {
-            width = line_available;
+        if (width > field_available) {
+            width = field_available;
         }
         *parsed = ptn_owned_string_len(ptn_duplicate_string_len(input + *offset, width), width);
         *offset += width;
