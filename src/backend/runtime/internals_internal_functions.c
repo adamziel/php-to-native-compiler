@@ -87943,6 +87943,21 @@ static const char *ptn_runtime_phar_cache_list(PtnRuntime *runtime) {
     return root->phar_cache_list;
 }
 
+static int ptn_runtime_phar_startup_ini_bool(const char *env_name, int default_value) {
+    const char *configured = getenv(env_name);
+    return ptn_runtime_ini_bool(configured == NULL ? (default_value ? "1" : "0") : configured, default_value);
+}
+
+static int ptn_runtime_phar_readonly_locked(PtnRuntime *runtime) {
+    (void)runtime;
+    return ptn_runtime_phar_startup_ini_bool("PTN_PHAR_READONLY", 1);
+}
+
+static int ptn_runtime_phar_require_hash_locked(PtnRuntime *runtime) {
+    (void)runtime;
+    return ptn_runtime_phar_startup_ini_bool("PTN_PHAR_REQUIRE_HASH", 1);
+}
+
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->internal_encoding == NULL) {
@@ -89765,7 +89780,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_readonly(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        if (ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+        if (ptn_runtime_phar_readonly_locked(runtime) && !ptn_runtime_ini_bool(next, 1)) {
             free(next);
             ptn_string_operand_free(value);
             ptn_string_operand_free(option);
@@ -89782,7 +89797,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_require_hash(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        if (ptn_runtime_ini_bool(ptn_runtime_phar_require_hash(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+        if (ptn_runtime_phar_require_hash_locked(runtime) && !ptn_runtime_ini_bool(next, 1)) {
             free(next);
             ptn_string_operand_free(value);
             ptn_string_operand_free(option);

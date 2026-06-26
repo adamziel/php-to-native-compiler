@@ -70639,6 +70639,75 @@ var_dump(ini_get('phar.readonly'));",
 }
 
 #[test]
+fn phpc_phar_startup_disabled_ini_flags_can_toggle_back_off() {
+    let root = temp_dir("ptn-phpc-phar-ini-startup-disabled-toggle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-ini-startup-disabled-toggle.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_set('phar.require_hash', 1));\n\
+var_dump(ini_set('phar.readonly', 1));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(Phar::canWrite());\n\
+var_dump(ini_set('phar.require_hash', 0));\n\
+var_dump(ini_set('phar.readonly', 0));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(Phar::canWrite());\n\
+var_dump(ini_set('phar.require_hash', 'yes'));\n\
+var_dump(ini_set('phar.readonly', 'yes'));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(Phar::canWrite());\n\
+var_dump(ini_set('phar.require_hash', 0));\n\
+var_dump(ini_set('phar.readonly', 0));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(Phar::canWrite());",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("phar.require_hash=0")
+        .arg("-d")
+        .arg("phar.readonly=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "bool(false)\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "bool(true)\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(3) \"yes\"\n",
+            "string(3) \"yes\"\n",
+            "bool(false)\n",
+            "string(3) \"yes\"\n",
+            "string(3) \"yes\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_string_ini_controls_default_charset_and_parse_str_separator() {
     let root = temp_dir("ptn-phpc-string-ini");
     fs::create_dir_all(&root).unwrap();
