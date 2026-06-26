@@ -713,7 +713,10 @@ typedef enum {
     PTN_STREAM_FILTER_STRING_ROT13,
     PTN_STREAM_FILTER_STRING_TOUPPER,
     PTN_STREAM_FILTER_STRING_TOLOWER,
+    PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE,
     PTN_STREAM_FILTER_CONVERT_BASE64_DECODE,
+    PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_ENCODE,
+    PTN_STREAM_FILTER_CONVERT_QUOTED_PRINTABLE_DECODE,
     PTN_STREAM_FILTER_ZLIB_DEFLATE,
     PTN_STREAM_FILTER_ZLIB_INFLATE
 } PtnStreamFilterKind;
@@ -1270,6 +1273,9 @@ struct PtnResource {
     PtnMemoryStream *memory_stream;
     PtnStreamFilter *read_filters;
     PtnStreamFilter *write_filters;
+    char *filtered_read_buffer;
+    size_t filtered_read_buffer_len;
+    size_t filtered_read_buffer_offset;
     PtnResourceCloseHook close_hook;
     void *close_hook_data;
     PtnResourceHookDataFree close_hook_data_free;
@@ -4244,6 +4250,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->filtered_read_buffer = NULL;
+    resource->filtered_read_buffer_len = 0;
+    resource->filtered_read_buffer_offset = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4285,6 +4294,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->memory_stream = ptn_memory_stream_new(max_memory, writable, append);
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->filtered_read_buffer = NULL;
+    resource->filtered_read_buffer_len = 0;
+    resource->filtered_read_buffer_offset = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4323,6 +4335,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->filtered_read_buffer = NULL;
+    resource->filtered_read_buffer_len = 0;
+    resource->filtered_read_buffer_offset = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4356,6 +4371,9 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->memory_stream = NULL;
     resource->read_filters = NULL;
     resource->write_filters = NULL;
+    resource->filtered_read_buffer = NULL;
+    resource->filtered_read_buffer_len = 0;
+    resource->filtered_read_buffer_offset = 0;
     resource->close_hook = NULL;
     resource->close_hook_data = NULL;
     resource->close_hook_data_free = NULL;
@@ -4785,6 +4803,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     ptn_resource_close(resource);
     ptn_stream_filter_chain_free(resource->read_filters);
     ptn_stream_filter_chain_free(resource->write_filters);
+    free(resource->filtered_read_buffer);
     free(resource->stream_uri);
     free(resource->stream_mode);
     ptn_value_destroy(&resource->context_options);
@@ -4822,6 +4841,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
+        0,
+        0,
+        NULL,
         NULL,
         NULL,
         1,
@@ -4842,6 +4864,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
+        0,
+        0,
+        NULL,
         NULL,
         NULL,
         1,
@@ -4861,6 +4886,9 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
+        NULL,
+        0,
+        0,
         NULL,
         NULL,
         NULL,

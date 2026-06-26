@@ -1,0 +1,13 @@
+# ptn-w17z.930 stream context/filter registry current-red row pack.
+ext/standard/tests/streams/stream_set_timeout_error.phpt
+ext/standard/tests/streams/bug60602.phpt
+ext/standard/tests/streams/opendir-004.phpt
+ext/standard/tests/streams/stream_get_line_NUL_delimiter.phpt
+ext/standard/tests/streams/stream_context_set_options_error.phpt
+ext/standard/tests/streams/stream_errors_set_default_context_error.phpt
+ext/standard/tests/streams/stream_set_chunk_size.phpt
+ext/standard/tests/streams/stream_get_wrappers.phpt
+ext/standard/tests/filters/user_filter_seek_03.phpt
+ext/standard/tests/filters/convert_filter_seek.phpt
+ext/standard/tests/filters/stream_filter_register_non_existing_class.phpt
+ext/standard/tests/filters/userfilters.phpt

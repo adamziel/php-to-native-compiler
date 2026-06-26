@@ -13149,7 +13149,7 @@ fn is_known_internal_enum_class(class_name: &str) -> bool {
             .trim_start_matches('\\')
             .to_ascii_lowercase()
             .as_str(),
-        "random\\intervalboundary" | "roundingmode"
+        "random\\intervalboundary" | "roundingmode" | "streamerrormode"
     )
 }
 

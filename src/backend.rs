@@ -99,6 +99,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "StreamErrorMode",
     "Dom\\AdjacentPosition",
     "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",
@@ -23826,6 +23827,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "datetimeimmutable" => Some("DateTimeImmutable"),
                 "datetimezone" => Some("DateTimeZone"),
                 "dateinterval" => Some("DateInterval"),
+                "streamerrormode" => Some("StreamErrorMode"),
                 "hashcontext" => Some("HashContext"),
                 "sessionhandler" => Some("SessionHandler"),
                 "random\\randomizer" => Some("Random\\Randomizer"),
