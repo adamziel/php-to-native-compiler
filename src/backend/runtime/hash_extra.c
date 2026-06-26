@@ -187,10 +187,23 @@ typedef struct {
 } PtnHashExtraRipemd128Ctx;
 
 typedef struct {
+    uint32_t state[8];
+    uint32_t count[2];
+    unsigned char buffer[64];
+} PtnHashExtraRipemd256Ctx;
+
+typedef struct {
     uint32_t state[10];
     uint32_t count[2];
     unsigned char buffer[64];
 } PtnHashExtraRipemd320Ctx;
+
+typedef struct {
+    uint32_t state[16];
+    uint32_t count[2];
+    unsigned char buffer[32];
+    unsigned char length;
+} PtnHashExtraSnefruCtx;
 
 #define PTN_RIPEMD_F0(x, y, z) ((x) ^ (y) ^ (z))
 #define PTN_RIPEMD_F1(x, y, z) (((x) & (y)) | ((~(x)) & (z)))
@@ -300,6 +313,56 @@ static void ptn_hash_extra_ripemd128_transform(uint32_t state[4], const unsigned
     memset(x, 0, sizeof(x));
 }
 
+static void ptn_hash_extra_ripemd256_transform(uint32_t state[8], const unsigned char block[64]) {
+    uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+    uint32_t aa = state[4], bb = state[5], cc = state[6], dd = state[7];
+    uint32_t tmp;
+    uint32_t x[16];
+    ptn_hash_extra_ripemd_decode(x, block);
+
+    for (int j = 0; j < 16; j++) {
+        tmp = PTN_RIPEMD_ROLS(j, a + PTN_RIPEMD_F0(b, c, d) + x[PTN_RIPEMD_R[j]] + PTN_RIPEMD_K(j));
+        a = d; d = c; c = b; b = tmp;
+        tmp = PTN_RIPEMD_ROLSS(j, aa + PTN_RIPEMD_F3(bb, cc, dd) + x[PTN_RIPEMD_RR[j]] + PTN_RIPEMD_KK(j));
+        aa = dd; dd = cc; cc = bb; bb = tmp;
+    }
+    tmp = a; a = aa; aa = tmp;
+
+    for (int j = 16; j < 32; j++) {
+        tmp = PTN_RIPEMD_ROLS(j, a + PTN_RIPEMD_F1(b, c, d) + x[PTN_RIPEMD_R[j]] + PTN_RIPEMD_K(j));
+        a = d; d = c; c = b; b = tmp;
+        tmp = PTN_RIPEMD_ROLSS(j, aa + PTN_RIPEMD_F2(bb, cc, dd) + x[PTN_RIPEMD_RR[j]] + PTN_RIPEMD_KK(j));
+        aa = dd; dd = cc; cc = bb; bb = tmp;
+    }
+    tmp = b; b = bb; bb = tmp;
+
+    for (int j = 32; j < 48; j++) {
+        tmp = PTN_RIPEMD_ROLS(j, a + PTN_RIPEMD_F2(b, c, d) + x[PTN_RIPEMD_R[j]] + PTN_RIPEMD_K(j));
+        a = d; d = c; c = b; b = tmp;
+        tmp = PTN_RIPEMD_ROLSS(j, aa + PTN_RIPEMD_F1(bb, cc, dd) + x[PTN_RIPEMD_RR[j]] + PTN_RIPEMD_KK(j));
+        aa = dd; dd = cc; cc = bb; bb = tmp;
+    }
+    tmp = c; c = cc; cc = tmp;
+
+    for (int j = 48; j < 64; j++) {
+        tmp = PTN_RIPEMD_ROLS(j, a + PTN_RIPEMD_F3(b, c, d) + x[PTN_RIPEMD_R[j]] + PTN_RIPEMD_K(j));
+        a = d; d = c; c = b; b = tmp;
+        tmp = PTN_RIPEMD_ROLSS(j, aa + PTN_RIPEMD_F0(bb, cc, dd) + x[PTN_RIPEMD_RR[j]] + PTN_RIPEMD_KK(j));
+        aa = dd; dd = cc; cc = bb; bb = tmp;
+    }
+    tmp = d; d = dd; dd = tmp;
+
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += aa;
+    state[5] += bb;
+    state[6] += cc;
+    state[7] += dd;
+    memset(x, 0, sizeof(x));
+}
+
 static void ptn_hash_extra_ripemd320_transform(uint32_t state[10], const unsigned char block[64]) {
     uint32_t a = state[0], b = state[1], c = state[2], d = state[3], e = state[4];
     uint32_t aa = state[5], bb = state[6], cc = state[7], dd = state[8], ee = state[9];
@@ -377,6 +440,27 @@ static void ptn_hash_extra_ripemd128_update(PtnHashExtraRipemd128Ctx *ctx, const
     memcpy(&ctx->buffer[index], &input[i], input_len - i);
 }
 
+static void ptn_hash_extra_ripemd256_update(PtnHashExtraRipemd256Ctx *ctx, const unsigned char *input, size_t input_len) {
+    unsigned int index = (unsigned int)((ctx->count[0] >> 3) & 0x3f);
+    ctx->count[0] += (uint32_t)(input_len << 3);
+    if (ctx->count[0] < ((uint32_t)input_len << 3)) {
+        ctx->count[1]++;
+    }
+    ctx->count[1] += (uint32_t)(input_len >> 29);
+
+    unsigned int part_len = 64 - index;
+    size_t i = 0;
+    if (input_len >= part_len) {
+        memcpy(&ctx->buffer[index], input, part_len);
+        ptn_hash_extra_ripemd256_transform(ctx->state, ctx->buffer);
+        for (i = part_len; i + 63 < input_len; i += 64) {
+            ptn_hash_extra_ripemd256_transform(ctx->state, &input[i]);
+        }
+        index = 0;
+    }
+    memcpy(&ctx->buffer[index], &input[i], input_len - i);
+}
+
 static void ptn_hash_extra_ripemd320_update(PtnHashExtraRipemd320Ctx *ctx, const unsigned char *input, size_t input_len) {
     unsigned int index = (unsigned int)((ctx->count[0] >> 3) & 0x3f);
     ctx->count[0] += (uint32_t)(input_len << 3);
@@ -426,6 +510,33 @@ static void ptn_hash_extra_ripemd128_digest_bytes(const unsigned char *input, si
     memset(&ctx, 0, sizeof(ctx));
 }
 
+static void ptn_hash_extra_ripemd256_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[32]) {
+    PtnHashExtraRipemd256Ctx ctx;
+    ctx.count[0] = ctx.count[1] = 0;
+    ctx.state[0] = UINT32_C(0x67452301);
+    ctx.state[1] = UINT32_C(0xefcdab89);
+    ctx.state[2] = UINT32_C(0x98badcfe);
+    ctx.state[3] = UINT32_C(0x10325476);
+    ctx.state[4] = UINT32_C(0x76543210);
+    ctx.state[5] = UINT32_C(0xfedcba98);
+    ctx.state[6] = UINT32_C(0x89abcdef);
+    ctx.state[7] = UINT32_C(0x01234567);
+    if (input_len != 0) {
+        ptn_hash_extra_ripemd256_update(&ctx, input, input_len);
+    }
+
+    unsigned char bits[8];
+    ptn_hash_extra_store_le32(bits, ctx.count, 2);
+    unsigned char padding[64];
+    ptn_hash_extra_ripemd_padding(padding);
+    unsigned int index = (unsigned int)((ctx.count[0] >> 3) & 0x3f);
+    unsigned int pad_len = index < 56 ? 56 - index : 120 - index;
+    ptn_hash_extra_ripemd256_update(&ctx, padding, pad_len);
+    ptn_hash_extra_ripemd256_update(&ctx, bits, 8);
+    ptn_hash_extra_store_le32(digest, ctx.state, 8);
+    memset(&ctx, 0, sizeof(ctx));
+}
+
 static void ptn_hash_extra_ripemd320_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[40]) {
     PtnHashExtraRipemd320Ctx ctx;
     ctx.count[0] = ctx.count[1] = 0;
@@ -452,6 +563,139 @@ static void ptn_hash_extra_ripemd320_digest_bytes(const unsigned char *input, si
     ptn_hash_extra_ripemd320_update(&ctx, padding, pad_len);
     ptn_hash_extra_ripemd320_update(&ctx, bits, 8);
     ptn_hash_extra_store_le32(digest, ctx.state, 10);
+    memset(&ctx, 0, sizeof(ctx));
+}
+
+static void ptn_hash_extra_snefru_round(uint32_t *left, uint32_t center, uint32_t *next, const uint32_t table[256]) {
+    uint32_t sbe = table[center & 0xff];
+    *left ^= sbe;
+    *next ^= sbe;
+}
+
+static void ptn_hash_extra_snefru_mix(uint32_t input[16]) {
+    static const int shifts[4] = {16, 8, 16, 24};
+    uint32_t b00 = input[0], b01 = input[1], b02 = input[2], b03 = input[3];
+    uint32_t b04 = input[4], b05 = input[5], b06 = input[6], b07 = input[7];
+    uint32_t b08 = input[8], b09 = input[9], b10 = input[10], b11 = input[11];
+    uint32_t b12 = input[12], b13 = input[13], b14 = input[14], b15 = input[15];
+
+    for (int index = 0; index < 8; index++) {
+        const uint32_t *t0 = ptn_hash_extra_snefru_tables[2 * index];
+        const uint32_t *t1 = ptn_hash_extra_snefru_tables[2 * index + 1];
+        for (int b = 0; b < 4; b++) {
+            ptn_hash_extra_snefru_round(&b15, b00, &b01, t0);
+            ptn_hash_extra_snefru_round(&b00, b01, &b02, t0);
+            ptn_hash_extra_snefru_round(&b01, b02, &b03, t1);
+            ptn_hash_extra_snefru_round(&b02, b03, &b04, t1);
+            ptn_hash_extra_snefru_round(&b03, b04, &b05, t0);
+            ptn_hash_extra_snefru_round(&b04, b05, &b06, t0);
+            ptn_hash_extra_snefru_round(&b05, b06, &b07, t1);
+            ptn_hash_extra_snefru_round(&b06, b07, &b08, t1);
+            ptn_hash_extra_snefru_round(&b07, b08, &b09, t0);
+            ptn_hash_extra_snefru_round(&b08, b09, &b10, t0);
+            ptn_hash_extra_snefru_round(&b09, b10, &b11, t1);
+            ptn_hash_extra_snefru_round(&b10, b11, &b12, t1);
+            ptn_hash_extra_snefru_round(&b11, b12, &b13, t0);
+            ptn_hash_extra_snefru_round(&b12, b13, &b14, t0);
+            ptn_hash_extra_snefru_round(&b13, b14, &b15, t1);
+            ptn_hash_extra_snefru_round(&b14, b15, &b00, t1);
+
+            int rshift = shifts[b];
+            int lshift = 32 - rshift;
+            b00 = (b00 >> rshift) | (b00 << lshift);
+            b01 = (b01 >> rshift) | (b01 << lshift);
+            b02 = (b02 >> rshift) | (b02 << lshift);
+            b03 = (b03 >> rshift) | (b03 << lshift);
+            b04 = (b04 >> rshift) | (b04 << lshift);
+            b05 = (b05 >> rshift) | (b05 << lshift);
+            b06 = (b06 >> rshift) | (b06 << lshift);
+            b07 = (b07 >> rshift) | (b07 << lshift);
+            b08 = (b08 >> rshift) | (b08 << lshift);
+            b09 = (b09 >> rshift) | (b09 << lshift);
+            b10 = (b10 >> rshift) | (b10 << lshift);
+            b11 = (b11 >> rshift) | (b11 << lshift);
+            b12 = (b12 >> rshift) | (b12 << lshift);
+            b13 = (b13 >> rshift) | (b13 << lshift);
+            b14 = (b14 >> rshift) | (b14 << lshift);
+            b15 = (b15 >> rshift) | (b15 << lshift);
+        }
+    }
+    input[0] ^= b15;
+    input[1] ^= b14;
+    input[2] ^= b13;
+    input[3] ^= b12;
+    input[4] ^= b11;
+    input[5] ^= b10;
+    input[6] ^= b09;
+    input[7] ^= b08;
+}
+
+static void ptn_hash_extra_snefru_transform(PtnHashExtraSnefruCtx *ctx, const unsigned char input[32]) {
+    for (int i = 0, j = 0; i < 32; i += 4, j++) {
+        ctx->state[8 + j] = ((uint32_t)input[i] << 24) |
+            ((uint32_t)input[i + 1] << 16) |
+            ((uint32_t)input[i + 2] << 8) |
+            (uint32_t)input[i + 3];
+    }
+    ptn_hash_extra_snefru_mix(ctx->state);
+    memset(&ctx->state[8], 0, sizeof(uint32_t) * 8);
+}
+
+static void ptn_hash_extra_snefru_update(PtnHashExtraSnefruCtx *ctx, const unsigned char *input, size_t input_len) {
+    uint64_t bit_count = ((uint64_t)ctx->count[0] << 32) | (uint64_t)ctx->count[1];
+    bit_count += (uint64_t)input_len * 8;
+    ctx->count[0] = (uint32_t)(bit_count >> 32);
+    ctx->count[1] = (uint32_t)bit_count;
+
+    if ((size_t)ctx->length + input_len < 32) {
+        if (input_len != 0) {
+            memcpy(&ctx->buffer[ctx->length], input, input_len);
+        }
+        ctx->length = (unsigned char)((size_t)ctx->length + input_len);
+        return;
+    }
+
+    size_t i = 0;
+    size_t remaining = input_len;
+    if (ctx->length != 0) {
+        size_t needed = 32 - ctx->length;
+        memcpy(&ctx->buffer[ctx->length], input, needed);
+        ptn_hash_extra_snefru_transform(ctx, ctx->buffer);
+        i = needed;
+        remaining -= needed;
+        ctx->length = 0;
+    }
+
+    for (; remaining >= 32; i += 32, remaining -= 32) {
+        ptn_hash_extra_snefru_transform(ctx, input + i);
+    }
+
+    if (remaining != 0) {
+        memcpy(ctx->buffer, input + i, remaining);
+    }
+    memset(&ctx->buffer[remaining], 0, 32 - remaining);
+    ctx->length = (unsigned char)remaining;
+}
+
+static void ptn_hash_extra_snefru_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[32]) {
+    PtnHashExtraSnefruCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    if (input_len != 0) {
+        ptn_hash_extra_snefru_update(&ctx, input, input_len);
+    }
+    if (ctx.length != 0) {
+        ptn_hash_extra_snefru_transform(&ctx, ctx.buffer);
+    }
+    ctx.state[14] = ctx.count[0];
+    ctx.state[15] = ctx.count[1];
+    ptn_hash_extra_snefru_mix(ctx.state);
+
+    for (size_t i = 0, j = 0; j < 32; i++, j += 4) {
+        digest[j] = (unsigned char)((ctx.state[i] >> 24) & 0xff);
+        digest[j + 1] = (unsigned char)((ctx.state[i] >> 16) & 0xff);
+        digest[j + 2] = (unsigned char)((ctx.state[i] >> 8) & 0xff);
+        digest[j + 3] = (unsigned char)(ctx.state[i] & 0xff);
+    }
     memset(&ctx, 0, sizeof(ctx));
 }
 

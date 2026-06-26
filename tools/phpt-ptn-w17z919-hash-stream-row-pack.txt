@@ -1,0 +1,17 @@
+# ptn-w17z.919 hash algorithm/object/stream current-red row pack
+# Paths are relative to PHP_SRC_PHPT.
+# Run with:
+#   tools/run-bounded-phpt.sh --classify-harness-programs tools/phpt-ptn-w17z919-hash-stream-row-pack.txt
+# bucket: hash-stream rows=12
+ext/hash/tests/md4.phpt
+ext/hash/tests/sha512-256.phpt
+ext/hash/tests/xxhash_secret.phpt
+ext/hash/tests/hash_serialize_002.phpt
+ext/hash/tests/hash_file_basic1.phpt
+ext/hash/tests/snefru.phpt
+ext/hash/tests/ripemd256.phpt
+ext/hash/tests/xxh3_convert_secret_to_string.phpt
+ext/hash/tests/hash_update_stream_basic_001.phpt
+ext/hash/tests/crc32.phpt
+ext/hash/tests/hash_copy_001.phpt
+ext/hash/tests/gh12186_2.phpt

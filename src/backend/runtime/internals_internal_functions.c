@@ -50804,6 +50804,33 @@ static uint32_t ptn_crc32_bytes(const unsigned char *input, size_t input_len) {
     return crc ^ UINT32_C(0xffffffff);
 }
 
+static uint32_t ptn_crc32_be_bytes(const unsigned char *input, size_t input_len) {
+    uint32_t crc = UINT32_C(0xffffffff);
+    for (size_t i = 0; i < input_len; i++) {
+        crc ^= (uint32_t)input[i] << 24;
+        for (size_t bit = 0; bit < 8; bit++) {
+            if ((crc & UINT32_C(0x80000000)) != 0) {
+                crc = (crc << 1) ^ UINT32_C(0x04c11db7);
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc ^ UINT32_C(0xffffffff);
+}
+
+static uint32_t ptn_crc32c_bytes(const unsigned char *input, size_t input_len) {
+    uint32_t crc = UINT32_C(0xffffffff);
+    for (size_t i = 0; i < input_len; i++) {
+        crc ^= (uint32_t)input[i];
+        for (size_t bit = 0; bit < 8; bit++) {
+            uint32_t mask = -(crc & UINT32_C(1));
+            crc = (crc >> 1) ^ (UINT32_C(0x82f63b78) & mask);
+        }
+    }
+    return crc ^ UINT32_C(0xffffffff);
+}
+
 static PtnValue ptn_internal_crc32(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "crc32", 1, "string", args[0], line);
@@ -63933,10 +63960,14 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
         ptn_text_operand_ascii_case_equal(algo, "sha512/256") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32") ||
         ptn_text_operand_ascii_case_equal(algo, "crc32b") ||
+        ptn_text_operand_ascii_case_equal(algo, "crc32c") ||
         ptn_text_operand_ascii_case_equal(algo, "adler32") ||
         ptn_text_operand_ascii_case_equal(algo, "fnv1a64") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd128") ||
+        ptn_text_operand_ascii_case_equal(algo, "ripemd256") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd320") ||
+        ptn_text_operand_ascii_case_equal(algo, "snefru") ||
+        ptn_text_operand_ascii_case_equal(algo, "snefru256") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
         ptn_text_operand_ascii_case_equal(algo, "xxh128");
 }
@@ -63948,10 +63979,14 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "sha512/256",
     "crc32",
     "crc32b",
+    "crc32c",
     "adler32",
     "fnv1a64",
     "ripemd128",
+    "ripemd256",
     "ripemd320",
+    "snefru",
+    "snefru256",
     "xxh3",
     "xxh128",
 };
@@ -64905,12 +64940,24 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
     if (ptn_text_operand_ascii_case_equal(algo, "crc32")) {
-        uint32_t checksum = ptn_crc32_bytes((const unsigned char *)data.data, data.len);
+        uint32_t checksum = ptn_crc32_be_bytes((const unsigned char *)data.data, data.len);
         unsigned char digest[4] = {
             (unsigned char)(checksum & 0xff),
             (unsigned char)((checksum >> 8) & 0xff),
             (unsigned char)((checksum >> 16) & 0xff),
             (unsigned char)((checksum >> 24) & 0xff)
+        };
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    if (ptn_text_operand_ascii_case_equal(algo, "crc32c")) {
+        uint32_t checksum = ptn_crc32c_bytes((const unsigned char *)data.data, data.len);
+        unsigned char digest[4] = {
+            (unsigned char)((checksum >> 24) & 0xff),
+            (unsigned char)((checksum >> 16) & 0xff),
+            (unsigned char)((checksum >> 8) & 0xff),
+            (unsigned char)(checksum & 0xff)
         };
         ptn_string_operand_free(algo);
         ptn_string_operand_free(data);
@@ -64958,9 +65005,24 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
         ptn_string_operand_free(data);
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
+    if (ptn_text_operand_ascii_case_equal(algo, "ripemd256")) {
+        unsigned char digest[32];
+        ptn_hash_extra_ripemd256_digest_bytes((const unsigned char *)data.data, data.len, digest);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
     if (ptn_text_operand_ascii_case_equal(algo, "ripemd320")) {
         unsigned char digest[40];
         ptn_hash_extra_ripemd320_digest_bytes((const unsigned char *)data.data, data.len, digest);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    if (ptn_text_operand_ascii_case_equal(algo, "snefru") ||
+        ptn_text_operand_ascii_case_equal(algo, "snefru256")) {
+        unsigned char digest[32];
+        ptn_hash_extra_snefru_digest_bytes((const unsigned char *)data.data, data.len, digest);
         ptn_string_operand_free(algo);
         ptn_string_operand_free(data);
         return ptn_digest_value(digest, sizeof(digest), raw_output);

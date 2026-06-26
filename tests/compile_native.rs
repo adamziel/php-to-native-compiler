@@ -31917,9 +31917,13 @@ fn compile_hash_extra_algorithm_vectors_to_native_binary() {
         "<?php
 echo hash('md4', ''), \"\\n\";
 echo hash('sha512/256', 'abc'), \"\\n\";
+echo hash('crc32', 'a'), \"\\n\";
+echo hash('crc32c', 'abc'), \"\\n\";
 echo hash('fnv1a64', '9'), \"\\n\";
 echo hash('ripemd128', ''), \"\\n\";
+echo hash('ripemd256', 'abc'), \"\\n\";
 echo hash('ripemd320', ''), \"\\n\";
+echo hash('snefru', ''), \"\\n\";
 $secret = str_repeat('a', 256);
 $ctx = hash_init('xxh3', options: ['secret' => $secret]);
 hash_update($ctx, 'Lorem');
@@ -31945,16 +31949,23 @@ echo hash('xxh128', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', 
         String::from_utf8(execution.stdout).unwrap(),
         "31d6cfe0d16ae931b73c59d7e0c089c0\n\
 53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23\n\
+6b9b9319\n\
+364b3fb7\n\
 af63b44c8601a894\n\
 cdf26213a150dc3ecb610f18f6b38b46\n\
+afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65\n\
 22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8\n\
+8617f366566a011837f4fb4ba5bedea2b892f3ed8b894023d16ae344b2be5881\n\
 8028aa834c03557a\n\
 54279097795e7218093a05d4d781cbb9\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_hash_extra_md4_digest_bytes"));
+    assert!(c_source.contains("ptn_crc32c_bytes"));
+    assert!(c_source.contains("ptn_hash_extra_ripemd256_digest_bytes"));
     assert!(c_source.contains("ptn_hash_extra_ripemd320_digest_bytes"));
+    assert!(c_source.contains("ptn_hash_extra_snefru_digest_bytes"));
 }
 
 #[test]
