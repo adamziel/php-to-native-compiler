@@ -14115,6 +14115,41 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
 
 static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array);
 
+static PTN_UNUSED void ptn_array_iterator_unwrap_current_plain_reference(
+    PtnArrayIterator *iterator,
+    size_t physical_index,
+    size_t next_index,
+    size_t limit
+) {
+    if (
+        iterator == NULL ||
+        iterator->array == NULL ||
+        iterator->object_property_iterator ||
+        iterator->current_reference == NULL ||
+        next_index >= limit ||
+        physical_index >= iterator->array->len
+    ) {
+        return;
+    }
+
+    PtnArrayEntry *entry = &iterator->array->entries[physical_index];
+    if (
+        entry->value.type != PTN_REFERENCE ||
+        entry->value.as.reference != iterator->current_reference ||
+        entry->by_ref_argument_eligible ||
+        entry->value.as.reference->refcount > 3
+    ) {
+        return;
+    }
+
+    PtnValue old_value = entry->value;
+    PtnValue unwrapped = ptn_value_clone_deref(old_value);
+    ptn_gc_attach_value_runtime(iterator->array->lifecycle_runtime, unwrapped, 0);
+    entry->value = unwrapped;
+    entry->by_ref_argument_eligible = 0;
+    ptn_value_destroy_with_runtime_scope_at(iterator->runtime, &old_value, iterator->line);
+}
+
 static PTN_UNUSED int ptn_array_iterator_refresh_watched_object(PtnArrayIterator *iterator) {
     if (
         iterator == NULL ||
@@ -14303,6 +14338,8 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
 
     int switched_from_mutated_array = 0;
     size_t mutation_resume_index = 0;
+    size_t current_index_for_unwrap = iterator->index;
+    int current_identity_for_unwrap = 0;
     if (
         iterator->live &&
         iterator->watched_slot != NULL &&
@@ -14343,6 +14380,8 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
             }
         }
         if (current_identity_matches) {
+            current_index_for_unwrap = current_index;
+            current_identity_for_unwrap = 1;
             next_index = current_index + 1;
         } else if (
             iterator->live &&
@@ -14352,18 +14391,32 @@ static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
         } else {
             next_index = iterator->index;
         }
+    } else {
+        current_identity_for_unwrap =
+            iterator->index < iterator->array->len &&
+            iterator->current_reference != NULL &&
+            iterator->array->entries[iterator->index].value.type == PTN_REFERENCE &&
+            iterator->array->entries[iterator->index].value.as.reference == iterator->current_reference;
     }
 
     if (iterator->generator != NULL) {
         ptn_generator_release_consumed_reference(iterator->generator, iterator->index);
     }
 
-    ptn_array_iterator_sync_object_property_keys(iterator);
-    ptn_array_iterator_clear_current_key(iterator);
     size_t limit = iterator->live ? iterator->array->len : iterator->length;
     if (limit > iterator->array->len) {
         limit = iterator->array->len;
     }
+    if (current_identity_for_unwrap) {
+        ptn_array_iterator_unwrap_current_plain_reference(
+            iterator,
+            current_index_for_unwrap,
+            next_index,
+            limit
+        );
+    }
+    ptn_array_iterator_sync_object_property_keys(iterator);
+    ptn_array_iterator_clear_current_key(iterator);
     iterator->index = next_index;
     iterator->valid = iterator->index < limit;
     if (iterator->generator != NULL) {
