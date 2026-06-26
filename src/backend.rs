@@ -136,10 +136,12 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.internal_function_dispatch
         || has_declared_methods
         || needs_direct_callable_dispatch;
-    let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
-    if needs_callable_dispatch {
+    let needs_callable_dispatch = needs_direct_callable_dispatch;
+    if needs_direct_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
+    let needs_lightweight_closure_reflection = runtime_requirements.closure_reflection_dispatch
+        && !runtime_requirements.internal_function_dispatch;
     let needs_magic_property_read = module.classes.iter().any(|class| {
         class_magic_get_method(class, &module.classes).is_some()
             || class_magic_isset_method(class, &module.classes).is_some()
@@ -269,6 +271,9 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
     }
+    if needs_lightweight_closure_reflection {
+        emit_closure_reflection_helpers(&mut out);
+    }
     if needs_method_dispatch {
         emit_method_dispatch(
             &mut out,
@@ -276,6 +281,7 @@ pub fn emit_c(module: &Module) -> String {
             &module.functions,
             needs_callable_dispatch,
             runtime_requirements.closure_invoke_method_dispatch,
+            needs_lightweight_closure_reflection,
         );
     }
     if needs_magic_property_dispatch {
@@ -1448,6 +1454,7 @@ struct RuntimeRequirements {
     dynamic_function_dispatch: bool,
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
+    closure_reflection_dispatch: bool,
     direct_internal_helpers: bool,
     compact_internal_helpers: bool,
     request_context: bool,
@@ -1564,6 +1571,248 @@ fn emit_runtime_source_path_helpers(out: &mut String) {
     out.push_str("    dir[end] = '\\0';\n");
     out.push_str("    *dir_len = end;\n");
     out.push_str("    return dir;\n");
+    out.push_str("}\n");
+}
+
+fn emit_closure_reflection_helpers(out: &mut String) {
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_string_equals(PtnValue value, const char *expected) {\n");
+    out.push_str("    value = ptn_value_deref(value);\n");
+    out.push_str("    if (value.type != PTN_STRING) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    char *actual = ptn_value_to_string(value);\n");
+    out.push_str("    int equal = ptn_ascii_case_equal(actual, expected);\n");
+    out.push_str("    free(actual);\n");
+    out.push_str("    return equal;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnArrayEntry *ptn_closure_reflection_property(PtnValue object, const char *name) {\n");
+    out.push_str("    object = ptn_value_deref(object);\n");
+    out.push_str("    if (object.type != PTN_OBJECT) {\n");
+    out.push_str("        return NULL;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnArrayKey key = ptn_array_string_key(name);\n");
+    out.push_str(
+        "    PtnArrayEntry *entry = ptn_array_entry_for_key(object.as.object->properties, key);\n",
+    );
+    out.push_str("    ptn_array_key_free(key);\n");
+    out.push_str("    return entry;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_is_kind(PtnValue object, const char *kind) {\n");
+    out.push_str("    PtnArrayEntry *entry = ptn_closure_reflection_property(object, \"__ptn_reflection_kind\");\n");
+    out.push_str(
+        "    return entry != NULL && ptn_closure_reflection_string_equals(entry->value, kind);\n",
+    );
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_stored_closure(PtnValue object, PtnValue *closure_out) {\n");
+    out.push_str(
+        "    PtnArrayEntry *entry = ptn_closure_reflection_property(object, \"__ptn_closure\");\n",
+    );
+    out.push_str("    if (entry == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue closure = ptn_value_deref(entry->value);\n");
+    out.push_str("    if (closure.type != PTN_CLOSURE) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    *closure_out = closure;\n");
+    out.push_str("    return 1;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_closure_reflection_method_object(PtnRuntime *runtime, PtnValue closure) {\n");
+    out.push_str("    PtnValue object = ptn_object_new_shell(runtime, \"ReflectionMethod\");\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"__ptn_reflection_kind\"), ptn_string(\"closure_method\"));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"__ptn_closure\"), ptn_value_clone_deref(closure));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"class\"), ptn_string(\"Closure\"));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"name\"), ptn_string(\"__invoke\"));\n");
+    out.push_str("    return object;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_closure_reflection_parameter_object(PtnRuntime *runtime, PtnValue closure, size_t parameter_index) {\n");
+    out.push_str("    PtnValue object = ptn_object_new_shell(runtime, \"ReflectionParameter\");\n");
+    out.push_str("    PtnFunctionMetadata metadata = closure.as.closure->metadata;\n");
+    out.push_str("    const char *parameter_name = parameter_index < metadata.parameter_count && metadata.parameters[parameter_index].name != NULL ? metadata.parameters[parameter_index].name : \"\";\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"__ptn_reflection_kind\"), ptn_string(\"closure_parameter\"));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"__ptn_closure\"), ptn_value_clone_deref(closure));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"__ptn_parameter_index\"), ptn_int((int64_t)parameter_index));\n");
+    out.push_str("    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key(\"name\"), ptn_string(parameter_name));\n");
+    out.push_str("    return object;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_callable_closure(PtnValue callable, PtnValue *closure_out) {\n");
+    out.push_str("    callable = ptn_value_deref(callable);\n");
+    out.push_str("    if (callable.type != PTN_ARRAY || callable.as.array->len != 2) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnArrayKey receiver_key = ptn_array_int_key(0);\n");
+    out.push_str("    PtnArrayKey method_key = ptn_array_int_key(1);\n");
+    out.push_str("    PtnArrayEntry *receiver_entry = ptn_array_entry_for_key(callable.as.array, receiver_key);\n");
+    out.push_str("    PtnArrayEntry *method_entry = ptn_array_entry_for_key(callable.as.array, method_key);\n");
+    out.push_str("    ptn_array_key_free(receiver_key);\n");
+    out.push_str("    ptn_array_key_free(method_key);\n");
+    out.push_str("    if (receiver_entry == NULL || method_entry == NULL || !ptn_closure_reflection_string_equals(method_entry->value, \"__invoke\")) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue receiver = ptn_value_deref(receiver_entry->value);\n");
+    out.push_str("    if (receiver.type != PTN_CLOSURE) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    *closure_out = receiver;\n");
+    out.push_str("    return 1;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_parameter_index(PtnFunctionMetadata metadata, PtnValue parameter, size_t *index_out) {\n");
+    out.push_str("    parameter = ptn_value_deref(parameter);\n");
+    out.push_str("    if (parameter.type == PTN_INT) {\n");
+    out.push_str("        if (parameter.as.integer >= 0 && (size_t)parameter.as.integer < metadata.parameter_count) {\n");
+    out.push_str("            *index_out = (size_t)parameter.as.integer;\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (parameter.type != PTN_STRING) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    char *name = ptn_value_to_string(parameter);\n");
+    out.push_str("    for (size_t i = 0; i < metadata.parameter_count; i++) {\n");
+    out.push_str("        if (metadata.parameters[i].name != NULL && strcmp(metadata.parameters[i].name, name) == 0) {\n");
+    out.push_str("            free(name);\n");
+    out.push_str("            *index_out = i;\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    free(name);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_closure_reflection_method_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line, int *handled_out) {\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    *handled_out = 0;\n");
+    out.push_str("    if (argc != 2 || args == NULL || !ptn_closure_reflection_string_equals(args[1], \"__invoke\")) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue closure = ptn_value_deref(args[0]);\n");
+    out.push_str("    if (closure.type != PTN_CLOSURE) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    *handled_out = 1;\n");
+    out.push_str("    return ptn_closure_reflection_method_object(runtime, closure);\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_closure_reflection_parameter_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line, int *handled_out) {\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    *handled_out = 0;\n");
+    out.push_str("    if (argc != 2 || args == NULL) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue closure;\n");
+    out.push_str("    if (!ptn_closure_reflection_callable_closure(args[0], &closure)) {\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    *handled_out = 1;\n");
+    out.push_str("    size_t parameter_index = 0;\n");
+    out.push_str("    if (!ptn_closure_reflection_parameter_index(closure.as.closure->metadata, args[1], &parameter_index)) {\n");
+    out.push_str(
+        "        ptn_throw_exception(runtime, \"ReflectionException\", \"Parameter not found\");\n",
+    );
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    return ptn_closure_reflection_parameter_object(runtime, closure, parameter_index);\n",
+    );
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_check_no_args(PtnRuntime *runtime, const char *display_name, size_t argc) {\n");
+    out.push_str("    if (argc == 0) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    char message[160];\n");
+    out.push_str("    int written = snprintf(message, sizeof(message), \"%s() expects exactly 0 arguments\", display_name);\n");
+    out.push_str("    if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_exception(runtime, \"ArgumentCountError\", message);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_closure_reflection_try_call_method(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    if (ptn_closure_reflection_is_kind(receiver, \"closure_method\")) {\n");
+    out.push_str("        PtnValue closure;\n");
+    out.push_str("        if (!ptn_closure_reflection_stored_closure(receiver, &closure)) {\n");
+    out.push_str("            return 0;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getName\")) {\n");
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionMethod::getName\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            *result_out = ptn_string(\"__invoke\");\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getNumberOfParameters\")) {\n");
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionMethod::getNumberOfParameters\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            *result_out = ptn_int((int64_t)closure.as.closure->metadata.parameter_count);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        if (ptn_ascii_case_equal(method_name, \"getNumberOfRequiredParameters\")) {\n",
+    );
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionMethod::getNumberOfRequiredParameters\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            *result_out = ptn_int((int64_t)closure.as.closure->metadata.required_parameter_count);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getParameters\")) {\n");
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionMethod::getParameters\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue parameters = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str(
+        "            for (size_t i = 0; i < closure.as.closure->metadata.parameter_count; i++) {\n",
+    );
+    out.push_str("                ptn_array_set_entry(parameters.as.array, ptn_array_int_key((int64_t)i), ptn_closure_reflection_parameter_object(runtime, closure, i));\n");
+    out.push_str("            }\n");
+    out.push_str("            *result_out = parameters;\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_closure_reflection_is_kind(receiver, \"closure_parameter\")) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getName\")) {\n");
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionParameter::getName\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnArrayEntry *name_entry = ptn_closure_reflection_property(receiver, \"name\");\n");
+    out.push_str("            *result_out = name_entry == NULL ? ptn_string(\"\") : ptn_value_clone_deref(name_entry->value);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getDeclaringFunction\")) {\n");
+    out.push_str("            if (!ptn_closure_reflection_check_no_args(runtime, \"ReflectionParameter::getDeclaringFunction\", argc)) {\n");
+    out.push_str("                *result_out = ptn_null();\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue closure;\n");
+    out.push_str("            if (!ptn_closure_reflection_stored_closure(receiver, &closure)) {\n");
+    out.push_str("                return 0;\n");
+    out.push_str("            }\n");
+    out.push_str(
+        "            *result_out = ptn_closure_reflection_method_object(runtime, closure);\n",
+    );
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 }
 
@@ -23365,50 +23614,60 @@ fn emit_method_dispatch(
     functions: &[FunctionDecl],
     needs_callable_dispatch: bool,
     needs_closure_invoke_dispatch: bool,
+    needs_closure_reflection_dispatch: bool,
 ) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_declared_method_named(PtnRuntime *runtime, PtnValue receiver, const char *method_name, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line) {\n",
     );
-    out.push_str("    static const PtnParameterMetadata PTN_CLOSURE_CALL_PARAMETERS[] = {\n");
-    out.push_str("        { \"newThis\", \"object\", \"object\", 0, 0, 0, 0, 1, NULL, NULL },\n");
-    out.push_str("        { \"args\", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL },\n");
-    out.push_str("    };\n");
-    out.push_str("    if (!ptn_call_arg_names_have_named(argc, arg_names)) {\n");
-    out.push_str("        return ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
-    out.push_str("    }\n");
-    out.push_str("    PtnFunctionMetadata metadata = ptn_function_metadata_not_found();\n");
-    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
-    out.push_str(
-        "    if (resolved.type == PTN_OBJECT && runtime->declared_method_metadata != NULL) {\n",
-    );
-    out.push_str("        metadata = runtime->declared_method_metadata(resolved.as.object->class_name, method_name);\n");
-    out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
-    out.push_str("        metadata = resolved.as.closure->metadata;\n");
-    out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"call\")) {\n");
-    out.push_str("        metadata = ptn_function_metadata_found(\"Closure::call\", 0, 2, 1, 1, PTN_CLOSURE_CALL_PARAMETERS, 0, NULL, NULL, 0, 0);\n");
-    out.push_str("    }\n");
-    out.push_str("    PtnNormalizedCallArguments normalized;\n");
-    out.push_str("    int normalized_active = ptn_normalize_named_call_arguments(runtime, metadata, argc, args, arg_names, line, &normalized);\n");
-    out.push_str("    if (runtime->exceptions->active_exception != NULL) {\n");
-    out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
-    out.push_str("        return ptn_null();\n");
-    out.push_str("    }\n");
-    out.push_str("    const char *const *previous_arg_names = runtime->next_call_arg_names;\n");
-    out.push_str("    const PtnValue *call_args = args;\n");
-    out.push_str("    const char *const *call_arg_names = arg_names;\n");
-    out.push_str("    size_t call_argc = argc;\n");
-    out.push_str("    if (normalized_active) {\n");
-    out.push_str("        call_args = normalized.values;\n");
-    out.push_str("        call_arg_names = (const char *const *)normalized.names;\n");
-    out.push_str("        call_argc = normalized.len;\n");
-    out.push_str("    }\n");
-    out.push_str("    runtime->next_call_arg_names = call_arg_names;\n");
-    out.push_str("    PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, call_argc, call_args, line);\n");
-    out.push_str("    runtime->next_call_arg_names = previous_arg_names;\n");
-    out.push_str("    if (normalized_active) {\n");
-    out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
-    out.push_str("    }\n");
-    out.push_str("    return result;\n");
+    if needs_callable_dispatch {
+        out.push_str("    static const PtnParameterMetadata PTN_CLOSURE_CALL_PARAMETERS[] = {\n");
+        out.push_str(
+            "        { \"newThis\", \"object\", \"object\", 0, 0, 0, 0, 1, NULL, NULL },\n",
+        );
+        out.push_str("        { \"args\", NULL, NULL, 0, 0, 0, 1, 1, NULL, NULL },\n");
+        out.push_str("    };\n");
+        out.push_str("    if (!ptn_call_arg_names_have_named(argc, arg_names)) {\n");
+        out.push_str("        return ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n");
+        out.push_str("    }\n");
+        out.push_str("    PtnFunctionMetadata metadata = ptn_function_metadata_not_found();\n");
+        out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+        out.push_str(
+            "    if (resolved.type == PTN_OBJECT && runtime->declared_method_metadata != NULL) {\n",
+        );
+        out.push_str("        metadata = runtime->declared_method_metadata(resolved.as.object->class_name, method_name);\n");
+        out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
+        out.push_str("        metadata = resolved.as.closure->metadata;\n");
+        out.push_str("    } else if (resolved.type == PTN_CLOSURE && ptn_ascii_case_equal(method_name, \"call\")) {\n");
+        out.push_str("        metadata = ptn_function_metadata_found(\"Closure::call\", 0, 2, 1, 1, PTN_CLOSURE_CALL_PARAMETERS, 0, NULL, NULL, 0, 0);\n");
+        out.push_str("    }\n");
+        out.push_str("    PtnNormalizedCallArguments normalized;\n");
+        out.push_str("    int normalized_active = ptn_normalize_named_call_arguments(runtime, metadata, argc, args, arg_names, line, &normalized);\n");
+        out.push_str("    if (runtime->exceptions->active_exception != NULL) {\n");
+        out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+        out.push_str("    const char *const *previous_arg_names = runtime->next_call_arg_names;\n");
+        out.push_str("    const PtnValue *call_args = args;\n");
+        out.push_str("    const char *const *call_arg_names = arg_names;\n");
+        out.push_str("    size_t call_argc = argc;\n");
+        out.push_str("    if (normalized_active) {\n");
+        out.push_str("        call_args = normalized.values;\n");
+        out.push_str("        call_arg_names = (const char *const *)normalized.names;\n");
+        out.push_str("        call_argc = normalized.len;\n");
+        out.push_str("    }\n");
+        out.push_str("    runtime->next_call_arg_names = call_arg_names;\n");
+        out.push_str("    PtnValue result = ptn_call_declared_method(runtime, receiver, method_name, call_argc, call_args, line);\n");
+        out.push_str("    runtime->next_call_arg_names = previous_arg_names;\n");
+        out.push_str("    if (normalized_active) {\n");
+        out.push_str("        ptn_normalized_call_arguments_destroy(&normalized);\n");
+        out.push_str("    }\n");
+        out.push_str("    return result;\n");
+    } else {
+        out.push_str("    (void)arg_names;\n");
+        out.push_str(
+            "    return ptn_call_declared_method(runtime, receiver, method_name, argc, args, line);\n",
+        );
+    }
     out.push_str("}\n");
 
     out.push_str(
@@ -23544,6 +23803,12 @@ fn emit_method_dispatch(
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    if needs_closure_reflection_dispatch {
+        out.push_str("    PtnValue ptn_closure_reflection_result;\n");
+        out.push_str("    if (ptn_closure_reflection_try_call_method(runtime, resolved, method_name, argc, args, line, &ptn_closure_reflection_result)) {\n");
+        out.push_str("        return ptn_closure_reflection_result;\n");
+        out.push_str("    }\n");
+    }
     for class in classes {
         let private_methods: Vec<_> = class
             .methods
@@ -32188,6 +32453,29 @@ fn collect_inc_dec_target_runtime_requirements(
     }
 }
 
+fn is_closure_invoke_reflection_constructor_shape(
+    class_name: &str,
+    arguments: &[ValueExpr],
+    argument_unpacks: &[bool],
+) -> bool {
+    if arguments.len() != 2 || argument_unpacks.iter().any(|unpack| *unpack) {
+        return false;
+    }
+    if class_name.eq_ignore_ascii_case("ReflectionMethod") {
+        return matches!(&arguments[1], ValueExpr::String(method) if method.eq_ignore_ascii_case("__invoke"));
+    }
+    if !class_name.eq_ignore_ascii_case("ReflectionParameter") {
+        return false;
+    }
+    let ValueExpr::Array(callable_elements) = &arguments[0] else {
+        return false;
+    };
+    matches!(
+        positional_array_value(callable_elements, 1),
+        Some(ValueExpr::String(method)) if method.eq_ignore_ascii_case("__invoke")
+    )
+}
+
 fn collect_value_runtime_requirements(
     value: &ValueExpr,
     functions: &[FunctionDecl],
@@ -32391,12 +32679,21 @@ fn collect_value_runtime_requirements(
         ValueExpr::NewObject {
             class_name,
             arguments,
+            argument_unpacks,
             ..
         } => {
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
-            if modeled_internal_class_name(class_name).is_some()
+            let uses_closure_reflection_dispatch = is_closure_invoke_reflection_constructor_shape(
+                class_name,
+                arguments,
+                argument_unpacks,
+            );
+            if uses_closure_reflection_dispatch {
+                requirements.closure_reflection_dispatch = true;
+                requirements.method_dispatch = true;
+            } else if modeled_internal_class_name(class_name).is_some()
                 || class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
@@ -46318,6 +46615,60 @@ impl ValueEmitter {
         );
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        if !self.full_internal_dispatch {
+            out.push_str("    } else if (ptn_ascii_case_equal(");
+            out.push_str(class_name_expr);
+            out.push_str(", \"ReflectionMethod\")) {\n");
+            out.push_str("        int ptn_closure_reflection_handled = 0;\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_closure_reflection_method_new(&runtime, ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(", &ptn_closure_reflection_handled);\n");
+            out.push_str("        if (!ptn_closure_reflection_handled) {\n");
+            out.push_str("            ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_new_object(&runtime, ");
+            out.push_str(class_name_expr);
+            out.push_str(", ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        }\n");
+            out.push_str("    } else if (ptn_ascii_case_equal(");
+            out.push_str(class_name_expr);
+            out.push_str(", \"ReflectionParameter\")) {\n");
+            out.push_str("        int ptn_closure_reflection_handled = 0;\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_closure_reflection_parameter_new(&runtime, ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(", &ptn_closure_reflection_handled);\n");
+            out.push_str("        if (!ptn_closure_reflection_handled) {\n");
+            out.push_str("            ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_new_object(&runtime, ");
+            out.push_str(class_name_expr);
+            out.push_str(", ");
+            out.push_str(argc_expr);
+            out.push_str(", ");
+            out.push_str(args_expr);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        }\n");
+        }
         out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
         out.push_str("    } else if (ptn_internal_class_name_is_uri_whatwg_url_validation_error(");
         out.push_str(class_name_expr);

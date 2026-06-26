@@ -44607,6 +44607,52 @@ var_dump($functionParam->getDeclaringFunction()->getName());
 }
 
 #[test]
+fn compile_closure_invoke_reflection_declaring_function_without_full_internal_dispatch() {
+    let root = temp_dir("ptn-native-closure-invoke-reflection-declaring-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-invoke-reflection-declaring-function.php");
+    let output = root.join("closure-invoke-reflection-declaring-function-bin");
+    fs::write(
+        &input,
+        "<?php
+$closure = function($a, $b = 0) { };
+
+$method = new ReflectionMethod($closure, '__invoke');
+$params = $method->getParameters();
+unset($method);
+$method = $params[0]->getDeclaringFunction();
+unset($params);
+echo $method->getName(), \"\\n\";
+
+$parameter = new ReflectionParameter(array($closure, '__invoke'), 'b');
+$method = $parameter->getDeclaringFunction();
+unset($parameter);
+echo $method->getName(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "__invoke\n__invoke\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(c_source.contains("ptn_closure_reflection_try_call_method"));
+    assert!(
+        c_source.len() < 3_000_000,
+        "generated C was {} bytes",
+        c_source.len()
+    );
+}
+
+#[test]
 fn compile_class_method_magic_constants_to_native_binary() {
     let root = temp_dir("ptn-native-class-method-magic-constants");
     fs::create_dir_all(&root).unwrap();
