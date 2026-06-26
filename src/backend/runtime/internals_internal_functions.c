@@ -1468,6 +1468,13 @@ static PTN_UNUSED int ptn_internal_class_exists_name(const char *class_name) {
         return 1;
     }
 #endif
+    if (ptn_ascii_case_equal(class_name, "StreamError") ||
+        ptn_ascii_case_equal(class_name, "StreamException") ||
+        ptn_ascii_case_equal(class_name, "StreamErrorCode") ||
+        ptn_ascii_case_equal(class_name, "StreamErrorMode") ||
+        ptn_ascii_case_equal(class_name, "StreamErrorStore")) {
+        return 1;
+    }
     (void)class_name;
     return 0;
 }
@@ -52628,6 +52635,8 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     ptn_value_destroy(&result);
 }
 
+static PtnArrayEntry *ptn_array_entry_for_literal_string_key(PtnArray *array, const char *key);
+
 static PtnResource *ptn_fopen_context_arg(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_RESOURCE || strcmp(value.as.resource->type_name, "stream-context") != 0) {
@@ -52644,6 +52653,221 @@ static PtnResource *ptn_effective_stream_context(size_t argc, const PtnValue *ar
         }
     }
     return ptn_default_stream_context;
+}
+
+typedef enum {
+    PTN_STREAM_ERROR_MODE_ERROR,
+    PTN_STREAM_ERROR_MODE_EXCEPTION,
+    PTN_STREAM_ERROR_MODE_SILENT
+} PtnStreamErrorMode;
+
+typedef enum {
+    PTN_STREAM_ERROR_STORE_NONE,
+    PTN_STREAM_ERROR_STORE_NON_TERMINATING,
+    PTN_STREAM_ERROR_STORE_TERMINATING,
+    PTN_STREAM_ERROR_STORE_ALL
+} PtnStreamErrorStore;
+
+typedef struct {
+    char *message;
+    char *wrapper_name;
+    char *code_name;
+    char *param;
+    int severity;
+    int terminating;
+} PtnStoredStreamError;
+
+static PtnStoredStreamError *ptn_stream_last_errors = NULL;
+static size_t ptn_stream_last_error_count = 0;
+
+static void ptn_stream_stored_error_destroy(PtnStoredStreamError *error) {
+    if (error == NULL) {
+        return;
+    }
+    free(error->message);
+    free(error->wrapper_name);
+    free(error->code_name);
+    free(error->param);
+}
+
+static void ptn_stream_clear_last_errors(void) {
+    for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
+        ptn_stream_stored_error_destroy(&ptn_stream_last_errors[i]);
+    }
+    free(ptn_stream_last_errors);
+    ptn_stream_last_errors = NULL;
+    ptn_stream_last_error_count = 0;
+}
+
+static void ptn_stream_store_single_error(
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    ptn_stream_clear_last_errors();
+    ptn_stream_last_errors = calloc(1, sizeof(PtnStoredStreamError));
+    if (ptn_stream_last_errors == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_stream_last_error_count = 1;
+    ptn_stream_last_errors[0].message = ptn_duplicate_string(message == NULL ? "" : message);
+    ptn_stream_last_errors[0].wrapper_name = ptn_duplicate_string(wrapper_name == NULL ? "stream" : wrapper_name);
+    ptn_stream_last_errors[0].code_name = ptn_duplicate_string(code_name == NULL ? "Generic" : code_name);
+    ptn_stream_last_errors[0].param = param == NULL ? NULL : ptn_duplicate_string(param);
+    ptn_stream_last_errors[0].severity = severity;
+    ptn_stream_last_errors[0].terminating = terminating;
+}
+
+static const char *ptn_stream_context_enum_case_name(PtnValue value, const char *class_name) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        value.as.object == NULL ||
+        value.as.object->enum_case_name == NULL ||
+        !ptn_ascii_case_equal(value.as.object->class_name, class_name)) {
+        return NULL;
+    }
+    return value.as.object->enum_case_name;
+}
+
+static PtnValue *ptn_stream_context_option(PtnResource *context, const char *wrapper_name, const char *option_name) {
+    if (context == NULL) {
+        return NULL;
+    }
+    PtnValue options = ptn_value_deref(context->context_options);
+    if (options.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayEntry *wrapper_entry = ptn_array_entry_for_literal_string_key(options.as.array, wrapper_name);
+    if (wrapper_entry == NULL) {
+        return NULL;
+    }
+    PtnValue wrapper_options = ptn_value_deref(wrapper_entry->value);
+    if (wrapper_options.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayEntry *option_entry = ptn_array_entry_for_literal_string_key(wrapper_options.as.array, option_name);
+    return option_entry == NULL ? NULL : &option_entry->value;
+}
+
+static int ptn_stream_context_error_mode(PtnRuntime *runtime, PtnResource *context, size_t line) {
+    PtnValue *option = ptn_stream_context_option(context, "stream", "error_mode");
+    if (option == NULL) {
+        return PTN_STREAM_ERROR_MODE_ERROR;
+    }
+    const char *case_name = ptn_stream_context_enum_case_name(*option, "StreamErrorMode");
+    if (case_name == NULL) {
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "stream context option 'error_mode' must be of type StreamErrorMode",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return PTN_STREAM_ERROR_MODE_ERROR;
+    }
+    if (strcmp(case_name, "Exception") == 0) {
+        return PTN_STREAM_ERROR_MODE_EXCEPTION;
+    }
+    if (strcmp(case_name, "Silent") == 0) {
+        return PTN_STREAM_ERROR_MODE_SILENT;
+    }
+    return PTN_STREAM_ERROR_MODE_ERROR;
+}
+
+static PtnStreamErrorStore ptn_stream_context_auto_store_mode(int error_mode) {
+    switch (error_mode) {
+        case PTN_STREAM_ERROR_MODE_EXCEPTION:
+            return PTN_STREAM_ERROR_STORE_NON_TERMINATING;
+        case PTN_STREAM_ERROR_MODE_SILENT:
+            return PTN_STREAM_ERROR_STORE_ALL;
+        case PTN_STREAM_ERROR_MODE_ERROR:
+        default:
+            return PTN_STREAM_ERROR_STORE_NONE;
+    }
+}
+
+static PtnStreamErrorStore ptn_stream_context_error_store(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    int error_mode,
+    size_t line
+) {
+    PtnValue *option = ptn_stream_context_option(context, "stream", "error_store");
+    if (option == NULL) {
+        return ptn_stream_context_auto_store_mode(error_mode);
+    }
+    const char *case_name = ptn_stream_context_enum_case_name(*option, "StreamErrorStore");
+    if (case_name == NULL) {
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "stream context option 'error_store' must be of type StreamErrorStore",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_stream_context_auto_store_mode(error_mode);
+    }
+    if (strcmp(case_name, "None") == 0) {
+        return PTN_STREAM_ERROR_STORE_NONE;
+    }
+    if (strcmp(case_name, "NonTerminating") == 0) {
+        return PTN_STREAM_ERROR_STORE_NON_TERMINATING;
+    }
+    if (strcmp(case_name, "Terminating") == 0) {
+        return PTN_STREAM_ERROR_STORE_TERMINATING;
+    }
+    if (strcmp(case_name, "All") == 0) {
+        return PTN_STREAM_ERROR_STORE_ALL;
+    }
+    return ptn_stream_context_auto_store_mode(error_mode);
+}
+
+static int ptn_stream_error_store_keeps(PtnStreamErrorStore store, int terminating) {
+    return store == PTN_STREAM_ERROR_STORE_ALL ||
+        (store == PTN_STREAM_ERROR_STORE_NON_TERMINATING && !terminating) ||
+        (store == PTN_STREAM_ERROR_STORE_TERMINATING && terminating);
+}
+
+static PtnValue ptn_stream_open_failure_result(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *path,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *detail,
+    int terminating,
+    size_t line
+) {
+    int error_mode = ptn_stream_context_error_mode(runtime, context, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
+    }
+    PtnStreamErrorStore store = ptn_stream_context_error_store(runtime, context, error_mode, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
+    }
+    if (ptn_stream_error_store_keeps(store, terminating)) {
+        ptn_stream_store_single_error(detail, wrapper_name, code_name, path, PTN_E_WARNING, terminating);
+    } else {
+        ptn_stream_clear_last_errors();
+    }
+    if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
+        ptn_throw_exception_at(
+            runtime,
+            "StreamException",
+            detail,
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    if (error_mode == PTN_STREAM_ERROR_MODE_ERROR) {
+        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+    }
+    return ptn_bool(0);
 }
 
 static int ptn_try_open_user_stream_wrapper(
@@ -52861,11 +53085,28 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return ptn_bool(0);
     }
-    if (ptn_try_open_user_stream_wrapper(runtime, path, mode, ptn_effective_stream_context(argc, args), line, &php_stream)) {
+    PtnResource *context = ptn_effective_stream_context(argc, args);
+    if (ptn_try_open_user_stream_wrapper(runtime, path, mode, context, line, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
         return php_stream;
+    }
+    if (ptn_ascii_case_has_prefix(path, "php://")) {
+        PtnValue result = ptn_stream_open_failure_result(
+            runtime,
+            context,
+            path,
+            "PHP",
+            "OpenFailed",
+            "Failed to open stream: operation failed",
+            1,
+            line
+        );
+        free(uri);
+        free(mode);
+        free(path);
+        return result;
     }
 
     FILE *stream = ptn_fopen_php_mode(path, mode);
@@ -52881,11 +53122,20 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         if (needed < 0 || (size_t)needed >= sizeof(detail)) {
             ptn_abort_out_of_memory();
         }
-        ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        PtnValue result = ptn_stream_open_failure_result(
+            runtime,
+            context,
+            path,
+            "plainfile",
+            "OpenFailed",
+            detail,
+            1,
+            line
+        );
         free(uri);
         free(mode);
         free(path);
-        return ptn_bool(0);
+        return result;
     }
     if (mode[0] == 'a') {
         (void)fseek(stream, 0, SEEK_SET);
@@ -55245,6 +55495,27 @@ static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *
     return NULL;
 }
 
+static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "stream_resolve_include_path", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "stream_resolve_include_path(): Argument #1 ($filename) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+    char *resolved = ptn_resolve_existing_include_path(runtime, path);
+    free(path);
+    return resolved == NULL ? ptn_bool(0) : ptn_owned_string(resolved);
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *path,
@@ -55806,6 +56077,42 @@ static PtnValue ptn_stream_context_options_snapshot_value(PtnValue value, size_t
     return snapshot;
 }
 
+static void ptn_stream_context_throw_options_shape(PtnRuntime *runtime, size_t line) {
+    ptn_throw_exception_at(
+        runtime,
+        "ValueError",
+        "Options should have the form [\"wrappername\"][\"optionname\"] = $value",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
+static int ptn_stream_context_validate_options_shape(PtnRuntime *runtime, PtnValue options, size_t line) {
+    options = ptn_value_deref(options);
+    if (options.type != PTN_ARRAY) {
+        ptn_stream_context_throw_options_shape(runtime, line);
+        return 0;
+    }
+    for (size_t i = 0; i < options.as.array->len; i++) {
+        PtnArrayEntry *entry = &options.as.array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING ||
+            ptn_value_deref(entry->value).type != PTN_ARRAY) {
+            ptn_stream_context_throw_options_shape(runtime, line);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_stream_context_assign_options(PtnRuntime *runtime, PtnResource *context, PtnValue options, size_t line) {
+    if (!ptn_stream_context_validate_options_shape(runtime, options, line)) {
+        return 0;
+    }
+    ptn_value_destroy(&context->context_options);
+    context->context_options = ptn_stream_context_options_snapshot_value(options, 0);
+    return 1;
+}
+
 static PtnArrayEntry *ptn_stream_context_array_entry_for_string_key(PtnArray *array, const char *key_name) {
     PtnArrayKey key = ptn_array_string_key(key_name);
     PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
@@ -55827,6 +56134,39 @@ static int ptn_stream_context_default_options_have_error_mode(PtnValue options) 
         return 0;
     }
     return ptn_stream_context_array_entry_for_string_key(stream_options.as.array, "error_mode") != NULL;
+}
+
+static int ptn_stream_context_apply_params(PtnRuntime *runtime, PtnResource *context, PtnValue params, size_t line) {
+    params = ptn_value_deref(params);
+    if (params.type == PTN_NULL) {
+        return 1;
+    }
+    if (params.type != PTN_ARRAY) {
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "Invalid stream/context parameter",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return 0;
+    }
+    PtnArrayEntry *options_entry = ptn_array_entry_for_literal_string_key(params.as.array, "options");
+    if (options_entry == NULL) {
+        return 1;
+    }
+    PtnValue options = ptn_value_deref(options_entry->value);
+    if (options.type != PTN_ARRAY) {
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "Invalid stream/context parameter",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return 0;
+    }
+    return ptn_stream_context_assign_options(runtime, context, options, line);
 }
 
 static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55852,10 +56192,15 @@ static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t a
             ptn_resource_release(context);
             return ptn_null();
         }
-        ptn_value_destroy(&context->context_options);
-        context->context_options = ptn_stream_context_options_snapshot_value(options, 0);
+        if (!ptn_stream_context_assign_options(runtime, context, options, line)) {
+            ptn_resource_release(context);
+            return ptn_null();
+        }
     }
-    (void)line;
+    if (argc > 1 && !ptn_stream_context_apply_params(runtime, context, args[1], line)) {
+        ptn_resource_release(context);
+        return ptn_null();
+    }
     return ptn_resource(context);
 }
 
@@ -56072,11 +56417,100 @@ static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, siz
         return ptn_null();
     }
     PtnResource *context = ptn_default_stream_context_ensure();
-    ptn_value_destroy(&context->context_options);
-    context->context_options = ptn_stream_context_options_snapshot_value(options, 0);
-    (void)line;
+    if (!ptn_stream_context_assign_options(runtime, context, options, line)) {
+        return ptn_null();
+    }
     ptn_resource_retain(context);
     return ptn_resource(context);
+}
+
+static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_context_set_options(): Argument #1 ($context) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        ptn_throw_exception(runtime, "TypeError", "Invalid stream/context parameter");
+        return ptn_null();
+    }
+    PtnValue options = ptn_value_deref(args[1]);
+    if (options.type != PTN_ARRAY) {
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_context_set_options(): Argument #2 ($options) must be of type array, %s given",
+            ptn_offset_container_type_name(options)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (!ptn_stream_context_assign_options(runtime, value.as.resource, options, line)) {
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
+        PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
+        PtnValue error = ptn_object_new_shell(runtime, "StreamError");
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("code"),
+            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", stored->code_name == NULL ? "Generic" : stored->code_name)
+        );
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("message"),
+            ptn_owned_string(ptn_duplicate_string(stored->message == NULL ? "" : stored->message))
+        );
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("wrapperName"),
+            ptn_owned_string(ptn_duplicate_string(stored->wrapper_name == NULL ? "stream" : stored->wrapper_name))
+        );
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("severity"),
+            ptn_int((int64_t)stored->severity)
+        );
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("terminating"),
+            ptn_bool(stored->terminating)
+        );
+        ptn_array_set_entry(
+            error.as.object->properties,
+            ptn_array_string_key("param"),
+            stored->param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(stored->param))
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            error
+        );
+    }
+    return result;
 }
 
 static int ptn_stream_wrapper_builtin_scheme(const char *scheme) {
@@ -144093,9 +144527,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 return ptn_null();
             }
             static const char *const names[] = {
-                "Ignore",
-                "Warning",
+                "Error",
                 "Exception",
+                "Silent",
             };
             PtnValue result = ptn_array_from_literal_entries(0, NULL);
             for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -153987,6 +154421,7 @@ static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, siz
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -153994,6 +154429,8 @@ static PtnValue ptn_internal_stream_filter_remove(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -154919,6 +155356,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_context_get_options", 1, 1, ptn_internal_stream_context_get_options },
         { "stream_context_set_default", 1, 1, ptn_internal_stream_context_set_default },
         { "stream_context_set_params", 2, 2, ptn_internal_stream_context_set_params },
+        { "stream_context_set_options", 2, 2, ptn_internal_stream_context_set_options },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
         { "stream_filter_prepend", 2, 4, ptn_internal_stream_filter_prepend },
@@ -154927,6 +155365,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
         { "stream_isatty", 1, 1, ptn_internal_stream_isatty },
+        { "stream_last_errors", 0, 0, ptn_internal_stream_last_errors },
+        { "stream_resolve_include_path", 1, 1, ptn_internal_stream_resolve_include_path },
         { "stream_select", 4, 5, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
@@ -156709,6 +157149,14 @@ static PTN_UNUSED int ptn_internal_class_name_is_stream_error_mode(const char *c
     return ptn_ascii_case_equal(class_name, "StreamErrorMode");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_stream_error_surface(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "StreamError")
+        || ptn_ascii_case_equal(class_name, "StreamException")
+        || ptn_ascii_case_equal(class_name, "StreamErrorCode")
+        || ptn_internal_class_name_is_stream_error_mode(class_name)
+        || ptn_ascii_case_equal(class_name, "StreamErrorStore");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Phar");
 }
@@ -157039,7 +157487,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_sqlite3_result(class_name)
         || ptn_internal_class_name_is_curl_file(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
-        || ptn_internal_class_name_is_stream_error_mode(class_name)
+        || ptn_internal_class_name_is_stream_error_surface(class_name)
         || ptn_internal_class_name_is_phar(class_name)
         || ptn_internal_class_name_is_phar_data(class_name)
         || ptn_internal_class_name_is_phar_file_info(class_name)

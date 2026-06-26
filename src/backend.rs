@@ -65,6 +65,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
     ("SoapFault", "Exception"),
+    ("StreamException", "Exception"),
     ("PDOException", "Exception"),
     ("IntlException", "Exception"),
     ("DOMException", "Exception"),
@@ -99,7 +100,9 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "StreamErrorCode",
     "StreamErrorMode",
+    "StreamErrorStore",
     "Dom\\AdjacentPosition",
     "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",

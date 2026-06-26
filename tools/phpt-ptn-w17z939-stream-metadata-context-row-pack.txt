@@ -1,0 +1,12 @@
+ext/standard/tests/streams/bug53903.phpt
+ext/standard/tests/streams/gh20286.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_variation4.phpt
+ext/standard/tests/streams/stream_resolve_include_path.phpt
+ext/standard/tests/streams/bug67626.phpt
+ext/standard/tests/streams/stream_errors_modes_with_auto_store.phpt
+ext/standard/tests/streams/bug60455_04.phpt
+ext/standard/tests/streams/stream_cast_loses_data.phpt
+ext/standard/tests/streams/stream_context_create_error.phpt
+ext/standard/tests/streams/stream_context_set_options_basic.phpt
+ext/standard/tests/streams/gh10031.phpt
+ext/standard/tests/streams/stream_socket_pair.phpt

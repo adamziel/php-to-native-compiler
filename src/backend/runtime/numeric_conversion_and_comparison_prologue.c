@@ -4793,15 +4793,119 @@ static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name)
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_stream_error_code_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "None",
+        "Generic",
+        "ReadFailed",
+        "WriteFailed",
+        "SeekFailed",
+        "SeekNotSupported",
+        "FlushFailed",
+        "TruncateFailed",
+        "ConnectFailed",
+        "BindFailed",
+        "ListenFailed",
+        "NotWritable",
+        "NotReadable",
+        "Disabled",
+        "NotFound",
+        "PermissionDenied",
+        "AlreadyExists",
+        "InvalidPath",
+        "PathTooLong",
+        "OpenFailed",
+        "CreateFailed",
+        "DupFailed",
+        "UnlinkFailed",
+        "RenameFailed",
+        "MkdirFailed",
+        "RmdirFailed",
+        "StatFailed",
+        "MetaFailed",
+        "ChmodFailed",
+        "ChownFailed",
+        "CopyFailed",
+        "TouchFailed",
+        "InvalidMode",
+        "InvalidMeta",
+        "ModeNotSupported",
+        "Readonly",
+        "RecursionDetected",
+        "NotImplemented",
+        "NoOpener",
+        "PersistentNotSupported",
+        "WrapperNotFound",
+        "WrapperDisabled",
+        "ProtocolUnsupported",
+        "WrapperRegistrationFailed",
+        "WrapperUnregistrationFailed",
+        "WrapperRestorationFailed",
+        "FilterNotFound",
+        "FilterFailed",
+        "CastFailed",
+        "CastNotSupported",
+        "MakeSeekableFailed",
+        "BufferedDataLost",
+        "NetworkSendFailed",
+        "NetworkRecvFailed",
+        "SslNotSupported",
+        "ResumptionFailed",
+        "SocketPathTooLong",
+        "OobNotSupported",
+        "ProtocolError",
+        "InvalidUrl",
+        "InvalidResponse",
+        "InvalidHeader",
+        "InvalidParam",
+        "RedirectLimit",
+        "AuthFailed",
+        "ArchivingFailed",
+        "EncodingFailed",
+        "DecodingFailed",
+        "InvalidFormat",
+        "AllocationFailed",
+        "TemporaryFileFailed",
+        "LockFailed",
+        "LockNotSupported",
+        "UserspaceNotImplemented",
+        "UserspaceInvalidReturn",
+        "UserspaceCallFailed",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED const char *ptn_stream_error_mode_case_name(const char *case_name) {
-    if (strcmp(case_name, "Ignore") == 0) {
-        return "Ignore";
+    static const char *const names[] = {
+        "Error",
+        "Exception",
+        "Silent",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
     }
-    if (strcmp(case_name, "Warning") == 0) {
-        return "Warning";
-    }
-    if (strcmp(case_name, "Exception") == 0) {
-        return "Exception";
+    return NULL;
+}
+
+static PTN_UNUSED const char *ptn_stream_error_store_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "Auto",
+        "None",
+        "NonTerminating",
+        "Terminating",
+        "All",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
     }
     return NULL;
 }
@@ -6599,11 +6703,23 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     if (rounding_case != NULL) {
         return ptn_enum_case(runtime, "RoundingMode", rounding_case);
     }
+    const char *stream_error_code_case = ptn_ascii_case_equal(resolved_class_name, "StreamErrorCode")
+        ? ptn_stream_error_code_case_name(constant)
+        : NULL;
+    if (stream_error_code_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", stream_error_code_case);
+    }
     const char *stream_error_mode_case = ptn_ascii_case_equal(resolved_class_name, "StreamErrorMode")
         ? ptn_stream_error_mode_case_name(constant)
         : NULL;
     if (stream_error_mode_case != NULL) {
         return ptn_builtin_enum_case_singleton(runtime, "StreamErrorMode", stream_error_mode_case);
+    }
+    const char *stream_error_store_case = ptn_ascii_case_equal(resolved_class_name, "StreamErrorStore")
+        ? ptn_stream_error_store_case_name(constant)
+        : NULL;
+    if (stream_error_store_case != NULL) {
+        return ptn_builtin_enum_case_singleton(runtime, "StreamErrorStore", stream_error_store_case);
     }
     const char *url_host_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlHostType")
         ? ptn_uri_url_host_type_case_name(constant)

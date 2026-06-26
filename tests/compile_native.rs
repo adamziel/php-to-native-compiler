@@ -28150,6 +28150,124 @@ string(0) \"\"\n"
 }
 
 #[test]
+fn compile_stream_context_mutators_paths_and_error_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-mutators-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-mutators-errors.php");
+    let output = root.join("stream-context-mutators-errors-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    stream_context_create(['ssl' => "abc"]);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+try {
+    stream_context_create(['ssl' => ['verify_peer'=> false]], ["options" => ['ssl' => "abc"]]);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+try {
+    stream_context_create(['ssl' => ['verify_peer'=> false]], ["options" => false]);
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$includePath = __DIR__ . '/test_path';
+$nested = $includePath . '/nested';
+mkdir($includePath);
+mkdir($nested);
+file_put_contents($includePath . DIRECTORY_SEPARATOR . 'file', 'include_path');
+file_put_contents($nested . DIRECTORY_SEPARATOR . 'file', 'include_path');
+
+set_include_path($includePath . PATH_SEPARATOR . $nested);
+var_dump(stream_resolve_include_path('file-does-not-exist'));
+$first = stream_resolve_include_path('file');
+echo basename(dirname($first)), "/", basename($first), "\n";
+set_include_path($nested . PATH_SEPARATOR . $includePath);
+$second = stream_resolve_include_path('file');
+echo basename(dirname($second)), "/", basename($second), "\n";
+
+$context = stream_context_create();
+$options = [
+    'http' => [
+        'protocol_version' => 1.1,
+        'user_agent' => 'PHPT Agent',
+    ],
+];
+var_dump(stream_context_set_options($context, $options));
+var_dump(stream_context_get_options($context));
+
+$context1 = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Error,
+        'error_store' => StreamErrorStore::Auto,
+    ],
+]);
+@fopen('php://nonexistent', 'r', false, $context1);
+$errors1 = stream_last_errors();
+echo "ERROR mode AUTO: " . (!empty($errors1) ? "has error" : "no error") . "\n";
+
+$context2 = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Exception,
+        'error_store' => StreamErrorStore::Auto,
+    ],
+]);
+try {
+    fopen('php://nonexistent2', 'r', false, $context2);
+} catch (StreamException $e) {}
+$errors2 = stream_last_errors();
+echo "EXCEPTION mode AUTO: " . (!empty($errors2) ? "has error" : "no error") . "\n";
+
+$context3 = stream_context_create([
+    'stream' => [
+        'error_mode' => StreamErrorMode::Silent,
+        'error_store' => StreamErrorStore::Auto,
+    ],
+]);
+fopen('php://nonexistent3', 'r', false, $context3);
+$errors3 = stream_last_errors();
+echo "SILENT mode AUTO: " . (!empty($errors3) ? "has error" : "no error") . "\n";
+
+@unlink($nested . DIRECTORY_SEPARATOR . 'file');
+@rmdir($nested);
+@unlink($includePath . DIRECTORY_SEPARATOR . 'file');
+@rmdir($includePath);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Invalid stream/context parameter\n\
+bool(false)\n\
+test_path/file\n\
+nested/file\n\
+bool(true)\n\
+array(1) {\n  [\"http\"]=>\n  array(2) {\n    [\"protocol_version\"]=>\n    float(1.1)\n    [\"user_agent\"]=>\n    string(10) \"PHPT Agent\"\n  }\n}\n\
+ERROR mode AUTO: no error\n\
+EXCEPTION mode AUTO: no error\n\
+SILENT mode AUTO: has error\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_set_options"));
+    assert!(c_source.contains("ptn_internal_stream_resolve_include_path"));
+    assert!(c_source.contains("ptn_internal_stream_last_errors"));
+    assert!(c_source.contains("StreamErrorMode"));
+    assert!(c_source.contains("StreamErrorStore"));
+}
+
+#[test]
 fn compile_file_get_contents_uri_parser_context_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
     fs::create_dir_all(&root).unwrap();
