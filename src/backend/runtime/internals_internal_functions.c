@@ -5589,6 +5589,7 @@ static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
@@ -135443,7 +135444,7 @@ static void ptn_phar_throw_meta_file_offset_set(
 static PtnPharObjectData *ptn_phar_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT ||
-        !ptn_internal_class_name_is_phar(receiver.as.object->class_name) ||
+        !ptn_internal_class_name_is_phar_archive(receiver.as.object->class_name) ||
         receiver.as.object->native_data == NULL) {
         ptn_throw_exception(runtime, "Error", "Invalid Phar object");
         return NULL;

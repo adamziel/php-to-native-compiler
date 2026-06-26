@@ -1364,8 +1364,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_random_engine(lookup_class_name)) {
         return ptn_random_engine_new(runtime, lookup_class_name, argc, args, line);
     }
-    if (ptn_internal_class_name_is_phar(lookup_class_name)) {
-        return ptn_phar_new(runtime, argc, args, line);
+    if (ptn_internal_class_name_is_phar(lookup_class_name) ||
+        ptn_internal_class_name_is_phar_data(lookup_class_name)) {
+        return ptn_phar_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_phar_file_info(lookup_class_name)) {
         ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
