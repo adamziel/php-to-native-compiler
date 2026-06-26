@@ -51928,6 +51928,29 @@ static int ptn_phar_stream_mode_appends(const char *mode) {
     return mode != NULL && (mode[0] == 'a' || mode[0] == 'A');
 }
 
+static int ptn_zlib_stream_mode_has_plus(const char *mode) {
+    return mode != NULL && strchr(mode, '+') != NULL;
+}
+
+static int ptn_zlib_stream_mode_can_read(const char *mode) {
+    return mode != NULL && (mode[0] == 'r' || mode[0] == 'R');
+}
+
+static int ptn_zlib_stream_mode_can_write(const char *mode) {
+    return mode != NULL && (
+        mode[0] == 'w' || mode[0] == 'W' ||
+        mode[0] == 'a' || mode[0] == 'A'
+    );
+}
+
+static int ptn_zlib_stream_mode_truncates(const char *mode) {
+    return mode != NULL && (mode[0] == 'w' || mode[0] == 'W');
+}
+
+static int ptn_zlib_stream_mode_appends(const char *mode) {
+    return mode != NULL && (mode[0] == 'a' || mode[0] == 'A');
+}
+
 static const char *ptn_zlib_wrapper_prefix(void) {
     return "compress.zlib://";
 }
@@ -52462,10 +52485,10 @@ static void ptn_zlib_stream_close_hook(PtnResource *resource, void *data) {
 }
 
 static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, const char *mode, int64_t level, PtnValue *out) {
-    int can_read = ptn_phar_stream_mode_can_read(mode);
-    int can_write = ptn_phar_stream_mode_can_write(mode);
-    int truncate = ptn_phar_stream_mode_truncates(mode);
-    int append = ptn_phar_stream_mode_appends(mode);
+    int can_read = ptn_zlib_stream_mode_can_read(mode);
+    int can_write = ptn_zlib_stream_mode_can_write(mode);
+    int truncate = ptn_zlib_stream_mode_truncates(mode);
+    int append = ptn_zlib_stream_mode_appends(mode);
     if (!can_read && !can_write) {
         errno = EINVAL;
         return 0;
@@ -52479,7 +52502,7 @@ static int ptn_try_open_zlib_path_stream(const char *uri, const char *path, cons
         1,
         append
     );
-    if (can_read && !truncate) {
+    if ((can_read || append) && !truncate) {
         unsigned char *data = NULL;
         size_t data_len = 0;
         int read_result = ptn_zlib_read_path_bytes(path, &data, &data_len);
@@ -141300,7 +141323,17 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
         free(path);
         return ptn_bool(0);
     }
-    if (argc >= 3 && ptn_is_truthy(args[2]) && !ptn_phar_stream_mode_can_write(mode)) {
+    if (ptn_zlib_stream_mode_has_plus(mode)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "gzopen(): Cannot open a zlib stream for reading and writing at the same time!",
+            line
+        );
+        free(mode);
+        free(path);
+        return ptn_bool(0);
+    }
+    if (argc >= 3 && ptn_is_truthy(args[2]) && !ptn_zlib_stream_mode_can_write(mode)) {
         char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
         if (resolved_path != NULL) {
             free(path);
@@ -141432,7 +141465,52 @@ static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static PtnValue ptn_internal_gzseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    return ptn_internal_fseek(runtime, argc, args, line);
+    PtnValue stream_value = ptn_value_deref(args[0]);
+    int64_t offset = ptn_internal_expect_integer_arg(runtime, "gzseek", 2, "offset", args[1], line);
+    int64_t whence = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "gzseek", 3, "whence", args[2], line)
+        : PTN_SEEK_SET;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (stream_value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "gzseek(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(stream_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (!ptn_stream_resource_is_open(stream_value.as.resource)) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "gzseek(): Argument #1 ($stream) must be an open stream resource"
+        );
+        return ptn_null();
+    }
+    PtnResource *resource = stream_value.as.resource;
+    int seek_whence = (int)whence;
+    if (seek_whence == SEEK_END) {
+        ptn_emit_warning(&runtime->diagnostics, "gzseek(): SEEK_END is not supported", line);
+        return ptn_int(-1);
+    }
+    if (seek_whence != SEEK_SET && seek_whence != SEEK_CUR) {
+        return ptn_int(-1);
+    }
+    if (ptn_stream_seek(resource, offset, seek_whence) == 0) {
+        ptn_stream_filtered_read_pending_clear(resource);
+        ptn_stream_filter_chain_reset(resource->read_filters);
+        ptn_stream_filter_chain_reset_on_seek(resource->write_filters);
+        return ptn_int(0);
+    }
+    return ptn_int(-1);
 }
 
 static PtnValue ptn_internal_gztell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

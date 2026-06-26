@@ -1,0 +1,16 @@
+# Focused PHPT row pack for ptn-w17z.968.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T224921Z.tsv
+# Rows were current-red in that artifact. Paths are relative to PHP_SRC_PHPT.
+
+ext/standard/tests/streams/opendir-003.phpt
+ext/phar/tests/phar_stub_write_file.phpt
+ext/phar/tests/bug69279a.phpt
+ext/phar/tests/bug60164.phpt
+ext/phar/tests/bug71391.phpt
+ext/zlib/tests/gzopen_basic2.phpt
+ext/phar/tests/phar_gobyebye.phpt
+ext/phar/tests/phar_commitwrite.phpt
+ext/phar/tests/tar/bignames.phpt
+ext/standard/tests/streams/bug77765.phpt
+ext/zlib/tests/gzseek_variation7.phpt
+ext/standard/tests/streams/gh11418.phpt

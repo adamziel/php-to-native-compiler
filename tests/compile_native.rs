@@ -28275,9 +28275,13 @@ $h = gzopen($path, "r", false);
 var_dump(gzread($h, 5));
 var_dump(gzseek($h, 6));
 var_dump(gzread($h, 4));
+var_dump(gzseek($h, 0, SEEK_END));
+var_dump(gztell($h));
 gzrewind($h);
 var_dump(gzread($h, 5));
 gzclose($h);
+
+var_dump(gzopen($path, "w+"));
 
 $h = gzopen($path, "r");
 $count = gzpassthru($h);
@@ -28353,13 +28357,13 @@ try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeErro
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("Warning: ftruncate(): Can't truncate this stream!"));
+    assert!(stdout.contains(
+        "Warning: gzopen(): Cannot open a zlib stream for reading and writing at the same time!"
+    ));
+    assert!(stdout.contains("Warning: gzseek(): SEEK_END is not supported"));
     let stdout_without_warnings = stdout
         .lines()
-        .filter(|line| {
-            !line.is_empty()
-                && !line.contains("Warning: ftruncate()")
-                && !line.contains("Warning: gzuncompress(): insufficient memory")
-        })
+        .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
@@ -28388,7 +28392,10 @@ bool(false)\n\
 string(5) \"alpha\"\n\
 int(0)\n\
 string(4) \"beta\"\n\
+int(-1)\n\
+int(10)\n\
 string(5) \"alpha\"\n\
+bool(false)\n\
 alpha beta gamma\n\
 int(16)\n\
 alpha beta gamma\n\
