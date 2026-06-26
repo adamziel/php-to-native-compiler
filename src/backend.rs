@@ -4492,6 +4492,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
         return Some("result");
     }
+    if name.eq_ignore_ascii_case("openssl_random_pseudo_bytes") && argument_index == 1 {
+        return Some("strong_result");
+    }
     if name.eq_ignore_ascii_case("curl_multi_exec") && argument_index == 1 {
         return Some("still_running");
     }
@@ -34131,6 +34134,42 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static HASH_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "binary",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static HASH_INIT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "algo",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "key",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
     static HASH_STRING_PARAMETERS: [InternalParameterSpec; 2] = [
         InternalParameterSpec {
             name: "string",
@@ -34513,6 +34552,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&SPAN_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr_compare") {
         Some(&SUBSTR_COMPARE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("hash") {
+        Some(&HASH_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("hash_init") {
+        Some(&HASH_INIT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("md5") || name.eq_ignore_ascii_case("sha1") {
         Some(&HASH_STRING_PARAMETERS)
     } else if name.eq_ignore_ascii_case("md5_file") || name.eq_ignore_ascii_case("sha1_file") {

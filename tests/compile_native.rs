@@ -31300,6 +31300,10 @@ $streamCtx = hash_init('md5');
 var_dump(hash_update_stream($streamCtx, $stream, 0));
 echo hash_final($streamCtx), \"\\n\";
 
+$strong = null;
+$random = openssl_random_pseudo_bytes(15, $strong);
+var_dump(strlen($random), $strong);
+
 try {
     new HashContext;
 } catch (Throwable $e) {
@@ -31370,6 +31374,7 @@ try {
         stdout.contains("int(0)\nd41d8cd98f00b204e9800998ecf8427e\n"),
         "{stdout}"
     );
+    assert!(stdout.contains("int(15)\nbool(true)\n"), "{stdout}");
     assert!(
         stdout.contains("Call to private HashContext::__construct() from global scope\n"),
         "{stdout}"
@@ -31415,6 +31420,14 @@ echo hash('sha512/256', 'abc'), \"\\n\";
 echo hash('fnv1a64', '9'), \"\\n\";
 echo hash('ripemd128', ''), \"\\n\";
 echo hash('ripemd320', ''), \"\\n\";
+$secret = str_repeat('a', 256);
+$ctx = hash_init('xxh3', options: ['secret' => $secret]);
+hash_update($ctx, 'Lorem');
+hash_update($ctx, ' ipsum dolor');
+hash_update($ctx, ' sit amet,');
+hash_update($ctx, ' consectetur adipiscing elit.');
+echo hash_final($ctx), \"\\n\";
+echo hash('xxh128', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', options: ['secret' => $secret]), \"\\n\";
 ",
     )
     .unwrap();
@@ -31434,7 +31447,9 @@ echo hash('ripemd320', ''), \"\\n\";
 53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23\n\
 af63b44c8601a894\n\
 cdf26213a150dc3ecb610f18f6b38b46\n\
-22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8\n"
+22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8\n\
+8028aa834c03557a\n\
+54279097795e7218093a05d4d781cbb9\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();

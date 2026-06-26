@@ -787,6 +787,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
     if (ptn_ascii_case_equal(name, "mb_parse_str") && index == 1) {
         return "result";
     }
+    if (ptn_ascii_case_equal(name, "openssl_random_pseudo_bytes") && index == 1) {
+        return "strong_result";
+    }
     if ((ptn_ascii_case_equal(name, "mb_ereg") || ptn_ascii_case_equal(name, "mb_eregi")) && index == 2) {
         return "matches";
     }
@@ -62845,6 +62848,8 @@ typedef struct {
     int hmac;
     unsigned char *key;
     size_t key_len;
+    unsigned char *secret;
+    size_t secret_len;
     unsigned char *data;
     size_t data_len;
     size_t data_capacity;
@@ -62858,6 +62863,7 @@ static void ptn_hash_context_data_free(void *ptr) {
     }
     free(data->algo);
     free(data->key);
+    free(data->secret);
     free(data->data);
     free(data);
 }
@@ -62874,7 +62880,15 @@ static PtnHashContextData *ptn_hash_context_data(PtnValue value) {
 
 static void ptn_hash_context_append(PtnHashContextData *data, const unsigned char *bytes, size_t len);
 
-static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, int hmac, const unsigned char *key, size_t key_len) {
+static PtnValue ptn_hash_context_object(
+    PtnRuntime *runtime,
+    const char *algo,
+    int hmac,
+    const unsigned char *key,
+    size_t key_len,
+    const unsigned char *secret,
+    size_t secret_len
+) {
     PtnValue object = ptn_object_new_shell(runtime, "HashContext");
     PtnHashContextData *data = malloc(sizeof(PtnHashContextData));
     if (data == NULL) {
@@ -62884,6 +62898,8 @@ static PtnValue ptn_hash_context_object(PtnRuntime *runtime, const char *algo, i
     data->hmac = hmac;
     data->key = key_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)key, key_len);
     data->key_len = key_len;
+    data->secret = secret_len == 0 ? NULL : (unsigned char *)ptn_duplicate_string_len((const char *)secret, secret_len);
+    data->secret_len = secret_len;
     data->data = NULL;
     data->data_len = 0;
     data->data_capacity = 0;
@@ -62909,7 +62925,15 @@ static PTN_UNUSED PtnValue ptn_hash_context_clone(PtnRuntime *runtime, PtnValue 
         ptn_throw_exception(runtime, "Error", "Cannot clone a finalized HashContext");
         return ptn_null();
     }
-    PtnValue clone = ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
+    PtnValue clone = ptn_hash_context_object(
+        runtime,
+        data->algo,
+        data->hmac,
+        data->key,
+        data->key_len,
+        data->secret,
+        data->secret_len
+    );
     ptn_hash_context_append((PtnHashContextData *)clone.as.object->native_data, data->data, data->data_len);
     return clone;
 }
@@ -62951,7 +62975,9 @@ static int ptn_hash_algorithm_is_supported(PtnStringOperand algo) {
         ptn_text_operand_ascii_case_equal(algo, "adler32") ||
         ptn_text_operand_ascii_case_equal(algo, "fnv1a64") ||
         ptn_text_operand_ascii_case_equal(algo, "ripemd128") ||
-        ptn_text_operand_ascii_case_equal(algo, "ripemd320");
+        ptn_text_operand_ascii_case_equal(algo, "ripemd320") ||
+        ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
+        ptn_text_operand_ascii_case_equal(algo, "xxh128");
 }
 
 static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
@@ -62965,6 +62991,8 @@ static const char *const PTN_HASH_SUPPORTED_ALGOS[] = {
     "fnv1a64",
     "ripemd128",
     "ripemd320",
+    "xxh3",
+    "xxh128",
 };
 
 static int ptn_hash_algorithm_name_is_supported(const char *algo) {
@@ -62979,6 +63007,162 @@ static int ptn_hash_algorithm_name_is_supported(const char *algo) {
 static int ptn_hash_algorithm_name_is_crypto(const char *algo) {
     return ptn_ascii_case_equal(algo, "md5") ||
         ptn_ascii_case_equal(algo, "sha1");
+}
+
+static int ptn_hash_algorithm_name_is_xxhash(const char *algo) {
+    return ptn_ascii_case_equal(algo, "xxh3") ||
+        ptn_ascii_case_equal(algo, "xxh128");
+}
+
+typedef struct {
+    uint64_t low64;
+    uint64_t high64;
+} PtnXxhash128;
+
+typedef struct {
+    int attempted;
+    int available;
+    void *handle;
+    uint64_t (*xxh3_64bits)(const void *, size_t);
+    uint64_t (*xxh3_64bits_with_secret)(const void *, size_t, const void *, size_t);
+    PtnXxhash128 (*xxh3_128bits)(const void *, size_t);
+    PtnXxhash128 (*xxh3_128bits_with_secret)(const void *, size_t, const void *, size_t);
+} PtnXxhashApi;
+
+static PtnXxhashApi ptn_xxhash_api = {0};
+
+#if !defined(_WIN32)
+static int ptn_xxhash_load_symbol(void *handle, const char *name, void *out, size_t out_size) {
+    void *symbol = handle == NULL ? NULL : dlsym(handle, name);
+    if (symbol == NULL) {
+        return 0;
+    }
+    memcpy(out, &symbol, out_size);
+    return 1;
+}
+
+static void *ptn_xxhash_open_nix_store(void) {
+    const char *patterns[] = {
+        "/nix/store/*-xxHash-*/lib/libxxhash.so.0*",
+        "/nix/store/*-xxHash-*/lib/libxxhash.so",
+        NULL
+    };
+    for (size_t pattern = 0; patterns[pattern] != NULL; pattern++) {
+        glob_t matches;
+        memset(&matches, 0, sizeof(matches));
+        void *handle = NULL;
+        if (glob(patterns[pattern], 0, NULL, &matches) == 0) {
+            for (size_t i = 0; i < matches.gl_pathc; i++) {
+                handle = dlopen(matches.gl_pathv[i], RTLD_LAZY | RTLD_LOCAL);
+                if (handle != NULL) {
+                    break;
+                }
+            }
+        }
+        globfree(&matches);
+        if (handle != NULL) {
+            return handle;
+        }
+    }
+    return NULL;
+}
+#endif
+
+static PtnXxhashApi *ptn_xxhash_api_get(void) {
+    if (ptn_xxhash_api.attempted) {
+        return ptn_xxhash_api.available ? &ptn_xxhash_api : NULL;
+    }
+    ptn_xxhash_api.attempted = 1;
+
+#if defined(_WIN32)
+    return NULL;
+#else
+    const char *env_library = getenv("PTN_XXHASH_LIBRARY");
+    const char *candidates[] = {
+        env_library == NULL ? "" : env_library,
+        "libxxhash.so.0",
+        "libxxhash.so",
+        NULL
+    };
+    void *handle = NULL;
+    for (size_t i = 0; candidates[i] != NULL; i++) {
+        if (candidates[i][0] == '\0') {
+            continue;
+        }
+        handle = dlopen(candidates[i], RTLD_LAZY | RTLD_LOCAL);
+        if (handle != NULL) {
+            break;
+        }
+    }
+    if (handle == NULL) {
+        handle = ptn_xxhash_open_nix_store();
+    }
+    if (handle == NULL) {
+        return NULL;
+    }
+
+#define PTN_XXHASH_LOAD(field, symbol) \
+    do { \
+        if (!ptn_xxhash_load_symbol(handle, symbol, &ptn_xxhash_api.field, sizeof(ptn_xxhash_api.field))) { \
+            dlclose(handle); \
+            memset(&ptn_xxhash_api, 0, sizeof(ptn_xxhash_api)); \
+            ptn_xxhash_api.attempted = 1; \
+            return NULL; \
+        } \
+    } while (0)
+
+    PTN_XXHASH_LOAD(xxh3_64bits, "XXH3_64bits");
+    PTN_XXHASH_LOAD(xxh3_64bits_with_secret, "XXH3_64bits_withSecret");
+    PTN_XXHASH_LOAD(xxh3_128bits, "XXH3_128bits");
+    PTN_XXHASH_LOAD(xxh3_128bits_with_secret, "XXH3_128bits_withSecret");
+#undef PTN_XXHASH_LOAD
+
+    ptn_xxhash_api.handle = handle;
+    ptn_xxhash_api.available = 1;
+    return &ptn_xxhash_api;
+#endif
+}
+
+static void ptn_store_u64_be(unsigned char out[8], uint64_t value) {
+    out[0] = (unsigned char)((value >> 56) & 0xff);
+    out[1] = (unsigned char)((value >> 48) & 0xff);
+    out[2] = (unsigned char)((value >> 40) & 0xff);
+    out[3] = (unsigned char)((value >> 32) & 0xff);
+    out[4] = (unsigned char)((value >> 24) & 0xff);
+    out[5] = (unsigned char)((value >> 16) & 0xff);
+    out[6] = (unsigned char)((value >> 8) & 0xff);
+    out[7] = (unsigned char)(value & 0xff);
+}
+
+static PtnValue ptn_hash_xxhash_digest_value(
+    PtnRuntime *runtime,
+    const char *algo,
+    const unsigned char *data,
+    size_t data_len,
+    const unsigned char *secret,
+    size_t secret_len,
+    int raw_output
+) {
+    PtnXxhashApi *api = ptn_xxhash_api_get();
+    if (api == NULL) {
+        ptn_throw_exception(runtime, "RuntimeException", "xxHash support is unavailable");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(algo, "xxh3")) {
+        uint64_t hash = secret_len == 0
+            ? api->xxh3_64bits(data, data_len)
+            : api->xxh3_64bits_with_secret(data, data_len, secret, secret_len);
+        unsigned char digest[8];
+        ptn_store_u64_be(digest, hash);
+        return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    PtnXxhash128 hash = secret_len == 0
+        ? api->xxh3_128bits(data, data_len)
+        : api->xxh3_128bits_with_secret(data, data_len, secret, secret_len);
+    unsigned char digest[16];
+    ptn_store_u64_be(digest, hash.high64);
+    ptn_store_u64_be(digest + 8, hash.low64);
+    return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
 static void ptn_hash_throw_invalid_algorithm(PtnRuntime *runtime, const char *function_name) {
@@ -63223,6 +63407,8 @@ static int ptn_hash_context_unserialize_payload(
     data->hmac = 0;
     data->key = NULL;
     data->key_len = 0;
+    data->secret = NULL;
+    data->secret_len = 0;
     data->data = buffered.len == 0
         ? NULL
         : (unsigned char *)ptn_duplicate_string_len(buffered.data, buffered.len);
@@ -63295,6 +63481,119 @@ static PtnValue ptn_internal_hash_algos(PtnRuntime *runtime, size_t argc, const 
     return result;
 }
 
+typedef struct {
+    unsigned char *secret;
+    size_t secret_len;
+} PtnHashOptions;
+
+static void ptn_hash_options_free(PtnHashOptions *options) {
+    if (options == NULL) {
+        return;
+    }
+    free(options->secret);
+    options->secret = NULL;
+    options->secret_len = 0;
+}
+
+static PtnArrayEntry *ptn_hash_options_entry(PtnArray *options, const char *name) {
+    if (options == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(options, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static void ptn_hash_throw_xxhash_secret_conflict(PtnRuntime *runtime, const char *algo) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s: Only one of seed or secret is to be passed for initialization",
+        algo
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_hash_throw_xxhash_short_secret(PtnRuntime *runtime, const char *algo, size_t secret_len) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s: Secret length must be >= 136 bytes, %zu bytes passed",
+        algo,
+        secret_len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_hash_parse_xxhash_options(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *algo,
+    PtnValue options_value,
+    size_t line,
+    PtnHashOptions *out
+) {
+    out->secret = NULL;
+    out->secret_len = 0;
+    options_value = ptn_value_deref(options_value);
+    if (options_value.type == PTN_NULL) {
+        return 1;
+    }
+    PtnArray *options = ptn_internal_expect_array_arg(runtime, function_name, 4, "options", options_value);
+    if (options == NULL || runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+
+    PtnArrayEntry *seed_entry = ptn_hash_options_entry(options, "seed");
+    PtnArrayEntry *secret_entry = ptn_hash_options_entry(options, "secret");
+    if (seed_entry != NULL && secret_entry != NULL) {
+        ptn_hash_throw_xxhash_secret_conflict(runtime, algo);
+        return 0;
+    }
+    if (secret_entry == NULL) {
+        return 1;
+    }
+
+    PtnValue secret_value = ptn_value_deref(secret_entry->value);
+    if (secret_value.type != PTN_STRING) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing a secret of a type other than string is deprecated because it implicitly converts to a string, potentially hiding bugs",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    }
+
+    PtnStringOperand secret = ptn_value_to_string_operand_with_runtime(runtime, secret_entry->value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(secret);
+        return 0;
+    }
+    if (secret.len < 136) {
+        ptn_hash_throw_xxhash_short_secret(runtime, algo, secret.len);
+        ptn_string_operand_free(secret);
+        return 0;
+    }
+    out->secret = (unsigned char *)ptn_duplicate_string_len(secret.data, secret.len);
+    out->secret_len = secret.len;
+    ptn_string_operand_free(secret);
+    return 1;
+}
+
 static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand algo = ptn_internal_expect_string_arg(runtime, "hash_init", 1, "algo", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
@@ -63320,7 +63619,25 @@ static PtnValue ptn_internal_hash_init(PtnRuntime *runtime, size_t argc, const P
         free(algo_name);
         return ptn_null();
     }
-    PtnValue result = ptn_hash_context_object(runtime, algo_name, (flags & PTN_HASH_HMAC) != 0, (const unsigned char *)key.data, key.len);
+    PtnHashOptions options = {0};
+    if (argc >= 4 &&
+        ptn_hash_algorithm_name_is_xxhash(algo_name) &&
+        !ptn_hash_parse_xxhash_options(runtime, "hash_init", algo_name, args[3], line, &options)) {
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(key);
+        free(algo_name);
+        return ptn_null();
+    }
+    PtnValue result = ptn_hash_context_object(
+        runtime,
+        algo_name,
+        (flags & PTN_HASH_HMAC) != 0,
+        (const unsigned char *)key.data,
+        key.len,
+        options.secret,
+        options.secret_len
+    );
+    ptn_hash_options_free(&options);
     free(algo_name);
     ptn_string_operand_free(algo);
     ptn_string_operand_free(key);
@@ -63339,7 +63656,15 @@ static PtnValue ptn_internal_hash_copy(PtnRuntime *runtime, size_t argc, const P
         ptn_throw_exception(runtime, "ValueError", "hash_copy(): Argument #1 ($context) must be a valid, non-finalized HashContext");
         return ptn_null();
     }
-    PtnValue copy = ptn_hash_context_object(runtime, data->algo, data->hmac, data->key, data->key_len);
+    PtnValue copy = ptn_hash_context_object(
+        runtime,
+        data->algo,
+        data->hmac,
+        data->key,
+        data->key_len,
+        data->secret,
+        data->secret_len
+    );
     ptn_hash_context_append(copy.as.object->native_data, data->data, data->data_len);
     return copy;
 }
@@ -63405,6 +63730,17 @@ static PtnValue ptn_internal_hash_final(PtnRuntime *runtime, size_t argc, const 
         return ptn_digest_value(digest, sizeof(digest), raw_output);
     }
     if (!data->hmac) {
+        if (ptn_hash_algorithm_name_is_xxhash(data->algo)) {
+            return ptn_hash_xxhash_digest_value(
+                runtime,
+                data->algo,
+                data->data,
+                data->data_len,
+                data->secret,
+                data->secret_len,
+                raw_output
+            );
+        }
         PtnValue hash_args[3] = {
             ptn_owned_string(ptn_duplicate_string(data->algo)),
             ptn_owned_string_len(ptn_duplicate_string_len((const char *)data->data, data->data_len), data->data_len),
@@ -63567,6 +63903,33 @@ static PtnValue ptn_internal_hash(PtnRuntime *runtime, size_t argc, const PtnVal
         ptn_string_operand_free(algo);
         ptn_string_operand_free(data);
         return ptn_digest_value(digest, sizeof(digest), raw_output);
+    }
+    if (ptn_text_operand_ascii_case_equal(algo, "xxh3") ||
+        ptn_text_operand_ascii_case_equal(algo, "xxh128")) {
+        char *algo_name = ptn_duplicate_string_len(algo.data, algo.len);
+        PtnHashOptions options = {0};
+        if (argc >= 4 &&
+            !ptn_hash_parse_xxhash_options(runtime, "hash", algo_name, args[3], line, &options)) {
+            ptn_hash_options_free(&options);
+            free(algo_name);
+            ptn_string_operand_free(algo);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+        PtnValue result = ptn_hash_xxhash_digest_value(
+            runtime,
+            algo_name,
+            (const unsigned char *)data.data,
+            data.len,
+            options.secret,
+            options.secret_len,
+            raw_output
+        );
+        ptn_hash_options_free(&options);
+        free(algo_name);
+        ptn_string_operand_free(algo);
+        ptn_string_operand_free(data);
+        return result;
     }
     if (ptn_text_operand_ascii_case_equal(algo, "crc32b")) {
         uint32_t checksum = ptn_crc32_bytes((const unsigned char *)data.data, data.len);
@@ -84790,6 +85153,42 @@ static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, cons
     if (!ptn_random_bytes_fill((unsigned char *)bytes, len)) {
         free(bytes);
         ptn_throw_exception(runtime, "Random\\RandomException", "random_bytes(): Failed to retrieve random bytes");
+        return ptn_null();
+    }
+    bytes[len] = '\0';
+    return ptn_owned_string_len(bytes, len);
+}
+
+static PtnValue ptn_internal_openssl_random_pseudo_bytes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "openssl_random_pseudo_bytes", 1, "length", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length <= 0) {
+        ptn_throw_exception(runtime, "ValueError", "openssl_random_pseudo_bytes(): Argument #1 ($length) must be greater than 0");
+        return ptn_null();
+    }
+    if (argc >= 2) {
+        if (args[1].type != PTN_REFERENCE) {
+            if (runtime->warn_by_ref_argument_mismatch) {
+                ptn_emit_by_reference_argument_warning(runtime, "openssl_random_pseudo_bytes", 2, "strong_result", line);
+            } else {
+                ptn_throw_by_reference_argument_error(runtime, "openssl_random_pseudo_bytes", 2, "strong_result", line);
+                return ptn_null();
+            }
+        } else if (!ptn_reference_assign(runtime, args[1].as.reference, ptn_bool(1))) {
+            return ptn_null();
+        }
+    }
+
+    size_t len = (size_t)length;
+    char *bytes = malloc(len + 1);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (!ptn_random_bytes_fill((unsigned char *)bytes, len)) {
+        free(bytes);
+        ptn_throw_exception(runtime, "Random\\RandomException", "openssl_random_pseudo_bytes(): Failed to retrieve random bytes");
         return ptn_null();
     }
     bytes[len] = '\0';
@@ -143561,14 +143960,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "inflate_init", 1, 2, ptn_internal_inflate_init },
-        { "hash", 2, 3, ptn_internal_hash },
+        { "hash", 2, 4, ptn_internal_hash },
         { "hash_algos", 0, 0, ptn_internal_hash_algos },
         { "hash_copy", 1, 1, ptn_internal_hash_copy },
         { "hash_equals", 2, 2, ptn_internal_hash_equals },
         { "hash_file", 2, 4, ptn_internal_hash_file },
         { "hash_final", 1, 2, ptn_internal_hash_final },
         { "hash_hmac", 3, 4, ptn_internal_hash_hmac },
-        { "hash_init", 1, 3, ptn_internal_hash_init },
+        { "hash_init", 1, 4, ptn_internal_hash_init },
         { "hash_pbkdf2", 4, 6, ptn_internal_hash_pbkdf2 },
         { "hash_update", 2, 2, ptn_internal_hash_update },
         { "hash_update_file", 2, 3, ptn_internal_hash_update_file },
@@ -143853,6 +144252,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_is_script_cached", 1, 1, ptn_internal_opcache_is_script_cached },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openssl_random_pseudo_bytes", 1, 2, ptn_internal_openssl_random_pseudo_bytes },
         { "ord", 1, 1, ptn_internal_ord },
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "parse_ini_file", 1, 3, ptn_internal_parse_ini_file },
