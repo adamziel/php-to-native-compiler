@@ -1,0 +1,13 @@
+# ptn-w17z.970 current-red PHAR/zlib/stream tar/security/opendir row pack.
+ext/phar/tests/tar/phar_buildfromiterator9.phpt
+ext/phar/tests/bug71331.phpt
+ext/phar/tests/security.phpt
+ext/zlib/tests/inflate_get_read_len.phpt
+ext/phar/tests/bug69720.phpt
+ext/standard/tests/streams/bug65483.phpt
+ext/phar/tests/opendir.phpt
+ext/phar/tests/tar/open_for_write_newfile.phpt
+ext/phar/tests/pharfileinfo_destruct.phpt
+ext/phar/tests/phar_offset_check.phpt
+ext/zlib/tests/gzcompress_error1.phpt
+ext/phar/tests/tar/badchecksum.phpt

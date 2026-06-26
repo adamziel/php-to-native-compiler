@@ -28380,6 +28380,16 @@ $compressed = deflate_add($deflate, "abcabc", ZLIB_FINISH);
 $inflate = inflate_init(ZLIB_ENCODING_RAW, ["dictionary" => $dictionary]);
 var_dump(inflate_add($inflate, $compressed) === "abcabc");
 
+$encoded = zlib_encode("Hello world.", ZLIB_ENCODING_DEFLATE);
+$inflate = inflate_init(ZLIB_ENCODING_DEFLATE);
+var_dump(inflate_get_status($inflate), inflate_get_read_len($inflate));
+var_dump(inflate_add($inflate, $encoded . str_repeat("qebsouesl", 2)));
+var_dump(inflate_get_status($inflate), inflate_get_read_len($inflate), strlen($encoded));
+var_dump(zlib_decode(zlib_encode("raw data", ZLIB_ENCODING_RAW)));
+var_dump(zlib_decode(zlib_encode("gzip data", ZLIB_ENCODING_GZIP)));
+try { zlib_encode("x", 42); } catch (ValueError $e) { echo "zlib-encoding-error\n"; }
+try { zlib_decode($encoded, -1); } catch (ValueError $e) { echo "zlib-max-error\n"; }
+
 $stream = fopen("php://temp", "w+");
 stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE);
 stream_filter_append($stream, "convert.base64-encode", STREAM_FILTER_WRITE);
@@ -28427,6 +28437,16 @@ string(6) \"first\n\
 from inc2\n\
 from inc1\n\
 bool(true)\n\
+int(0)\n\
+int(0)\n\
+string(12) \"Hello world.\"\n\
+int(1)\n\
+int(20)\n\
+int(20)\n\
+string(8) \"raw data\"\n\
+string(9) \"gzip data\"\n\
+zlib-encoding-error\n\
+zlib-max-error\n\
 string(11) \"filter text\"\n\
 deflate_init(): Argument #2 ($options) must not contain empty strings\n\
 deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
@@ -28441,6 +28461,8 @@ bool(true)\n"
     assert!(c_source.contains("ptn_internal_gzcompress"));
     assert!(c_source.contains("ptn_internal_gzgets"));
     assert!(c_source.contains("ptn_internal_deflate_add"));
+    assert!(c_source.contains("ptn_internal_zlib_encode"));
+    assert!(c_source.contains("ptn_internal_inflate_get_read_len"));
     assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE"));
 }
 

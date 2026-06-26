@@ -35881,6 +35881,34 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         name: "options",
         default: Some(InternalParameterDefault::Null),
     }];
+    static ZLIB_ENCODE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "level",
+            default: Some(InternalParameterDefault::Int(-1)),
+        },
+    ];
+    static ZLIB_DECODE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "max_length",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static ZLIB_CONTEXT_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "context",
+        default: None,
+    }];
     static HEADERS_SENT_PARAMETERS: [InternalParameterSpec; 2] = [
         InternalParameterSpec {
             name: "filename",
@@ -36432,6 +36460,14 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&PARSE_STR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("request_parse_body") {
         Some(&REQUEST_PARSE_BODY_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("zlib_encode") {
+        Some(&ZLIB_ENCODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("zlib_decode") {
+        Some(&ZLIB_DECODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("inflate_get_status")
+        || name.eq_ignore_ascii_case("inflate_get_read_len")
+    {
+        Some(&ZLIB_CONTEXT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("headers_sent") {
         Some(&HEADERS_SENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("header") {

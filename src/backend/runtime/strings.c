@@ -3239,6 +3239,42 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_ZLIB_VERNUM);
         return 1;
     }
+    if (strcmp(name, "ZLIB_OK") == 0) {
+        *out = ptn_int(PTN_ZLIB_OK);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_STREAM_END") == 0) {
+        *out = ptn_int(PTN_ZLIB_STREAM_END);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_NEED_DICT") == 0) {
+        *out = ptn_int(PTN_ZLIB_NEED_DICT);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_ERRNO") == 0) {
+        *out = ptn_int(PTN_ZLIB_ERRNO);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_STREAM_ERROR") == 0) {
+        *out = ptn_int(PTN_ZLIB_STREAM_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_DATA_ERROR") == 0) {
+        *out = ptn_int(PTN_ZLIB_DATA_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_MEM_ERROR") == 0) {
+        *out = ptn_int(PTN_ZLIB_MEM_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_BUF_ERROR") == 0) {
+        *out = ptn_int(PTN_ZLIB_BUF_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_VERSION_ERROR") == 0) {
+        *out = ptn_int(PTN_ZLIB_VERSION_ERROR);
+        return 1;
+    }
     if (strcmp(name, "FORCE_GZIP") == 0) {
         *out = ptn_int(PTN_FORCE_GZIP);
         return 1;
