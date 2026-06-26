@@ -3226,6 +3226,7 @@ static PTN_UNUSED void ptn_bcmath_number_hydrate_unserialized(
 );
 static PTN_UNUSED PtnValue ptn_phar_new(
     PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line

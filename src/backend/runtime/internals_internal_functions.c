@@ -5589,6 +5589,7 @@ static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_phar_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_stream_error_mode(const char *class_name);
@@ -138672,6 +138673,31 @@ static int ptn_phar_entry_name_is_meta_file(const char *name) {
         ptn_phar_entry_name_is_alias_meta_file(name);
 }
 
+static int ptn_phar_entry_name_has_double_slash(const char *name) {
+    if (name == NULL) {
+        return 0;
+    }
+    for (const char *cursor = name; cursor[0] != '\0' && cursor[1] != '\0'; cursor++) {
+        if ((cursor[0] == '/' || cursor[0] == '\\') &&
+            (cursor[1] == '/' || cursor[1] == '\\')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_phar_entry_name_is_magic_directory_tree(const char *name) {
+    if (name == NULL) {
+        return 0;
+    }
+    const char *cursor = name;
+    if (*cursor == '/' || *cursor == '\\') {
+        cursor++;
+    }
+    return strncmp(cursor, ".phar", 5) == 0 &&
+        (cursor[5] == '\0' || cursor[5] == '/' || cursor[5] == '\\');
+}
+
 static int ptn_phar_entry_name_has_upper_directory_reference(const char *name) {
     if (name == NULL) {
         return 0;
@@ -138769,6 +138795,48 @@ static void ptn_phar_throw_copy_invalid_dest(
     free(message);
 }
 
+static int ptn_phar_validate_entry_create(PtnRuntime *runtime, const char *entry_name) {
+    if (ptn_phar_entry_name_has_double_slash(entry_name)) {
+        int needed = snprintf(
+            NULL,
+            0,
+            "Entry %s does not exist and cannot be created: phar error: invalid path \"%s\" contains double slash",
+            entry_name == NULL ? "" : entry_name,
+            entry_name == NULL ? "" : entry_name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "Entry %s does not exist and cannot be created: phar error: invalid path \"%s\" contains double slash",
+            entry_name == NULL ? "" : entry_name,
+            entry_name == NULL ? "" : entry_name
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "BadMethodCallException", message);
+        free(message);
+        return 0;
+    }
+    if (ptn_phar_entry_name_is_magic_directory_tree(entry_name)) {
+        ptn_throw_exception(
+            runtime,
+            "BadMethodCallException",
+            "Cannot create any files in magic \".phar\" directory"
+        );
+        return 0;
+    }
+    return 1;
+}
+
 static void ptn_phar_throw_meta_file_offset_set(
     PtnRuntime *runtime,
     const char *entry_name,
@@ -138812,7 +138880,7 @@ static void ptn_phar_throw_meta_file_offset_set(
 static PtnPharObjectData *ptn_phar_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT ||
-        !ptn_internal_class_name_is_phar(receiver.as.object->class_name) ||
+        !ptn_internal_class_name_is_phar_archive(receiver.as.object->class_name) ||
         receiver.as.object->native_data == NULL) {
         ptn_throw_exception(runtime, "Error", "Invalid Phar object");
         return NULL;
@@ -139400,7 +139468,18 @@ static PtnValue ptn_phar_file_info_new(
     return ptn_phar_file_info_new_with_temporary_dir(runtime, archive, entry_name, 0, line);
 }
 
-static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PTN_UNUSED PtnValue ptn_phar_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    const char *resolved_class_name =
+        class_name == NULL || class_name[0] == '\0' ? "Phar" : class_name;
+    const char *constructor_name = ptn_internal_class_name_is_phar_data(resolved_class_name)
+        ? "PharData::__construct"
+        : "Phar::__construct";
     if (argc < 1 || argc > 3) {
         char message[160];
         const char *relation = argc < 1 ? "at least" : "at most";
@@ -139408,7 +139487,8 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
         int written = snprintf(
             message,
             sizeof(message),
-            "Phar::__construct() expects %s %zu argument%s, %zu given",
+            "%s::__construct() expects %s %zu argument%s, %zu given",
+            resolved_class_name,
             relation,
             expected,
             expected == 1 ? "" : "s",
@@ -139421,7 +139501,7 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
         return ptn_null();
     }
     PtnStringOperand filename =
-        ptn_internal_expect_string_arg(runtime, "Phar::__construct", 1, "filename", args[0], line);
+        ptn_internal_expect_string_arg(runtime, constructor_name, 1, "filename", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(filename);
         return ptn_null();
@@ -139429,13 +139509,23 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
     char *path = ptn_path_operand_to_c_string(filename);
     ptn_string_operand_free(filename);
     if (path == NULL) {
-        ptn_throw_exception(runtime, "ValueError", "Phar::__construct(): Argument #1 ($filename) must not contain any null bytes");
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct(): Argument #1 ($filename) must not contain any null bytes",
+            resolved_class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
         return ptn_null();
     }
     char *requested_alias = NULL;
     if (argc >= 3) {
         PtnStringOperand alias =
-            ptn_internal_expect_string_arg(runtime, "Phar::__construct", 3, "alias", args[2], line);
+            ptn_internal_expect_string_arg(runtime, constructor_name, 3, "alias", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(alias);
             free(path);
@@ -139470,7 +139560,7 @@ static PTN_UNUSED PtnValue ptn_phar_new(PtnRuntime *runtime, size_t argc, const 
     data->position = 0;
     free(requested_alias);
     free(path);
-    PtnValue object = ptn_object_new_shell(runtime, "Phar");
+    PtnValue object = ptn_object_new_shell(runtime, resolved_class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_phar_object_data_free;
     return object;
@@ -139643,7 +139733,11 @@ static PtnValue ptn_phar_call_method(
     size_t line
 ) {
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnValue replacement = ptn_phar_new(runtime, argc, args, line);
+        PtnValue receiver_value = ptn_value_deref(receiver);
+        const char *receiver_class = receiver_value.type == PTN_OBJECT
+            ? receiver_value.as.object->class_name
+            : "Phar";
+        PtnValue replacement = ptn_phar_new(runtime, receiver_class, argc, args, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&replacement);
             return ptn_null();
@@ -139703,6 +139797,10 @@ static PtnValue ptn_phar_call_method(
         }
         char *entry_name = ptn_phar_string_arg(runtime, "Phar::addFromString", 1, "localName", args[0], line);
         if (entry_name == NULL) {
+            return ptn_null();
+        }
+        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+            free(entry_name);
             return ptn_null();
         }
         if (ptn_phar_entry_name_is_meta_file(entry_name)) {
@@ -139894,6 +139992,10 @@ static PtnValue ptn_phar_call_method(
         }
         char *entry_name = ptn_phar_string_arg(runtime, "Phar::addFromString", 1, "localName", args[0], line);
         if (entry_name == NULL) {
+            return ptn_null();
+        }
+        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+            free(entry_name);
             return ptn_null();
         }
         PtnStringOperand contents =
@@ -140332,6 +140434,10 @@ static PtnValue ptn_phar_call_method(
         if (entry_name == NULL) {
             return ptn_null();
         }
+        if (!ptn_phar_validate_entry_create(runtime, entry_name)) {
+            free(entry_name);
+            return ptn_null();
+        }
         if (ptn_phar_entry_name_is_meta_file(entry_name)) {
             ptn_phar_throw_meta_file_offset_set(runtime, entry_name, data->archive->path);
             free(entry_name);
@@ -140522,10 +140628,22 @@ static PtnValue ptn_phar_file_info_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "isCompressed")) {
-        if (!ptn_phar_expect_no_arguments(runtime, "PharFileInfo", name, argc)) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "PharFileInfo::isCompressed() expects at most 1 argument");
             return ptn_null();
         }
-        return ptn_bool((entry->flags & (PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2)) != 0);
+        uint32_t compression_mask = (uint32_t)(PTN_PHAR_COMPRESSION_GZ | PTN_PHAR_COMPRESSION_BZ2);
+        if (argc == 1) {
+            int64_t compression =
+                ptn_internal_expect_integer_arg(runtime, "PharFileInfo::isCompressed", 1, "compression", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            compression_mask = compression == PTN_PHAR_COMPRESSION_BZ2
+                ? (uint32_t)PTN_PHAR_COMPRESSION_BZ2
+                : (uint32_t)PTN_PHAR_COMPRESSION_GZ;
+        }
+        return ptn_bool((entry->flags & compression_mask) != 0);
     }
     if (ptn_ascii_case_equal(name, "compress")) {
         if (argc != 1) {
@@ -155866,6 +155984,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar_data(const char *class_nam
     return ptn_ascii_case_equal(class_name, "PharData");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_phar_archive(const char *class_name) {
+    return ptn_internal_class_name_is_phar(class_name) ||
+        ptn_internal_class_name_is_phar_data(class_name);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_phar_file_info(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "PharFileInfo");
 }
@@ -158242,7 +158365,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "rewind")
             || ptn_ascii_case_equal(method_name, "valid");
     }
-    if (ptn_internal_class_name_is_phar(class_name)) {
+    if (ptn_internal_class_name_is_phar_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "addEmptyDir")
             || ptn_ascii_case_equal(method_name, "addFromString")
@@ -158284,9 +158407,6 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
             || ptn_ascii_case_equal(method_name, "mount")
             || ptn_ascii_case_equal(method_name, "running");
-    }
-    if (ptn_internal_class_name_is_phar_data(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__construct");
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
         return ptn_ascii_case_equal(method_name, "chmod")
@@ -158509,7 +158629,7 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "createFromInterface")
             || ptn_ascii_case_equal(method_name, "createFromTimestamp");
     }
-    if (ptn_internal_class_name_is_phar(class_name)) {
+    if (ptn_internal_class_name_is_phar_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "apiVersion")
             || ptn_ascii_case_equal(method_name, "canCompress")
             || ptn_ascii_case_equal(method_name, "canWrite")
@@ -159960,7 +160080,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "valid");
         return result;
     }
-    if (ptn_internal_class_name_is_phar(class_name)) {
+    if (ptn_internal_class_name_is_phar_archive(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "addEmptyDir");
         ptn_append_method_name(result, &index, "addFromString");
@@ -160002,10 +160122,6 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "startBuffering");
         ptn_append_method_name(result, &index, "stopBuffering");
         ptn_append_method_name(result, &index, "valid");
-        return result;
-    }
-    if (ptn_internal_class_name_is_phar_data(class_name)) {
-        ptn_append_method_name(result, &index, "__construct");
         return result;
     }
     if (ptn_internal_class_name_is_phar_file_info(class_name)) {
@@ -167826,7 +167942,7 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC"), ptn_int(32));
         return;
     }
-    if (ptn_internal_class_name_is_phar(class_name)) {
+    if (ptn_internal_class_name_is_phar_archive(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("PHAR"), ptn_int(PTN_PHAR_FORMAT_PHAR));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("TAR"), ptn_int(PTN_PHAR_FORMAT_TAR));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ZIP"), ptn_int(PTN_PHAR_FORMAT_ZIP));
