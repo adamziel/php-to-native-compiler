@@ -75346,6 +75346,2079 @@ static char *ptn_mb_substitute_text_alloc(const char *format, uint32_t cp, size_
     return replacement;
 }
 
+typedef struct {
+    uint32_t unicode;
+    uint32_t mobile;
+} PtnMbUtf8MobileMapEntry;
+
+static const PtnMbUtf8MobileMapEntry PTN_MB_UTF8_MOBILE_DOCOMO_MAP[] = {
+    { 0x0000a9u, 0x00e731u },
+    { 0x0000aeu, 0x00e736u },
+    { 0x00203cu, 0x00e704u },
+    { 0x002049u, 0x00e703u },
+    { 0x002122u, 0x00e732u },
+    { 0x002194u, 0x00e73cu },
+    { 0x002195u, 0x00e73du },
+    { 0x002196u, 0x00e697u },
+    { 0x002197u, 0x00e678u },
+    { 0x002198u, 0x00e696u },
+    { 0x002199u, 0x00e6a5u },
+    { 0x0021a9u, 0x00e6dau },
+    { 0x00231au, 0x00e71fu },
+    { 0x0023f0u, 0x00e6bau },
+    { 0x0023f3u, 0x00e71cu },
+    { 0x0024c2u, 0x00e65cu },
+    { 0x002600u, 0x00e63eu },
+    { 0x002601u, 0x00e63fu },
+    { 0x00260eu, 0x00e687u },
+    { 0x002614u, 0x00e640u },
+    { 0x002615u, 0x00e670u },
+    { 0x002648u, 0x00e646u },
+    { 0x002649u, 0x00e647u },
+    { 0x00264au, 0x00e648u },
+    { 0x00264bu, 0x00e649u },
+    { 0x00264cu, 0x00e64au },
+    { 0x00264du, 0x00e64bu },
+    { 0x00264eu, 0x00e64cu },
+    { 0x00264fu, 0x00e64du },
+    { 0x002650u, 0x00e64eu },
+    { 0x002651u, 0x00e64fu },
+    { 0x002652u, 0x00e650u },
+    { 0x002653u, 0x00e651u },
+    { 0x002660u, 0x00e68eu },
+    { 0x002663u, 0x00e690u },
+    { 0x002665u, 0x00e68du },
+    { 0x002666u, 0x00e68fu },
+    { 0x002668u, 0x00e6f7u },
+    { 0x00267bu, 0x00e735u },
+    { 0x00267fu, 0x00e69bu },
+    { 0x0026a0u, 0x00e737u },
+    { 0x0026a1u, 0x00e642u },
+    { 0x0026bdu, 0x00e656u },
+    { 0x0026beu, 0x00e653u },
+    { 0x0026c4u, 0x00e641u },
+    { 0x0026f3u, 0x00e654u },
+    { 0x0026f5u, 0x00e6a3u },
+    { 0x0026fdu, 0x00e66bu },
+    { 0x002702u, 0x00e675u },
+    { 0x002708u, 0x00e662u },
+    { 0x002709u, 0x00e6d3u },
+    { 0x00270au, 0x00e693u },
+    { 0x00270bu, 0x00e695u },
+    { 0x00270cu, 0x00e694u },
+    { 0x00270fu, 0x00e719u },
+    { 0x002712u, 0x00e6aeu },
+    { 0x002728u, 0x00e6fau },
+    { 0x002757u, 0x00e702u },
+    { 0x002764u, 0x00e6ecu },
+    { 0x0027b0u, 0x00e70au },
+    { 0x0027bfu, 0x00e6dfu },
+    { 0x002934u, 0x00e6f5u },
+    { 0x002935u, 0x00e700u },
+    { 0x003030u, 0x00e709u },
+    { 0x003299u, 0x00e734u },
+    { 0x01f17fu, 0x00e66cu },
+    { 0x01f191u, 0x00e6dbu },
+    { 0x01f193u, 0x00e6d7u },
+    { 0x01f194u, 0x00e6d8u },
+    { 0x01f195u, 0x00e6ddu },
+    { 0x01f196u, 0x00e72fu },
+    { 0x01f197u, 0x00e70bu },
+    { 0x01f232u, 0x00e738u },
+    { 0x01f233u, 0x00e739u },
+    { 0x01f234u, 0x00e73au },
+    { 0x01f235u, 0x00e73bu },
+    { 0x01f300u, 0x00e643u },
+    { 0x01f301u, 0x00e644u },
+    { 0x01f302u, 0x00e645u },
+    { 0x01f303u, 0x00e6b3u },
+    { 0x01f30au, 0x00e73fu },
+    { 0x01f311u, 0x00e69cu },
+    { 0x01f313u, 0x00e69eu },
+    { 0x01f314u, 0x00e69du },
+    { 0x01f315u, 0x00e6a0u },
+    { 0x01f319u, 0x00e69fu },
+    { 0x01f331u, 0x00e746u },
+    { 0x01f337u, 0x00e743u },
+    { 0x01f338u, 0x00e748u },
+    { 0x01f340u, 0x00e741u },
+    { 0x01f341u, 0x00e747u },
+    { 0x01f34cu, 0x00e744u },
+    { 0x01f34eu, 0x00e745u },
+    { 0x01f352u, 0x00e742u },
+    { 0x01f354u, 0x00e673u },
+    { 0x01f359u, 0x00e749u },
+    { 0x01f35cu, 0x00e74cu },
+    { 0x01f35eu, 0x00e74du },
+    { 0x01f370u, 0x00e74au },
+    { 0x01f374u, 0x00e66fu },
+    { 0x01f375u, 0x00e71eu },
+    { 0x01f376u, 0x00e74bu },
+    { 0x01f377u, 0x00e756u },
+    { 0x01f378u, 0x00e671u },
+    { 0x01f37au, 0x00e672u },
+    { 0x01f380u, 0x00e684u },
+    { 0x01f381u, 0x00e685u },
+    { 0x01f382u, 0x00e686u },
+    { 0x01f384u, 0x00e6a4u },
+    { 0x01f3a0u, 0x00e679u },
+    { 0x01f3a4u, 0x00e676u },
+    { 0x01f3a5u, 0x00e677u },
+    { 0x01f3a7u, 0x00e67au },
+    { 0x01f3a8u, 0x00e67bu },
+    { 0x01f3a9u, 0x00e67cu },
+    { 0x01f3aau, 0x00e67du },
+    { 0x01f3abu, 0x00e67eu },
+    { 0x01f3acu, 0x00e6acu },
+    { 0x01f3aeu, 0x00e68bu },
+    { 0x01f3b5u, 0x00e6f6u },
+    { 0x01f3b6u, 0x00e6ffu },
+    { 0x01f3bdu, 0x00e652u },
+    { 0x01f3beu, 0x00e655u },
+    { 0x01f3bfu, 0x00e657u },
+    { 0x01f3c0u, 0x00e658u },
+    { 0x01f3c1u, 0x00e659u },
+    { 0x01f3c2u, 0x00e712u },
+    { 0x01f3c3u, 0x00e733u },
+    { 0x01f3e0u, 0x00e663u },
+    { 0x01f3e2u, 0x00e664u },
+    { 0x01f3e3u, 0x00e665u },
+    { 0x01f3e5u, 0x00e666u },
+    { 0x01f3e6u, 0x00e667u },
+    { 0x01f3e7u, 0x00e668u },
+    { 0x01f3e8u, 0x00e669u },
+    { 0x01f3eau, 0x00e66au },
+    { 0x01f3ebu, 0x00e73eu },
+    { 0x01f40cu, 0x00e74eu },
+    { 0x01f41fu, 0x00e751u },
+    { 0x01f424u, 0x00e74fu },
+    { 0x01f427u, 0x00e750u },
+    { 0x01f431u, 0x00e6a2u },
+    { 0x01f434u, 0x00e754u },
+    { 0x01f436u, 0x00e6a1u },
+    { 0x01f437u, 0x00e755u },
+    { 0x01f440u, 0x00e691u },
+    { 0x01f442u, 0x00e692u },
+    { 0x01f44au, 0x00e6fdu },
+    { 0x01f44du, 0x00e727u },
+    { 0x01f451u, 0x00e71au },
+    { 0x01f453u, 0x00e69au },
+    { 0x01f455u, 0x00e70eu },
+    { 0x01f456u, 0x00e711u },
+    { 0x01f45bu, 0x00e70fu },
+    { 0x01f45cu, 0x00e682u },
+    { 0x01f45du, 0x00e6adu },
+    { 0x01f45fu, 0x00e699u },
+    { 0x01f460u, 0x00e674u },
+    { 0x01f463u, 0x00e698u },
+    { 0x01f464u, 0x00e6b1u },
+    { 0x01f484u, 0x00e710u },
+    { 0x01f48bu, 0x00e6f9u },
+    { 0x01f48cu, 0x00e717u },
+    { 0x01f48du, 0x00e71bu },
+    { 0x01f493u, 0x00e6edu },
+    { 0x01f494u, 0x00e6eeu },
+    { 0x01f495u, 0x00e6efu },
+    { 0x01f4a0u, 0x00e6f8u },
+    { 0x01f4a1u, 0x00e6fbu },
+    { 0x01f4a2u, 0x00e6fcu },
+    { 0x01f4a3u, 0x00e6feu },
+    { 0x01f4a4u, 0x00e701u },
+    { 0x01f4a5u, 0x00e705u },
+    { 0x01f4a6u, 0x00e706u },
+    { 0x01f4a7u, 0x00e707u },
+    { 0x01f4a8u, 0x00e708u },
+    { 0x01f4b0u, 0x00e715u },
+    { 0x01f4b4u, 0x00e6d6u },
+    { 0x01f4bau, 0x00e6b2u },
+    { 0x01f4bbu, 0x00e716u },
+    { 0x01f4bfu, 0x00e68cu },
+    { 0x01f4ceu, 0x00e730u },
+    { 0x01f4d6u, 0x00e683u },
+    { 0x01f4ddu, 0x00e689u },
+    { 0x01f4dfu, 0x00e65au },
+    { 0x01f4e0u, 0x00e6d0u },
+    { 0x01f4e9u, 0x00e6cfu },
+    { 0x01f4f1u, 0x00e688u },
+    { 0x01f4f2u, 0x00e6ceu },
+    { 0x01f4f7u, 0x00e681u },
+    { 0x01f4fau, 0x00e68au },
+    { 0x01f50du, 0x00e6dcu },
+    { 0x01f511u, 0x00e6d9u },
+    { 0x01f514u, 0x00e713u },
+    { 0x01f51au, 0x00e6b9u },
+    { 0x01f51bu, 0x00e6b8u },
+    { 0x01f51cu, 0x00e6b7u },
+    { 0x01f527u, 0x00e718u },
+    { 0x01f5fbu, 0x00e740u },
+    { 0x01f601u, 0x00e753u },
+    { 0x01f603u, 0x00e6f0u },
+    { 0x01f605u, 0x00e722u },
+    { 0x01f606u, 0x00e72au },
+    { 0x01f609u, 0x00e729u },
+    { 0x01f60bu, 0x00e752u },
+    { 0x01f60cu, 0x00e721u },
+    { 0x01f60du, 0x00e726u },
+    { 0x01f60fu, 0x00e72cu },
+    { 0x01f612u, 0x00e725u },
+    { 0x01f613u, 0x00e723u },
+    { 0x01f614u, 0x00e720u },
+    { 0x01f616u, 0x00e6f3u },
+    { 0x01f61cu, 0x00e728u },
+    { 0x01f61eu, 0x00e6f2u },
+    { 0x01f620u, 0x00e6f1u },
+    { 0x01f621u, 0x00e724u },
+    { 0x01f622u, 0x00e72eu },
+    { 0x01f623u, 0x00e72bu },
+    { 0x01f62du, 0x00e72du },
+    { 0x01f631u, 0x00e757u },
+    { 0x01f635u, 0x00e6f4u },
+    { 0x01f683u, 0x00e65bu },
+    { 0x01f684u, 0x00e65du },
+    { 0x01f68cu, 0x00e660u },
+    { 0x01f697u, 0x00e65eu },
+    { 0x01f699u, 0x00e65fu },
+    { 0x01f6a2u, 0x00e661u },
+    { 0x01f6a5u, 0x00e66du },
+    { 0x01f6a9u, 0x00e6deu },
+    { 0x01f6aau, 0x00e714u },
+    { 0x01f6acu, 0x00e67fu },
+    { 0x01f6adu, 0x00e680u },
+    { 0x01f6b2u, 0x00e71du },
+    { 0x01f6bbu, 0x00e66eu },
+    { 0x0fe82du, 0x00e6e1u },
+    { 0x0fee10u, 0x00e6d1u },
+    { 0x0fee11u, 0x00e6d2u },
+    { 0x0fee12u, 0x00e6d4u },
+    { 0x0fee13u, 0x00e6d5u },
+    { 0x0fee14u, 0x00e70cu },
+    { 0x0fee15u, 0x00e70du },
+    { 0x0fee16u, 0x00e6a6u },
+    { 0x0fee17u, 0x00e6a7u },
+    { 0x0fee18u, 0x00e6a8u },
+    { 0x0fee19u, 0x00e6a9u },
+    { 0x0fee1au, 0x00e6aau },
+    { 0x0fee1bu, 0x00e6abu },
+    { 0x0fee1cu, 0x00e6afu },
+    { 0x0fee1du, 0x00e6b0u },
+    { 0x0fee1eu, 0x00e6b4u },
+    { 0x0fee1fu, 0x00e6b5u },
+    { 0x0fee20u, 0x00e6b6u },
+    { 0x0fee21u, 0x00e6bbu },
+    { 0x0fee22u, 0x00e6bcu },
+    { 0x0fee23u, 0x00e6bdu },
+    { 0x0fee24u, 0x00e6beu },
+    { 0x0fee25u, 0x00e6bfu },
+    { 0x0fee26u, 0x00e6c0u },
+    { 0x0fee27u, 0x00e6c1u },
+    { 0x0fee28u, 0x00e6c2u },
+    { 0x0fee29u, 0x00e6c3u },
+    { 0x0fee2au, 0x00e6c4u },
+    { 0x0fee2bu, 0x00e6c5u },
+    { 0x0fee2cu, 0x00e6c6u },
+    { 0x0fee2du, 0x00e6c7u },
+    { 0x0fee2eu, 0x00e6c8u },
+    { 0x0fee2fu, 0x00e6c9u },
+    { 0x0fee30u, 0x00e6cau },
+    { 0x0fee31u, 0x00e6cbu },
+    { 0x0fee32u, 0x00e6ccu },
+    { 0x0fee33u, 0x00e6cdu },
+};
+
+static const uint32_t PTN_MB_UTF8_MOBILE_DOCOMO_BAD[] = {
+};
+
+static const PtnMbUtf8MobileMapEntry PTN_MB_UTF8_MOBILE_KDDI_A_MAP[] = {
+    { 0x0000a9u, 0x00e558u },
+    { 0x0000aeu, 0x00e559u },
+    { 0x002002u, 0x00e58du },
+    { 0x002003u, 0x00e58cu },
+    { 0x002005u, 0x00e58eu },
+    { 0x00203cu, 0x00eb30u },
+    { 0x002049u, 0x00eb2fu },
+    { 0x002122u, 0x00e54eu },
+    { 0x002139u, 0x00e533u },
+    { 0x002194u, 0x00eb7au },
+    { 0x002195u, 0x00eb7bu },
+    { 0x002196u, 0x00e54cu },
+    { 0x002197u, 0x00e555u },
+    { 0x002198u, 0x00e54du },
+    { 0x002199u, 0x00e556u },
+    { 0x0021a9u, 0x00e55du },
+    { 0x0021aau, 0x00e55cu },
+    { 0x00231au, 0x00e57au },
+    { 0x00231bu, 0x00e57bu },
+    { 0x0023e9u, 0x00e530u },
+    { 0x0023eau, 0x00e52fu },
+    { 0x0023ebu, 0x00e545u },
+    { 0x0023ecu, 0x00e544u },
+    { 0x0023f0u, 0x00e594u },
+    { 0x0023f3u, 0x00e47cu },
+    { 0x0025aau, 0x00e532u },
+    { 0x0025abu, 0x00e531u },
+    { 0x0025b6u, 0x00e52eu },
+    { 0x0025c0u, 0x00e52du },
+    { 0x0025fbu, 0x00e538u },
+    { 0x0025fcu, 0x00e539u },
+    { 0x0025fdu, 0x00e534u },
+    { 0x0025feu, 0x00e535u },
+    { 0x002600u, 0x00e488u },
+    { 0x002601u, 0x00e48du },
+    { 0x00260eu, 0x00e596u },
+    { 0x002611u, 0x00eb02u },
+    { 0x002614u, 0x00e48cu },
+    { 0x002615u, 0x00e597u },
+    { 0x00261du, 0x00e4f6u },
+    { 0x00263au, 0x00e4fbu },
+    { 0x002648u, 0x00e48fu },
+    { 0x002649u, 0x00e490u },
+    { 0x00264au, 0x00e491u },
+    { 0x00264bu, 0x00e492u },
+    { 0x00264cu, 0x00e493u },
+    { 0x00264du, 0x00e494u },
+    { 0x00264eu, 0x00e495u },
+    { 0x00264fu, 0x00e496u },
+    { 0x002650u, 0x00e497u },
+    { 0x002651u, 0x00e498u },
+    { 0x002652u, 0x00e499u },
+    { 0x002653u, 0x00e49au },
+    { 0x002660u, 0x00e5a1u },
+    { 0x002663u, 0x00e5a3u },
+    { 0x002665u, 0x00eaa5u },
+    { 0x002666u, 0x00e5a2u },
+    { 0x002668u, 0x00e4bcu },
+    { 0x00267bu, 0x00eb79u },
+    { 0x00267fu, 0x00e47fu },
+    { 0x002693u, 0x00e4a9u },
+    { 0x0026a0u, 0x00e481u },
+    { 0x0026a1u, 0x00e487u },
+    { 0x0026aau, 0x00e53au },
+    { 0x0026abu, 0x00e53bu },
+    { 0x0026bdu, 0x00e4b6u },
+    { 0x0026beu, 0x00e4bau },
+    { 0x0026c4u, 0x00e485u },
+    { 0x0026c5u, 0x00e48eu },
+    { 0x0026ceu, 0x00e49bu },
+    { 0x0026d4u, 0x00e484u },
+    { 0x0026eau, 0x00e5bbu },
+    { 0x0026f2u, 0x00e5cfu },
+    { 0x0026f3u, 0x00e599u },
+    { 0x0026f5u, 0x00e4b4u },
+    { 0x0026fau, 0x00e5d0u },
+    { 0x0026fdu, 0x00e571u },
+    { 0x002702u, 0x00e516u },
+    { 0x002705u, 0x00e55eu },
+    { 0x002708u, 0x00e4b3u },
+    { 0x002709u, 0x00e521u },
+    { 0x00270au, 0x00eb83u },
+    { 0x00270bu, 0x00e5a7u },
+    { 0x00270cu, 0x00e5a6u },
+    { 0x00270fu, 0x00e4a1u },
+    { 0x002712u, 0x00eb03u },
+    { 0x002714u, 0x00e557u },
+    { 0x002716u, 0x00e54fu },
+    { 0x002728u, 0x00eaabu },
+    { 0x002733u, 0x00e53eu },
+    { 0x002734u, 0x00e479u },
+    { 0x002744u, 0x00e48au },
+    { 0x002747u, 0x00e46cu },
+    { 0x00274cu, 0x00e550u },
+    { 0x00274eu, 0x00e551u },
+    { 0x002753u, 0x00e483u },
+    { 0x002757u, 0x00e482u },
+    { 0x002764u, 0x00e595u },
+    { 0x002795u, 0x00e53cu },
+    { 0x002796u, 0x00e53du },
+    { 0x002797u, 0x00e554u },
+    { 0x0027a1u, 0x00e552u },
+    { 0x0027b0u, 0x00eb31u },
+    { 0x002934u, 0x00eb2du },
+    { 0x002935u, 0x00eb2eu },
+    { 0x002b05u, 0x00e553u },
+    { 0x002b06u, 0x00e53fu },
+    { 0x002b07u, 0x00e540u },
+    { 0x002b1bu, 0x00e549u },
+    { 0x002b1cu, 0x00e548u },
+    { 0x002b50u, 0x00e48bu },
+    { 0x002b55u, 0x00eaadu },
+    { 0x003297u, 0x00ea99u },
+    { 0x003299u, 0x00e4f1u },
+    { 0x01f004u, 0x00e5d1u },
+    { 0x01f0cfu, 0x00eb6fu },
+    { 0x01f170u, 0x00eb26u },
+    { 0x01f171u, 0x00eb27u },
+    { 0x01f17eu, 0x00eb28u },
+    { 0x01f17fu, 0x00e4a6u },
+    { 0x01f18eu, 0x00eb29u },
+    { 0x01f191u, 0x00e5abu },
+    { 0x01f192u, 0x00ea85u },
+    { 0x01f193u, 0x00e578u },
+    { 0x01f194u, 0x00ea88u },
+    { 0x01f195u, 0x00e5b5u },
+    { 0x01f197u, 0x00e5adu },
+    { 0x01f198u, 0x00e4e8u },
+    { 0x01f199u, 0x00e50fu },
+    { 0x01f19au, 0x00e5d2u },
+    { 0x01f202u, 0x00ea87u },
+    { 0x01f22fu, 0x00ea8bu },
+    { 0x01f233u, 0x00ea8au },
+    { 0x01f235u, 0x00ea89u },
+    { 0x01f239u, 0x00ea86u },
+    { 0x01f23au, 0x00ea8cu },
+    { 0x01f250u, 0x00e4f7u },
+    { 0x01f251u, 0x00eb01u },
+    { 0x01f300u, 0x00e469u },
+    { 0x01f301u, 0x00e598u },
+    { 0x01f302u, 0x00eae8u },
+    { 0x01f303u, 0x00eaf1u },
+    { 0x01f305u, 0x00eaf4u },
+    { 0x01f306u, 0x00e5dau },
+    { 0x01f308u, 0x00eaf2u },
+    { 0x01f309u, 0x00e4bfu },
+    { 0x01f30au, 0x00eb7cu },
+    { 0x01f30bu, 0x00eb53u },
+    { 0x01f30cu, 0x00eb5fu },
+    { 0x01f30fu, 0x00e5b3u },
+    { 0x01f311u, 0x00e5a8u },
+    { 0x01f313u, 0x00e5aau },
+    { 0x01f314u, 0x00e5a9u },
+    { 0x01f319u, 0x00e486u },
+    { 0x01f31bu, 0x00e489u },
+    { 0x01f320u, 0x00e468u },
+    { 0x01f330u, 0x00eb38u },
+    { 0x01f331u, 0x00eb7du },
+    { 0x01f334u, 0x00e4e2u },
+    { 0x01f335u, 0x00ea96u },
+    { 0x01f337u, 0x00e4e4u },
+    { 0x01f338u, 0x00e4cau },
+    { 0x01f339u, 0x00e5bau },
+    { 0x01f33au, 0x00ea94u },
+    { 0x01f33bu, 0x00e4e3u },
+    { 0x01f33cu, 0x00eb49u },
+    { 0x01f33du, 0x00eb36u },
+    { 0x01f33fu, 0x00eb82u },
+    { 0x01f340u, 0x00e513u },
+    { 0x01f341u, 0x00e4ceu },
+    { 0x01f342u, 0x00e5cdu },
+    { 0x01f344u, 0x00eb37u },
+    { 0x01f345u, 0x00eabbu },
+    { 0x01f346u, 0x00eabcu },
+    { 0x01f347u, 0x00eb34u },
+    { 0x01f348u, 0x00eb32u },
+    { 0x01f349u, 0x00e4cdu },
+    { 0x01f34au, 0x00eabau },
+    { 0x01f34cu, 0x00eb35u },
+    { 0x01f34du, 0x00eb33u },
+    { 0x01f34eu, 0x00eab9u },
+    { 0x01f34fu, 0x00eb5au },
+    { 0x01f351u, 0x00eb39u },
+    { 0x01f352u, 0x00e4d2u },
+    { 0x01f353u, 0x00e4d4u },
+    { 0x01f354u, 0x00e4d6u },
+    { 0x01f355u, 0x00eb3bu },
+    { 0x01f356u, 0x00e4c4u },
+    { 0x01f357u, 0x00eb3cu },
+    { 0x01f358u, 0x00eab3u },
+    { 0x01f359u, 0x00e4d5u },
+    { 0x01f35au, 0x00eab4u },
+    { 0x01f35bu, 0x00eab6u },
+    { 0x01f35cu, 0x00e5b4u },
+    { 0x01f35du, 0x00eab5u },
+    { 0x01f35eu, 0x00eaafu },
+    { 0x01f35fu, 0x00eab1u },
+    { 0x01f360u, 0x00eb3au },
+    { 0x01f361u, 0x00eab2u },
+    { 0x01f362u, 0x00eab7u },
+    { 0x01f363u, 0x00eab8u },
+    { 0x01f364u, 0x00eb70u },
+    { 0x01f365u, 0x00e4edu },
+    { 0x01f366u, 0x00eab0u },
+    { 0x01f367u, 0x00eaeau },
+    { 0x01f368u, 0x00eb4au },
+    { 0x01f369u, 0x00eb4bu },
+    { 0x01f36au, 0x00eb4cu },
+    { 0x01f36bu, 0x00eb4du },
+    { 0x01f36cu, 0x00eb4eu },
+    { 0x01f36du, 0x00eb4fu },
+    { 0x01f36eu, 0x00eb56u },
+    { 0x01f36fu, 0x00eb59u },
+    { 0x01f370u, 0x00e4d0u },
+    { 0x01f371u, 0x00eabdu },
+    { 0x01f372u, 0x00eabeu },
+    { 0x01f373u, 0x00e4d1u },
+    { 0x01f374u, 0x00e4acu },
+    { 0x01f375u, 0x00eaaeu },
+    { 0x01f376u, 0x00ea97u },
+    { 0x01f377u, 0x00e4c1u },
+    { 0x01f378u, 0x00e4c2u },
+    { 0x01f379u, 0x00eb3eu },
+    { 0x01f37au, 0x00e4c3u },
+    { 0x01f37bu, 0x00ea98u },
+    { 0x01f380u, 0x00e59fu },
+    { 0x01f381u, 0x00e4cfu },
+    { 0x01f382u, 0x00e5a0u },
+    { 0x01f383u, 0x00eaeeu },
+    { 0x01f384u, 0x00e4c9u },
+    { 0x01f385u, 0x00eaf0u },
+    { 0x01f386u, 0x00e5ccu },
+    { 0x01f387u, 0x00eaebu },
+    { 0x01f388u, 0x00ea9bu },
+    { 0x01f389u, 0x00ea9cu },
+    { 0x01f38au, 0x00e46fu },
+    { 0x01f38bu, 0x00eb3du },
+    { 0x01f38cu, 0x00e5d9u },
+    { 0x01f38du, 0x00eae3u },
+    { 0x01f38eu, 0x00eae4u },
+    { 0x01f38fu, 0x00eae7u },
+    { 0x01f390u, 0x00eaedu },
+    { 0x01f391u, 0x00eaefu },
+    { 0x01f392u, 0x00eae6u },
+    { 0x01f393u, 0x00eae5u },
+    { 0x01f3a1u, 0x00e46du },
+    { 0x01f3a2u, 0x00eae2u },
+    { 0x01f3a3u, 0x00eb42u },
+    { 0x01f3a4u, 0x00e503u },
+    { 0x01f3a5u, 0x00e517u },
+    { 0x01f3a7u, 0x00e508u },
+    { 0x01f3a8u, 0x00e59cu },
+    { 0x01f3a9u, 0x00eaf5u },
+    { 0x01f3aau, 0x00e59eu },
+    { 0x01f3abu, 0x00e49eu },
+    { 0x01f3acu, 0x00e4beu },
+    { 0x01f3adu, 0x00e59du },
+    { 0x01f3aeu, 0x00e4c6u },
+    { 0x01f3afu, 0x00e4c5u },
+    { 0x01f3b0u, 0x00e46eu },
+    { 0x01f3b1u, 0x00eaddu },
+    { 0x01f3b2u, 0x00e4c8u },
+    { 0x01f3b3u, 0x00eb43u },
+    { 0x01f3b4u, 0x00eb6eu },
+    { 0x01f3b5u, 0x00e5beu },
+    { 0x01f3b6u, 0x00e505u },
+    { 0x01f3b8u, 0x00e506u },
+    { 0x01f3b9u, 0x00eb40u },
+    { 0x01f3bau, 0x00eadcu },
+    { 0x01f3bbu, 0x00e507u },
+    { 0x01f3bcu, 0x00eaccu },
+    { 0x01f3beu, 0x00e4b7u },
+    { 0x01f3bfu, 0x00eaacu },
+    { 0x01f3c0u, 0x00e59au },
+    { 0x01f3c1u, 0x00e4b9u },
+    { 0x01f3c2u, 0x00e4b8u },
+    { 0x01f3c3u, 0x00e46bu },
+    { 0x01f3c4u, 0x00eb41u },
+    { 0x01f3c6u, 0x00e5d3u },
+    { 0x01f3c8u, 0x00e4bbu },
+    { 0x01f3cau, 0x00eadeu },
+    { 0x01f3e0u, 0x00e4abu },
+    { 0x01f3e1u, 0x00eb09u },
+    { 0x01f3e2u, 0x00e4adu },
+    { 0x01f3e3u, 0x00e5deu },
+    { 0x01f3e5u, 0x00e5dfu },
+    { 0x01f3e6u, 0x00e4aau },
+    { 0x01f3e7u, 0x00e4a3u },
+    { 0x01f3e8u, 0x00ea81u },
+    { 0x01f3e9u, 0x00eaf3u },
+    { 0x01f3eau, 0x00e4a4u },
+    { 0x01f3ebu, 0x00ea80u },
+    { 0x01f3ecu, 0x00eaf6u },
+    { 0x01f3edu, 0x00eaf9u },
+    { 0x01f3eeu, 0x00e4bdu },
+    { 0x01f3efu, 0x00eaf7u },
+    { 0x01f3f0u, 0x00eaf8u },
+    { 0x01f40cu, 0x00eb7eu },
+    { 0x01f40du, 0x00eb22u },
+    { 0x01f414u, 0x00eb23u },
+    { 0x01f417u, 0x00eb24u },
+    { 0x01f418u, 0x00eb1fu },
+    { 0x01f419u, 0x00e5c7u },
+    { 0x01f41au, 0x00eaecu },
+    { 0x01f41bu, 0x00eb1eu },
+    { 0x01f41cu, 0x00e4ddu },
+    { 0x01f41du, 0x00eb57u },
+    { 0x01f41eu, 0x00eb58u },
+    { 0x01f420u, 0x00eb1du },
+    { 0x01f421u, 0x00e4d3u },
+    { 0x01f422u, 0x00e5d4u },
+    { 0x01f423u, 0x00e5dbu },
+    { 0x01f424u, 0x00e4e0u },
+    { 0x01f425u, 0x00eb76u },
+    { 0x01f427u, 0x00e4dcu },
+    { 0x01f428u, 0x00eb20u },
+    { 0x01f429u, 0x00e4dfu },
+    { 0x01f42bu, 0x00eb25u },
+    { 0x01f42cu, 0x00eb1bu },
+    { 0x01f42du, 0x00e5c2u },
+    { 0x01f42eu, 0x00eb21u },
+    { 0x01f42fu, 0x00e5c0u },
+    { 0x01f430u, 0x00e4d7u },
+    { 0x01f431u, 0x00e4dbu },
+    { 0x01f432u, 0x00eb3fu },
+    { 0x01f433u, 0x00e470u },
+    { 0x01f434u, 0x00e4d8u },
+    { 0x01f435u, 0x00e4d9u },
+    { 0x01f436u, 0x00e4e1u },
+    { 0x01f437u, 0x00e4deu },
+    { 0x01f438u, 0x00e4dau },
+    { 0x01f43bu, 0x00e5c1u },
+    { 0x01f43cu, 0x00eb46u },
+    { 0x01f43du, 0x00eb48u },
+    { 0x01f43eu, 0x00e4eeu },
+    { 0x01f440u, 0x00e5a4u },
+    { 0x01f442u, 0x00e5a5u },
+    { 0x01f443u, 0x00ead0u },
+    { 0x01f444u, 0x00ead1u },
+    { 0x01f445u, 0x00eb47u },
+    { 0x01f446u, 0x00ea8du },
+    { 0x01f447u, 0x00ea8eu },
+    { 0x01f448u, 0x00e4ffu },
+    { 0x01f449u, 0x00e500u },
+    { 0x01f44au, 0x00e4f3u },
+    { 0x01f44bu, 0x00ead6u },
+    { 0x01f44cu, 0x00ead4u },
+    { 0x01f44du, 0x00e4f9u },
+    { 0x01f44eu, 0x00ead5u },
+    { 0x01f44fu, 0x00ead3u },
+    { 0x01f451u, 0x00e5c9u },
+    { 0x01f452u, 0x00ea9eu },
+    { 0x01f453u, 0x00e4feu },
+    { 0x01f454u, 0x00ea93u },
+    { 0x01f455u, 0x00e5b6u },
+    { 0x01f456u, 0x00eb77u },
+    { 0x01f457u, 0x00eb6bu },
+    { 0x01f458u, 0x00eaa3u },
+    { 0x01f459u, 0x00eaa4u },
+    { 0x01f45au, 0x00e50du },
+    { 0x01f45bu, 0x00e504u },
+    { 0x01f45cu, 0x00e49cu },
+    { 0x01f45eu, 0x00e5b7u },
+    { 0x01f45fu, 0x00eb2bu },
+    { 0x01f460u, 0x00e51au },
+    { 0x01f462u, 0x00ea9fu },
+    { 0x01f463u, 0x00eb2au },
+    { 0x01f468u, 0x00e4fcu },
+    { 0x01f469u, 0x00e4fau },
+    { 0x01f46au, 0x00e501u },
+    { 0x01f46eu, 0x00e5ddu },
+    { 0x01f46fu, 0x00eadbu },
+    { 0x01f470u, 0x00eae9u },
+    { 0x01f471u, 0x00eb13u },
+    { 0x01f472u, 0x00eb14u },
+    { 0x01f473u, 0x00eb15u },
+    { 0x01f474u, 0x00eb16u },
+    { 0x01f475u, 0x00eb17u },
+    { 0x01f476u, 0x00eb18u },
+    { 0x01f477u, 0x00eb19u },
+    { 0x01f478u, 0x00eb1au },
+    { 0x01f479u, 0x00eb44u },
+    { 0x01f47au, 0x00eb45u },
+    { 0x01f47bu, 0x00e4cbu },
+    { 0x01f47cu, 0x00e5bfu },
+    { 0x01f47du, 0x00e50eu },
+    { 0x01f47eu, 0x00e4ecu },
+    { 0x01f47fu, 0x00e4efu },
+    { 0x01f480u, 0x00e4f8u },
+    { 0x01f483u, 0x00eb1cu },
+    { 0x01f484u, 0x00e509u },
+    { 0x01f485u, 0x00eaa0u },
+    { 0x01f486u, 0x00e50bu },
+    { 0x01f487u, 0x00eaa1u },
+    { 0x01f488u, 0x00eaa2u },
+    { 0x01f489u, 0x00e510u },
+    { 0x01f48au, 0x00ea9au },
+    { 0x01f48bu, 0x00e4ebu },
+    { 0x01f48cu, 0x00eb78u },
+    { 0x01f48du, 0x00e514u },
+    { 0x01f48fu, 0x00e5cau },
+    { 0x01f490u, 0x00ea95u },
+    { 0x01f491u, 0x00eadau },
+    { 0x01f493u, 0x00eb75u },
+    { 0x01f494u, 0x00e477u },
+    { 0x01f495u, 0x00e478u },
+    { 0x01f496u, 0x00eaa6u },
+    { 0x01f498u, 0x00e4eau },
+    { 0x01f499u, 0x00eaa7u },
+    { 0x01f49au, 0x00eaa8u },
+    { 0x01f49bu, 0x00eaa9u },
+    { 0x01f49cu, 0x00eaaau },
+    { 0x01f49du, 0x00eb54u },
+    { 0x01f49eu, 0x00e5afu },
+    { 0x01f4a1u, 0x00e476u },
+    { 0x01f4a2u, 0x00e4e5u },
+    { 0x01f4a3u, 0x00e47au },
+    { 0x01f4a4u, 0x00e475u },
+    { 0x01f4a5u, 0x00e5b0u },
+    { 0x01f4a6u, 0x00e5b1u },
+    { 0x01f4a7u, 0x00e4e6u },
+    { 0x01f4a8u, 0x00e4f4u },
+    { 0x01f4a9u, 0x00e4f5u },
+    { 0x01f4aau, 0x00e4e9u },
+    { 0x01f4abu, 0x00eb5cu },
+    { 0x01f4acu, 0x00e4fdu },
+    { 0x01f4aeu, 0x00e4f0u },
+    { 0x01f4afu, 0x00e4f2u },
+    { 0x01f4b0u, 0x00e4c7u },
+    { 0x01f4b2u, 0x00e579u },
+    { 0x01f4b3u, 0x00e57cu },
+    { 0x01f4b4u, 0x00e57du },
+    { 0x01f4b5u, 0x00e585u },
+    { 0x01f4b8u, 0x00eb5bu },
+    { 0x01f4b9u, 0x00e5dcu },
+    { 0x01f4bbu, 0x00e5b8u },
+    { 0x01f4bcu, 0x00e5ceu },
+    { 0x01f4bdu, 0x00e582u },
+    { 0x01f4beu, 0x00e562u },
+    { 0x01f4bfu, 0x00e50cu },
+    { 0x01f4c1u, 0x00e58fu },
+    { 0x01f4c2u, 0x00e590u },
+    { 0x01f4c3u, 0x00e561u },
+    { 0x01f4c4u, 0x00e569u },
+    { 0x01f4c5u, 0x00e563u },
+    { 0x01f4c6u, 0x00e56au },
+    { 0x01f4c7u, 0x00e56cu },
+    { 0x01f4c8u, 0x00e575u },
+    { 0x01f4c9u, 0x00e576u },
+    { 0x01f4cau, 0x00e574u },
+    { 0x01f4cbu, 0x00e564u },
+    { 0x01f4ccu, 0x00e56du },
+    { 0x01f4cdu, 0x00e560u },
+    { 0x01f4ceu, 0x00e4a0u },
+    { 0x01f4cfu, 0x00e570u },
+    { 0x01f4d0u, 0x00e4a2u },
+    { 0x01f4d1u, 0x00eb0bu },
+    { 0x01f4d2u, 0x00e56eu },
+    { 0x01f4d3u, 0x00e56bu },
+    { 0x01f4d4u, 0x00e49du },
+    { 0x01f4d5u, 0x00e568u },
+    { 0x01f4d6u, 0x00e49fu },
+    { 0x01f4d7u, 0x00e565u },
+    { 0x01f4d8u, 0x00e566u },
+    { 0x01f4d9u, 0x00e567u },
+    { 0x01f4dau, 0x00e56fu },
+    { 0x01f4dbu, 0x00e51du },
+    { 0x01f4dcu, 0x00e55fu },
+    { 0x01f4ddu, 0x00ea92u },
+    { 0x01f4deu, 0x00e51eu },
+    { 0x01f4dfu, 0x00e59bu },
+    { 0x01f4e0u, 0x00e520u },
+    { 0x01f4e1u, 0x00e4a8u },
+    { 0x01f4e4u, 0x00e592u },
+    { 0x01f4e5u, 0x00e593u },
+    { 0x01f4e6u, 0x00e51fu },
+    { 0x01f4e7u, 0x00eb71u },
+    { 0x01f4e8u, 0x00e591u },
+    { 0x01f4e9u, 0x00eb62u },
+    { 0x01f4eau, 0x00e51bu },
+    { 0x01f4ebu, 0x00eb0au },
+    { 0x01f4f0u, 0x00e58bu },
+    { 0x01f4f1u, 0x00e588u },
+    { 0x01f4f2u, 0x00eb08u },
+    { 0x01f4f3u, 0x00ea90u },
+    { 0x01f4f4u, 0x00ea91u },
+    { 0x01f4f6u, 0x00ea84u },
+    { 0x01f4f7u, 0x00e515u },
+    { 0x01f4f9u, 0x00e57eu },
+    { 0x01f4fau, 0x00e502u },
+    { 0x01f4fbu, 0x00e5b9u },
+    { 0x01f4fcu, 0x00e580u },
+    { 0x01f503u, 0x00eb0du },
+    { 0x01f50au, 0x00e511u },
+    { 0x01f50bu, 0x00e584u },
+    { 0x01f50cu, 0x00e589u },
+    { 0x01f50du, 0x00e518u },
+    { 0x01f50eu, 0x00eb05u },
+    { 0x01f50fu, 0x00eb0cu },
+    { 0x01f510u, 0x00eafcu },
+    { 0x01f511u, 0x00e519u },
+    { 0x01f512u, 0x00e51cu },
+    { 0x01f514u, 0x00e512u },
+    { 0x01f516u, 0x00eb07u },
+    { 0x01f517u, 0x00e58au },
+    { 0x01f518u, 0x00eb04u },
+    { 0x01f519u, 0x00eb06u },
+    { 0x01f51eu, 0x00ea83u },
+    { 0x01f51fu, 0x00e52bu },
+    { 0x01f520u, 0x00eafdu },
+    { 0x01f521u, 0x00eafeu },
+    { 0x01f522u, 0x00eaffu },
+    { 0x01f523u, 0x00eb00u },
+    { 0x01f524u, 0x00eb55u },
+    { 0x01f525u, 0x00e47bu },
+    { 0x01f526u, 0x00e583u },
+    { 0x01f527u, 0x00e587u },
+    { 0x01f528u, 0x00e5cbu },
+    { 0x01f529u, 0x00e581u },
+    { 0x01f52au, 0x00e57fu },
+    { 0x01f52bu, 0x00e50au },
+    { 0x01f52eu, 0x00ea8fu },
+    { 0x01f530u, 0x00e480u },
+    { 0x01f534u, 0x00e54au },
+    { 0x01f535u, 0x00e54bu },
+    { 0x01f536u, 0x00e546u },
+    { 0x01f537u, 0x00e547u },
+    { 0x01f538u, 0x00e536u },
+    { 0x01f539u, 0x00e537u },
+    { 0x01f53au, 0x00e55au },
+    { 0x01f53bu, 0x00e55bu },
+    { 0x01f53cu, 0x00e543u },
+    { 0x01f53du, 0x00e542u },
+    { 0x01f5fbu, 0x00e5bdu },
+    { 0x01f5fcu, 0x00e4c0u },
+    { 0x01f5feu, 0x00e572u },
+    { 0x01f5ffu, 0x00eb6cu },
+    { 0x01f601u, 0x00eb80u },
+    { 0x01f602u, 0x00eb64u },
+    { 0x01f603u, 0x00e471u },
+    { 0x01f609u, 0x00e5c3u },
+    { 0x01f60au, 0x00eacdu },
+    { 0x01f60cu, 0x00eac5u },
+    { 0x01f60du, 0x00e5c4u },
+    { 0x01f60fu, 0x00eabfu },
+    { 0x01f612u, 0x00eac9u },
+    { 0x01f613u, 0x00e5c6u },
+    { 0x01f614u, 0x00eac0u },
+    { 0x01f616u, 0x00eac3u },
+    { 0x01f618u, 0x00eacfu },
+    { 0x01f61au, 0x00eaceu },
+    { 0x01f61cu, 0x00e4e7u },
+    { 0x01f620u, 0x00e472u },
+    { 0x01f621u, 0x00eb5du },
+    { 0x01f622u, 0x00eb69u },
+    { 0x01f623u, 0x00eac2u },
+    { 0x01f624u, 0x00eac1u },
+    { 0x01f628u, 0x00eac6u },
+    { 0x01f629u, 0x00eb67u },
+    { 0x01f62au, 0x00eac4u },
+    { 0x01f62bu, 0x00e474u },
+    { 0x01f62du, 0x00e473u },
+    { 0x01f630u, 0x00eacbu },
+    { 0x01f631u, 0x00e5c5u },
+    { 0x01f632u, 0x00eacau },
+    { 0x01f633u, 0x00eac8u },
+    { 0x01f635u, 0x00e5aeu },
+    { 0x01f637u, 0x00eac7u },
+    { 0x01f638u, 0x00eb7fu },
+    { 0x01f639u, 0x00eb63u },
+    { 0x01f63au, 0x00eb61u },
+    { 0x01f63bu, 0x00eb65u },
+    { 0x01f63cu, 0x00eb6au },
+    { 0x01f63du, 0x00eb60u },
+    { 0x01f63eu, 0x00eb5eu },
+    { 0x01f63fu, 0x00eb68u },
+    { 0x01f640u, 0x00eb66u },
+    { 0x01f645u, 0x00ead7u },
+    { 0x01f646u, 0x00ead8u },
+    { 0x01f647u, 0x00ead9u },
+    { 0x01f648u, 0x00eb50u },
+    { 0x01f649u, 0x00eb52u },
+    { 0x01f64au, 0x00eb51u },
+    { 0x01f64bu, 0x00eb85u },
+    { 0x01f64cu, 0x00eb86u },
+    { 0x01f64du, 0x00eb87u },
+    { 0x01f64eu, 0x00eb88u },
+    { 0x01f64fu, 0x00ead2u },
+    { 0x01f680u, 0x00e5c8u },
+    { 0x01f683u, 0x00e4b5u },
+    { 0x01f685u, 0x00e4b0u },
+    { 0x01f687u, 0x00e5bcu },
+    { 0x01f689u, 0x00eb6du },
+    { 0x01f68cu, 0x00e4afu },
+    { 0x01f68fu, 0x00e4a7u },
+    { 0x01f691u, 0x00eae0u },
+    { 0x01f692u, 0x00eadfu },
+    { 0x01f693u, 0x00eae1u },
+    { 0x01f697u, 0x00e4b1u },
+    { 0x01f69au, 0x00e4b2u },
+    { 0x01f6a2u, 0x00ea82u },
+    { 0x01f6a5u, 0x00e46au },
+    { 0x01f6a7u, 0x00e5d7u },
+    { 0x01f6a8u, 0x00eb73u },
+    { 0x01f6a9u, 0x00eb2cu },
+    { 0x01f6abu, 0x00e541u },
+    { 0x01f6acu, 0x00e47du },
+    { 0x01f6adu, 0x00e47eu },
+    { 0x01f6b2u, 0x00e4aeu },
+    { 0x01f6b6u, 0x00eb72u },
+    { 0x01f6bbu, 0x00e4a5u },
+    { 0x01f6c0u, 0x00e5d8u },
+    { 0x0fe82du, 0x00e52cu },
+    { 0x0fe83cu, 0x00e586u },
+    { 0x0feb89u, 0x00eafbu },
+    { 0x0fee40u, 0x00e577u },
+    { 0x0fee41u, 0x00e5b2u },
+    { 0x0fee42u, 0x00ea9du },
+    { 0x0fee43u, 0x00eb74u },
+    { 0x0fee44u, 0x00eb81u },
+    { 0x0fee45u, 0x00eb89u },
+    { 0x0fee46u, 0x00eb8au },
+    { 0x0fee47u, 0x00eb8bu },
+    { 0x0fee48u, 0x00eb8cu },
+    { 0x0fee49u, 0x00eb8du },
+    { 0x0fee4au, 0x00eb8eu },
+};
+
+static const uint32_t PTN_MB_UTF8_MOBILE_KDDI_A_BAD[] = {
+    0x01f1e8u,
+    0x01f1e9u,
+    0x01f1eau,
+    0x01f1ebu,
+    0x01f1ecu,
+    0x01f1edu,
+    0x01f1eeu,
+    0x01f1efu,
+    0x01f1f0u,
+    0x01f1f1u,
+    0x01f1f2u,
+    0x01f1f3u,
+    0x01f1f4u,
+    0x01f1f5u,
+    0x01f1f6u,
+    0x01f1f7u,
+    0x01f1f8u,
+    0x01f1f9u,
+    0x01f1fau,
+};
+
+static const PtnMbUtf8MobileMapEntry PTN_MB_UTF8_MOBILE_KDDI_B_MAP[] = {
+    { 0x0000a9u, 0x00f074u },
+    { 0x0000aeu, 0x00f075u },
+    { 0x002002u, 0x00f0aau },
+    { 0x002003u, 0x00f0a9u },
+    { 0x002005u, 0x00f0abu },
+    { 0x00203cu, 0x00ecf1u },
+    { 0x002049u, 0x00ecf0u },
+    { 0x002122u, 0x00f06au },
+    { 0x002139u, 0x00f04fu },
+    { 0x002194u, 0x00ed7eu },
+    { 0x002195u, 0x00ed80u },
+    { 0x002196u, 0x00f068u },
+    { 0x002197u, 0x00f071u },
+    { 0x002198u, 0x00f069u },
+    { 0x002199u, 0x00f072u },
+    { 0x0021a9u, 0x00f079u },
+    { 0x0021aau, 0x00f078u },
+    { 0x00231au, 0x00f097u },
+    { 0x00231bu, 0x00f098u },
+    { 0x0023e9u, 0x00f04cu },
+    { 0x0023eau, 0x00f04bu },
+    { 0x0023ebu, 0x00f061u },
+    { 0x0023ecu, 0x00f060u },
+    { 0x0023f0u, 0x00f0b1u },
+    { 0x0023f3u, 0x00ef54u },
+    { 0x0025aau, 0x00f04eu },
+    { 0x0025abu, 0x00f04du },
+    { 0x0025b6u, 0x00f04au },
+    { 0x0025c0u, 0x00f049u },
+    { 0x0025fbu, 0x00f054u },
+    { 0x0025fcu, 0x00f055u },
+    { 0x0025fdu, 0x00f050u },
+    { 0x0025feu, 0x00f051u },
+    { 0x002600u, 0x00ef60u },
+    { 0x002601u, 0x00ef65u },
+    { 0x00260eu, 0x00f0b3u },
+    { 0x002611u, 0x00f0d9u },
+    { 0x002614u, 0x00ef64u },
+    { 0x002615u, 0x00f0b4u },
+    { 0x00261du, 0x00efcfu },
+    { 0x00263au, 0x00efd4u },
+    { 0x002648u, 0x00ef67u },
+    { 0x002649u, 0x00ef68u },
+    { 0x00264au, 0x00ef69u },
+    { 0x00264bu, 0x00ef6au },
+    { 0x00264cu, 0x00ef6bu },
+    { 0x00264du, 0x00ef6cu },
+    { 0x00264eu, 0x00ef6du },
+    { 0x00264fu, 0x00ef6eu },
+    { 0x002650u, 0x00ef6fu },
+    { 0x002651u, 0x00ef70u },
+    { 0x002652u, 0x00ef71u },
+    { 0x002653u, 0x00ef72u },
+    { 0x002660u, 0x00f0beu },
+    { 0x002663u, 0x00f0c0u },
+    { 0x002665u, 0x00ec78u },
+    { 0x002666u, 0x00f0bfu },
+    { 0x002668u, 0x00ef95u },
+    { 0x00267bu, 0x00ed7du },
+    { 0x00267fu, 0x00ef57u },
+    { 0x002693u, 0x00ef82u },
+    { 0x0026a0u, 0x00ef59u },
+    { 0x0026a1u, 0x00ef5fu },
+    { 0x0026aau, 0x00f056u },
+    { 0x0026abu, 0x00f057u },
+    { 0x0026bdu, 0x00ef8fu },
+    { 0x0026beu, 0x00ef93u },
+    { 0x0026c4u, 0x00ef5du },
+    { 0x0026c5u, 0x00ef66u },
+    { 0x0026ceu, 0x00ef73u },
+    { 0x0026d4u, 0x00ef5cu },
+    { 0x0026eau, 0x00f0ebu },
+    { 0x0026f2u, 0x00ec42u },
+    { 0x0026f3u, 0x00f0b6u },
+    { 0x0026f5u, 0x00ef8du },
+    { 0x0026fau, 0x00ec43u },
+    { 0x0026fdu, 0x00f08eu },
+    { 0x002702u, 0x00efefu },
+    { 0x002705u, 0x00f07au },
+    { 0x002708u, 0x00ef8cu },
+    { 0x002709u, 0x00effau },
+    { 0x00270au, 0x00ed88u },
+    { 0x00270bu, 0x00f0c4u },
+    { 0x00270cu, 0x00f0c3u },
+    { 0x00270fu, 0x00ef79u },
+    { 0x002712u, 0x00f0dau },
+    { 0x002714u, 0x00f073u },
+    { 0x002716u, 0x00f06bu },
+    { 0x002728u, 0x00ec7eu },
+    { 0x002733u, 0x00f05au },
+    { 0x002734u, 0x00ef51u },
+    { 0x002744u, 0x00ef62u },
+    { 0x002747u, 0x00ef44u },
+    { 0x00274cu, 0x00f06cu },
+    { 0x00274eu, 0x00f06du },
+    { 0x002753u, 0x00ef5bu },
+    { 0x002757u, 0x00ef5au },
+    { 0x002764u, 0x00f0b2u },
+    { 0x002795u, 0x00f058u },
+    { 0x002796u, 0x00f059u },
+    { 0x002797u, 0x00f070u },
+    { 0x0027a1u, 0x00f06eu },
+    { 0x0027b0u, 0x00ecf2u },
+    { 0x002934u, 0x00eceeu },
+    { 0x002935u, 0x00ecefu },
+    { 0x002b05u, 0x00f06fu },
+    { 0x002b06u, 0x00f05bu },
+    { 0x002b07u, 0x00f05cu },
+    { 0x002b1bu, 0x00f065u },
+    { 0x002b1cu, 0x00f064u },
+    { 0x002b50u, 0x00ef63u },
+    { 0x002b55u, 0x00ec81u },
+    { 0x003297u, 0x00ec6cu },
+    { 0x003299u, 0x00efcau },
+    { 0x01f004u, 0x00ec44u },
+    { 0x01f0cfu, 0x00ed73u },
+    { 0x01f170u, 0x00ece7u },
+    { 0x01f171u, 0x00ece8u },
+    { 0x01f17eu, 0x00ece9u },
+    { 0x01f17fu, 0x00ef7eu },
+    { 0x01f18eu, 0x00eceau },
+    { 0x01f191u, 0x00f0c8u },
+    { 0x01f192u, 0x00ec58u },
+    { 0x01f193u, 0x00f095u },
+    { 0x01f194u, 0x00ec5bu },
+    { 0x01f195u, 0x00f0e5u },
+    { 0x01f197u, 0x00f0cau },
+    { 0x01f198u, 0x00efc1u },
+    { 0x01f199u, 0x00efe8u },
+    { 0x01f19au, 0x00ec45u },
+    { 0x01f202u, 0x00ec5au },
+    { 0x01f22fu, 0x00ec5eu },
+    { 0x01f233u, 0x00ec5du },
+    { 0x01f235u, 0x00ec5cu },
+    { 0x01f239u, 0x00ec59u },
+    { 0x01f23au, 0x00ec5fu },
+    { 0x01f250u, 0x00efd0u },
+    { 0x01f251u, 0x00f0d8u },
+    { 0x01f300u, 0x00ef41u },
+    { 0x01f301u, 0x00f0b5u },
+    { 0x01f302u, 0x00ecbcu },
+    { 0x01f303u, 0x00ecc5u },
+    { 0x01f305u, 0x00ecc8u },
+    { 0x01f306u, 0x00ec4du },
+    { 0x01f308u, 0x00ecc6u },
+    { 0x01f309u, 0x00ef98u },
+    { 0x01f30au, 0x00ed81u },
+    { 0x01f30bu, 0x00ed57u },
+    { 0x01f30cu, 0x00ed63u },
+    { 0x01f30fu, 0x00f0d0u },
+    { 0x01f311u, 0x00f0c5u },
+    { 0x01f313u, 0x00f0c7u },
+    { 0x01f314u, 0x00f0c6u },
+    { 0x01f319u, 0x00ef5eu },
+    { 0x01f31bu, 0x00ef61u },
+    { 0x01f320u, 0x00ef40u },
+    { 0x01f330u, 0x00ecf9u },
+    { 0x01f331u, 0x00ed82u },
+    { 0x01f334u, 0x00efbbu },
+    { 0x01f335u, 0x00ec69u },
+    { 0x01f337u, 0x00efbdu },
+    { 0x01f338u, 0x00efa3u },
+    { 0x01f339u, 0x00f0eau },
+    { 0x01f33au, 0x00ec67u },
+    { 0x01f33bu, 0x00efbcu },
+    { 0x01f33cu, 0x00ed4du },
+    { 0x01f33du, 0x00ecf7u },
+    { 0x01f33fu, 0x00ed87u },
+    { 0x01f340u, 0x00efecu },
+    { 0x01f341u, 0x00efa7u },
+    { 0x01f342u, 0x00ec40u },
+    { 0x01f344u, 0x00ecf8u },
+    { 0x01f345u, 0x00ec8fu },
+    { 0x01f346u, 0x00ec90u },
+    { 0x01f347u, 0x00ecf5u },
+    { 0x01f348u, 0x00ecf3u },
+    { 0x01f349u, 0x00efa6u },
+    { 0x01f34au, 0x00ec8eu },
+    { 0x01f34cu, 0x00ecf6u },
+    { 0x01f34du, 0x00ecf4u },
+    { 0x01f34eu, 0x00ec8du },
+    { 0x01f34fu, 0x00ed5eu },
+    { 0x01f351u, 0x00ecfau },
+    { 0x01f352u, 0x00efabu },
+    { 0x01f353u, 0x00efadu },
+    { 0x01f354u, 0x00efafu },
+    { 0x01f355u, 0x00ecfcu },
+    { 0x01f356u, 0x00ef9du },
+    { 0x01f357u, 0x00ed40u },
+    { 0x01f358u, 0x00ec87u },
+    { 0x01f359u, 0x00efaeu },
+    { 0x01f35au, 0x00ec88u },
+    { 0x01f35bu, 0x00ec8au },
+    { 0x01f35cu, 0x00f0d1u },
+    { 0x01f35du, 0x00ec89u },
+    { 0x01f35eu, 0x00ec83u },
+    { 0x01f35fu, 0x00ec85u },
+    { 0x01f360u, 0x00ecfbu },
+    { 0x01f361u, 0x00ec86u },
+    { 0x01f362u, 0x00ec8bu },
+    { 0x01f363u, 0x00ec8cu },
+    { 0x01f364u, 0x00ed74u },
+    { 0x01f365u, 0x00efc6u },
+    { 0x01f366u, 0x00ec84u },
+    { 0x01f367u, 0x00ecbeu },
+    { 0x01f368u, 0x00ed4eu },
+    { 0x01f369u, 0x00ed4fu },
+    { 0x01f36au, 0x00ed50u },
+    { 0x01f36bu, 0x00ed51u },
+    { 0x01f36cu, 0x00ed52u },
+    { 0x01f36du, 0x00ed53u },
+    { 0x01f36eu, 0x00ed5au },
+    { 0x01f36fu, 0x00ed5du },
+    { 0x01f370u, 0x00efa9u },
+    { 0x01f371u, 0x00ec91u },
+    { 0x01f372u, 0x00ec92u },
+    { 0x01f373u, 0x00efaau },
+    { 0x01f374u, 0x00ef85u },
+    { 0x01f375u, 0x00ec82u },
+    { 0x01f376u, 0x00ec6au },
+    { 0x01f377u, 0x00ef9au },
+    { 0x01f378u, 0x00ef9bu },
+    { 0x01f379u, 0x00ed42u },
+    { 0x01f37au, 0x00ef9cu },
+    { 0x01f37bu, 0x00ec6bu },
+    { 0x01f380u, 0x00f0bcu },
+    { 0x01f381u, 0x00efa8u },
+    { 0x01f382u, 0x00f0bdu },
+    { 0x01f383u, 0x00ecc2u },
+    { 0x01f384u, 0x00efa2u },
+    { 0x01f385u, 0x00ecc4u },
+    { 0x01f386u, 0x00f0fcu },
+    { 0x01f387u, 0x00ecbfu },
+    { 0x01f388u, 0x00ec6eu },
+    { 0x01f389u, 0x00ec6fu },
+    { 0x01f38au, 0x00ef47u },
+    { 0x01f38bu, 0x00ed41u },
+    { 0x01f38cu, 0x00ec4cu },
+    { 0x01f38du, 0x00ecb7u },
+    { 0x01f38eu, 0x00ecb8u },
+    { 0x01f38fu, 0x00ecbbu },
+    { 0x01f390u, 0x00ecc1u },
+    { 0x01f391u, 0x00ecc3u },
+    { 0x01f392u, 0x00ecbau },
+    { 0x01f393u, 0x00ecb9u },
+    { 0x01f3a1u, 0x00ef45u },
+    { 0x01f3a2u, 0x00ecb6u },
+    { 0x01f3a3u, 0x00ed46u },
+    { 0x01f3a4u, 0x00efdcu },
+    { 0x01f3a5u, 0x00eff0u },
+    { 0x01f3a7u, 0x00efe1u },
+    { 0x01f3a8u, 0x00f0b9u },
+    { 0x01f3a9u, 0x00ecc9u },
+    { 0x01f3aau, 0x00f0bbu },
+    { 0x01f3abu, 0x00ef76u },
+    { 0x01f3acu, 0x00ef97u },
+    { 0x01f3adu, 0x00f0bau },
+    { 0x01f3aeu, 0x00ef9fu },
+    { 0x01f3afu, 0x00ef9eu },
+    { 0x01f3b0u, 0x00ef46u },
+    { 0x01f3b1u, 0x00ecb1u },
+    { 0x01f3b2u, 0x00efa1u },
+    { 0x01f3b3u, 0x00ed47u },
+    { 0x01f3b4u, 0x00ed72u },
+    { 0x01f3b5u, 0x00f0eeu },
+    { 0x01f3b6u, 0x00efdeu },
+    { 0x01f3b8u, 0x00efdfu },
+    { 0x01f3b9u, 0x00ed44u },
+    { 0x01f3bau, 0x00ecb0u },
+    { 0x01f3bbu, 0x00efe0u },
+    { 0x01f3bcu, 0x00eca0u },
+    { 0x01f3beu, 0x00ef90u },
+    { 0x01f3bfu, 0x00ec80u },
+    { 0x01f3c0u, 0x00f0b7u },
+    { 0x01f3c1u, 0x00ef92u },
+    { 0x01f3c2u, 0x00ef91u },
+    { 0x01f3c3u, 0x00ef43u },
+    { 0x01f3c4u, 0x00ed45u },
+    { 0x01f3c6u, 0x00ec46u },
+    { 0x01f3c8u, 0x00ef94u },
+    { 0x01f3cau, 0x00ecb2u },
+    { 0x01f3e0u, 0x00ef84u },
+    { 0x01f3e1u, 0x00f0e0u },
+    { 0x01f3e2u, 0x00ef86u },
+    { 0x01f3e3u, 0x00ec51u },
+    { 0x01f3e5u, 0x00ec52u },
+    { 0x01f3e6u, 0x00ef83u },
+    { 0x01f3e7u, 0x00ef7bu },
+    { 0x01f3e8u, 0x00ec54u },
+    { 0x01f3e9u, 0x00ecc7u },
+    { 0x01f3eau, 0x00ef7cu },
+    { 0x01f3ebu, 0x00ec53u },
+    { 0x01f3ecu, 0x00eccau },
+    { 0x01f3edu, 0x00eccdu },
+    { 0x01f3eeu, 0x00ef96u },
+    { 0x01f3efu, 0x00eccbu },
+    { 0x01f3f0u, 0x00ecccu },
+    { 0x01f40cu, 0x00ed83u },
+    { 0x01f40du, 0x00ece3u },
+    { 0x01f414u, 0x00ece4u },
+    { 0x01f417u, 0x00ece5u },
+    { 0x01f418u, 0x00ece0u },
+    { 0x01f419u, 0x00f0f7u },
+    { 0x01f41au, 0x00ecc0u },
+    { 0x01f41bu, 0x00ecdfu },
+    { 0x01f41cu, 0x00efb6u },
+    { 0x01f41du, 0x00ed5bu },
+    { 0x01f41eu, 0x00ed5cu },
+    { 0x01f420u, 0x00ecdeu },
+    { 0x01f421u, 0x00efacu },
+    { 0x01f422u, 0x00ec47u },
+    { 0x01f423u, 0x00ec4eu },
+    { 0x01f424u, 0x00efb9u },
+    { 0x01f425u, 0x00ed7au },
+    { 0x01f427u, 0x00efb5u },
+    { 0x01f428u, 0x00ece1u },
+    { 0x01f429u, 0x00efb8u },
+    { 0x01f42bu, 0x00ece6u },
+    { 0x01f42cu, 0x00ecdcu },
+    { 0x01f42du, 0x00f0f2u },
+    { 0x01f42eu, 0x00ece2u },
+    { 0x01f42fu, 0x00f0f0u },
+    { 0x01f430u, 0x00efb0u },
+    { 0x01f431u, 0x00efb4u },
+    { 0x01f432u, 0x00ed43u },
+    { 0x01f433u, 0x00ef48u },
+    { 0x01f434u, 0x00efb1u },
+    { 0x01f435u, 0x00efb2u },
+    { 0x01f436u, 0x00efbau },
+    { 0x01f437u, 0x00efb7u },
+    { 0x01f438u, 0x00efb3u },
+    { 0x01f43bu, 0x00f0f1u },
+    { 0x01f43cu, 0x00ed4au },
+    { 0x01f43du, 0x00ed4cu },
+    { 0x01f43eu, 0x00efc7u },
+    { 0x01f440u, 0x00f0c1u },
+    { 0x01f442u, 0x00f0c2u },
+    { 0x01f443u, 0x00eca4u },
+    { 0x01f444u, 0x00eca5u },
+    { 0x01f445u, 0x00ed4bu },
+    { 0x01f446u, 0x00ec60u },
+    { 0x01f447u, 0x00ec61u },
+    { 0x01f448u, 0x00efd8u },
+    { 0x01f449u, 0x00efd9u },
+    { 0x01f44au, 0x00efccu },
+    { 0x01f44bu, 0x00ecaau },
+    { 0x01f44cu, 0x00eca8u },
+    { 0x01f44du, 0x00efd2u },
+    { 0x01f44eu, 0x00eca9u },
+    { 0x01f44fu, 0x00eca7u },
+    { 0x01f451u, 0x00f0f9u },
+    { 0x01f452u, 0x00ec71u },
+    { 0x01f453u, 0x00efd7u },
+    { 0x01f454u, 0x00ec66u },
+    { 0x01f455u, 0x00f0e6u },
+    { 0x01f456u, 0x00ed7bu },
+    { 0x01f457u, 0x00ed6fu },
+    { 0x01f458u, 0x00ec76u },
+    { 0x01f459u, 0x00ec77u },
+    { 0x01f45au, 0x00efe6u },
+    { 0x01f45bu, 0x00efddu },
+    { 0x01f45cu, 0x00ef74u },
+    { 0x01f45eu, 0x00f0e7u },
+    { 0x01f45fu, 0x00ececu },
+    { 0x01f460u, 0x00eff3u },
+    { 0x01f462u, 0x00ec72u },
+    { 0x01f463u, 0x00ecebu },
+    { 0x01f468u, 0x00efd5u },
+    { 0x01f469u, 0x00efd3u },
+    { 0x01f46au, 0x00efdau },
+    { 0x01f46eu, 0x00ec50u },
+    { 0x01f46fu, 0x00ecafu },
+    { 0x01f470u, 0x00ecbdu },
+    { 0x01f471u, 0x00ecd4u },
+    { 0x01f472u, 0x00ecd5u },
+    { 0x01f473u, 0x00ecd6u },
+    { 0x01f474u, 0x00ecd7u },
+    { 0x01f475u, 0x00ecd8u },
+    { 0x01f476u, 0x00ecd9u },
+    { 0x01f477u, 0x00ecdau },
+    { 0x01f478u, 0x00ecdbu },
+    { 0x01f479u, 0x00ed48u },
+    { 0x01f47au, 0x00ed49u },
+    { 0x01f47bu, 0x00efa4u },
+    { 0x01f47cu, 0x00f0efu },
+    { 0x01f47du, 0x00efe7u },
+    { 0x01f47eu, 0x00efc5u },
+    { 0x01f47fu, 0x00efc8u },
+    { 0x01f480u, 0x00efd1u },
+    { 0x01f483u, 0x00ecddu },
+    { 0x01f484u, 0x00efe2u },
+    { 0x01f485u, 0x00ec73u },
+    { 0x01f486u, 0x00efe4u },
+    { 0x01f487u, 0x00ec74u },
+    { 0x01f488u, 0x00ec75u },
+    { 0x01f489u, 0x00efe9u },
+    { 0x01f48au, 0x00ec6du },
+    { 0x01f48bu, 0x00efc4u },
+    { 0x01f48cu, 0x00ed7cu },
+    { 0x01f48du, 0x00efedu },
+    { 0x01f48fu, 0x00f0fau },
+    { 0x01f490u, 0x00ec68u },
+    { 0x01f491u, 0x00ecaeu },
+    { 0x01f493u, 0x00ed79u },
+    { 0x01f494u, 0x00ef4fu },
+    { 0x01f495u, 0x00ef50u },
+    { 0x01f496u, 0x00ec79u },
+    { 0x01f498u, 0x00efc3u },
+    { 0x01f499u, 0x00ec7au },
+    { 0x01f49au, 0x00ec7bu },
+    { 0x01f49bu, 0x00ec7cu },
+    { 0x01f49cu, 0x00ec7du },
+    { 0x01f49du, 0x00ed58u },
+    { 0x01f49eu, 0x00f0ccu },
+    { 0x01f4a1u, 0x00ef4eu },
+    { 0x01f4a2u, 0x00efbeu },
+    { 0x01f4a3u, 0x00ef52u },
+    { 0x01f4a4u, 0x00ef4du },
+    { 0x01f4a5u, 0x00f0cdu },
+    { 0x01f4a6u, 0x00f0ceu },
+    { 0x01f4a7u, 0x00efbfu },
+    { 0x01f4a8u, 0x00efcdu },
+    { 0x01f4a9u, 0x00efceu },
+    { 0x01f4aau, 0x00efc2u },
+    { 0x01f4abu, 0x00ed60u },
+    { 0x01f4acu, 0x00efd6u },
+    { 0x01f4aeu, 0x00efc9u },
+    { 0x01f4afu, 0x00efcbu },
+    { 0x01f4b0u, 0x00efa0u },
+    { 0x01f4b2u, 0x00f096u },
+    { 0x01f4b3u, 0x00f099u },
+    { 0x01f4b4u, 0x00f09au },
+    { 0x01f4b5u, 0x00f0a2u },
+    { 0x01f4b8u, 0x00ed5fu },
+    { 0x01f4b9u, 0x00ec4fu },
+    { 0x01f4bbu, 0x00f0e8u },
+    { 0x01f4bcu, 0x00ec41u },
+    { 0x01f4bdu, 0x00f09fu },
+    { 0x01f4beu, 0x00f07eu },
+    { 0x01f4bfu, 0x00efe5u },
+    { 0x01f4c1u, 0x00f0acu },
+    { 0x01f4c2u, 0x00f0adu },
+    { 0x01f4c3u, 0x00f07du },
+    { 0x01f4c4u, 0x00f086u },
+    { 0x01f4c5u, 0x00f080u },
+    { 0x01f4c6u, 0x00f087u },
+    { 0x01f4c7u, 0x00f089u },
+    { 0x01f4c8u, 0x00f092u },
+    { 0x01f4c9u, 0x00f093u },
+    { 0x01f4cau, 0x00f091u },
+    { 0x01f4cbu, 0x00f081u },
+    { 0x01f4ccu, 0x00f08au },
+    { 0x01f4cdu, 0x00f07cu },
+    { 0x01f4ceu, 0x00ef78u },
+    { 0x01f4cfu, 0x00f08du },
+    { 0x01f4d0u, 0x00ef7au },
+    { 0x01f4d1u, 0x00f0e2u },
+    { 0x01f4d2u, 0x00f08bu },
+    { 0x01f4d3u, 0x00f088u },
+    { 0x01f4d4u, 0x00ef75u },
+    { 0x01f4d5u, 0x00f085u },
+    { 0x01f4d6u, 0x00ef77u },
+    { 0x01f4d7u, 0x00f082u },
+    { 0x01f4d8u, 0x00f083u },
+    { 0x01f4d9u, 0x00f084u },
+    { 0x01f4dau, 0x00f08cu },
+    { 0x01f4dbu, 0x00eff6u },
+    { 0x01f4dcu, 0x00f07bu },
+    { 0x01f4ddu, 0x00ec65u },
+    { 0x01f4deu, 0x00eff7u },
+    { 0x01f4dfu, 0x00f0b8u },
+    { 0x01f4e0u, 0x00eff9u },
+    { 0x01f4e1u, 0x00ef81u },
+    { 0x01f4e4u, 0x00f0afu },
+    { 0x01f4e5u, 0x00f0b0u },
+    { 0x01f4e6u, 0x00eff8u },
+    { 0x01f4e7u, 0x00ed75u },
+    { 0x01f4e8u, 0x00f0aeu },
+    { 0x01f4e9u, 0x00ed66u },
+    { 0x01f4eau, 0x00eff4u },
+    { 0x01f4ebu, 0x00f0e1u },
+    { 0x01f4f0u, 0x00f0a8u },
+    { 0x01f4f1u, 0x00f0a5u },
+    { 0x01f4f2u, 0x00f0dfu },
+    { 0x01f4f3u, 0x00ec63u },
+    { 0x01f4f4u, 0x00ec64u },
+    { 0x01f4f6u, 0x00ec57u },
+    { 0x01f4f7u, 0x00efeeu },
+    { 0x01f4f9u, 0x00f09bu },
+    { 0x01f4fau, 0x00efdbu },
+    { 0x01f4fbu, 0x00f0e9u },
+    { 0x01f4fcu, 0x00f09du },
+    { 0x01f503u, 0x00f0e4u },
+    { 0x01f50au, 0x00efeau },
+    { 0x01f50bu, 0x00f0a1u },
+    { 0x01f50cu, 0x00f0a6u },
+    { 0x01f50du, 0x00eff1u },
+    { 0x01f50eu, 0x00f0dcu },
+    { 0x01f50fu, 0x00f0e3u },
+    { 0x01f510u, 0x00f0d3u },
+    { 0x01f511u, 0x00eff2u },
+    { 0x01f512u, 0x00eff5u },
+    { 0x01f514u, 0x00efebu },
+    { 0x01f516u, 0x00f0deu },
+    { 0x01f517u, 0x00f0a7u },
+    { 0x01f518u, 0x00f0dbu },
+    { 0x01f519u, 0x00f0ddu },
+    { 0x01f51eu, 0x00ec56u },
+    { 0x01f51fu, 0x00f047u },
+    { 0x01f520u, 0x00f0d4u },
+    { 0x01f521u, 0x00f0d5u },
+    { 0x01f522u, 0x00f0d6u },
+    { 0x01f523u, 0x00f0d7u },
+    { 0x01f524u, 0x00ed59u },
+    { 0x01f525u, 0x00ef53u },
+    { 0x01f526u, 0x00f0a0u },
+    { 0x01f527u, 0x00f0a4u },
+    { 0x01f528u, 0x00f0fbu },
+    { 0x01f529u, 0x00f09eu },
+    { 0x01f52au, 0x00f09cu },
+    { 0x01f52bu, 0x00efe3u },
+    { 0x01f52eu, 0x00ec62u },
+    { 0x01f530u, 0x00ef58u },
+    { 0x01f534u, 0x00f066u },
+    { 0x01f535u, 0x00f067u },
+    { 0x01f536u, 0x00f062u },
+    { 0x01f537u, 0x00f063u },
+    { 0x01f538u, 0x00f052u },
+    { 0x01f539u, 0x00f053u },
+    { 0x01f53au, 0x00f076u },
+    { 0x01f53bu, 0x00f077u },
+    { 0x01f53cu, 0x00f05fu },
+    { 0x01f53du, 0x00f05eu },
+    { 0x01f5fbu, 0x00f0edu },
+    { 0x01f5fcu, 0x00ef99u },
+    { 0x01f5feu, 0x00f08fu },
+    { 0x01f5ffu, 0x00ed70u },
+    { 0x01f601u, 0x00ed85u },
+    { 0x01f602u, 0x00ed68u },
+    { 0x01f603u, 0x00ef49u },
+    { 0x01f609u, 0x00f0f3u },
+    { 0x01f60au, 0x00eca1u },
+    { 0x01f60cu, 0x00ec99u },
+    { 0x01f60du, 0x00f0f4u },
+    { 0x01f60fu, 0x00ec93u },
+    { 0x01f612u, 0x00ec9du },
+    { 0x01f613u, 0x00f0f6u },
+    { 0x01f614u, 0x00ec94u },
+    { 0x01f616u, 0x00ec97u },
+    { 0x01f618u, 0x00eca3u },
+    { 0x01f61au, 0x00eca2u },
+    { 0x01f61cu, 0x00efc0u },
+    { 0x01f620u, 0x00ef4au },
+    { 0x01f621u, 0x00ed61u },
+    { 0x01f622u, 0x00ed6du },
+    { 0x01f623u, 0x00ec96u },
+    { 0x01f624u, 0x00ec95u },
+    { 0x01f628u, 0x00ec9au },
+    { 0x01f629u, 0x00ed6bu },
+    { 0x01f62au, 0x00ec98u },
+    { 0x01f62bu, 0x00ef4cu },
+    { 0x01f62du, 0x00ef4bu },
+    { 0x01f630u, 0x00ec9fu },
+    { 0x01f631u, 0x00f0f5u },
+    { 0x01f632u, 0x00ec9eu },
+    { 0x01f633u, 0x00ec9cu },
+    { 0x01f635u, 0x00f0cbu },
+    { 0x01f637u, 0x00ec9bu },
+    { 0x01f638u, 0x00ed84u },
+    { 0x01f639u, 0x00ed67u },
+    { 0x01f63au, 0x00ed65u },
+    { 0x01f63bu, 0x00ed69u },
+    { 0x01f63cu, 0x00ed6eu },
+    { 0x01f63du, 0x00ed64u },
+    { 0x01f63eu, 0x00ed62u },
+    { 0x01f63fu, 0x00ed6cu },
+    { 0x01f640u, 0x00ed6au },
+    { 0x01f645u, 0x00ecabu },
+    { 0x01f646u, 0x00ecacu },
+    { 0x01f647u, 0x00ecadu },
+    { 0x01f648u, 0x00ed54u },
+    { 0x01f649u, 0x00ed56u },
+    { 0x01f64au, 0x00ed55u },
+    { 0x01f64bu, 0x00ed8au },
+    { 0x01f64cu, 0x00ed8bu },
+    { 0x01f64du, 0x00ed8cu },
+    { 0x01f64eu, 0x00ed8du },
+    { 0x01f64fu, 0x00eca6u },
+    { 0x01f680u, 0x00f0f8u },
+    { 0x01f683u, 0x00ef8eu },
+    { 0x01f685u, 0x00ef89u },
+    { 0x01f687u, 0x00f0ecu },
+    { 0x01f689u, 0x00ed71u },
+    { 0x01f68cu, 0x00ef88u },
+    { 0x01f68fu, 0x00ef80u },
+    { 0x01f691u, 0x00ecb4u },
+    { 0x01f692u, 0x00ecb3u },
+    { 0x01f693u, 0x00ecb5u },
+    { 0x01f697u, 0x00ef8au },
+    { 0x01f69au, 0x00ef8bu },
+    { 0x01f6a2u, 0x00ec55u },
+    { 0x01f6a5u, 0x00ef42u },
+    { 0x01f6a7u, 0x00ec4au },
+    { 0x01f6a8u, 0x00ed77u },
+    { 0x01f6a9u, 0x00ecedu },
+    { 0x01f6abu, 0x00f05du },
+    { 0x01f6acu, 0x00ef55u },
+    { 0x01f6adu, 0x00ef56u },
+    { 0x01f6b2u, 0x00ef87u },
+    { 0x01f6b6u, 0x00ed76u },
+    { 0x01f6bbu, 0x00ef7du },
+    { 0x01f6c0u, 0x00ec4bu },
+    { 0x0fe82du, 0x00f048u },
+    { 0x0fe83cu, 0x00f0a3u },
+    { 0x0feb89u, 0x00f0d2u },
+    { 0x0fee40u, 0x00f094u },
+    { 0x0fee41u, 0x00f0cfu },
+    { 0x0fee42u, 0x00ec70u },
+    { 0x0fee43u, 0x00ed78u },
+    { 0x0fee44u, 0x00ed86u },
+    { 0x0fee45u, 0x00ed8eu },
+    { 0x0fee46u, 0x00ed8fu },
+    { 0x0fee47u, 0x00ed90u },
+    { 0x0fee48u, 0x00ed91u },
+    { 0x0fee49u, 0x00ed92u },
+    { 0x0fee4au, 0x00ed93u },
+};
+
+static const uint32_t PTN_MB_UTF8_MOBILE_KDDI_B_BAD[] = {
+    0x01f1e8u,
+    0x01f1e9u,
+    0x01f1eau,
+    0x01f1ebu,
+    0x01f1ecu,
+    0x01f1edu,
+    0x01f1eeu,
+    0x01f1efu,
+    0x01f1f0u,
+    0x01f1f1u,
+    0x01f1f2u,
+    0x01f1f3u,
+    0x01f1f4u,
+    0x01f1f5u,
+    0x01f1f6u,
+    0x01f1f7u,
+    0x01f1f8u,
+    0x01f1f9u,
+    0x01f1fau,
+};
+
+static const PtnMbUtf8MobileMapEntry PTN_MB_UTF8_MOBILE_SOFTBANK_MAP[] = {
+    { 0x0000a9u, 0x00e24eu },
+    { 0x0000aeu, 0x00e24fu },
+    { 0x002122u, 0x00e537u },
+    { 0x002196u, 0x00e237u },
+    { 0x002197u, 0x00e236u },
+    { 0x002198u, 0x00e238u },
+    { 0x002199u, 0x00e239u },
+    { 0x0023e9u, 0x00e23cu },
+    { 0x0023eau, 0x00e23du },
+    { 0x0025b6u, 0x00e23au },
+    { 0x0025c0u, 0x00e23bu },
+    { 0x002600u, 0x00e04au },
+    { 0x002601u, 0x00e049u },
+    { 0x00260eu, 0x00e009u },
+    { 0x002614u, 0x00e04bu },
+    { 0x002615u, 0x00e045u },
+    { 0x00261du, 0x00e00fu },
+    { 0x00263au, 0x00e414u },
+    { 0x002648u, 0x00e23fu },
+    { 0x002649u, 0x00e240u },
+    { 0x00264au, 0x00e241u },
+    { 0x00264bu, 0x00e242u },
+    { 0x00264cu, 0x00e243u },
+    { 0x00264du, 0x00e244u },
+    { 0x00264eu, 0x00e245u },
+    { 0x00264fu, 0x00e246u },
+    { 0x002650u, 0x00e247u },
+    { 0x002651u, 0x00e248u },
+    { 0x002652u, 0x00e249u },
+    { 0x002653u, 0x00e24au },
+    { 0x002660u, 0x00e20eu },
+    { 0x002663u, 0x00e20fu },
+    { 0x002665u, 0x00e20cu },
+    { 0x002666u, 0x00e20du },
+    { 0x002668u, 0x00e123u },
+    { 0x00267fu, 0x00e20au },
+    { 0x0026a0u, 0x00e252u },
+    { 0x0026a1u, 0x00e13du },
+    { 0x0026bdu, 0x00e018u },
+    { 0x0026beu, 0x00e016u },
+    { 0x0026c4u, 0x00e048u },
+    { 0x0026ceu, 0x00e24bu },
+    { 0x0026eau, 0x00e037u },
+    { 0x0026f2u, 0x00e121u },
+    { 0x0026f3u, 0x00e014u },
+    { 0x0026f5u, 0x00e01cu },
+    { 0x0026fau, 0x00e122u },
+    { 0x0026fdu, 0x00e03au },
+    { 0x002702u, 0x00e313u },
+    { 0x002708u, 0x00e01du },
+    { 0x00270au, 0x00e010u },
+    { 0x00270bu, 0x00e012u },
+    { 0x00270cu, 0x00e011u },
+    { 0x002728u, 0x00e32eu },
+    { 0x002733u, 0x00e206u },
+    { 0x002734u, 0x00e205u },
+    { 0x00274cu, 0x00e333u },
+    { 0x002753u, 0x00e020u },
+    { 0x002754u, 0x00e336u },
+    { 0x002755u, 0x00e337u },
+    { 0x002757u, 0x00e021u },
+    { 0x002764u, 0x00e022u },
+    { 0x0027a1u, 0x00e234u },
+    { 0x0027bfu, 0x00e211u },
+    { 0x002b05u, 0x00e235u },
+    { 0x002b06u, 0x00e232u },
+    { 0x002b07u, 0x00e233u },
+    { 0x002b50u, 0x00e32fu },
+    { 0x002b55u, 0x00e332u },
+    { 0x00303du, 0x00e12cu },
+    { 0x003297u, 0x00e30du },
+    { 0x003299u, 0x00e315u },
+    { 0x01f004u, 0x00e12du },
+    { 0x01f170u, 0x00e532u },
+    { 0x01f171u, 0x00e533u },
+    { 0x01f17eu, 0x00e535u },
+    { 0x01f17fu, 0x00e14fu },
+    { 0x01f18eu, 0x00e534u },
+    { 0x01f192u, 0x00e214u },
+    { 0x01f194u, 0x00e229u },
+    { 0x01f195u, 0x00e212u },
+    { 0x01f197u, 0x00e24du },
+    { 0x01f199u, 0x00e213u },
+    { 0x01f19au, 0x00e12eu },
+    { 0x01f201u, 0x00e203u },
+    { 0x01f202u, 0x00e228u },
+    { 0x01f21au, 0x00e216u },
+    { 0x01f22fu, 0x00e22cu },
+    { 0x01f233u, 0x00e22bu },
+    { 0x01f235u, 0x00e22au },
+    { 0x01f236u, 0x00e215u },
+    { 0x01f237u, 0x00e217u },
+    { 0x01f238u, 0x00e218u },
+    { 0x01f239u, 0x00e227u },
+    { 0x01f23au, 0x00e22du },
+    { 0x01f250u, 0x00e226u },
+    { 0x01f300u, 0x00e443u },
+    { 0x01f302u, 0x00e43cu },
+    { 0x01f303u, 0x00e44bu },
+    { 0x01f304u, 0x00e04du },
+    { 0x01f305u, 0x00e449u },
+    { 0x01f306u, 0x00e146u },
+    { 0x01f307u, 0x00e44au },
+    { 0x01f308u, 0x00e44cu },
+    { 0x01f30au, 0x00e43eu },
+    { 0x01f319u, 0x00e04cu },
+    { 0x01f31fu, 0x00e335u },
+    { 0x01f334u, 0x00e307u },
+    { 0x01f335u, 0x00e308u },
+    { 0x01f337u, 0x00e304u },
+    { 0x01f338u, 0x00e030u },
+    { 0x01f339u, 0x00e032u },
+    { 0x01f33au, 0x00e303u },
+    { 0x01f33bu, 0x00e305u },
+    { 0x01f33eu, 0x00e444u },
+    { 0x01f340u, 0x00e110u },
+    { 0x01f341u, 0x00e118u },
+    { 0x01f342u, 0x00e119u },
+    { 0x01f343u, 0x00e447u },
+    { 0x01f345u, 0x00e349u },
+    { 0x01f346u, 0x00e34au },
+    { 0x01f349u, 0x00e348u },
+    { 0x01f34au, 0x00e346u },
+    { 0x01f34eu, 0x00e345u },
+    { 0x01f353u, 0x00e347u },
+    { 0x01f354u, 0x00e120u },
+    { 0x01f358u, 0x00e33du },
+    { 0x01f359u, 0x00e342u },
+    { 0x01f35au, 0x00e33eu },
+    { 0x01f35bu, 0x00e341u },
+    { 0x01f35cu, 0x00e340u },
+    { 0x01f35du, 0x00e33fu },
+    { 0x01f35eu, 0x00e339u },
+    { 0x01f35fu, 0x00e33bu },
+    { 0x01f361u, 0x00e33cu },
+    { 0x01f362u, 0x00e343u },
+    { 0x01f363u, 0x00e344u },
+    { 0x01f366u, 0x00e33au },
+    { 0x01f367u, 0x00e43fu },
+    { 0x01f370u, 0x00e046u },
+    { 0x01f371u, 0x00e34cu },
+    { 0x01f372u, 0x00e34du },
+    { 0x01f373u, 0x00e147u },
+    { 0x01f374u, 0x00e043u },
+    { 0x01f375u, 0x00e338u },
+    { 0x01f376u, 0x00e30bu },
+    { 0x01f378u, 0x00e044u },
+    { 0x01f37au, 0x00e047u },
+    { 0x01f37bu, 0x00e30cu },
+    { 0x01f380u, 0x00e314u },
+    { 0x01f381u, 0x00e112u },
+    { 0x01f382u, 0x00e34bu },
+    { 0x01f383u, 0x00e445u },
+    { 0x01f384u, 0x00e033u },
+    { 0x01f385u, 0x00e448u },
+    { 0x01f386u, 0x00e117u },
+    { 0x01f387u, 0x00e440u },
+    { 0x01f388u, 0x00e310u },
+    { 0x01f389u, 0x00e312u },
+    { 0x01f38cu, 0x00e143u },
+    { 0x01f38du, 0x00e436u },
+    { 0x01f38eu, 0x00e438u },
+    { 0x01f38fu, 0x00e43bu },
+    { 0x01f390u, 0x00e442u },
+    { 0x01f391u, 0x00e446u },
+    { 0x01f392u, 0x00e43au },
+    { 0x01f393u, 0x00e439u },
+    { 0x01f3a1u, 0x00e124u },
+    { 0x01f3a2u, 0x00e433u },
+    { 0x01f3a4u, 0x00e03cu },
+    { 0x01f3a5u, 0x00e03du },
+    { 0x01f3a6u, 0x00e507u },
+    { 0x01f3a7u, 0x00e30au },
+    { 0x01f3a8u, 0x00e502u },
+    { 0x01f3a9u, 0x00e503u },
+    { 0x01f3abu, 0x00e125u },
+    { 0x01f3acu, 0x00e324u },
+    { 0x01f3afu, 0x00e130u },
+    { 0x01f3b0u, 0x00e133u },
+    { 0x01f3b1u, 0x00e42cu },
+    { 0x01f3b5u, 0x00e03eu },
+    { 0x01f3b6u, 0x00e326u },
+    { 0x01f3b7u, 0x00e040u },
+    { 0x01f3b8u, 0x00e041u },
+    { 0x01f3bau, 0x00e042u },
+    { 0x01f3beu, 0x00e015u },
+    { 0x01f3bfu, 0x00e013u },
+    { 0x01f3c0u, 0x00e42au },
+    { 0x01f3c1u, 0x00e132u },
+    { 0x01f3c3u, 0x00e115u },
+    { 0x01f3c4u, 0x00e017u },
+    { 0x01f3c6u, 0x00e131u },
+    { 0x01f3c8u, 0x00e42bu },
+    { 0x01f3cau, 0x00e42du },
+    { 0x01f3e0u, 0x00e036u },
+    { 0x01f3e2u, 0x00e038u },
+    { 0x01f3e3u, 0x00e153u },
+    { 0x01f3e5u, 0x00e155u },
+    { 0x01f3e6u, 0x00e14du },
+    { 0x01f3e7u, 0x00e154u },
+    { 0x01f3e8u, 0x00e158u },
+    { 0x01f3e9u, 0x00e501u },
+    { 0x01f3eau, 0x00e156u },
+    { 0x01f3ebu, 0x00e157u },
+    { 0x01f3ecu, 0x00e504u },
+    { 0x01f3edu, 0x00e508u },
+    { 0x01f3efu, 0x00e505u },
+    { 0x01f3f0u, 0x00e506u },
+    { 0x01f40du, 0x00e52du },
+    { 0x01f40eu, 0x00e134u },
+    { 0x01f411u, 0x00e529u },
+    { 0x01f412u, 0x00e528u },
+    { 0x01f414u, 0x00e52eu },
+    { 0x01f417u, 0x00e52fu },
+    { 0x01f418u, 0x00e526u },
+    { 0x01f419u, 0x00e10au },
+    { 0x01f41au, 0x00e441u },
+    { 0x01f41bu, 0x00e525u },
+    { 0x01f41fu, 0x00e019u },
+    { 0x01f420u, 0x00e522u },
+    { 0x01f424u, 0x00e523u },
+    { 0x01f426u, 0x00e521u },
+    { 0x01f427u, 0x00e055u },
+    { 0x01f428u, 0x00e527u },
+    { 0x01f42bu, 0x00e530u },
+    { 0x01f42cu, 0x00e520u },
+    { 0x01f42du, 0x00e053u },
+    { 0x01f42eu, 0x00e52bu },
+    { 0x01f42fu, 0x00e050u },
+    { 0x01f430u, 0x00e52cu },
+    { 0x01f431u, 0x00e04fu },
+    { 0x01f433u, 0x00e054u },
+    { 0x01f434u, 0x00e01au },
+    { 0x01f435u, 0x00e109u },
+    { 0x01f436u, 0x00e052u },
+    { 0x01f437u, 0x00e10bu },
+    { 0x01f438u, 0x00e531u },
+    { 0x01f439u, 0x00e524u },
+    { 0x01f43au, 0x00e52au },
+    { 0x01f43bu, 0x00e051u },
+    { 0x01f440u, 0x00e419u },
+    { 0x01f442u, 0x00e41bu },
+    { 0x01f443u, 0x00e41au },
+    { 0x01f444u, 0x00e41cu },
+    { 0x01f446u, 0x00e22eu },
+    { 0x01f447u, 0x00e22fu },
+    { 0x01f448u, 0x00e230u },
+    { 0x01f449u, 0x00e231u },
+    { 0x01f44au, 0x00e00du },
+    { 0x01f44bu, 0x00e41eu },
+    { 0x01f44cu, 0x00e420u },
+    { 0x01f44du, 0x00e00eu },
+    { 0x01f44eu, 0x00e421u },
+    { 0x01f44fu, 0x00e41fu },
+    { 0x01f450u, 0x00e422u },
+    { 0x01f451u, 0x00e10eu },
+    { 0x01f452u, 0x00e318u },
+    { 0x01f454u, 0x00e302u },
+    { 0x01f455u, 0x00e006u },
+    { 0x01f457u, 0x00e319u },
+    { 0x01f458u, 0x00e321u },
+    { 0x01f459u, 0x00e322u },
+    { 0x01f45cu, 0x00e323u },
+    { 0x01f45fu, 0x00e007u },
+    { 0x01f460u, 0x00e13eu },
+    { 0x01f461u, 0x00e31au },
+    { 0x01f462u, 0x00e31bu },
+    { 0x01f463u, 0x00e536u },
+    { 0x01f466u, 0x00e001u },
+    { 0x01f467u, 0x00e002u },
+    { 0x01f468u, 0x00e004u },
+    { 0x01f469u, 0x00e005u },
+    { 0x01f46bu, 0x00e428u },
+    { 0x01f46eu, 0x00e152u },
+    { 0x01f46fu, 0x00e429u },
+    { 0x01f471u, 0x00e515u },
+    { 0x01f472u, 0x00e516u },
+    { 0x01f473u, 0x00e517u },
+    { 0x01f474u, 0x00e518u },
+    { 0x01f475u, 0x00e519u },
+    { 0x01f476u, 0x00e51au },
+    { 0x01f477u, 0x00e51bu },
+    { 0x01f478u, 0x00e51cu },
+    { 0x01f47bu, 0x00e11bu },
+    { 0x01f47cu, 0x00e04eu },
+    { 0x01f47du, 0x00e10cu },
+    { 0x01f47eu, 0x00e12bu },
+    { 0x01f47fu, 0x00e11au },
+    { 0x01f480u, 0x00e11cu },
+    { 0x01f481u, 0x00e253u },
+    { 0x01f482u, 0x00e51eu },
+    { 0x01f483u, 0x00e51fu },
+    { 0x01f484u, 0x00e31cu },
+    { 0x01f485u, 0x00e31du },
+    { 0x01f486u, 0x00e31eu },
+    { 0x01f487u, 0x00e31fu },
+    { 0x01f488u, 0x00e320u },
+    { 0x01f489u, 0x00e13bu },
+    { 0x01f48au, 0x00e30fu },
+    { 0x01f48bu, 0x00e003u },
+    { 0x01f48du, 0x00e034u },
+    { 0x01f48eu, 0x00e035u },
+    { 0x01f48fu, 0x00e111u },
+    { 0x01f490u, 0x00e306u },
+    { 0x01f491u, 0x00e425u },
+    { 0x01f492u, 0x00e43du },
+    { 0x01f493u, 0x00e327u },
+    { 0x01f494u, 0x00e023u },
+    { 0x01f497u, 0x00e328u },
+    { 0x01f498u, 0x00e329u },
+    { 0x01f499u, 0x00e32au },
+    { 0x01f49au, 0x00e32bu },
+    { 0x01f49bu, 0x00e32cu },
+    { 0x01f49cu, 0x00e32du },
+    { 0x01f49du, 0x00e437u },
+    { 0x01f49fu, 0x00e204u },
+    { 0x01f4a1u, 0x00e10fu },
+    { 0x01f4a2u, 0x00e334u },
+    { 0x01f4a3u, 0x00e311u },
+    { 0x01f4a4u, 0x00e13cu },
+    { 0x01f4a6u, 0x00e331u },
+    { 0x01f4a8u, 0x00e330u },
+    { 0x01f4a9u, 0x00e05au },
+    { 0x01f4aau, 0x00e14cu },
+    { 0x01f4b0u, 0x00e12fu },
+    { 0x01f4b1u, 0x00e149u },
+    { 0x01f4b9u, 0x00e14au },
+    { 0x01f4bau, 0x00e11fu },
+    { 0x01f4bbu, 0x00e00cu },
+    { 0x01f4bcu, 0x00e11eu },
+    { 0x01f4bdu, 0x00e316u },
+    { 0x01f4bfu, 0x00e126u },
+    { 0x01f4c0u, 0x00e127u },
+    { 0x01f4d6u, 0x00e148u },
+    { 0x01f4ddu, 0x00e301u },
+    { 0x01f4e0u, 0x00e00bu },
+    { 0x01f4e1u, 0x00e14bu },
+    { 0x01f4e2u, 0x00e142u },
+    { 0x01f4e3u, 0x00e317u },
+    { 0x01f4e9u, 0x00e103u },
+    { 0x01f4ebu, 0x00e101u },
+    { 0x01f4eeu, 0x00e102u },
+    { 0x01f4f1u, 0x00e00au },
+    { 0x01f4f2u, 0x00e104u },
+    { 0x01f4f3u, 0x00e250u },
+    { 0x01f4f4u, 0x00e251u },
+    { 0x01f4f6u, 0x00e20bu },
+    { 0x01f4f7u, 0x00e008u },
+    { 0x01f4fau, 0x00e12au },
+    { 0x01f4fbu, 0x00e128u },
+    { 0x01f4fcu, 0x00e129u },
+    { 0x01f50au, 0x00e141u },
+    { 0x01f50du, 0x00e114u },
+    { 0x01f511u, 0x00e03fu },
+    { 0x01f512u, 0x00e144u },
+    { 0x01f513u, 0x00e145u },
+    { 0x01f514u, 0x00e325u },
+    { 0x01f51du, 0x00e24cu },
+    { 0x01f51eu, 0x00e207u },
+    { 0x01f525u, 0x00e11du },
+    { 0x01f528u, 0x00e116u },
+    { 0x01f52bu, 0x00e113u },
+    { 0x01f52fu, 0x00e23eu },
+    { 0x01f530u, 0x00e209u },
+    { 0x01f531u, 0x00e031u },
+    { 0x01f532u, 0x00e21au },
+    { 0x01f533u, 0x00e21bu },
+    { 0x01f534u, 0x00e219u },
+    { 0x01f550u, 0x00e024u },
+    { 0x01f551u, 0x00e025u },
+    { 0x01f552u, 0x00e026u },
+    { 0x01f553u, 0x00e027u },
+    { 0x01f554u, 0x00e028u },
+    { 0x01f555u, 0x00e029u },
+    { 0x01f556u, 0x00e02au },
+    { 0x01f557u, 0x00e02bu },
+    { 0x01f558u, 0x00e02cu },
+    { 0x01f559u, 0x00e02du },
+    { 0x01f55au, 0x00e02eu },
+    { 0x01f55bu, 0x00e02fu },
+    { 0x01f5fbu, 0x00e03bu },
+    { 0x01f5fcu, 0x00e509u },
+    { 0x01f5fdu, 0x00e51du },
+    { 0x01f601u, 0x00e404u },
+    { 0x01f602u, 0x00e412u },
+    { 0x01f603u, 0x00e057u },
+    { 0x01f604u, 0x00e415u },
+    { 0x01f609u, 0x00e405u },
+    { 0x01f60au, 0x00e056u },
+    { 0x01f60cu, 0x00e40au },
+    { 0x01f60du, 0x00e106u },
+    { 0x01f60fu, 0x00e402u },
+    { 0x01f612u, 0x00e40eu },
+    { 0x01f613u, 0x00e108u },
+    { 0x01f614u, 0x00e403u },
+    { 0x01f616u, 0x00e407u },
+    { 0x01f618u, 0x00e418u },
+    { 0x01f61au, 0x00e417u },
+    { 0x01f61cu, 0x00e105u },
+    { 0x01f61du, 0x00e409u },
+    { 0x01f61eu, 0x00e058u },
+    { 0x01f620u, 0x00e059u },
+    { 0x01f621u, 0x00e416u },
+    { 0x01f622u, 0x00e413u },
+    { 0x01f623u, 0x00e406u },
+    { 0x01f625u, 0x00e401u },
+    { 0x01f628u, 0x00e40bu },
+    { 0x01f62au, 0x00e408u },
+    { 0x01f62du, 0x00e411u },
+    { 0x01f630u, 0x00e40fu },
+    { 0x01f631u, 0x00e107u },
+    { 0x01f632u, 0x00e410u },
+    { 0x01f633u, 0x00e40du },
+    { 0x01f637u, 0x00e40cu },
+    { 0x01f645u, 0x00e423u },
+    { 0x01f646u, 0x00e424u },
+    { 0x01f647u, 0x00e426u },
+    { 0x01f64cu, 0x00e427u },
+    { 0x01f64fu, 0x00e41du },
+    { 0x01f680u, 0x00e10du },
+    { 0x01f683u, 0x00e01eu },
+    { 0x01f684u, 0x00e435u },
+    { 0x01f685u, 0x00e01fu },
+    { 0x01f687u, 0x00e434u },
+    { 0x01f689u, 0x00e039u },
+    { 0x01f68cu, 0x00e159u },
+    { 0x01f68fu, 0x00e150u },
+    { 0x01f691u, 0x00e431u },
+    { 0x01f692u, 0x00e430u },
+    { 0x01f693u, 0x00e432u },
+    { 0x01f695u, 0x00e15au },
+    { 0x01f697u, 0x00e01bu },
+    { 0x01f699u, 0x00e42eu },
+    { 0x01f69au, 0x00e42fu },
+    { 0x01f6a2u, 0x00e202u },
+    { 0x01f6a4u, 0x00e135u },
+    { 0x01f6a5u, 0x00e14eu },
+    { 0x01f6a7u, 0x00e137u },
+    { 0x01f6acu, 0x00e30eu },
+    { 0x01f6adu, 0x00e208u },
+    { 0x01f6b2u, 0x00e136u },
+    { 0x01f6b6u, 0x00e201u },
+    { 0x01f6b9u, 0x00e138u },
+    { 0x01f6bau, 0x00e139u },
+    { 0x01f6bbu, 0x00e151u },
+    { 0x01f6bcu, 0x00e13au },
+    { 0x01f6bdu, 0x00e140u },
+    { 0x01f6beu, 0x00e309u },
+    { 0x01f6c0u, 0x00e13fu },
+    { 0x0fe4c5u, 0x00e50au },
+    { 0x0fee70u, 0x00e538u },
+    { 0x0fee71u, 0x00e539u },
+    { 0x0fee72u, 0x00e53au },
+    { 0x0fee73u, 0x00e53bu },
+    { 0x0fee74u, 0x00e53cu },
+    { 0x0fee75u, 0x00e53du },
+    { 0x0fee76u, 0x00e53eu },
+    { 0x0fee77u, 0x00e254u },
+    { 0x0fee78u, 0x00e255u },
+    { 0x0fee79u, 0x00e256u },
+    { 0x0fee7au, 0x00e257u },
+    { 0x0fee7bu, 0x00e258u },
+    { 0x0fee7cu, 0x00e259u },
+    { 0x0fee7du, 0x00e25au },
+};
+
+static const uint32_t PTN_MB_UTF8_MOBILE_SOFTBANK_BAD[] = {
+    0x01f1e8u,
+    0x01f1e9u,
+    0x01f1eau,
+    0x01f1ebu,
+    0x01f1ecu,
+    0x01f1edu,
+    0x01f1eeu,
+    0x01f1efu,
+    0x01f1f0u,
+    0x01f1f1u,
+    0x01f1f2u,
+    0x01f1f3u,
+    0x01f1f4u,
+    0x01f1f5u,
+    0x01f1f6u,
+    0x01f1f7u,
+    0x01f1f8u,
+    0x01f1f9u,
+    0x01f1fau,
+};
+
 static const uint16_t PTN_MB_CP850_DECODE_TABLE[256] = {
     0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007,
     0x0008, 0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x000e, 0x000f,
@@ -76153,6 +78226,40 @@ static const unsigned char PTN_MB_EUCTW_UNICODE_PAGE_BITS[] = {
 };
 
 
+static int ptn_mb_encoding_is_utf8_mobile(const char *encoding);
+static int ptn_mb_encoding_is_jis_family(const char *encoding);
+static void ptn_mb_utf8_append_codepoint(PtnStringBuffer *buffer, uint32_t cp);
+static char *ptn_mb_utf8_mobile_convert_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+);
+static char *ptn_mb_utf7imap_to_utf8_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+);
+static int ptn_mb_utf7imap_validate_bytes(const char *data, size_t len);
+static char *ptn_mb_jis_convert_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+);
+static int ptn_mb_jis_validate_bytes(const char *data, size_t len, const char *encoding);
+static int ptn_mb_iconv_validate_bytes(const char *data, size_t len, const char *encoding);
 static char *ptn_mb_iconv_convert_alloc_options(
     const char *input,
     size_t input_len,
@@ -77398,6 +79505,65 @@ static char *ptn_mb_iconv_convert_alloc_options(
 ) {
     const char *from_iconv = ptn_mb_iconv_encoding_name(from_encoding);
     const char *to_iconv = ptn_mb_iconv_encoding_name(to_encoding);
+    if (ptn_mb_encoding_is_jis_family(from_encoding) || ptn_mb_encoding_is_jis_family(to_encoding)) {
+        return ptn_mb_jis_convert_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            to_encoding,
+            replacement,
+            replacement_len,
+            illegal_chars,
+            output_len
+        );
+    }
+    if (ptn_ascii_case_equal(from_encoding, "UTF7-IMAP")) {
+        size_t utf8_len = 0;
+        const char *utf7_replacement = replacement;
+        size_t utf7_replacement_len = replacement_len;
+        char *utf8_replacement = NULL;
+        if (!ptn_mb_encoding_is_utf8(to_encoding)) {
+            utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf7_replacement_len);
+            utf7_replacement = utf8_replacement;
+        }
+        char *utf8 = ptn_mb_utf7imap_to_utf8_alloc_options(
+            input,
+            input_len,
+            utf7_replacement,
+            utf7_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+        if (ptn_mb_encoding_is_utf8(to_encoding)) {
+            *output_len = utf8_len;
+            return utf8;
+        }
+        char *converted = ptn_mb_iconv_convert_alloc_options(
+            utf8,
+            utf8_len,
+            "UTF-8",
+            to_encoding,
+            replacement,
+            replacement_len,
+            illegal_chars,
+            output_len
+        );
+        free(utf8_replacement);
+        free(utf8);
+        return converted;
+    }
+    if (ptn_mb_encoding_is_utf8_mobile(from_encoding) || ptn_mb_encoding_is_utf8_mobile(to_encoding)) {
+        return ptn_mb_utf8_mobile_convert_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            to_encoding,
+            replacement,
+            replacement_len,
+            illegal_chars,
+            output_len
+        );
+    }
     if (from_iconv == NULL || to_iconv == NULL || ptn_ascii_case_equal(from_iconv, to_iconv)) {
         *output_len = input_len;
         return ptn_duplicate_string_len(input, input_len);
@@ -78074,6 +80240,804 @@ static int ptn_mb_utf8_decode_one(const char *data, size_t len, size_t *offset, 
     return 1;
 }
 
+static int ptn_mb_encoding_is_utf8_mobile(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#DOCOMO") ||
+         ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-A") ||
+         ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-B") ||
+         ptn_ascii_case_equal(encoding, "UTF-8-Mobile#SOFTBANK"));
+}
+
+static int ptn_mb_utf8_mobile_tables(
+    const char *encoding,
+    const PtnMbUtf8MobileMapEntry **map,
+    size_t *map_len,
+    const uint32_t **bad,
+    size_t *bad_len
+) {
+    if (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#DOCOMO")) {
+        *map = PTN_MB_UTF8_MOBILE_DOCOMO_MAP;
+        *map_len = sizeof(PTN_MB_UTF8_MOBILE_DOCOMO_MAP) / sizeof(PTN_MB_UTF8_MOBILE_DOCOMO_MAP[0]);
+        *bad = PTN_MB_UTF8_MOBILE_DOCOMO_BAD;
+        *bad_len = sizeof(PTN_MB_UTF8_MOBILE_DOCOMO_BAD) / sizeof(PTN_MB_UTF8_MOBILE_DOCOMO_BAD[0]);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-A")) {
+        *map = PTN_MB_UTF8_MOBILE_KDDI_A_MAP;
+        *map_len = sizeof(PTN_MB_UTF8_MOBILE_KDDI_A_MAP) / sizeof(PTN_MB_UTF8_MOBILE_KDDI_A_MAP[0]);
+        *bad = PTN_MB_UTF8_MOBILE_KDDI_A_BAD;
+        *bad_len = sizeof(PTN_MB_UTF8_MOBILE_KDDI_A_BAD) / sizeof(PTN_MB_UTF8_MOBILE_KDDI_A_BAD[0]);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#KDDI-B")) {
+        *map = PTN_MB_UTF8_MOBILE_KDDI_B_MAP;
+        *map_len = sizeof(PTN_MB_UTF8_MOBILE_KDDI_B_MAP) / sizeof(PTN_MB_UTF8_MOBILE_KDDI_B_MAP[0]);
+        *bad = PTN_MB_UTF8_MOBILE_KDDI_B_BAD;
+        *bad_len = sizeof(PTN_MB_UTF8_MOBILE_KDDI_B_BAD) / sizeof(PTN_MB_UTF8_MOBILE_KDDI_B_BAD[0]);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(encoding, "UTF-8-Mobile#SOFTBANK")) {
+        *map = PTN_MB_UTF8_MOBILE_SOFTBANK_MAP;
+        *map_len = sizeof(PTN_MB_UTF8_MOBILE_SOFTBANK_MAP) / sizeof(PTN_MB_UTF8_MOBILE_SOFTBANK_MAP[0]);
+        *bad = PTN_MB_UTF8_MOBILE_SOFTBANK_BAD;
+        *bad_len = sizeof(PTN_MB_UTF8_MOBILE_SOFTBANK_BAD) / sizeof(PTN_MB_UTF8_MOBILE_SOFTBANK_BAD[0]);
+        return 1;
+    }
+    *map = NULL;
+    *map_len = 0;
+    *bad = NULL;
+    *bad_len = 0;
+    return 0;
+}
+
+static int ptn_mb_utf8_mobile_lookup_from_mobile(const char *encoding, uint32_t mobile, uint32_t *unicode) {
+    const PtnMbUtf8MobileMapEntry *map = NULL;
+    const uint32_t *bad = NULL;
+    size_t map_len = 0;
+    size_t bad_len = 0;
+    (void)bad;
+    (void)bad_len;
+    if (!ptn_mb_utf8_mobile_tables(encoding, &map, &map_len, &bad, &bad_len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < map_len; i++) {
+        if (map[i].mobile == mobile) {
+            *unicode = map[i].unicode;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_mb_utf8_mobile_lookup_to_mobile(const char *encoding, uint32_t unicode, uint32_t *mobile) {
+    const PtnMbUtf8MobileMapEntry *map = NULL;
+    const uint32_t *bad = NULL;
+    size_t map_len = 0;
+    size_t bad_len = 0;
+    (void)bad;
+    (void)bad_len;
+    if (!ptn_mb_utf8_mobile_tables(encoding, &map, &map_len, &bad, &bad_len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < map_len; i++) {
+        if (map[i].unicode == unicode) {
+            *mobile = map[i].mobile;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_mb_utf8_mobile_unicode_is_bad(const char *encoding, uint32_t unicode) {
+    const PtnMbUtf8MobileMapEntry *map = NULL;
+    const uint32_t *bad = NULL;
+    size_t map_len = 0;
+    size_t bad_len = 0;
+    (void)map;
+    (void)map_len;
+    if (!ptn_mb_utf8_mobile_tables(encoding, &map, &map_len, &bad, &bad_len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < bad_len; i++) {
+        if (bad[i] == unicode) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_mb_utf8_mobile_from_variant_to_utf8_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < input_len) {
+        size_t sequence_len = 0;
+        if (ptn_mb_utf8_valid_sequence_len_at(input, input_len, offset, &sequence_len)) {
+            size_t decode_offset = offset;
+            uint32_t cp = 0;
+            ptn_mb_utf8_decode_one(input, input_len, &decode_offset, &cp);
+            uint32_t mapped = 0;
+            if (ptn_mb_utf8_mobile_lookup_from_mobile(from_encoding, cp, &mapped)) {
+                cp = mapped;
+            }
+            ptn_mb_utf8_append_codepoint(&output, cp);
+            offset += sequence_len;
+            continue;
+        }
+        size_t invalid_len = ptn_mb_utf8_invalid_sequence_len_at(input, input_len, offset);
+        if (invalid_len == 0) {
+            invalid_len = 1;
+        }
+        if (illegal_chars != NULL) {
+            (*illegal_chars)++;
+        }
+        if (replacement_len > 0) {
+            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+        }
+        offset += invalid_len;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static char *ptn_mb_utf8_mobile_from_utf8_to_variant_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *to_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t offset = 0;
+    while (offset < input_len) {
+        size_t sequence_len = 0;
+        if (ptn_mb_utf8_valid_sequence_len_at(input, input_len, offset, &sequence_len)) {
+            size_t decode_offset = offset;
+            uint32_t cp = 0;
+            ptn_mb_utf8_decode_one(input, input_len, &decode_offset, &cp);
+            if (ptn_mb_utf8_mobile_unicode_is_bad(to_encoding, cp)) {
+                if (illegal_chars != NULL) {
+                    (*illegal_chars)++;
+                }
+                if (replacement_len > 0) {
+                    ptn_string_buffer_append_len(&output, replacement, replacement_len);
+                }
+                offset += sequence_len;
+                continue;
+            }
+            uint32_t mapped = 0;
+            if (ptn_mb_utf8_mobile_lookup_to_mobile(to_encoding, cp, &mapped)) {
+                cp = mapped;
+            }
+            ptn_mb_utf8_append_codepoint(&output, cp);
+            offset += sequence_len;
+            continue;
+        }
+        size_t invalid_len = ptn_mb_utf8_invalid_sequence_len_at(input, input_len, offset);
+        if (invalid_len == 0) {
+            invalid_len = 1;
+        }
+        if (illegal_chars != NULL) {
+            (*illegal_chars)++;
+        }
+        if (replacement_len > 0) {
+            ptn_string_buffer_append_len(&output, replacement, replacement_len);
+        }
+        offset += invalid_len;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static char *ptn_mb_utf8_mobile_convert_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    char *utf8 = NULL;
+    size_t utf8_len = 0;
+    const char *source_replacement = replacement;
+    size_t source_replacement_len = replacement_len;
+    char *utf8_replacement = NULL;
+    if (!ptn_mb_encoding_is_utf8(to_encoding)) {
+        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &source_replacement_len);
+        source_replacement = utf8_replacement;
+    }
+    if (ptn_mb_encoding_is_utf8_mobile(from_encoding)) {
+        utf8 = ptn_mb_utf8_mobile_from_variant_to_utf8_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            source_replacement,
+            source_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+    } else if (ptn_mb_encoding_is_utf8(from_encoding)) {
+        utf8 = ptn_mb_utf8_replace_invalid_alloc(
+            input,
+            input_len,
+            source_replacement,
+            source_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+    } else {
+        utf8 = ptn_mb_iconv_convert_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            "UTF-8",
+            source_replacement,
+            source_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+    }
+
+    if (ptn_mb_encoding_is_utf8_mobile(to_encoding)) {
+        char *mobile = ptn_mb_utf8_mobile_from_utf8_to_variant_alloc_options(
+            utf8,
+            utf8_len,
+            to_encoding,
+            replacement,
+            replacement_len,
+            illegal_chars,
+            output_len
+        );
+        free(utf8_replacement);
+        free(utf8);
+        return mobile;
+    }
+    if (ptn_mb_encoding_is_utf8(to_encoding)) {
+        *output_len = utf8_len;
+        return utf8;
+    }
+    char *converted = ptn_mb_iconv_convert_alloc_options(
+        utf8,
+        utf8_len,
+        "UTF-8",
+        to_encoding,
+        replacement,
+        replacement_len,
+        illegal_chars,
+        output_len
+    );
+    free(utf8_replacement);
+    free(utf8);
+    return converted;
+}
+
+static int ptn_mb_utf7imap_base64_value(unsigned char byte) {
+    if (byte == ',') {
+        return 63;
+    }
+    return ptn_base64_decode_value(byte);
+}
+
+static int ptn_mb_utf7imap_direct_byte_valid(unsigned char byte) {
+    return byte >= 0x20 && byte <= 0x7e && byte != '&';
+}
+
+static void ptn_mb_append_utf7imap_replacement(
+    PtnStringBuffer *output,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars
+) {
+    if (illegal_chars != NULL) {
+        (*illegal_chars)++;
+    }
+    if (replacement_len > 0) {
+        ptn_string_buffer_append_len(output, replacement, replacement_len);
+    }
+}
+
+static char *ptn_mb_utf7imap_decode_base64_bytes_alloc(const char *data, size_t len, size_t *output_len, int *bad_padding) {
+    *bad_padding = 0;
+    if (len == 0 || len % 4 == 1) {
+        *bad_padding = 1;
+    }
+    int *values = len == 0 ? NULL : malloc(len * sizeof(int));
+    if (len != 0 && values == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        values[i] = ptn_mb_utf7imap_base64_value((unsigned char)data[i]);
+    }
+    size_t cap = len == 0 ? 1 : len;
+    char *output = malloc(cap + 1);
+    if (output == NULL) {
+        free(values);
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    size_t i = 0;
+    while (i + 4 <= len) {
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+        output[out++] = (char)(((values[i + 2] & 0x03) << 6) | values[i + 3]);
+        i += 4;
+    }
+    size_t remainder = len - i;
+    if (remainder == 2) {
+        if ((values[i + 1] & 0x0f) != 0) {
+            *bad_padding = 1;
+        }
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+    } else if (remainder == 3) {
+        if ((values[i + 2] & 0x03) != 0) {
+            *bad_padding = 1;
+        }
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+    }
+    output[out] = '\0';
+    free(values);
+    *output_len = out;
+    return output;
+}
+
+static int ptn_mb_utf7imap_append_utf16be_as_utf8(
+    PtnStringBuffer *output,
+    const char *data,
+    size_t len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars
+) {
+    int ok = 1;
+    size_t offset = 0;
+    while (offset < len) {
+        if (offset + 1 >= len) {
+            ptn_mb_append_utf7imap_replacement(output, replacement, replacement_len, illegal_chars);
+            ok = 0;
+            break;
+        }
+        uint16_t first = (uint16_t)(((uint16_t)(unsigned char)data[offset] << 8) | (unsigned char)data[offset + 1]);
+        offset += 2;
+        uint32_t cp = first;
+        if (first >= 0xd800 && first <= 0xdbff) {
+            if (offset + 1 >= len) {
+                ptn_mb_append_utf7imap_replacement(output, replacement, replacement_len, illegal_chars);
+                ok = 0;
+                break;
+            }
+            uint16_t second = (uint16_t)(((uint16_t)(unsigned char)data[offset] << 8) | (unsigned char)data[offset + 1]);
+            if (second < 0xdc00 || second > 0xdfff) {
+                ptn_mb_append_utf7imap_replacement(output, replacement, replacement_len, illegal_chars);
+                ok = 0;
+                continue;
+            }
+            offset += 2;
+            cp = 0x10000u + ((((uint32_t)first - 0xd800u) << 10) | ((uint32_t)second - 0xdc00u));
+        } else if (first >= 0xdc00 && first <= 0xdfff) {
+            ptn_mb_append_utf7imap_replacement(output, replacement, replacement_len, illegal_chars);
+            ok = 0;
+            continue;
+        }
+        if (ptn_mb_utf7imap_direct_byte_valid((unsigned char)cp) && cp <= 0x7f) {
+            ptn_mb_append_utf7imap_replacement(output, replacement, replacement_len, illegal_chars);
+            ok = 0;
+            continue;
+        }
+        ptn_mb_utf8_append_codepoint(output, cp);
+    }
+    return ok;
+}
+
+static char *ptn_mb_utf7imap_to_utf8_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t i = 0;
+    while (i < input_len) {
+        unsigned char byte = (unsigned char)input[i];
+        if (ptn_mb_utf7imap_direct_byte_valid(byte)) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            i++;
+            continue;
+        }
+        if (byte != '&') {
+            ptn_mb_append_utf7imap_replacement(&output, replacement, replacement_len, illegal_chars);
+            i++;
+            continue;
+        }
+        if (i + 1 < input_len && input[i + 1] == '-') {
+            ptn_string_buffer_append_char(&output, '&');
+            i += 2;
+            continue;
+        }
+        size_t section_start = i + 1;
+        size_t cursor = section_start;
+        while (cursor < input_len && input[cursor] != '-') {
+            if (ptn_mb_utf7imap_base64_value((unsigned char)input[cursor]) < 0) {
+                break;
+            }
+            cursor++;
+        }
+        if (cursor == section_start) {
+            ptn_mb_append_utf7imap_replacement(&output, replacement, replacement_len, illegal_chars);
+            if (cursor < input_len && input[cursor] == '-') {
+                i = cursor + 1;
+            } else if (cursor < input_len) {
+                i = cursor + 1;
+            } else {
+                i = cursor;
+            }
+            continue;
+        }
+        if (cursor < input_len && input[cursor] != '-') {
+            ptn_mb_append_utf7imap_replacement(&output, replacement, replacement_len, illegal_chars);
+            i = cursor + 1;
+            continue;
+        }
+        size_t decoded_len = 0;
+        int bad_padding = 0;
+        char *decoded = ptn_mb_utf7imap_decode_base64_bytes_alloc(
+            input + section_start,
+            cursor - section_start,
+            &decoded_len,
+            &bad_padding
+        );
+        int unicode_ok = ptn_mb_utf7imap_append_utf16be_as_utf8(
+            &output,
+            decoded,
+            decoded_len,
+            replacement,
+            replacement_len,
+            illegal_chars
+        );
+        int unterminated_partial = cursor >= input_len && ((cursor - section_start) % 4) != 0 && (decoded_len % 2) == 0;
+        if ((bad_padding && unicode_ok) || unterminated_partial) {
+            ptn_mb_append_utf7imap_replacement(&output, replacement, replacement_len, illegal_chars);
+        }
+        free(decoded);
+        i = cursor < input_len && input[cursor] == '-' ? cursor + 1 : cursor;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static int ptn_mb_utf7imap_validate_bytes(const char *data, size_t len) {
+    int64_t illegal_delta = 0;
+    size_t utf8_len = 0;
+    char *utf8 = ptn_mb_utf7imap_to_utf8_alloc_options(data, len, "", 0, &illegal_delta, &utf8_len);
+    free(utf8);
+    (void)utf8_len;
+    return illegal_delta == 0;
+}
+
+static int ptn_mb_encoding_is_jis_family(const char *encoding) {
+    return encoding != NULL &&
+        (ptn_ascii_case_equal(encoding, "JIS") ||
+         ptn_ascii_case_equal(encoding, "ISO-2022-JP"));
+}
+
+static void ptn_mb_jis_append_ascii_escape(PtnStringBuffer *output) {
+    ptn_string_buffer_append_len(output, "\x1b(B", 3);
+}
+
+static char *ptn_mb_jis_normalize_to_iso2022jp2_alloc(const char *input, size_t input_len, size_t *output_len) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t i = 0;
+    while (i < input_len) {
+        unsigned char byte = (unsigned char)input[i];
+        if (byte >= 0xa1 && byte <= 0xdf) {
+            ptn_string_buffer_append_len(&output, "\x1b(I", 3);
+            ptn_string_buffer_append_char(&output, (char)(byte - 0x80));
+            ptn_mb_jis_append_ascii_escape(&output);
+            i++;
+            continue;
+        }
+        if (byte == 0x0e) {
+            ptn_string_buffer_append_len(&output, "\x1b(I", 3);
+            i++;
+            while (i < input_len) {
+                unsigned char shifted = (unsigned char)input[i];
+                if (shifted == 0x0f) {
+                    i++;
+                    break;
+                }
+                ptn_string_buffer_append_char(&output, (char)shifted);
+                i++;
+            }
+            ptn_mb_jis_append_ascii_escape(&output);
+            continue;
+        }
+        if (byte == 0x0f) {
+            ptn_mb_jis_append_ascii_escape(&output);
+            i++;
+            continue;
+        }
+        if (byte == 0x1b) {
+            if (i + 2 < input_len && input[i + 1] == '(') {
+                unsigned char final = (unsigned char)input[i + 2];
+                if (final == 'H') {
+                    ptn_mb_jis_append_ascii_escape(&output);
+                    i += 3;
+                    continue;
+                }
+                if (final == 'B' || final == 'J' || final == 'I') {
+                    ptn_string_buffer_append_len(&output, input + i, 3);
+                    i += 3;
+                    continue;
+                }
+            }
+            if (i + 2 < input_len && input[i + 1] == '$') {
+                unsigned char final = (unsigned char)input[i + 2];
+                if (final == '@' || final == 'B') {
+                    ptn_string_buffer_append_len(&output, input + i, 3);
+                    i += 3;
+                    continue;
+                }
+                if (final == '(' && i + 3 < input_len) {
+                    unsigned char nested = (unsigned char)input[i + 3];
+                    if (nested == '@' || nested == 'B') {
+                        ptn_string_buffer_append_char(&output, '\x1b');
+                        ptn_string_buffer_append_char(&output, '$');
+                        ptn_string_buffer_append_char(&output, (char)nested);
+                        i += 4;
+                        continue;
+                    }
+                    if (nested == 'D') {
+                        ptn_string_buffer_append_len(&output, input + i, 4);
+                        i += 4;
+                        continue;
+                    }
+                }
+            }
+        }
+        ptn_string_buffer_append_char(&output, (char)byte);
+        i++;
+    }
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static int ptn_mb_jis_validate_bytes(const char *data, size_t len, const char *encoding) {
+    int is_jis = ptn_ascii_case_equal(encoding, "JIS");
+    int invalid = 0;
+    int shift_out = 0;
+    size_t i = 0;
+    while (i < len) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == 0x0e) {
+            if (!is_jis) {
+                invalid = 1;
+            }
+            shift_out = 1;
+            i++;
+            continue;
+        }
+        if (byte == 0x0f) {
+            if (!is_jis || !shift_out) {
+                invalid = 1;
+            }
+            shift_out = 0;
+            i++;
+            continue;
+        }
+        if (shift_out) {
+            if (byte < 0x21 || byte > 0x5f) {
+                invalid = 1;
+            }
+            i++;
+            continue;
+        }
+        if (byte >= 0x80) {
+            if (!is_jis || byte < 0xa1 || byte > 0xdf) {
+                invalid = 1;
+            }
+            i++;
+            continue;
+        }
+        if (byte != 0x1b) {
+            i++;
+            continue;
+        }
+        if (i + 1 >= len) {
+            invalid = 1;
+            break;
+        }
+        if (data[i + 1] == '(') {
+            if (i + 2 >= len) {
+                invalid = 1;
+                break;
+            }
+            unsigned char final = (unsigned char)data[i + 2];
+            if (final == 'B' || final == 'J') {
+                i += 3;
+                continue;
+            }
+            if (final == 'H' || final == 'I') {
+                if (!is_jis) {
+                    invalid = 1;
+                }
+                i += 3;
+                continue;
+            }
+            invalid = 1;
+            i++;
+            continue;
+        }
+        if (data[i + 1] == '$') {
+            if (i + 2 >= len) {
+                invalid = 1;
+                break;
+            }
+            unsigned char final = (unsigned char)data[i + 2];
+            if (final == '@' || final == 'B') {
+                i += 3;
+                continue;
+            }
+            if (final == '(') {
+                if (i + 3 >= len) {
+                    invalid = 1;
+                    break;
+                }
+                unsigned char nested = (unsigned char)data[i + 3];
+                if (nested == '@' || nested == 'B' || nested == 'D') {
+                    if (!is_jis) {
+                        invalid = 1;
+                    }
+                    i += 4;
+                    continue;
+                }
+            }
+            invalid = 1;
+            i++;
+            continue;
+        }
+        invalid = 1;
+        i++;
+    }
+    if (shift_out) {
+        invalid = 1;
+    }
+    if (invalid) {
+        return 0;
+    }
+    size_t normalized_len = 0;
+    char *normalized = ptn_mb_jis_normalize_to_iso2022jp2_alloc(data, len, &normalized_len);
+    int valid = ptn_mb_iconv_validate_bytes(normalized, normalized_len, "ISO-2022-JP-2");
+    free(normalized);
+    return valid;
+}
+
+static char *ptn_mb_iso2022jp_postprocess_alloc(char *input, size_t input_len, size_t *output_len) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t i = 0;
+    while (i < input_len) {
+        if (i + 7 <= input_len && memcmp(input + i, "\x1b(J~\x1b(B", 7) == 0) {
+            ptn_string_buffer_append_len(&output, "\x1b$B!1\x1b(B", 8);
+            i += 7;
+            continue;
+        }
+        ptn_string_buffer_append_char(&output, input[i]);
+        i++;
+    }
+    free(input);
+    *output_len = output.len;
+    return output.data == NULL ? ptn_duplicate_string_len("", 0) : output.data;
+}
+
+static char *ptn_mb_jis_convert_alloc_options(
+    const char *input,
+    size_t input_len,
+    const char *from_encoding,
+    const char *to_encoding,
+    const char *replacement,
+    size_t replacement_len,
+    int64_t *illegal_chars,
+    size_t *output_len
+) {
+    char *utf8_replacement = NULL;
+    size_t utf8_replacement_len = 0;
+    char *utf8 = NULL;
+    size_t utf8_len = 0;
+    if (ptn_mb_encoding_is_jis_family(from_encoding)) {
+        size_t normalized_len = 0;
+        char *normalized = ptn_mb_jis_normalize_to_iso2022jp2_alloc(input, input_len, &normalized_len);
+        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
+        utf8 = ptn_mb_iconv_convert_alloc_options(
+            normalized,
+            normalized_len,
+            "ISO-2022-JP-2",
+            "UTF-8",
+            utf8_replacement,
+            utf8_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+        free(utf8_replacement);
+        free(normalized);
+    } else if (ptn_mb_encoding_is_utf8(from_encoding)) {
+        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
+        utf8 = ptn_mb_utf8_replace_invalid_alloc(
+            input,
+            input_len,
+            utf8_replacement,
+            utf8_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+        free(utf8_replacement);
+    } else {
+        utf8_replacement = ptn_mb_substitute_bytes_for_encoding_alloc("UTF-8", &utf8_replacement_len);
+        utf8 = ptn_mb_iconv_convert_alloc_options(
+            input,
+            input_len,
+            from_encoding,
+            "UTF-8",
+            utf8_replacement,
+            utf8_replacement_len,
+            illegal_chars,
+            &utf8_len
+        );
+        free(utf8_replacement);
+    }
+
+    if (ptn_mb_encoding_is_utf8(to_encoding)) {
+        *output_len = utf8_len;
+        return utf8;
+    }
+    if (!ptn_mb_encoding_is_jis_family(to_encoding)) {
+        char *converted = ptn_mb_iconv_convert_alloc_options(
+            utf8,
+            utf8_len,
+            "UTF-8",
+            to_encoding,
+            replacement,
+            replacement_len,
+            illegal_chars,
+            output_len
+        );
+        free(utf8);
+        return converted;
+    }
+    const char *raw_target = ptn_ascii_case_equal(to_encoding, "JIS") ? "ISO-2022-JP-2" : "ISO-2022-JP-MS";
+    char *encoded = ptn_mb_iconv_convert_alloc_options(
+        utf8,
+        utf8_len,
+        "UTF-8",
+        raw_target,
+        replacement,
+        replacement_len,
+        illegal_chars,
+        output_len
+    );
+    free(utf8);
+    if (ptn_ascii_case_equal(to_encoding, "ISO-2022-JP")) {
+        encoded = ptn_mb_iso2022jp_postprocess_alloc(encoded, *output_len, output_len);
+    }
+    return encoded;
+}
+
 static int ptn_mb_utf8_is_valid(const char *data, size_t len) {
     size_t offset = 0;
     while (offset < len) {
@@ -78097,6 +81061,15 @@ static int ptn_mb_ascii_is_valid(const char *data, size_t len) {
 }
 
 static int ptn_mb_iconv_validate_bytes(const char *data, size_t len, const char *encoding) {
+    if (ptn_ascii_case_equal(encoding, "UTF7-IMAP")) {
+        return ptn_mb_utf7imap_validate_bytes(data, len);
+    }
+    if (ptn_mb_encoding_is_utf8_mobile(encoding)) {
+        return ptn_mb_utf8_is_valid(data, len);
+    }
+    if (ptn_mb_encoding_is_jis_family(encoding)) {
+        return ptn_mb_jis_validate_bytes(data, len, encoding);
+    }
     if (ptn_mb_encoding_is_table(encoding)) {
         if (ptn_mb_encoding_is_cp936_table(encoding)) {
             return ptn_mb_cp936_validate_bytes(data, len);
@@ -78156,17 +81129,8 @@ static int ptn_mb_check_encoding_string_bytes(const char *data, size_t len, cons
     if (ptn_mb_encoding_is_utf8(encoding)) {
         return ptn_mb_utf8_is_valid(data, len);
     }
-    if (ptn_ascii_case_equal(encoding, "JIS")) {
-        for (size_t i = 0; i < len; i++) {
-            unsigned char byte = (unsigned char)data[i];
-            if (byte == 0x0e || byte == 0x0f) {
-                return 0;
-            }
-            if (byte >= 0x80 && (byte < 0xa1 || byte > 0xdf)) {
-                return 0;
-            }
-        }
-        return 1;
+    if (ptn_mb_encoding_is_jis_family(encoding)) {
+        return ptn_mb_jis_validate_bytes(data, len, encoding);
     }
     if (ptn_ascii_case_equal(encoding, "ASCII") || ptn_ascii_case_equal(encoding, "7bit")) {
         return ptn_mb_ascii_is_valid(data, len);
