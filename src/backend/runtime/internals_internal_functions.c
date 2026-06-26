@@ -53132,6 +53132,85 @@ static int ptn_stream_error_store_keeps(PtnStreamErrorStore store, int terminati
         (store == PTN_STREAM_ERROR_STORE_TERMINATING && terminating);
 }
 
+static PtnValue ptn_stream_error_object_from_fields(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    PtnValue error = ptn_object_new_shell(runtime, "StreamError");
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("code"),
+        ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", code_name == NULL ? "Generic" : code_name)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("message"),
+        ptn_owned_string(ptn_duplicate_string(message == NULL ? "" : message))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("wrapperName"),
+        ptn_owned_string(ptn_duplicate_string(wrapper_name == NULL ? "stream" : wrapper_name))
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("severity"),
+        ptn_int((int64_t)severity)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("terminating"),
+        ptn_bool(terminating)
+    );
+    ptn_array_set_entry(
+        error.as.object->properties,
+        ptn_array_string_key("param"),
+        param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(param))
+    );
+    return error;
+}
+
+static void ptn_stream_context_dispatch_error_handler(
+    PtnRuntime *runtime,
+    PtnResource *context,
+    const char *path,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *detail,
+    int terminating,
+    size_t line
+) {
+    PtnValue *handler_option = ptn_stream_context_option(context, "stream", "error_handler");
+    if (runtime == NULL || handler_option == NULL) {
+        return;
+    }
+    PtnValue handler = ptn_value_clone_deref(*handler_option);
+    PtnValue errors = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        errors.as.array,
+        ptn_array_int_key(0),
+        ptn_stream_error_object_from_fields(
+            runtime,
+            detail,
+            wrapper_name,
+            code_name,
+            path,
+            PTN_E_WARNING,
+            terminating
+        )
+    );
+    PtnValue callback_args[1] = { ptn_value_borrow(errors) };
+    PtnValue result = ptn_call_callable(runtime, handler, 1, callback_args, line, 0);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&errors);
+    ptn_value_destroy(&handler);
+}
+
 static PtnValue ptn_stream_open_failure_result(
     PtnRuntime *runtime,
     PtnResource *context,
@@ -53154,6 +53233,19 @@ static PtnValue ptn_stream_open_failure_result(
         ptn_stream_store_single_error(detail, wrapper_name, code_name, path, PTN_E_WARNING, terminating);
     } else {
         ptn_stream_clear_last_errors();
+    }
+    ptn_stream_context_dispatch_error_handler(
+        runtime,
+        context,
+        path,
+        wrapper_name,
+        code_name,
+        detail,
+        terminating,
+        line
+    );
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
     }
     if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
         ptn_throw_exception_at(
@@ -57252,36 +57344,14 @@ static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
         PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
-        PtnValue error = ptn_object_new_shell(runtime, "StreamError");
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("code"),
-            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", stored->code_name == NULL ? "Generic" : stored->code_name)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("message"),
-            ptn_owned_string(ptn_duplicate_string(stored->message == NULL ? "" : stored->message))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("wrapperName"),
-            ptn_owned_string(ptn_duplicate_string(stored->wrapper_name == NULL ? "stream" : stored->wrapper_name))
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("severity"),
-            ptn_int((int64_t)stored->severity)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("terminating"),
-            ptn_bool(stored->terminating)
-        );
-        ptn_array_set_entry(
-            error.as.object->properties,
-            ptn_array_string_key("param"),
-            stored->param == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(stored->param))
+        PtnValue error = ptn_stream_error_object_from_fields(
+            runtime,
+            stored->message,
+            stored->wrapper_name,
+            stored->code_name,
+            stored->param,
+            stored->severity,
+            stored->terminating
         );
         ptn_array_set_entry(
             result.as.array,
@@ -139804,6 +139874,7 @@ static int ptn_zlib_resolve_dictionary_option(
                 ptn_value_destroy(&dictionary);
                 return 0;
             }
+            ptn_string_buffer_append_len(&buffer, "\0", 1);
         }
     } else {
         PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, resolved, line);
@@ -140076,9 +140147,22 @@ static PtnValue ptn_zlib_transform_context_string_value(
     );
     if (ok <= 0) {
         char detail[192];
-        int written = decompress
-            ? snprintf(detail, sizeof(detail), "%s(): data error", function_name)
-            : snprintf(detail, sizeof(detail), "%s(): compression failed", function_name);
+        int written;
+        if (decompress && context->dictionary_len > 0) {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                "%s(): Dictionary does not match expected dictionary (incorrect adler32 hash)",
+                function_name
+            );
+        } else {
+            written = snprintf(
+                detail,
+                sizeof(detail),
+                decompress ? "%s(): data error" : "%s(): compression failed",
+                function_name
+            );
+        }
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             ptn_abort_out_of_memory();
         }
@@ -140106,12 +140190,25 @@ static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const Pt
         ptn_zlib_throw_level_value_error(runtime, "gzencode");
         return ptn_null();
     }
+    int64_t encoding = PTN_ZLIB_ENCODING_GZIP;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        encoding = ptn_internal_expect_integer_arg(runtime, "gzencode", 3, "encoding", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_encoding_is_valid(encoding)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_encoding_value_error(runtime, "gzencode", 3, "encoding");
+        return ptn_null();
+    }
     PtnValue result = ptn_zlib_transform_string_value(
         runtime,
         "gzencode",
         data,
         0,
-        PTN_ZLIB_ENCODING_GZIP,
+        encoding,
         level,
         0,
         line
