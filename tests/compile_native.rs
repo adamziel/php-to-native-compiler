@@ -26344,6 +26344,60 @@ int(21)\n\
 }
 
 #[test]
+fn compile_timelib_timestamp_and_negative_year_rows_to_native_binary() {
+    let root = temp_dir("ptn-native-timelib-timestamp-negative-year-rows");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("timelib-timestamp-negative-year-rows.php");
+    let output = root.join("timelib-timestamp-negative-year-rows-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+echo date('Y-m-d o-W-N', -62167046400 - (((99 * 365) + 25) * 86400) + (6 * 86400)), "\n";
+
+date_default_timezone_set('Europe/London');
+$empty = new DateTime('');
+echo $empty->getTimezone()->getName(), "\n";
+
+$m = new DateTime('2022-12-20 14:30:25', new DateTimeZone('Europe/Paris'));
+$m->modify('@1234567890');
+var_dump($m->getTimestamp());
+echo $m->format(DateTime::ATOM), "\n";
+
+$a = new DateTime('2022-11-01 13:30:00', new DateTimeZone('America/Lima'));
+echo $a->format(DateTime::ATOM), "\n";
+$a->modify('@' . $a->getTimestamp());
+echo $a->format(DateTime::ATOM), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "-0099-01-08 -99-02-2\n\
+Europe/London\n\
+int(1234567890)\n\
+2009-02-13T23:31:30+00:00\n\
+2022-11-01T13:30:00-05:00\n\
+2022-11-01T18:30:00+00:00\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("{ \"date\", 1, 2, ptn_internal_date }"));
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_datetime_new("));
+}
+
+#[test]
 fn compile_conditional_datetimeinterface_implementation_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-conditional-datetimeinterface-fatal");
     fs::create_dir_all(&root).unwrap();

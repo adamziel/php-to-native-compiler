@@ -100564,6 +100564,30 @@ static void ptn_date_append_offset(PtnStringBuffer *buffer, int64_t offset, int 
     }
 }
 
+static void ptn_date_append_year(PtnStringBuffer *buffer, int64_t year) {
+    if (year < 0) {
+        ptn_string_buffer_append_format(buffer, "-%04lld", (long long)-year);
+    } else {
+        ptn_string_buffer_append_format(buffer, "%04lld", (long long)year);
+    }
+}
+
+static void ptn_date_append_expanded_year(PtnStringBuffer *buffer, int64_t year) {
+    if (year < 0) {
+        ptn_string_buffer_append_format(buffer, "-%04lld", (long long)-year);
+    } else {
+        ptn_string_buffer_append_format(buffer, "+%04lld", (long long)year);
+    }
+}
+
+static void ptn_date_append_iso_year(PtnStringBuffer *buffer, int64_t year) {
+    if (year < 0) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)year);
+    } else {
+        ptn_string_buffer_append_format(buffer, "%04lld", (long long)year);
+    }
+}
+
 static int ptn_date_swatch_beats(time_t timestamp) {
     struct tm *utc = gmtime(&timestamp);
     if (utc == NULL) {
@@ -100630,25 +100654,18 @@ static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_
                 int iso_week = 0;
                 ptn_date_iso_week_info(parts, &iso_year, &iso_week);
                 (void)iso_week;
-                ptn_string_buffer_append_format(&buffer, "%04d", iso_year);
+                ptn_date_append_iso_year(&buffer, iso_year);
                 break;
             }
             case 'c':
-                ptn_string_buffer_append_format(&buffer, "%04d-%02d-%02dT%02d:%02d:%02d", year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
+                ptn_date_append_year(&buffer, year);
+                ptn_string_buffer_append_format(&buffer, "-%02d-%02dT%02d:%02d:%02d", month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 1);
                 break;
             case 'r':
-                ptn_string_buffer_append_format(
-                    &buffer,
-                    "%s, %02d %s %04d %02d:%02d:%02d ",
-                    ptn_date_weekday_short(parts->tm_wday),
-                    parts->tm_mday,
-                    ptn_date_month_short(parts->tm_mon),
-                    year,
-                    parts->tm_hour,
-                    parts->tm_min,
-                    parts->tm_sec
-                );
+                ptn_string_buffer_append_format(&buffer, "%s, %02d %s ", ptn_date_weekday_short(parts->tm_wday), parts->tm_mday, ptn_date_month_short(parts->tm_mon));
+                ptn_date_append_year(&buffer, year);
+                ptn_string_buffer_append_format(&buffer, " %02d:%02d:%02d ", parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 0);
                 break;
             case 'F':
@@ -100658,10 +100675,10 @@ static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_
                 ptn_string_buffer_append(&buffer, ptn_date_month_short(parts->tm_mon));
                 break;
             case 'Y':
-                ptn_string_buffer_append_format(&buffer, "%04d", year);
+                ptn_date_append_year(&buffer, year);
                 break;
             case 'X':
-                ptn_string_buffer_append_format(&buffer, "%+05d", year);
+                ptn_date_append_expanded_year(&buffer, year);
                 break;
             case 'y':
                 ptn_string_buffer_append_format(&buffer, "%02d", year % 100);
@@ -100864,25 +100881,18 @@ static PtnValue ptn_format_date_value_for_timezone(
                 int iso_week = 0;
                 ptn_date_iso_week_info(parts, &iso_year, &iso_week);
                 (void)iso_week;
-                ptn_string_buffer_append_format(&buffer, "%04d", iso_year);
+                ptn_date_append_iso_year(&buffer, iso_year);
                 break;
             }
             case 'c':
-                ptn_string_buffer_append_format(&buffer, "%04lld-%02d-%02dT%02d:%02d:%02d", (long long)year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
+                ptn_date_append_year(&buffer, year);
+                ptn_string_buffer_append_format(&buffer, "-%02d-%02dT%02d:%02d:%02d", month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 1);
                 break;
             case 'r':
-                ptn_string_buffer_append_format(
-                    &buffer,
-                    "%s, %02d %s %04lld %02d:%02d:%02d ",
-                    ptn_date_weekday_short(parts->tm_wday),
-                    parts->tm_mday,
-                    ptn_date_month_short(parts->tm_mon),
-                    (long long)year,
-                    parts->tm_hour,
-                    parts->tm_min,
-                    parts->tm_sec
-                );
+                ptn_string_buffer_append_format(&buffer, "%s, %02d %s ", ptn_date_weekday_short(parts->tm_wday), parts->tm_mday, ptn_date_month_short(parts->tm_mon));
+                ptn_date_append_year(&buffer, year);
+                ptn_string_buffer_append_format(&buffer, " %02d:%02d:%02d ", parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 0);
                 break;
             case 'F':
@@ -100892,10 +100902,10 @@ static PtnValue ptn_format_date_value_for_timezone(
                 ptn_string_buffer_append(&buffer, ptn_date_month_short(parts->tm_mon));
                 break;
             case 'Y':
-                ptn_string_buffer_append_format(&buffer, "%04lld", (long long)year);
+                ptn_date_append_year(&buffer, year);
                 break;
             case 'X':
-                ptn_string_buffer_append_format(&buffer, "%+05lld", (long long)year);
+                ptn_date_append_expanded_year(&buffer, year);
                 break;
             case 'y':
                 ptn_string_buffer_append_format(&buffer, "%02lld", (long long)(year % 100));
@@ -101439,6 +101449,7 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "America/Havana", 2, 0 },
     { "America/Halifax", 2, 0 },
     { "America/Indiana/Knox", 2, 0 },
+    { "America/Lima", 2, 0 },
     { "America/Los_Angeles", 2, 0 },
     { "America/Montevideo", 2, 0 },
     { "America/New_York", 2, 0 },
@@ -101490,6 +101501,7 @@ static const PtnTimezoneLocation ptn_timezone_locations[] = {
     { "America/Havana", "CU", 23.13333, -82.36667, "" },
     { "America/Halifax", "CA", 44.65, -63.6, "Atlantic - NS (most areas), PE" },
     { "America/Indiana/Knox", "US", 41.29583, -86.625, "Central - IN (Starke)" },
+    { "America/Lima", "PE", -12.05, -77.05, "" },
     { "America/Los_Angeles", "US", 34.05222, -118.24278, "Pacific" },
     { "America/Montevideo", "UY", -34.90917, -56.2125, "" },
     { "America/New_York", "US", 40.71416, -74.00639, "Eastern (most areas)" },
@@ -102171,6 +102183,9 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
         return -18000;
     }
+    if (ptn_ascii_case_equal(name, "America/Lima")) {
+        return -18000;
+    }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
         int us_dst = ptn_datetime_timestamp_us_dst_for_standard_offset(timestamp, -28800);
         return us_dst ? -25200 : -28800;
@@ -102311,6 +102326,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
         return us_dst ? "EDT" : "EST";
     }
     if (ptn_ascii_case_equal(name, "America/Bogota")) {
+        return "-05";
+    }
+    if (ptn_ascii_case_equal(name, "America/Lima")) {
         return "-05";
     }
     if (ptn_ascii_case_equal(name, "America/Havana")) {
@@ -103929,7 +103947,9 @@ static PTN_UNUSED PtnValue ptn_datetime_new(
         char *input_name = ptn_duplicate_string_len(input.data, input.len);
         char *parsed_timezone = NULL;
         int parsed_microsecond = 0;
-        if (ptn_datetime_parse_timestamp_literal(input_name, &timestamp, &parsed_microsecond)) {
+        if (input.len == 0) {
+            /* Default constructor state already models "now". */
+        } else if (ptn_datetime_parse_timestamp_literal(input_name, &timestamp, &parsed_microsecond)) {
             microsecond = parsed_microsecond;
             free(owned_timezone);
             owned_timezone = ptn_duplicate_string("+00:00");
@@ -105927,6 +105947,17 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         char *parsed_timezone = NULL;
         PtnValue target = immutable ? ptn_datetime_clone(runtime, receiver, line) : receiver;
         PtnDateTimeData *target_data = ptn_datetime_data_from_value(target);
+        if (ptn_datetime_parse_timestamp_literal(modifier_string, &parsed_timestamp, &parsed_microsecond)) {
+            target_data->timestamp = parsed_timestamp;
+            target_data->microsecond = parsed_microsecond;
+            free(target_data->timezone);
+            target_data->timezone = ptn_duplicate_string("+00:00");
+            target_data->timezone_type = ptn_timezone_name_type(target_data->timezone);
+            ptn_datetime_sync_properties(runtime, target, target.as.object->class_name, line);
+            free(modifier_string);
+            ptn_string_operand_free(modifier);
+            return immutable ? target : ptn_value_clone(target);
+        }
         if (ptn_datetime_parse_date_string(modifier_string, data->timezone, &parsed_timestamp, &parsed_microsecond, &parsed_timezone)) {
             target_data->timestamp = parsed_timestamp;
             target_data->microsecond = parsed_microsecond;

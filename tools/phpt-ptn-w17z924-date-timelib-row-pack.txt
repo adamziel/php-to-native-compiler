@@ -1,0 +1,12 @@
+ext/date/tests/bug54316.phpt
+ext/date/tests/bug76770.phpt
+ext/date/tests/gh-124.phpt
+ext/date/tests/bug48097.phpt
+ext/date/tests/date_default_timezone_get-1.phpt
+ext/date/tests/bug70245.phpt
+ext/date/tests/gh9891.phpt
+ext/date/tests/bug77243-002.phpt
+ext/date/tests/date_interval_create_from_date_string.phpt
+ext/date/tests/bug35887.phpt
+ext/date/tests/gh10747-4.phpt
+ext/date/tests/DateTime_construct_basic1.phpt
