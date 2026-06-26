@@ -28846,6 +28846,110 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_file_lock_truncate_write_frontier_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-file-lock-truncate-write-frontier");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-lock-truncate-write-frontier.php");
+    let output = root.join("file-lock-truncate-write-frontier-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$root = __DIR__;
+$inc = $root . "/inc";
+$cwd = $root . "/cwd";
+mkdir($inc);
+mkdir($cwd);
+file_put_contents($inc . "/same.txt", "include");
+file_put_contents($root . "/same.txt", "source");
+file_put_contents($cwd . "/same.txt", "cwd");
+chdir($cwd);
+set_include_path($inc);
+$handle = fopen("same.txt", "r", true);
+echo fgets($handle), "\n";
+fclose($handle);
+set_include_path($root . "/missing");
+$handle = fopen("same.txt", "r", true);
+echo fgets($handle), "\n";
+fclose($handle);
+chdir($root);
+
+file_put_contents($root . "/photo.JpG", "");
+file_put_contents($root . "/anim.GIF", "");
+file_put_contents($root . "/note.txt", "");
+$matches = glob($root . "/*.{[jJ][pP][gG],[gG][iI][fF]}", GLOB_BRACE);
+sort($matches);
+foreach ($matches as $match) {
+    echo basename($match), ",";
+}
+echo "\n";
+
+echo file_get_contents("php://filter/read=convert.iconv.ISO-8859-15%2FUTF-8|string.rot13/resource=data://text/plain,uryyb"), "\n";
+echo bin2hex(strip_tags("<" . chr(0) . "\n!\n")), "\n";
+
+$memory = fopen("php://memory", "w+");
+fwrite($memory, "Hello World");
+ftruncate($memory, 2);
+fwrite($memory, "World");
+rewind($memory);
+var_dump(fread($memory, 100));
+
+$file = fopen($root . "/lock.txt", "w+");
+var_dump(stream_supports_lock($file));
+var_dump(stream_supports_lock(fopen("php://memory", "r")));
+try {
+    stream_supports_lock(stream_context_create());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$writer = fopen($root . "/write.txt", "w");
+var_dump(fwrite($writer, "abc", -10));
+fclose($writer);
+echo file_get_contents($root . "/write.txt"), "\n";
+
+try {
+    touch($root . "/missing-parent/leaf", null, 1599492068);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "include\n\
+source\n\
+anim.GIF,photo.JpG,\n\
+hello\n\
+\n\
+string(7) \"HeWorld\"\n\
+bool(true)\n\
+bool(false)\n\
+stream_supports_lock(): Argument #1 ($stream) must be an open stream resource\n\
+int(0)\n\
+\n\
+touch(): Argument #2 ($mtime) cannot be null when argument #3 ($atime) is an integer\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_try_read_php_filter_url_bytes"));
+    assert!(c_source.contains("ptn_internal_stream_supports_lock"));
+    assert!(c_source.contains("ptn_glob_expand_braces_into"));
+}
+
+#[test]
 fn compile_standard_uri_stream_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-standard-uri-stream-wrappers");
     fs::create_dir_all(&root).unwrap();

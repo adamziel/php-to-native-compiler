@@ -23738,6 +23738,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_isatty"
             | "stream_last_errors"
             | "stream_resolve_include_path"
+            | "stream_supports_lock"
             | "stream_select"
             | "stream_set_blocking"
             | "stream_socket_client"

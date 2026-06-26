@@ -1,0 +1,13 @@
+# ptn-w17z.950 file lock/truncate/write/touch/fscanf row pack.
+ext/standard/tests/file/bug43008.phpt
+ext/standard/tests/file/fscanf_variation25.phpt
+ext/standard/tests/file/touch.phpt
+ext/standard/tests/file/bug69628.phpt
+ext/standard/tests/file/stream_supports_lock.phpt
+ext/standard/tests/file/bug38450_3.phpt
+ext/standard/tests/file/bug79099.phpt
+ext/standard/tests/file/ftruncate_bug76803.phpt
+ext/standard/tests/file/fopen_variation5.phpt
+ext/standard/tests/file/fwrite_error.phpt
+ext/standard/tests/file/fscanf_variation50.phpt
+ext/standard/tests/file/gh13136.phpt
