@@ -164234,7 +164234,6 @@ static PtnValue ptn_pdo_drivers_value(void) {
 }
 
 static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value, int mode, int column_index, const char *class_name, PtnValue into, size_t line) {
-    (void)line;
     PtnPdoStatementData *statement = ptn_pdo_statement_data(statement_value);
     if (statement == NULL || statement->rows.type != PTN_ARRAY || statement->cursor >= statement->rows.as.array->len) {
         return ptn_bool(0);
@@ -164269,11 +164268,24 @@ static PtnValue ptn_pdo_fetch_row(PtnRuntime *runtime, PtnValue statement_value,
         for (size_t i = 0; i < row.as.array->len; i++) {
             PtnArrayEntry *entry = &row.as.array->entries[i];
             if (entry->key.type == PTN_ARRAY_KEY_STRING) {
-                ptn_array_set_entry(
-                    object.as.object->properties,
-                    ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
-                    ptn_value_clone_deref(entry->value)
-                );
+                if (base_mode == PTN_PDO_FETCH_CLASS || base_mode == PTN_PDO_FETCH_INTO) {
+                    PtnValue assigned = ptn_object_write_property_len(
+                        runtime,
+                        object,
+                        entry->key.as.string,
+                        entry->key.string_len,
+                        NULL,
+                        ptn_value_clone_deref(entry->value),
+                        line
+                    );
+                    ptn_value_destroy(&assigned);
+                } else {
+                    ptn_array_set_entry(
+                        object.as.object->properties,
+                        ptn_array_string_key_len(entry->key.as.string, entry->key.string_len),
+                        ptn_value_clone_deref(entry->value)
+                    );
+                }
             }
         }
         return object;

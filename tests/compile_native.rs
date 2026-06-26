@@ -26926,6 +26926,41 @@ var_dump($result->fetchArray(SQLITE3_NUM));
 }
 
 #[test]
+fn compile_pdo_sqlite_fetch_class_magic_set_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-fetch-class-magic-set");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-fetch-class-magic-set.php");
+    let output = root.join("pdo-fetch-class-magic-set-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class EEE {
+    public function __set($field, $value) {
+        echo "hello world\n";
+    }
+}
+
+$db = new PDO('sqlite::memory:');
+$db->query('CREATE TABLE t (a INT, b INT)');
+$db->query('INSERT INTO t VALUES (1, 2)');
+$rows = $db->query('SELECT * FROM t')->fetchAll(PDO::FETCH_CLASS, 'EEE');
+var_dump(count($rows));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "hello world\nhello world\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();
