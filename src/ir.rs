@@ -35,6 +35,12 @@ pub struct Module {
     pub source_bytes: Vec<u8>,
     pub strict_types: bool,
     pub ticks: bool,
+    pub runtime_requirements: ModuleRuntimeRequirements,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModuleRuntimeRequirements {
+    pub internal_function_dispatch: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1157,6 +1163,7 @@ pub fn lower_with_source_and_includes(
         source_bytes,
         strict_types: program.strict_types,
         ticks: program.ticks,
+        runtime_requirements: ModuleRuntimeRequirements::default(),
     }
 }
 

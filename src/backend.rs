@@ -109,6 +109,9 @@ const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let mut runtime_requirements = module_runtime_requirements(module);
+    if module.runtime_requirements.internal_function_dispatch {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     if module_has_attribute_metadata(module) {
         runtime_requirements.internal_function_dispatch = true;
     }
@@ -313,6 +316,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    out.push_str("    ptn_runtime_startup_output_handler(&runtime);\n");
     out.push_str("    runtime.native_argc = ptn_native_argc;\n");
     out.push_str("    runtime.native_argv = ptn_native_argv;\n");
     if runtime_requirements.request_context {
@@ -33716,6 +33720,20 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             name: "callback",
             default: None,
         }];
+    static HEADER_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "header",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "replace",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "response_code",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
     static SUBSTR_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "string",
@@ -34174,6 +34192,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&REQUEST_PARSE_BODY_PARAMETERS)
     } else if name.eq_ignore_ascii_case("headers_sent") {
         Some(&HEADERS_SENT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("header") {
+        Some(&HEADER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("header_register_callback") {
         Some(&HEADER_REGISTER_CALLBACK_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr") {

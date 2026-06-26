@@ -165,6 +165,12 @@ static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(
     int64_t operation_flags,
     const char *function_name
 );
+static PTN_UNUSED void ptn_runtime_startup_output_handler(PtnRuntime *runtime);
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED void ptn_runtime_startup_output_handler(PtnRuntime *runtime) {
+    (void)runtime;
+}
+#endif
 
 static void ptn_output_buffer_note_handler_output(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
@@ -6295,6 +6301,28 @@ static void ptn_output_buffer_push(
     buffer->callback = has_callback ? ptn_value_clone_deref(callback) : ptn_null();
     buffer->chunk_size = chunk_size;
     buffer->flags = flags;
+}
+
+static PTN_UNUSED void ptn_runtime_startup_output_handler(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root == NULL || root->output_handler == NULL || root->output_handler[0] == '\0') {
+        return;
+    }
+
+    PtnValue callback = ptn_owned_string(ptn_duplicate_string(root->output_handler));
+    if (ptn_callable_is_valid(runtime, callback, 0)) {
+        ptn_output_buffer_push(
+            runtime,
+            1,
+            callback,
+            0,
+            PTN_PHP_OUTPUT_HANDLER_STDFLAGS | PTN_PHP_OUTPUT_HANDLER_TYPE_INTERNAL
+        );
+    }
+    ptn_value_destroy(&callback);
 }
 
 static int ptn_output_buffer_pop(PtnRuntime *runtime, PtnOutputBuffer *buffer_out) {
@@ -78488,16 +78516,23 @@ static PtnValue ptn_internal_mb_parse_str(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PtnValue ptn_internal_mb_output_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     if (argc == 0) {
         return ptn_string("");
     }
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    char *copy = ptn_duplicate_string_len(input.data, input.len);
-    size_t len = input.len;
+    const char *from_encoding = ptn_mb_current_internal_encoding(runtime);
+    const char *to_encoding = ptn_mb_current_http_output(runtime);
+    size_t len = 0;
+    char *converted = ptn_mb_iconv_convert_alloc_counting(
+        input.data,
+        input.len,
+        from_encoding,
+        to_encoding,
+        &len
+    );
     ptn_string_operand_free(input);
-    return ptn_owned_string_len(copy, len);
+    return ptn_owned_string_len(converted, len);
 }
 
 static PtnValue ptn_internal_mb_send_mail(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -94405,6 +94440,21 @@ static PtnValue ptn_internal_trigger_error(PtnRuntime *runtime, size_t argc, con
 
 static PtnValue ptn_internal_user_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_trigger_error(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand header = ptn_internal_expect_string_arg(runtime, "header", 1, "header", args[0], line);
+    ptn_string_operand_free(header);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (argc >= 2) {
+        (void)ptn_is_truthy(args[1]);
+    }
+    if (argc >= 3) {
+        (void)ptn_internal_expect_integer_arg(runtime, "header", 3, "response_code", args[2], line);
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -142730,6 +142780,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
+        { "header", 1, 3, ptn_internal_header },
         { "header_register_callback", 1, 1, ptn_internal_header_register_callback },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },

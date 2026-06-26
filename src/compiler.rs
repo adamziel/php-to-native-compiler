@@ -76,6 +76,7 @@ pub struct CompileSourceOptions {
     pub script_encoding: Option<String>,
     pub internal_encoding: Option<String>,
     pub encoding_translation: bool,
+    pub force_internal_function_dispatch: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -156,7 +157,7 @@ fn compile_file_inner_with_source_options(
     )?;
     let include_sources = includes.sources;
     let include_resolutions = includes.resolutions;
-    let module = lower_with_source_and_includes(
+    let mut module = lower_with_source_and_includes(
         &program,
         source_file,
         source_dir,
@@ -165,6 +166,8 @@ fn compile_file_inner_with_source_options(
         preload_include_indices,
         &include_resolutions,
     );
+    module.runtime_requirements.internal_function_dispatch |=
+        source_options.force_internal_function_dispatch;
     let c_source = emit_c(&module);
     compile_c(&c_source, output)?;
     let c_path = output.with_extension("c");

@@ -1136,6 +1136,10 @@ fn compile_and_run(
             .mbstring_encoding_translation
             .as_deref()
             .is_some_and(ini_scalar_truthy),
+        force_internal_function_dispatch: ini
+            .output_handler
+            .as_deref()
+            .is_some_and(|handler| !handler.trim().is_empty()),
     };
     let native = TempPath::new("ptn-phpc-native", "bin");
     let preload_files = opcache_preload_files(&ini, script);

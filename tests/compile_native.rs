@@ -29863,6 +29863,50 @@ echo bin2hex(mb_convert_encoding(hex2bin('7e7b7e7d61626364'), 'UTF-8', 'HZ')), \
 }
 
 #[test]
+fn compile_mbstring_output_handler_encoding_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-output-handler-encoding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-output-handler-encoding.php");
+    let output = root.join("mb-output-handler-encoding-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(mb_http_output());\n\
+var_dump(\"\\xff\");\n\
+ob_end_flush();\n\
+\n\
+ob_start('mb_output_handler');\n\
+mb_http_output('UTF-8');\n\
+var_dump(\"\\xff\");\n\
+ob_end_flush();\n\
+\n\
+mb_http_output('EUC-JP');\n\
+header('Content-Type: text/html');\n\
+ob_start();\n\
+ob_start('mb_output_handler');\n\
+echo \"\\xe3\\x83\\x86\\xe3\\x82\\xb9\\xe3\\x83\\x88\";\n\
+ob_end_flush();\n\
+echo bin2hex(ob_get_clean()), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_OUTPUT_HANDLER", "mb_output_handler")
+        .env("PTN_OUTPUT_ENCODING", "pass")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(b"string(4) \"pass\"\nstring(1) \"");
+    expected.push(0xff);
+    expected.extend_from_slice(b"\"\nstring(1) \"?\"\na5c6a5b9a5c8\n");
+    assert_eq!(execution.stdout, expected);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_mbstring_encoding_table_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-mb-encoding-table-overrides");
     fs::create_dir_all(&root).unwrap();
