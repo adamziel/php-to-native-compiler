@@ -945,6 +945,17 @@ static PtnValue ptn_declared_class_new_instance(
     size_t line
 );
 
+#if defined(PTN_HAS_INTERNAL_FUNCTION_DISPATCH) || defined(PTN_HAS_URI_INTERNAL_HELPERS)
+static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
+static PTN_UNUSED PtnValue ptn_uri_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+#endif
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_date_period_new(
     PtnRuntime *runtime,
@@ -1386,6 +1397,11 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
         return ptn_uri_whatwg_url_new(runtime, argc, args, line);
+    }
+#endif
+#ifdef PTN_HAS_URI_INTERNAL_HELPERS
+    if (ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
+        return ptn_uri_new(runtime, lookup_class_name, argc, args, line);
     }
 #endif
     if (ptn_class_name_is_generator(lookup_class_name)) {

@@ -25,6 +25,7 @@ use crate::ir::{
 mod runtime;
 
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const DIRECT_PREG_WORD_BOUNDARY_PATTERN: &str = "/\\b/u";
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
 const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
@@ -136,12 +137,15 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.internal_function_dispatch
         || has_declared_methods
         || needs_direct_callable_dispatch;
-    let needs_callable_dispatch = needs_direct_callable_dispatch;
+    let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
     if needs_direct_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
-    let needs_lightweight_closure_reflection = runtime_requirements.closure_reflection_dispatch
-        && !runtime_requirements.internal_function_dispatch;
+    if needs_callable_dispatch {
+        runtime_requirements.named_call_helpers = true;
+    }
+    let needs_lightweight_closure_reflection = !runtime_requirements.internal_function_dispatch
+        && (runtime_requirements.closure_reflection_dispatch || needs_method_dispatch);
     let needs_magic_property_read = module.classes.iter().any(|class| {
         class_magic_get_method(class, &module.classes).is_some()
             || class_magic_isset_method(class, &module.classes).is_some()
@@ -234,8 +238,17 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_dir,
         runtime_requirements.internal_function_dispatch,
     );
-    if runtime_requirements.internal_function_dispatch {
-        emit_user_function_dispatch(&mut out, &module.functions, &module.classes, &module.traits);
+    if runtime_requirements.internal_function_dispatch || needs_callable_dispatch {
+        emit_user_function_dispatch(
+            &mut out,
+            &module.functions,
+            &module.classes,
+            &module.traits,
+            runtime_requirements.internal_function_dispatch,
+        );
+    }
+    if !runtime_requirements.internal_function_dispatch && needs_callable_dispatch {
+        emit_compact_function_metadata_lookup(&mut out);
     }
     emit_class_metadata_helpers(
         &mut out,
@@ -302,6 +315,7 @@ pub fn emit_c(module: &Module) -> String {
             &module.functions,
             &module.classes,
             needs_method_dispatch,
+            runtime_requirements.internal_function_dispatch,
         );
     }
     emit_declared_class_new_instance_without_constructor(
@@ -1458,9 +1472,14 @@ struct RuntimeRequirements {
     direct_internal_helpers: bool,
     compact_internal_helpers: bool,
     compact_intl_helpers: bool,
+    named_call_helpers: bool,
+    pcre_internal_helpers: bool,
+    uri_internal_helpers: bool,
+    json_internal_helpers: bool,
     request_context: bool,
     ada_url: bool,
     known_array_variables: HashSet<String>,
+    known_simple_preg_patterns: HashSet<String>,
 }
 
 fn variable_needs_request_context(name: &str) -> bool {
@@ -1479,6 +1498,105 @@ fn variable_needs_request_context(name: &str) -> bool {
     )
 }
 
+fn value_is_direct_preg_word_boundary_pattern(value: &ValueExpr) -> bool {
+    matches!(value, ValueExpr::String(pattern) if pattern == DIRECT_PREG_WORD_BOUNDARY_PATTERN)
+}
+
+fn update_known_simple_preg_pattern_variable(
+    known_patterns: &mut HashSet<String>,
+    name: &str,
+    value: &ValueExpr,
+) {
+    if value_is_direct_preg_word_boundary_pattern(value) {
+        known_patterns.insert(name.to_string());
+    } else {
+        known_patterns.remove(name);
+    }
+}
+
+fn forget_known_simple_preg_pattern_reference_target(
+    known_patterns: &mut HashSet<String>,
+    target: &ReferenceTarget,
+) {
+    match target {
+        ReferenceTarget::Variable { name, .. } => {
+            known_patterns.remove(name);
+        }
+        ReferenceTarget::DynamicVariable { .. } => {
+            known_patterns.clear();
+        }
+        ReferenceTarget::ArrayDim(target) => {
+            known_patterns.remove(&target.array);
+        }
+        ReferenceTarget::PropertyArrayDim { .. }
+        | ReferenceTarget::Property { .. }
+        | ReferenceTarget::DynamicProperty { .. } => {}
+    }
+}
+
+fn forget_known_simple_preg_pattern_assignment_target(
+    known_patterns: &mut HashSet<String>,
+    target: &AssignmentTarget,
+) {
+    match target {
+        AssignmentTarget::Variable { name, .. } => {
+            known_patterns.remove(name);
+        }
+        AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::DynamicArrayDim { .. } => {
+            known_patterns.clear();
+        }
+        AssignmentTarget::ArrayDim { array, .. } => {
+            known_patterns.remove(array);
+        }
+        AssignmentTarget::List(target) => {
+            for element in &target.elements {
+                match &element.target {
+                    ListAssignmentElementTarget::Value(target) => {
+                        forget_known_simple_preg_pattern_assignment_target(known_patterns, target);
+                    }
+                    ListAssignmentElementTarget::Reference(target) => {
+                        forget_known_simple_preg_pattern_reference_target(known_patterns, target);
+                    }
+                }
+            }
+        }
+        AssignmentTarget::ValueArrayDim { .. }
+        | AssignmentTarget::PropertyArrayDim { .. }
+        | AssignmentTarget::DynamicPropertyArrayDim { .. }
+        | AssignmentTarget::StaticPropertyArrayDim { .. }
+        | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
+        | AssignmentTarget::Property { .. }
+        | AssignmentTarget::DynamicProperty { .. }
+        | AssignmentTarget::StaticProperty { .. }
+        | AssignmentTarget::DynamicStaticProperty { .. }
+        | AssignmentTarget::DynamicStaticPropertyName { .. } => {}
+    }
+}
+
+fn forget_known_simple_preg_pattern_inc_dec_target(
+    known_patterns: &mut HashSet<String>,
+    target: &IncDecTarget,
+) {
+    match target {
+        IncDecTarget::Variable { name, .. } => {
+            known_patterns.remove(name);
+        }
+        IncDecTarget::DynamicVariable { .. } | IncDecTarget::DynamicArrayDim { .. } => {
+            known_patterns.clear();
+        }
+        IncDecTarget::ArrayDim { array, .. } => {
+            known_patterns.remove(array);
+        }
+        IncDecTarget::ValueArrayDim { .. }
+        | IncDecTarget::PropertyArrayDim { .. }
+        | IncDecTarget::StaticPropertyArrayDim { .. }
+        | IncDecTarget::Property { .. }
+        | IncDecTarget::DynamicProperty { .. }
+        | IncDecTarget::StaticProperty { .. }
+        | IncDecTarget::DynamicStaticPropertyName { .. } => {}
+    }
+}
+
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
@@ -1492,6 +1610,9 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.ada_url {
         out.push_str("#define PTN_USE_ADA_URL 1\n");
     }
+    if requirements.uri_internal_helpers && !requirements.internal_function_dispatch {
+        out.push_str("#define PTN_HAS_URI_INTERNAL_HELPERS 1\n");
+    }
     let runtime_c = runtime::runtime_c();
     let direct_helpers = runtime_chunk_range(
         runtime_c,
@@ -1503,6 +1624,26 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         runtime::COMPACT_INTERNAL_HELPERS_START,
         runtime::COMPACT_INTERNAL_HELPERS_END,
     );
+    let named_call_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::NAMED_CALL_HELPERS_START,
+        runtime::NAMED_CALL_HELPERS_END,
+    );
+    let pcre_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::PCRE_INTERNAL_HELPERS_START,
+        runtime::PCRE_INTERNAL_HELPERS_END,
+    );
+    let uri_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::URI_INTERNAL_HELPERS_START,
+        runtime::URI_INTERNAL_HELPERS_END,
+    );
+    let json_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::JSON_INTERNAL_HELPERS_START,
+        runtime::JSON_INTERNAL_HELPERS_END,
+    );
     let internal_functions = runtime_chunk_range(
         runtime_c,
         runtime::INTERNAL_FUNCTIONS_START,
@@ -1510,7 +1651,12 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     );
     assert!(
         direct_helpers.after_end <= compact_helpers.start
-            && compact_helpers.after_end <= internal_functions.start,
+            && compact_helpers.after_end <= internal_functions.start
+            && internal_functions.after_start <= named_call_helpers.start
+            && named_call_helpers.after_end <= json_helpers.start
+            && json_helpers.after_end <= uri_helpers.start
+            && uri_helpers.after_end <= pcre_helpers.start
+            && pcre_helpers.after_end <= internal_functions.end,
         "runtime helper chunks should precede internal-function chunk"
     );
 
@@ -1518,6 +1664,8 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.direct_internal_helpers
         || requirements.compact_internal_helpers
         || requirements.compact_intl_helpers
+        || requirements.uri_internal_helpers
+        || requirements.json_internal_helpers
         || requirements.internal_function_dispatch
     {
         out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
@@ -1527,6 +1675,18 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         out.push_str(&runtime_c[compact_helpers.after_start..compact_helpers.end]);
     }
     out.push_str(&runtime_c[compact_helpers.after_end..internal_functions.start]);
+    if requirements.named_call_helpers && !requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[named_call_helpers.after_start..named_call_helpers.end]);
+    }
+    if requirements.json_internal_helpers && !requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[json_helpers.after_start..json_helpers.end]);
+    }
+    if requirements.uri_internal_helpers && !requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[uri_helpers.after_start..uri_helpers.end]);
+    }
+    if requirements.pcre_internal_helpers && !requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[pcre_helpers.after_start..pcre_helpers.end]);
+    }
     if requirements.internal_function_dispatch {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
     }
@@ -3820,6 +3980,20 @@ fn emit_user_function_prototypes(
             "static PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len);\n",
         );
     }
+    if !needs_function_dispatch && (needs_dynamic_function_dispatch || needs_method_dispatch) {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
+        );
+        out.push_str(
+            "static PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len);\n",
+        );
+    }
     if needs_dynamic_function_dispatch {
         out.push_str("static PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable);\n");
         out.push_str(
@@ -3846,6 +4020,11 @@ fn emit_user_function_prototypes(
     if needs_function_dispatch || needs_dynamic_function_dispatch {
         out.push_str(
             "static PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line);\n",
+        );
+    }
+    if needs_dynamic_function_dispatch || needs_method_dispatch {
+        out.push_str(
+            "static PTN_UNUSED void ptn_call_user_func_emit_relative_callable_deprecation(PtnRuntime *runtime, PtnValue callable, size_t line);\n",
         );
     }
     for (index, _) in functions.iter().enumerate() {
@@ -8493,6 +8672,7 @@ fn emit_user_function_dispatch(
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
     traits: &[TraitDecl],
+    full_internal_dispatch: bool,
 ) {
     out.push_str(
         "\nstatic int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
@@ -9116,11 +9296,13 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
-    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
-    out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
-    out.push_str("            free(ptn_static_call_class);\n");
-    out.push_str("            return ptn_static_call_result;\n");
-    out.push_str("        }\n");
+    if full_internal_dispatch {
+        out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DatePeriod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"ReflectionMethod\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+        out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
+        out.push_str("            free(ptn_static_call_class);\n");
+        out.push_str("            return ptn_static_call_result;\n");
+        out.push_str("        }\n");
+    }
     out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
@@ -9133,6 +9315,32 @@ fn emit_user_function_dispatch(
     );
     out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_compact_function_metadata_lookup(out: &mut String) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnFunctionMetadata ptn_find_function_metadata(const char *name) {\n",
+    );
+    out.push_str("    return ptn_user_function_metadata(name);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, size_t index) {\n",
+    );
+    out.push_str("    if (metadata.parameters != NULL && index < metadata.parameter_count) {\n");
+    out.push_str("        return metadata.parameters[index].by_ref;\n");
+    out.push_str("    }\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_function_metadata_parameter_can_be_passed_by_value(PtnFunctionMetadata metadata, size_t index) {\n",
+    );
+    out.push_str("    if (metadata.parameters != NULL && index < metadata.parameter_count) {\n");
+    out.push_str("        return metadata.parameters[index].can_be_passed_by_value;\n");
+    out.push_str("    }\n");
+    out.push_str("    return !ptn_function_metadata_parameter_by_ref(metadata, index);\n");
     out.push_str("}\n");
 }
 
@@ -9162,6 +9370,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
     );
     out.push_str("static int ptn_declared_trait_exists(const char *name);\n");
+    out.push_str("static int ptn_declared_interface_exists(const char *name);\n");
     out.push_str(
         "static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);\n",
     );
@@ -25248,6 +25457,13 @@ fn emit_method_dispatch(
         out.push_str("        }\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_URI_INTERNAL_HELPERS\n");
+    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
+    out.push_str(
+        "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    if (resolved.type == PTN_OBJECT && ptn_dom_effective_class_is_modeled(class_name) && ptn_internal_class_method_exists(class_name, method_name)) {\n");
     out.push_str(
@@ -25349,11 +25565,6 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_object_is_internal_or_descendant(resolved, \"UConverter\") && ptn_internal_class_method_exists(\"UConverter\", method_name)) {\n");
     out.push_str(
         "        return ptn_intl_uconverter_call_method(runtime, resolved, method_name, argc, args, line);\n",
-    );
-    out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
-    out.push_str(
-        "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str(
@@ -26122,6 +26333,7 @@ fn emit_callable_dispatch(
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
     needs_method_dispatch: bool,
+    full_internal_dispatch: bool,
 ) {
     if needs_method_dispatch {
         out.push_str(
@@ -26187,6 +26399,59 @@ fn emit_callable_dispatch(
     }
 
     emit_no_discard_callable_dispatch(out, functions, classes);
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_call_user_func_emit_relative_callable_deprecation(PtnRuntime *runtime, PtnValue callable, size_t line) {\n",
+    );
+    out.push_str("    if (runtime == NULL || runtime->suppress_scoped_callable_deprecation) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type != PTN_ARRAY || resolved.as.array->len != 2) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnArrayKey scope_key = ptn_array_int_key(0);\n");
+    out.push_str("    PtnArrayKey method_key = ptn_array_int_key(1);\n");
+    out.push_str(
+        "    PtnArrayEntry *scope_entry = ptn_array_entry_for_key(resolved.as.array, scope_key);\n",
+    );
+    out.push_str("    PtnArrayEntry *method_entry = ptn_array_entry_for_key(resolved.as.array, method_key);\n");
+    out.push_str("    ptn_array_key_free(scope_key);\n");
+    out.push_str("    ptn_array_key_free(method_key);\n");
+    out.push_str("    if (scope_entry == NULL || method_entry == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    PtnValue scope = ptn_value_deref(scope_entry->value);\n");
+    out.push_str("    PtnValue method = ptn_value_deref(method_entry->value);\n");
+    out.push_str("    if (scope.type != PTN_STRING || method.type != PTN_STRING) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    char *scope_name = ptn_value_to_string(scope);\n");
+    out.push_str("    char *method_name = ptn_value_to_string(method);\n");
+    out.push_str("    if (strstr(method_name, \"::\") == NULL) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\")) {\n");
+    out.push_str("            const char *resolved_scope = runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name;\n");
+    out.push_str("            if (resolved_scope != NULL && !ptn_ascii_case_equal(resolved_scope, scope_name)) {\n");
+    out.push_str("                char deprecation[96];\n");
+    out.push_str("                int deprecation_written = snprintf(deprecation, sizeof(deprecation), \"Use of \\\"%s\\\" in callables is deprecated\", scope_name);\n");
+    out.push_str("                if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str(
+        "                ptn_emit_deprecation(&runtime->diagnostics, deprecation, line);\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("        } else if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n");
+    out.push_str("            const char *base = runtime->current_class_name;\n");
+    out.push_str("            const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
+    out.push_str("            if (parent != NULL) {\n");
+    out.push_str("                ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", line);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    free(method_name);\n");
+    out.push_str("    free(scope_name);\n");
+    out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index) {\n",
@@ -26302,6 +26567,17 @@ fn emit_callable_dispatch(
             out.push_str("    }\n");
         }
         out.push_str("    return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
+        out.push_str("}\n");
+    }
+
+    if !full_internal_dispatch {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func) {\n",
+        );
+        out.push_str("    (void)arg_names;\n");
+        out.push_str(
+            "    return ptn_call_callable(runtime, callable, argc, args, line, from_call_user_func);\n",
+        );
         out.push_str("}\n");
     }
 
@@ -27830,9 +28106,11 @@ fn emit_instruction(
             out.push_str(&emitted_value);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
+            values.update_known_simple_preg_pattern_variable(name, value);
         }
         Instruction::StoreRef { name, source, line } => {
             values.emit_store_reference_source_to_variable(out, name, source, *line);
+            values.known_simple_preg_patterns.remove(name);
         }
         Instruction::BindStatic { name, value, .. } => {
             let slot = values.next_static_local();
@@ -27884,6 +28162,7 @@ fn emit_instruction(
             out.push_str("\", ptn_reference_value(");
             out.push_str(&slot);
             out.push_str("));\n");
+            values.known_simple_preg_patterns.remove(name);
         }
         Instruction::StoreArrayDim {
             array,
@@ -28231,9 +28510,11 @@ fn emit_instruction(
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }
             }
+            values.known_simple_preg_patterns.remove(array);
         }
         Instruction::StoreArrayDimRef { target, source } => {
             values.emit_store_reference_source_to_array_dim(out, target, source, source_path);
+            values.known_simple_preg_patterns.remove(&target.array);
         }
         Instruction::DefineConstant {
             name, value, line, ..
@@ -28288,6 +28569,7 @@ fn emit_instruction(
         }
         Instruction::Increment { target, op, line } => {
             emit_increment_statement(out, values, target, *op, *line, source_path);
+            values.forget_known_simple_preg_pattern_inc_dec_target(target);
         }
         Instruction::Tick { .. } => {}
         Instruction::TickScope { enabled, body } => {
@@ -28373,6 +28655,7 @@ fn emit_instruction(
             out.push_str("    ptn_runtime_unset_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\");\n");
+            values.known_simple_preg_patterns.remove(name);
         }
         Instruction::UnsetDynamicVariable { name, line } => {
             let name_temp = values.emit_dynamic_variable_name(out, name, *line);
@@ -28383,11 +28666,13 @@ fn emit_instruction(
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::BindGlobal { name } => {
             out.push_str("    ptn_runtime_bind_global_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\");\n");
+            values.known_simple_preg_patterns.remove(name);
         }
         Instruction::BindDynamicGlobal { name, line } => {
             let name_temp = values.emit_dynamic_variable_name(out, name, *line);
@@ -28397,6 +28682,7 @@ fn emit_instruction(
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::DeclareFunction { function_index } => {
             let function = &values.user_functions[*function_index];
@@ -29116,6 +29402,7 @@ fn emit_instruction(
                 return_target,
                 label_scope,
             );
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::Branch {
             condition,
@@ -29123,6 +29410,7 @@ fn emit_instruction(
             else_body,
         } => {
             let condition_predicate = values.emit_condition(out, condition);
+            let condition_known_simple_preg_patterns = values.known_simple_preg_patterns.clone();
             out.push_str("    if (");
             out.push_str(&condition_predicate);
             out.push_str(") {\n");
@@ -29138,6 +29426,8 @@ fn emit_instruction(
                     label_scope,
                 );
             }
+            let then_known_simple_preg_patterns = values.known_simple_preg_patterns.clone();
+            values.known_simple_preg_patterns = condition_known_simple_preg_patterns.clone();
             if !else_body.is_empty() {
                 out.push_str("    } else {\n");
                 for body_instruction in else_body {
@@ -29153,6 +29443,11 @@ fn emit_instruction(
                     );
                 }
             }
+            let else_known_simple_preg_patterns = values.known_simple_preg_patterns.clone();
+            values.known_simple_preg_patterns = then_known_simple_preg_patterns
+                .intersection(&else_known_simple_preg_patterns)
+                .cloned()
+                .collect();
             out.push_str("    }\n");
         }
         Instruction::While { condition, body } => {
@@ -29195,6 +29490,7 @@ fn emit_instruction(
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::DoWhile { body, condition } => {
             let end_label = values.next_label("ptn_loop_end");
@@ -29236,6 +29532,7 @@ fn emit_instruction(
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::For {
             initializers,
@@ -29312,6 +29609,7 @@ fn emit_instruction(
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::Foreach {
             iterable,
@@ -29669,6 +29967,7 @@ fn emit_instruction(
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::Switch { expression, cases } => {
             emit_switch(
@@ -29682,6 +29981,7 @@ fn emit_instruction(
                 return_target,
                 label_scope,
             );
+            values.known_simple_preg_patterns.clear();
         }
         Instruction::Label { name } => {
             let label = scoped_c_label(name, label_scope);
@@ -33007,8 +33307,7 @@ fn collect_value_legacy_dollar_brace_deprecations(
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     let mut requirements = RuntimeRequirements::default();
     if module.classes.iter().any(|class| {
-        !class.methods.is_empty()
-            || !class.properties.is_empty()
+        !class.properties.is_empty()
             || !class.static_properties.is_empty()
             || !class.interfaces.is_empty()
             || class
@@ -33077,6 +33376,8 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         }
         let previous_known_array_variables =
             std::mem::take(&mut requirements.known_array_variables);
+        let previous_known_simple_preg_patterns =
+            std::mem::take(&mut requirements.known_simple_preg_patterns);
         for parameter in &function.parameters {
             if parameter.is_variadic {
                 requirements
@@ -33090,6 +33391,7 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
             &mut requirements,
         );
         requirements.known_array_variables = previous_known_array_variables;
+        requirements.known_simple_preg_patterns = previous_known_simple_preg_patterns;
     }
     requirements
 }
@@ -33164,6 +33466,11 @@ fn collect_instruction_runtime_requirements(
             } else {
                 requirements.known_array_variables.remove(name);
             }
+            update_known_simple_preg_pattern_variable(
+                &mut requirements.known_simple_preg_patterns,
+                name,
+                value,
+            );
         }
         Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
@@ -33191,6 +33498,7 @@ fn collect_instruction_runtime_requirements(
                 }
             }
             collect_value_runtime_requirements(value, functions, requirements);
+            requirements.known_simple_preg_patterns.remove(array);
         }
         Instruction::StoreRef { name, source, .. } => {
             if variable_needs_request_context(name) {
@@ -33198,6 +33506,7 @@ fn collect_instruction_runtime_requirements(
             }
             collect_value_runtime_requirements(source, functions, requirements);
             requirements.known_array_variables.remove(name);
+            requirements.known_simple_preg_patterns.remove(name);
         }
         Instruction::StoreArrayDimRef { target, source } => {
             for dimension in &target.dimensions {
@@ -33206,9 +33515,16 @@ fn collect_instruction_runtime_requirements(
                 }
             }
             collect_value_runtime_requirements(source, functions, requirements);
+            requirements
+                .known_simple_preg_patterns
+                .remove(&target.array);
         }
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
+            forget_known_simple_preg_pattern_inc_dec_target(
+                &mut requirements.known_simple_preg_patterns,
+                target,
+            );
         }
         Instruction::Tick { .. } => {}
         Instruction::TickScope { body, .. } => {
@@ -33219,10 +33535,12 @@ fn collect_instruction_runtime_requirements(
                 requirements.request_context = true;
             }
             requirements.known_array_variables.remove(name);
+            requirements.known_simple_preg_patterns.remove(name);
         }
         Instruction::BindDynamicGlobal { name, .. } => {
             requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::DeclareFunction { .. }
         | Instruction::DeclareTrait { .. }
@@ -33231,6 +33549,7 @@ fn collect_instruction_runtime_requirements(
         | Instruction::ValidateClass { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::UnsetArrayDim {
             array, dimensions, ..
@@ -33241,6 +33560,7 @@ fn collect_instruction_runtime_requirements(
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
+            requirements.known_simple_preg_patterns.remove(array);
         }
         Instruction::UnsetDynamicArrayDim {
             name, dimensions, ..
@@ -33328,6 +33648,7 @@ fn collect_instruction_runtime_requirements(
                 collect_instructions_runtime_requirements(&catch.body, functions, requirements);
             }
             collect_instructions_runtime_requirements(finally_body, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::Branch {
             condition,
@@ -33335,12 +33656,23 @@ fn collect_instruction_runtime_requirements(
             else_body,
         } => {
             collect_value_runtime_requirements(condition, functions, requirements);
+            let condition_known_simple_preg_patterns =
+                requirements.known_simple_preg_patterns.clone();
+            requirements.known_simple_preg_patterns = condition_known_simple_preg_patterns.clone();
             collect_instructions_runtime_requirements(then_body, functions, requirements);
+            let then_known_simple_preg_patterns = requirements.known_simple_preg_patterns.clone();
+            requirements.known_simple_preg_patterns = condition_known_simple_preg_patterns.clone();
             collect_instructions_runtime_requirements(else_body, functions, requirements);
+            let else_known_simple_preg_patterns = requirements.known_simple_preg_patterns.clone();
+            requirements.known_simple_preg_patterns = then_known_simple_preg_patterns
+                .intersection(&else_known_simple_preg_patterns)
+                .cloned()
+                .collect();
         }
         Instruction::While { condition, body } | Instruction::DoWhile { body, condition } => {
             collect_value_runtime_requirements(condition, functions, requirements);
             collect_instructions_runtime_requirements(body, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::For {
             initializers,
@@ -33354,6 +33686,7 @@ fn collect_instruction_runtime_requirements(
             }
             collect_instructions_runtime_requirements(updates, functions, requirements);
             collect_instructions_runtime_requirements(body, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::Foreach {
             iterable,
@@ -33368,6 +33701,7 @@ fn collect_instruction_runtime_requirements(
             }
             collect_assignment_target_runtime_requirements(value, functions, requirements);
             collect_instructions_runtime_requirements(body, functions, requirements);
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::Switch { expression, cases } => {
             collect_value_runtime_requirements(expression, functions, requirements);
@@ -33377,6 +33711,7 @@ fn collect_instruction_runtime_requirements(
                 }
                 collect_instructions_runtime_requirements(&case.body, functions, requirements);
             }
+            requirements.known_simple_preg_patterns.clear();
         }
         Instruction::Break { .. }
         | Instruction::Continue { .. }
@@ -33710,18 +34045,47 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
+            forget_known_simple_preg_pattern_inc_dec_target(
+                &mut requirements.known_simple_preg_patterns,
+                target,
+            );
         }
         ValueExpr::DynamicVariable { name, .. } => {
             requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        ValueExpr::Assign { target, value, .. } => {
+        ValueExpr::Assign {
+            target, op, value, ..
+        } => {
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(value, functions, requirements);
+            if matches!(op, AssignmentOp::Assign) {
+                if let AssignmentTarget::Variable { name, .. } = target {
+                    update_known_simple_preg_pattern_variable(
+                        &mut requirements.known_simple_preg_patterns,
+                        name,
+                        value,
+                    );
+                } else {
+                    forget_known_simple_preg_pattern_assignment_target(
+                        &mut requirements.known_simple_preg_patterns,
+                        target,
+                    );
+                }
+            } else {
+                forget_known_simple_preg_pattern_assignment_target(
+                    &mut requirements.known_simple_preg_patterns,
+                    target,
+                );
+            }
         }
         ValueExpr::AssignRef { target, source } => {
             collect_assignment_target_runtime_requirements(target, functions, requirements);
             collect_value_runtime_requirements(source, functions, requirements);
+            forget_known_simple_preg_pattern_assignment_target(
+                &mut requirements.known_simple_preg_patterns,
+                target,
+            );
         }
         ValueExpr::Array(elements) => {
             for element in elements {
@@ -33835,20 +34199,19 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("setTimestamp") {
                 requirements.internal_function_dispatch = true;
             }
-            if (name.eq_ignore_ascii_case("parse") && !is_compact_intl_method_name(name))
-                || is_uri_whatwg_url_method_name(name)
-            {
-                requirements.internal_function_dispatch = true;
-            }
             if is_uri_whatwg_url_method_name(name) {
                 requirements.ada_url = true;
+                requirements.direct_internal_helpers = true;
+                requirements.uri_internal_helpers = true;
+            } else if name.eq_ignore_ascii_case("parse") && !is_compact_intl_method_name(name) {
+                requirements.internal_function_dispatch = true;
             }
             if name.eq_ignore_ascii_case("__invoke") {
                 requirements.closure_invoke_method_dispatch = true;
                 requirements.internal_function_dispatch = true;
                 requirements.dynamic_function_dispatch = true;
             }
-            if name.eq_ignore_ascii_case("bindTo") || name.eq_ignore_ascii_case("call") {
+            if name.eq_ignore_ascii_case("bindTo") {
                 requirements.internal_function_dispatch = true;
                 requirements.dynamic_function_dispatch = true;
             }
@@ -33891,7 +34254,8 @@ fn collect_value_runtime_requirements(
                 requirements.method_dispatch = true;
             } else if is_compact_intl_new_object(class_name, argument_unpacks) {
                 mark_compact_intl_runtime_requirements(requirements);
-            } else if modeled_internal_class_name(class_name).is_some()
+            } else if (modeled_internal_class_name(class_name).is_some()
+                && !is_uri_whatwg_url_class_name(class_name))
                 || class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
@@ -34014,7 +34378,6 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("SimpleXMLIterator")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
-                || is_uri_whatwg_url_class_name(class_name)
                 || class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
@@ -34027,6 +34390,12 @@ fn collect_value_runtime_requirements(
                 if is_uri_whatwg_url_class_name(class_name) {
                     requirements.ada_url = true;
                 }
+            }
+            if is_uri_whatwg_url_class_name(class_name) {
+                requirements.ada_url = true;
+                requirements.method_dispatch = true;
+                requirements.direct_internal_helpers = true;
+                requirements.uri_internal_helpers = true;
             }
             if class_name.eq_ignore_ascii_case("CallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
@@ -34176,8 +34545,14 @@ fn collect_call_runtime_requirements(
     }
     if is_uri_whatwg_url_static_call_name(name) {
         requirements.ada_url = true;
-        requirements.internal_function_dispatch = true;
         requirements.method_dispatch = true;
+        if has_named_arguments || has_unpacked_arguments {
+            requirements.internal_function_dispatch = true;
+        } else {
+            requirements.direct_internal_helpers = true;
+            requirements.uri_internal_helpers = true;
+            return;
+        }
     }
     if !has_named_arguments && name.eq_ignore_ascii_case("var_dump") {
         requirements.compact_internal_helpers = true;
@@ -34201,6 +34576,55 @@ fn collect_call_runtime_requirements(
         && is_direct_array_uassoc_call(name, arguments, argument_unpacks, functions)
     {
         requirements.compact_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && name.eq_ignore_ascii_case("json_decode")
+        && (1..=4).contains(&arguments.len())
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.json_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && (name.eq_ignore_ascii_case("json_last_error")
+            || name.eq_ignore_ascii_case("json_last_error_msg"))
+        && arguments.is_empty()
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.json_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && name.eq_ignore_ascii_case("preg_match")
+        && (2..=5).contains(&arguments.len())
+    {
+        requirements.direct_internal_helpers = true;
+        if !is_direct_simple_preg_match_call(arguments, requirements) {
+            requirements.pcre_internal_helpers = true;
+        }
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && (name.eq_ignore_ascii_case("preg_last_error")
+            || name.eq_ignore_ascii_case("preg_last_error_msg"))
+        && arguments.is_empty()
+    {
+        requirements.direct_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && name.eq_ignore_ascii_case("call_user_func")
+        && !arguments.is_empty()
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.dynamic_function_dispatch = true;
+        requirements.method_dispatch = true;
         return;
     }
     requirements.internal_function_dispatch = true;
@@ -34386,6 +34810,8 @@ fn is_direct_internal_helper_call(
             || name.eq_ignore_ascii_case("key_exists"))
             && argument_count == 2)
         || (name.eq_ignore_ascii_case("str_repeat") && argument_count == 2)
+        || ((name.eq_ignore_ascii_case("implode") || name.eq_ignore_ascii_case("join"))
+            && (argument_count == 1 || argument_count == 2))
         || (name.eq_ignore_ascii_case("get_class") && argument_count == 1)
         || name.eq_ignore_ascii_case("var_dump")
 }
@@ -34418,6 +34844,22 @@ fn is_direct_array_fill_call(
     name.eq_ignore_ascii_case("array_fill")
         && arguments.len() == 3
         && argument_unpacks.iter().all(|unpack| !*unpack)
+}
+
+fn is_direct_simple_preg_match_call(
+    arguments: &[ValueExpr],
+    requirements: &RuntimeRequirements,
+) -> bool {
+    let [pattern, _, ValueExpr::Load { name, .. }, ValueExpr::Int(0), _] = arguments else {
+        return false;
+    };
+    name != "GLOBALS"
+        && (value_is_direct_preg_word_boundary_pattern(pattern)
+            || matches!(
+                pattern,
+                ValueExpr::Load { name, .. }
+                    if requirements.known_simple_preg_patterns.contains(name)
+            ))
 }
 
 fn is_known_array_count_call(arguments: &[ValueExpr], requirements: &RuntimeRequirements) -> bool {
@@ -37478,6 +37920,7 @@ struct ValueEmitter {
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
     full_internal_dispatch: bool,
+    known_simple_preg_patterns: HashSet<String>,
 }
 
 enum PropertyReadSegment<'a> {
@@ -39229,7 +39672,38 @@ impl ValueEmitter {
             classes: classes.to_vec(),
             includes: includes.to_vec(),
             full_internal_dispatch,
+            known_simple_preg_patterns: HashSet::new(),
         }
+    }
+
+    fn update_known_simple_preg_pattern_variable(&mut self, name: &str, value: &ValueExpr) {
+        update_known_simple_preg_pattern_variable(
+            &mut self.known_simple_preg_patterns,
+            name,
+            value,
+        );
+    }
+
+    fn forget_known_simple_preg_pattern_assignment_target(&mut self, target: &AssignmentTarget) {
+        forget_known_simple_preg_pattern_assignment_target(
+            &mut self.known_simple_preg_patterns,
+            target,
+        );
+    }
+
+    fn forget_known_simple_preg_pattern_inc_dec_target(&mut self, target: &IncDecTarget) {
+        forget_known_simple_preg_pattern_inc_dec_target(
+            &mut self.known_simple_preg_patterns,
+            target,
+        );
+    }
+
+    fn preg_match_pattern_is_direct_word_boundary(&self, pattern: &ValueExpr) -> bool {
+        value_is_direct_preg_word_boundary_pattern(pattern)
+            || matches!(
+                pattern,
+                ValueExpr::Load { name, .. } if self.known_simple_preg_patterns.contains(name)
+            )
     }
 
     fn emit_access_scope(&self, out: &mut String) {
@@ -40431,6 +40905,7 @@ impl ValueEmitter {
         op: AssignmentOp,
         value: &ValueExpr,
     ) -> String {
+        self.forget_known_simple_preg_pattern_assignment_target(target);
         if matches!(op, AssignmentOp::CoalesceAssign) {
             match target {
                 AssignmentTarget::Variable { name, .. } => {
@@ -41120,6 +41595,9 @@ impl ValueEmitter {
             }
             let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
             emit_value_cleanup(out, "    ", &value_temp);
+            if matches!(op, AssignmentOp::Assign) {
+                self.update_known_simple_preg_pattern_variable(name, value);
+            }
             return result_temp;
         }
 
@@ -42973,6 +43451,7 @@ impl ValueEmitter {
         target: &AssignmentTarget,
         source: &ValueExpr,
     ) -> String {
+        self.forget_known_simple_preg_pattern_assignment_target(target);
         if let ValueExpr::StaticPropertyFetch {
             class_name,
             name,
@@ -43182,6 +43661,7 @@ impl ValueEmitter {
         source: &ValueExpr,
         line: usize,
     ) -> String {
+        self.forget_known_simple_preg_pattern_assignment_target(target);
         if let ValueExpr::StaticPropertyFetch {
             class_name,
             name,
@@ -45683,6 +46163,7 @@ impl ValueEmitter {
         result: IncDecResult,
         line: usize,
     ) -> String {
+        self.forget_known_simple_preg_pattern_inc_dec_target(target);
         match target {
             IncDecTarget::Variable { name, .. } => {
                 let current_temp = self.next_temp();
@@ -53272,17 +53753,90 @@ impl ValueEmitter {
         result_temp.to_string()
     }
 
+    fn emit_direct_implode_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        let helper = if name.eq_ignore_ascii_case("join") {
+            "ptn_direct_join"
+        } else {
+            "ptn_direct_implode"
+        };
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(helper);
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_direct_preg_match_call(
         &mut self,
         out: &mut String,
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
-        if let [ValueExpr::String(pattern), subject, ValueExpr::Load {
+        if let [pattern, subject, ValueExpr::Load {
             name: matches_name, ..
         }, ValueExpr::Int(0), offset] = arguments
         {
-            if pattern == "/\\G\\w/u" && matches_name != "GLOBALS" {
+            if self.preg_match_pattern_is_direct_word_boundary(pattern) && matches_name != "GLOBALS"
+            {
+                let subject_temp = self.emit_call_argument(out, "preg_match", 1, subject);
+                let offset_temp = self.emit_call_argument(out, "preg_match", 4, offset);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_direct_preg_match_word_boundary_variable_matches(&runtime, ");
+                out.push_str(&subject_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(matches_name));
+                out.push_str("\", ");
+                out.push_str(&offset_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &subject_temp);
+                emit_value_cleanup(out, "    ", &offset_temp);
+                return result_temp;
+            }
+            if matches!(pattern, ValueExpr::String(pattern) if pattern == "/\\G\\w/u")
+                && matches_name != "GLOBALS"
+            {
                 let subject_temp = self.emit_call_argument(out, "preg_match", 1, subject);
                 let offset_temp = self.emit_call_argument(out, "preg_match", 4, offset);
                 let result_temp = self.next_temp();
@@ -53342,6 +53896,252 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_internal_preg_match(&runtime, ");
         out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
+    fn emit_direct_json_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+
+        let result_temp = self.next_temp();
+        let helper = if name.eq_ignore_ascii_case("json_last_error") {
+            "ptn_internal_json_last_error"
+        } else if name.eq_ignore_ascii_case("json_last_error_msg") {
+            "ptn_internal_json_last_error_msg"
+        } else {
+            "ptn_internal_json_decode"
+        };
+        if temps.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(helper);
+            out.push_str("(&runtime, 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(helper);
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
+    fn emit_direct_call_user_func_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+        discarded: bool,
+    ) -> String {
+        let callable_temp = self.emit_materialized_value(out, &arguments[0]);
+        let result_temp = self.next_temp();
+        let previous_call_site_line_temp = self.next_temp();
+        let previous_warn_by_ref_temp = self.next_temp();
+        out.push_str("    size_t ");
+        out.push_str(&previous_call_site_line_temp);
+        out.push_str(" = runtime.call_site_line;\n");
+        out.push_str("    int ");
+        out.push_str(&previous_warn_by_ref_temp);
+        out.push_str(" = runtime.warn_by_ref_argument_mismatch;\n");
+        out.push_str("    runtime.call_site_line = ");
+        out.push_str(&line.to_string());
+        out.push_str(";\n");
+        out.push_str("    runtime.warn_by_ref_argument_mismatch = 1;\n");
+        out.push_str("    ptn_call_user_func_emit_relative_callable_deprecation(&runtime, ");
+        out.push_str(&callable_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        if arguments.len() == 1 {
+            if discarded {
+                self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
+            }
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_callable(&runtime, ");
+            out.push_str(&callable_temp);
+            out.push_str(", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(", 1);\n");
+            out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
+            out.push_str(&previous_warn_by_ref_temp);
+            out.push_str(";\n");
+            out.push_str("    runtime.call_site_line = ");
+            out.push_str(&previous_call_site_line_temp);
+            out.push_str(";\n");
+            emit_value_cleanup(out, "    ", &callable_temp);
+            return result_temp;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len() - 1);
+        let mut unwrap_array_dim_reference_temps = Vec::new();
+        for (argument_index, argument) in arguments.iter().enumerate().skip(1) {
+            let temp = self.emit_runtime_callable_call_argument(
+                out,
+                &callable_temp,
+                argument_index - 1,
+                argument,
+                line,
+            );
+            if value_is_array_dim_reference_target(argument) {
+                unwrap_array_dim_reference_temps.push(temp.clone());
+            }
+            temps.push(temp);
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &args_temp, temps.len());
+        if discarded {
+            self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
+        }
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_callable(&runtime, ");
+        out.push_str(&callable_temp);
+        out.push_str(", ");
+        out.push_str(&temps.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1);\n");
+        out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
+        out.push_str(&previous_warn_by_ref_temp);
+        out.push_str(";\n");
+        out.push_str("    runtime.call_site_line = ");
+        out.push_str(&previous_call_site_line_temp);
+        out.push_str(";\n");
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
+        }
+        emit_pop_owned_call_argument_roots(out, "    ", temps.len());
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        emit_value_cleanup(out, "    ", &callable_temp);
+        result_temp
+    }
+
+    fn emit_direct_uri_whatwg_url_parse_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if argument_index == 2 {
+                temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    "Uri\\WhatWg\\Url::parse",
+                    argument_index,
+                    "errors",
+                    line,
+                    true,
+                    true,
+                ));
+            } else {
+                temps.push(self.emit_call_argument(
+                    out,
+                    "Uri\\WhatWg\\Url::parse",
+                    argument_index,
+                    argument,
+                ));
+            }
+        }
+
+        let result_temp = self.next_temp();
+        if temps.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_uri_parse_static(&runtime, \"Uri\\\\WhatWg\\\\Url\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_uri_parse_static(&runtime, \"Uri\\\\WhatWg\\\\Url\", ");
+        out.push_str(&temps.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
         out.push_str(", ");
@@ -53833,10 +54633,72 @@ impl ValueEmitter {
 
         if !has_named_arguments
             && !has_unpacked_arguments
+            && (name.eq_ignore_ascii_case("implode") || name.eq_ignore_ascii_case("join"))
+            && (arguments.len() == 1 || arguments.len() == 2)
+        {
+            return self.emit_direct_implode_call(out, name, arguments, line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
             && name.eq_ignore_ascii_case("preg_match")
             && (2..=5).contains(&arguments.len())
         {
             return self.emit_direct_preg_match_call(out, arguments, line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("json_decode")
+            && (1..=4).contains(&arguments.len())
+        {
+            return self.emit_direct_json_call(out, name, arguments, line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && arguments.is_empty()
+            && (name.eq_ignore_ascii_case("json_last_error")
+                || name.eq_ignore_ascii_case("json_last_error_msg"))
+        {
+            return self.emit_direct_json_call(out, name, arguments, line);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && arguments.is_empty()
+            && (name.eq_ignore_ascii_case("preg_last_error")
+                || name.eq_ignore_ascii_case("preg_last_error_msg"))
+        {
+            let result_temp = self.next_temp();
+            let helper = if name.eq_ignore_ascii_case("preg_last_error") {
+                "ptn_direct_preg_last_error"
+            } else {
+                "ptn_direct_preg_last_error_msg"
+            };
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(helper);
+            out.push_str("(&runtime, 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("call_user_func")
+            && !arguments.is_empty()
+        {
+            return self.emit_direct_call_user_func_call(out, arguments, line, discarded);
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && is_uri_whatwg_url_static_call_name(name)
+        {
+            return self.emit_direct_uri_whatwg_url_parse_call(out, arguments, line);
         }
 
         if !has_named_arguments
