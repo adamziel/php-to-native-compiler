@@ -12,14 +12,14 @@ use crate::ast::{
 };
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassConstantDecl, ClassDecl, ClosureCapture,
-    CompileWarning, CompileWarningKind, DeprecatedMessageDependency, EnumBackingType, FunctionDecl,
-    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
-    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
-    PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TraitMethodDecl,
-    TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
+    ArrayDimTarget, ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue,
+    AssignmentTarget, BinaryOp, CastKind, CatchClause as IrCatchClause, ClassConstantDecl,
+    ClassDecl, ClosureCapture, CompileWarning, CompileWarningKind, DeprecatedMessageDependency,
+    EnumBackingType, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget,
+    IncludeFile, InstanceOfTarget, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl,
+    TraitMethodDecl, TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -201,7 +201,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_include_once_state(&mut out, &module.includes, &module.preload_include_indices);
     emit_include_runtime_helpers(&mut out);
     emit_source_snapshot_arrays(&mut out, module);
-    if needs_lightweight_closure_reflection {
+    if needs_lightweight_closure_reflection || !runtime_requirements.internal_function_dispatch {
         emit_closure_reflection_helpers(&mut out);
     }
     emit_user_function_prototypes(
@@ -29710,8 +29710,12 @@ fn emit_instruction(
             out.push_str("    runtime.implicit_generator_foreach_line = ");
             out.push_str(&line.to_string());
             out.push_str(";\n");
-            let value_list_has_reference = matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
-            let iterator_needs_reference = *value_by_ref || value_list_has_reference;
+            let value_list_reference_target = if let AssignmentTarget::List(target) = value {
+                list_assignment_has_reference(target).then_some(target)
+            } else {
+                None
+            };
+            let iterator_needs_reference = *value_by_ref || value_list_reference_target.is_some();
             let iterable_temp = if iterator_needs_reference {
                 match iterable {
                     ValueExpr::Load { name, .. } => {
@@ -29854,7 +29858,7 @@ fn emit_instruction(
             out.push_str("        PtnValue ");
             out.push_str(&value_temp);
             out.push_str(" = ");
-            if iterator_needs_reference {
+            if *value_by_ref {
                 out.push_str("ptn_array_iterator_current_reference(&");
             } else {
                 out.push_str("ptn_array_iterator_current_value(&");
@@ -29875,6 +29879,14 @@ fn emit_instruction(
             }
             if *value_by_ref {
                 values.emit_bind_assignment_target_reference(out, value, &value_temp);
+            } else if let Some(target) = value_list_reference_target {
+                values.emit_list_assignment_from_iterator_path(
+                    out,
+                    target,
+                    &iterator_temp,
+                    &value_temp,
+                    &[],
+                );
             } else {
                 let value_result_temp =
                     values.emit_store_assignment_target_from_temp(out, value, &value_temp);
@@ -31607,6 +31619,18 @@ fn emit_array_path(
         value_temps,
         deferred_undefined_variable_warnings: Vec::new(),
     }
+}
+
+fn emit_array_path_from_key_temps(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    key_temps: &[String],
+) -> EmittedArrayPath {
+    let initializers = key_temps
+        .iter()
+        .map(|temp| format!("{{ 0, {temp} }}"))
+        .collect();
+    emit_array_path(out, values, key_temps.len(), initializers, Vec::new())
 }
 
 fn emit_array_path_value_snapshot(
@@ -44524,6 +44548,13 @@ impl ValueEmitter {
                 return self.emit_reference_list_assignment_from_variable(out, target, name);
             }
             if let Some(source_target) = reference_target_from_value(value) {
+                if let ReferenceTarget::ArrayDim(source) = &source_target {
+                    if source.dimensions.iter().all(Option::is_some) {
+                        return self.emit_reference_list_assignment_from_array_dim_path(
+                            out, target, source,
+                        );
+                    }
+                }
                 let reference_temp = self.emit_reference_target(out, &source_target);
                 let result_temp =
                     self.emit_list_assignment_from_temp(out, target, &reference_temp, false);
@@ -44597,6 +44628,325 @@ impl ValueEmitter {
         out.push_str("    exit(255);\n");
     }
 
+    fn emit_non_referenceable_list_reference_notice_guard(
+        &self,
+        out: &mut String,
+        value_temp: &str,
+        line: usize,
+        warn_non_referenceable_refs: bool,
+    ) {
+        if !warn_non_referenceable_refs {
+            return;
+        }
+        out.push_str("    if (");
+        out.push_str(value_temp);
+        out.push_str(".type != PTN_REFERENCE) {\n");
+        out.push_str(
+            "        ptn_emit_attempting_to_set_reference_to_non_referenceable_value_notice(&runtime.diagnostics, ",
+        );
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+
+    fn emit_list_assignment_from_value_path(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        value_temp: &str,
+        prefix_keys: &[String],
+        warn_non_referenceable_refs: bool,
+    ) {
+        for (index, element) in target.elements.iter().enumerate() {
+            let key_temp = self.emit_list_key(out, element, index);
+            let mut path_keys = prefix_keys.to_vec();
+            path_keys.push(key_temp.clone());
+            match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    if let AssignmentTarget::List(nested) = target.as_ref() {
+                        if list_assignment_has_reference(nested) {
+                            self.emit_list_assignment_from_value_path(
+                                out,
+                                nested,
+                                value_temp,
+                                &path_keys,
+                                warn_non_referenceable_refs,
+                            );
+                        } else {
+                            let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                            let element_temp = self.next_temp();
+                            out.push_str("    PtnValue ");
+                            out.push_str(&element_temp);
+                            out.push_str(
+                                " = ptn_value_array_path_read_for_list_destructure(&runtime, ",
+                            );
+                            out.push_str(value_temp);
+                            out.push_str(", ");
+                            out.push_str(&path.name);
+                            out.push_str(", ");
+                            out.push_str(&path.len.to_string());
+                            out.push_str(", ");
+                            out.push_str(&target.line().to_string());
+                            out.push_str(");\n");
+                            let stored_temp = self.emit_store_assignment_target_from_temp(
+                                out,
+                                target,
+                                &element_temp,
+                            );
+                            emit_value_cleanup(out, "    ", &stored_temp);
+                            emit_value_cleanup(out, "    ", &element_temp);
+                        }
+                    } else {
+                        let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                        let element_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&element_temp);
+                        out.push_str(
+                            " = ptn_value_array_path_read_for_list_destructure(&runtime, ",
+                        );
+                        out.push_str(value_temp);
+                        out.push_str(", ");
+                        out.push_str(&path.name);
+                        out.push_str(", ");
+                        out.push_str(&path.len.to_string());
+                        out.push_str(", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        let stored_temp =
+                            self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                        emit_value_cleanup(out, "    ", &stored_temp);
+                        emit_value_cleanup(out, "    ", &element_temp);
+                    }
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    self.emit_non_referenceable_list_reference_notice_guard(
+                        out,
+                        value_temp,
+                        target.line(),
+                        warn_non_referenceable_refs,
+                    );
+                    let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_value_reference_for_array_path(&runtime, &");
+                    out.push_str(value_temp);
+                    out.push_str(", ");
+                    out.push_str(&path.name);
+                    out.push_str(", ");
+                    out.push_str(&path.len.to_string());
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    self.emit_bind_reference_target(out, target, &source_temp);
+                    emit_value_cleanup(out, "    ", &source_temp);
+                }
+            }
+            emit_value_cleanup(out, "    ", &key_temp);
+        }
+    }
+
+    fn emit_list_assignment_from_variable_path(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        source_name: &str,
+        prefix_keys: &[String],
+        self_referential: bool,
+        pending_reference_binds: &mut Vec<(ReferenceTarget, String)>,
+        cleanup_temps: &mut Vec<String>,
+    ) {
+        for (index, element) in target.elements.iter().enumerate() {
+            let key_temp = self.emit_list_key(out, element, index);
+            cleanup_temps.push(key_temp.clone());
+            let mut path_keys = prefix_keys.to_vec();
+            path_keys.push(key_temp);
+            match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    if let AssignmentTarget::List(nested) = target.as_ref() {
+                        if list_assignment_has_reference(nested) {
+                            self.emit_list_assignment_from_variable_path(
+                                out,
+                                nested,
+                                source_name,
+                                &path_keys,
+                                self_referential,
+                                pending_reference_binds,
+                                cleanup_temps,
+                            );
+                        } else {
+                            let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                            let element_temp = self.next_temp();
+                            out.push_str("    PtnValue ");
+                            out.push_str(&element_temp);
+                            out.push_str(
+                                " = ptn_runtime_array_path_read_for_list_destructure(&runtime, \"",
+                            );
+                            out.push_str(&c_string(source_name));
+                            out.push_str("\", ");
+                            out.push_str(&path.name);
+                            out.push_str(", ");
+                            out.push_str(&path.len.to_string());
+                            out.push_str(", \"");
+                            out.push_str(&c_string(&self.source_file));
+                            out.push_str("\", ");
+                            out.push_str(&target.line().to_string());
+                            out.push_str(");\n");
+                            let stored_temp = self.emit_store_assignment_target_from_temp(
+                                out,
+                                target,
+                                &element_temp,
+                            );
+                            emit_value_cleanup(out, "    ", &stored_temp);
+                            cleanup_temps.push(element_temp);
+                        }
+                    } else {
+                        let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                        let element_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&element_temp);
+                        out.push_str(
+                            " = ptn_runtime_array_path_read_for_list_destructure(&runtime, \"",
+                        );
+                        out.push_str(&c_string(source_name));
+                        out.push_str("\", ");
+                        out.push_str(&path.name);
+                        out.push_str(", ");
+                        out.push_str(&path.len.to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&self.source_file));
+                        out.push_str("\", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        let stored_temp =
+                            self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                        emit_value_cleanup(out, "    ", &stored_temp);
+                        cleanup_temps.push(element_temp);
+                    }
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_runtime_reference_for_array_path(&runtime, \"");
+                    out.push_str(&c_string(source_name));
+                    out.push_str("\", ");
+                    out.push_str(&path.name);
+                    out.push_str(", ");
+                    out.push_str(&path.len.to_string());
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    if self_referential {
+                        pending_reference_binds.push((target.clone(), source_temp.clone()));
+                        cleanup_temps.push(source_temp);
+                    } else {
+                        self.emit_bind_reference_target(out, target, &source_temp);
+                        emit_value_cleanup(out, "    ", &source_temp);
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_list_assignment_from_iterator_path(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        iterator_temp: &str,
+        value_temp: &str,
+        prefix_keys: &[String],
+    ) {
+        for (index, element) in target.elements.iter().enumerate() {
+            let key_temp = self.emit_list_key(out, element, index);
+            let mut path_keys = prefix_keys.to_vec();
+            path_keys.push(key_temp.clone());
+            match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    if let AssignmentTarget::List(nested) = target.as_ref() {
+                        if list_assignment_has_reference(nested) {
+                            self.emit_list_assignment_from_iterator_path(
+                                out,
+                                nested,
+                                iterator_temp,
+                                value_temp,
+                                &path_keys,
+                            );
+                        } else {
+                            let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                            let element_temp = self.next_temp();
+                            out.push_str("    PtnValue ");
+                            out.push_str(&element_temp);
+                            out.push_str(
+                                " = ptn_value_array_path_read_for_list_destructure(&runtime, ",
+                            );
+                            out.push_str(value_temp);
+                            out.push_str(", ");
+                            out.push_str(&path.name);
+                            out.push_str(", ");
+                            out.push_str(&path.len.to_string());
+                            out.push_str(", ");
+                            out.push_str(&target.line().to_string());
+                            out.push_str(");\n");
+                            let stored_temp = self.emit_store_assignment_target_from_temp(
+                                out,
+                                target,
+                                &element_temp,
+                            );
+                            emit_value_cleanup(out, "    ", &stored_temp);
+                            emit_value_cleanup(out, "    ", &element_temp);
+                        }
+                    } else {
+                        let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                        let element_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&element_temp);
+                        out.push_str(
+                            " = ptn_value_array_path_read_for_list_destructure(&runtime, ",
+                        );
+                        out.push_str(value_temp);
+                        out.push_str(", ");
+                        out.push_str(&path.name);
+                        out.push_str(", ");
+                        out.push_str(&path.len.to_string());
+                        out.push_str(", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        let stored_temp =
+                            self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                        emit_value_cleanup(out, "    ", &stored_temp);
+                        emit_value_cleanup(out, "    ", &element_temp);
+                    }
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    let path = emit_array_path_from_key_temps(out, self, &path_keys);
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_array_iterator_current_reference_for_array_path(&");
+                    out.push_str(iterator_temp);
+                    out.push_str(", ");
+                    out.push_str(&path.name);
+                    out.push_str(", ");
+                    out.push_str(&path.len.to_string());
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    self.emit_bind_reference_target(out, target, &source_temp);
+                    emit_value_cleanup(out, "    ", &source_temp);
+                }
+            }
+            emit_value_cleanup(out, "    ", &key_temp);
+        }
+    }
+
     fn emit_list_assignment_from_temp(
         &mut self,
         out: &mut String,
@@ -44608,20 +44958,50 @@ impl ValueEmitter {
             let key_temp = self.emit_list_key(out, element, index);
             match &element.target {
                 ListAssignmentElementTarget::Value(target) => {
-                    let element_temp = self.next_temp();
-                    out.push_str("    PtnValue ");
-                    out.push_str(&element_temp);
-                    out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
-                    out.push_str(value_temp);
-                    out.push_str(", ");
-                    out.push_str(&key_temp);
-                    out.push_str(", ");
-                    out.push_str(&target.line().to_string());
-                    out.push_str(");\n");
-                    let stored_temp =
-                        self.emit_store_assignment_target_from_temp(out, target, &element_temp);
-                    emit_value_cleanup(out, "    ", &stored_temp);
-                    emit_value_cleanup(out, "    ", &element_temp);
+                    if let AssignmentTarget::List(nested) = target.as_ref() {
+                        if list_assignment_has_reference(nested) {
+                            self.emit_list_assignment_from_value_path(
+                                out,
+                                nested,
+                                value_temp,
+                                &[key_temp.clone()],
+                                warn_non_referenceable_refs,
+                            );
+                        } else {
+                            let element_temp = self.next_temp();
+                            out.push_str("    PtnValue ");
+                            out.push_str(&element_temp);
+                            out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
+                            out.push_str(value_temp);
+                            out.push_str(", ");
+                            out.push_str(&key_temp);
+                            out.push_str(", ");
+                            out.push_str(&target.line().to_string());
+                            out.push_str(");\n");
+                            let stored_temp = self.emit_store_assignment_target_from_temp(
+                                out,
+                                target,
+                                &element_temp,
+                            );
+                            emit_value_cleanup(out, "    ", &stored_temp);
+                            emit_value_cleanup(out, "    ", &element_temp);
+                        }
+                    } else {
+                        let element_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&element_temp);
+                        out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
+                        out.push_str(value_temp);
+                        out.push_str(", ");
+                        out.push_str(&key_temp);
+                        out.push_str(", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        let stored_temp =
+                            self.emit_store_assignment_target_from_temp(out, target, &element_temp);
+                        emit_value_cleanup(out, "    ", &stored_temp);
+                        emit_value_cleanup(out, "    ", &element_temp);
+                    }
                 }
                 ListAssignmentElementTarget::Reference(target) => {
                     let source_temp = self.next_temp();
@@ -44658,6 +45038,54 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_reference_list_assignment_from_array_dim_path(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        source: &ArrayDimTarget,
+    ) -> String {
+        let self_referential = list_assignment_references_variable(target, &source.array);
+        let path = emit_array_path_segments(out, self, &source.dimensions);
+        let mut pending_reference_binds: Vec<(ReferenceTarget, String)> = Vec::new();
+        let mut cleanup_temps = Vec::new();
+        self.emit_list_assignment_from_variable_path(
+            out,
+            target,
+            &source.array,
+            &path.value_temps,
+            self_referential,
+            &mut pending_reference_binds,
+            &mut cleanup_temps,
+        );
+
+        for (target, source_temp) in &pending_reference_binds {
+            self.emit_bind_reference_target(out, target, source_temp);
+        }
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_array_path_read_for_list_destructure(&runtime, \"");
+        out.push_str(&c_string(&source.array));
+        out.push_str("\", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&source.line.to_string());
+        out.push_str(");\n");
+
+        for temp in cleanup_temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        for temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_reference_list_assignment_from_variable(
         &mut self,
         out: &mut String,
@@ -44679,20 +45107,37 @@ impl ValueEmitter {
                         let element_temp = self.next_temp();
                         out.push_str("    PtnValue ");
                         out.push_str(&element_temp);
-                        out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                        out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
                         out.push_str(&c_string(source_name));
-                        out.push_str("\", &");
-                        out.push_str(&key_temp);
-                        out.push_str(", \"");
+                        out.push_str("\", \"");
                         out.push_str(&c_string(&self.source_file));
                         out.push_str("\", ");
                         out.push_str(&target.line().to_string());
                         out.push_str(");\n");
-                        let stored_temp =
-                            self.emit_store_assignment_target_from_temp(out, target, &element_temp);
-                        emit_value_cleanup(out, "    ", &stored_temp);
+                        let nested_value_temp = self.next_temp();
+                        out.push_str("    PtnValue ");
+                        out.push_str(&nested_value_temp);
+                        out.push_str(" = ptn_array_read_for_list_destructure(&runtime, ");
+                        out.push_str(&element_temp);
+                        out.push_str(", ");
+                        out.push_str(&key_temp);
+                        out.push_str(", ");
+                        out.push_str(&target.line().to_string());
+                        out.push_str(");\n");
+                        if let AssignmentTarget::List(nested) = target.as_ref() {
+                            self.emit_list_assignment_from_variable_path(
+                                out,
+                                nested,
+                                source_name,
+                                &[key_temp.clone()],
+                                self_referential,
+                                &mut pending_reference_binds,
+                                &mut cleanup_temps,
+                            );
+                        }
                         cleanup_temps.push(element_temp.clone());
-                        element_temp
+                        cleanup_temps.push(nested_value_temp.clone());
+                        nested_value_temp
                     } else {
                         let source_value_temp = self.next_temp();
                         out.push_str("    PtnValue ");

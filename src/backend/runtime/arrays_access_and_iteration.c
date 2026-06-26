@@ -14129,6 +14129,70 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
     return ptn_value_clone(entry->value);
 }
 
+static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    const char *path,
+    size_t line
+);
+
+static PTN_UNUSED PtnValue ptn_array_iterator_current_reference_for_array_path(
+    PtnArrayIterator *iterator,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    const char *path,
+    size_t line
+) {
+    if (segment_count == 0 || iterator->protocol_iterator || iterator->generator != NULL) {
+        PtnValue current = ptn_array_iterator_current_reference(iterator);
+        if (segment_count == 0) {
+            return current;
+        }
+        PtnValue nested = ptn_value_reference_for_array_path(
+            iterator->runtime,
+            &current,
+            segments,
+            segment_count,
+            path,
+            line
+        );
+        ptn_value_destroy(&current);
+        return nested;
+    }
+
+    size_t physical_index = ptn_array_iterator_effective_index(iterator);
+    if (
+        iterator->array == NULL ||
+        !iterator->valid ||
+        physical_index >= iterator->array->len ||
+        iterator->object_property_iterator
+    ) {
+        PtnValue current = ptn_array_iterator_current_reference(iterator);
+        PtnValue nested = ptn_value_reference_for_array_path(
+            iterator->runtime,
+            &current,
+            segments,
+            segment_count,
+            path,
+            line
+        );
+        ptn_value_destroy(&current);
+        return nested;
+    }
+
+    PtnArrayEntry *entry = &iterator->array->entries[physical_index];
+    return ptn_value_reference_for_array_path(
+        iterator->runtime,
+        &entry->value,
+        segments,
+        segment_count,
+        path,
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_array_iterator_release(PtnArray *array);
 
 static PTN_UNUSED int ptn_array_iterator_refresh_watched_object(PtnArrayIterator *iterator) {
@@ -15494,6 +15558,51 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     PtnValue value = ptn_value_clone_deref(entry->value);
     ptn_array_key_free(key);
     return value;
+}
+
+static PTN_UNUSED PtnValue ptn_value_array_path_read_for_list_destructure(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    PtnValue current = ptn_value_clone_deref(target);
+    for (size_t i = 0; i < segment_count; i++) {
+        if (segments[i].append) {
+            ptn_value_destroy(&current);
+            return ptn_null();
+        }
+        PtnValue next = ptn_array_read_for_list_destructure(
+            runtime,
+            current,
+            segments[i].value,
+            line
+        );
+        ptn_value_destroy(&current);
+        current = next;
+    }
+    return current;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_list_destructure(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    const char *path,
+    size_t line
+) {
+    PtnValue root = ptn_runtime_read_variable(runtime, name, path, line);
+    PtnValue result = ptn_value_array_path_read_for_list_destructure(
+        runtime,
+        root,
+        segments,
+        segment_count,
+        line
+    );
+    ptn_value_destroy(&root);
+    return result;
 }
 
 static PTN_UNUSED int ptn_offset_is_set(

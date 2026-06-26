@@ -57057,6 +57057,40 @@ echo $alias, \":\", $result[0], \":\", $result[1], \"\\n\";",
 }
 
 #[test]
+fn compile_nested_list_reference_destructuring_keeps_containers_unreferenced_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-list-reference-destructuring");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-list-reference-destructuring.php");
+    let output = root.join("nested-list-reference-destructuring-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arr = [1, [2]];\n\
+[&$a, [&$b]] = $arr;\n\
+var_dump($a, $b, $arr);\n\
+$ary = [[0, 1]];\n\
+[[0 => &$x, ($ary[\"foo\"] = 1) => &$y]] = $ary;\n\
+var_dump($ary, $x, $y);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\n\
+int(2)\n\
+array(2) {\n  [0]=>\n  &int(1)\n  [1]=>\n  array(1) {\n    [0]=>\n    &int(2)\n  }\n}\n\
+array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    &int(0)\n    [1]=>\n    &int(1)\n  }\n  [\"foo\"]=>\n  int(1)\n}\n\
+int(0)\n\
+int(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_list_destructuring_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-list-destructuring");
     fs::create_dir_all(&root).unwrap();

@@ -1292,7 +1292,14 @@ static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, 
         ptn_abort_out_of_memory();
     }
     ptn_gc_attach_value_runtime(runtime, reference, 0);
-    ptn_symbols_bind_reference(ptn_runtime_variable_symbol_table(runtime, name), name, reference);
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
+    PtnValue old_value = symbol->value;
+    ptn_array_note_value_replacement(old_value, reference);
+    symbol->value = ptn_value_clone(reference);
+    symbols->mutation_epoch++;
+    ptn_runtime_unwrap_reference_slots_if_unaliased(runtime, old_value, 2);
+    ptn_value_destroy(&old_value);
 }
 
 static PTN_UNUSED void ptn_runtime_bind_global_variable(PtnRuntime *runtime, const char *name) {
