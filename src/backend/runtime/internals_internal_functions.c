@@ -83218,7 +83218,8 @@ static size_t ptn_gc_collect_destructor_components(
         return 0;
     }
     size_t component_epoch = ptn_runtime_next_gc_mark_epoch(root);
-    for (size_t i = 0; i < root->live_objects_len; i++) {
+    size_t initial_live_objects_len = root->live_objects_len;
+    for (size_t i = 0; i < initial_live_objects_len; i++) {
         PtnObject *object = root->live_objects[i];
         if (
             object == NULL ||
@@ -83459,7 +83460,8 @@ static size_t ptn_runtime_collect_unreachable_objects(
     size_t destructed_objects_len = 0;
     size_t destructed_objects_capacity = 0;
 
-    for (size_t i = 0; i < root->live_objects_len; i++) {
+    size_t initial_live_objects_len = root->live_objects_len;
+    for (size_t i = 0; i < initial_live_objects_len; i++) {
         PtnObject *object = root->live_objects[i];
         if (
             object == NULL ||
@@ -83715,7 +83717,11 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         counted_object_epoch
     );
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
-    ptn_runtime_run_unreferenced_object_destructors(root);
+    /*
+     * The object collector above already runs the Zend-style destructor rerun
+     * for cycles exposed by destructors. A second broad unreferenced sweep here
+     * would let objects created by that rerun join the same collection pass.
+     */
     size_t array_cycles = ptn_pending_array_cycle_collections;
     ptn_pending_array_cycle_collections = 0;
     ptn_pending_array_cycle_auto_flushed = 0;
