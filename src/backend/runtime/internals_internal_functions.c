@@ -55395,6 +55395,8 @@ static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t a
     PtnResource *context = ptn_resource_new_named("stream-context");
     ptn_value_destroy(&context->context_options);
     context->context_options = ptn_array_from_literal_entries(0, NULL);
+    ptn_value_destroy(&context->context_params);
+    context->context_params = ptn_array_from_literal_entries(0, NULL);
     if (argc > 0 && ptn_value_deref(args[0]).type != PTN_NULL) {
         PtnValue options = ptn_value_deref(args[0]);
         if (options.type != PTN_ARRAY) {
@@ -55417,6 +55419,49 @@ static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t a
     }
     (void)line;
     return ptn_resource(context);
+}
+
+static int ptn_internal_expect_stream_context_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line,
+    PtnResource **context_out
+) {
+    *context_out = NULL;
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE) {
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($context) must be of type resource, %s given",
+            function_name,
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): supplied resource is not a valid stream-context resource",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    (void)line;
+    *context_out = value.as.resource;
+    return 1;
 }
 
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55446,11 +55491,109 @@ static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, siz
     return ptn_stream_context_options_snapshot_value(value.as.resource->context_options, 0);
 }
 
+static void ptn_stream_context_set_params_throw_callback_error(
+    PtnRuntime *runtime,
+    PtnValue callback
+) {
+    char *reason = ptn_invalid_callback_reason(runtime, callback);
+    int needed = snprintf(
+        NULL,
+        0,
+        "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, %s",
+        reason == NULL ? "" : reason
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, %s",
+        reason == NULL ? "" : reason
+    );
+    free(reason);
+    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+}
+
+static PtnArrayEntry *ptn_stream_context_params_literal_entry(PtnArray *array, const char *literal) {
+    size_t literal_len = strlen(literal);
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        if (
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+            entry->key.string_len == literal_len &&
+            memcmp(entry->key.as.string, literal, literal_len) == 0
+        ) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_stream_context_params_validate_notifications(
+    PtnRuntime *runtime,
+    PtnValue params
+) {
+    PtnValue resolved = ptn_value_deref(params);
+    if (resolved.type != PTN_ARRAY) {
+        return 1;
+    }
+    PtnArrayEntry *notification_entry = ptn_stream_context_params_literal_entry(
+        resolved.as.array,
+        "notification"
+    );
+    if (notification_entry == NULL) {
+        return 1;
+    }
+    PtnValue callback = ptn_value_deref(notification_entry->value);
+    if (ptn_callable_is_valid(runtime, callback, 0)) {
+        return 1;
+    }
+    ptn_stream_context_set_params_throw_callback_error(runtime, callback);
+    return 0;
+}
+
+static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnResource *context = NULL;
+    if (!ptn_internal_expect_stream_context_arg(runtime, "stream_context_set_params", args[0], line, &context)) {
+        return ptn_null();
+    }
+    PtnValue params = ptn_value_deref(args[1]);
+    if (params.type != PTN_ARRAY) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "stream_context_set_params(): Argument #2 ($params) must be of type array, %s given",
+            ptn_offset_container_type_name(params)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (!ptn_stream_context_params_validate_notifications(runtime, params)) {
+        return ptn_null();
+    }
+    ptn_value_destroy(&context->context_params);
+    context->context_params = ptn_stream_context_options_snapshot_value(params, 0);
+    return ptn_bool(1);
+}
+
 static PtnResource *ptn_default_stream_context_ensure(void) {
     if (ptn_default_stream_context == NULL) {
         ptn_default_stream_context = ptn_resource_new_named("stream-context");
         ptn_value_destroy(&ptn_default_stream_context->context_options);
         ptn_default_stream_context->context_options = ptn_array_from_literal_entries(0, NULL);
+        ptn_value_destroy(&ptn_default_stream_context->context_params);
+        ptn_default_stream_context->context_params = ptn_array_from_literal_entries(0, NULL);
     }
     return ptn_default_stream_context;
 }
@@ -55842,6 +55985,12 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         free(path);
         ptn_string_operand_free(data);
         return result;
+    }
+    if (strncmp(path, "data://", 7) == 0) {
+        ptn_emit_notice(&runtime->diagnostics, "file_put_contents(): Stream is not writable", line);
+        free(path);
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
     }
     FILE *stream = fopen(path, (flags & PTN_FILE_APPEND) != 0 ? "ab" : "wb");
     if (stream == NULL) {
@@ -100376,6 +100525,7 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
     ptn_get_defined_constants_add_int(table, "STREAM_PF_UNIX", PTN_STREAM_PF_UNIX);
     ptn_get_defined_constants_add_int(table, "STREAM_SOCK_STREAM", PTN_STREAM_SOCK_STREAM);
+    ptn_get_defined_constants_add_int(table, "STREAM_IPPROTO_IP", PTN_STREAM_IPPROTO_IP);
     ptn_get_defined_constants_add_int(table, "STREAM_SHUT_WR", PTN_STREAM_SHUT_WR);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_UNKNOWN", PTN_IMAGE_FILETYPE_UNKNOWN);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_GIF", PTN_IMAGE_FILETYPE_GIF);
@@ -100894,6 +101044,7 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_ALL",
         "STREAM_PF_UNIX",
         "STREAM_SOCK_STREAM",
+        "STREAM_IPPROTO_IP",
         "STREAM_SHUT_WR",
         "IMAGETYPE_UNKNOWN",
         "IMAGETYPE_GIF",
@@ -153241,6 +153392,7 @@ static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_append(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -154171,6 +154323,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_context_get_default", 0, 1, ptn_internal_stream_context_get_default },
         { "stream_context_get_options", 1, 1, ptn_internal_stream_context_get_options },
         { "stream_context_set_default", 1, 1, ptn_internal_stream_context_set_default },
+        { "stream_context_set_params", 2, 2, ptn_internal_stream_context_set_params },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
         { "stream_filter_append", 2, 4, ptn_internal_stream_filter_append },
         { "stream_filter_prepend", 2, 4, ptn_internal_stream_filter_prepend },

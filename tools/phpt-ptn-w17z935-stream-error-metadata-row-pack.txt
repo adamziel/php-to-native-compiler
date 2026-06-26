@@ -1,0 +1,12 @@
+ext/standard/tests/streams/stream_errors_mix_modes_storage.phpt
+ext/standard/tests/streams/bug54623.phpt
+ext/standard/tests/streams/bug72853.phpt
+ext/standard/tests/streams/bug79467.phpt
+ext/standard/tests/streams/bug78902.phpt
+ext/standard/tests/streams/bug78662.phpt
+ext/standard/tests/streams/stream_errors_standard_error.phpt
+ext/standard/tests/streams/stream_context_set_params_notification_valid_then_invalid.phpt
+ext/standard/tests/streams/stream_read_object_return.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_variation2.phpt
+ext/standard/tests/streams/bug60455_02.phpt
+ext/standard/tests/streams/eagain_is_not_an_error.phpt
