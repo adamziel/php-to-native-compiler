@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-26T02:33:23Z |
+| last refresh | 2026-06-26T12:16:43Z |
 | source commit | `ff324e3a214a` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -21,25 +21,15 @@
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-26T02:00Z) | 0 |
-| last 24 hours (2026-06-25T03:00Z - 2026-06-26T02:00Z) | 1641 |
-| last 7 days (2026-06-19T03:00Z - 2026-06-26T02:00Z) | 6712 |
+| latest hour (2026-06-26T12:00Z) | 0 |
+| last 24 hours (2026-06-25T13:00Z - 2026-06-26T12:00Z) | 1641 |
+| last 7 days (2026-06-19T13:00Z - 2026-06-26T12:00Z) | 6712 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
 | full PHPT corpus sharded partial snapshot | 21867 | 12884 | 21867 |
-| hourly history retained 2026-06-19T03:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T04:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T05:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T06:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T07:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T08:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T09:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T10:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T11:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T12:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-19T13:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-19T14:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-19T15:00Z | 0 | 0 | 0 |
@@ -192,21 +182,12 @@
 | hourly history retained 2026-06-25T23:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-26T00:00Z | 0 | 0 | 0 |
 | hourly history retained 2026-06-26T01:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-26T02:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-19T03:00Z | 0 | 6172 |
-| 2026-06-19T04:00Z | 0 | 6172 |
-| 2026-06-19T05:00Z | 0 | 6172 |
-| 2026-06-19T06:00Z | 0 | 6172 |
-| 2026-06-19T07:00Z | 0 | 6172 |
-| 2026-06-19T08:00Z | 0 | 6172 |
-| 2026-06-19T09:00Z | 0 | 6172 |
-| 2026-06-19T10:00Z | 0 | 6172 |
-| 2026-06-19T11:00Z | 0 | 6172 |
-| 2026-06-19T12:00Z | 0 | 6172 |
 | 2026-06-19T13:00Z | 0 | 6172 |
 | 2026-06-19T14:00Z | 0 | 6172 |
 | 2026-06-19T15:00Z | 0 | 6172 |
@@ -365,3 +346,13 @@
 | 2026-06-26T00:00Z | 0 | 12884 |
 | 2026-06-26T01:00Z | 0 | 12884 |
 | 2026-06-26T02:00Z | 0 | 12884 |
+| 2026-06-26T03:00Z | 0 | 12884 |
+| 2026-06-26T04:00Z | 0 | 12884 |
+| 2026-06-26T05:00Z | 0 | 12884 |
+| 2026-06-26T06:00Z | 0 | 12884 |
+| 2026-06-26T07:00Z | 0 | 12884 |
+| 2026-06-26T08:00Z | 0 | 12884 |
+| 2026-06-26T09:00Z | 0 | 12884 |
+| 2026-06-26T10:00Z | 0 | 12884 |
+| 2026-06-26T11:00Z | 0 | 12884 |
+| 2026-06-26T12:00Z | 0 | 12884 |
