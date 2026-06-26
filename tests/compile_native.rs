@@ -28679,6 +28679,68 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_zlib_alias_encode_incremental_inflate_and_wrappers_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-alias-inflate-wrappers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-alias-inflate-wrappers.php");
+    let output = root.join("zlib-alias-inflate-wrappers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$data = implode(range("a", "z"));
+$packed = zlib_encode($data, ZLIB_ENCODING_GZIP);
+$ctx = inflate_init(ZLIB_ENCODING_GZIP);
+$out = "";
+for ($i = 0; $i < strlen($packed); $i++) {
+    $out .= inflate_add($ctx, $packed[$i]);
+}
+$out .= inflate_add($ctx, "", ZLIB_FINISH);
+var_dump($out === $data);
+
+$out = "";
+for ($i = 0; $i < strlen($packed); $i++) {
+    $out .= inflate_add($ctx, $packed[$i]);
+}
+$out .= inflate_add($ctx, "", ZLIB_FINISH);
+var_dump($out === $data);
+
+$path = __DIR__ . "/gzputs.gz";
+$h = gzopen($path, "w");
+var_dump(gzputs($h, "abcdef", 3));
+gzclose($h);
+$h = gzopen($path, "r");
+var_dump(gzread($h, 10));
+gzclose($h);
+unlink($path);
+
+$wrappers = stream_get_wrappers();
+var_dump(in_array("phar", $wrappers, true), in_array("compress.zlib", $wrappers, true));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nint(3)\nstring(3) \"abc\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_zlib_encode"));
+    assert!(c_source.contains("ptn_zlib_context_inflate_with_zlib"));
+    assert!(c_source.contains("ptn_internal_stream_get_wrappers"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();

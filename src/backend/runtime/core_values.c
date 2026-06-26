@@ -64,6 +64,13 @@
 #include <openssl/x509.h>
 #endif
 
+#ifndef PTN_HAVE_ZLIB
+#define PTN_HAVE_ZLIB 0
+#endif
+#if PTN_HAVE_ZLIB
+#include <zlib.h>
+#endif
+
 #if !defined(_WIN32)
 extern char *realpath(const char *path, char *resolved_path);
 extern char *strptime(const char *s, const char *format, struct tm *tm);

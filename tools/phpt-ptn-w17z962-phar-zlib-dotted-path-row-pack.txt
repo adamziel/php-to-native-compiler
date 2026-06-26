@@ -1,0 +1,15 @@
+# ptn-w17z.962 focused PHAR/zlib dotted-path row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T214905Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/phar_dotted_path.phpt
+ext/zlib/tests/inflate_init_reuse.phpt
+ext/zlib/tests/gzputs_basic.phpt
+ext/phar/tests/withphar.phpt
+ext/zlib/tests/gzencode_basic1.phpt
+ext/zlib/tests/inflate_add_basic.phpt
+ext/phar/tests/tar/phar_buildfromiterator7.phpt
+ext/phar/tests/tar/bug49910.phpt
+ext/phar/tests/fopen.phpt
+ext/phar/tests/create_path_error.phpt
+ext/phar/tests/phar_oo_012b.phpt
+ext/phar/tests/gh13833.phpt

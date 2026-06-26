@@ -57670,6 +57670,35 @@ static PtnValue ptn_internal_stream_register_wrapper(PtnRuntime *runtime, size_t
     return ptn_internal_stream_wrapper_register_named(runtime, "stream_register_wrapper", argc, args, line);
 }
 
+static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    static const char *builtin_wrappers[] = {
+        "https",
+        "php",
+        "file",
+        "data",
+        "http",
+        "compress.zlib",
+        "phar",
+    };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    for (size_t i = 0; i < sizeof(builtin_wrappers) / sizeof(builtin_wrappers[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(builtin_wrappers[i]));
+    }
+    for (size_t i = 0; i < ptn_user_stream_wrapper_count; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(index++),
+            ptn_owned_string(ptn_duplicate_string(ptn_user_stream_wrappers[i].scheme))
+        );
+    }
+    return result;
+}
+
 static void ptn_stream_meta_set(PtnArray *array, const char *key, PtnValue value) {
     ptn_array_set_entry(array, ptn_array_string_key(key), value);
 }
@@ -140174,12 +140203,48 @@ typedef struct {
     unsigned char *output;
     size_t output_len;
     int64_t status;
+    pid_t worker_pid;
+    int worker_input_fd;
+    int worker_output_fd;
+    int worker_failed;
+#if PTN_HAVE_ZLIB
+    z_stream native_stream;
+    int native_stream_initialized;
+    int native_stream_ended;
+    int native_dictionary_applied;
+#endif
 } PtnZlibContext;
+
+static void ptn_zlib_context_end_native(PtnZlibContext *context) {
+#if PTN_HAVE_ZLIB
+    if (context != NULL && context->native_stream_initialized) {
+        inflateEnd(&context->native_stream);
+        memset(&context->native_stream, 0, sizeof(context->native_stream));
+        context->native_stream_initialized = 0;
+        context->native_dictionary_applied = 0;
+    }
+#else
+    (void)context;
+#endif
+}
 
 static void ptn_zlib_context_data_free(void *data) {
     PtnZlibContext *context = (PtnZlibContext *)data;
     if (context == NULL) {
         return;
+    }
+    ptn_zlib_context_end_native(context);
+    if (context->worker_input_fd >= 0) {
+        close(context->worker_input_fd);
+        context->worker_input_fd = -1;
+    }
+    if (context->worker_output_fd >= 0) {
+        close(context->worker_output_fd);
+        context->worker_output_fd = -1;
+    }
+    if (context->worker_pid > 0) {
+        (void)ptn_zlib_wait_success(context->worker_pid);
+        context->worker_pid = -1;
     }
     free(context->dictionary);
     free(context->input);
@@ -140245,6 +140310,16 @@ static PtnValue ptn_zlib_context_resource(
     context->output = NULL;
     context->output_len = 0;
     context->status = PTN_ZLIB_OK;
+    context->worker_pid = -1;
+    context->worker_input_fd = -1;
+    context->worker_output_fd = -1;
+    context->worker_failed = 0;
+#if PTN_HAVE_ZLIB
+    memset(&context->native_stream, 0, sizeof(context->native_stream));
+    context->native_stream_initialized = 0;
+    context->native_stream_ended = 0;
+    context->native_dictionary_applied = 0;
+#endif
     PtnResource *resource = ptn_resource_new_named(type_name);
     resource->close_hook_data = context;
     resource->close_hook_data_free = ptn_zlib_context_data_free;
@@ -140400,6 +140475,407 @@ static int ptn_zlib_max_length_arg(
     }
     *max_length_out = (size_t)max_length;
     return 1;
+}
+
+static int ptn_zlib_read_exact_fd(int fd, unsigned char *data, size_t len) {
+    size_t offset = 0;
+    while (offset < len) {
+        size_t remaining = len - offset;
+        size_t chunk_len = remaining > (size_t)SSIZE_MAX ? (size_t)SSIZE_MAX : remaining;
+        ssize_t read_len = read(fd, data + offset, chunk_len);
+        if (read_len < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 0;
+        }
+        if (read_len == 0) {
+            errno = EIO;
+            return 0;
+        }
+        offset += (size_t)read_len;
+    }
+    return 1;
+}
+
+static void ptn_zlib_u64_to_be(uint64_t value, unsigned char out[8]) {
+    for (int i = 7; i >= 0; i--) {
+        out[i] = (unsigned char)(value & 0xff);
+        value >>= 8;
+    }
+}
+
+static uint64_t ptn_zlib_u64_from_be(const unsigned char data[8]) {
+    uint64_t value = 0;
+    for (size_t i = 0; i < 8; i++) {
+        value = (value << 8) | data[i];
+    }
+    return value;
+}
+
+static void ptn_zlib_context_close_worker(PtnZlibContext *context) {
+    if (context == NULL) {
+        return;
+    }
+    if (context->worker_input_fd >= 0) {
+        close(context->worker_input_fd);
+        context->worker_input_fd = -1;
+    }
+    if (context->worker_output_fd >= 0) {
+        close(context->worker_output_fd);
+        context->worker_output_fd = -1;
+    }
+    if (context->worker_pid > 0) {
+        (void)ptn_zlib_wait_success(context->worker_pid);
+        context->worker_pid = -1;
+    }
+}
+
+static int ptn_zlib_context_start_inflate_worker(PtnZlibContext *context) {
+#if defined(_WIN32)
+    (void)context;
+    errno = ENOSYS;
+    return 0;
+#else
+    if (context->worker_failed) {
+        errno = EIO;
+        return 0;
+    }
+    if (context->worker_pid > 0) {
+        return 1;
+    }
+
+    int input_fds[2];
+    int output_fds[2];
+    if (pipe(input_fds) != 0) {
+        return 0;
+    }
+    if (pipe(output_fds) != 0) {
+        close(input_fds[0]);
+        close(input_fds[1]);
+        return 0;
+    }
+
+    char window_arg[32];
+    snprintf(window_arg, sizeof(window_arg), "%lld", (long long)context->encoding);
+    const char *script =
+        "import sys,zlib\n"
+        "wbits=int(sys.argv[1])\n"
+        "has_dict=sys.argv[2] == '1'\n"
+        "inp=sys.stdin.buffer\n"
+        "outp=sys.stdout.buffer\n"
+        "def read_exact(n):\n"
+        "    chunks=[]\n"
+        "    got=0\n"
+        "    while got<n:\n"
+        "        chunk=inp.read(n-got)\n"
+        "        if not chunk:\n"
+        "            return None\n"
+        "        chunks.append(chunk)\n"
+        "        got += len(chunk)\n"
+        "    return b''.join(chunks)\n"
+        "zdict=b''\n"
+        "if has_dict:\n"
+        "    hdr=read_exact(8)\n"
+        "    if hdr is None:\n"
+        "        sys.exit(0)\n"
+        "    dict_len=int.from_bytes(hdr, 'big')\n"
+        "    zdict=read_exact(dict_len)\n"
+        "    if zdict is None:\n"
+        "        sys.exit(1)\n"
+        "def make_obj():\n"
+        "    return zlib.decompressobj(wbits, zdict=zdict) if has_dict else zlib.decompressobj(wbits)\n"
+        "d=make_obj()\n"
+        "while True:\n"
+        "    hdr=read_exact(9)\n"
+        "    if hdr is None:\n"
+        "        break\n"
+        "    finish=hdr[0] == 1\n"
+        "    data_len=int.from_bytes(hdr[1:], 'big')\n"
+        "    data=read_exact(data_len)\n"
+        "    if data is None:\n"
+        "        break\n"
+        "    try:\n"
+        "        payload=d.decompress(data)\n"
+        "        if finish:\n"
+        "            payload += d.flush()\n"
+        "            d=make_obj()\n"
+        "        outp.write(len(payload).to_bytes(8, 'big'))\n"
+        "        outp.write(payload)\n"
+        "        outp.flush()\n"
+        "    except Exception:\n"
+        "        outp.write((2**64-1).to_bytes(8, 'big'))\n"
+        "        outp.flush()\n"
+        "        sys.exit(1)\n";
+
+    pid_t child = fork();
+    if (child < 0) {
+        close(input_fds[0]);
+        close(input_fds[1]);
+        close(output_fds[0]);
+        close(output_fds[1]);
+        return 0;
+    }
+    if (child == 0) {
+        close(input_fds[1]);
+        close(output_fds[0]);
+        (void)dup2(input_fds[0], STDIN_FILENO);
+        (void)dup2(output_fds[1], STDOUT_FILENO);
+        if (input_fds[0] > STDERR_FILENO) {
+            close(input_fds[0]);
+        }
+        if (output_fds[1] > STDERR_FILENO) {
+            close(output_fds[1]);
+        }
+        ptn_zlib_child_silence_stderr();
+        execlp(
+            "python3",
+            "python3",
+            "-c",
+            script,
+            window_arg,
+            context->dictionary != NULL && context->dictionary_len != 0 ? "1" : "0",
+            (char *)NULL
+        );
+        _exit(127);
+    }
+
+    close(input_fds[0]);
+    close(output_fds[1]);
+    context->worker_pid = child;
+    context->worker_input_fd = input_fds[1];
+    context->worker_output_fd = output_fds[0];
+
+    if (context->dictionary != NULL && context->dictionary_len != 0) {
+        unsigned char header[8];
+        ptn_zlib_u64_to_be((uint64_t)context->dictionary_len, header);
+        if (!ptn_zlib_write_all_fd(context->worker_input_fd, header, sizeof(header)) ||
+            !ptn_zlib_write_all_fd(context->worker_input_fd, context->dictionary, context->dictionary_len)) {
+            context->worker_failed = 1;
+            ptn_zlib_context_close_worker(context);
+            return 0;
+        }
+    }
+
+    return 1;
+#endif
+}
+
+static int ptn_zlib_context_inflate_with_worker(
+    PtnZlibContext *context,
+    PtnStringOperand data,
+    int finish,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    *data_out = NULL;
+    *len_out = 0;
+    if (!ptn_zlib_context_start_inflate_worker(context)) {
+        return 0;
+    }
+    unsigned char header[9];
+    header[0] = finish ? 1 : 0;
+    ptn_zlib_u64_to_be((uint64_t)data.len, header + 1);
+    if (!ptn_zlib_write_all_fd(context->worker_input_fd, header, sizeof(header)) ||
+        !ptn_zlib_write_all_fd(context->worker_input_fd, (const unsigned char *)data.data, data.len)) {
+        context->worker_failed = 1;
+        ptn_zlib_context_close_worker(context);
+        return 0;
+    }
+    unsigned char len_header[8];
+    if (!ptn_zlib_read_exact_fd(context->worker_output_fd, len_header, sizeof(len_header))) {
+        context->worker_failed = 1;
+        ptn_zlib_context_close_worker(context);
+        return 0;
+    }
+    uint64_t payload_len = ptn_zlib_u64_from_be(len_header);
+    if (payload_len == UINT64_MAX || payload_len > SIZE_MAX) {
+        context->worker_failed = 1;
+        ptn_zlib_context_close_worker(context);
+        return 0;
+    }
+    unsigned char *payload = NULL;
+    if (payload_len == 0) {
+        payload = (unsigned char *)ptn_duplicate_string_len("", 0);
+    } else {
+        payload = malloc((size_t)payload_len);
+        if (payload == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_zlib_read_exact_fd(context->worker_output_fd, payload, (size_t)payload_len)) {
+            free(payload);
+            context->worker_failed = 1;
+            ptn_zlib_context_close_worker(context);
+            return 0;
+        }
+    }
+    *data_out = payload;
+    *len_out = (size_t)payload_len;
+    return 1;
+}
+
+static int ptn_zlib_context_start_native_inflate(PtnZlibContext *context) {
+#if PTN_HAVE_ZLIB
+    if (context->native_stream_initialized) {
+        return 1;
+    }
+    memset(&context->native_stream, 0, sizeof(context->native_stream));
+    int status = inflateInit2(&context->native_stream, (int)context->encoding);
+    if (status != Z_OK) {
+        memset(&context->native_stream, 0, sizeof(context->native_stream));
+        return -1;
+    }
+    context->native_stream_initialized = 1;
+    context->native_stream_ended = 0;
+    context->native_dictionary_applied = 0;
+    if (context->encoding == PTN_ZLIB_ENCODING_RAW &&
+        context->dictionary != NULL &&
+        context->dictionary_len != 0) {
+        if (context->dictionary_len > UINT_MAX ||
+            inflateSetDictionary(&context->native_stream, context->dictionary, (uInt)context->dictionary_len) != Z_OK) {
+            ptn_zlib_context_end_native(context);
+            return -1;
+        }
+        context->native_dictionary_applied = 1;
+    }
+    return 1;
+#else
+    (void)context;
+    return 0;
+#endif
+}
+
+static int ptn_zlib_context_inflate_with_zlib(
+    PtnZlibContext *context,
+    PtnStringOperand data,
+    int64_t flush_mode,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    *data_out = NULL;
+    *len_out = 0;
+#if !PTN_HAVE_ZLIB
+    (void)context;
+    (void)data;
+    (void)flush_mode;
+    return 0;
+#else
+    if (context->native_stream_ended) {
+        if (data.len == 0 && flush_mode == PTN_ZLIB_FINISH) {
+            context->native_stream_ended = 0;
+            *data_out = (unsigned char *)ptn_duplicate_string_len("", 0);
+            *len_out = 0;
+            return 1;
+        }
+        context->native_stream_ended = 0;
+    }
+    int start_status = ptn_zlib_context_start_native_inflate(context);
+    if (start_status <= 0) {
+        return start_status;
+    }
+    if (data.len > UINT_MAX) {
+        ptn_zlib_context_end_native(context);
+        return -1;
+    }
+
+    z_stream *stream = &context->native_stream;
+    stream->next_in = (Bytef *)(const unsigned char *)data.data;
+    stream->avail_in = (uInt)data.len;
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    int status = Z_OK;
+    int saw_stream_end = 0;
+    do {
+        unsigned char chunk[8192];
+        stream->next_out = chunk;
+        stream->avail_out = (uInt)sizeof(chunk);
+        uInt before_in = stream->avail_in;
+        status = inflate(stream, (int)flush_mode);
+        if (status == Z_NEED_DICT) {
+            if (context->dictionary == NULL ||
+                context->dictionary_len == 0 ||
+                context->dictionary_len > UINT_MAX ||
+                inflateSetDictionary(stream, context->dictionary, (uInt)context->dictionary_len) != Z_OK) {
+                free(buffer.data);
+                ptn_zlib_context_end_native(context);
+                return -1;
+            }
+            context->native_dictionary_applied = 1;
+            continue;
+        }
+        if (status == Z_STREAM_ERROR || status == Z_DATA_ERROR || status == Z_MEM_ERROR) {
+            free(buffer.data);
+            ptn_zlib_context_end_native(context);
+            return -1;
+        }
+        size_t produced = sizeof(chunk) - stream->avail_out;
+        if (produced != 0) {
+            ptn_string_buffer_append_len(&buffer, (const char *)chunk, produced);
+        }
+        if (status == Z_STREAM_END) {
+            saw_stream_end = 1;
+            break;
+        }
+        if (status == Z_BUF_ERROR) {
+            if (produced == 0 && stream->avail_in == before_in) {
+                break;
+            }
+            status = Z_OK;
+        }
+    } while (stream->avail_out == 0 || stream->avail_in > 0);
+
+    if (saw_stream_end) {
+        ptn_zlib_context_end_native(context);
+        context->native_stream_ended = 1;
+    }
+    *data_out = (unsigned char *)buffer.data;
+    *len_out = buffer.len;
+    return 1;
+#endif
+}
+
+static PtnValue ptn_zlib_inflate_context_string_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand data,
+    PtnZlibContext *context,
+    int64_t flush_mode,
+    size_t line
+) {
+    unsigned char *transformed = NULL;
+    size_t transformed_len = 0;
+    int ok = ptn_zlib_context_inflate_with_zlib(
+        context,
+        data,
+        flush_mode,
+        &transformed,
+        &transformed_len
+    );
+    if (ok == 0) {
+        ok = ptn_zlib_context_inflate_with_worker(
+            context,
+            data,
+            flush_mode == PTN_ZLIB_FINISH,
+            &transformed,
+            &transformed_len
+        );
+    }
+    if (ok <= 0) {
+        char detail[192];
+        int written = snprintf(
+            detail,
+            sizeof(detail),
+            "%s(): data error failed",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        return ptn_bool(0);
+    }
+    return ptn_owned_string_len((char *)transformed, transformed_len);
 }
 
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -140752,40 +141228,22 @@ static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const
     }
 
     PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
-    if (context->status == PTN_ZLIB_STREAM_END) {
-        ptn_zlib_context_reset_stream(context);
-    }
-    ptn_zlib_context_append_input(context, (const unsigned char *)data.data, data.len);
-    unsigned char *output = NULL;
-    size_t output_len = 0;
-    int64_t status = PTN_ZLIB_OK;
-    int ok = ptn_zlib_inflate_accumulated_bytes(
-        context->input,
-        context->input_len,
-        context->encoding,
-        context->dictionary,
-        context->dictionary_len,
-        &output,
-        &output_len,
-        &status
+    PtnValue result = ptn_zlib_inflate_context_string_value(
+        runtime,
+        "inflate_add",
+        data,
+        context,
+        flush_mode,
+        line
     );
     ptn_string_operand_free(data);
-    if (ok <= 0) {
-        free(output);
-        ptn_emit_warning(&runtime->diagnostics, "inflate_add(): data error failed", line);
-        return ptn_bool(0);
+    if (result.type != PTN_BOOL || result.as.boolean) {
+        int stream_ended = flush_mode == PTN_ZLIB_FINISH;
+#if PTN_HAVE_ZLIB
+        stream_ended = stream_ended || context->native_stream_ended;
+#endif
+        context->status = stream_ended ? PTN_ZLIB_STREAM_END : PTN_ZLIB_OK;
     }
-    size_t previous_output_len = context->output_len;
-    if (output_len < previous_output_len) {
-        previous_output_len = 0;
-    }
-    size_t new_len = output_len - previous_output_len;
-    char *new_bytes = ptn_duplicate_string_len((const char *)output + previous_output_len, new_len);
-    free(context->output);
-    context->output = output;
-    context->output_len = output_len;
-    context->status = status;
-    PtnValue result = ptn_owned_string_len(new_bytes, new_len);
     return result;
 }
 
@@ -158242,6 +158700,7 @@ static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_resolve_include_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_get_wrappers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_isatty(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -158249,6 +158708,7 @@ static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t 
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -158666,6 +159126,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gzseek", 2, 3, ptn_internal_gzseek },
         { "gztell", 1, 1, ptn_internal_gztell },
         { "gzuncompress", 1, 2, ptn_internal_gzuncompress },
+        { "gzputs", 2, 3, ptn_internal_gzwrite },
         { "gzwrite", 2, 3, ptn_internal_gzwrite },
         { "getservbyname", 2, 2, ptn_internal_getservbyname },
         { "getservbyport", 2, 2, ptn_internal_getservbyport },
@@ -159191,6 +159652,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
+        { "stream_get_wrappers", 0, 0, ptn_internal_stream_get_wrappers },
         { "stream_is_local", 1, 1, ptn_internal_stream_is_local },
         { "stream_isatty", 1, 1, ptn_internal_stream_isatty },
         { "stream_last_errors", 0, 0, ptn_internal_stream_last_errors },
@@ -159363,6 +159825,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zip_entry_open", 2, 3, ptn_internal_zip_entry_open },
         { "zip_open", 1, 1, ptn_internal_zip_open },
         { "zip_read", 1, 1, ptn_internal_zip_read },
+        { "zlib_encode", 2, 3, ptn_internal_zlib_encode },
         { "zlib_get_coding_type", 0, 0, ptn_internal_zlib_get_coding_type },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
