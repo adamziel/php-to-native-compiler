@@ -3231,6 +3231,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_ZLIB_ENCODING_DEFLATE);
         return 1;
     }
+    if (strcmp(name, "ZLIB_VERSION") == 0) {
+        *out = ptn_string(PTN_ZLIB_VERSION);
+        return 1;
+    }
+    if (strcmp(name, "ZLIB_VERNUM") == 0) {
+        *out = ptn_int(PTN_ZLIB_VERNUM);
+        return 1;
+    }
     if (strcmp(name, "FORCE_GZIP") == 0) {
         *out = ptn_int(PTN_FORCE_GZIP);
         return 1;

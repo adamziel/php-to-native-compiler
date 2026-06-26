@@ -28131,6 +28131,128 @@ option-error\n"
 }
 
 #[test]
+fn compile_zlib_row_pack_frontier_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-row-pack-frontier");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-row-pack-frontier.php");
+    let output = root.join("zlib-row-pack-frontier-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$original = str_repeat("hallo php", 32);
+$packed = gzcompress($original);
+var_dump(gzuncompress($packed) === $original);
+var_dump(gzuncompress($packed, 3));
+
+$deflated = gzdeflate("aaaaaaaaaaaaaaa");
+var_dump(gzinflate($deflated, 150));
+var_dump(gzinflate($deflated, 1));
+
+$path = __DIR__ . "/lines.gz";
+$h = gzopen($path, "w");
+gzwrite($h, "first\nsecond\n");
+gzclose($h);
+$h = gzopen($path, "r");
+var_dump(gzgets($h));
+var_dump(gzeof($h));
+gzread($h, 4096);
+var_dump(gzeof($h));
+gzrewind($h);
+var_dump(gztell($h), gzgets($h));
+gzclose($h);
+
+mkdir(__DIR__ . "/inc1");
+mkdir(__DIR__ . "/inc2");
+mkdir(__DIR__ . "/work");
+$name = "sample.gz";
+$h = gzopen(__DIR__ . "/inc2/" . $name, "w");
+gzwrite($h, "from inc2");
+gzclose($h);
+chdir(__DIR__ . "/work");
+set_include_path(__DIR__ . "/inc1:" . __DIR__ . "/inc2:");
+$lines = gzfile($name, true);
+echo $lines[0], "\n";
+$h = gzopen(__DIR__ . "/inc1/" . $name, "w");
+gzwrite($h, "from inc1");
+gzclose($h);
+$h = gzopen($name, "w");
+gzwrite($h, "from cwd");
+gzclose($h);
+$lines = gzfile($name, true);
+echo $lines[0], "\n";
+chdir(__DIR__);
+
+$dictionary = "abc";
+$deflate = deflate_init(ZLIB_ENCODING_RAW, ["dictionary" => $dictionary]);
+$compressed = deflate_add($deflate, "abcabc", ZLIB_FINISH);
+$inflate = inflate_init(ZLIB_ENCODING_RAW, ["dictionary" => $dictionary]);
+var_dump(inflate_add($inflate, $compressed) === "abcabc");
+
+$stream = fopen("php://temp", "w+");
+stream_filter_append($stream, "zlib.deflate", STREAM_FILTER_WRITE);
+stream_filter_append($stream, "convert.base64-encode", STREAM_FILTER_WRITE);
+fwrite($stream, "filter text");
+rewind($stream);
+$encoded = stream_get_contents($stream);
+var_dump(gzinflate(base64_decode($encoded)));
+
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => [" ", ""]]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => ["hello", "wor\0ld"]]); } catch (ValueError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["dictionary" => [" ", new stdClass]]); } catch (Error $e) { echo $e->getMessage(), "\n"; }
+
+var_dump(zlib_get_coding_type());
+var_dump(ZLIB_VERSION, ZLIB_VERNUM >= 0x1240);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: gzuncompress(): insufficient memory"));
+    assert!(stdout.contains("Warning: gzinflate(): insufficient memory"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "bool(true)\n\
+bool(false)\n\
+string(15) \"aaaaaaaaaaaaaaa\"\n\
+bool(false)\n\
+string(6) \"first\n\
+\"\n\
+bool(false)\n\
+bool(true)\n\
+int(0)\n\
+string(6) \"first\n\
+\"\n\
+from inc2\n\
+from inc1\n\
+bool(true)\n\
+string(11) \"filter text\"\n\
+deflate_init(): Argument #2 ($options) must not contain empty strings\n\
+deflate_init(): Argument #2 ($options) must not contain strings with null bytes\n\
+Object of class stdClass could not be converted to string\n\
+bool(false)\n\
+string(5) \"1.3.1\"\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_gzcompress"));
+    assert!(c_source.contains("ptn_internal_gzgets"));
+    assert!(c_source.contains("ptn_internal_deflate_add"));
+    assert!(c_source.contains("PTN_STREAM_FILTER_CONVERT_BASE64_ENCODE"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();

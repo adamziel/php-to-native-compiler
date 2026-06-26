@@ -51990,6 +51990,8 @@ static int ptn_zlib_transform_bytes(
     int decompress,
     int64_t window_bits,
     int64_t level,
+    const unsigned char *dictionary,
+    size_t dictionary_len,
     unsigned char **data_out,
     size_t *len_out
 ) {
@@ -52001,6 +52003,8 @@ static int ptn_zlib_transform_bytes(
     (void)decompress;
     (void)window_bits;
     (void)level;
+    (void)dictionary;
+    (void)dictionary_len;
     errno = ENOSYS;
     return -1;
 #else
@@ -52023,12 +52027,29 @@ static int ptn_zlib_transform_bytes(
         "mode=sys.argv[1]\n"
         "wbits=int(sys.argv[2])\n"
         "level=int(sys.argv[3])\n"
-        "data=sys.stdin.buffer.read()\n"
+        "has_dict=sys.argv[4] == '1'\n"
+        "payload=sys.stdin.buffer.read()\n"
+        "zdict=b''\n"
+        "if has_dict:\n"
+        "    if len(payload) < 8:\n"
+        "        sys.exit(1)\n"
+        "    dict_len=int.from_bytes(payload[:8], 'big')\n"
+        "    zdict=payload[8:8+dict_len]\n"
+        "    data=payload[8+dict_len:]\n"
+        "else:\n"
+        "    data=payload\n"
         "try:\n"
         "    if mode == 'd':\n"
-        "        out=zlib.decompress(data,wbits)\n"
+        "        if has_dict:\n"
+        "            d=zlib.decompressobj(wbits,zdict=zdict)\n"
+        "            out=d.decompress(data)+d.flush()\n"
+        "        else:\n"
+        "            out=zlib.decompress(data,wbits)\n"
         "    else:\n"
-        "        c=zlib.compressobj(level,zlib.DEFLATED,wbits)\n"
+        "        if has_dict:\n"
+        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,zdict=zdict)\n"
+        "        else:\n"
+        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits)\n"
         "        out=c.compress(data)+c.flush()\n"
         "    sys.stdout.buffer.write(out)\n"
         "except Exception:\n"
@@ -52061,13 +52082,27 @@ static int ptn_zlib_transform_bytes(
             decompress ? "d" : "c",
             window_arg,
             level_arg,
+            dictionary != NULL && dictionary_len != 0 ? "1" : "0",
             (char *)NULL
         );
         _exit(127);
     }
     close(pipe_fds[0]);
     close(output_fds[1]);
-    int write_ok = ptn_zlib_write_all_fd(pipe_fds[1], data, len);
+    int write_ok = 1;
+    if (dictionary != NULL && dictionary_len != 0) {
+        unsigned char header[8];
+        uint64_t dict_len = (uint64_t)dictionary_len;
+        for (int i = 7; i >= 0; i--) {
+            header[i] = (unsigned char)(dict_len & 0xff);
+            dict_len >>= 8;
+        }
+        write_ok = ptn_zlib_write_all_fd(pipe_fds[1], header, sizeof(header)) &&
+            ptn_zlib_write_all_fd(pipe_fds[1], dictionary, dictionary_len);
+    }
+    if (write_ok) {
+        write_ok = ptn_zlib_write_all_fd(pipe_fds[1], data, len);
+    }
     int saved_errno = errno;
     if (close(pipe_fds[1]) != 0 && write_ok) {
         write_ok = 0;
@@ -52092,6 +52127,28 @@ static int ptn_zlib_transform_bytes(
 #endif
 }
 
+static int ptn_zlib_transform_bytes_no_dictionary(
+    const unsigned char *data,
+    size_t len,
+    int decompress,
+    int64_t window_bits,
+    int64_t level,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    return ptn_zlib_transform_bytes(
+        data,
+        len,
+        decompress,
+        window_bits,
+        level,
+        NULL,
+        0,
+        data_out,
+        len_out
+    );
+}
+
 static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
     unsigned char *compressed = NULL;
     size_t compressed_len = 0;
@@ -52102,7 +52159,7 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
         free(compressed);
         return read_result;
     }
-    int ok = ptn_zlib_transform_bytes(
+    int ok = ptn_zlib_transform_bytes_no_dictionary(
         compressed,
         compressed_len,
         1,
@@ -52118,7 +52175,7 @@ static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, 
 static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len) {
     unsigned char *compressed = NULL;
     size_t compressed_len = 0;
-    int compressed_ok = ptn_zlib_transform_bytes(
+    int compressed_ok = ptn_zlib_transform_bytes_no_dictionary(
         data,
         len,
         0,
@@ -54295,7 +54352,7 @@ static char *ptn_stream_apply_filter_chain_alloc(
         if (ptn_stream_filter_kind_is_zlib(filter->kind)) {
             unsigned char *transformed = NULL;
             size_t transformed_len = 0;
-            int ok = ptn_zlib_transform_bytes(
+            int ok = ptn_zlib_transform_bytes_no_dictionary(
                 (const unsigned char *)output,
                 output_len,
                 filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
@@ -54605,7 +54662,7 @@ static void ptn_stream_filter_probe_prebuffered_zlib(
 
     unsigned char *transformed = NULL;
     size_t transformed_len = 0;
-    int ok = ptn_zlib_transform_bytes(
+    int ok = ptn_zlib_transform_bytes_no_dictionary(
         (const unsigned char *)buffer.data,
         buffer.len,
         1,
@@ -101382,6 +101439,8 @@ static void ptn_defined_constants_add_zlib(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "ZLIB_ENCODING_RAW", PTN_ZLIB_ENCODING_RAW);
     ptn_get_defined_constants_add_int(table, "ZLIB_ENCODING_GZIP", PTN_ZLIB_ENCODING_GZIP);
     ptn_get_defined_constants_add_int(table, "ZLIB_ENCODING_DEFLATE", PTN_ZLIB_ENCODING_DEFLATE);
+    ptn_get_defined_constants_add_string(table, "ZLIB_VERSION", PTN_ZLIB_VERSION);
+    ptn_get_defined_constants_add_int(table, "ZLIB_VERNUM", PTN_ZLIB_VERNUM);
     ptn_get_defined_constants_add_int(table, "FORCE_GZIP", PTN_FORCE_GZIP);
     ptn_get_defined_constants_add_int(table, "FORCE_DEFLATE", PTN_FORCE_DEFLATE);
     ptn_get_defined_constants_add_int(table, "ZLIB_NO_FLUSH", PTN_ZLIB_NO_FLUSH);
@@ -102047,6 +102106,8 @@ static int ptn_reflection_constant_is_zlib(const char *name) {
         "ZLIB_ENCODING_RAW",
         "ZLIB_ENCODING_GZIP",
         "ZLIB_ENCODING_DEFLATE",
+        "ZLIB_VERSION",
+        "ZLIB_VERNUM",
         "FORCE_GZIP",
         "FORCE_DEFLATE",
         "ZLIB_NO_FLUSH",
@@ -138305,10 +138366,112 @@ static int ptn_zlib_option_level(PtnValue options, PtnValue *level_out) {
     return 0;
 }
 
-static PtnValue ptn_zlib_context_resource(int64_t encoding, const char *type_name);
+static int ptn_zlib_dictionary_append_array_entry(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return 0;
+    }
+    if (string.len == 0) {
+        ptn_string_operand_free(string);
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($options) must not contain empty strings",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    if (memchr(string.data, '\0', string.len) != NULL) {
+        ptn_string_operand_free(string);
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #2 ($options) must not contain strings with null bytes",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    ptn_string_buffer_append_len(buffer, string.data, string.len);
+    ptn_string_operand_free(string);
+    return 1;
+}
+
+static int ptn_zlib_resolve_dictionary_option(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue options,
+    unsigned char **dictionary_out,
+    size_t *dictionary_len_out,
+    size_t line
+) {
+    *dictionary_out = NULL;
+    *dictionary_len_out = 0;
+    PtnValue dictionary = ptn_null();
+    if (!ptn_stream_filter_option(options, "dictionary", &dictionary)) {
+        return 1;
+    }
+
+    PtnValue resolved = ptn_value_deref(dictionary);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (resolved.type == PTN_ARRAY && resolved.as.array != NULL) {
+        for (size_t i = 0; i < resolved.as.array->len; i++) {
+            if (!ptn_zlib_dictionary_append_array_entry(
+                runtime,
+                function_name,
+                &buffer,
+                resolved.as.array->entries[i].value,
+                line
+            )) {
+                free(buffer.data);
+                ptn_value_destroy(&dictionary);
+                return 0;
+            }
+        }
+    } else {
+        PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, resolved, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(string);
+            free(buffer.data);
+            ptn_value_destroy(&dictionary);
+            return 0;
+        }
+        ptn_string_buffer_append_len(&buffer, string.data, string.len);
+        ptn_string_operand_free(string);
+    }
+
+    ptn_value_destroy(&dictionary);
+    *dictionary_out = (unsigned char *)buffer.data;
+    *dictionary_len_out = buffer.len;
+    return 1;
+}
+
+static PtnValue ptn_zlib_context_resource(
+    int64_t encoding,
+    int64_t level,
+    unsigned char *dictionary,
+    size_t dictionary_len,
+    const char *type_name
+);
 
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     int64_t encoding = ptn_internal_expect_integer_arg(runtime, "inflate_init", 1, "encoding", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
@@ -138317,7 +138480,13 @@ static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, cons
         ptn_zlib_throw_encoding_value_error(runtime, "inflate_init", 1, "encoding");
         return ptn_null();
     }
-    return ptn_zlib_context_resource(encoding, "zlib inflate");
+    unsigned char *dictionary = NULL;
+    size_t dictionary_len = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL &&
+        !ptn_zlib_resolve_dictionary_option(runtime, "inflate_init", args[1], &dictionary, &dictionary_len, line)) {
+        return ptn_null();
+    }
+    return ptn_zlib_context_resource(encoding, -1, dictionary, dictionary_len, "zlib inflate");
 }
 
 static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -138329,53 +138498,129 @@ static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, cons
         ptn_zlib_throw_encoding_value_error(runtime, "deflate_init", 1, "encoding");
         return ptn_null();
     }
+    int64_t level_value = -1;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
         PtnValue level = ptn_null();
-        (void)ptn_zlib_option_level(args[1], &level);
-        PtnValue resolved = ptn_value_deref(level);
-        if (resolved.type != PTN_INT) {
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "deflate_init(): Argument #2 ($options) the value for option \"level\" must be of type int, %s given",
-                ptn_offset_container_type_name(resolved)
-            );
-            ptn_value_destroy(&level);
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
+        if (ptn_zlib_option_level(args[1], &level)) {
+            PtnValue resolved = ptn_value_deref(level);
+            if (resolved.type != PTN_INT) {
+                char message[192];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "deflate_init(): Argument #2 ($options) the value for option \"level\" must be of type int, %s given",
+                    ptn_offset_container_type_name(resolved)
+                );
+                ptn_value_destroy(&level);
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "TypeError", message);
+                return ptn_null();
             }
-            ptn_throw_exception(runtime, "TypeError", message);
-            return ptn_null();
-        }
-        if (!ptn_zlib_level_is_valid(resolved.as.integer)) {
+            if (!ptn_zlib_level_is_valid(resolved.as.integer)) {
+                ptn_value_destroy(&level);
+                ptn_zlib_throw_level_value_error(runtime, "deflate_init");
+                return ptn_null();
+            }
+            level_value = resolved.as.integer;
             ptn_value_destroy(&level);
-            ptn_zlib_throw_level_value_error(runtime, "deflate_init");
-            return ptn_null();
         }
-        ptn_value_destroy(&level);
     }
-    return ptn_zlib_context_resource(encoding, "zlib deflate");
+    unsigned char *dictionary = NULL;
+    size_t dictionary_len = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL &&
+        !ptn_zlib_resolve_dictionary_option(runtime, "deflate_init", args[1], &dictionary, &dictionary_len, line)) {
+        return ptn_null();
+    }
+    return ptn_zlib_context_resource(encoding, level_value, dictionary, dictionary_len, "zlib deflate");
 }
 
 typedef struct {
     int64_t encoding;
+    int64_t level;
+    unsigned char *dictionary;
+    size_t dictionary_len;
 } PtnZlibContext;
 
 static void ptn_zlib_context_data_free(void *data) {
-    free(data);
+    PtnZlibContext *context = (PtnZlibContext *)data;
+    if (context == NULL) {
+        return;
+    }
+    free(context->dictionary);
+    free(context);
 }
 
-static PtnValue ptn_zlib_context_resource(int64_t encoding, const char *type_name) {
+static PtnValue ptn_zlib_context_resource(
+    int64_t encoding,
+    int64_t level,
+    unsigned char *dictionary,
+    size_t dictionary_len,
+    const char *type_name
+) {
     PtnZlibContext *context = malloc(sizeof(PtnZlibContext));
     if (context == NULL) {
+        free(dictionary);
         ptn_abort_out_of_memory();
     }
     context->encoding = encoding;
+    context->level = level;
+    context->dictionary = dictionary;
+    context->dictionary_len = dictionary_len;
     PtnResource *resource = ptn_resource_new_named(type_name);
     resource->close_hook_data = context;
     resource->close_hook_data_free = ptn_zlib_context_data_free;
     return ptn_resource(resource);
+}
+
+static PtnValue ptn_zlib_transform_string_value_limited(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand data,
+    int decompress,
+    int64_t encoding,
+    int64_t level,
+    int64_t max_length,
+    size_t line
+) {
+    unsigned char *transformed = NULL;
+    size_t transformed_len = 0;
+    int ok = ptn_zlib_transform_bytes_no_dictionary(
+        (const unsigned char *)data.data,
+        data.len,
+        decompress,
+        encoding,
+        level,
+        &transformed,
+        &transformed_len
+    );
+    if (ok <= 0) {
+        char detail[192];
+        int written = snprintf(
+            detail,
+            sizeof(detail),
+            "%s(): %s",
+            function_name,
+            decompress ? "data error" : "compression"
+        );
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        return ptn_bool(0);
+    }
+    if (decompress && max_length > 0 && transformed_len > (uint64_t)max_length) {
+        free(transformed);
+        char detail[128];
+        int written = snprintf(detail, sizeof(detail), "%s(): insufficient memory", function_name);
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, detail, line);
+        return ptn_bool(0);
+    }
+    return ptn_owned_string_len((char *)transformed, transformed_len);
 }
 
 static PtnValue ptn_zlib_transform_string_value(
@@ -138387,14 +138632,36 @@ static PtnValue ptn_zlib_transform_string_value(
     int64_t level,
     size_t line
 ) {
+    return ptn_zlib_transform_string_value_limited(
+        runtime,
+        function_name,
+        data,
+        decompress,
+        encoding,
+        level,
+        -1,
+        line
+    );
+}
+
+static PtnValue ptn_zlib_transform_context_string_value(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand data,
+    int decompress,
+    PtnZlibContext *context,
+    size_t line
+) {
     unsigned char *transformed = NULL;
     size_t transformed_len = 0;
     int ok = ptn_zlib_transform_bytes(
         (const unsigned char *)data.data,
         data.len,
         decompress,
-        encoding,
-        level,
+        context->encoding,
+        context->level,
+        context->dictionary,
+        context->dictionary_len,
         &transformed,
         &transformed_len
     );
@@ -138535,6 +138802,33 @@ static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
+static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzuncompress", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t max_length = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        max_length = ptn_internal_expect_integer_arg(runtime, "gzuncompress", 2, "max_length", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    PtnValue result = ptn_zlib_transform_string_value_limited(
+        runtime,
+        "gzuncompress",
+        data,
+        1,
+        PTN_ZLIB_ENCODING_DEFLATE,
+        -1,
+        max_length,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
 static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzdecode", 1, "data", args[0], line);
@@ -138555,18 +138849,26 @@ static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const Pt
 }
 
 static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzinflate", 1, "data", args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    PtnValue result = ptn_zlib_transform_string_value(
+    int64_t max_length = 0;
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        max_length = ptn_internal_expect_integer_arg(runtime, "gzinflate", 2, "max_length", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    PtnValue result = ptn_zlib_transform_string_value_limited(
         runtime,
         "gzinflate",
         data,
         1,
         PTN_ZLIB_ENCODING_RAW,
         -1,
+        max_length,
         line
     );
     ptn_string_operand_free(data);
@@ -138594,6 +138896,57 @@ static void ptn_zlib_throw_flush_mode_value_error(PtnRuntime *runtime, const cha
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_internal_deflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue context_value = ptn_value_deref(args[0]);
+    if (context_value.type != PTN_RESOURCE ||
+        context_value.as.resource == NULL ||
+        strcmp(context_value.as.resource->type_name, "zlib deflate") != 0 ||
+        context_value.as.resource->close_hook_data == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "deflate_add(): Argument #1 ($context) must be of type DeflateContext, %s given",
+            ptn_offset_container_type_name(context_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "deflate_add", 2, "data", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t flush_mode = PTN_ZLIB_SYNC_FLUSH;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        flush_mode = ptn_internal_expect_integer_arg(runtime, "deflate_add", 3, "flush_mode", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_flush_mode_is_valid(flush_mode)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_flush_mode_value_error(runtime, "deflate_add");
+        return ptn_null();
+    }
+
+    PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
+    PtnValue result = ptn_zlib_transform_context_string_value(
+        runtime,
+        "deflate_add",
+        data,
+        0,
+        context,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
 }
 
 static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -138635,13 +138988,12 @@ static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const
     }
 
     PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
-    PtnValue result = ptn_zlib_transform_string_value(
+    PtnValue result = ptn_zlib_transform_context_string_value(
         runtime,
         "inflate_add",
         data,
         1,
-        context->encoding,
-        -1,
+        context,
         line
     );
     ptn_string_operand_free(data);
@@ -138822,24 +139174,84 @@ static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const 
     return ptn_int((int64_t)data_len);
 }
 
+static int ptn_zlib_file_exists(const char *path) {
+    struct stat info;
+    return path != NULL && stat(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static char *ptn_resolve_zlib_include_path(PtnRuntime *runtime, const char *path) {
+    if (path == NULL ||
+        path[0] == '\0' ||
+        ptn_path_string_is_absolute(path) ||
+        ptn_path_contains_scheme_separator(path, strlen(path))) {
+        return NULL;
+    }
+
+    const char *include_path = ptn_runtime_current_include_path(runtime);
+    const char separator =
+#if defined(_WIN32)
+        ';';
+#else
+        ':';
+#endif
+    const char *segment = include_path;
+    while (segment != NULL) {
+        const char *end = strchr(segment, separator);
+        size_t segment_len = end == NULL ? strlen(segment) : (size_t)(end - segment);
+        if (segment_len != 0) {
+            char *directory = ptn_duplicate_string_len(segment, segment_len);
+            char *candidate = ptn_path_join_alloc(directory, path);
+            free(directory);
+            if (ptn_zlib_file_exists(candidate)) {
+                return candidate;
+            }
+            free(candidate);
+        }
+        if (end == NULL) {
+            break;
+        }
+        segment = end + 1;
+    }
+
+    char *source_dir = ptn_runtime_source_dir_alloc(runtime);
+    if (source_dir != NULL) {
+        char *candidate = ptn_path_join_alloc(source_dir, path);
+        free(source_dir);
+        if (ptn_zlib_file_exists(candidate)) {
+            return candidate;
+        }
+        free(candidate);
+    }
+
+    if (ptn_zlib_file_exists(path)) {
+        return ptn_duplicate_string(path);
+    }
+
+    return NULL;
+}
+
 static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "gzfile", 1, "filename", args[0], line);
     if (path == NULL) {
         return ptn_null();
     }
+    int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
+    char *resolved_path = use_include_path ? ptn_resolve_zlib_include_path(runtime, path) : NULL;
+    const char *open_path = resolved_path == NULL ? path : resolved_path;
     unsigned char *data = NULL;
     size_t data_len = 0;
-    int ok = ptn_zlib_read_path_bytes(path, &data, &data_len);
+    int ok = ptn_zlib_read_path_bytes(open_path, &data, &data_len);
     if (ok <= 0) {
         char detail[192];
         int written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             free(path);
+            free(resolved_path);
             free(data);
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "gzfile", path, detail, line);
+        free(resolved_path);
         free(path);
         free(data);
         return ptn_bool(0);
@@ -138857,6 +139269,7 @@ static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnV
     if (start < data_len) {
         ptn_file_array_append_line(result, data, start, data_len, 0, 0, &index);
     }
+    free(resolved_path);
     free(path);
     free(data);
     return result;
@@ -138864,6 +139277,30 @@ static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_gzclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_fclose(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_gzeof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "gzeof", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    if (resource->stream_backend == PTN_STREAM_BACKEND_ZLIB && resource->memory_stream != NULL) {
+        return ptn_bool(resource->memory_stream->position >= resource->memory_stream->len);
+    }
+    return ptn_bool(ptn_stream_eof(resource));
+}
+
+static PtnValue ptn_internal_gzgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_fgets(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(0);
 }
 
 enum {
@@ -154767,6 +155204,7 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
 static PtnValue ptn_internal_disk_free_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_disk_total_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_deflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_chgrp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -154793,13 +155231,16 @@ static PtnValue ptn_internal_gzcompress(PtnRuntime *runtime, size_t argc, const 
 static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzeof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzrewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gztell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzuncompress(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -154835,6 +155276,7 @@ static PtnValue ptn_internal_stream_socket_get_name(PtnRuntime *runtime, size_t 
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_zlib_get_coding_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -155116,6 +155558,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
+        { "deflate_add", 2, 3, ptn_internal_deflate_add },
         { "deflate_init", 1, 2, ptn_internal_deflate_init },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "enum_exists", 1, 2, ptn_internal_enum_exists },
@@ -155233,7 +155676,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gzdecode", 1, 2, ptn_internal_gzdecode },
         { "gzdeflate", 1, 3, ptn_internal_gzdeflate },
         { "gzencode", 1, 3, ptn_internal_gzencode },
+        { "gzeof", 1, 1, ptn_internal_gzeof },
         { "gzfile", 1, 2, ptn_internal_gzfile },
+        { "gzgets", 1, 2, ptn_internal_gzgets },
         { "gzinflate", 1, 2, ptn_internal_gzinflate },
         { "gzopen", 2, 2, ptn_internal_gzopen },
         { "gzpassthru", 1, 1, ptn_internal_gzpassthru },
@@ -155241,6 +155686,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gzrewind", 1, 1, ptn_internal_gzrewind },
         { "gzseek", 2, 3, ptn_internal_gzseek },
         { "gztell", 1, 1, ptn_internal_gztell },
+        { "gzuncompress", 1, 2, ptn_internal_gzuncompress },
         { "gzwrite", 2, 3, ptn_internal_gzwrite },
         { "getservbyname", 2, 2, ptn_internal_getservbyname },
         { "getservbyport", 2, 2, ptn_internal_getservbyport },
@@ -155931,6 +156377,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "zip_entry_open", 2, 3, ptn_internal_zip_entry_open },
         { "zip_open", 1, 1, ptn_internal_zip_open },
         { "zip_read", 1, 1, ptn_internal_zip_read },
+        { "zlib_get_coding_type", 0, 0, ptn_internal_zlib_get_coding_type },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;

@@ -1,0 +1,12 @@
+ext/zlib/tests/gzfile_variation15.phpt
+ext/zlib/tests/zlib_get_coding_type_br.phpt
+ext/zlib/tests/gh16326.phpt
+ext/zlib/tests/gzuncompress_error1.phpt
+ext/zlib/tests/zlib_filter_inflate.phpt
+ext/zlib/tests/gzrewind_basic2.phpt
+ext/zlib/tests/gzinflate_length.phpt
+ext/zlib/tests/bug73944.phpt
+ext/zlib/tests/gzgets_basic.phpt
+ext/zlib/tests/deflate_add_block_v123.phpt
+ext/zlib/tests/002.phpt
+ext/zlib/tests/zlib_filter_deflate.phpt
