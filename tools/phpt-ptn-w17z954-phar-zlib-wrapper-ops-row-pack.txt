@@ -1,0 +1,15 @@
+# ptn-w17z.954 focused PHAR/zlib wrapper operation row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T210851Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/zlib/tests/readgzfile_variation15.phpt
+ext/zlib/tests/gzinflate-bug42663.phpt
+ext/zlib/tests/zlib_filter_seek_inflate.phpt
+ext/phar/tests/bug69441.phpt
+ext/phar/tests/dir.phpt
+ext/phar/tests/ini_set_off.phpt
+ext/phar/tests/zip/open_for_write_newfile_c.phpt
+ext/phar/tests/gh17808.phpt
+ext/phar/tests/bug54395.phpt
+ext/phar/tests/opendir_edgecases.phpt
+ext/phar/tests/025.phpt
+ext/zlib/tests/gh19922.phpt

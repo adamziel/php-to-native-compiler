@@ -28524,6 +28524,137 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_zlib_phar_wrapper_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-phar-wrapper-ops");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-phar-wrapper-ops.php");
+    let output = root.join("zlib-phar-wrapper-ops-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$base = __DIR__ . '/readgz';
+$dir1 = $base . '/dir1';
+$dir2 = $base . '/dir2';
+$dir3 = $base . '/dir3';
+$work = $base . '/work';
+mkdir($base);
+mkdir($dir1);
+mkdir($dir2);
+mkdir($dir3);
+mkdir($work);
+$name = 'payload.gz';
+
+$h = gzopen($dir2 . '/' . $name, 'w');
+gzwrite($h, 'dir2');
+gzclose($h);
+chdir($work);
+set_include_path($dir1 . ':' . $dir2 . ':' . $dir3 . ':');
+echo 'read:';
+readgzfile($name, true);
+echo "\n";
+
+$h = gzopen($dir1 . '/' . $name, 'w');
+gzwrite($h, 'dir1');
+gzclose($h);
+$h = gzopen($name, 'w');
+gzwrite($h, 'work');
+gzclose($h);
+echo 'read:';
+readgzfile($name, true);
+echo "\n";
+
+unlink($dir1 . '/' . $name);
+unlink($dir2 . '/' . $name);
+echo 'read:';
+readgzfile($name, true);
+echo "\n";
+
+$h = gzopen(__DIR__ . '/' . $name, 'w');
+gzwrite($h, 'script');
+gzclose($h);
+echo 'read:';
+readgzfile($name, true);
+echo "\n";
+chdir(__DIR__);
+
+$big = '';
+for ($i = 0; $i < 30000; $i++) {
+    $big .= $i . ' ';
+}
+$deflated = gzdeflate($big, 9);
+var_dump(strlen($deflated) > 65535);
+var_dump(gzinflate(substr($deflated, 0, 65535)));
+
+$file = __DIR__ . '/seek.zlib';
+$fp = fopen($file, 'w');
+stream_filter_append($fp, 'zlib.deflate', STREAM_FILTER_WRITE);
+fwrite($fp, 'abcdefghij');
+fclose($fp);
+
+$fp = fopen($file, 'r');
+stream_filter_append($fp, 'zlib.inflate', STREAM_FILTER_READ);
+echo fread($fp, 3), "\n";
+var_dump(fseek($fp, 0, SEEK_SET));
+var_dump(ftell($fp));
+var_dump(stream_get_contents($fp));
+var_dump(fseek($fp, 4, SEEK_SET));
+fclose($fp);
+
+var_dump(gzopen('php://output', 14));
+
+unlink($work . '/' . $name);
+unlink(__DIR__ . '/' . $name);
+unlink($file);
+rmdir($work);
+rmdir($dir1);
+rmdir($dir2);
+rmdir($dir3);
+rmdir($base);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: gzinflate(): data error"));
+    assert!(stdout.contains(
+        "Warning: fseek(): Stream filter zlib.inflate is seekable only to start position"
+    ));
+    assert!(
+        stdout.contains("Warning: gzopen(php://output): could not make seekable - php://output")
+    );
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.contains("Warning: "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "read:dir2\n\
+read:dir1\n\
+read:work\n\
+read:script\n\
+bool(true)\n\
+bool(false)\n\
+abc\n\
+int(0)\n\
+int(0)\n\
+string(10) \"abcdefghij\"\n\
+int(-1)\n\
+bool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_resolve_zlib_include_path"));
+    assert!(c_source.contains("ptn_stream_filter_chain_has_zlib_inflate"));
+}
+
+#[test]
 fn compile_stream_context_options_snapshot_to_native_binary() {
     let root = temp_dir("ptn-native-stream-context-options-snapshot");
     fs::create_dir_all(&root).unwrap();
@@ -73361,6 +73492,55 @@ var_dump(ini_get('phar.readonly'));",
             "bool(false)\n",
             "string(1) \"1\"\n",
             "string(1) \"1\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_phar_disabled_ini_flags_can_toggle_at_runtime() {
+    let root = temp_dir("ptn-phpc-phar-ini-disabled-toggle");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-ini-disabled-toggle.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(ini_set('phar.require_hash', 1));\n\
+var_dump(ini_set('phar.readonly', 1));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));\n\
+var_dump(ini_set('phar.require_hash', 0));\n\
+var_dump(ini_set('phar.readonly', 0));\n\
+var_dump(ini_get('phar.require_hash'));\n\
+var_dump(ini_get('phar.readonly'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("phar.require_hash=0")
+        .arg("-d")
+        .arg("phar.readonly=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

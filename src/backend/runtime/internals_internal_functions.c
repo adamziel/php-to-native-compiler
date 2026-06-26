@@ -52093,13 +52093,17 @@ static int ptn_zlib_transform_bytes(
         "        else:\n"
         "            d=zlib.decompressobj(wbits)\n"
         "            out=d.decompress(data)\n"
-        "        if flush_mode != 0 or allow_truncated:\n"
+        "        if allow_truncated:\n"
+        "            out += d.flush()\n"
+        "        else:\n"
+        "            if not d.eof:\n"
+        "                sys.exit(1)\n"
         "            out += d.flush()\n"
         "    else:\n"
         "        if has_dict:\n"
-        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,zdict=zdict)\n"
+        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,9,zlib.Z_DEFAULT_STRATEGY,zdict=zdict)\n"
         "        else:\n"
-        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits)\n"
+        "            c=zlib.compressobj(level,zlib.DEFLATED,wbits,9,zlib.Z_DEFAULT_STRATEGY)\n"
         "        out=c.compress(data)\n"
         "        if flush_mode != 0:\n"
         "            out += c.flush(flush)\n"
@@ -54183,6 +54187,15 @@ static int ptn_stream_filter_chain_has_convert(PtnStreamFilter *filter) {
     return 0;
 }
 
+static int ptn_stream_filter_chain_has_zlib_inflate(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void ptn_stream_filter_chain_reset(PtnStreamFilter *filter) {
     for (; filter != NULL; filter = filter->next) {
         filter->base64_value_count = 0;
@@ -55697,6 +55710,16 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
             ptn_emit_warning(
                 &runtime->diagnostics,
                 "fseek(): Stream filter convert.* is seekable only to start position",
+                line
+            );
+            return ptn_int(-1);
+        }
+    }
+    if (ptn_stream_filter_chain_has_zlib_inflate(resource->read_filters)) {
+        if (offset != 0 || seek_whence != SEEK_SET) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "fseek(): Stream filter zlib.inflate is seekable only to start position",
                 line
             );
             return ptn_int(-1);
@@ -96649,6 +96672,16 @@ static const char *ptn_runtime_phar_require_hash(PtnRuntime *runtime) {
     return root->phar_require_hash;
 }
 
+static int ptn_runtime_phar_readonly_started_enabled(void) {
+    const char *value = getenv("PTN_PHAR_READONLY");
+    return ptn_runtime_ini_bool(value == NULL ? "1" : value, 1);
+}
+
+static int ptn_runtime_phar_require_hash_started_enabled(void) {
+    const char *value = getenv("PTN_PHAR_REQUIRE_HASH");
+    return ptn_runtime_ini_bool(value == NULL ? "1" : value, 1);
+}
+
 static const char *ptn_runtime_phar_cache_list(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->phar_cache_list == NULL) {
@@ -98573,7 +98606,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_readonly(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        if (ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+        if (ptn_runtime_phar_readonly_started_enabled() && !ptn_runtime_ini_bool(next, 1)) {
             free(next);
             ptn_string_operand_free(value);
             ptn_string_operand_free(option);
@@ -98590,7 +98623,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_require_hash(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        if (ptn_runtime_ini_bool(ptn_runtime_phar_require_hash(runtime), 1) && !ptn_runtime_ini_bool(next, 1)) {
+        if (ptn_runtime_phar_require_hash_started_enabled() && !ptn_runtime_ini_bool(next, 1)) {
             free(next);
             ptn_string_operand_free(value);
             ptn_string_operand_free(option);
@@ -140638,6 +140671,35 @@ static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnV
             path = resolved_path;
         }
     }
+    if (strlen(path) >= 6 && ptn_ascii_case_equal_n(path, "php://", 6)) {
+        size_t needed = (size_t)snprintf(
+            NULL,
+            0,
+            "gzopen(%s): could not make seekable - %s",
+            path,
+            path
+        );
+        char *message = malloc(needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            needed + 1,
+            "gzopen(%s): could not make seekable - %s",
+            path,
+            path
+        );
+        if (written < 0 || (size_t)written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        free(message);
+        free(mode);
+        free(path);
+        return ptn_bool(0);
+    }
     PtnValue stream;
     int opened = ptn_try_open_zlib_path_stream(path, path, mode, -1, &stream);
     if (opened > 0) {
@@ -140749,24 +140811,30 @@ static PtnValue ptn_internal_gzpassthru(PtnRuntime *runtime, size_t argc, const 
     return ptn_internal_fpassthru(runtime, argc, args, line);
 }
 
+static char *ptn_resolve_zlib_include_path(PtnRuntime *runtime, const char *path);
+
 static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "readgzfile", 1, "filename", args[0], line);
     if (path == NULL) {
         return ptn_null();
     }
+    int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
+    char *resolved_path = use_include_path ? ptn_resolve_zlib_include_path(runtime, path) : NULL;
+    const char *open_path = resolved_path == NULL ? path : resolved_path;
     unsigned char *data = NULL;
     size_t data_len = 0;
-    int ok = ptn_zlib_read_path_bytes(path, &data, &data_len);
+    int ok = ptn_zlib_read_path_bytes(open_path, &data, &data_len);
     if (ok <= 0) {
         char detail[192];
         int written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             free(path);
+            free(resolved_path);
             free(data);
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "readgzfile", path, detail, line);
+        free(resolved_path);
         free(path);
         free(data);
         return ptn_bool(0);
@@ -140774,6 +140842,7 @@ static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const 
     if (data_len != 0) {
         fwrite(data, 1, data_len, stdout);
     }
+    free(resolved_path);
     free(path);
     free(data);
     if (data_len > (size_t)INT64_MAX) {
@@ -157999,7 +158068,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "register_shutdown_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_shutdown_function },
         { "register_tick_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_tick_function },
         { "readdir", 0, 1, ptn_internal_readdir },
-        { "readgzfile", 1, 1, ptn_internal_readgzfile },
+        { "readgzfile", 1, 2, ptn_internal_readgzfile },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },
         { "realpath_cache_get", 0, 0, ptn_internal_realpath_cache_get },
