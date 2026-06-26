@@ -53596,6 +53596,62 @@ include $alias . '/b/c.php';
 }
 
 #[test]
+fn compile_phar_data_empty_dir_count_and_zip_stat_name_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-data-empty-dir-zip-stat");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-data-empty-dir-zip-stat.php");
+    let output = root.join("phar-data-empty-dir-zip-stat-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$zip = new PharData(__DIR__ . '/created.zip', 0, null, Phar::ZIP);
+$zip->addEmptyDir('/');
+var_dump($zip->count(), count($zip));
+$zip->addFromString('name', 'contents');
+unset($zip);
+
+$reader = new ZipArchive();
+var_dump($reader->open(__DIR__ . '/created.zip'));
+$stat = $reader->statName('name');
+var_dump(is_array($stat), $stat['mtime'] > 315529200);
+var_dump($stat['crc'] === 3036287351);
+$reader->close();
+
+$tar = new PharData(__DIR__ . '/created.tar');
+$tar->addEmptyDir('/');
+var_dump($tar->count());
+
+try {
+    $tar->buildFromDirectory(1);
+} catch (Throwable $e) {
+    echo get_class($e), "\n";
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(1)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(1)\nUnexpectedValueException\nRecursiveDirectoryIterator::__construct(1): Failed to open directory: No such file or directory\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_call_method"));
+    assert!(c_source.contains("ptn_zip_archive_stat_name"));
+}
+
+#[test]
 fn compile_soap_round2_boolean_lexical_values_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-boolean-lexical");
     fs::create_dir_all(&root).unwrap();

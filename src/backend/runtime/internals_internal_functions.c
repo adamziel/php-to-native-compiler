@@ -141422,7 +141422,7 @@ static void ptn_phar_archive_set_entry(
     const unsigned char *content,
     size_t content_len
 ) {
-    ptn_phar_archive_set_entry_with_flags(archive, name, content, content_len, 0, 0);
+    ptn_phar_archive_set_entry_with_flags(archive, name, content, content_len, 0, (int64_t)time(NULL));
 }
 
 static void ptn_phar_archive_set_entry_with_timestamp(
@@ -143156,6 +143156,41 @@ static PtnValue ptn_phar_build_from_directory_result(
     const char *directory,
     size_t line
 ) {
+#if !defined(_WIN32)
+    DIR *handle = opendir(directory);
+    if (handle == NULL) {
+        int saved_errno = errno;
+        int needed = snprintf(
+            NULL,
+            0,
+            "RecursiveDirectoryIterator::__construct(%s): Failed to open directory: %s",
+            directory == NULL ? "" : directory,
+            strerror(saved_errno)
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(
+            message,
+            (size_t)needed + 1,
+            "RecursiveDirectoryIterator::__construct(%s): Failed to open directory: %s",
+            directory == NULL ? "" : directory,
+            strerror(saved_errno)
+        );
+        if (written < 0 || written != needed) {
+            free(message);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "UnexpectedValueException", message);
+        free(message);
+        return ptn_null();
+    }
+    closedir(handle);
+#endif
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_phar_add_directory_files(runtime, archive, directory, "", result, line);
     return result;
@@ -143541,13 +143576,15 @@ static PTN_UNUSED PtnValue ptn_phar_new(
 ) {
     const char *resolved_class_name =
         class_name == NULL || class_name[0] == '\0' ? "Phar" : class_name;
-    const char *constructor_name = ptn_internal_class_name_is_phar_data(resolved_class_name)
+    int is_phar_data = ptn_internal_class_name_is_phar_data(resolved_class_name);
+    const char *constructor_name = is_phar_data
         ? "PharData::__construct"
         : "Phar::__construct";
-    if (argc < 1 || argc > 3) {
+    size_t max_argc = is_phar_data ? 4 : 3;
+    if (argc < 1 || argc > max_argc) {
         char message[160];
         const char *relation = argc < 1 ? "at least" : "at most";
-        size_t expected = argc < 1 ? 1 : 3;
+        size_t expected = argc < 1 ? 1 : max_argc;
         int written = snprintf(
             message,
             sizeof(message),
@@ -143586,8 +143623,25 @@ static PTN_UNUSED PtnValue ptn_phar_new(
         ptn_throw_exception(runtime, "ValueError", message);
         return ptn_null();
     }
+    int64_t requested_format = PTN_PHAR_FORMAT_NONE;
+    if (is_phar_data && argc >= 4) {
+        requested_format =
+            ptn_internal_expect_integer_arg(runtime, constructor_name, 4, "format", args[3], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            return ptn_null();
+        }
+        if (requested_format != PTN_PHAR_FORMAT_NONE &&
+            requested_format != PTN_PHAR_FORMAT_PHAR &&
+            requested_format != PTN_PHAR_FORMAT_TAR &&
+            requested_format != PTN_PHAR_FORMAT_ZIP) {
+            free(path);
+            ptn_throw_exception(runtime, "UnexpectedValueException", "Unknown file format specified");
+            return ptn_null();
+        }
+    }
     char *requested_alias = NULL;
-    if (argc >= 3) {
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
         PtnStringOperand alias =
             ptn_internal_expect_string_arg(runtime, constructor_name, 3, "alias", args[2], line);
         if (runtime->exceptions->active_exception != NULL) {
@@ -143695,6 +143749,9 @@ static PTN_UNUSED PtnValue ptn_phar_new(
         ptn_abort_out_of_memory();
     }
     data->archive = ptn_phar_archive_for_path(path);
+    if (data->archive != NULL && requested_format != PTN_PHAR_FORMAT_NONE) {
+        data->archive->format = (int)requested_format;
+    }
     data->info_class = NULL;
     if (!ptn_phar_archive_apply_constructor_alias(runtime, data->archive, path, requested_alias)) {
         free(requested_alias);
@@ -143986,6 +144043,17 @@ static PtnValue ptn_phar_call_method(
     PtnPharObjectData *data = ptn_phar_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "Phar::count() expects at most 1 argument");
+            return ptn_null();
+        }
+        if (argc == 1) {
+            (void)ptn_value_to_integer(args[0]);
+        }
+        size_t count = data->archive == NULL ? 0 : data->archive->entry_count;
+        return ptn_int(count > (size_t)INT64_MAX ? INT64_MAX : (int64_t)count);
     }
     if (ptn_ascii_case_equal(name, "getModified")) {
         if (!ptn_phar_expect_no_arguments(runtime, "Phar", name, argc)) {
@@ -150208,6 +150276,7 @@ typedef struct PtnZipArchiveData {
     int is_open;
     int has_cancel_callback;
     PtnValue cancel_callback;
+    char *filename;
 } PtnZipArchiveData;
 
 static PtnZipArchiveData *ptn_zip_archive_data_new(void) {
@@ -150218,6 +150287,7 @@ static PtnZipArchiveData *ptn_zip_archive_data_new(void) {
     data->is_open = 0;
     data->has_cancel_callback = 0;
     data->cancel_callback = ptn_null();
+    data->filename = NULL;
     return data;
 }
 
@@ -150227,6 +150297,7 @@ static void ptn_zip_archive_data_free(void *data_ptr) {
         return;
     }
     ptn_value_destroy(&data->cancel_callback);
+    free(data->filename);
     free(data);
 }
 
@@ -150284,13 +150355,22 @@ static PtnValue ptn_zip_archive_open(
         ptn_string_operand_free(filename);
         return ptn_null();
     }
+    char *path = ptn_path_operand_to_c_string(filename);
     ptn_string_operand_free(filename);
+    if (path == NULL) {
+        ptn_throw_exception(runtime, "ValueError", "ZipArchive::open(): Argument #1 ($filename) must not contain any null bytes");
+        return ptn_null();
+    }
     if (argc >= 2) {
         (void)ptn_value_to_integer(args[1]);
     }
     PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
     if (data != NULL) {
+        free(data->filename);
+        data->filename = path;
         data->is_open = 1;
+    } else {
+        free(path);
     }
     return ptn_bool(1);
 }
@@ -150402,6 +150482,78 @@ static PtnValue ptn_zip_archive_close(
     return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(1);
 }
 
+static PtnValue ptn_zip_archive_stat_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 1
+                ? "ZipArchive::statName() expects at least 1 argument, %zu given"
+                : "ZipArchive::statName() expects at most 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *entry_name = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    if (argc >= 2) {
+        (void)ptn_value_to_integer(args[1]);
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || data->filename == NULL) {
+        free(entry_name);
+        return ptn_bool(0);
+    }
+    PtnPharArchiveState *archive = ptn_phar_archive_for_path(data->filename);
+    size_t index = 0;
+    if (archive == NULL || !ptn_phar_archive_find_entry_index(archive, entry_name, &index)) {
+        free(entry_name);
+        return ptn_bool(0);
+    }
+    PtnPharArchiveEntry *entry = &archive->entries[index];
+    int64_t mtime = entry->timestamp != 0 ? entry->timestamp : (int64_t)time(NULL);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("name"), ptn_string(entry_name));
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("index"),
+        ptn_int(index > (size_t)INT64_MAX ? INT64_MAX : (int64_t)index)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("size"),
+        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("comp_size"),
+        ptn_int(entry->content_len > (size_t)INT64_MAX ? INT64_MAX : (int64_t)entry->content_len)
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("mtime"), ptn_int(mtime));
+    uint32_t crc = ptn_crc32_bytes(entry->content, entry->content_len);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("crc"), ptn_int((int64_t)crc));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("comp_method"), ptn_int(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("encryption_method"), ptn_int(0));
+    free(entry_name);
+    return result;
+}
+
 static PTN_UNUSED void ptn_zip_archive_run_destructor(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -150447,6 +150599,9 @@ static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
     }
     if (ptn_ascii_case_equal(name, "addFromString")) {
         return ptn_zip_archive_add_from_string(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "statName")) {
+        return ptn_zip_archive_stat_name(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "close")) {
         return ptn_zip_archive_close(runtime, receiver, argc, args, line);
@@ -163235,6 +163390,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "compressFiles")
             || ptn_ascii_case_equal(method_name, "convertToExecutable")
             || ptn_ascii_case_equal(method_name, "copy")
+            || ptn_ascii_case_equal(method_name, "count")
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "delete")
             || ptn_ascii_case_equal(method_name, "decompressFiles")
@@ -163314,6 +163470,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "open")
             || ptn_ascii_case_equal(method_name, "registerCancelCallback")
             || ptn_ascii_case_equal(method_name, "addFromString")
+            || ptn_ascii_case_equal(method_name, "statName")
             || ptn_ascii_case_equal(method_name, "close");
     }
     if (ptn_internal_class_name_is_soap_client(class_name)) {
@@ -164956,6 +165113,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "compressFiles");
         ptn_append_method_name(result, &index, "convertToExecutable");
         ptn_append_method_name(result, &index, "copy");
+        ptn_append_method_name(result, &index, "count");
         ptn_append_method_name(result, &index, "current");
         ptn_append_method_name(result, &index, "delete");
         ptn_append_method_name(result, &index, "decompressFiles");
@@ -165006,6 +165164,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "open");
         ptn_append_method_name(result, &index, "registerCancelCallback");
         ptn_append_method_name(result, &index, "addFromString");
+        ptn_append_method_name(result, &index, "statName");
         ptn_append_method_name(result, &index, "close");
         return result;
     }

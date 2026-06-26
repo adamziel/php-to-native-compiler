@@ -1,0 +1,15 @@
+# ptn-w17z.963 focused PHAR zip/tar buildfromdirectory row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T215909Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/zip/gh10766.phpt
+ext/phar/tests/zip/delete_in_phar_confirm.phpt
+ext/phar/tests/phar_oo_011b.phpt
+ext/zlib/tests/gzfile_basic.phpt
+ext/phar/tests/phar_buildfromdirectory2.phpt
+ext/phar/tests/zip/phar_setdefaultstub.phpt
+ext/phar/tests/tar/tar_001.phpt
+ext/phar/tests/tar/tar_openssl_hash.phpt
+ext/phar/tests/zip/exists_as_phar.phpt
+ext/phar/tests/zip/corrupt_002.phpt
+ext/phar/tests/phar_oo_008.phpt
+ext/phar/tests/bug77322.phpt
