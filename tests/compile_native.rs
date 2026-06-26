@@ -29693,6 +29693,109 @@ dump_order();\n",
 }
 
 #[test]
+fn phpc_mbstring_residual_state_and_diagnostics_edges() {
+    let root = temp_dir("ptn-phpc-mbstring-residual-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-residual-edges.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo mb_convert_case(\"People's issues versus people’s issues\", MB_CASE_TITLE, 'UTF-8'), \"\\n\";\n\
+try {\n\
+    var_dump(mb_convert_encoding(\"\", \"UTF-8\", [0]));\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump(mb_convert_encoding('foo', 'UTF-8', [['bar'], ['baz']]));\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+ini_set('mbstring.internal_encoding', 'utf-8');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+ini_set('internal_encoding', 'iso-8859-2');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+ini_set('mbstring.internal_encoding', '');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+mb_internal_encoding('utf-8');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+ini_set('internal_encoding', 'iso-8859-3');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+ini_set('mbstring.internal_encoding', '');\n\
+var_dump(mb_internal_encoding());\n\
+var_dump(mb_strlen(\"\\xc3\\xb6\"));\n\
+var_dump(mb_strimwidth('some string', 1, -2, '...', 'ASCII'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("error_reporting=32767")
+        .arg("-d")
+        .arg("internal_encoding=iso-8859-1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("People's Issues Versus People’s Issues\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"0\"\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("\nWarning: Array to string conversion in ptn on line "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"Array\"\n"),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("Deprecated: ini_set(): Use of mbstring.internal_encoding is deprecated")
+            .count(),
+        3,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(10) \"ISO-8859-1\"\nint(2)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(5) \"UTF-8\"\nint(1)\nstring(5) \"UTF-8\"\nint(1)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(10) \"ISO-8859-2\"\nint(2)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(10) \"ISO-8859-3\"\nint(2)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Deprecated: mb_strimwidth(): passing a negative integer to argument #3 ($width) is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(8) \"ome s...\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iconv_encoding_state_to_native_binary() {
     let root = temp_dir("ptn-native-iconv-encoding-state");
     fs::create_dir_all(&root).unwrap();

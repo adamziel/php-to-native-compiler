@@ -72870,6 +72870,7 @@ static PtnValue ptn_internal_quoted_printable_decode(PtnRuntime *runtime, size_t
 }
 
 static char ptn_mb_internal_encoding_name[64] = "";
+static int ptn_mb_internal_encoding_overridden = 0;
 static char ptn_mb_regex_encoding_name[64] = "";
 static char ptn_mb_http_output_name[64] = "";
 static char ptn_mb_language_name[32] = "";
@@ -73334,15 +73335,18 @@ static int ptn_mb_encoding_is_raw(const char *encoding) {
 }
 
 static const char *ptn_mb_current_internal_encoding(PtnRuntime *runtime) {
-    if (ptn_mb_internal_encoding_name[0] != '\0') {
-        return ptn_mb_internal_encoding_name;
-    }
-    const char *env = getenv("PTN_MBSTRING_INTERNAL_ENCODING");
-    if (env != NULL && env[0] != '\0') {
-        PtnStringOperand operand = ptn_string_operand_borrowed(env);
-        const char *canonical = ptn_mb_canonical_encoding_name(operand);
-        if (canonical != NULL) {
-            return canonical;
+    if (ptn_mb_internal_encoding_overridden) {
+        if (ptn_mb_internal_encoding_name[0] != '\0') {
+            return ptn_mb_internal_encoding_name;
+        }
+    } else {
+        const char *env = getenv("PTN_MBSTRING_INTERNAL_ENCODING");
+        if (env != NULL && env[0] != '\0') {
+            PtnStringOperand operand = ptn_string_operand_borrowed(env);
+            const char *canonical = ptn_mb_canonical_encoding_name(operand);
+            if (canonical != NULL) {
+                return canonical;
+            }
         }
     }
     const char *legacy = ptn_runtime_internal_encoding(runtime);
@@ -73625,6 +73629,13 @@ static const char *ptn_mb_encoding_list_item_canonical_or_throw(
     return canonical;
 }
 
+static void ptn_mb_emit_array_to_string_warning_if_needed(PtnRuntime *runtime, PtnValue value, size_t line) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY) {
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+}
+
 static void ptn_mb_detect_order_buffer_append_name(PtnStringBuffer *buffer, const char *name) {
     if (buffer->len != 0) {
         ptn_string_buffer_append_char(buffer, ',');
@@ -73742,6 +73753,7 @@ static int ptn_mb_detect_order_buffer_from_value(
             return 0;
         }
         for (size_t i = 0; i < resolved.as.array->len; i++) {
+            ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
             PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
             int ok = ptn_mb_detect_order_buffer_append_item(runtime, item, buffer, 1, line);
             ptn_string_operand_free(item);
@@ -73774,6 +73786,7 @@ static const char *ptn_mb_encoding_list_first_from_value(
     if (resolved.type == PTN_ARRAY) {
         const char *first = NULL;
         for (size_t i = 0; i < resolved.as.array->len; i++) {
+            ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
             PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
             const char *canonical = ptn_mb_encoding_list_item_canonical_or_throw(
                 runtime,
@@ -73915,6 +73928,7 @@ static char *ptn_mb_encoding_detect_list_from_value_alloc(
             return NULL;
         }
         for (size_t i = 0; i < resolved.as.array->len; i++) {
+            ptn_mb_emit_array_to_string_warning_if_needed(runtime, resolved.as.array->entries[i].value, line);
             PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
             int ok = ptn_mb_detect_list_append_item(
                 runtime,
@@ -77419,7 +77433,7 @@ static char *ptn_mb_utf8_case_alloc(const char *input, size_t input_len, int mod
             } else {
                 cp = ptn_mb_case_map_codepoint(cp, 0);
             }
-            title_next = cp <= 0x7f && !isalnum((unsigned char)cp);
+            title_next = cp <= 0x7f && cp != '\'' && !isalnum((unsigned char)cp);
         } else {
             cp = ptn_mb_case_map_codepoint(cp, 0);
         }
@@ -77534,6 +77548,7 @@ static PtnValue ptn_internal_mb_internal_encoding(PtnRuntime *runtime, size_t ar
         return ptn_bool(0);
     }
     ptn_mb_copy_state_string(ptn_mb_internal_encoding_name, sizeof(ptn_mb_internal_encoding_name), encoding);
+    ptn_mb_internal_encoding_overridden = 1;
     return ptn_bool(1);
 }
 
@@ -78934,8 +78949,19 @@ static PtnValue ptn_internal_mb_strimwidth(PtnRuntime *runtime, size_t argc, con
         width += ptn_mb_codepoint_width(cp);
     }
     size_t content_start = offset;
-    int64_t available_width = width_limit < 0 ? 0 : width_limit;
     int64_t remaining_width = ptn_mb_utf8_display_width(utf8 + content_start, utf8_len - content_start);
+    int64_t available_width = width_limit;
+    if (width_limit < 0) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "mb_strimwidth(): passing a negative integer to argument #3 ($width) is deprecated",
+            line
+        );
+        available_width = remaining_width + width_limit;
+        if (available_width < 0) {
+            available_width = 0;
+        }
+    }
     int truncated = remaining_width > available_width;
     int64_t marker_width = truncated && marker_utf8_len != 0
         ? ptn_mb_utf8_display_width(marker_utf8, marker_utf8_len)
@@ -89399,6 +89425,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "mbstring.internal_encoding")) {
+        ptn_mb_internal_encoding_name[0] = '\0';
+        ptn_mb_internal_encoding_overridden = 0;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "iconv.internal_encoding")) {
         ptn_runtime_set_iconv_internal_encoding(runtime, "");
         ptn_string_operand_free(option);
@@ -89541,6 +89573,37 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
             "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null"
         );
         return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "mbstring.internal_encoding")) {
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): Use of mbstring.internal_encoding is deprecated", line);
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_mb_current_internal_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        if (value.len == 0) {
+            ptn_mb_internal_encoding_name[0] = '\0';
+            ptn_mb_internal_encoding_overridden = 1;
+            ptn_string_operand_free(value);
+            ptn_string_operand_free(option);
+            return previous;
+        }
+        PtnStringOperand canonical_input = value;
+        char *prefix = NULL;
+        if (ptn_mb_encoding_has_embedded_nul(value, &prefix)) {
+            canonical_input = ptn_string_operand_borrowed(prefix);
+        }
+        const char *canonical = ptn_mb_canonical_encoding_name(canonical_input);
+        if (canonical == NULL || prefix != NULL) {
+            ptn_mb_emit_ini_invalid_encoding_warning(runtime, canonical_input, line);
+            free(prefix);
+            ptn_string_operand_free(value);
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        ptn_mb_copy_state_string(ptn_mb_internal_encoding_name, sizeof(ptn_mb_internal_encoding_name), canonical);
+        ptn_mb_internal_encoding_overridden = 1;
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "mbstring.http_output")) {
         ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): Use of mbstring.http_output is deprecated", line);

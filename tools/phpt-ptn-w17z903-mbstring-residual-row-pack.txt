@@ -1,0 +1,10 @@
+ext/mbstring/tests/iso2022jp_encoding.phpt
+ext/mbstring/tests/bug79149.phpt
+ext/mbstring/tests/utf7imap_encoding.phpt
+ext/mbstring/tests/bug71298.phpt
+ext/mbstring/tests/zend_multibyte-14.phpt
+ext/mbstring/tests/zend_multibyte-04.phpt
+ext/mbstring/tests/mb_send_mail06.phpt
+ext/mbstring/tests/mb_output_handler_pattern-06.phpt
+ext/mbstring/tests/internal_encoding.phpt
+ext/mbstring/tests/mb_strimwidth_deprecated.phpt
