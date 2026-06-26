@@ -51548,6 +51548,12 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
+static int ptn_try_read_data_url_bytes_with_detail(
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **detail_out
+);
 static int ptn_base64_decode_value(unsigned char byte);
 static int ptn_base64_is_space(unsigned char byte);
 static char *ptn_quoted_printable_decode_string(const char *input, size_t len, size_t *output_len_out);
@@ -51559,6 +51565,7 @@ static void ptn_emit_stream_read_notice(
 );
 static int ptn_lstat_path(const char *path, struct stat *info);
 static const char *ptn_runtime_current_include_path(PtnRuntime *runtime);
+static char *ptn_resolve_existing_include_path(PtnRuntime *runtime, const char *path);
 static char *ptn_internal_non_empty_path_arg_c_string_or_value_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -52796,6 +52803,15 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(mode);
         free(path);
         return php_stream;
+    }
+    if (argc >= 3 && ptn_is_truthy(args[2])) {
+        char *resolved_path = ptn_resolve_existing_include_path(runtime, path);
+        if (resolved_path != NULL) {
+            free(path);
+            path = resolved_path;
+            free(uri);
+            uri = ptn_duplicate_string(path);
+        }
     }
     int data_url_result = ptn_try_open_data_url_stream(path, mode, &php_stream, &wrapper_detail);
     if (data_url_result > 0) {
@@ -54901,6 +54917,19 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     path = normalized_path;
 
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    const int64_t valid_flags = PTN_FILE_USE_INCLUDE_PATH |
+        PTN_FILE_IGNORE_NEW_LINES |
+        PTN_FILE_SKIP_EMPTY_LINES |
+        PTN_FILE_NO_DEFAULT_CONTEXT;
+    if ((flags & ~valid_flags) != 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "file(): Argument #2 ($flags) must be a valid flag value"
+        );
+        free(path);
+        return ptn_null();
+    }
     int use_include_path = (flags & PTN_FILE_USE_INCLUDE_PATH) != 0;
     int ignore_new_lines = (flags & PTN_FILE_IGNORE_NEW_LINES) != 0;
     int skip_empty_lines = (flags & PTN_FILE_SKIP_EMPTY_LINES) != 0;
@@ -54967,7 +54996,10 @@ static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const Pt
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
-    int read_result = ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
+    const char *zlib_path = NULL;
+    int read_result = ptn_zlib_uri_path(path, &zlib_path)
+        ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
+        : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(
@@ -56369,10 +56401,30 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
-    int read_result = strncmp(path, "phar://", 7) == 0
+    char *data_url_detail = NULL;
+    int data_url_result = ptn_try_read_data_url_bytes_with_detail(
+        path,
+        &data,
+        &data_len,
+        &data_url_detail
+    );
+    const char *zlib_path = NULL;
+    int read_result = data_url_result != 0
+        ? data_url_result
+        : strncmp(path, "phar://", 7) == 0
         ? ptn_phar_uri_read_entry(path, &data, &data_len)
+        : ptn_zlib_uri_path(path, &zlib_path)
+        ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
         : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
+        if (data_url_detail != NULL) {
+            ptn_emit_file_warning(runtime, "file_get_contents", path, data_url_detail, line);
+            free(data_url_detail);
+            free(opened_path);
+            free(path);
+            free(data);
+            return ptn_bool(0);
+        }
         if (read_result < 0) {
             ptn_emit_file_read_failure_notice(runtime, "file_get_contents", path, opened_path, line);
             free(opened_path);
@@ -56404,6 +56456,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         free(data);
         return ptn_bool(0);
     }
+    free(data_url_detail);
     free(opened_path);
     free(path);
 
@@ -56770,9 +56823,14 @@ static int ptn_data_url_parse(const char *path, PtnDataUrlInfo *info, char **det
     return 1;
 }
 
-static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+static int ptn_try_read_data_url_bytes_with_detail(
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out,
+    char **detail_out
+) {
     PtnDataUrlInfo info;
-    int result = ptn_data_url_parse(path, &info, NULL);
+    int result = ptn_data_url_parse(path, &info, detail_out);
     if (result <= 0) {
         return result;
     }
@@ -56781,6 +56839,10 @@ static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_ou
     info.data = NULL;
     ptn_data_url_info_free(&info);
     return 1;
+}
+
+static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    return ptn_try_read_data_url_bytes_with_detail(path, data_out, len_out, NULL);
 }
 
 static int ptn_try_open_data_url_stream(const char *path, const char *mode, PtnValue *out, char **detail_out) {
@@ -57932,6 +57994,9 @@ static PtnValue ptn_internal_fstat(PtnRuntime *runtime, size_t argc, const PtnVa
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
+    if (value.as.resource->stream_backend == PTN_STREAM_BACKEND_ZLIB) {
+        return ptn_bool(0);
+    }
     if (value.as.resource->memory_stream != NULL) {
         return ptn_stat_array_from_memory_stream(value.as.resource->memory_stream);
     }
@@ -58573,6 +58638,33 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_emit_warning(&runtime->diagnostics, "scandir(): Filename contains null byte", line);
         return ptn_bool(0);
     }
+    if (path[0] == '\0') {
+        free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "scandir(): Argument #1 ($directory) must not be empty"
+        );
+        return ptn_null();
+    }
+    int64_t sorting_order = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "scandir", 2, "sorting_order", args[1], line)
+        : PTN_SCANDIR_SORT_ASCENDING;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        return ptn_null();
+    }
+    if (sorting_order != PTN_SCANDIR_SORT_ASCENDING &&
+        sorting_order != PTN_SCANDIR_SORT_DESCENDING &&
+        sorting_order != PTN_SCANDIR_SORT_NONE) {
+        free(path);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "scandir(): Argument #2 ($sorting_order) must be SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE"
+        );
+        return ptn_null();
+    }
 
 #if defined(_WIN32)
     ptn_emit_file_warning(runtime, "scandir", path, "directory scanning is unsupported on this platform", line);
@@ -58618,14 +58710,17 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
     }
     closedir(dir);
     free(path);
-    qsort(names, len, sizeof(char *), ptn_scandir_name_compare);
+    if (sorting_order != PTN_SCANDIR_SORT_NONE) {
+        qsort(names, len, sizeof(char *), ptn_scandir_name_compare);
+    }
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < len; i++) {
+        size_t source_index = sorting_order == PTN_SCANDIR_SORT_DESCENDING ? len - i - 1 : i;
         if (i > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_owned_string(names[i]));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_owned_string(names[source_index]));
     }
     free(names);
     return result;
@@ -100419,6 +100514,10 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "FILE_IGNORE_NEW_LINES", PTN_FILE_IGNORE_NEW_LINES);
     ptn_get_defined_constants_add_int(table, "FILE_SKIP_EMPTY_LINES", PTN_FILE_SKIP_EMPTY_LINES);
     ptn_get_defined_constants_add_int(table, "FILE_APPEND", PTN_FILE_APPEND);
+    ptn_get_defined_constants_add_int(table, "FILE_NO_DEFAULT_CONTEXT", PTN_FILE_NO_DEFAULT_CONTEXT);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_ASCENDING", PTN_SCANDIR_SORT_ASCENDING);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_DESCENDING", PTN_SCANDIR_SORT_DESCENDING);
+    ptn_get_defined_constants_add_int(table, "SCANDIR_SORT_NONE", PTN_SCANDIR_SORT_NONE);
     ptn_get_defined_constants_add_int(table, "SEEK_SET", PTN_SEEK_SET);
     ptn_get_defined_constants_add_int(table, "SEEK_CUR", PTN_SEEK_CUR);
     ptn_get_defined_constants_add_int(table, "SEEK_END", PTN_SEEK_END);
@@ -100934,6 +101033,10 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "FILE_IGNORE_NEW_LINES",
         "FILE_SKIP_EMPTY_LINES",
         "FILE_APPEND",
+        "FILE_NO_DEFAULT_CONTEXT",
+        "SCANDIR_SORT_ASCENDING",
+        "SCANDIR_SORT_DESCENDING",
+        "SCANDIR_SORT_NONE",
         "SEEK_SET",
         "SEEK_CUR",
         "SEEK_END",
