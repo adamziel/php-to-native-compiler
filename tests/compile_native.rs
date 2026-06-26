@@ -94209,6 +94209,78 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_file_path_row_pack_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-file-path-row-pack-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-path-row-pack-edges.php");
+    let output = root.join("file-path-row-pack-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/write.txt';\n\
+$fp = fopen($path, 'w');\n\
+var_dump(fwrite($fp, 'data', -1));\n\
+var_dump(fwrite($fp, 'data', 100000));\n\
+fclose($fp);\n\
+var_dump(file_get_contents($path));\n\
+\n\
+$ini = \"a=false\\nb=off\\nc=no\\nd=none\\ne=null\\nf=true\\n\";\n\
+$normal = parse_ini_string($ini);\n\
+foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $key) {\n\
+    var_dump($normal[$key]);\n\
+}\n\
+$typed = parse_ini_string($ini, false, INI_SCANNER_TYPED);\n\
+foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $key) {\n\
+    var_dump($typed[$key]);\n\
+}\n\
+\n\
+$globRoot = __DIR__ . '/glob-root';\n\
+mkdir($globRoot);\n\
+mkdir($globRoot . '/dir');\n\
+mkdir($globRoot . '/dir5');\n\
+file_put_contents($globRoot . '/file5', 'x');\n\
+file_put_contents($globRoot . '/file6', 'x');\n\
+$brace = array_map('basename', glob($globRoot . '/*{5}', GLOB_BRACE));\n\
+sort($brace);\n\
+echo implode(',', $brace), \"\\n\";\n\
+$dirs = array_map('basename', glob($globRoot . '/*', GLOB_ONLYDIR));\n\
+sort($dirs);\n\
+echo implode(',', $dirs), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\n\
+int(4)\n\
+string(4) \"data\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(0) \"\"\n\
+string(1) \"1\"\n\
+bool(false)\n\
+bool(false)\n\
+bool(false)\n\
+NULL\n\
+NULL\n\
+bool(true)\n\
+dir5,file5\n\
+dir,dir5\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_glob_run_brace_pattern"));
+    assert!(c_source.contains("ptn_ini_text_is_reserved_false_or_null"));
+}
+
+#[test]
 fn compile_stream_writes_preserve_eof_indicator_to_native_binary() {
     let root = temp_dir("ptn-native-stream-write-eof");
     fs::create_dir_all(&root).unwrap();

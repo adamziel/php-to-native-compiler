@@ -54938,21 +54938,8 @@ static PtnValue ptn_internal_fwrite_named(
     if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
         int64_t requested = ptn_internal_expect_integer_arg(runtime, function_name, 3, "length", args[2], line);
         if (requested < 0) {
-            ptn_string_operand_free(data);
-            char message[128];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "%s(): Argument #3 ($length) must be greater than or equal to 0",
-                function_name
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "ValueError", message);
-            return ptn_null();
-        }
-        if ((uint64_t)requested < length) {
+            length = 0;
+        } else if ((uint64_t)requested < length) {
             length = (size_t)requested;
         }
     }
@@ -59920,6 +59907,78 @@ static int ptn_glob_flags(int64_t flags) {
     return c_flags;
 }
 
+static void ptn_glob_append_matches(PtnValue result, const glob_t *matches, int64_t flags, size_t *next_index) {
+    for (size_t i = 0; i < matches->gl_pathc; i++) {
+        const char *path = matches->gl_pathv[i];
+        if ((flags & PTN_GLOB_ONLYDIR) != 0 && !ptn_path_is_directory_c(path)) {
+            continue;
+        }
+        if (*next_index > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)*next_index),
+            ptn_owned_string(ptn_duplicate_string(path))
+        );
+        (*next_index)++;
+    }
+}
+
+static int ptn_glob_run_pattern(PtnValue result, const char *pattern, int64_t flags, size_t *next_index) {
+    glob_t matches;
+    memset(&matches, 0, sizeof(matches));
+    int status = glob(pattern, ptn_glob_flags(flags & ~PTN_GLOB_BRACE), NULL, &matches);
+    if (status != 0 && status != GLOB_NOMATCH) {
+        globfree(&matches);
+        return 0;
+    }
+    ptn_glob_append_matches(result, &matches, flags, next_index);
+    globfree(&matches);
+    return 1;
+}
+
+static int ptn_glob_run_brace_pattern(PtnValue result, const char *pattern, int64_t flags, size_t *next_index) {
+    const char *open = strchr(pattern, '{');
+    if (open == NULL) {
+        return ptn_glob_run_pattern(result, pattern, flags, next_index);
+    }
+    const char *close = strchr(open + 1, '}');
+    if (close == NULL) {
+        return ptn_glob_run_pattern(result, pattern, flags, next_index);
+    }
+
+    size_t prefix_len = (size_t)(open - pattern);
+    size_t suffix_len = strlen(close + 1);
+    const char *part_start = open + 1;
+    while (part_start <= close) {
+        const char *part_end = part_start;
+        while (part_end < close && *part_end != ',') {
+            part_end++;
+        }
+        size_t part_len = (size_t)(part_end - part_start);
+        size_t expanded_len = prefix_len + part_len + suffix_len;
+        char *expanded = malloc(expanded_len + 1);
+        if (expanded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(expanded, pattern, prefix_len);
+        memcpy(expanded + prefix_len, part_start, part_len);
+        memcpy(expanded + prefix_len + part_len, close + 1, suffix_len);
+        expanded[expanded_len] = '\0';
+        int ok = ptn_glob_run_pattern(result, expanded, flags, next_index);
+        free(expanded);
+        if (!ok) {
+            return 0;
+        }
+        if (part_end >= close) {
+            break;
+        }
+        part_start = part_end + 1;
+    }
+    return 1;
+}
+
 static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *pattern = ptn_internal_path_arg_c_string_or_value_error(runtime, "glob", 1, "pattern", args[0], line);
     if (pattern == NULL) {
@@ -59934,26 +59993,15 @@ static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnVal
     free(pattern);
     return result;
 #else
-    glob_t matches;
-    memset(&matches, 0, sizeof(matches));
-    int status = glob(pattern, ptn_glob_flags(flags), NULL, &matches);
+    size_t next_index = 0;
+    int ok = (flags & PTN_GLOB_BRACE) != 0
+        ? ptn_glob_run_brace_pattern(result, pattern, flags, &next_index)
+        : ptn_glob_run_pattern(result, pattern, flags, &next_index);
     free(pattern);
-    if (status != 0 && status != GLOB_NOMATCH) {
-        globfree(&matches);
+    if (!ok) {
+        ptn_value_destroy(&result);
         return ptn_bool(0);
     }
-    for (size_t i = 0; i < matches.gl_pathc; i++) {
-        if (i > (size_t)INT64_MAX) {
-            globfree(&matches);
-            ptn_abort_out_of_memory();
-        }
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_int_key((int64_t)i),
-            ptn_owned_string(ptn_duplicate_string(matches.gl_pathv[i]))
-        );
-    }
-    globfree(&matches);
     return result;
 #endif
 }
@@ -90484,6 +90532,20 @@ static PtnValue ptn_ini_string_value_from_buffer(PtnStringBuffer *buffer) {
     return ptn_owned_string_len(buffer->data, buffer->len);
 }
 
+static int ptn_ini_text_is_reserved_true(PtnIniText text) {
+    return ptn_ini_text_ascii_case_equal(text, "yes") ||
+        ptn_ini_text_ascii_case_equal(text, "on") ||
+        ptn_ini_text_ascii_case_equal(text, "true");
+}
+
+static int ptn_ini_text_is_reserved_false_or_null(PtnIniText text) {
+    return ptn_ini_text_ascii_case_equal(text, "no") ||
+        ptn_ini_text_ascii_case_equal(text, "off") ||
+        ptn_ini_text_ascii_case_equal(text, "false") ||
+        ptn_ini_text_ascii_case_equal(text, "none") ||
+        ptn_ini_text_ascii_case_equal(text, "null");
+}
+
 static PtnValue ptn_ini_normalized_string_value(
     PtnRuntime *runtime,
     PtnIniText text,
@@ -90518,8 +90580,19 @@ static PtnValue ptn_ini_normalized_string_value(
         return ptn_owned_string_len(ptn_ini_duplicate_text(trimmed), trimmed.len);
     }
 
+    if (scanner_mode == PTN_INI_SCANNER_NORMAL) {
+        if (ptn_ini_text_is_reserved_true(trimmed)) {
+            return ptn_string("1");
+        }
+        if (ptn_ini_text_is_reserved_false_or_null(trimmed)) {
+            return ptn_string("");
+        }
+    }
+
     int64_t expression = 0;
     if (
+        !(scanner_mode == PTN_INI_SCANNER_TYPED &&
+            (ptn_ini_text_is_reserved_true(trimmed) || ptn_ini_text_is_reserved_false_or_null(trimmed))) &&
         (scanner_mode != PTN_INI_SCANNER_NORMAL || !ptn_ini_text_is_plain_octal_or_hex_literal(trimmed)) &&
         ptn_ini_eval_int_expression(runtime, trimmed, &expression)
     ) {
@@ -90531,19 +90604,9 @@ static PtnValue ptn_ini_normalized_string_value(
         return ptn_owned_string_len(ptn_duplicate_string_len(number, (size_t)written), (size_t)written);
     }
 
-    if (scanner_mode == PTN_INI_SCANNER_NORMAL) {
-        if (ptn_ini_text_ascii_case_equal(trimmed, "yes") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "on") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "true")) {
-            return ptn_string("1");
-        }
-        if (ptn_ini_text_ascii_case_equal(trimmed, "no") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "off") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "false") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "none") ||
-            ptn_ini_text_ascii_case_equal(trimmed, "null")) {
-            return ptn_string("");
-        }
+    if (scanner_mode == PTN_INI_SCANNER_TYPED &&
+        (ptn_ini_text_is_reserved_true(trimmed) || ptn_ini_text_is_reserved_false_or_null(trimmed))) {
+        return ptn_owned_string_len(ptn_ini_duplicate_text(trimmed), trimmed.len);
     }
 
     PtnStringBuffer buffer;

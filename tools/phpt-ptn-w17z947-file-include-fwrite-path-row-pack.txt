@@ -1,0 +1,12 @@
+ext/standard/tests/file/auto_detect_line_endings_1.phpt
+ext/standard/tests/file/fwrite.phpt
+ext/standard/tests/file/bug27508.phpt
+ext/standard/tests/file/bug24482.phpt
+ext/standard/tests/file/fscanf_variation31.phpt
+ext/standard/tests/file/include_userstream_003.phpt
+ext/standard/tests/file/fscanf_variation38.phpt
+ext/standard/tests/file/fopencookie.phpt
+ext/standard/tests/file/parse_ini_file.phpt
+ext/standard/tests/file/bug38450.phpt
+ext/standard/tests/file/glob_variation.phpt
+ext/standard/tests/file/symlink_to_symlink.phpt
