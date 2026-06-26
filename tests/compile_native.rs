@@ -56831,6 +56831,36 @@ Cannot access \"self\" when no class scope is active\n"
 }
 
 #[test]
+fn compile_compact_new_object_includes_closure_reflection_constructors() {
+    let root = temp_dir("ptn-native-compact-new-object-reflection-constructors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-new-object-reflection-constructors.php");
+    let output = root.join("compact-new-object-reflection-constructors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function make_object() {\n\
+$object = new stdClass;\n\
+    return $object;\n\
+}\n\
+var_dump(make_object() instanceof stdClass);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "bool(true)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(c_source.contains("ptn_closure_reflection_method_new"));
+    assert!(c_source.contains("ptn_closure_reflection_parameter_new"));
+}
+
+#[test]
 fn compile_class_constant_self_reference_trace_to_native_binary() {
     let root = temp_dir("ptn-native-class-constant-self-reference-trace");
     fs::create_dir_all(&root).unwrap();

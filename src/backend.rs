@@ -197,6 +197,9 @@ pub fn emit_c(module: &Module) -> String {
     emit_include_once_state(&mut out, &module.includes, &module.preload_include_indices);
     emit_include_runtime_helpers(&mut out);
     emit_source_snapshot_arrays(&mut out, module);
+    if needs_lightweight_closure_reflection {
+        emit_closure_reflection_helpers(&mut out);
+    }
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
@@ -270,9 +273,6 @@ pub fn emit_c(module: &Module) -> String {
     }
     if runtime_requirements.internal_function_dispatch {
         emit_callable_validation_helpers(&mut out);
-    }
-    if needs_lightweight_closure_reflection {
-        emit_closure_reflection_helpers(&mut out);
     }
     if needs_method_dispatch {
         emit_method_dispatch(
@@ -32693,13 +32693,13 @@ fn collect_value_runtime_requirements(
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
+            requirements.closure_reflection_dispatch = true;
             let uses_closure_reflection_dispatch = is_closure_invoke_reflection_constructor_shape(
                 class_name,
                 arguments,
                 argument_unpacks,
             );
             if uses_closure_reflection_dispatch {
-                requirements.closure_reflection_dispatch = true;
                 requirements.method_dispatch = true;
             } else if modeled_internal_class_name(class_name).is_some()
                 || class_name.eq_ignore_ascii_case("ReflectionClass")
