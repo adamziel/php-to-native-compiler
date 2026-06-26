@@ -1,0 +1,12 @@
+ext/zlib/tests/gzseek_basic.phpt
+ext/zlib/tests/gzrewind_basic.phpt
+ext/zlib/tests/zlib_filter_inflate2.phpt
+ext/zlib/tests/003.phpt
+ext/zlib/tests/inflate_add_error.phpt
+ext/zlib/tests/zlib_filter_deflate2.phpt
+ext/zlib/tests/gzread_error2.phpt
+ext/zlib/tests/zlib_scheme_fopen_variation1.phpt
+ext/zlib/tests/gzdeflate_variation1.phpt
+ext/zlib/tests/gzfilegzreadfile.phpt
+ext/zlib/tests/zlib_scheme_file_basic.phpt
+ext/zlib/tests/bug61287.phpt

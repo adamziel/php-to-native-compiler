@@ -290,6 +290,12 @@ typedef struct {
 #define PTN_ZLIB_ENCODING_DEFLATE 15
 #define PTN_FORCE_GZIP 31
 #define PTN_FORCE_DEFLATE 15
+#define PTN_ZLIB_NO_FLUSH 0
+#define PTN_ZLIB_PARTIAL_FLUSH 1
+#define PTN_ZLIB_SYNC_FLUSH 2
+#define PTN_ZLIB_FULL_FLUSH 3
+#define PTN_ZLIB_BLOCK 5
+#define PTN_ZLIB_FINISH 4
 #if defined(AF_UNIX)
 #define PTN_STREAM_PF_UNIX AF_UNIX
 #else
@@ -1242,6 +1248,9 @@ struct PtnStreamFilter {
     char *name;
     int base64_values[4];
     size_t base64_value_count;
+    int64_t zlib_window;
+    int64_t zlib_level;
+    int zlib_error;
     PtnStreamFilter *next;
 };
 

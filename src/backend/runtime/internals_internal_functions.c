@@ -51810,7 +51810,11 @@ static int ptn_zlib_uri_path(const char *uri, const char **path_out) {
     if (uri == NULL || strncmp(uri, prefix, prefix_len) != 0) {
         return 0;
     }
-    *path_out = uri + prefix_len;
+    const char *path = uri + prefix_len;
+    if (strncmp(path, "file://", 7) == 0) {
+        path += 7;
+    }
+    *path_out = path;
     return 1;
 }
 
@@ -51911,114 +51915,12 @@ static int ptn_zlib_write_all_fd(int fd, const unsigned char *data, size_t len) 
     return 1;
 }
 
-static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
-    *data_out = NULL;
-    *len_out = 0;
-#if defined(_WIN32)
-    return ptn_read_file_bytes(path, data_out, len_out);
-#else
-    int pipe_fds[2];
-    if (pipe(pipe_fds) != 0) {
-        return -1;
-    }
-    pid_t child = fork();
-    if (child < 0) {
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
-        return -1;
-    }
-    if (child == 0) {
-        close(pipe_fds[0]);
-        (void)dup2(pipe_fds[1], STDOUT_FILENO);
-        if (pipe_fds[1] > STDERR_FILENO) {
-            close(pipe_fds[1]);
-        }
-        ptn_zlib_child_silence_stderr();
-        execlp("gzip", "gzip", "-cd", "--", path, (char *)NULL);
-        _exit(127);
-    }
-    close(pipe_fds[1]);
-    unsigned char *data = NULL;
-    size_t len = 0;
-    int read_result = ptn_zlib_read_from_fd(pipe_fds[0], &data, &len);
-    int saved_errno = errno;
-    close(pipe_fds[0]);
-    int ok = ptn_zlib_wait_success(child);
-    if (read_result <= 0 || !ok) {
-        free(data);
-        errno = ok ? saved_errno : EIO;
-        return ptn_read_file_bytes(path, data_out, len_out);
-    }
-    *data_out = data;
-    *len_out = len;
-    return 1;
-#endif
-}
-
-static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len) {
-#if defined(_WIN32)
-    (void)path;
-    (void)data;
-    (void)len;
-    errno = ENOSYS;
-    return -1;
-#else
-    int input_fds[2];
-    if (pipe(input_fds) != 0) {
-        return -1;
-    }
-    int output_fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (output_fd < 0) {
-        close(input_fds[0]);
-        close(input_fds[1]);
-        return 0;
-    }
-    pid_t child = fork();
-    if (child < 0) {
-        close(input_fds[0]);
-        close(input_fds[1]);
-        close(output_fd);
-        return -1;
-    }
-    if (child == 0) {
-        close(input_fds[1]);
-        (void)dup2(input_fds[0], STDIN_FILENO);
-        (void)dup2(output_fd, STDOUT_FILENO);
-        if (input_fds[0] > STDERR_FILENO) {
-            close(input_fds[0]);
-        }
-        if (output_fd > STDERR_FILENO) {
-            close(output_fd);
-        }
-        ptn_zlib_child_silence_stderr();
-        execlp("gzip", "gzip", "-c", (char *)NULL);
-        _exit(127);
-    }
-    close(input_fds[0]);
-    close(output_fd);
-    int write_ok = ptn_zlib_write_all_fd(input_fds[1], data, len);
-    int saved_errno = errno;
-    if (close(input_fds[1]) != 0 && write_ok) {
-        write_ok = 0;
-        saved_errno = errno;
-    }
-    int ok = ptn_zlib_wait_success(child);
-    if (!write_ok || !ok) {
-        if (write_ok && !ok) {
-            errno = EIO;
-        } else {
-            errno = saved_errno;
-        }
-        return -1;
-    }
-    return 1;
-#endif
-}
-
 static int ptn_zlib_transform_bytes(
     const unsigned char *data,
     size_t len,
     int decompress,
+    int64_t window_bits,
+    int64_t level,
     unsigned char **data_out,
     size_t *len_out
 ) {
@@ -52028,47 +51930,77 @@ static int ptn_zlib_transform_bytes(
     (void)data;
     (void)len;
     (void)decompress;
+    (void)window_bits;
+    (void)level;
     errno = ENOSYS;
     return -1;
 #else
-    int input_fds[2];
+    int pipe_fds[2];
     int output_fds[2];
-    if (pipe(input_fds) != 0) {
+    if (pipe(pipe_fds) != 0) {
         return -1;
     }
     if (pipe(output_fds) != 0) {
-        close(input_fds[0]);
-        close(input_fds[1]);
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
         return -1;
     }
+    char window_arg[32];
+    char level_arg[32];
+    snprintf(window_arg, sizeof(window_arg), "%lld", (long long)window_bits);
+    snprintf(level_arg, sizeof(level_arg), "%lld", (long long)level);
+    const char *script =
+        "import sys,zlib\n"
+        "mode=sys.argv[1]\n"
+        "wbits=int(sys.argv[2])\n"
+        "level=int(sys.argv[3])\n"
+        "data=sys.stdin.buffer.read()\n"
+        "try:\n"
+        "    if mode == 'd':\n"
+        "        out=zlib.decompress(data,wbits)\n"
+        "    else:\n"
+        "        c=zlib.compressobj(level,zlib.DEFLATED,wbits)\n"
+        "        out=c.compress(data)+c.flush()\n"
+        "    sys.stdout.buffer.write(out)\n"
+        "except Exception:\n"
+        "    sys.exit(1)\n";
     pid_t child = fork();
     if (child < 0) {
-        close(input_fds[0]);
-        close(input_fds[1]);
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
         close(output_fds[0]);
         close(output_fds[1]);
         return -1;
     }
     if (child == 0) {
-        close(input_fds[1]);
+        close(pipe_fds[1]);
         close(output_fds[0]);
-        (void)dup2(input_fds[0], STDIN_FILENO);
+        (void)dup2(pipe_fds[0], STDIN_FILENO);
         (void)dup2(output_fds[1], STDOUT_FILENO);
-        if (input_fds[0] > STDERR_FILENO) {
-            close(input_fds[0]);
+        if (pipe_fds[0] > STDERR_FILENO) {
+            close(pipe_fds[0]);
         }
         if (output_fds[1] > STDERR_FILENO) {
             close(output_fds[1]);
         }
         ptn_zlib_child_silence_stderr();
-        execlp("gzip", "gzip", decompress ? "-cd" : "-c", (char *)NULL);
+        execlp(
+            "python3",
+            "python3",
+            "-c",
+            script,
+            decompress ? "d" : "c",
+            window_arg,
+            level_arg,
+            (char *)NULL
+        );
         _exit(127);
     }
-    close(input_fds[0]);
+    close(pipe_fds[0]);
     close(output_fds[1]);
-    int write_ok = ptn_zlib_write_all_fd(input_fds[1], data, len);
+    int write_ok = ptn_zlib_write_all_fd(pipe_fds[1], data, len);
     int saved_errno = errno;
-    if (close(input_fds[1]) != 0 && write_ok) {
+    if (close(pipe_fds[1]) != 0 && write_ok) {
         write_ok = 0;
         saved_errno = errno;
     }
@@ -52089,6 +52021,59 @@ static int ptn_zlib_transform_bytes(
     *len_out = output_len;
     return 1;
 #endif
+}
+
+static int ptn_zlib_read_path_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    unsigned char *compressed = NULL;
+    size_t compressed_len = 0;
+    int read_result = ptn_read_file_bytes(path, &compressed, &compressed_len);
+    if (read_result <= 0) {
+        *data_out = NULL;
+        *len_out = 0;
+        free(compressed);
+        return read_result;
+    }
+    int ok = ptn_zlib_transform_bytes(
+        compressed,
+        compressed_len,
+        1,
+        PTN_ZLIB_ENCODING_GZIP,
+        -1,
+        data_out,
+        len_out
+    );
+    free(compressed);
+    return ok;
+}
+
+static int ptn_zlib_write_path_bytes(const char *path, const unsigned char *data, size_t len) {
+    unsigned char *compressed = NULL;
+    size_t compressed_len = 0;
+    int compressed_ok = ptn_zlib_transform_bytes(
+        data,
+        len,
+        0,
+        PTN_ZLIB_ENCODING_GZIP,
+        -1,
+        &compressed,
+        &compressed_len
+    );
+    if (compressed_ok <= 0) {
+        free(compressed);
+        return compressed_ok;
+    }
+    FILE *output = fopen(path, "wb");
+    if (output == NULL) {
+        free(compressed);
+        return 0;
+    }
+    size_t written = compressed_len == 0 ? 0 : fwrite(compressed, 1, compressed_len, output);
+    int close_failed = fclose(output) != 0;
+    free(compressed);
+    if (written != compressed_len || close_failed) {
+        return -1;
+    }
+    return 1;
 }
 
 typedef struct {
@@ -53243,7 +53228,12 @@ static int ptn_stream_filter_kind_from_name(PtnStringOperand name, PtnStreamFilt
     return 0;
 }
 
-static PtnStreamFilter *ptn_stream_filter_new(PtnStreamFilterKind kind, PtnStringOperand name) {
+static PtnStreamFilter *ptn_stream_filter_new(
+    PtnStreamFilterKind kind,
+    PtnStringOperand name,
+    int64_t zlib_window,
+    int64_t zlib_level
+) {
     PtnStreamFilter *filter = malloc(sizeof(PtnStreamFilter));
     if (filter == NULL) {
         ptn_abort_out_of_memory();
@@ -53252,6 +53242,9 @@ static PtnStreamFilter *ptn_stream_filter_new(PtnStreamFilterKind kind, PtnStrin
     filter->name = ptn_duplicate_string_len(name.data, name.len);
     memset(filter->base64_values, 0, sizeof(filter->base64_values));
     filter->base64_value_count = 0;
+    filter->zlib_window = zlib_window;
+    filter->zlib_level = zlib_level;
+    filter->zlib_error = 0;
     filter->next = NULL;
     return filter;
 }
@@ -53275,6 +53268,56 @@ static void ptn_stream_filter_chain_insert(
 
 static int ptn_stream_filter_kind_is_zlib(PtnStreamFilterKind kind) {
     return kind == PTN_STREAM_FILTER_ZLIB_DEFLATE || kind == PTN_STREAM_FILTER_ZLIB_INFLATE;
+}
+
+static int ptn_zlib_level_is_valid(int64_t level);
+
+static int ptn_stream_filter_zlib_option(PtnValue options, const char *name, PtnValue *out) {
+    options = ptn_value_deref(options);
+    if (options.type == PTN_ARRAY && options.as.array != NULL) {
+        PtnArrayKey key = ptn_array_string_key(name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.array, key);
+        ptn_array_key_free(key);
+        *out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
+        return entry != NULL;
+    }
+    if (options.type == PTN_OBJECT && options.as.object != NULL && options.as.object->properties != NULL) {
+        PtnArrayKey key = ptn_array_string_key(name);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(options.as.object->properties, key);
+        ptn_array_key_free(key);
+        *out = entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
+        return entry != NULL;
+    }
+    *out = ptn_null();
+    return 0;
+}
+
+static void ptn_stream_filter_zlib_options(
+    PtnStreamFilterKind kind,
+    PtnValue options,
+    int64_t *window_out,
+    int64_t *level_out
+) {
+    *window_out = PTN_ZLIB_ENCODING_RAW;
+    *level_out = -1;
+    if (!ptn_stream_filter_kind_is_zlib(kind)) {
+        return;
+    }
+
+    PtnValue window = ptn_null();
+    if (ptn_stream_filter_zlib_option(options, "window", &window)) {
+        *window_out = ptn_value_to_integer(window);
+    }
+    ptn_value_destroy(&window);
+
+    PtnValue level = ptn_null();
+    if (ptn_stream_filter_zlib_option(options, "level", &level)) {
+        int64_t requested = ptn_value_to_integer(level);
+        if (ptn_zlib_level_is_valid(requested)) {
+            *level_out = requested;
+        }
+    }
+    ptn_value_destroy(&level);
 }
 
 typedef struct {
@@ -53442,6 +53485,8 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 (const unsigned char *)output,
                 output_len,
                 filter->kind == PTN_STREAM_FILTER_ZLIB_INFLATE,
+                filter->zlib_window,
+                filter->zlib_level,
                 &transformed,
                 &transformed_len
             );
@@ -53449,6 +53494,11 @@ static char *ptn_stream_apply_filter_chain_alloc(
                 free(output);
                 output = (char *)transformed;
                 output_len = transformed_len;
+            } else {
+                filter->zlib_error = 1;
+                free(output);
+                output = ptn_duplicate_string_len("", 0);
+                output_len = 0;
             }
             continue;
         }
@@ -53462,6 +53512,25 @@ static char *ptn_stream_apply_filter_chain_alloc(
     }
     *out_len = output_len;
     return output;
+}
+
+static int ptn_stream_filter_chain_take_zlib_error(PtnStreamFilter *filter) {
+    for (; filter != NULL; filter = filter->next) {
+        if (filter->zlib_error) {
+            filter->zlib_error = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_emit_zlib_data_notice(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(message, sizeof(message), "%s(): zlib: data error", function_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
 static int ptn_stream_getc_filtered(PtnResource *resource) {
@@ -53481,8 +53550,12 @@ static size_t ptn_stream_write_filtered(
 ) {
     size_t output_len = 0;
     char *output = ptn_stream_apply_filter_chain_alloc(resource->write_filters, data, len, &output_len);
+    int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->write_filters);
     size_t written = ptn_stream_write_bytes(resource, output, output_len);
     free(output);
+    if (filter_error) {
+        return 0;
+    }
     return written == output_len ? len : written;
 }
 
@@ -53587,11 +53660,15 @@ static PtnValue ptn_internal_stream_filter_attach(
     PtnResource *stream = stream_value.as.resource;
     PtnStreamFilter *read_filter = NULL;
     PtnStreamFilter *write_filter = NULL;
+    int64_t zlib_window = PTN_ZLIB_ENCODING_RAW;
+    int64_t zlib_level = -1;
+    PtnValue filter_params = argc >= 4 ? args[3] : ptn_null();
+    ptn_stream_filter_zlib_options(kind, filter_params, &zlib_window, &zlib_level);
     if (ptn_stream_filter_kind_is_zlib(kind) && (mode & PTN_STREAM_FILTER_READ) != 0) {
         ptn_stream_filter_chain_remove_zlib(&stream->read_filters);
     }
     if ((mode & PTN_STREAM_FILTER_READ) != 0) {
-        read_filter = ptn_stream_filter_new(kind, name);
+        read_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
         ptn_stream_filter_chain_insert(
             &stream->read_filters,
             read_filter,
@@ -53602,7 +53679,7 @@ static PtnValue ptn_internal_stream_filter_attach(
         ptn_stream_filter_chain_remove_zlib(&stream->write_filters);
     }
     if ((mode & PTN_STREAM_FILTER_WRITE) != 0) {
-        write_filter = ptn_stream_filter_new(kind, name);
+        write_filter = ptn_stream_filter_new(kind, name, zlib_window, zlib_level);
         ptn_stream_filter_chain_insert(
             &stream->write_filters,
             write_filter,
@@ -53938,7 +54015,11 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
     }
     size_t filtered_len = 0;
     char *filtered = ptn_stream_apply_filter_chain_alloc(resource->read_filters, buffer, read_len, &filtered_len);
+    int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
     free(buffer);
+    if (filter_error) {
+        ptn_emit_zlib_data_notice(runtime, "fread", line);
+    }
     return ptn_owned_string_len(filtered, filtered_len);
 }
 
@@ -54476,7 +54557,10 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
-    int read_result = ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
+    const char *zlib_path = NULL;
+    int read_result = ptn_zlib_uri_path(path, &zlib_path)
+        ? ptn_zlib_read_path_bytes(zlib_path, &data, &data_len)
+        : ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(
@@ -95047,6 +95131,12 @@ static void ptn_defined_constants_add_zlib(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "ZLIB_ENCODING_DEFLATE", PTN_ZLIB_ENCODING_DEFLATE);
     ptn_get_defined_constants_add_int(table, "FORCE_GZIP", PTN_FORCE_GZIP);
     ptn_get_defined_constants_add_int(table, "FORCE_DEFLATE", PTN_FORCE_DEFLATE);
+    ptn_get_defined_constants_add_int(table, "ZLIB_NO_FLUSH", PTN_ZLIB_NO_FLUSH);
+    ptn_get_defined_constants_add_int(table, "ZLIB_PARTIAL_FLUSH", PTN_ZLIB_PARTIAL_FLUSH);
+    ptn_get_defined_constants_add_int(table, "ZLIB_SYNC_FLUSH", PTN_ZLIB_SYNC_FLUSH);
+    ptn_get_defined_constants_add_int(table, "ZLIB_FULL_FLUSH", PTN_ZLIB_FULL_FLUSH);
+    ptn_get_defined_constants_add_int(table, "ZLIB_BLOCK", PTN_ZLIB_BLOCK);
+    ptn_get_defined_constants_add_int(table, "ZLIB_FINISH", PTN_ZLIB_FINISH);
 }
 
 static PtnValue ptn_defined_constants_zlib_table(void) {
@@ -95698,6 +95788,12 @@ static int ptn_reflection_constant_is_zlib(const char *name) {
         "ZLIB_ENCODING_DEFLATE",
         "FORCE_GZIP",
         "FORCE_DEFLATE",
+        "ZLIB_NO_FLUSH",
+        "ZLIB_PARTIAL_FLUSH",
+        "ZLIB_SYNC_FLUSH",
+        "ZLIB_FULL_FLUSH",
+        "ZLIB_BLOCK",
+        "ZLIB_FINISH",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -131773,6 +131869,8 @@ static int ptn_zlib_option_level(PtnValue options, PtnValue *level_out) {
     return 0;
 }
 
+static PtnValue ptn_zlib_context_resource(int64_t encoding, const char *type_name);
+
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     int64_t encoding = ptn_internal_expect_integer_arg(runtime, "inflate_init", 1, "encoding", args[0], line);
@@ -131783,7 +131881,7 @@ static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, cons
         ptn_zlib_throw_encoding_value_error(runtime, "inflate_init", 1, "encoding");
         return ptn_null();
     }
-    return ptn_resource(ptn_resource_new_named("zlib inflate"));
+    return ptn_zlib_context_resource(encoding, "zlib inflate");
 }
 
 static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -131821,28 +131919,65 @@ static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, cons
         }
         ptn_value_destroy(&level);
     }
-    return ptn_resource(ptn_resource_new_named("zlib deflate"));
+    return ptn_zlib_context_resource(encoding, "zlib deflate");
 }
 
-static PtnValue ptn_zlib_gzip_string_value(
+typedef struct {
+    int64_t encoding;
+} PtnZlibContext;
+
+static void ptn_zlib_context_data_free(void *data) {
+    free(data);
+}
+
+static PtnValue ptn_zlib_context_resource(int64_t encoding, const char *type_name) {
+    PtnZlibContext *context = malloc(sizeof(PtnZlibContext));
+    if (context == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    context->encoding = encoding;
+    PtnResource *resource = ptn_resource_new_named(type_name);
+    resource->close_hook_data = context;
+    resource->close_hook_data_free = ptn_zlib_context_data_free;
+    return ptn_resource(resource);
+}
+
+static PtnValue ptn_zlib_transform_string_value(
     PtnRuntime *runtime,
     const char *function_name,
     PtnStringOperand data,
+    int decompress,
+    int64_t encoding,
+    int64_t level,
     size_t line
 ) {
-    unsigned char *compressed = NULL;
-    size_t compressed_len = 0;
-    int ok = ptn_zlib_transform_bytes((const unsigned char *)data.data, data.len, 0, &compressed, &compressed_len);
+    unsigned char *transformed = NULL;
+    size_t transformed_len = 0;
+    int ok = ptn_zlib_transform_bytes(
+        (const unsigned char *)data.data,
+        data.len,
+        decompress,
+        encoding,
+        level,
+        &transformed,
+        &transformed_len
+    );
     if (ok <= 0) {
         char detail[192];
-        int written = snprintf(detail, sizeof(detail), "%s(): compression failed", function_name);
+        int written = snprintf(
+            detail,
+            sizeof(detail),
+            "%s(): %s failed",
+            function_name,
+            decompress ? "data error" : "compression"
+        );
         if (written < 0 || (size_t)written >= sizeof(detail)) {
             ptn_abort_out_of_memory();
         }
         ptn_emit_warning(&runtime->diagnostics, detail, line);
         return ptn_bool(0);
     }
-    return ptn_owned_string_len((char *)compressed, compressed_len);
+    return ptn_owned_string_len((char *)transformed, transformed_len);
 }
 
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -131863,7 +131998,15 @@ static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const Pt
         ptn_zlib_throw_level_value_error(runtime, "gzencode");
         return ptn_null();
     }
-    PtnValue result = ptn_zlib_gzip_string_value(runtime, "gzencode", data, line);
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzencode",
+        data,
+        0,
+        PTN_ZLIB_ENCODING_GZIP,
+        level,
+        line
+    );
     ptn_string_operand_free(data);
     return result;
 }
@@ -131899,7 +132042,128 @@ static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const P
         ptn_zlib_throw_encoding_value_error(runtime, "gzdeflate", 3, "encoding");
         return ptn_null();
     }
-    PtnValue result = ptn_zlib_gzip_string_value(runtime, "gzdeflate", data, line);
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzdeflate",
+        data,
+        0,
+        encoding,
+        level,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
+static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzdecode", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzdecode",
+        data,
+        1,
+        PTN_ZLIB_ENCODING_GZIP,
+        -1,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
+static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "gzinflate", 1, "data", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "gzinflate",
+        data,
+        1,
+        PTN_ZLIB_ENCODING_RAW,
+        -1,
+        line
+    );
+    ptn_string_operand_free(data);
+    return result;
+}
+
+static int ptn_zlib_flush_mode_is_valid(int64_t flush_mode) {
+    return flush_mode == PTN_ZLIB_NO_FLUSH ||
+        flush_mode == PTN_ZLIB_PARTIAL_FLUSH ||
+        flush_mode == PTN_ZLIB_SYNC_FLUSH ||
+        flush_mode == PTN_ZLIB_FULL_FLUSH ||
+        flush_mode == PTN_ZLIB_BLOCK ||
+        flush_mode == PTN_ZLIB_FINISH;
+}
+
+static void ptn_zlib_throw_flush_mode_value_error(PtnRuntime *runtime, const char *function_name) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #3 ($flush_mode) must be one of ZLIB_NO_FLUSH, ZLIB_PARTIAL_FLUSH, ZLIB_SYNC_FLUSH, ZLIB_FULL_FLUSH, ZLIB_BLOCK, or ZLIB_FINISH",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue context_value = ptn_value_deref(args[0]);
+    if (context_value.type != PTN_RESOURCE ||
+        context_value.as.resource == NULL ||
+        strcmp(context_value.as.resource->type_name, "zlib inflate") != 0 ||
+        context_value.as.resource->close_hook_data == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "inflate_add(): Argument #1 ($context) must be of type InflateContext, %s given",
+            ptn_offset_container_type_name(context_value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "inflate_add", 2, "data", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t flush_mode = PTN_ZLIB_SYNC_FLUSH;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        flush_mode = ptn_internal_expect_integer_arg(runtime, "inflate_add", 3, "flush_mode", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    if (!ptn_zlib_flush_mode_is_valid(flush_mode)) {
+        ptn_string_operand_free(data);
+        ptn_zlib_throw_flush_mode_value_error(runtime, "inflate_add");
+        return ptn_null();
+    }
+
+    PtnZlibContext *context = (PtnZlibContext *)context_value.as.resource->close_hook_data;
+    PtnValue result = ptn_zlib_transform_string_value(
+        runtime,
+        "inflate_add",
+        data,
+        1,
+        context->encoding,
+        -1,
+        line
+    );
     ptn_string_operand_free(data);
     return result;
 }
@@ -132077,6 +132341,46 @@ static PtnValue ptn_internal_readgzfile(PtnRuntime *runtime, size_t argc, const 
         ptn_abort_out_of_memory();
     }
     return ptn_int((int64_t)data_len);
+}
+
+static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "gzfile", 1, "filename", args[0], line);
+    if (path == NULL) {
+        return ptn_null();
+    }
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int ok = ptn_zlib_read_path_bytes(path, &data, &data_len);
+    if (ok <= 0) {
+        char detail[192];
+        int written = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            free(path);
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "gzfile", path, detail, line);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t start = 0;
+    size_t index = 0;
+    for (size_t i = 0; i < data_len; i++) {
+        if (data[i] != '\n') {
+            continue;
+        }
+        ptn_file_array_append_line(result, data, start, i + 1, 0, 0, &index);
+        start = i + 1;
+    }
+    if (start < data_len) {
+        ptn_file_array_append_line(result, data, start, data_len, 0, 0, &index);
+    }
+    free(path);
+    free(data);
+    return result;
 }
 
 static PtnValue ptn_internal_gzclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -147854,8 +148158,10 @@ static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_fnmatch(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzdecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzdeflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzread(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -147863,6 +148169,8 @@ static PtnValue ptn_internal_gzrewind(PtnRuntime *runtime, size_t argc, const Pt
 static PtnValue ptn_internal_gzseek(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gztell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_gzinflate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_inflate_add(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -148284,8 +148592,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
         { "gzclose", 1, 1, ptn_internal_gzclose },
+        { "gzdecode", 1, 2, ptn_internal_gzdecode },
         { "gzdeflate", 1, 3, ptn_internal_gzdeflate },
         { "gzencode", 1, 3, ptn_internal_gzencode },
+        { "gzfile", 1, 2, ptn_internal_gzfile },
+        { "gzinflate", 1, 2, ptn_internal_gzinflate },
         { "gzopen", 2, 2, ptn_internal_gzopen },
         { "gzpassthru", 1, 1, ptn_internal_gzpassthru },
         { "gzread", 2, 2, ptn_internal_gzread },
@@ -148316,6 +148627,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hebrev", 1, 2, ptn_internal_hebrev },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "inflate_add", 2, 3, ptn_internal_inflate_add },
         { "inflate_init", 1, 2, ptn_internal_inflate_init },
         { "hash", 2, 4, ptn_internal_hash },
         { "hash_algos", 0, 0, ptn_internal_hash_algos },
