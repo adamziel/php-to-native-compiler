@@ -46263,6 +46263,63 @@ var_dump(NumberFormatter::DECIMAL_COMPACT_SHORT, NumberFormatter::DECIMAL_COMPAC
 }
 
 #[test]
+fn compile_intl_formatter_symbols_message_static_and_error_code_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-formatter-symbols-message-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-formatter-symbols-message-error.php");
+    let output = root.join("intl-formatter-symbols-message-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fmt = new NumberFormatter('en_US', NumberFormatter::DECIMAL);\n\
+var_dump(NumberFormatter::DECIMAL_SEPARATOR_SYMBOL, NumberFormatter::GROUPING_SEPARATOR_SYMBOL, NumberFormatter::MONETARY_GROUPING_SEPARATOR_SYMBOL);\n\
+echo $fmt->getSymbol(NumberFormatter::DECIMAL_SEPARATOR_SYMBOL), \"\\n\";\n\
+var_dump($fmt->setSymbol(NumberFormatter::DECIMAL_SEPARATOR_SYMBOL, '_._'));\n\
+echo $fmt->format(12345.123456), \"\\n\";\n\
+$currency = numfmt_create('en_US', NumberFormatter::CURRENCY);\n\
+numfmt_set_symbol($currency, NumberFormatter::MONETARY_GROUPING_SEPARATOR_SYMBOL, '_MG_');\n\
+numfmt_set_symbol($currency, NumberFormatter::MONETARY_SEPARATOR_SYMBOL, '_MS_');\n\
+echo numfmt_format($currency, 12345.123456), \"\\n\";\n\
+$percent = numfmt_create('en_US', NumberFormatter::PERCENT);\n\
+numfmt_set_symbol($percent, NumberFormatter::PERCENT_SYMBOL, '_%_');\n\
+echo numfmt_format($percent, 12345.123456), \"\\n\";\n\
+$scientific = numfmt_create('en_US', NumberFormatter::SCIENTIFIC);\n\
+numfmt_set_symbol($scientific, NumberFormatter::EXPONENTIAL_SYMBOL, '_E_');\n\
+echo numfmt_format($scientific, 12345.123456), \"\\n\";\n\
+$values = [4560, 123, 4560 / 123];\n\
+$de = MessageFormatter::create('de', '{0,number,integer} Affen über {1,number,integer} Bäume um {2,number} Affen pro Baum');\n\
+echo $de->format($values), \"\\n\";\n\
+echo MessageFormatter::formatMessage('ru_UA', '{0,number,integer} мавп на {1,number,integer} деревах це {2,number} мавпи на кожному деревi', $values), \"\\n\";\n\
+$collator = collator_create('en_US');\n\
+var_dump(collator_get_locale($collator, -1));\n\
+var_dump(intl_get_error_code() !== 0);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\n\
+int(1)\n\
+int(17)\n\
+.\n\
+bool(true)\n\
+12,345_._123\n\
+$12_MG_345_MS_12\n\
+1,234,512_%_\n\
+1.2345123456_E_4\n\
+4.560 Affen über 123 Bäume um 37,073 Affen pro Baum\n\
+4\u{00a0}560 мавп на 123 деревах це 37,073 мавпи на кожному деревi\n\
+bool(false)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_intl_collator_sort_key_to_native_binary() {
     let root = temp_dir("ptn-native-intl-collator-sort-key");
     fs::create_dir_all(&root).unwrap();

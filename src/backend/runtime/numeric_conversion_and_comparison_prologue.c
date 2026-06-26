@@ -5339,6 +5339,24 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         if (strcmp(constant, "TYPE_INT64") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_INT64); return 1; }
         if (strcmp(constant, "TYPE_DOUBLE") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_DOUBLE); return 1; }
         if (strcmp(constant, "TYPE_CURRENCY") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_TYPE_CURRENCY); return 1; }
+        if (strcmp(constant, "DECIMAL_SEPARATOR_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DECIMAL_SEPARATOR_SYMBOL); return 1; }
+        if (strcmp(constant, "GROUPING_SEPARATOR_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_GROUPING_SEPARATOR_SYMBOL); return 1; }
+        if (strcmp(constant, "PATTERN_SEPARATOR_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PATTERN_SEPARATOR_SYMBOL); return 1; }
+        if (strcmp(constant, "PERCENT_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PERCENT_SYMBOL); return 1; }
+        if (strcmp(constant, "ZERO_DIGIT_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_ZERO_DIGIT_SYMBOL); return 1; }
+        if (strcmp(constant, "DIGIT_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_DIGIT_SYMBOL); return 1; }
+        if (strcmp(constant, "MINUS_SIGN_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL); return 1; }
+        if (strcmp(constant, "PLUS_SIGN_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PLUS_SIGN_SYMBOL); return 1; }
+        if (strcmp(constant, "CURRENCY_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_CURRENCY_SYMBOL); return 1; }
+        if (strcmp(constant, "INTL_CURRENCY_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_INTL_CURRENCY_SYMBOL); return 1; }
+        if (strcmp(constant, "MONETARY_SEPARATOR_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_MONETARY_SEPARATOR_SYMBOL); return 1; }
+        if (strcmp(constant, "EXPONENTIAL_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_EXPONENTIAL_SYMBOL); return 1; }
+        if (strcmp(constant, "PERMILL_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PERMILL_SYMBOL); return 1; }
+        if (strcmp(constant, "PAD_ESCAPE_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_PAD_ESCAPE_SYMBOL); return 1; }
+        if (strcmp(constant, "INFINITY_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_INFINITY_SYMBOL); return 1; }
+        if (strcmp(constant, "NAN_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_NAN_SYMBOL); return 1; }
+        if (strcmp(constant, "SIGNIFICANT_DIGIT_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_SIGNIFICANT_DIGIT_SYMBOL); return 1; }
+        if (strcmp(constant, "MONETARY_GROUPING_SEPARATOR_SYMBOL") == 0) { *out = ptn_int(PTN_NUMBER_FORMATTER_MONETARY_GROUPING_SEPARATOR_SYMBOL); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlNumberRangeFormatter")) {
         if (strcmp(constant, "COLLAPSE_AUTO") == 0) { *out = ptn_int(PTN_INTL_NUMBER_RANGE_COLLAPSE_AUTO); return 1; }

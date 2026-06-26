@@ -1,0 +1,20 @@
+# ptn-w17z.923 focused intl ICU formatter/locale current-red row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T164812Z.tsv
+# Evidence at selection time: selected=12 current FAIL rows.
+# Run with:
+#   PTN_PHPT_TEST_TIMEOUT=120 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z923-intl-icu-formatter-locale-row-pack.txt
+
+# bucket: ext/intl rows=12
+ext/intl/tests/msgfmt_format_error1.phpt
+ext/intl/tests/spoofchecker_008.phpt
+ext/intl/tests/bug75317.phpt
+ext/intl/tests/msgfmt_fail2.phpt
+ext/intl/tests/intl_get_error_code.phpt
+ext/intl/tests/bug78804.phpt
+ext/intl/tests/bug60192-getlocale.phpt
+ext/intl/tests/bug12887.phpt
+ext/intl/tests/formatter_get_set_symbol2.phpt
+ext/intl/tests/msgfmt_format.phpt
+ext/intl/tests/bug72241.phpt
+ext/intl/tests/bug59597_64.phpt

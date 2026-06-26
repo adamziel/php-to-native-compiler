@@ -34690,17 +34690,92 @@ fn compact_intl_class_constant_value_expr(class_name: &str, name: &str) -> Optio
         return Some("PTN_SORT_REGULAR");
     }
     if class_name.eq_ignore_ascii_case("NumberFormatter") {
-        if name.eq_ignore_ascii_case("TYPE_DEFAULT") {
-            return Some("PTN_NUMBER_FORMATTER_TYPE_DEFAULT");
-        }
-        if name.eq_ignore_ascii_case("TYPE_INT32") {
-            return Some("PTN_NUMBER_FORMATTER_TYPE_INT32");
-        }
-        if name.eq_ignore_ascii_case("TYPE_INT64") {
-            return Some("PTN_NUMBER_FORMATTER_TYPE_INT64");
-        }
-        if name.eq_ignore_ascii_case("TYPE_DOUBLE") {
-            return Some("PTN_NUMBER_FORMATTER_TYPE_DOUBLE");
+        const NUMBER_FORMATTER_CONSTANTS: &[(&str, &str)] = &[
+            ("PATTERN_DECIMAL", "PTN_NUMBER_FORMATTER_PATTERN_DECIMAL"),
+            ("DECIMAL", "PTN_NUMBER_FORMATTER_DECIMAL"),
+            ("CURRENCY", "PTN_NUMBER_FORMATTER_CURRENCY"),
+            ("PERCENT", "PTN_NUMBER_FORMATTER_PERCENT"),
+            ("SCIENTIFIC", "PTN_NUMBER_FORMATTER_SCIENTIFIC"),
+            ("SPELLOUT", "PTN_NUMBER_FORMATTER_SPELLOUT"),
+            ("ORDINAL", "PTN_NUMBER_FORMATTER_ORDINAL"),
+            ("DURATION", "PTN_NUMBER_FORMATTER_DURATION"),
+            (
+                "PATTERN_RULEBASED",
+                "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED",
+            ),
+            (
+                "CURRENCY_ACCOUNTING",
+                "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING",
+            ),
+            (
+                "DECIMAL_COMPACT_SHORT",
+                "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT",
+            ),
+            (
+                "DECIMAL_COMPACT_LONG",
+                "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG",
+            ),
+            ("TYPE_DEFAULT", "PTN_NUMBER_FORMATTER_TYPE_DEFAULT"),
+            ("TYPE_INT32", "PTN_NUMBER_FORMATTER_TYPE_INT32"),
+            ("TYPE_INT64", "PTN_NUMBER_FORMATTER_TYPE_INT64"),
+            ("TYPE_DOUBLE", "PTN_NUMBER_FORMATTER_TYPE_DOUBLE"),
+            ("TYPE_CURRENCY", "PTN_NUMBER_FORMATTER_TYPE_CURRENCY"),
+            (
+                "DECIMAL_SEPARATOR_SYMBOL",
+                "PTN_NUMBER_FORMATTER_DECIMAL_SEPARATOR_SYMBOL",
+            ),
+            (
+                "GROUPING_SEPARATOR_SYMBOL",
+                "PTN_NUMBER_FORMATTER_GROUPING_SEPARATOR_SYMBOL",
+            ),
+            (
+                "PATTERN_SEPARATOR_SYMBOL",
+                "PTN_NUMBER_FORMATTER_PATTERN_SEPARATOR_SYMBOL",
+            ),
+            ("PERCENT_SYMBOL", "PTN_NUMBER_FORMATTER_PERCENT_SYMBOL"),
+            (
+                "ZERO_DIGIT_SYMBOL",
+                "PTN_NUMBER_FORMATTER_ZERO_DIGIT_SYMBOL",
+            ),
+            ("DIGIT_SYMBOL", "PTN_NUMBER_FORMATTER_DIGIT_SYMBOL"),
+            (
+                "MINUS_SIGN_SYMBOL",
+                "PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL",
+            ),
+            ("PLUS_SIGN_SYMBOL", "PTN_NUMBER_FORMATTER_PLUS_SIGN_SYMBOL"),
+            ("CURRENCY_SYMBOL", "PTN_NUMBER_FORMATTER_CURRENCY_SYMBOL"),
+            (
+                "INTL_CURRENCY_SYMBOL",
+                "PTN_NUMBER_FORMATTER_INTL_CURRENCY_SYMBOL",
+            ),
+            (
+                "MONETARY_SEPARATOR_SYMBOL",
+                "PTN_NUMBER_FORMATTER_MONETARY_SEPARATOR_SYMBOL",
+            ),
+            (
+                "EXPONENTIAL_SYMBOL",
+                "PTN_NUMBER_FORMATTER_EXPONENTIAL_SYMBOL",
+            ),
+            ("PERMILL_SYMBOL", "PTN_NUMBER_FORMATTER_PERMILL_SYMBOL"),
+            (
+                "PAD_ESCAPE_SYMBOL",
+                "PTN_NUMBER_FORMATTER_PAD_ESCAPE_SYMBOL",
+            ),
+            ("INFINITY_SYMBOL", "PTN_NUMBER_FORMATTER_INFINITY_SYMBOL"),
+            ("NAN_SYMBOL", "PTN_NUMBER_FORMATTER_NAN_SYMBOL"),
+            (
+                "SIGNIFICANT_DIGIT_SYMBOL",
+                "PTN_NUMBER_FORMATTER_SIGNIFICANT_DIGIT_SYMBOL",
+            ),
+            (
+                "MONETARY_GROUPING_SEPARATOR_SYMBOL",
+                "PTN_NUMBER_FORMATTER_MONETARY_GROUPING_SEPARATOR_SYMBOL",
+            ),
+        ];
+        for (constant, value) in NUMBER_FORMATTER_CONSTANTS {
+            if name.eq_ignore_ascii_case(constant) {
+                return Some(value);
+            }
         }
     }
     if class_name.eq_ignore_ascii_case("Spoofchecker") {
@@ -59051,8 +59126,41 @@ fn c_property_default_int_value(value: &ValueExpr) -> Option<i64> {
         } => {
             compact_intl_class_constant_value_expr(class_name, name).and_then(|value| match value {
                 "PTN_SORT_REGULAR" => Some(0),
+                "PTN_NUMBER_FORMATTER_PATTERN_DECIMAL" => Some(0),
+                "PTN_NUMBER_FORMATTER_DECIMAL" => Some(1),
+                "PTN_NUMBER_FORMATTER_CURRENCY" => Some(2),
+                "PTN_NUMBER_FORMATTER_PERCENT" => Some(3),
+                "PTN_NUMBER_FORMATTER_SCIENTIFIC" => Some(4),
+                "PTN_NUMBER_FORMATTER_SPELLOUT" => Some(5),
+                "PTN_NUMBER_FORMATTER_ORDINAL" => Some(6),
+                "PTN_NUMBER_FORMATTER_DURATION" => Some(7),
+                "PTN_NUMBER_FORMATTER_PATTERN_RULEBASED" => Some(9),
+                "PTN_NUMBER_FORMATTER_CURRENCY_ACCOUNTING" => Some(12),
+                "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_SHORT" => Some(14),
+                "PTN_NUMBER_FORMATTER_DECIMAL_COMPACT_LONG" => Some(15),
                 "PTN_NUMBER_FORMATTER_TYPE_DEFAULT" => Some(0),
+                "PTN_NUMBER_FORMATTER_TYPE_INT32" => Some(1),
+                "PTN_NUMBER_FORMATTER_TYPE_INT64" => Some(2),
                 "PTN_NUMBER_FORMATTER_TYPE_DOUBLE" => Some(3),
+                "PTN_NUMBER_FORMATTER_TYPE_CURRENCY" => Some(4),
+                "PTN_NUMBER_FORMATTER_DECIMAL_SEPARATOR_SYMBOL" => Some(0),
+                "PTN_NUMBER_FORMATTER_GROUPING_SEPARATOR_SYMBOL" => Some(1),
+                "PTN_NUMBER_FORMATTER_PATTERN_SEPARATOR_SYMBOL" => Some(2),
+                "PTN_NUMBER_FORMATTER_PERCENT_SYMBOL" => Some(3),
+                "PTN_NUMBER_FORMATTER_ZERO_DIGIT_SYMBOL" => Some(4),
+                "PTN_NUMBER_FORMATTER_DIGIT_SYMBOL" => Some(5),
+                "PTN_NUMBER_FORMATTER_MINUS_SIGN_SYMBOL" => Some(6),
+                "PTN_NUMBER_FORMATTER_PLUS_SIGN_SYMBOL" => Some(7),
+                "PTN_NUMBER_FORMATTER_CURRENCY_SYMBOL" => Some(8),
+                "PTN_NUMBER_FORMATTER_INTL_CURRENCY_SYMBOL" => Some(9),
+                "PTN_NUMBER_FORMATTER_MONETARY_SEPARATOR_SYMBOL" => Some(10),
+                "PTN_NUMBER_FORMATTER_EXPONENTIAL_SYMBOL" => Some(11),
+                "PTN_NUMBER_FORMATTER_PERMILL_SYMBOL" => Some(12),
+                "PTN_NUMBER_FORMATTER_PAD_ESCAPE_SYMBOL" => Some(13),
+                "PTN_NUMBER_FORMATTER_INFINITY_SYMBOL" => Some(14),
+                "PTN_NUMBER_FORMATTER_NAN_SYMBOL" => Some(15),
+                "PTN_NUMBER_FORMATTER_SIGNIFICANT_DIGIT_SYMBOL" => Some(16),
+                "PTN_NUMBER_FORMATTER_MONETARY_GROUPING_SEPARATOR_SYMBOL" => Some(17),
                 _ => None,
             })
         }
