@@ -28137,10 +28137,17 @@ copy("compress.zlib://$compressed", "compress.zlib://$round");
 $h = gzopen($round, "r");
 var_dump(gzread($h, 4096));
 gzclose($h);
+$put = __DIR__ . "/zlib-put.gz";
+var_dump(file_put_contents("compress.zlib://$put", $data));
+var_dump(file_put_contents("compress.zlib://$put", "\nappended", FILE_APPEND));
+$h = gzopen($put, "r");
+var_dump(gzread($h, 4096));
+gzclose($h);
 @unlink($source);
 @unlink($compressed);
 @unlink($plain);
 @unlink($round);
+@unlink($put);
 "#,
     )
     .unwrap();
@@ -28161,7 +28168,12 @@ line two\"\n\
 string(19) \"hello zlib\n\
 line two\"\n\
 string(19) \"hello zlib\n\
-line two\"\n"
+line two\"\n\
+int(19)\n\
+int(9)\n\
+string(28) \"hello zlib\n\
+line two\n\
+appended\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

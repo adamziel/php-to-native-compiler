@@ -1,0 +1,15 @@
+# ptn-w17z.952 focused PHAR/zlib archive row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T202842Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/buildFromIterator_user_overrides/getPathname_wrong_type.phpt
+ext/zlib/tests/gzdeflate_variation1.phpt
+ext/phar/tests/phar_magic.phpt
+ext/zlib/tests/gzfilegzreadfile.phpt
+ext/zlib/tests/zlib_scheme_file_basic.phpt
+ext/zlib/tests/bug61287.phpt
+ext/phar/tests/create_new_phar_c.phpt
+ext/phar/tests/gh12532.phpt
+ext/phar/tests/gh13836.phpt
+ext/phar/tests/tar/tar_004.phpt
+ext/phar/tests/tar/phar_stub.phpt
+ext/zlib/tests/zlib_scheme_file_put_contents_basic.phpt

@@ -57290,6 +57290,61 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
         ptn_string_operand_free(data);
         return ptn_null();
     }
+    const char *zlib_path = NULL;
+    if (ptn_zlib_uri_path(path, &zlib_path)) {
+        unsigned char *write_data = (unsigned char *)data.data;
+        size_t write_len = data.len;
+        unsigned char *combined = NULL;
+        if ((flags & PTN_FILE_APPEND) != 0) {
+            unsigned char *existing = NULL;
+            size_t existing_len = 0;
+            int read_result = ptn_zlib_read_path_bytes(zlib_path, &existing, &existing_len);
+            if (read_result > 0) {
+                if (existing_len > SIZE_MAX - data.len) {
+                    free(existing);
+                    free(path);
+                    ptn_string_operand_free(data);
+                    ptn_abort_out_of_memory();
+                }
+                combined = malloc(existing_len + data.len + 1);
+                if (combined == NULL) {
+                    free(existing);
+                    free(path);
+                    ptn_string_operand_free(data);
+                    ptn_abort_out_of_memory();
+                }
+                memcpy(combined, existing, existing_len);
+                memcpy(combined + existing_len, data.data, data.len);
+                combined[existing_len + data.len] = '\0';
+                write_data = combined;
+                write_len = existing_len + data.len;
+            }
+            free(existing);
+        }
+        int ok = ptn_zlib_write_path_bytes(zlib_path, write_data, write_len);
+        free(combined);
+        if (ok <= 0) {
+            char detail[192];
+            const char *prefix = ok == 0 ? "Failed to open stream" : "Failed to write stream";
+            int needed = snprintf(detail, sizeof(detail), "%s: %s", prefix, strerror(errno));
+            if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_bool(0);
+        }
+        if (data.len > (size_t)INT64_MAX) {
+            free(path);
+            ptn_string_operand_free(data);
+            ptn_abort_out_of_memory();
+        }
+        PtnValue result = ptn_int((int64_t)data.len);
+        free(path);
+        ptn_string_operand_free(data);
+        return result;
+    }
     if (strncmp(path, "phar://", 7) == 0) {
         unsigned char *write_data = (unsigned char *)data.data;
         size_t write_len = data.len;
