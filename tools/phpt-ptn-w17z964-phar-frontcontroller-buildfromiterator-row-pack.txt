@@ -1,0 +1,15 @@
+# ptn-w17z.964 focused PHAR frontcontroller/buildFromIterator row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T220915Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/032.phpt
+ext/phar/tests/zip/phar_buildfromiterator4.phpt
+ext/phar/tests/022.phpt
+ext/phar/tests/012.phpt
+ext/phar/tests/tar/bug64343.phpt
+ext/phar/tests/frontcontroller30.phpt
+ext/phar/tests/002.phpt
+ext/phar/tests/create_new_and_modify.phpt
+ext/phar/tests/frontcontroller20.phpt
+ext/phar/tests/zip/rename_dir.phpt
+ext/phar/tests/phar_begin_setstub_commit.phpt
+ext/phar/tests/open_for_write_existing_c.phpt

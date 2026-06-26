@@ -685,10 +685,10 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
             "}\n",
             "int(1)\n",
             "bool(false)\n",
-            "array(1) {\n",
+            "array(1) {{\n",
             "  [0]=>\n",
             "  string(1) \"a\"\n",
-            "}\n",
+            "}}\n",
             "Overloaded object of type SplFixedArray is not compatible with ArrayObject\n",
             "Overloaded object of type SplFixedArray is not compatible with ArrayObject\n",
             "integer overflow detected\n",
@@ -16994,13 +16994,13 @@ echo serialize($box), "\n";
             "  &string(7) \"changed\"\n",
             "}\n",
             "string(24) \"a:1:{i:0;a:1:{i:0;R:2;}}\"\n",
-            "array(1) {\n",
+            "array(1) {{\n",
             "  [0]=>\n",
             "  &array(1) {\n",
             "    [0]=>\n",
             "    *RECURSION*\n",
             "  }\n",
-            "}\n",
+            "}}\n",
             "array(1) {\n",
             "  [0]=>\n",
             "  string(7) \"changed\"\n",
@@ -52813,6 +52813,94 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_stream_write_respects_readonly_ini_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let root = temp_dir("ptn-native-phar-readonly-stream-write");
+    fs::create_dir_all(&root).unwrap();
+    let archive = root.join("readonly-existing.phar.php");
+    let input = root.join("phar-readonly-stream-write.php");
+    let output = root.join("phar-readonly-stream-write-bin");
+
+    let entry_name = b"b/c.txt";
+    let entry_content = b"This is b/c\n";
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 1);
+    push_u16(&mut manifest, 0x0011);
+    push_u32(&mut manifest, 0x00010000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, entry_name.len() as u32);
+    manifest.extend_from_slice(entry_name);
+    push_u32(&mut manifest, entry_content.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, entry_content.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+
+    let mut source = Vec::new();
+    source.extend_from_slice(b"<?php __HALT_COMPILER(); ?>\r\n");
+    push_u32(&mut source, manifest.len() as u32);
+    source.extend_from_slice(&manifest);
+    source.extend_from_slice(entry_content);
+    fs::write(&archive, source).unwrap();
+
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$fname = '{}';\n\
+$handle = fopen('phar://' . $fname . '/b/c.txt', 'wb');\n\
+var_dump($handle);\n\
+echo file_get_contents('phar://' . $fname . '/b/c.txt');",
+            archive.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHAR_READONLY", "1")
+        .env("PTN_PHAR_REQUIRE_HASH", "0")
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: fopen(phar://"),
+        "stdout did not include fopen warning:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Failed to open stream: phar error: write operations disabled by the php.ini setting phar.readonly"
+        ),
+        "stdout did not include readonly stream detail:\n{stdout}"
+    );
+    assert!(
+        stdout.ends_with("bool(false)\nThis is b/c\n"),
+        "stdout did not preserve existing entry after blocked write:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_phar_readonly"));
+    assert!(c_source.contains("ptn_try_open_phar_stream"));
+}
+
+#[test]
 fn compile_phar_alias_lifecycle_conflicts_to_native_binary() {
     let root = temp_dir("ptn-native-phar-alias-lifecycle-conflicts");
     fs::create_dir_all(&root).unwrap();
@@ -52946,6 +53034,73 @@ var_dump(isset($result['content/hello.txt']));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_phar_build_from_iterator_result"));
     assert!(c_source.contains("GlobIterator"));
+}
+
+#[test]
+fn compile_phar_build_from_iterator_uses_key_without_base_directory_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-build-from-iterator-key");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-build-from-iterator-key.php");
+    let output = root.join("phar-build-from-iterator-key-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyIterator implements Iterator {
+    private array $a;
+    public function __construct(array $a) { $this->a = $a; }
+    public function next(): void { echo "next\n"; next($this->a); }
+    public function current(): mixed { echo "current\n"; return current($this->a); }
+    public function key(): mixed { echo "key\n"; return key($this->a); }
+    public function valid(): bool { echo "valid\n"; return current($this->a); }
+    public function rewind(): void { echo "rewind\n"; reset($this->a); }
+}
+
+chdir(__DIR__);
+file_put_contents('iterator-source.txt', "payload\n");
+$phar = new Phar(__DIR__ . '/iterator-no-base.phar.zip');
+var_dump($phar->buildFromIterator(new MyIterator(['entry.txt' => 'iterator-source.txt'])));
+var_dump(isset($phar['entry.txt']));
+echo $phar['entry.txt']->getContent();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let source_path = root.join("iterator-source.txt").display().to_string();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "rewind\n",
+                "valid\n",
+                "current\n",
+                "key\n",
+                "next\n",
+                "valid\n",
+                "array(1) {{\n",
+                "  [\"entry.txt\"]=>\n",
+                "  string({}) \"{}\"\n",
+                "}}\n",
+                "bool(true)\n",
+                "payload\n",
+            ),
+            source_path.len(),
+            source_path
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_build_from_iterator_result"));
+    assert!(c_source.contains("ptn_phar_iterator_string_from_value"));
 }
 
 #[test]

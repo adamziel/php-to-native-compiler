@@ -5608,6 +5608,7 @@ typedef struct PtnPharArchiveState PtnPharArchiveState;
 typedef struct PtnPharDirectoryData PtnPharDirectoryData;
 static void ptn_phar_archive_clone_path(const char *source_path, const char *dest_path);
 static char *ptn_phar_take_last_stream_error(void);
+static void ptn_phar_set_last_stream_error_detail(const char *detail);
 static PTN_UNUSED int ptn_phar_uri_entry_exists(const char *uri);
 static int ptn_phar_uri_entry_status(const char *uri, int *is_dir_out);
 static int ptn_phar_uri_stat(const char *uri, struct stat *info);
@@ -35510,6 +35511,7 @@ static PTN_UNUSED PtnValue ptn_uri_whatwg_url_call_method(
 static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime);
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
 static const char *ptn_runtime_filter_default(PtnRuntime *runtime);
+static const char *ptn_runtime_phar_readonly(PtnRuntime *runtime);
 static char *ptn_request_read_stdin(size_t *len_out);
 static const char *ptn_runtime_variables_order(PtnRuntime *runtime);
 static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime);
@@ -52337,7 +52339,7 @@ static void ptn_phar_stream_close_hook(PtnResource *resource, void *data) {
     ptn_phar_archive_release_entry(stream_data->archive, stream_data->entry_name);
 }
 
-static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue *out) {
+static int ptn_try_open_phar_stream(PtnRuntime *runtime, const char *path, const char *mode, PtnValue *out) {
     if (path == NULL || strncmp(path, "phar://", 7) != 0) {
         return 0;
     }
@@ -52347,8 +52349,17 @@ static int ptn_try_open_phar_stream(const char *path, const char *mode, PtnValue
     int append = ptn_phar_stream_mode_appends(mode);
     PtnPharArchiveState *archive = NULL;
     char *entry_name = NULL;
-    if (!ptn_phar_uri_archive_and_entry_mode(path, can_write, &archive, &entry_name)) {
+    int readonly = can_write && ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1);
+    if (!ptn_phar_uri_archive_and_entry_mode(path, can_write && !readonly, &archive, &entry_name)) {
         errno = ENOENT;
+        return 0;
+    }
+    if (readonly) {
+        free(entry_name);
+        ptn_phar_set_last_stream_error_detail(
+            "phar error: write operations disabled by the php.ini setting phar.readonly"
+        );
+        errno = EACCES;
         return 0;
     }
     int exclusive = mode != NULL && (mode[0] == 'x' || mode[0] == 'X');
@@ -53237,7 +53248,7 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
         free(path);
         return php_stream;
     }
-    if (ptn_try_open_phar_stream(path, mode, &php_stream)) {
+    if (ptn_try_open_phar_stream(runtime, path, mode, &php_stream)) {
         free(uri);
         free(mode);
         free(path);
@@ -140053,6 +140064,11 @@ static char *ptn_phar_take_last_stream_error(void) {
     return message;
 }
 
+static void ptn_phar_set_last_stream_error_detail(const char *detail) {
+    ptn_phar_clear_last_stream_error();
+    ptn_phar_last_stream_error = ptn_duplicate_open_stream_detail(detail);
+}
+
 static uint32_t ptn_phar_read_u32_le(const unsigned char *data) {
     return ((uint32_t)data[0]) |
         ((uint32_t)data[1] << 8) |
@@ -141997,6 +142013,7 @@ static void ptn_phar_build_from_iterator_add_path(
     PtnPharArchiveState *archive,
     const char *path,
     const char *base_directory,
+    const char *entry_name_override,
     int64_t timestamp,
     PtnValue result,
     size_t line
@@ -142016,12 +142033,18 @@ static void ptn_phar_build_from_iterator_add_path(
         free(data);
         return;
     }
-    char *entry_name = ptn_phar_relative_entry_name(path, base_directory);
+    char *entry_name = entry_name_override == NULL
+        ? ptn_phar_relative_entry_name(path, base_directory)
+        : ptn_phar_normalize_entry_name(ptn_duplicate_string(entry_name_override));
     ptn_phar_archive_set_entry_with_timestamp(archive, entry_name, data, data_len, timestamp);
+    char *result_path = realpath(path, NULL);
+    if (result_path == NULL) {
+        result_path = ptn_duplicate_string(path);
+    }
     ptn_array_set_entry(
         result.as.array,
         ptn_array_string_key(entry_name),
-        ptn_owned_string(ptn_duplicate_string(path))
+        ptn_owned_string(result_path)
     );
     free(entry_name);
     free(data);
@@ -142048,30 +142071,41 @@ static PtnValue ptn_phar_build_from_iterator_result(
         if (!is_valid || runtime->exceptions->active_exception != NULL) {
             break;
         }
-        PtnValue key = runtime->method_dispatch(runtime, iterator, "key", 0, NULL, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&key);
-            break;
-        }
         PtnValue current = runtime->method_dispatch(runtime, iterator, "current", 0, NULL, line);
         if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&key);
             ptn_value_destroy(&current);
+            break;
+        }
+        PtnValue key = runtime->method_dispatch(runtime, iterator, "key", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            ptn_value_destroy(&key);
             break;
         }
         char *path = ptn_phar_iterator_item_path(runtime, current, key, line);
         if (runtime->exceptions->active_exception == NULL && path != NULL) {
             int64_t timestamp = ptn_phar_iterator_item_timestamp(runtime, current, path, line);
             if (runtime->exceptions->active_exception == NULL) {
+                char *entry_name_override = NULL;
+                if (base_directory == NULL) {
+                    PtnValue key_value = ptn_value_deref(key);
+                    if (key_value.type == PTN_STRING ||
+                        key_value.type == PTN_INT ||
+                        key_value.type == PTN_FLOAT) {
+                        entry_name_override = ptn_phar_iterator_string_from_value(key);
+                    }
+                }
                 ptn_phar_build_from_iterator_add_path(
                     runtime,
                     archive,
                     path,
                     base_directory,
+                    entry_name_override,
                     timestamp,
                     result,
                     line
                 );
+                free(entry_name_override);
             }
         }
         free(path);
@@ -142602,88 +142636,7 @@ static PtnValue ptn_phar_call_method(
             return ptn_null();
         }
         if (argc < 2) {
-            PtnValue iterator = ptn_value_clone_deref(args[0]);
-            if (runtime->method_dispatch == NULL) {
-                ptn_value_destroy(&iterator);
-                ptn_throw_exception(runtime, "Error", "Iterator method dispatch is unavailable");
-                return ptn_null();
-            }
-            PtnValue rewind = runtime->method_dispatch(runtime, iterator, "rewind", 0, NULL, line);
-            ptn_value_destroy(&rewind);
-            if (runtime->exceptions->active_exception != NULL) {
-                ptn_value_destroy(&iterator);
-                return ptn_null();
-            }
-            PtnValue valid = runtime->method_dispatch(runtime, iterator, "valid", 0, NULL, line);
-            int is_valid = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
-            ptn_value_destroy(&valid);
-            if (runtime->exceptions->active_exception != NULL) {
-                ptn_value_destroy(&iterator);
-                return ptn_null();
-            }
-            if (!is_valid) {
-                ptn_value_destroy(&iterator);
-                return ptn_array_from_literal_entries(0, NULL);
-            }
-            PtnValue current = runtime->method_dispatch(runtime, iterator, "current", 0, NULL, line);
-            if (runtime->exceptions->active_exception != NULL) {
-                ptn_value_destroy(&current);
-                ptn_value_destroy(&iterator);
-                return ptn_null();
-            }
-            PtnValue current_value = ptn_value_deref(current);
-            int acceptable = current_value.type == PTN_STRING || current_value.type == PTN_RESOURCE;
-            if (current_value.type == PTN_OBJECT) {
-                const char *class_name = current_value.as.object->class_name;
-                acceptable = ptn_ascii_case_equal(class_name, "SplFileInfo") ||
-                    ptn_ascii_case_equal(class_name, "SplFileObject") ||
-                    ptn_ascii_case_equal(class_name, "PharFileInfo") ||
-                    (ptn_declared_class_exists(class_name) &&
-                        ptn_declared_class_is_same_or_descendant(class_name, "SplFileInfo"));
-            }
-            if (!acceptable) {
-                PtnValue iterator_value = ptn_value_deref(iterator);
-                const char *iterator_class = iterator_value.type == PTN_OBJECT
-                    ? iterator_value.as.object->class_name
-                    : "Iterator";
-                int needed = snprintf(
-                    NULL,
-                    0,
-                    "Iterator %s returned an invalid value (must return a string, a stream, or an SplFileInfo object)",
-                    iterator_class
-                );
-                if (needed < 0) {
-                    ptn_value_destroy(&current);
-                    ptn_value_destroy(&iterator);
-                    ptn_abort_out_of_memory();
-                }
-                char *message = malloc((size_t)needed + 1);
-                if (message == NULL) {
-                    ptn_value_destroy(&current);
-                    ptn_value_destroy(&iterator);
-                    ptn_abort_out_of_memory();
-                }
-                int written = snprintf(
-                    message,
-                    (size_t)needed + 1,
-                    "Iterator %s returned an invalid value (must return a string, a stream, or an SplFileInfo object)",
-                    iterator_class
-                );
-                if (written < 0 || written != needed) {
-                    free(message);
-                    ptn_value_destroy(&current);
-                    ptn_value_destroy(&iterator);
-                    ptn_abort_out_of_memory();
-                }
-                ptn_throw_exception(runtime, "UnexpectedValueException", message);
-                free(message);
-                ptn_value_destroy(&current);
-                ptn_value_destroy(&iterator);
-                return ptn_null();
-            }
-            ptn_value_destroy(&current);
-            ptn_value_destroy(&iterator);
-            return ptn_array_from_literal_entries(0, NULL);
+            return ptn_phar_build_from_iterator_result(runtime, data->archive, args[0], NULL, line);
         }
         PtnStringOperand base_directory =
             ptn_internal_expect_string_arg(runtime, "Phar::buildFromIterator", 2, "baseDirectory", args[1], line);
