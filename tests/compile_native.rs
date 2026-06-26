@@ -29924,6 +29924,23 @@ echo bin2hex(mb_convert_encoding(hex2bin('20ac'), 'CP936', 'UTF-16BE')), \"\\n\"
 echo bin2hex(mb_convert_encoding(hex2bin('fe10'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
 echo bin2hex(mb_convert_encoding(hex2bin('f900'), 'CP936', 'UTF-16BE')), \"\\n\";\n\
 echo mb_strlen($cp936, 'CP936'), \"\\n\";\n\
+$cp1252 = hex2bin('818d8f909d');\n\
+var_dump(mb_check_encoding($cp1252, 'CP1252'));\n\
+echo bin2hex(mb_convert_encoding($cp1252, 'UTF-16BE', 'CP1252')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('0081008d008f0090009d'), 'CP1252', 'UTF-16BE')), \"\\n\";\n\
+mb_substitute_character('long');\n\
+echo bin2hex(mb_convert_encoding(hex2bin('1234'), 'CP1251', 'UTF-16BE')), \"\\n\";\n\
+mb_substitute_character(0x25);\n\
+$cp850 = hex2bin('82feff');\n\
+var_dump(mb_check_encoding($cp850, 'CP850'));\n\
+echo bin2hex(mb_convert_encoding($cp850, 'UTF-16BE', 'CP850')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('00e925a000a0'), 'CP850', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('04100430'), 'CP866', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('04100430'), 'KOI8-R', 'UTF-16BE')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('04900491'), 'KOI8-U', 'UTF-16BE')), \"\\n\";\n\
+$armscii = hex2bin('aba4a5a9ac');\n\
+echo bin2hex(mb_convert_encoding($armscii, 'UTF-16BE', 'ARMSCII-8')), \"\\n\";\n\
+echo bin2hex(mb_convert_encoding(hex2bin('002c00290028002e002d'), 'ARMSCII-8', 'UTF-16BE')), \"\\n\";\n\
 $cp1254 = hex2bin('80ddfe');\n\
 var_dump(mb_check_encoding($cp1254, 'CP1254'));\n\
 var_dump(mb_check_encoding(\"\\x81\", 'CP1254'));\n\
@@ -29958,6 +29975,18 @@ echo mb_strlen($euctw, 'EUC-TW'), \"\\n\";\n",
             "25\n",
             "d84d\n",
             "1\n",
+            "bool(true)\n",
+            "0081008d008f0090009d\n",
+            "818d8f909d\n",
+            "552b31323334\n",
+            "bool(true)\n",
+            "00e925a000a0\n",
+            "82feff\n",
+            "80a0\n",
+            "e1c1\n",
+            "bdad\n",
+            "002c00290028002e002d\n",
+            "aba4a5a9ac\n",
             "bool(true)\n",
             "bool(false)\n",
             "20ac0130015f\n",
