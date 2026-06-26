@@ -45396,6 +45396,16 @@ mt_srand(123);
 var_dump(function_exists(\"mt_rand\"), function_exists(\"MT_GETRANDMAX\"), function_exists(\"mt_srand\"));
 var_dump(mt_getrandmax());
 var_dump(mt_rand(1, 1));
+var_dump(function_exists(\"rand\"), function_exists(\"lcg_value\"));
+$legacy = rand(20, 10);
+var_dump($legacy >= 10, $legacy <= 20);
+try {
+    mt_rand(8, 3);
+} catch (ValueError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$lcg = lcg_value();
+var_dump(is_float($lcg), $lcg >= 0 && $lcg <= 1);
 ",
     )
     .unwrap();
@@ -45412,6 +45422,13 @@ var_dump(mt_rand(1, 1));
             "bool(true)\n",
             "int(2147483647)\n",
             "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "mt_rand(): Argument #2 ($max) must be greater than or equal to argument #1 ($min)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -95620,13 +95637,22 @@ $randomizer = new Randomizer(new Mt19937(1234));
 $methodTwo = $randomizer->pickArrayKeys($map, 2);
 var_dump($one === $methodOne, $two === $methodTwo);
 var_dump(strlen($randomizer->getBytes(8)));
+$sample = $randomizer->getBytesFromString('az', 32);
+var_dump(strlen($sample), strspn($sample, 'az') === 32);
+$bounded = $randomizer->getInt(-10, 10);
+var_dump($bounded >= -10 && $bounded <= 10);
+$float = $randomizer->nextFloat();
+var_dump($float >= 0 && $float < 1);
 
 $engine = new Secure();
 var_dump(
     $engine instanceof Random\Engine,
     class_exists(Random\Engine\PcgOneseq128XslRr64::class),
     method_exists($randomizer, 'pickArrayKeys'),
-    method_exists($randomizer, 'shuffleArray')
+    method_exists($randomizer, 'shuffleArray'),
+    method_exists($randomizer, 'getBytesFromString'),
+    method_exists($randomizer, 'getInt'),
+    method_exists($randomizer, 'nextFloat')
 );
 
 $keys = $randomizer->pickArrayKeys(['x' => 1, 'y' => 2, 'z' => 3], 2);
@@ -95676,6 +95702,13 @@ try {
             "bool(true)\n",
             "bool(true)\n",
             "int(8)\n",
+            "int(32)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -95693,6 +95726,9 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_random_engine_new"));
     assert!(c_source.contains("ptn_random_engine_call_method"));
+    assert!(c_source.contains("ptn_random_randomizer_get_bytes_from_string"));
+    assert!(c_source.contains("ptn_random_randomizer_get_int"));
+    assert!(c_source.contains("ptn_random_randomizer_next_float"));
     assert!(c_source.contains("ptn_random_randomizer_pick_array_keys"));
     assert!(c_source.contains("ptn_random_randomizer_shuffle_array"));
 }

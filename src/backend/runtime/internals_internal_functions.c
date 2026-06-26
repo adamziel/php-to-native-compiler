@@ -87034,13 +87034,47 @@ static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnVal
         min = ptn_internal_expect_integer_arg(runtime, "rand", 1, "min", args[0], line);
         max = ptn_internal_expect_integer_arg(runtime, "rand", 2, "max", args[1], line);
         if (min > max) {
-            ptn_throw_exception(runtime, "ValueError", "rand(): Argument #1 ($min) must be less than or equal to argument #2 ($max)");
+            int64_t swap = min;
+            min = max;
+            max = swap;
+        }
+    }
+    uint64_t span = (uint64_t)max - (uint64_t)min + 1ULL;
+    uint64_t offset = span == 0
+        ? ptn_mt19937_range64(&ptn_global_mt19937_state, UINT64_MAX)
+        : ptn_mt19937_range64(&ptn_global_mt19937_state, span - 1ULL);
+    int64_t value = (int64_t)((uint64_t)min + offset);
+    return ptn_int(value);
+}
+
+static PtnValue ptn_internal_mt_rand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t min = 0;
+    int64_t max = 2147483647;
+    if (argc == 2) {
+        min = ptn_internal_expect_integer_arg(runtime, "mt_rand", 1, "min", args[0], line);
+        max = ptn_internal_expect_integer_arg(runtime, "mt_rand", 2, "max", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (min > max) {
+            ptn_throw_exception(runtime, "ValueError", "mt_rand(): Argument #2 ($max) must be greater than or equal to argument #1 ($min)");
             return ptn_null();
         }
     }
-    uint64_t span = (uint64_t)(max - min) + 1;
-    int64_t value = min + (int64_t)ptn_mt19937_range64(&ptn_global_mt19937_state, span - 1);
+    uint64_t span = (uint64_t)max - (uint64_t)min + 1ULL;
+    uint64_t offset = span == 0
+        ? ptn_mt19937_range64(&ptn_global_mt19937_state, UINT64_MAX)
+        : ptn_mt19937_range64(&ptn_global_mt19937_state, span - 1ULL);
+    int64_t value = (int64_t)((uint64_t)min + offset);
     return ptn_int(value);
+}
+
+static PtnValue ptn_internal_lcg_value(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_float((double)(ptn_mt19937_u64(&ptn_global_mt19937_state) >> 11) * (1.0 / 9007199254740992.0));
 }
 
 static PtnValue ptn_internal_srand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -88332,6 +88366,86 @@ static PtnValue ptn_random_randomizer_unserialize(
     return ptn_null();
 }
 
+static int ptn_random_randomizer_fill_bytes(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    const char *function_name,
+    char *bytes,
+    size_t requested,
+    size_t line
+) {
+    PtnValue engine = ptn_value_deref(data->engine);
+    if (engine.type == PTN_NULL || ptn_random_engine_value_is_secure(engine)) {
+        if (!ptn_random_bytes_fill((unsigned char *)bytes, requested)) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Failed to retrieve random bytes",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "Random\\RandomException", message);
+            return 0;
+        }
+        return 1;
+    }
+
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
+        ptn_throw_exception(runtime, "Error", "Random\\Randomizer cannot dispatch engine method");
+        return 0;
+    }
+
+    size_t offset = 0;
+    while (offset < requested) {
+        PtnValue engine_receiver = ptn_value_clone_deref(data->engine);
+        PtnValue generated = runtime->method_dispatch(
+            runtime,
+            engine_receiver,
+            "generate",
+            0,
+            NULL,
+            line
+        );
+        ptn_value_destroy(&engine_receiver);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&generated);
+            return 0;
+        }
+
+        PtnValue generated_value = ptn_value_deref(generated);
+        if (generated_value.type != PTN_STRING) {
+            ptn_value_destroy(&generated);
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "Random\\Engine::generate() must return a string"
+            );
+            return 0;
+        }
+        if (generated_value.as.string.len == 0) {
+            ptn_value_destroy(&generated);
+            ptn_throw_exception(
+                runtime,
+                "Random\\BrokenRandomEngineError",
+                "Random\\Engine::generate() must return a non-empty string"
+            );
+            return 0;
+        }
+
+        size_t remaining = requested - offset;
+        size_t chunk_len = generated_value.as.string.len < remaining
+            ? generated_value.as.string.len
+            : remaining;
+        memcpy(bytes + offset, generated_value.as.string.data, chunk_len);
+        offset += chunk_len;
+        ptn_value_destroy(&generated);
+    }
+    return 1;
+}
+
 static PtnValue ptn_random_randomizer_get_bytes(
     PtnRuntime *runtime,
     PtnRandomRandomizerData *data,
@@ -88380,77 +88494,277 @@ static PtnValue ptn_random_randomizer_get_bytes(
         ptn_abort_out_of_memory();
     }
 
-    PtnValue engine = ptn_value_deref(data->engine);
-    if (engine.type == PTN_NULL || ptn_random_engine_value_is_secure(engine)) {
-        if (!ptn_random_bytes_fill((unsigned char *)bytes, requested)) {
-            free(bytes);
-            ptn_throw_exception(
-                runtime,
-                "Random\\RandomException",
-                "Random\\Randomizer::getBytes(): Failed to retrieve random bytes"
-            );
-            return ptn_null();
-        }
-        bytes[requested] = '\0';
-        return ptn_owned_string_len(bytes, requested);
-    }
-
-    if (runtime == NULL || runtime->method_dispatch == NULL) {
+    if (!ptn_random_randomizer_fill_bytes(
+        runtime,
+        data,
+        "Random\\Randomizer::getBytes",
+        bytes,
+        requested,
+        line
+    )) {
         free(bytes);
-        ptn_throw_exception(runtime, "Error", "Random\\Randomizer cannot dispatch engine method");
         return ptn_null();
-    }
-
-    size_t offset = 0;
-    while (offset < requested) {
-        PtnValue engine_receiver = ptn_value_clone_deref(data->engine);
-        PtnValue generated = runtime->method_dispatch(
-            runtime,
-            engine_receiver,
-            "generate",
-            0,
-            NULL,
-            line
-        );
-        ptn_value_destroy(&engine_receiver);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&generated);
-            free(bytes);
-            return ptn_null();
-        }
-
-        PtnValue generated_value = ptn_value_deref(generated);
-        if (generated_value.type != PTN_STRING) {
-            ptn_value_destroy(&generated);
-            free(bytes);
-            ptn_throw_exception(
-                runtime,
-                "TypeError",
-                "Random\\Engine::generate() must return a string"
-            );
-            return ptn_null();
-        }
-        if (generated_value.as.string.len == 0) {
-            ptn_value_destroy(&generated);
-            free(bytes);
-            ptn_throw_exception(
-                runtime,
-                "Random\\BrokenRandomEngineError",
-                "Random\\Engine::generate() must return a non-empty string"
-            );
-            return ptn_null();
-        }
-
-        size_t remaining = requested - offset;
-        size_t chunk_len = generated_value.as.string.len < remaining
-            ? generated_value.as.string.len
-            : remaining;
-        memcpy(bytes + offset, generated_value.as.string.data, chunk_len);
-        offset += chunk_len;
-        ptn_value_destroy(&generated);
     }
     bytes[requested] = '\0';
     return ptn_owned_string_len(bytes, requested);
+}
+
+static int ptn_random_randomizer_next_u64(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    const char *function_name,
+    size_t line,
+    uint64_t *out
+) {
+    unsigned char bytes[8];
+    if (!ptn_random_randomizer_fill_bytes(runtime, data, function_name, (char *)bytes, sizeof(bytes), line)) {
+        return 0;
+    }
+    *out = ptn_random_bytes_to_u64_le(bytes);
+    return 1;
+}
+
+static int ptn_random_randomizer_range64(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    const char *function_name,
+    uint64_t upper_inclusive,
+    size_t line,
+    uint64_t *out
+) {
+    uint64_t result = 0;
+    if (!ptn_random_randomizer_next_u64(runtime, data, function_name, line, &result)) {
+        return 0;
+    }
+    if (upper_inclusive == UINT64_MAX) {
+        *out = result;
+        return 1;
+    }
+
+    uint64_t range = upper_inclusive + 1ULL;
+    if ((range & (range - 1ULL)) == 0) {
+        *out = result & (range - 1ULL);
+        return 1;
+    }
+
+    uint64_t limit = UINT64_MAX - (UINT64_MAX % range) - 1ULL;
+    for (uint32_t attempts = 0; result > limit && attempts <= 50; attempts++) {
+        if (!ptn_random_randomizer_next_u64(runtime, data, function_name, line, &result)) {
+            return 0;
+        }
+    }
+    *out = result % range;
+    return 1;
+}
+
+static PtnValue ptn_random_randomizer_get_bytes_from_string(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::getBytesFromString() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand input = ptn_internal_expect_string_arg(
+        runtime,
+        "Random\\Randomizer::getBytesFromString",
+        1,
+        "string",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    int64_t length = ptn_internal_expect_integer_arg(
+        runtime,
+        "Random\\Randomizer::getBytesFromString",
+        2,
+        "length",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
+    if (input.len == 0) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Random\\Randomizer::getBytesFromString(): Argument #1 ($string) must not be empty"
+        );
+        return ptn_null();
+    }
+    if (length <= 0) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Random\\Randomizer::getBytesFromString(): Argument #2 ($length) must be greater than 0"
+        );
+        return ptn_null();
+    }
+
+    size_t requested = (size_t)length;
+    char *output = malloc(requested + 1);
+    if (output == NULL) {
+        ptn_string_operand_free(input);
+        ptn_abort_out_of_memory();
+    }
+    if (requested > SIZE_MAX / sizeof(uint64_t)) {
+        ptn_string_operand_free(input);
+        free(output);
+        ptn_abort_out_of_memory();
+    }
+    size_t random_len = requested * sizeof(uint64_t);
+    char *random = malloc(random_len == 0 ? 1 : random_len);
+    if (random == NULL) {
+        ptn_string_operand_free(input);
+        free(output);
+        ptn_abort_out_of_memory();
+    }
+    if (!ptn_random_randomizer_fill_bytes(
+        runtime,
+        data,
+        "Random\\Randomizer::getBytesFromString",
+        random,
+        random_len,
+        line
+    )) {
+        ptn_string_operand_free(input);
+        free(random);
+        free(output);
+        return ptn_null();
+    }
+    for (size_t i = 0; i < requested; i++) {
+        uint64_t value = ptn_random_bytes_to_u64_le((const unsigned char *)(random + (i * sizeof(uint64_t))));
+        output[i] = (char)input.data[(size_t)(value % (uint64_t)input.len)];
+    }
+    output[requested] = '\0';
+    ptn_string_operand_free(input);
+    free(random);
+    return ptn_owned_string_len(output, requested);
+}
+
+static PtnValue ptn_random_randomizer_get_int(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::getInt() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    int64_t min = ptn_internal_expect_integer_arg(
+        runtime,
+        "Random\\Randomizer::getInt",
+        1,
+        "min",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t max = ptn_internal_expect_integer_arg(
+        runtime,
+        "Random\\Randomizer::getInt",
+        2,
+        "max",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (min > max) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Random\\Randomizer::getInt(): Argument #1 ($min) must be less than or equal to argument #2 ($max)"
+        );
+        return ptn_null();
+    }
+
+    uint64_t span = (uint64_t)max - (uint64_t)min + 1ULL;
+    uint64_t offset = 0;
+    uint64_t upper = span == 0 ? UINT64_MAX : span - 1ULL;
+    if (!ptn_random_randomizer_range64(
+        runtime,
+        data,
+        "Random\\Randomizer::getInt",
+        upper,
+        line,
+        &offset
+    )) {
+        return ptn_null();
+    }
+    return ptn_int((int64_t)((uint64_t)min + offset));
+}
+
+static PtnValue ptn_random_randomizer_next_float(
+    PtnRuntime *runtime,
+    PtnRandomRandomizerData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[144];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Random\\Randomizer::nextFloat() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    uint64_t value = 0;
+    if (!ptn_random_randomizer_next_u64(
+        runtime,
+        data,
+        "Random\\Randomizer::nextFloat",
+        line,
+        &value
+    )) {
+        return ptn_null();
+    }
+    return ptn_float((double)(value >> 11) * (1.0 / 9007199254740992.0));
 }
 
 static PtnMt19937State *ptn_random_randomizer_mt19937_state(PtnRandomRandomizerData *data) {
@@ -88602,6 +88916,15 @@ static PTN_UNUSED PtnValue ptn_random_randomizer_call_method(
     }
     if (ptn_ascii_case_equal(name, "getBytes")) {
         return ptn_random_randomizer_get_bytes(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getBytesFromString")) {
+        return ptn_random_randomizer_get_bytes_from_string(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getInt")) {
+        return ptn_random_randomizer_get_int(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "nextFloat")) {
+        return ptn_random_randomizer_next_float(runtime, data, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "pickArrayKeys")) {
         return ptn_random_randomizer_pick_array_keys(runtime, data, argc, args, line);
@@ -148823,6 +149146,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
+        { "lcg_value", 0, 0, ptn_internal_lcg_value },
         { "levenshtein", 2, 5, ptn_internal_levenshtein },
         { "libxml_clear_errors", 0, 0, ptn_internal_libxml_clear_errors },
         { "libxml_disable_entity_loader", 0, 1, ptn_internal_libxml_disable_entity_loader },
@@ -148928,7 +149252,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "msgfmt_format", 2, 2, ptn_internal_msgfmt_format },
         { "mktime", 1, 6, ptn_internal_mktime },
         { "mt_getrandmax", 0, 0, ptn_internal_getrandmax },
-        { "mt_rand", 0, 2, ptn_internal_rand },
+        { "mt_rand", 0, 2, ptn_internal_mt_rand },
         { "mt_srand", 0, 2, ptn_internal_srand },
         { "move_uploaded_file", 2, 2, ptn_internal_move_uploaded_file },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
@@ -153365,6 +153689,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "__serialize")
             || ptn_ascii_case_equal(method_name, "__unserialize")
             || ptn_ascii_case_equal(method_name, "getBytes")
+            || ptn_ascii_case_equal(method_name, "getBytesFromString")
+            || ptn_ascii_case_equal(method_name, "getInt")
+            || ptn_ascii_case_equal(method_name, "nextFloat")
             || ptn_ascii_case_equal(method_name, "pickArrayKeys")
             || ptn_ascii_case_equal(method_name, "shuffleArray");
     }
