@@ -1707,6 +1707,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ResourceBundle\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
@@ -7894,6 +7900,7 @@ fn emit_class_metadata_helpers(
         "IntlDateFormatter",
         "IntlTimeZone",
         "IntlIterator",
+        "ResourceBundle",
         "MessageFormatter",
         "IntlListFormatter",
         "IntlDatePatternGenerator",
@@ -8786,6 +8793,7 @@ fn emit_class_metadata_helpers(
         "IntlDateFormatter",
         "IntlTimeZone",
         "IntlIterator",
+        "ResourceBundle",
         "MessageFormatter",
         "IntlListFormatter",
         "IntlDatePatternGenerator",
@@ -22064,6 +22072,7 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intldateformatter" => Some("IntlDateFormatter"),
         "intltimezone" => Some("IntlTimeZone"),
         "intliterator" => Some("IntlIterator"),
+        "resourcebundle" => Some("ResourceBundle"),
         "messageformatter" => Some("MessageFormatter"),
         "intllistformatter" => Some("IntlListFormatter"),
         "intldatepatterngenerator" => Some("IntlDatePatternGenerator"),
@@ -23850,6 +23859,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_intl_iterator(class_name)) {\n");
     out.push_str(
         "        return ptn_intl_iterator_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_resource_bundle(class_name)) {\n");
+    out.push_str(
+        "        return ptn_resource_bundle_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_message_formatter(class_name)) {\n");
@@ -32452,6 +32466,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlDateFormatter")
                 || class_name.eq_ignore_ascii_case("IntlTimeZone")
                 || class_name.eq_ignore_ascii_case("IntlIterator")
+                || class_name.eq_ignore_ascii_case("ResourceBundle")
                 || class_name.eq_ignore_ascii_case("MessageFormatter")
                 || class_name.eq_ignore_ascii_case("IntlListFormatter")
                 || class_name.eq_ignore_ascii_case("IntlDatePatternGenerator")

@@ -45108,6 +45108,80 @@ var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
 }
 
 #[test]
+fn compile_intl_resourcebundle_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-resourcebundle-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-resourcebundle-surface.php");
+    let output = root.join("intl-resourcebundle-surface-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/resourcebundle_le';\n\
+$bundle = new ResourceBundle('root', $path);\n\
+var_dump($bundle instanceof Traversable, $bundle instanceof Countable, $bundle instanceof ArrayAccess);\n\
+echo $bundle->count(), \"\\n\";\n\
+echo $bundle['teststring'], \"\\n\";\n\
+echo bin2hex($bundle->get('testbin')), \"\\n\";\n\
+echo $bundle->get('testtable')->get('major'), \"\\n\";\n\
+foreach ($bundle as $key => $value) {\n\
+    echo $key, ':', is_object($value) ? get_class($value) : gettype($value), \"\\n\";\n\
+}\n\
+$es = resourcebundle_create('es', $path);\n\
+echo resourcebundle_get($es, 'teststring'), \"\\n\";\n\
+var_dump(iterator_to_array($es->get('testarray')));\n\
+var_dump(ResourceBundle::getLocales($path));\n\
+var_dump($bundle->get('missing'));\n\
+echo intl_get_error_message(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "6\n",
+            "Hello World!\n",
+            "a1b2c3d4e5f67890\n",
+            "3\n",
+            "testarray:ResourceBundle\n",
+            "testbin:string\n",
+            "testint:integer\n",
+            "teststring:string\n",
+            "testtable:ResourceBundle\n",
+            "testvector:array\n",
+            "Hola Mundo!\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(8) \"cadena 1\"\n",
+            "  [1]=>\n",
+            "  string(8) \"cadena 2\"\n",
+            "  [2]=>\n",
+            "  string(8) \"cadena 3\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(2) \"es\"\n",
+            "  [1]=>\n",
+            "  string(4) \"root\"\n",
+            "}\n",
+            "NULL\n",
+            "ResourceBundle::get(): Cannot load resource element 'missing': U_MISSING_RESOURCE_ERROR\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_resource_bundle_call_method"));
+    assert!(c_source.contains("ptn_internal_resourcebundle_create"));
+}
+
+#[test]
 fn compile_intl_timezone_identity_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-intl-timezone-identity-offsets");
     fs::create_dir_all(&root).unwrap();

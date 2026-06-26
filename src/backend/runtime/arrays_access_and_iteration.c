@@ -1177,6 +1177,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_intl_date_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_timezone(lookup_class_name) ||
         ptn_internal_class_name_is_intl_iterator(lookup_class_name) ||
+        ptn_internal_class_name_is_resource_bundle(lookup_class_name) ||
         ptn_internal_class_name_is_message_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_list_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_intl_date_pattern_generator(lookup_class_name) ||

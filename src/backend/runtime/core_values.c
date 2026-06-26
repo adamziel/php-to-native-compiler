@@ -2243,6 +2243,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_calendar(const char *class
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_timezone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_resource_bundle(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_list_formatter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name);
@@ -3366,6 +3367,14 @@ static PTN_UNUSED PtnValue ptn_intl_timezone_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_intl_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_resource_bundle_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

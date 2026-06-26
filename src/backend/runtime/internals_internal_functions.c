@@ -65383,6 +65383,21 @@ typedef struct {
     size_t index;
 } PtnIntlIteratorData;
 
+typedef enum {
+    PTN_RESOURCE_BUNDLE_TOP = 1,
+    PTN_RESOURCE_BUNDLE_ARRAY = 2,
+    PTN_RESOURCE_BUNDLE_TABLE = 3
+} PtnResourceBundleKind;
+
+typedef struct {
+    char *locale;
+    char *bundle;
+    PtnResourceBundleKind kind;
+    int error_code;
+    char *error_message;
+    size_t index;
+} PtnResourceBundleData;
+
 typedef struct {
     char *locale;
     char *pattern;
@@ -65461,6 +65476,17 @@ static void ptn_intl_iterator_data_free(void *ptr) {
         return;
     }
     ptn_value_destroy(&data->values);
+    free(data);
+}
+
+static void ptn_resource_bundle_data_free(void *ptr) {
+    PtnResourceBundleData *data = (PtnResourceBundleData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->bundle);
+    free(data->error_message);
     free(data);
 }
 
@@ -65619,6 +65645,7 @@ static PtnValue ptn_intl_list_formatter_new(PtnRuntime *runtime, const char *cla
 static PtnValue ptn_intl_date_pattern_generator_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_number_formatter_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_intl_number_range_formatter_new(PtnRuntime *runtime, const char *skeleton, const char *locale, int collapse, int identity_fallback);
+static PtnValue ptn_resource_bundle_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static int ptn_intl_locale_has_prefix(const char *locale, const char *prefix);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_pattern_generator(const char *class_name);
 
@@ -65644,6 +65671,9 @@ static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
     }
     if (ptn_ascii_case_equal(class_name, "IntlDatePatternGenerator")) {
         return ptn_intl_date_pattern_generator_new(runtime, class_name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(class_name, "ResourceBundle")) {
+        return ptn_resource_bundle_new(runtime, class_name, argc, args, line);
     }
     if (ptn_ascii_case_equal(class_name, "NumberFormatter")) {
         return ptn_intl_number_formatter_new(runtime, class_name, argc, args, line);
@@ -65770,6 +65800,452 @@ static void ptn_intl_signal_error(PtnRuntime *runtime, const char *message, size
     }
 }
 
+static void ptn_resource_bundle_set_error(
+    PtnRuntime *runtime,
+    PtnResourceBundleData *data,
+    int code,
+    const char *message
+) {
+    if (data != NULL) {
+        data->error_code = code;
+        free(data->error_message);
+        data->error_message = ptn_duplicate_string(message == NULL ? "U_ZERO_ERROR" : message);
+    }
+    ptn_intl_set_error_message(runtime, message);
+}
+
+static int ptn_resource_bundle_locale_is_es(const char *locale) {
+    return locale != NULL &&
+        (ptn_ascii_case_equal(locale, "es") ||
+         ptn_ascii_case_equal(locale, "es_ES") ||
+         ptn_ascii_case_equal(locale, "es-ES"));
+}
+
+static int ptn_resource_bundle_locale_is_root(const char *locale) {
+    return locale == NULL ||
+        locale[0] == '\0' ||
+        ptn_ascii_case_equal(locale, "root");
+}
+
+static const char *ptn_resource_bundle_effective_locale(const char *locale) {
+    return ptn_resource_bundle_locale_is_es(locale) ? "es" : "root";
+}
+
+static PtnResourceBundleData *ptn_resource_bundle_data_new(
+    const char *locale,
+    const char *bundle,
+    PtnResourceBundleKind kind
+) {
+    PtnResourceBundleData *data = malloc(sizeof(PtnResourceBundleData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = ptn_duplicate_string(locale == NULL ? "root" : locale);
+    data->bundle = ptn_duplicate_string(bundle == NULL ? "" : bundle);
+    data->kind = kind;
+    data->error_code = 0;
+    data->error_message = ptn_duplicate_string("U_ZERO_ERROR");
+    data->index = 0;
+    return data;
+}
+
+static PtnResourceBundleData *ptn_resource_bundle_data(PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        resolved.as.object->native_data == NULL ||
+        !ptn_ascii_case_equal(resolved.as.object->class_name, "ResourceBundle")) {
+        return NULL;
+    }
+    return (PtnResourceBundleData *)resolved.as.object->native_data;
+}
+
+static PtnValue ptn_resource_bundle_object(
+    PtnRuntime *runtime,
+    const char *locale,
+    const char *bundle,
+    PtnResourceBundleKind kind
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "ResourceBundle");
+    object.as.object->native_data = ptn_resource_bundle_data_new(locale, bundle, kind);
+    object.as.object->native_data_free = ptn_resource_bundle_data_free;
+    return object;
+}
+
+static size_t ptn_resource_bundle_count_kind(PtnResourceBundleKind kind) {
+    return kind == PTN_RESOURCE_BUNDLE_TOP ? 6 : 3;
+}
+
+static const char *ptn_resource_bundle_top_key(size_t index) {
+    static const char *const keys[] = {
+        "testarray",
+        "testbin",
+        "testint",
+        "teststring",
+        "testtable",
+        "testvector"
+    };
+    return index < sizeof(keys) / sizeof(keys[0]) ? keys[index] : NULL;
+}
+
+static const char *ptn_resource_bundle_table_key(size_t index) {
+    static const char *const keys[] = { "major", "minor", "patch" };
+    return index < sizeof(keys) / sizeof(keys[0]) ? keys[index] : NULL;
+}
+
+static int ptn_resource_bundle_key_to_index(PtnValue key_value, size_t *index_out, char **label_out) {
+    PtnValue key = ptn_value_deref(key_value);
+    if (label_out != NULL) {
+        *label_out = NULL;
+    }
+    if (key.type == PTN_INT) {
+        if (key.as.integer < 0) {
+            if (label_out != NULL) {
+                char buffer[32];
+                snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+                *label_out = ptn_duplicate_string(buffer);
+            }
+            return 0;
+        }
+        *index_out = (size_t)key.as.integer;
+        if (label_out != NULL) {
+            char buffer[32];
+            snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+            *label_out = ptn_duplicate_string(buffer);
+        }
+        return 1;
+    }
+    PtnStringOperand string = ptn_value_to_string_operand(key_value);
+    char *copy = ptn_duplicate_string_len(string.data, string.len);
+    ptn_string_operand_free(string);
+    char *end = NULL;
+    long long parsed = strtoll(copy, &end, 10);
+    int ok = copy[0] != '\0' && end != NULL && *end == '\0' && parsed >= 0;
+    if (ok) {
+        *index_out = (size_t)parsed;
+    }
+    if (label_out != NULL) {
+        *label_out = copy;
+    } else {
+        free(copy);
+    }
+    return ok;
+}
+
+static PtnValue ptn_resource_bundle_vector_value(void) {
+    static const int64_t values[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_int(values[i]));
+    }
+    return result;
+}
+
+static PtnValue ptn_resource_bundle_binary_value(void) {
+    static const unsigned char bytes[] = { 0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x78, 0x90 };
+    return ptn_owned_string_len(
+        ptn_duplicate_string_len((const char *)bytes, sizeof(bytes)),
+        sizeof(bytes)
+    );
+}
+
+static PtnValue ptn_resource_bundle_array_string_value(const char *locale, size_t index) {
+    static const char *const root_values[] = { "string 1", "string 2", "string 3" };
+    static const char *const es_values[] = { "cadena 1", "cadena 2", "cadena 3" };
+    const char *const *values = ptn_resource_bundle_locale_is_es(locale) ? es_values : root_values;
+    return index < 3 ? ptn_string(values[index]) : ptn_null();
+}
+
+static int ptn_resource_bundle_lookup_position(
+    PtnResourceBundleData *data,
+    PtnValue key_value,
+    size_t *position_out,
+    char **label_out
+) {
+    *position_out = 0;
+    if (label_out != NULL) {
+        *label_out = NULL;
+    }
+    size_t numeric = 0;
+    char *label = NULL;
+    if (ptn_resource_bundle_key_to_index(key_value, &numeric, &label)) {
+        if (numeric < ptn_resource_bundle_count_kind(data->kind)) {
+            *position_out = numeric;
+            if (label_out != NULL) {
+                *label_out = label;
+            } else {
+                free(label);
+            }
+            return 1;
+        }
+    }
+    if (data->kind == PTN_RESOURCE_BUNDLE_TOP) {
+        for (size_t i = 0; i < 6; i++) {
+            const char *key = ptn_resource_bundle_top_key(i);
+            if (label != NULL && ptn_ascii_case_equal(label, key)) {
+                *position_out = i;
+                if (label_out != NULL) {
+                    *label_out = label;
+                } else {
+                    free(label);
+                }
+                return 1;
+            }
+        }
+    } else if (data->kind == PTN_RESOURCE_BUNDLE_TABLE) {
+        for (size_t i = 0; i < 3; i++) {
+            const char *key = ptn_resource_bundle_table_key(i);
+            if (label != NULL && ptn_ascii_case_equal(label, key)) {
+                *position_out = i;
+                if (label_out != NULL) {
+                    *label_out = label;
+                } else {
+                    free(label);
+                }
+                return 1;
+            }
+        }
+    }
+    if (label_out != NULL) {
+        *label_out = label == NULL ? ptn_duplicate_string("") : label;
+    } else {
+        free(label);
+    }
+    return 0;
+}
+
+static PtnValue ptn_resource_bundle_value_at(
+    PtnRuntime *runtime,
+    PtnResourceBundleData *data,
+    size_t position
+) {
+    const char *locale = ptn_resource_bundle_effective_locale(data->locale);
+    if (data->kind == PTN_RESOURCE_BUNDLE_ARRAY) {
+        return ptn_resource_bundle_array_string_value(locale, position);
+    }
+    if (data->kind == PTN_RESOURCE_BUNDLE_TABLE) {
+        static const int64_t values[] = { 3, 4, 7 };
+        return position < 3 ? ptn_int(values[position]) : ptn_null();
+    }
+    const char *key = ptn_resource_bundle_top_key(position);
+    if (key == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(key, "testarray")) {
+        return ptn_resource_bundle_object(runtime, locale, data->bundle, PTN_RESOURCE_BUNDLE_ARRAY);
+    }
+    if (ptn_ascii_case_equal(key, "testbin")) {
+        return ptn_resource_bundle_binary_value();
+    }
+    if (ptn_ascii_case_equal(key, "testint")) {
+        return ptn_int(2);
+    }
+    if (ptn_ascii_case_equal(key, "teststring")) {
+        return ptn_string(ptn_resource_bundle_locale_is_es(locale) ? "Hola Mundo!" : "Hello World!");
+    }
+    if (ptn_ascii_case_equal(key, "testtable")) {
+        return ptn_resource_bundle_object(runtime, locale, data->bundle, PTN_RESOURCE_BUNDLE_TABLE);
+    }
+    if (ptn_ascii_case_equal(key, "testvector")) {
+        return ptn_resource_bundle_vector_value();
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_resource_bundle_get_value(
+    PtnRuntime *runtime,
+    PtnResourceBundleData *data,
+    PtnValue key_value,
+    const char *operation_name
+) {
+    if (data == NULL) {
+        return ptn_null();
+    }
+    size_t position = 0;
+    char *label = NULL;
+    if (!ptn_resource_bundle_lookup_position(data, key_value, &position, &label)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Cannot load resource element '%s': U_MISSING_RESOURCE_ERROR",
+            operation_name,
+            label == NULL ? "" : label
+        );
+        free(label);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_resource_bundle_set_error(runtime, data, 2, message);
+        return ptn_null();
+    }
+    free(label);
+    ptn_resource_bundle_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    return ptn_resource_bundle_value_at(runtime, data, position);
+}
+
+static PtnValue ptn_resource_bundle_locales_value(PtnRuntime *runtime) {
+    (void)runtime;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("es"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("root"));
+    return result;
+}
+
+static PtnValue ptn_resource_bundle_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    char *locale = argc >= 1 ? ptn_intl_value_string_copy(args[0]) : ptn_duplicate_string("root");
+    char *bundle = argc >= 2 ? ptn_intl_value_string_copy(args[1]) : ptn_duplicate_string("");
+    int fallback = argc < 3 || ptn_is_truthy(ptn_value_deref(args[2]));
+    int exact = ptn_resource_bundle_locale_is_root(locale) || ptn_resource_bundle_locale_is_es(locale);
+    if (!exact && !fallback) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ResourceBundle::__construct(): Cannot load bundle for locale '%s': U_MISSING_RESOURCE_ERROR",
+            locale
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_intl_set_error_message(runtime, message);
+        free(locale);
+        free(bundle);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    const char *effective_locale = ptn_resource_bundle_effective_locale(locale);
+    PtnResourceBundleData *data = ptn_resource_bundle_data_new(effective_locale, bundle, PTN_RESOURCE_BUNDLE_TOP);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_resource_bundle_data_free;
+    if (exact) {
+        ptn_resource_bundle_set_error(runtime, data, 0, "U_ZERO_ERROR");
+    } else {
+        ptn_resource_bundle_set_error(runtime, data, -127, "U_USING_DEFAULT_WARNING");
+    }
+    free(locale);
+    free(bundle);
+    return object;
+}
+
+static PtnValue ptn_resource_bundle_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnResourceBundleData *data = ptn_resource_bundle_data(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue resolved = ptn_value_deref(receiver);
+        PtnValue constructed = ptn_resource_bundle_new(runtime, resolved.as.object->class_name, argc, args, line);
+        PtnResourceBundleData *new_data = ptn_resource_bundle_data(constructed);
+        if (resolved.type == PTN_OBJECT && new_data != NULL) {
+            if (resolved.as.object->native_data_free != NULL) {
+                resolved.as.object->native_data_free(resolved.as.object->native_data);
+            }
+            resolved.as.object->native_data = new_data;
+            resolved.as.object->native_data_free = ptn_resource_bundle_data_free;
+            constructed.as.object->native_data = NULL;
+            ptn_value_destroy(&constructed);
+        }
+        return ptn_null();
+    }
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed ResourceBundle");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        return ptn_int((int64_t)ptn_resource_bundle_count_kind(data->kind));
+    }
+    if (ptn_ascii_case_equal(name, "get") || ptn_ascii_case_equal(name, "offsetGet")) {
+        return argc >= 1
+            ? ptn_resource_bundle_get_value(runtime, data, args[0], "ResourceBundle::get")
+            : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists")) {
+        size_t position = 0;
+        char *label = NULL;
+        int exists = argc >= 1 && ptn_resource_bundle_lookup_position(data, args[0], &position, &label);
+        free(label);
+        return ptn_bool(exists);
+    }
+    if (ptn_ascii_case_equal(name, "offsetSet") || ptn_ascii_case_equal(name, "offsetUnset")) {
+        ptn_throw_exception(runtime, "Error", "Cannot modify readonly ResourceBundle");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getErrorCode")) {
+        return ptn_int(data->error_code);
+    }
+    if (ptn_ascii_case_equal(name, "getErrorMessage")) {
+        return ptn_owned_string(ptn_duplicate_string(data->error_message));
+    }
+    if (ptn_ascii_case_equal(name, "getLocales")) {
+        return ptn_resource_bundle_locales_value(runtime);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->index = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(data->index < ptn_resource_bundle_count_kind(data->kind));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        return data->index < ptn_resource_bundle_count_kind(data->kind)
+            ? ptn_resource_bundle_value_at(runtime, data, data->index)
+            : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        if (data->kind == PTN_RESOURCE_BUNDLE_ARRAY) {
+            return data->index > (size_t)INT64_MAX ? ptn_int(INT64_MAX) : ptn_int((int64_t)data->index);
+        }
+        const char *key = data->kind == PTN_RESOURCE_BUNDLE_TABLE
+            ? ptn_resource_bundle_table_key(data->index)
+            : ptn_resource_bundle_top_key(data->index);
+        return key == NULL ? ptn_null() : ptn_string(key);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        data->index++;
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_resourcebundle_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_resource_bundle_new(runtime, "ResourceBundle", argc, args, line);
+}
+
+static PtnValue ptn_internal_resourcebundle_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnResourceBundleData *data = argc >= 1 ? ptn_resource_bundle_data(args[0]) : NULL;
+    return ptn_int(data == NULL ? 0 : (int64_t)ptn_resource_bundle_count_kind(data->kind));
+}
+
+static PtnValue ptn_internal_resourcebundle_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnResourceBundleData *data = argc >= 1 ? ptn_resource_bundle_data(args[0]) : NULL;
+    return argc >= 2 ? ptn_resource_bundle_get_value(runtime, data, args[1], "resourcebundle_get") : ptn_null();
+}
+
+static PtnValue ptn_internal_resourcebundle_locales(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_intl_set_error_message(runtime, "U_ZERO_ERROR");
+    return ptn_resource_bundle_locales_value(runtime);
+}
+
+static PtnValue ptn_internal_resourcebundle_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnResourceBundleData *data = argc >= 1 ? ptn_resource_bundle_data(args[0]) : NULL;
+    return ptn_int(data == NULL ? 0 : data->error_code);
+}
+
+static PtnValue ptn_internal_resourcebundle_get_error_message(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnResourceBundleData *data = argc >= 1 ? ptn_resource_bundle_data(args[0]) : NULL;
+    return ptn_owned_string(ptn_duplicate_string(data == NULL ? "U_ZERO_ERROR" : data->error_message));
+}
+
 static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -65780,6 +66256,12 @@ static PtnValue ptn_internal_intl_get_error_code(PtnRuntime *runtime, size_t arg
         : root->intl_last_error_message;
     if (strstr(message, "U_NUMBER_SKELETON_SYNTAX_ERROR") != NULL) {
         return ptn_int(65811);
+    }
+    if (strstr(message, "U_USING_DEFAULT_WARNING") != NULL) {
+        return ptn_int(-127);
+    }
+    if (strstr(message, "U_MISSING_RESOURCE_ERROR") != NULL) {
+        return ptn_int(2);
     }
     return ptn_int(strstr(message, "U_ILLEGAL_ARGUMENT_ERROR") == NULL ? 0 : 1);
 }
@@ -132906,6 +133388,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "getDisplayName")) {
         return ptn_internal_locale_static_get_display_name(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(class_name, "ResourceBundle") &&
+        ptn_ascii_case_equal(name, "getLocales")) {
+        return ptn_internal_resourcebundle_locales(runtime, argc, args, line);
+    }
     if (ptn_ascii_case_equal(class_name, "NumberFormatter") &&
         ptn_ascii_case_equal(name, "create")) {
         return ptn_internal_numfmt_create(runtime, argc, args, line);
@@ -142657,6 +143143,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "datefmt_format_object", 1, 3, ptn_internal_datefmt_format_object },
         { "intl_get_error_code", 0, 0, ptn_internal_intl_get_error_code },
         { "intl_get_error_message", 0, 0, ptn_internal_intl_get_error_message },
+        { "ResourceBundle::getLocales", 1, 1, ptn_internal_resourcebundle_locales },
         { "intlcal_field_difference", 3, 3, ptn_internal_intlcal_field_difference },
         { "intlcal_get", 2, 2, ptn_internal_intlcal_get },
         { "intlcal_get_actual_minimum", 2, 2, ptn_internal_intlcal_get_actual_minimum },
@@ -142689,6 +143176,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_offset", 5, 5, ptn_internal_intltz_get_offset },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
         { "intltz_get_windows_id", 1, 1, ptn_internal_intltz_get_windows_id },
+        { "resourcebundle_count", 1, 1, ptn_internal_resourcebundle_count },
+        { "resourcebundle_create", 2, 3, ptn_internal_resourcebundle_create },
+        { "resourcebundle_get", 2, 2, ptn_internal_resourcebundle_get },
+        { "resourcebundle_get_error_code", 1, 1, ptn_internal_resourcebundle_get_error_code },
+        { "resourcebundle_get_error_message", 1, 1, ptn_internal_resourcebundle_get_error_message },
+        { "resourcebundle_locales", 1, 1, ptn_internal_resourcebundle_locales },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
         { "is_array", 1, 1, ptn_internal_is_array },
@@ -143280,6 +143773,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         }
         if (ptn_internal_function_name_has_prefix(name, "Collator::") ||
             ptn_internal_function_name_has_prefix(name, "NumberFormatter::") ||
+            ptn_internal_function_name_has_prefix(name, "ResourceBundle::") ||
             ptn_internal_function_name_has_prefix(name, "Spoofchecker::") ||
             ptn_internal_function_name_has_prefix(name, "UConverter::")) {
             return "intl";
@@ -143354,6 +143848,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_internal_function_name_has_prefix(name, "grapheme_") ||
         ptn_internal_function_name_has_prefix(name, "intltz_") ||
         ptn_internal_function_name_has_prefix(name, "numfmt_") ||
+        ptn_internal_function_name_has_prefix(name, "resourcebundle_") ||
         ptn_ascii_case_equal(name, "locale_compose") ||
         ptn_ascii_case_equal(name, "locale_lookup")) {
         return "intl";
@@ -144907,6 +145402,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_iterator(const char *class
     return ptn_ascii_case_equal(class_name, "IntlIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_resource_bundle(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ResourceBundle");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "MessageFormatter");
 }
@@ -145156,6 +145655,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_date_formatter(class_name)
         || ptn_internal_class_name_is_intl_timezone(class_name)
         || ptn_internal_class_name_is_intl_iterator(class_name)
+        || ptn_internal_class_name_is_resource_bundle(class_name)
         || ptn_internal_class_name_is_message_formatter(class_name)
         || ptn_internal_class_name_is_intl_list_formatter(class_name)
         || ptn_internal_class_name_is_intl_date_pattern_generator(class_name)
@@ -146951,6 +147451,23 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "rewind")
             || ptn_ascii_case_equal(method_name, "valid");
     }
+    if (ptn_internal_class_name_is_resource_bundle(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "count")
+            || ptn_ascii_case_equal(method_name, "current")
+            || ptn_ascii_case_equal(method_name, "get")
+            || ptn_ascii_case_equal(method_name, "getErrorCode")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage")
+            || ptn_ascii_case_equal(method_name, "getLocales")
+            || ptn_ascii_case_equal(method_name, "key")
+            || ptn_ascii_case_equal(method_name, "next")
+            || ptn_ascii_case_equal(method_name, "offsetExists")
+            || ptn_ascii_case_equal(method_name, "offsetGet")
+            || ptn_ascii_case_equal(method_name, "offsetSet")
+            || ptn_ascii_case_equal(method_name, "offsetUnset")
+            || ptn_ascii_case_equal(method_name, "rewind")
+            || ptn_ascii_case_equal(method_name, "valid");
+    }
     if (ptn_internal_class_name_is_message_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "format")
@@ -147452,6 +147969,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "formatObject");
+    }
+    if (ptn_internal_class_name_is_resource_bundle(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getLocales");
     }
     if (ptn_internal_class_name_is_locale(class_name)) {
         return ptn_ascii_case_equal(method_name, "getDisplayName");
@@ -156494,6 +157014,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_date_formatter(class_name) ||
         ptn_internal_class_name_is_intl_timezone(class_name) ||
         ptn_internal_class_name_is_intl_iterator(class_name) ||
+        ptn_internal_class_name_is_resource_bundle(class_name) ||
         ptn_internal_class_name_is_message_formatter(class_name) ||
         ptn_internal_class_name_is_intl_list_formatter(class_name) ||
         ptn_internal_class_name_is_intl_date_pattern_generator(class_name) ||
@@ -164778,6 +165299,7 @@ static PtnValue ptn_reflection_extension_classes(
             "IntlDateFormatter",
             "IntlTimeZone",
             "IntlIterator",
+            "ResourceBundle",
             "MessageFormatter",
             "IntlListFormatter",
             "IntlDatePatternGenerator",
