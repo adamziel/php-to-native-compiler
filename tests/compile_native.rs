@@ -26873,6 +26873,110 @@ echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e')
 }
 
 #[test]
+fn compile_date_modify_immutable_timezone_edge_rows_to_native_binary() {
+    let root = temp_dir("ptn-native-date-modify-immutable-timezone-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-modify-immutable-timezone-edges.php");
+    let output = root.join("date-modify-immutable-timezone-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+var_dump(date_create_immutable('Invalid'));
+
+try {
+    timezone_open("Europe/Zurich\0Foo");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    new DateTimeZone("Europe/Zurich\0Foo");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+foreach (['CST6CDT', 'Cuba', 'GMT0', 'UTC', 'GMT', 'GMT+0100', '-0230'] as $zone) {
+    $state = (new DateTimeZone($zone))->__serialize();
+    echo $state['timezone_type'], ':', $state['timezone'], "\n";
+}
+
+$pdt = new DateTime('2008-01-01 12:00:00 PDT');
+$utc = new DateTime('2008-01-01 12:00:00 UTC');
+echo $pdt->format(DATE_ISO8601), "\n";
+echo $utc->setTimeZone($pdt->getTimeZone())->format(DATE_ISO8601), "\n";
+
+$offset = date_create('2005-07-18 22:10:00 +0400');
+echo date_format($offset, 'D, d M Y H:i:s T'), "\n";
+echo gmdate('Y-m-d H:i:s', strtotime('20 VI. 2005')), "\n";
+
+date_default_timezone_set('Europe/Amsterdam');
+$stamp = mktime(17, 17, 17, 10, 27, 2004);
+echo 'tStamp=', date('l Y-m-d H:i:s T', $stamp), "\n";
+echo 'result=', date('l Y-m-d H:i:s T', strtotime('Monday', $stamp)), "\n";
+
+$tz = new DateTimeZone('Europe/Amsterdam');
+echo (new DateTime('January 0099', $tz))->format('Y'), "\n";
+echo (new DateTime('January 1, 0099', $tz))->format('Y'), "\n";
+echo (new DateTime('0099-01', $tz))->format('Y'), "\n";
+
+$fromFormat = DateTime::createFromFormat('Y-m-d\TH:i:sP[e]', '2022-02-18T00:00:00+01:00[Europe/Berlin]');
+echo $fromFormat->format('Y-m-d H:i:s e'), "\n";
+
+date_default_timezone_set('UTC');
+$date = new DateTime('-1500-01-01');
+echo $date->format('r'), "\n";
+$date->setDate(-2147483648, 1, 1);
+echo $date->format('r'), "\n";
+echo $date->format('c'), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "timezone_open(): Argument #1 ($timezone) must not contain any null bytes\n",
+            "DateTimeZone::__construct(): Argument #1 ($timezone) must not contain any null bytes\n",
+            "3:CST6CDT\n",
+            "3:Cuba\n",
+            "3:GMT0\n",
+            "3:UTC\n",
+            "2:GMT\n",
+            "1:+01:00\n",
+            "1:-02:30\n",
+            "2008-01-01T12:00:00-0700\n",
+            "2008-01-01T05:00:00-0700\n",
+            "Mon, 18 Jul 2005 22:10:00 GMT+0400\n",
+            "2005-06-20 00:00:00\n",
+            "tStamp=Wednesday 2004-10-27 17:17:17 CEST\n",
+            "result=Monday 2004-11-01 00:00:00 CET\n",
+            "0099\n",
+            "0099\n",
+            "0099\n",
+            "2022-02-18 00:00:00 Europe/Berlin\n",
+            "Fri, 01 Jan -1500 00:00:00 +0000\n",
+            "Tue, 01 Jan -2147483648 00:00:00 +0000\n",
+            "-2147483648-01-01T00:00:00+00:00\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_datetime_parse_relative_weekday_string"));
+    assert!(c_source.contains("ptn_datetime_try_bracketed_tzid_format"));
+}
+
+#[test]
 fn compile_datetime_tokyo_textual_clone_lifecycle_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-tokyo-textual-clone");
     fs::create_dir_all(&root).unwrap();

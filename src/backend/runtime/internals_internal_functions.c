@@ -108367,6 +108367,7 @@ static int ptn_timezone_offset_for_wall_timestamp(const char *name, time_t wall_
 static int ptn_datetime_timestamp_dst_month(time_t timestamp);
 static int ptn_timezone_is_dst_for_name(const char *name, time_t timestamp);
 static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t timestamp);
+static int ptn_timezone_parse_offset_literal(const char *name, int *offset_out);
 
 typedef struct {
     int64_t year;
@@ -110805,6 +110806,8 @@ static int ptn_date_month_number_from_name(const char *name) {
     }
     return 0;
 }
+
+static int ptn_date_weekday_number_from_name(const char *name, int *weekday_out);
 
 static int ptn_datetime_day_number_from_token(const char *token) {
     if (token == NULL || !isdigit((unsigned char)token[0])) {
