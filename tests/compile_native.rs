@@ -63227,6 +63227,45 @@ var_dump($a);",
 }
 
 #[test]
+fn compile_array_assign_op_handler_type_error_chains_offset_type_error_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-assign-op-handler-type-error-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-assign-op-handler-type-error-chain.php");
+    let output = root.join("array-offset-assign-op-handler-type-error-chain-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function (y $y) {\n\
+});\n\
+$k = [];\n\
+$y[$k]++;\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught TypeError: {closure:")
+            && stderr.contains("Argument #1 ($y) must be of type y, int given")
+            && stderr.contains(&format!("#0 {}(5): {{closure:", input.display()))
+            && stderr.contains(&format!(
+                "Next TypeError: Cannot access offset of type array on array in {}:5",
+                input.display()
+            ))
+            && stderr.contains(&format!("thrown in {} on line 5", input.display())),
+        "{stderr}"
+    );
+    assert!(
+        !stderr.contains("Warning: Undefined variable $y"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_array_dim_false_conversion_is_visible_to_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-array-dim-false-conversion-handler");
     fs::create_dir_all(&root).unwrap();
@@ -77955,6 +77994,101 @@ function repeated_include_function() {\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Cannot redeclare function repeated_include_function"));
     assert!(c_source.contains("ptn_emit_fatal_error_at"));
+}
+
+#[test]
+fn compile_include_continue_warning_routes_through_current_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-include-continue-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("include-warning.inc");
+    let output = root.join("include-continue-warning-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $errstr, $errfile, $errline) {\n\
+    echo \"handler:$errno:$errstr:$errline\\n\";\n\
+});\n\
+require __DIR__ . '/include-warning.inc';\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function included_warning() {\n\
+    switch (1) {\n\
+        case 1:\n\
+            continue;\n\
+    }\n\
+}\n\
+echo \"included\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "handler:2:\"continue\" targeting switch is equivalent to \"break\":5\nincluded\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_emit_compile_warning"));
+}
+
+#[test]
+fn compile_include_warning_before_redeclare_fatal_bypasses_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-include-warning-function-redeclare-bypass-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("include-warning-fatal.inc");
+    let output = root.join("include-warning-function-redeclare-bypass-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $errstr) {\n\
+    echo \"handler:$errstr\\n\";\n\
+});\n\
+require __DIR__ . '/include-warning-fatal.inc';\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function duplicate_warning() {\n\
+    switch (1) {\n\
+        case 1:\n\
+            continue;\n\
+    }\n\
+}\n\
+function duplicate_warning() {}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: \"continue\" targeting switch is equivalent to \"break\" in {} on line 5\n",
+            included.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Cannot redeclare function duplicate_warning() (previously declared in {}:2) in {} on line 8\n",
+            included.display(),
+            included.display()
+        )
+    );
 }
 
 #[test]
@@ -100105,6 +100239,47 @@ foreach ([[C::class, new C()], [C::class, new B()], [D::class, new B()]] as [$cl
         "{stderr}"
     );
     assert!(stderr.contains("Stack trace:\n#0 {main}"), "{stderr}");
+}
+
+#[test]
+fn compile_tentative_return_before_signature_fatal_bypasses_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-tentative-return-before-internal-fatal-bypass-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("tentative-return-before-internal-fatal-bypass-handler.php");
+    let output = root.join("tentative-return-before-internal-fatal-bypass-handler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $message) {
+    echo "handler:$message\n";
+});
+
+class C extends DateTime {
+    public function getTimezone() {}
+    public function getTimestamp(C $arg): int {}
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Deprecated: Return type of C::getTimezone() should either be compatible with DateTime::getTimezone(): DateTimeZone|false, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice in {} on line 7\n",
+            input.display()
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Declaration of C::getTimestamp(C $arg): int must be compatible with DateTime::getTimestamp(): int in {} on line 8\n",
+            input.display()
+        )
+    );
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

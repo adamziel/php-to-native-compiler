@@ -17,7 +17,10 @@ use crate::ir::{
     lower_with_source_and_includes, IncludeParseError, IncludeResolutionMap, IncludeSource,
 };
 use crate::lexer::{decode_php_source_bytes, decode_php_source_bytes_with_encoding};
-use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases_and_symbols};
+use crate::parser::{
+    parse_for_include_collection, parse_include_with_runtime_class_aliases_and_symbols,
+    parse_with_runtime_class_aliases_and_symbols,
+};
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
 
@@ -1610,7 +1613,7 @@ impl IncludeCollector {
             let source = decode_compiler_source_bytes(&source_bytes, &self.source_options)?;
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
             self.sources[index].source_bytes = source_bytes;
-            self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
+            self.sources[index].program = parse_include_with_runtime_class_aliases_and_symbols(
                 &source,
                 &self.runtime_class_aliases,
                 &included_classes,

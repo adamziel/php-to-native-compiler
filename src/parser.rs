@@ -68,14 +68,14 @@ pub(crate) fn parse_for_include_collection(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], false)
+    parse_with_options(source, runtime_class_aliases, &[], &[], false, false)
 }
 
 pub(crate) fn parse_with_runtime_class_aliases(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, &[], &[], true)
+    parse_with_options(source, runtime_class_aliases, &[], &[], true, true)
 }
 
 pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
@@ -90,6 +90,23 @@ pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
         external_classes,
         external_traits,
         true,
+        true,
+    )
+}
+
+pub(crate) fn parse_include_with_runtime_class_aliases_and_symbols(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+    external_classes: &[ClassDecl],
+    external_traits: &[TraitDecl],
+) -> Result<Program> {
+    parse_with_options(
+        source,
+        runtime_class_aliases,
+        external_classes,
+        external_traits,
+        true,
+        false,
     )
 }
 
@@ -99,6 +116,7 @@ fn parse_with_options(
     external_classes: &[ClassDecl],
     external_traits: &[TraitDecl],
     validate_method_signatures: bool,
+    validate_function_names: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
     let compiler_halt_offset = find_compiler_halt_offset(&tokens);
@@ -148,6 +166,7 @@ fn parse_with_options(
         compiler_halt_offset,
         compile_warnings: Vec::new(),
         validate_method_signatures,
+        validate_function_names,
         current_statement_doc_comment: None,
     };
     parser.parse_program().map_err(|error| {
@@ -224,6 +243,7 @@ struct Parser<'a> {
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
+    validate_function_names: bool,
     current_statement_doc_comment: Option<String>,
 }
 
@@ -585,10 +605,16 @@ impl Parser<'_> {
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
                 validate_reference_assignment_sources(&method.body, &functions)?;
                 validate_control_transfers_in_statements(&method.body, 0)?;
+                collect_continue_targeting_switch_warnings(
+                    &method.body,
+                    &mut self.compile_warnings,
+                );
                 validate_goto_labels(&method.body)?;
             }
         }
-        validate_function_names(&functions)?;
+        if self.validate_function_names {
+            validate_function_names(&functions)?;
+        }
         validate_by_reference_returns(&functions)?;
         validate_void_returns(&functions)?;
         validate_never_returns(&functions)?;
@@ -597,10 +623,12 @@ impl Parser<'_> {
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
+        collect_continue_targeting_switch_warnings(&statements, &mut self.compile_warnings);
         for function in &functions {
             validate_anonymous_functions_in_statements(&function.body, &functions)?;
             validate_reference_assignment_sources(&function.body, &functions)?;
             validate_control_transfers_in_statements(&function.body, 0)?;
+            collect_continue_targeting_switch_warnings(&function.body, &mut self.compile_warnings);
             validate_goto_labels(&function.body)?;
         }
         validate_goto_labels(&statements)?;
@@ -6617,6 +6645,7 @@ impl Parser<'_> {
             &self.eval_visible_classes,
             &self.eval_visible_traits,
             false,
+            true,
         )?;
         for statement in &eval_program.statements {
             self.note_runtime_class_alias_statement(statement);
@@ -9044,6 +9073,7 @@ impl Parser<'_> {
             compiler_halt_offset: None,
             compile_warnings: Vec::new(),
             validate_method_signatures: false,
+            validate_function_names: true,
             current_statement_doc_comment: None,
         };
         parser.expect_open_tag()?;
@@ -21153,6 +21183,158 @@ impl ControlTransfer {
             Self::Break => "break",
             Self::Continue => "continue",
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContinueTargetKind {
+    Loop,
+    Switch,
+}
+
+fn collect_continue_targeting_switch_warnings(
+    statements: &[Statement],
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    collect_continue_targeting_switch_warnings_inner(statements, &mut Vec::new(), compile_warnings);
+}
+
+fn collect_continue_targeting_switch_warnings_inner(
+    statements: &[Statement],
+    contexts: &mut Vec<ContinueTargetKind>,
+    compile_warnings: &mut Vec<CompileWarning>,
+) {
+    for statement in statements {
+        match statement {
+            Statement::Block { statements, .. } => {
+                collect_continue_targeting_switch_warnings_inner(
+                    statements,
+                    contexts,
+                    compile_warnings,
+                );
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_continue_targeting_switch_warnings_inner(
+                    then_body,
+                    contexts,
+                    compile_warnings,
+                );
+                collect_continue_targeting_switch_warnings_inner(
+                    else_body,
+                    contexts,
+                    compile_warnings,
+                );
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                contexts.push(ContinueTargetKind::Loop);
+                collect_continue_targeting_switch_warnings_inner(body, contexts, compile_warnings);
+                contexts.pop();
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_continue_targeting_switch_warnings_inner(
+                    initializers,
+                    contexts,
+                    compile_warnings,
+                );
+                contexts.push(ContinueTargetKind::Loop);
+                collect_continue_targeting_switch_warnings_inner(body, contexts, compile_warnings);
+                contexts.pop();
+                collect_continue_targeting_switch_warnings_inner(
+                    updates,
+                    contexts,
+                    compile_warnings,
+                );
+            }
+            Statement::Foreach { body, .. } => {
+                contexts.push(ContinueTargetKind::Loop);
+                collect_continue_targeting_switch_warnings_inner(body, contexts, compile_warnings);
+                contexts.pop();
+            }
+            Statement::Switch { cases, .. } => {
+                contexts.push(ContinueTargetKind::Switch);
+                for case in cases {
+                    collect_continue_targeting_switch_warnings_inner(
+                        &case.body,
+                        contexts,
+                        compile_warnings,
+                    );
+                }
+                contexts.pop();
+            }
+            Statement::Continue { level, span } if *level > 0 && *level <= contexts.len() => {
+                let target_index = contexts.len() - *level;
+                if contexts[target_index] == ContinueTargetKind::Switch {
+                    compile_warnings.push(CompileWarning {
+                        message: continue_targeting_switch_warning(*level, contexts, target_index),
+                        span: *span,
+                        kind: CompileWarningKind::Warning,
+                    });
+                }
+            }
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                collect_continue_targeting_switch_warnings_inner(body, contexts, compile_warnings);
+                for catch in catches {
+                    collect_continue_targeting_switch_warnings_inner(
+                        &catch.body,
+                        contexts,
+                        compile_warnings,
+                    );
+                }
+                collect_continue_targeting_switch_warnings_inner(
+                    finally_body,
+                    contexts,
+                    compile_warnings,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn continue_targeting_switch_warning(
+    level: usize,
+    contexts: &[ContinueTargetKind],
+    target_index: usize,
+) -> String {
+    let mut message = format!(
+        "{} targeting switch is equivalent to {}",
+        quoted_control_operator("continue", level),
+        quoted_control_operator("break", level)
+    );
+    if let Some(suggested_level) = nearest_outer_loop_level(contexts, target_index) {
+        message.push_str(". Did you mean to use ");
+        message.push_str(&quoted_control_operator("continue", suggested_level));
+        message.push('?');
+    }
+    message
+}
+
+fn nearest_outer_loop_level(contexts: &[ContinueTargetKind], target_index: usize) -> Option<usize> {
+    (0..target_index)
+        .rev()
+        .find(|index| contexts[*index] == ContinueTargetKind::Loop)
+        .map(|index| contexts.len() - index)
+}
+
+fn quoted_control_operator(operator: &str, level: usize) -> String {
+    if level == 1 {
+        format!("\"{operator}\"")
+    } else {
+        format!("\"{operator} {level}\"")
     }
 }
 

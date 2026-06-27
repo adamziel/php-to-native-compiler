@@ -1,0 +1,18 @@
+# Focused PHPT row pack for ptn-w17z.1018.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1018-opcache-optimizer-jit-residual-row-pack.txt
+#
+# bucket: opcache-optimizer-jit-residual rows=12
+ext/opcache/tests/gh17422/005.phpt
+ext/opcache/tests/gh17422/007.phpt
+ext/opcache/tests/gh17422/002.phpt
+ext/opcache/tests/opt/gh18107_2.phpt
+ext/opcache/tests/jit/fetch_dim_rw_004.phpt
+ext/opcache/tests/opt/dce_002.phpt
+ext/opcache/tests/jit/bw_not_002.phpt
+ext/opcache/tests/jit/bug81249.phpt
+ext/opcache/tests/jit/gh17307.phpt
+ext/opcache/tests/opt/nullsafe_001.phpt
+ext/opcache/tests/opt/sccp_exception.phpt
+ext/opcache/tests/gh17422/009.phpt

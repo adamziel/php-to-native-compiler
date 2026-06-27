@@ -579,7 +579,12 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         runtime_requirements.internal_function_dispatch,
     );
-    emit_compile_warnings(&mut out, &module.compile_warnings, &module.source_file);
+    emit_compile_warnings(
+        &mut out,
+        &module.compile_warnings,
+        &module.source_file,
+        false,
+    );
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_parameter_default_diagnostics(
         &mut out,
@@ -595,14 +600,6 @@ pub fn emit_c(module: &Module) -> String {
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     emit_static_property_declarations(&mut out, &module.classes, &module.traits);
-    for warning in collect_module_control_warnings(module) {
-        emit_control_warning(
-            &mut out,
-            &warning.message,
-            &module.source_file,
-            warning.line,
-        );
-    }
     let mut control_targets = Vec::new();
     let mut finally_stack = Vec::new();
     let return_label = values.next_label("ptn_main_return");
@@ -6024,6 +6021,25 @@ fn internal_by_ref_temporary_argument_allowed(name: &str, argument_index: usize)
         )
 }
 
+fn include_has_duplicate_function_declaration(
+    include: &IncludeFile,
+    functions: &[FunctionDecl],
+) -> bool {
+    let mut declared = HashSet::new();
+    for instruction in &include.instructions {
+        let Instruction::DeclareFunction { function_index } = instruction else {
+            continue;
+        };
+        let Some(function) = functions.get(*function_index) else {
+            continue;
+        };
+        if !declared.insert(function.name.to_ascii_lowercase()) {
+            return true;
+        }
+    }
+    false
+}
+
 fn emit_include_helpers(
     out: &mut String,
     includes: &[IncludeFile],
@@ -6084,7 +6100,12 @@ fn emit_include_helpers(
             out.push_str(&return_label);
             out.push_str(";\n");
         }
-        emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
+        emit_compile_warnings(
+            out,
+            &include.compile_warnings,
+            &include.source_file,
+            include_has_duplicate_function_declaration(include, functions),
+        );
         emit_preload_unlinked_anonymous_class_warnings(out, include, classes);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
@@ -7114,11 +7135,20 @@ fn emit_magic_debug_info_return_deprecations(
     }
 }
 
-fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_file: &str) {
+fn emit_compile_warnings(
+    out: &mut String,
+    warnings: &[CompileWarning],
+    source_file: &str,
+    bypass_error_handler: bool,
+) {
     for warning in warnings {
         match warning.kind {
             CompileWarningKind::Warning => {
-                out.push_str("    ptn_emit_compile_warning(&runtime, \"");
+                out.push_str(if bypass_error_handler {
+                    "    ptn_emit_compile_warning_direct(&runtime, \""
+                } else {
+                    "    ptn_emit_compile_warning(&runtime, \""
+                });
                 out.push_str(&c_string(&warning.message));
                 out.push_str("\", \"");
                 out.push_str(&c_string(source_file));
@@ -7127,7 +7157,11 @@ fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_f
                 out.push_str(");\n");
             }
             CompileWarningKind::Deprecation => {
-                out.push_str("    ptn_emit_compile_deprecation(&runtime, \"");
+                out.push_str(if bypass_error_handler {
+                    "    ptn_emit_compile_deprecation_direct(&runtime, \""
+                } else {
+                    "    ptn_emit_compile_deprecation(&runtime, \""
+                });
                 out.push_str(&c_string(&warning.message));
                 out.push_str("\", \"");
                 out.push_str(&c_string(source_file));
@@ -20840,6 +20874,19 @@ fn tentative_internal_return_method(
                 TypeHint::False,
             ]),
         }),
+        ("datetime", "gettimestamp") | ("datetimeimmutable", "gettimestamp") => {
+            Some(TentativeInternalReturnMethod {
+                class_name: if normalized_class_name == "datetimeimmutable" {
+                    "DateTimeImmutable"
+                } else {
+                    "DateTime"
+                },
+                method_name: "getTimestamp",
+                signature: "getTimestamp(): int",
+                is_static: false,
+                return_type: TypeHint::Int,
+            })
+        }
         _ => None,
     }
 }
@@ -20864,6 +20911,38 @@ fn find_tentative_internal_parent_return_method(
     None
 }
 
+fn class_has_tentative_internal_return_signature_fatal(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> bool {
+    class.methods.iter().any(|method| {
+        if method.visibility == PropertyVisibility::Private {
+            return false;
+        }
+        let Some(tentative_method) =
+            find_tentative_internal_parent_return_method(class, &method.name, classes)
+        else {
+            return false;
+        };
+        if method.is_static != tentative_method.is_static
+            || !method
+                .name
+                .eq_ignore_ascii_case(tentative_method.method_name)
+            || method.attributes.return_type_will_change_count > 0
+        {
+            return false;
+        }
+        let Some(function) = functions.get(method.function_index) else {
+            return false;
+        };
+        function
+            .parameters
+            .iter()
+            .any(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+    })
+}
+
 fn emit_tentative_internal_return_signature_deprecations(
     out: &mut String,
     class: &ClassDecl,
@@ -20872,6 +20951,8 @@ fn emit_tentative_internal_return_signature_deprecations(
     class_index: usize,
     _source_path: &str,
 ) {
+    let bypass_deprecation_handler =
+        class_has_tentative_internal_return_signature_fatal(class, classes, functions);
     for method in &class.methods {
         if method.visibility == PropertyVisibility::Private {
             continue;
@@ -20939,7 +21020,11 @@ fn emit_tentative_internal_return_signature_deprecations(
         out.push_str(&class_index.to_string());
         out.push_str("] = 1;\n");
         out.push_str("        }\n");
-        out.push_str("        ptn_emit_compile_deprecation(&runtime, \"");
+        out.push_str(if bypass_deprecation_handler {
+            "        ptn_emit_compile_deprecation_direct(&runtime, \""
+        } else {
+            "        ptn_emit_compile_deprecation(&runtime, \""
+        });
         out.push_str(&c_string(&message));
         out.push_str("\", \"");
         out.push_str(&c_string(&method.source_file));
@@ -28772,6 +28857,32 @@ fn emit_instruction(
         Instruction::DeclareFunction { function_index } => {
             let function = &values.user_functions[*function_index];
             out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
+            for (previous_index, previous_function) in values.user_functions.iter().enumerate() {
+                if previous_index == *function_index
+                    || !previous_function.name.eq_ignore_ascii_case(&function.name)
+                {
+                    continue;
+                }
+                out.push_str("        if (runtime.declared_user_functions[");
+                out.push_str(&previous_index.to_string());
+                out.push_str("]) {\n");
+                out.push_str("            char message[1024];\n");
+                out.push_str(
+                    "            snprintf(message, sizeof(message), \"Cannot redeclare function ",
+                );
+                out.push_str(&c_string(&function.name));
+                out.push_str("() (previously declared in %s:%zu)\", \"");
+                out.push_str(&c_string(&previous_function.source_file));
+                out.push_str("\", (size_t)");
+                out.push_str(&previous_function.line.to_string());
+                out.push_str(");\n");
+                out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+                out.push_str(&c_string(&function.source_file));
+                out.push_str("\", ");
+                out.push_str(&function.line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
+            }
             out.push_str("        if (runtime.declared_user_functions[");
             out.push_str(&function_index.to_string());
             out.push_str("]) {\n");
@@ -28786,7 +28897,7 @@ fn emit_instruction(
             out.push_str(&function.line.to_string());
             out.push_str(");\n");
             out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
-            out.push_str(&c_string(source_path));
+            out.push_str(&c_string(&function.source_file));
             out.push_str("\", ");
             out.push_str(&function.line.to_string());
             out.push_str(");\n");
@@ -31834,32 +31945,6 @@ fn concat_tree_needs_deferred_direct_variable_lhs(value: &ValueExpr) -> bool {
         }
         _ => false,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControlTargetKind {
-    Loop,
-    Switch,
-}
-
-struct ControlWarning {
-    message: String,
-    line: usize,
-}
-
-fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning> {
-    let mut warnings = Vec::new();
-    collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
-    warnings
-}
-
-fn collect_module_control_warnings(module: &Module) -> Vec<ControlWarning> {
-    let mut warnings = Vec::new();
-    for function in &module.functions {
-        warnings.extend(collect_control_warnings(&function.body));
-    }
-    warnings.extend(collect_control_warnings(&module.instructions));
-    warnings
 }
 
 fn collect_module_legacy_dollar_brace_deprecations(
@@ -37079,118 +37164,6 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("spl_autoload_register")
         || name.eq_ignore_ascii_case("unregister_tick_function")
         || name.eq_ignore_ascii_case("unserialize")
-}
-
-fn collect_control_warnings_in(
-    instructions: &[Instruction],
-    contexts: &mut Vec<ControlTargetKind>,
-    warnings: &mut Vec<ControlWarning>,
-) {
-    for instruction in instructions {
-        match instruction {
-            Instruction::Branch {
-                then_body,
-                else_body,
-                ..
-            } => {
-                collect_control_warnings_in(then_body, contexts, warnings);
-                collect_control_warnings_in(else_body, contexts, warnings);
-            }
-            Instruction::Try {
-                body,
-                catches,
-                finally_body,
-            } => {
-                collect_control_warnings_in(body, contexts, warnings);
-                for catch in catches {
-                    collect_control_warnings_in(&catch.body, contexts, warnings);
-                }
-                collect_control_warnings_in(finally_body, contexts, warnings);
-            }
-            Instruction::While { body, .. } | Instruction::DoWhile { body, .. } => {
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-            }
-            Instruction::For {
-                initializers,
-                updates,
-                body,
-                ..
-            } => {
-                collect_control_warnings_in(initializers, contexts, warnings);
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-                collect_control_warnings_in(updates, contexts, warnings);
-            }
-            Instruction::Foreach { body, .. } => {
-                contexts.push(ControlTargetKind::Loop);
-                collect_control_warnings_in(body, contexts, warnings);
-                contexts.pop();
-            }
-            Instruction::Switch { cases, .. } => {
-                contexts.push(ControlTargetKind::Switch);
-                for case in cases {
-                    collect_control_warnings_in(&case.body, contexts, warnings);
-                }
-                contexts.pop();
-            }
-            Instruction::Continue { level, line } if *level > 0 && *level <= contexts.len() => {
-                let target_index = contexts.len() - *level;
-                if contexts[target_index] == ControlTargetKind::Switch {
-                    warnings.push(ControlWarning {
-                        message: continue_targeting_switch_warning(*level, contexts, target_index),
-                        line: *line,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn continue_targeting_switch_warning(
-    level: usize,
-    contexts: &[ControlTargetKind],
-    target_index: usize,
-) -> String {
-    let mut message = format!(
-        "{} targeting switch is equivalent to {}",
-        quoted_control_operator("continue", level),
-        quoted_control_operator("break", level)
-    );
-    if let Some(suggested_level) = nearest_outer_loop_level(contexts, target_index) {
-        message.push_str(". Did you mean to use ");
-        message.push_str(&quoted_control_operator("continue", suggested_level));
-        message.push('?');
-    }
-    message
-}
-
-fn nearest_outer_loop_level(contexts: &[ControlTargetKind], target_index: usize) -> Option<usize> {
-    (0..target_index)
-        .rev()
-        .find(|index| contexts[*index] == ControlTargetKind::Loop)
-        .map(|index| contexts.len() - index)
-}
-
-fn quoted_control_operator(operator: &str, level: usize) -> String {
-    if level == 1 {
-        format!("\"{operator}\"")
-    } else {
-        format!("\"{operator} {level}\"")
-    }
-}
-
-fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line: usize) {
-    out.push_str("    ptn_emit_control_warning(\"");
-    out.push_str(&c_string(message));
-    out.push_str("\", \"");
-    out.push_str(&c_string(source_path));
-    out.push_str("\", ");
-    out.push_str(&line.to_string());
-    out.push_str(");\n");
 }
 
 fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &str, line: usize) {

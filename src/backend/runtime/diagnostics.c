@@ -2302,13 +2302,9 @@ static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char 
     );
 }
 
-static PTN_UNUSED void ptn_emit_compile_warning(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
+static PTN_UNUSED void ptn_emit_compile_warning_direct(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
-        return;
-    }
-    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
-        diagnostics->emitted_warning = 1;
         return;
     }
     if (diagnostics->emitted_warning) {
@@ -2324,13 +2320,21 @@ static PTN_UNUSED void ptn_emit_compile_warning(PtnRuntime *runtime, const char 
     );
 }
 
-static PTN_UNUSED void ptn_emit_compile_deprecation(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
+static PTN_UNUSED void ptn_emit_compile_warning(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
-    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, path, line)) {
-        diagnostics->emitted_deprecation = 1;
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
+        diagnostics->emitted_warning = 1;
+        return;
+    }
+    ptn_emit_compile_warning_direct(runtime, message, path, line);
+}
+
+static PTN_UNUSED void ptn_emit_compile_deprecation_direct(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
     if (diagnostics->emitted_deprecation) {
@@ -2344,6 +2348,18 @@ static PTN_UNUSED void ptn_emit_compile_deprecation(PtnRuntime *runtime, const c
         path != NULL ? path : "ptn",
         line
     );
+}
+
+static PTN_UNUSED void ptn_emit_compile_deprecation(PtnRuntime *runtime, const char *message, const char *path, size_t line) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, path, line)) {
+        diagnostics->emitted_deprecation = 1;
+        return;
+    }
+    ptn_emit_compile_deprecation_direct(runtime, message, path, line);
 }
 
 static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
