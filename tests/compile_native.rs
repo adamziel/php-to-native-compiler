@@ -69893,6 +69893,50 @@ fn compile_uncaught_array_merge_type_error_in_foreach_reports_captured_trace_to_
 }
 
 #[test]
+fn compile_standalone_var_export_to_native_binary() {
+    let root = temp_dir("ptn-native-standalone-var-export");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standalone-var-export.php");
+    let output = root.join("standalone-var-export-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = array(\"quote'\" => array(\"quote'\"), -1 => 'Hello');\n\
+echo var_export($a, true), \"\\n---\\n\";\n\
+$o = (object) array(1, 3, \"foo\" => \"bar\");\n\
+var_export($o);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array (\n",
+            "  'quote\\'' => \n",
+            "  array (\n",
+            "    0 => 'quote\\'',\n",
+            "  ),\n",
+            "  -1 => 'Hello',\n",
+            ")\n",
+            "---\n",
+            "(object) array(\n",
+            "   '0' => 1,\n",
+            "   '1' => 3,\n",
+            "   'foo' => 'bar',\n",
+            ")",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_var_export"));
+}
+
+#[test]
 fn compile_var_export_and_array_set_operations_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-array-set-operations");
     fs::create_dir_all(&root).unwrap();

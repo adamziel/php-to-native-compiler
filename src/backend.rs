@@ -34938,7 +34938,6 @@ fn is_compact_intl_call(name: &str, argument_count: usize, has_unpacked_argument
     }
     let _ = argument_count;
     name.eq_ignore_ascii_case("printf")
-        || name.eq_ignore_ascii_case("var_export")
         || name.eq_ignore_ascii_case("is_null")
         || name.eq_ignore_ascii_case("intl_get_error_code")
         || name.eq_ignore_ascii_case("intl_get_error_message")

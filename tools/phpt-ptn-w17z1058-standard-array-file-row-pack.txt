@@ -1,0 +1,12 @@
+ext/standard/tests/array/bug25758.phpt
+ext/standard/tests/array/bug52534.phpt
+ext/standard/tests/array/var_export.phpt
+ext/standard/tests/file/auto_detect_line_endings_1.phpt
+ext/standard/tests/file/bug22414.phpt
+ext/standard/tests/file/bug24482.phpt
+ext/standard/tests/file/bug27508.phpt
+ext/standard/tests/file/bug38450.phpt
+ext/standard/tests/file/bug38450_1.phpt
+ext/standard/tests/file/bug38450_2.phpt
+ext/standard/tests/file/bug38450_3.phpt
+ext/standard/tests/file/bug41815.phpt
