@@ -169156,14 +169156,6 @@ static PtnValue ptn_internal_syslog(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(1);
 }
 
-static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)argc;
-    (void)args;
-    (void)line;
-    return ptn_bool(1);
-}
-
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnValue source = ptn_value_deref(args[0]);
@@ -169343,7 +169335,6 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "clone", 1, 2, ptn_internal_clone },
         { "closelog", 0, 0, ptn_internal_closelog },
         { "closedir", 0, 1, ptn_internal_closedir },
-        { "closelog", 0, 0, ptn_internal_closelog },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
@@ -212094,31 +212085,6 @@ fail:
     return 0;
 }
 
-static int ptn_dynamic_execute_halt_compiler_statement(
-    const char *code,
-    size_t len,
-    size_t *pos
-) {
-    static const char marker[] = "__HALT_COMPILER";
-    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
-    size_t marker_len = sizeof(marker) - 1;
-    if (cursor + marker_len > len || memcmp(code + cursor, marker, marker_len) != 0) {
-        return 0;
-    }
-    cursor += marker_len;
-    if (!ptn_eval_consume_char(code, len, &cursor, '(') ||
-        !ptn_eval_consume_char(code, len, &cursor, ')')) {
-        return 0;
-    }
-    (void)ptn_eval_consume_char(code, len, &cursor, ';');
-    cursor = ptn_eval_skip_ws(code, len, cursor);
-    if (cursor + 2 <= len && code[cursor] == '?' && code[cursor + 1] == '>') {
-        cursor += 2;
-    }
-    *pos = len;
-    return 1;
-}
-
 static int ptn_eval_execute_array_mutator_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -213038,10 +213004,6 @@ static int ptn_dynamic_execute_statements_range(
         *pos = statement_pos;
         if (ptn_dynamic_skip_class_declaration(code, end, pos)) {
             continue;
-        }
-        *pos = statement_pos;
-        if (ptn_dynamic_execute_halt_compiler_statement(code, end, pos)) {
-            return 1;
         }
         *pos = statement_pos;
         if (ptn_dynamic_execute_echo_statement(runtime, code, end, pos, line) ||
