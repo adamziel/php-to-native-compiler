@@ -1,0 +1,15 @@
+# Focused Zend fibers continuation/destructor lifecycle current-red row pack for ptn-w17z.1063.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T194602Z.tsv
+# bucket: zend-fibers-continuation rows=12
+Zend/tests/fibers/gh9916-008.phpt
+Zend/tests/fibers/gh15108-006.phpt
+Zend/tests/fibers/gh9735-008.phpt
+Zend/tests/fibers/fatal-error-in-nested-fiber.phpt
+Zend/tests/fibers/resume.phpt
+Zend/tests/fibers/destructors_005.phpt
+Zend/tests/fibers/gh9916-003.phpt
+Zend/tests/fibers/gh15108-001.phpt
+Zend/tests/fibers/gh9735-003.phpt
+Zend/tests/fibers/destructors_010.phpt
+Zend/tests/fibers/get-return-after-bailout.phpt
+Zend/tests/fibers/destructors_007.phpt
