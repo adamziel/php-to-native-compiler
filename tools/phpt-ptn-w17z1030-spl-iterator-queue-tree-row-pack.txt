@@ -1,0 +1,12 @@
+ext/spl/tests/bug70852.phpt
+ext/spl/tests/bug41828.phpt
+ext/spl/tests/bug70053.phpt
+ext/spl/tests/pqueue_004.phpt
+ext/spl/tests/bug64228.phpt
+ext/spl/tests/dit_004.phpt
+ext/spl/tests/bug66834.phpt
+ext/spl/tests/bug81587.phpt
+ext/spl/tests/bug67359.phpt
+ext/spl/tests/recursive_tree_iterator_004.phpt
+ext/spl/tests/bug65328.phpt
+ext/spl/tests/bug68825.phpt

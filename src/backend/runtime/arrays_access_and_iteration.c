@@ -5236,6 +5236,13 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
     size_t line,
     PtnLookupResult *result_out
 );
+static PTN_UNUSED int ptn_internal_array_object_offset_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int *isset_out
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -15888,6 +15895,9 @@ static PTN_UNUSED int ptn_offset_is_set(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_arrayaccess_value_is_weak_map(container)) {
         result = ptn_weak_map_offset_isset(runtime, container, key_value, line);
+        goto done;
+    }
+    if (ptn_internal_array_object_offset_isset(runtime, container, &key_value, line, &result)) {
         goto done;
     }
 #endif

@@ -7744,6 +7744,8 @@ typedef struct {
     int sorting;
 } PtnArrayIteratorData;
 
+static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnValue receiver);
+
 typedef struct {
     PtnValue storage;
     int64_t flags;
@@ -9844,6 +9846,17 @@ static void ptn_print_r_object(
     size_t indent,
     PtnDumpSeenArrays *seen
 ) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (object != NULL &&
+        (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator"))) {
+        PtnValue receiver = ptn_object(object);
+        (void)ptn_array_iterator_data(runtime, receiver);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return;
+        }
+    }
+#endif
     if (object != NULL && object->enum_case_name != NULL) {
         const char *backing_type = NULL;
         for (size_t i = 0; i < object->property_metadata_len; i++) {
@@ -166982,6 +166995,7 @@ static int ptn_spl_file_info_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getFilename")
         || ptn_ascii_case_equal(method_name, "getGroup")
         || ptn_ascii_case_equal(method_name, "getInode")
+        || ptn_ascii_case_equal(method_name, "getLinkTarget")
         || ptn_ascii_case_equal(method_name, "getMTime")
         || ptn_ascii_case_equal(method_name, "getOwner")
         || ptn_ascii_case_equal(method_name, "getPath")
@@ -169238,6 +169252,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -169287,6 +169302,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFileInfo",
             "getFilename",
             "getFlags",
+            "getLinkTarget",
             "getMaxLineLen",
             "getPath",
             "getPathname",
@@ -169325,6 +169341,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getMTime",
             "getOwner",
             "getPath",
@@ -190637,6 +190654,45 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_quiet(
     );
 }
 
+static PTN_UNUSED int ptn_internal_array_object_offset_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
+    int *isset_out
+) {
+    if (isset_out == NULL) {
+        return 0;
+    }
+    *isset_out = 0;
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL || offset_value == NULL) {
+        return 0;
+    }
+    if (ptn_spl_array_object_declares_offset_method(runtime, receiver, "offsetExists")) {
+        return 0;
+    }
+
+    PtnArrayKey key;
+    if (!ptn_spl_offset_key_from_value(
+            runtime,
+            "ArrayObject",
+            ptn_value_deref(*offset_value),
+            line,
+            1,
+            0,
+            &key
+        )) {
+        return 1;
+    }
+
+    PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+    ptn_array_key_free(key);
+    *isset_out = entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL;
+    return 1;
+}
+
 static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -190644,15 +190700,75 @@ static PTN_UNUSED int ptn_internal_array_object_offset_lookup_for_assign_op(
     size_t line,
     PtnLookupResult *result_out
 ) {
-    return ptn_internal_array_object_offset_lookup_impl(
-        runtime,
-        receiver,
-        offset_value,
-        line,
-        0,
-        1,
-        result_out
-    );
+    if (result_out == NULL) {
+        return 0;
+    }
+    *result_out = ptn_lookup_missing();
+    if (offset_value == NULL ||
+        !ptn_internal_array_object_uses_builtin_offsets(runtime, receiver)) {
+        return 0;
+    }
+
+    receiver = ptn_value_deref(receiver);
+    PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
+    if (data == NULL) {
+        return 0;
+    }
+
+    PtnValue storage_guard;
+    PtnArray *array =
+        ptn_spl_storage_mutable_array_with_lifetime_guard(&data->storage, &storage_guard);
+    if (array == NULL) {
+        *result_out = ptn_lookup_found(ptn_reference_value(ptn_reference_new_owned(ptn_null())));
+        ptn_value_destroy(&storage_guard);
+        return 1;
+    }
+
+    PtnArrayKey key;
+    if (!ptn_spl_offset_key_from_value(
+            runtime,
+            "ArrayObject",
+            ptn_value_deref(*offset_value),
+            line,
+            0,
+            0,
+            &key
+        )) {
+        ptn_value_destroy(&storage_guard);
+        return 1;
+    }
+
+    PtnObject *object = ptn_spl_storage_object(data->storage);
+    PtnArrayKey storage_key = object == NULL
+        ? ptn_array_key_clone(key)
+        : ptn_spl_object_property_key_from_array_key(key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, storage_key);
+    if (entry == NULL) {
+        ptn_emit_undefined_array_key_warning(runtime, key, line);
+        ptn_array_set_entry(
+            array,
+            ptn_array_key_clone(storage_key),
+            ptn_reference_value(ptn_reference_new_owned(ptn_null()))
+        );
+        ptn_spl_object_backing_mark_property_initialized(object, storage_key);
+        entry = ptn_array_entry_for_key(array, storage_key);
+    }
+    if (entry == NULL) {
+        ptn_array_key_free(storage_key);
+        ptn_array_key_free(key);
+        ptn_value_destroy(&storage_guard);
+        ptn_abort_out_of_memory();
+    }
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    *result_out = ptn_lookup_found(ptn_value_clone(entry->value));
+    ptn_array_key_free(storage_key);
+    ptn_array_key_free(key);
+    ptn_value_destroy(&storage_guard);
+    ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+    return 1;
 }
 
 static void ptn_spl_declare_storage_property(
@@ -195781,10 +195897,11 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
             ptn_throw_exception(runtime, "OutOfRangeException", message);
             return ptn_null();
         }
+        size_t physical_offset = ptn_spl_dllist_physical_index(data, (size_t)offset);
         if (ptn_ascii_case_equal(name, "offsetGet")) {
-            return ptn_spl_dllist_entry_at(data, (size_t)offset);
+            return ptn_spl_dllist_entry_at(data, physical_offset);
         }
-        PtnValue rebuilt = ptn_spl_dllist_rebuild_without_index(data, (size_t)offset, NULL);
+        PtnValue rebuilt = ptn_spl_dllist_rebuild_without_index(data, physical_offset, NULL);
         ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
         ptn_value_destroy(&rebuilt);
         return ptn_null();
@@ -195810,9 +195927,10 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
             ptn_throw_exception(runtime, "OutOfRangeException", "SplDoublyLinkedList::offsetSet(): Argument #1 ($index) is out of range");
             return ptn_null();
         }
+        size_t physical_offset = ptn_spl_dllist_physical_index(data, (size_t)offset);
         PtnArray *array = ptn_spl_dllist_array(data);
-        ptn_value_destroy(&array->entries[offset].value);
-        array->entries[offset].value = ptn_value_clone_deref(args[1]);
+        ptn_value_destroy(&array->entries[physical_offset].value);
+        array->entries[physical_offset].value = ptn_value_clone_deref(args[1]);
         ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
         return ptn_null();
     }
@@ -196517,6 +196635,55 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_bool(0);
         }
         return ptn_owned_string(ptn_duplicate_string(resolved));
+    }
+    if (ptn_ascii_case_equal(name, "getLinkTarget")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *path = data->path == NULL ? "" : data->path;
+#if defined(_WIN32)
+        int saved_errno = EINVAL;
+#else
+        int saved_errno = 0;
+        size_t capacity = 256;
+        char *buffer = NULL;
+        for (;;) {
+            char *next = realloc(buffer, capacity + 1);
+            if (next == NULL) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            buffer = next;
+            ssize_t len = readlink(path, buffer, capacity);
+            if (len < 0) {
+                saved_errno = errno;
+                free(buffer);
+                break;
+            }
+            if ((size_t)len < capacity) {
+                buffer[len] = '\0';
+                return ptn_owned_string_len(buffer, (size_t)len);
+            }
+            if (capacity > SIZE_MAX / 2) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            capacity *= 2;
+        }
+#endif
+        const char *error = strerror(saved_errno);
+        int needed = snprintf(NULL, 0, "Unable to read link %s, error: %s", path, error);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Unable to read link %s, error: %s", path, error);
+        ptn_throw_exception_owned_message(runtime, "RuntimeException", message);
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getType") ||
         ptn_ascii_case_equal(name, "getSize") ||
@@ -200633,12 +200800,17 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnValue current = ptn_value_deref(entry->value);
-        int follows_object = current.type == PTN_OBJECT &&
+        int follows_recursive_object = current.type == PTN_OBJECT &&
             ptn_declared_class_is_same_or_descendant(
                 ptn_value_deref(receiver).as.object->class_name,
                 "RecursiveArrayIterator"
             ) &&
             (data->flags & 4) == 0;
+        if (follows_recursive_object &&
+            ptn_value_object_implements_interface(current, "RecursiveIterator")) {
+            return ptn_value_clone_deref(current);
+        }
+        int follows_object = follows_recursive_object;
         if (current.type != PTN_ARRAY && !follows_object) {
             return ptn_null();
         }
