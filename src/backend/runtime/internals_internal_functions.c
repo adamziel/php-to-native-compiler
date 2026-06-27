@@ -52404,6 +52404,7 @@ static PtnPersistentSocketEntry *ptn_persistent_sockets = NULL;
 static size_t ptn_persistent_socket_count = 0;
 static size_t ptn_persistent_socket_capacity = 0;
 static PtnResource *ptn_default_stream_context = NULL;
+static PtnResource *ptn_default_stream_context_ensure(void);
 
 static int ptn_ascii_case_has_prefix(const char *value, const char *prefix) {
     size_t prefix_len = strlen(prefix);
@@ -53735,6 +53736,31 @@ static int ptn_object_has_declared_method(PtnRuntime *runtime, PtnValue object, 
     return runtime->declared_method_metadata(object.as.object->class_name, method_name).found;
 }
 
+static int ptn_user_wrapper_assign_context(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnResource *context,
+    size_t line
+) {
+    if (runtime == NULL || object.type != PTN_OBJECT || object.as.object == NULL) {
+        return 0;
+    }
+    PtnResource *effective_context = context == NULL ? ptn_default_stream_context_ensure() : context;
+    ptn_resource_retain(effective_context);
+    PtnValue context_value = ptn_resource(effective_context);
+    PtnValue written = ptn_object_write_property(
+        runtime,
+        object,
+        "context",
+        object.as.object->class_name,
+        context_value,
+        line
+    );
+    ptn_value_destroy(&written);
+    ptn_value_destroy(&context_value);
+    return runtime->exceptions->active_exception == NULL;
+}
+
 static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     (void)resource;
     PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
@@ -53754,6 +53780,63 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
         data->line
     );
     ptn_value_destroy(&result);
+}
+
+static PtnUserStreamResourceData *ptn_user_stream_data_from_resource(PtnResource *resource) {
+    if (resource == NULL ||
+        resource->close_hook != ptn_user_stream_close_hook ||
+        resource->close_hook_data == NULL) {
+        return NULL;
+    }
+    return (PtnUserStreamResourceData *)resource->close_hook_data;
+}
+
+static void ptn_user_directory_close_hook(PtnResource *resource, void *raw) {
+    PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
+    if (resource != NULL && resource->directory == raw) {
+        resource->directory = NULL;
+    }
+    if (data == NULL || data->runtime == NULL) {
+        return;
+    }
+    if (data->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "dir_closedir")) {
+        return;
+    }
+    PtnValue result = data->runtime->method_dispatch(
+        data->runtime,
+        data->wrapper_object,
+        "dir_closedir",
+        0,
+        NULL,
+        data->line
+    );
+    ptn_value_destroy(&result);
+}
+
+static PtnUserStreamResourceData *ptn_user_directory_data_from_resource(PtnResource *resource) {
+    if (resource == NULL ||
+        resource->close_hook != ptn_user_directory_close_hook ||
+        resource->directory == NULL) {
+        return NULL;
+    }
+    return (PtnUserStreamResourceData *)resource->directory;
+}
+
+static PtnValue ptn_user_wrapper_dispatch(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *method_name,
+    size_t argc,
+    PtnValue *args,
+    size_t line
+) {
+    if (runtime == NULL ||
+        runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, object, method_name)) {
+        return ptn_bool(0);
+    }
+    return runtime->method_dispatch(runtime, object, method_name, argc, args, line);
 }
 
 static void ptn_user_stream_materialize_reads(
@@ -54079,13 +54162,10 @@ static int ptn_try_open_user_stream_wrapper(
         return 1;
     }
     PtnObject *object_ptr = ptn_value_deref(object).as.object;
-    if (context != NULL) {
-        ptn_resource_retain(context);
-        ptn_array_set_entry(
-            object_ptr->properties,
-            ptn_array_string_key("context"),
-            ptn_resource(context)
-        );
+    if (!ptn_user_wrapper_assign_context(runtime, object, context, line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
     }
 
     PtnValue opened_path = ptn_reference_value(ptn_reference_new_owned(ptn_string("")));
