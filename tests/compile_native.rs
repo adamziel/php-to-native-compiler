@@ -54985,6 +54985,128 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_phar_manifest_corruption_diagnostics_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let root = temp_dir("ptn-native-phar-manifest-corruption");
+    fs::create_dir_all(&root).unwrap();
+
+    let truncated_input = root.join("truncated.phar.php");
+    let truncated_output = root.join("truncated-phar-bin");
+    fs::write(
+        &truncated_input,
+        "<?php\n\
+try {\n\
+    Phar::mapPhar();\n\
+} catch (Exception $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+__HALT_COMPILER(); ?>",
+    )
+    .unwrap();
+
+    let compiled = compile_file(
+        &truncated_input,
+        &truncated_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let execution = Command::new(&truncated_output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "internal corruption of phar \"{}\" (truncated manifest at manifest length)\n",
+            truncated_input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_set_internal_corruption"));
+
+    let reader_input = root.join("phar-corrupt-entry-reader.php");
+    let reader_output = root.join("phar-corrupt-entry-reader-bin");
+    let archive = root.join("bad-entry.phar.php");
+
+    let wrong_crc_entry = b"a";
+    let compressed_entry = [0xcb, 0xc8, 0x04, 0x00];
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 2);
+    push_u16(&mut manifest, 0x1000);
+    push_u32(&mut manifest, 0x1000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 1);
+    manifest.extend_from_slice(b"a");
+    push_u32(&mut manifest, wrong_crc_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, wrong_crc_entry.len() as u32);
+    push_u32(&mut manifest, 0x12345678);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 1);
+    manifest.extend_from_slice(b"b");
+    push_u32(&mut manifest, 1);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, compressed_entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0x1000);
+    push_u32(&mut manifest, 0);
+
+    let mut source = Vec::new();
+    source.extend_from_slice(b"<?php __HALT_COMPILER(); ?>");
+    push_u32(&mut source, manifest.len() as u32);
+    source.extend_from_slice(&manifest);
+    source.extend_from_slice(wrong_crc_entry);
+    source.extend_from_slice(&compressed_entry);
+    fs::write(&archive, source).unwrap();
+
+    fs::write(
+        &reader_input,
+        format!(
+            "<?php\n\
+var_dump(file_get_contents('phar://{}/a'));\n\
+var_dump(file_get_contents('phar://{}/b'));\n",
+            archive.display(),
+            archive.display()
+        ),
+    )
+    .unwrap();
+    let compiled = compile_file(
+        &reader_input,
+        &reader_output,
+        CompileOptions { emit_c: true },
+    )
+    .unwrap();
+    let execution = Command::new(&reader_output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: file_get_contents(phar://{}/a): Failed to open stream: phar error: internal corruption of phar \"{}\" (crc32 mismatch on file \"a\") in {} on line 2\n\
+bool(false)\n\
+\nWarning: file_get_contents(phar://{}/b): Failed to open stream: phar error: internal corruption of phar \"{}\" (actual filesize mismatch on file \"b\") in {} on line 3\n\
+bool(false)\n",
+            archive.display(),
+            archive.display(),
+            reader_input.display(),
+            archive.display(),
+            archive.display(),
+            reader_input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_entry_stream_error"));
+}
+
+#[test]
 fn compile_phar_alias_lifecycle_conflicts_to_native_binary() {
     let root = temp_dir("ptn-native-phar-alias-lifecycle-conflicts");
     fs::create_dir_all(&root).unwrap();

@@ -2446,6 +2446,18 @@ ptn_phpt_first_unsupported_phar_archive_surface() {
 
 ptn_phpt_supported_phar_archive_residual_row() {
     case "$1" in
+        ext/phar/tests/002.phpt|\
+        ext/phar/tests/004.phpt|\
+        ext/phar/tests/005.phpt|\
+        ext/phar/tests/006.phpt|\
+        ext/phar/tests/007.phpt|\
+        ext/phar/tests/008.phpt|\
+        ext/phar/tests/009.phpt|\
+        ext/phar/tests/010.phpt|\
+        ext/phar/tests/011.phpt|\
+        ext/phar/tests/012.phpt|\
+        ext/phar/tests/014.phpt|\
+        ext/phar/tests/016.phpt|\
         ext/phar/tests/zip/frontcontroller20.phar.phpt|\
         ext/phar/tests/tar/phar_stub_error.phpt|\
         ext/phar/tests/zip/rmdir.phpt|\
