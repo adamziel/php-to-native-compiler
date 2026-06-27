@@ -112663,6 +112663,7 @@ typedef struct {
     char *live_dom_token_list_current_token;
     int live_dom_token_list_has_current;
     int clone_datetime_current;
+    int rewind_forbidden;
 } PtnInternalIteratorData;
 
 typedef struct {
@@ -118117,6 +118118,7 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
+    data->rewind_forbidden = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -118147,6 +118149,7 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
+    data->rewind_forbidden = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -118186,7 +118189,6 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     size_t line
 ) {
     (void)args;
-    (void)line;
     receiver = ptn_value_deref(receiver);
     PtnInternalIteratorData *data = receiver.type == PTN_OBJECT
         ? (PtnInternalIteratorData *)receiver.as.object->native_data
@@ -118201,6 +118203,16 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     PtnArray *array = ptn_internal_iterator_values(data);
     size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
+        if (data->rewind_forbidden) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Iterator does not support rewinding",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
         data->index = 0;
         PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
         data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(token_list);
@@ -118225,6 +118237,7 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         return ptn_internal_iterator_key_value(array->entries[data->index].key);
     }
     if (ptn_ascii_case_equal(name, "next")) {
+        data->rewind_forbidden = 1;
         PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
         if (token_list != NULL) {
             uint64_t version = ptn_dom_token_list_mutation_version(token_list);
@@ -121044,6 +121057,7 @@ typedef struct {
     int filter_elements;
     int filter_namespace;
     int attributes;
+    int rewind_forbidden;
 } PtnXmlNodeListData;
 
 typedef struct PtnDomTokenListData {
@@ -123006,6 +123020,7 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     const char *class_name = ptn_xml_node_list_class_name_for_parent(parent);
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
@@ -123050,6 +123065,7 @@ static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *e
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 1;
+    data->rewind_forbidden = 0;
     const char *class_name = element != NULL && ptn_xml_document_for_node(element) != NULL && ptn_xml_document_for_node(element)->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
@@ -123078,6 +123094,7 @@ static PtnValue ptn_xml_named_node_map_snapshot_object(PtnRuntime *runtime, PtnX
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     const char *class_name = owner != NULL && owner->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
@@ -123103,6 +123120,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     size_t length = ptn_xml_node_list_length(source);
     for (size_t i = 0; i < length; i++) {
         ptn_xml_node_list_push(data, ptn_xml_node_list_item(source, i));
@@ -123111,6 +123129,25 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
     return object;
+}
+
+static PtnValue ptn_xml_node_list_internal_iterator(PtnRuntime *runtime, PtnXmlNodeListData *list, size_t line) {
+    PtnValue values = ptn_array_from_literal_entries(0, NULL);
+    size_t length = ptn_xml_node_list_length(list);
+    for (size_t i = 0; i < length; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_value_destroy(&values);
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            values.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_xml_node_value_for_runtime(runtime, ptn_xml_node_list_item(list, i))
+        );
+    }
+    PtnValue iterator = ptn_internal_iterator_from_values(runtime, values, line);
+    ptn_value_destroy(&values);
+    return iterator;
 }
 
 static void ptn_dom_token_list_data_free(void *data) {
@@ -137778,7 +137815,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             if (argc != 0) {
                 return ptn_dom_throw_count(runtime, "DOMNodeList::getIterator", "exactly 0 arguments", argc);
             }
-            return ptn_xml_node_list_snapshot_object(runtime, list, object_class_name);
+            return ptn_xml_node_list_internal_iterator(runtime, list, line);
         }
         if (ptn_ascii_case_equal(class_name, "DOMNodeList") && ptn_ascii_case_equal(name, "namedItem")) {
             if (argc != 1) {
@@ -137832,6 +137869,16 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_xml_node_value_for_runtime(runtime, ptn_xml_node_list_item(list, (size_t)index));
         }
         if (ptn_ascii_case_equal(name, "rewind")) {
+            if (list->rewind_forbidden) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Iterator does not support rewinding",
+                    runtime->source_path,
+                    line
+                );
+                return ptn_null();
+            }
             list->position = 0;
             return ptn_null();
         }
@@ -137851,6 +137898,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_int((int64_t)list->position);
         }
         if (ptn_ascii_case_equal(name, "next")) {
+            list->rewind_forbidden = 1;
             if (list->position == SIZE_MAX) {
                 list->position = 0;
             } else if (list->position < ptn_xml_node_list_length(list)) {
@@ -203754,6 +203802,19 @@ static PtnValue ptn_iterator_iterator_resolve_inner(
     size_t line
 ) {
     candidate = ptn_value_deref(candidate);
+    if (candidate.type == PTN_OBJECT &&
+        ptn_object_is_dom_node_list_instance(candidate.as.object) &&
+        runtime->method_dispatch != NULL) {
+        PtnValue iterator = runtime->method_dispatch(runtime, candidate, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&iterator);
+            return ptn_null();
+        }
+        if (ptn_value_is_iterator_object(iterator)) {
+            return iterator;
+        }
+        ptn_value_destroy(&iterator);
+    }
     if (ptn_value_is_iterator_object(candidate)) {
         return ptn_value_clone_deref(candidate);
     }
@@ -207524,7 +207585,33 @@ static PtnValue ptn_iterator_inner_call(
         ptn_throw_exception(runtime, "Error", "Iterator method dispatch is unavailable");
         return ptn_null();
     }
-    return runtime->method_dispatch(runtime, inner, name, argc, args, line);
+    PtnValue resolved_inner = ptn_value_deref(inner);
+    PtnTraceFrame trace_frame;
+    char trace_name[192];
+    int pushed_trace_frame = 0;
+    if (resolved_inner.type == PTN_OBJECT &&
+        resolved_inner.as.object != NULL &&
+        resolved_inner.as.object->class_name != NULL &&
+        ptn_ascii_case_equal(resolved_inner.as.object->class_name, "InternalIterator") &&
+        ptn_ascii_case_equal(name, "rewind")) {
+        int written = snprintf(
+            trace_name,
+            sizeof(trace_name),
+            "%s->%s",
+            resolved_inner.as.object->class_name,
+            name
+        );
+        if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_runtime_push_trace_frame(runtime, &trace_frame, trace_name, NULL, 0, argc, args);
+        pushed_trace_frame = 1;
+    }
+    PtnValue result = runtime->method_dispatch(runtime, inner, name, argc, args, line);
+    if (pushed_trace_frame) {
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    }
+    return result;
 }
 
 static PtnValue ptn_iterator_inner_call_no_args(
@@ -208439,6 +208526,22 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     }
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->has_cached_valid = 0;
+        PtnTraceFrame trace_frame;
+        char trace_name[192];
+        int written = snprintf(
+            trace_name,
+            sizeof(trace_name),
+            "%s->%s",
+            receiver_class_name,
+            name
+        );
+        if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_runtime_push_trace_frame(runtime, &trace_frame, trace_name, NULL, 0, argc, args);
+        PtnValue rewind = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        return rewind;
     }
     if (ptn_ascii_case_equal(name, "current")) {
         PtnValue current = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
@@ -208475,7 +208578,6 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         return result;
     }
     if (
-        ptn_ascii_case_equal(name, "rewind") ||
         ptn_ascii_case_equal(name, "valid") ||
         ptn_ascii_case_equal(name, "key") ||
         ptn_ascii_case_equal(name, "next") ||

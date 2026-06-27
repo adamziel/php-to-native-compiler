@@ -52377,6 +52377,63 @@ echo $xml->saveXML();
 }
 
 #[test]
+fn compile_dom_nodelist_internal_iterator_rewind_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-nodelist-internal-iterator-rewind-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-nodelist-internal-iterator-rewind-error.php");
+    let output = root.join("dom-nodelist-internal-iterator-rewind-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<XML
+<root>
+  <item>1</item>
+  <item>2</item>
+  <item>3</item>
+</root>
+XML;
+
+$dom = new DOMDocument();
+$dom->loadXML($xml);
+$items = $dom->getElementsByTagName('item');
+
+echo "Count: " . count($items) . "\n";
+echo "Count: " . iterator_count($items->getIterator()) . "\n";
+$it = new IteratorIterator($items);
+echo "Count: " . iterator_count($it) . "\n";
+echo "Count: " . iterator_count($it) . "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Count: 3\nCount: 3\nCount: 3\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Error: Iterator does not support rewinding"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[internal function]: InternalIterator->rewind()"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[internal function]: IteratorIterator->rewind()"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_iterator_call_method"));
+    assert!(c_source.contains("Iterator does not support rewinding"));
+}
+
+#[test]
 fn compile_dom_token_list_dtd_entities_and_live_iterators_to_native_binary() {
     let root = temp_dir("ptn-native-dom-token-list-dtd-entities-iterators");
     fs::create_dir_all(&root).unwrap();
