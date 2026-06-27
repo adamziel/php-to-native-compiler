@@ -55490,6 +55490,101 @@ print_r($client->__getTypes());
 }
 
 #[test]
+fn compile_soap_document_literal_foreign_field_namespace_array_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-document-literal-foreign-field-namespace-array");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("foreign-field.wsdl"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns:s="http://www.w3.org/2001/XMLSchema"
+  xmlns:s0="urn:Messages" xmlns:s1="urn:FieldTypes"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:Service" xmlns="http://schemas.xmlsoap.org/wsdl/"
+  targetNamespace="urn:Service">
+  <types>
+    <s:schema elementFormDefault="qualified" targetNamespace="urn:Messages">
+      <s:import namespace="urn:FieldTypes" />
+      <s:element name="message" type="s0:MessageType" />
+      <s:complexType name="MessageType">
+        <s:choice minOccurs="0" maxOccurs="unbounded">
+          <s:element minOccurs="0" maxOccurs="1" name="event" type="s1:EventType" />
+        </s:choice>
+      </s:complexType>
+    </s:schema>
+    <s:schema elementFormDefault="qualified" targetNamespace="urn:FieldTypes">
+      <s:complexType name="EventType">
+        <s:attribute name="bad" type="s:string" />
+      </s:complexType>
+    </s:schema>
+  </types>
+  <message name="sendIn"><part name="message" element="s0:message" /></message>
+  <portType name="Port"><operation name="send"><input message="tns:sendIn" /></operation></portType>
+  <binding name="Binding" type="tns:Port">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" />
+    <operation name="send">
+      <soap:operation soapAction="urn:send" style="document" />
+      <input><soap:body use="literal" /></input>
+    </operation>
+  </binding>
+  <service name="Service"><port name="Port" binding="tns:Binding"><soap:address location="test://" /></port></service>
+</definitions>
+"#,
+    )
+    .unwrap();
+    let input = root.join("soap-document-literal-foreign-field-namespace-array.php");
+    let output = root.join("soap-document-literal-foreign-field-namespace-array-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class LocalSoapClient extends SoapClient {
+  function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+    echo $request;
+    return "";
+  }
+}
+class Marker {}
+class Event {
+  public $bad;
+  function __construct() {
+    $this->bad = new Marker();
+  }
+}
+class Message {
+  public $event;
+  function __construct() {
+    $this->event = [new Event(), new Event()];
+  }
+}
+$client = new LocalSoapClient(__DIR__ . "/foreign-field.wsdl");
+$client->send(new Message());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"urn:FieldTypes\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:ns2=\"urn:Messages\"><SOAP-ENV:Body><ns2:message><ns2:event/><ns2:event/></ns2:message></SOAP-ENV:Body></SOAP-ENV:Envelope>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_first_foreign_field_type_namespace"));
+    assert!(c_source.contains("ptn_soap_enclosing_schema_element_form_qualified"));
+}
+
+#[test]
 fn compile_soap_server_setclass_constructor_and_setobject_to_native_binary() {
     let root = temp_dir("ptn-native-soap-server-service-binding");
     fs::create_dir_all(&root).unwrap();
