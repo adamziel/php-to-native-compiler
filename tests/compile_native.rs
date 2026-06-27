@@ -56139,6 +56139,114 @@ echo "after\n";
 }
 
 #[test]
+fn compile_soap_client_get_functions_filters_soap_bindings_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-get-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-client-get-functions.php");
+    let output = root.join("soap-client-get-functions-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/client-functions.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+  xmlns:s0="http://tempuri.org/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:s="http://www.w3.org/2001/XMLSchema"
+  xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+  name="test"
+  targetNamespace="http://tempuri.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <s:schema elementFormDefault="qualified" targetNamespace="http://tempuri.org/">
+      <s:element name="HelloWorld"><s:complexType /></s:element>
+      <s:element name="HelloWorldResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HelloWorldResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="string" type="s:string" />
+    </s:schema>
+  </types>
+  <message name="HelloWorldSoapIn"><part name="parameters" element="s0:HelloWorld" /></message>
+  <message name="HelloWorldSoapOut"><part name="parameters" element="s0:HelloWorldResponse" /></message>
+  <message name="HelloWorldHttpGetIn" />
+  <message name="HelloWorldHttpGetOut"><part name="Body" element="s0:string" /></message>
+  <message name="HelloWorldHttpPostIn" />
+  <message name="HelloWorldHttpPostOut"><part name="Body" element="s0:string" /></message>
+  <portType name="testSoap">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldSoapIn" />
+      <output message="s0:HelloWorldSoapOut" />
+    </operation>
+  </portType>
+  <portType name="testHttpGet">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldHttpGetIn" />
+      <output message="s0:HelloWorldHttpGetOut" />
+    </operation>
+  </portType>
+  <portType name="testHttpPost">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldHttpPostIn" />
+      <output message="s0:HelloWorldHttpPostOut" />
+    </operation>
+  </portType>
+  <binding name="testSoap" type="s0:testSoap">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http" />
+    <operation name="HelloWorld">
+      <soap:operation soapAction="http://tempuri.org/HelloWorld" style="document" />
+      <input><soap:body use="literal" /></input>
+      <output><soap:body use="literal" /></output>
+    </operation>
+  </binding>
+  <binding name="testHttpGet" type="s0:testHttpGet">
+    <http:binding verb="GET" />
+    <operation name="HelloWorld"><http:operation location="/HelloWorld" /></operation>
+  </binding>
+  <binding name="testHttpPost" type="s0:testHttpPost">
+    <http:binding verb="POST" />
+    <operation name="HelloWorld"><http:operation location="/HelloWorld" /></operation>
+  </binding>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl);
+var_dump($client->__getFunctions());
+var_dump(method_exists($client, '__getFunctions'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(53) \"HelloWorldResponse HelloWorld(HelloWorld $parameters)\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_get_functions"));
+}
+
+#[test]
 fn compile_soap_wsdl_schema_property_defaults_to_native_binary() {
     let root = temp_dir("ptn-native-soap-wsdl-schema-property-defaults");
     fs::create_dir_all(&root).unwrap();

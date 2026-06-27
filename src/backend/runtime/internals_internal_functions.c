@@ -156452,6 +156452,405 @@ static char *ptn_soap_wsdl_output_part_type_dup(PtnSoapClientData *data, const c
     return local;
 }
 
+static int ptn_soap_bytes_contain_ascii_case(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle
+);
+
+static int ptn_soap_binding_range_is_soap(const char *start, const char *end) {
+    const char *cursor = start;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            return 0;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            return 0;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "binding")) {
+            char *transport = ptn_soap_attr_dup(tag, tag_end, "transport");
+            if (transport != NULL) {
+                int is_soap = ptn_soap_bytes_contain_ascii_case(
+                    transport,
+                    strlen(transport),
+                    "soap"
+                );
+                free(transport);
+                if (is_soap) {
+                    return 1;
+                }
+            }
+        }
+        cursor = tag_end;
+    }
+    return 0;
+}
+
+static int ptn_soap_array_contains_string(PtnValue array, const char *needle) {
+    array = ptn_value_deref(array);
+    if (array.type != PTN_ARRAY || array.as.array == NULL || needle == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < array.as.array->len; i++) {
+        PtnValue value = ptn_value_deref(array.as.array->entries[i].value);
+        if (value.type == PTN_STRING &&
+            value.as.string.len == strlen(needle) &&
+            memcmp(value.as.string.data, needle, value.as.string.len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static char *ptn_soap_port_type_operation_child_attr(
+    PtnSoapClientData *data,
+    const char *port_type_name,
+    const char *operation_name,
+    const char *tag_name,
+    const char *attr_name
+) {
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            return NULL;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            return NULL;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "portType")) {
+            char *name = ptn_soap_attr_dup(tag, tag_end, "name");
+            int matches = name != NULL && ptn_ascii_case_equal(name, port_type_name);
+            free(name);
+            if (matches) {
+                const char *close = ptn_soap_find_closing_tag(tag_end, end, "portType");
+                const char *scan_end = close == NULL ? tag_end : close;
+                const char *scan = tag_end;
+                while (scan < scan_end) {
+                    const char *operation = memchr(scan, '<', (size_t)(scan_end - scan));
+                    if (operation == NULL) {
+                        break;
+                    }
+                    const char *operation_end = ptn_soap_tag_end(operation, scan_end);
+                    if (operation_end == NULL) {
+                        break;
+                    }
+                    if (ptn_soap_tag_is_opening_name(operation, operation_end, "operation")) {
+                        char *candidate = ptn_soap_attr_dup(operation, operation_end, "name");
+                        int operation_matches = candidate != NULL &&
+                            ptn_ascii_case_equal(candidate, operation_name);
+                        free(candidate);
+                        if (operation_matches) {
+                            const char *operation_close = ptn_soap_tag_is_self_closing(operation, operation_end)
+                                ? NULL
+                                : ptn_soap_find_closing_tag(operation_end, scan_end, "operation");
+                            const char *child_scan_end = operation_close == NULL
+                                ? operation_end
+                                : operation_close;
+                            const char *child_scan = operation_end;
+                            while (child_scan < child_scan_end) {
+                                const char *child = memchr(
+                                    child_scan,
+                                    '<',
+                                    (size_t)(child_scan_end - child_scan)
+                                );
+                                if (child == NULL) {
+                                    break;
+                                }
+                                const char *child_end = ptn_soap_tag_end(child, child_scan_end);
+                                if (child_end == NULL) {
+                                    break;
+                                }
+                                if (ptn_soap_tag_is_opening_name(child, child_end, tag_name)) {
+                                    return ptn_soap_attr_dup(child, child_end, attr_name);
+                                }
+                                child_scan = child_end;
+                            }
+                        }
+                    }
+                    scan = operation_end;
+                }
+            }
+        }
+        cursor = tag_end;
+    }
+    return NULL;
+}
+
+static char *ptn_soap_part_signature_type_dup(const char *part, const char *part_end) {
+    char *type = ptn_soap_attr_dup(part, part_end, "type");
+    if (type != NULL) {
+        char *local = ptn_soap_local_name_dup(type);
+        free(type);
+        return local;
+    }
+    char *element = ptn_soap_attr_dup(part, part_end, "element");
+    if (element != NULL) {
+        char *local = ptn_soap_local_name_dup(element);
+        free(element);
+        return local;
+    }
+    return ptn_duplicate_string("mixed");
+}
+
+static char *ptn_soap_message_first_part_signature_type_dup(
+    PtnSoapClientData *data,
+    const char *message_name
+) {
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            return NULL;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            return NULL;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "message")) {
+            char *name = ptn_soap_attr_dup(tag, tag_end, "name");
+            int matches = name != NULL && ptn_ascii_case_equal(name, message_name);
+            free(name);
+            if (matches) {
+                const char *close = ptn_soap_tag_is_self_closing(tag, tag_end)
+                    ? NULL
+                    : ptn_soap_find_closing_tag(tag_end, end, "message");
+                const char *scan_end = close == NULL ? tag_end : close;
+                const char *scan = tag_end;
+                while (scan < scan_end) {
+                    const char *part = memchr(scan, '<', (size_t)(scan_end - scan));
+                    if (part == NULL) {
+                        break;
+                    }
+                    const char *part_end = ptn_soap_tag_end(part, scan_end);
+                    if (part_end == NULL) {
+                        break;
+                    }
+                    if (ptn_soap_tag_is_opening_name(part, part_end, "part")) {
+                        return ptn_soap_part_signature_type_dup(part, part_end);
+                    }
+                    scan = part_end;
+                }
+                return NULL;
+            }
+        }
+        cursor = tag_end;
+    }
+    return NULL;
+}
+
+static size_t ptn_soap_append_message_part_signatures(
+    PtnSoapClientData *data,
+    const char *message_name,
+    PtnStringBuffer *buffer
+) {
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            return 0;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            return 0;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "message")) {
+            char *name = ptn_soap_attr_dup(tag, tag_end, "name");
+            int matches = name != NULL && ptn_ascii_case_equal(name, message_name);
+            free(name);
+            if (matches) {
+                size_t count = 0;
+                const char *close = ptn_soap_tag_is_self_closing(tag, tag_end)
+                    ? NULL
+                    : ptn_soap_find_closing_tag(tag_end, end, "message");
+                const char *scan_end = close == NULL ? tag_end : close;
+                const char *scan = tag_end;
+                while (scan < scan_end) {
+                    const char *part = memchr(scan, '<', (size_t)(scan_end - scan));
+                    if (part == NULL) {
+                        break;
+                    }
+                    const char *part_end = ptn_soap_tag_end(part, scan_end);
+                    if (part_end == NULL) {
+                        break;
+                    }
+                    if (ptn_soap_tag_is_opening_name(part, part_end, "part")) {
+                        char *part_type = ptn_soap_part_signature_type_dup(part, part_end);
+                        char *part_name = ptn_soap_attr_dup(part, part_end, "name");
+                        if (count != 0) {
+                            ptn_string_buffer_append(buffer, ", ");
+                        }
+                        ptn_string_buffer_append(buffer, part_type == NULL ? "mixed" : part_type);
+                        if (part_name != NULL) {
+                            ptn_string_buffer_append(buffer, " $");
+                            ptn_string_buffer_append(buffer, part_name);
+                        }
+                        free(part_type);
+                        free(part_name);
+                        count++;
+                    }
+                    scan = part_end;
+                }
+                return count;
+            }
+        }
+        cursor = tag_end;
+    }
+    return 0;
+}
+
+static void ptn_soap_append_client_function_signature(
+    PtnSoapClientData *data,
+    PtnValue result,
+    const char *port_type_name,
+    const char *operation_name
+) {
+    char *input_message = ptn_soap_port_type_operation_child_attr(
+        data,
+        port_type_name,
+        operation_name,
+        "input",
+        "message"
+    );
+    if (input_message == NULL) {
+        input_message = ptn_soap_operation_attr(data, operation_name, "input", "message");
+    }
+    char *output_message = ptn_soap_port_type_operation_child_attr(
+        data,
+        port_type_name,
+        operation_name,
+        "output",
+        "message"
+    );
+    if (output_message == NULL) {
+        output_message = ptn_soap_operation_attr(data, operation_name, "output", "message");
+    }
+    char *input_local = input_message == NULL ? NULL : ptn_soap_local_name_dup(input_message);
+    char *output_local = output_message == NULL ? NULL : ptn_soap_local_name_dup(output_message);
+    char *output_type = output_local == NULL
+        ? NULL
+        : ptn_soap_message_first_part_signature_type_dup(data, output_local);
+
+    PtnStringBuffer signature;
+    ptn_string_buffer_init(&signature);
+    ptn_string_buffer_append(&signature, output_type == NULL ? "void" : output_type);
+    ptn_string_buffer_append_char(&signature, ' ');
+    ptn_string_buffer_append(&signature, operation_name);
+    ptn_string_buffer_append_char(&signature, '(');
+    if (input_local != NULL) {
+        (void)ptn_soap_append_message_part_signatures(data, input_local, &signature);
+    }
+    ptn_string_buffer_append_char(&signature, ')');
+
+    if (!ptn_soap_array_contains_string(result, signature.data)) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(result.as.array->next_auto_key),
+            ptn_owned_string_len(signature.data, signature.len)
+        );
+    } else {
+        free(signature.data);
+    }
+
+    free(input_message);
+    free(output_message);
+    free(input_local);
+    free(output_local);
+    free(output_type);
+}
+
+static PtnValue ptn_soap_client_get_functions(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    size_t line
+) {
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapClient::__getFunctions() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnSoapClientData *data = ptn_soap_client_ensure_data(receiver);
+    if (data == NULL || data->wsdl_path == NULL) {
+        return ptn_null();
+    }
+    if (!ptn_soap_client_load_wsdl(runtime, data, line)) {
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *cursor = data->wsdl;
+    const char *end = data->wsdl + data->wsdl_len;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            break;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            break;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, "binding")) {
+            char *binding_type = ptn_soap_attr_dup(tag, tag_end, "type");
+            const char *close = binding_type == NULL || ptn_soap_tag_is_self_closing(tag, tag_end)
+                ? NULL
+                : ptn_soap_find_closing_tag(tag_end, end, "binding");
+            const char *scan_end = close == NULL ? tag_end : close;
+            if (binding_type != NULL && ptn_soap_binding_range_is_soap(tag_end, scan_end)) {
+                char *port_type = ptn_soap_local_name_dup(binding_type);
+                const char *scan = tag_end;
+                while (scan < scan_end) {
+                    const char *operation = memchr(scan, '<', (size_t)(scan_end - scan));
+                    if (operation == NULL) {
+                        break;
+                    }
+                    const char *operation_end = ptn_soap_tag_end(operation, scan_end);
+                    if (operation_end == NULL) {
+                        break;
+                    }
+                    if (ptn_soap_tag_is_opening_name(operation, operation_end, "operation")) {
+                        char *operation_name = ptn_soap_attr_dup(operation, operation_end, "name");
+                        if (operation_name != NULL) {
+                            ptn_soap_append_client_function_signature(
+                                data,
+                                result,
+                                port_type,
+                                operation_name
+                            );
+                        }
+                        free(operation_name);
+                    }
+                    scan = operation_end;
+                }
+                free(port_type);
+            }
+            free(binding_type);
+            if (close != NULL) {
+                cursor = close;
+                continue;
+            }
+        }
+        cursor = tag_end;
+    }
+    return result;
+}
+
 static int ptn_soap_append_options_xml_declaration(
     PtnRuntime *runtime,
     PtnStringBuffer *buffer,
@@ -162477,6 +162876,9 @@ static PTN_UNUSED PtnValue ptn_soap_call_method(
     if (is_client && ptn_ascii_case_equal(name, "__getLastRequest")) {
         return ptn_soap_get_last_request(runtime, receiver, argc);
     }
+    if (is_client && ptn_ascii_case_equal(name, "__getFunctions")) {
+        return ptn_soap_client_get_functions(runtime, receiver, argc, line);
+    }
     if (is_client && ptn_ascii_case_equal(name, "__setLocation")) {
         return ptn_soap_set_location(runtime, receiver, argc, args, line);
     }
@@ -168168,6 +168570,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_soap_client(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__doRequest")
+            || ptn_ascii_case_equal(method_name, "__getFunctions")
             || ptn_ascii_case_equal(method_name, "__getLastRequest")
             || ptn_ascii_case_equal(method_name, "__getTypes")
             || ptn_ascii_case_equal(method_name, "__setLocation")
@@ -169870,6 +170273,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_soap_client(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         ptn_append_method_name(result, &index, "__doRequest");
+        ptn_append_method_name(result, &index, "__getFunctions");
         ptn_append_method_name(result, &index, "__getLastRequest");
         ptn_append_method_name(result, &index, "__getTypes");
         ptn_append_method_name(result, &index, "__setLocation");
