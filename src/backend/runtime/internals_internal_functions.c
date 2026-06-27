@@ -7994,6 +7994,8 @@ static char *ptn_spl_path_filename_alloc(const char *path);
 
 #define PTN_SPL_DLLIST_IT_MODE_DELETE 1
 #define PTN_SPL_DLLIST_IT_MODE_LIFO 2
+#define PTN_SPL_DLLIST_IT_MODE_LOCKED 4
+#define PTN_SPL_DLLIST_IT_MODE_PUBLIC_MASK (PTN_SPL_DLLIST_IT_MODE_DELETE | PTN_SPL_DLLIST_IT_MODE_LIFO)
 #define PTN_SPL_FILE_OBJECT_DROP_NEW_LINE 1
 #define PTN_SPL_FILE_OBJECT_READ_AHEAD 2
 #define PTN_SPL_FILE_OBJECT_SKIP_EMPTY 4
@@ -13009,10 +13011,6 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     if (entry->slot->type == PTN_REFERENCE) {
         entry->reference = entry->slot->as.reference;
         return ptn_value_clone(*entry->slot);
-    }
-    PtnValue resolved = ptn_value_deref(*entry->slot);
-    if (resolved.type == PTN_OBJECT) {
-        return ptn_value_clone(resolved);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
     PtnReference *reference = ptn_unserialize_reference_new_owned(current);
@@ -190933,7 +190931,12 @@ static void ptn_spl_file_info_sync_properties(
     size_t line
 ) {
     PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path == NULL ? "" : path));
-    char *filename = ptn_spl_path_filename_alloc(path == NULL ? "" : path);
+    PtnValue resolved_object = ptn_value_deref(object);
+    char *filename =
+        resolved_object.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(resolved_object.as.object->class_name, "SplTempFileObject")
+            ? ptn_duplicate_string(path == NULL ? "" : path)
+            : ptn_spl_path_filename_alloc(path == NULL ? "" : path);
     PtnValue filename_value = ptn_owned_string(filename);
     ptn_spl_declare_private_value_property(runtime, object, "pathName", declaring_class, path_value, line);
     ptn_spl_declare_private_value_property(runtime, object, "fileName", declaring_class, filename_value, line);
@@ -191272,10 +191275,41 @@ static int ptn_spl_file_info_stat(
     PtnSplFileInfoData *data,
     const char *method_name,
     int use_lstat,
-    struct stat *info
+    struct stat *info,
+    size_t line
 ) {
+    char qualified_method[128];
+    const char *display_method = method_name;
+    if (strstr(method_name, "::") == NULL) {
+        int written = snprintf(qualified_method, sizeof(qualified_method), "SplFileInfo::%s", method_name);
+        if (written < 0 || (size_t)written >= sizeof(qualified_method)) {
+            ptn_abort_out_of_memory();
+        }
+        display_method = qualified_method;
+    }
+    char trace_method[128];
+    int written = snprintf(trace_method, sizeof(trace_method), "%s", display_method);
+    if (written < 0 || (size_t)written >= sizeof(trace_method)) {
+        ptn_abort_out_of_memory();
+    }
+    char *separator = strstr(trace_method, "::");
+    if (separator != NULL) {
+        separator[0] = '-';
+        separator[1] = '>';
+    }
     if (data == NULL || data->path == NULL || data->path[0] == '\0') {
-        ptn_throw_exception(runtime, "RuntimeException", "SplFileInfo object is uninitialized");
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "RuntimeException",
+            ptn_duplicate_string("SplFileInfo object is uninitialized"),
+            runtime->source_path,
+            line,
+            trace_method,
+            runtime->source_path,
+            line,
+            0,
+            NULL
+        );
         return 0;
     }
     if (strncmp(data->path, "phar://", 7) == 0) {
@@ -191286,13 +191320,24 @@ static int ptn_spl_file_info_stat(
                 message,
                 sizeof(message),
                 "%s(): stat failed for %s",
-                method_name,
+                display_method,
                 data->path
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "RuntimeException", message);
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "RuntimeException",
+                ptn_duplicate_string(message),
+                runtime->source_path,
+                line,
+                trace_method,
+                runtime->source_path,
+                line,
+                0,
+                NULL
+            );
             return 0;
         }
         return 1;
@@ -191304,13 +191349,24 @@ static int ptn_spl_file_info_stat(
             message,
             sizeof(message),
             "%s(): stat failed for %s",
-            method_name,
+            display_method,
             data->path
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        ptn_throw_exception(runtime, "RuntimeException", message);
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "RuntimeException",
+            ptn_duplicate_string(message),
+            runtime->source_path,
+            line,
+            trace_method,
+            runtime->source_path,
+            line,
+            0,
+            NULL
+        );
         return 0;
     }
     return 1;
@@ -195432,8 +195488,8 @@ static PtnSplDoublyLinkedListData *ptn_spl_doubly_linked_list_data(PtnRuntime *r
         data->storage = ptn_array_from_literal_entries(0, NULL);
         data->index = 0;
         data->flags = ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplStack")
-            ? 6
-            : (ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplQueue") ? 4 : 0);
+            ? (PTN_SPL_DLLIST_IT_MODE_LOCKED | PTN_SPL_DLLIST_IT_MODE_LIFO)
+            : (ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplQueue") ? PTN_SPL_DLLIST_IT_MODE_LOCKED : 0);
         receiver.as.object->native_data = data;
         receiver.as.object->native_data_free = ptn_spl_doubly_linked_list_data_free;
         ptn_spl_dllist_sync_properties(runtime, receiver, data, 0);
@@ -195471,8 +195527,8 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_new(
     data->storage = ptn_array_from_literal_entries(0, NULL);
     data->index = 0;
     data->flags = ptn_internal_class_name_is_spl_stack(class_name)
-        ? 6
-        : (ptn_internal_class_name_is_spl_queue(class_name) ? 4 : 0);
+        ? (PTN_SPL_DLLIST_IT_MODE_LOCKED | PTN_SPL_DLLIST_IT_MODE_LIFO)
+        : (ptn_internal_class_name_is_spl_queue(class_name) ? PTN_SPL_DLLIST_IT_MODE_LOCKED : 0);
 
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
@@ -195718,17 +195774,23 @@ static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
     }
     if (ptn_ascii_case_equal(name, "getIteratorMode")) {
         ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags & PTN_SPL_DLLIST_IT_MODE_PUBLIC_MASK);
     }
     if (ptn_ascii_case_equal(name, "setIteratorMode")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::setIteratorMode() expects exactly 1 argument");
             return ptn_null();
         }
-        data->flags = ptn_internal_expect_integer_arg(runtime, "SplDoublyLinkedList::setIteratorMode", 1, "mode", args[0], line);
+        int64_t mode = ptn_internal_expect_integer_arg(runtime, "SplDoublyLinkedList::setIteratorMode", 1, "mode", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+        if ((data->flags & PTN_SPL_DLLIST_IT_MODE_LOCKED) != 0 &&
+            ((mode ^ data->flags) & PTN_SPL_DLLIST_IT_MODE_LIFO) != 0) {
+            ptn_throw_exception(runtime, "RuntimeException", "Iterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen");
+            return ptn_null();
+        }
+        data->flags = (data->flags & PTN_SPL_DLLIST_IT_MODE_LOCKED) | (mode & PTN_SPL_DLLIST_IT_MODE_PUBLIC_MASK);
         ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
         return ptn_null();
     }
@@ -196532,7 +196594,7 @@ static PtnValue ptn_spl_file_info_call_method(
             return ptn_null();
         }
         struct stat info;
-        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info)) {
+        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info, line)) {
             return ptn_null();
         }
         if (ptn_ascii_case_equal(name, "getType")) {
@@ -196972,10 +197034,47 @@ static PtnValue ptn_spl_file_object_new_for_class(
     PtnValue stream = ptn_null();
     char *open_mode = NULL;
     if (is_temp_file_object) {
-        (void)args;
-        path = ptn_duplicate_string("php://temp");
-        open_mode = ptn_duplicate_string("w+");
-        stream = ptn_internal_tmpfile(runtime, 0, NULL, line);
+        int64_t max_memory = 0;
+        if (argc == 0) {
+            path = ptn_duplicate_string("php://temp");
+        } else {
+            max_memory = ptn_internal_expect_integer_arg(
+                runtime,
+                "SplTempFileObject::__construct",
+                1,
+                "maxMemory",
+                args[0],
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            if (max_memory < 0) {
+                path = ptn_duplicate_string("php://memory");
+            } else {
+                int needed = snprintf(NULL, 0, "php://temp/maxmemory:%lld", (long long)max_memory);
+                if (needed < 0) {
+                    ptn_abort_out_of_memory();
+                }
+                path = malloc((size_t)needed + 1);
+                if (path == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                int written = snprintf(path, (size_t)needed + 1, "php://temp/maxmemory:%lld", (long long)max_memory);
+                if (written < 0 || written != needed) {
+                    free(path);
+                    ptn_abort_out_of_memory();
+                }
+            }
+        }
+        open_mode = ptn_duplicate_string("wb");
+        PtnValue fopen_args[2] = {
+            ptn_owned_string(ptn_duplicate_string(path)),
+            ptn_string("w+b")
+        };
+        stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
+        ptn_value_destroy(&fopen_args[0]);
+        ptn_value_destroy(&fopen_args[1]);
         if (runtime->exceptions->active_exception != NULL) {
             free(open_mode);
             free(path);
