@@ -52861,6 +52861,13 @@ $attr->nodeValue = '2';
 var_dump($doc->documentElement->setAttributeNodeNS($attr)?->nodeValue);
 echo $doc->saveXML();
 
+$doc = new DOMDocument();
+$doc->appendChild($doc->createElement('container'));
+foreach ([1, 2, 3, 4] as $i) {
+    var_dump($doc->documentElement->setAttributeNodeNS($doc->createAttributeNS('http://php.net/ns' . $i, 'foo:hello'))?->namespaceURI);
+}
+echo $doc->saveXML();
+
 $dom = new DOMDocument();
 $dom->loadXML('<?xml version=\"1.0\"?><container xmlns:foo=\"http://php.net\" foo:bar=\"yes\"/>');
 $dom->documentElement->setAttributeNS('http://php.net/2', 'foo:bar', 'no1');
@@ -52896,6 +52903,12 @@ echo $dest->saveXML();
             "string(1) \"1\"\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"http://php.net/ns1\" foo:hello=\"2\"/>\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "NULL\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:foo=\"http://php.net/ns1\" xmlns:default=\"http://php.net/ns2\" xmlns:default1=\"http://php.net/ns3\" xmlns:default2=\"http://php.net/ns4\" foo:hello=\"\" default:hello=\"\" default1:hello=\"\" default2:hello=\"\"/>\n",
             "<?xml version=\"1.0\"?>\n",
             "<container xmlns:foo=\"http://php.net\" xmlns:default=\"http://php.net/2\" foo:bar=\"yes\" default:bar=\"no2\"/>\n",
             "string(7) \"default\"\n",
@@ -53410,6 +53423,62 @@ echo $html->saveXml();
     assert!(c_source.contains("serialized_name"));
     assert!(c_source.contains("ptn_dom_attribute_set_serialized_prefix"));
     assert!(c_source.contains("ptn_dom_remove_attribute_method"));
+}
+
+#[test]
+fn compile_dom_xml_empty_tag_serialization_uses_document_mode_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-xml-empty-tag-document-mode");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-xml-empty-tag-document-mode.php");
+    let output = root.join("dom-xml-empty-tag-document-mode-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$dom = new DOMDocument;
+$dom->loadXML('<hello:container xmlns:conflict="urn:foo" xmlns:hello="http://www.w3.org/1999/xhtml"/>');
+$container = $dom->documentElement;
+
+$container->prefix = "";
+echo $dom->saveXML();
+
+$container->prefix = "\0foobar";
+echo $dom->saveXML();
+
+$container->prefix = "hello";
+echo $dom->saveXML();
+
+try {
+    $container->prefix = "conflict";
+} catch (DOMException $e) {
+    echo $e->getMessage(), "\n";
+}
+echo $dom->saveXML();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<hello:container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+            "Namespace Error\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<hello:container xmlns:conflict=\"urn:foo\" xmlns:hello=\"http://www.w3.org/1999/xhtml\" xmlns=\"http://www.w3.org/1999/xhtml\"/>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("document->html_document"));
 }
 
 #[test]
