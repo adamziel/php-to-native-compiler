@@ -135580,7 +135580,9 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "ownerDocument")) {
-        *value_out = ptn_xml_node_value_for_runtime(runtime, ptn_xml_document_for_node(node));
+        *value_out = node->type == PTN_XML_NODE_DOCUMENT
+            ? ptn_null()
+            : ptn_xml_node_value_for_runtime(runtime, ptn_xml_document_for_node(node));
         return 1;
     }
     if (ptn_ascii_case_equal(property, "isConnected")) {
