@@ -813,6 +813,7 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
             : ptn_array_from_literal_entries(0, NULL);
     }
     ptn_exception_set_soap_fault_headerfault(exception, argc, args);
+    ptn_exception_set_soap_fault_properties(exception, argc, args);
     return ptn_exception_value(exception);
 }
 
