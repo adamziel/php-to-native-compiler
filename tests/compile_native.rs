@@ -52995,6 +52995,115 @@ try {
 }
 
 #[test]
+fn compile_dom_modern_node_document_residual_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-modern-node-document-residual-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-modern-node-document-residual-semantics.php");
+    let output = root.join("dom-modern-node-document-residual-semantics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = Dom\XMLDocument::createEmpty();
+$root = $xml->appendChild($xml->createElement('root'));
+$attr = $xml->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:p');
+$root->setAttributeNodeNS($attr);
+var_dump($root->attributes->length);
+var_dump($attr->namespaceURI);
+var_dump($attr->prefix);
+
+$html = Dom\HTMLDocument::createEmpty();
+try {
+    $html->createCDATASection('foo');
+} catch (DOMException $e) {
+    var_dump($e->getCode());
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $xml->createCDATASection(']]>');
+} catch (DOMException $e) {
+    var_dump($e->getCode());
+    echo $e->getMessage(), "\n";
+}
+
+$legacy = new DOMDocument();
+try {
+    $legacy->nodeValue = [];
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $legacy->nodeType += 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $legacy->xmlEncoding = null;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+$entity = new DOMEntity();
+foreach (['actualEncoding', 'encoding', 'version'] as $property) {
+    try {
+        $entity->{$property} = null;
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$document = new DOMDocument();
+$xpath = new DOMXPath($document);
+$xpath->registerNamespace('my', 'my.ns');
+$xpath->registerPHPFunctionNS('my.ns', 'include', function(): DOMElement {
+    $includedDocument = new DOMDocument();
+    $includedDocument->loadXML('<root><uaf/><node/><uaf/></root>');
+    return $includedDocument->documentElement;
+});
+$nodes = $xpath->query('my:include()/uaf');
+var_dump($nodes->length);
+var_dump($nodes->item(0)->ownerDocument->saveXML($nodes->item(0)));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "string(29) \"http://www.w3.org/2000/xmlns/\"\n",
+            "string(5) \"xmlns\"\n",
+            "int(9)\n",
+            "This operation is not supported for HTML documents\n",
+            "int(5)\n",
+            "Invalid character sequence \"]]>\" in CDATA section\n",
+            "Cannot assign array to property DOMNode::$nodeValue of type ?string\n",
+            "Cannot modify private(set) property DOMNode::$nodeType from global scope\n",
+            "Cannot modify private(set) property DOMDocument::$xmlEncoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$actualEncoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$encoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$version from global scope\n",
+            "int(2)\n",
+            "string(6) \"<uaf/>\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_xpath_register_php_function_ns_method"));
+    assert!(c_source.contains("PTN_DOM_NOT_SUPPORTED_ERR"));
+    assert!(c_source.contains("Cannot assign array to property DOMNode::$nodeValue"));
+}
+
+#[test]
 fn compile_dom_node_document_current_red_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-node-document-current-red-pack");
     fs::create_dir_all(&root).unwrap();

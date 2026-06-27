@@ -1,0 +1,15 @@
+# ptn-w17z.1026 exact DOM modern/spec/node current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T064143Z.tsv
+
+ext/dom/tests/modern/html/interactions/HTMLDocument_clone.phpt
+ext/dom/tests/modern/spec/reconciliation_of_elements.phpt
+ext/dom/tests/php_function_edge_cases.phpt
+ext/dom/tests/gh22077.phpt
+ext/dom/tests/modern/spec/Document_importLegacyNode.phpt
+ext/dom/tests/gh16338.phpt
+ext/dom/tests/gh12870_a.phpt
+ext/dom/tests/property_write_errors.phpt
+ext/dom/tests/bug42082.phpt
+ext/dom/tests/modern/spec/HTMLDocument_createCDATASection.phpt
+ext/dom/tests/bug47531_a.phpt
+ext/dom/tests/dom003.phpt
