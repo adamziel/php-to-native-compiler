@@ -3558,6 +3558,46 @@ static PTN_UNUSED void ptn_exception_set_soap_fault_headerfault(
     exception->soap_fault_headerfault = headerfault;
 }
 
+static PTN_UNUSED void ptn_exception_set_soap_fault_property(
+    PtnException *exception,
+    const char *name,
+    PtnValue value
+) {
+    if (exception == NULL || exception->dynamic_properties.type != PTN_ARRAY) {
+        return;
+    }
+    ptn_array_set_entry(
+        exception->dynamic_properties.as.array,
+        ptn_array_string_key(name),
+        ptn_value_clone_deref(value)
+    );
+}
+
+static PTN_UNUSED void ptn_exception_set_soap_fault_properties(
+    PtnException *exception,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (exception == NULL || !ptn_exception_is_soap_fault_class(exception->class_name)) {
+        return;
+    }
+    PtnValue faultstring = ptn_owned_string_len(
+        ptn_duplicate_string_len(exception->message, exception->message_len),
+        exception->message_len
+    );
+    ptn_exception_set_soap_fault_property(exception, "faultstring", faultstring);
+    ptn_value_destroy(&faultstring);
+    ptn_exception_set_soap_fault_property(exception, "faultcode", argc >= 1 ? args[0] : ptn_null());
+    ptn_exception_set_soap_fault_property(
+        exception,
+        "faultcodens",
+        ptn_string("http://schemas.xmlsoap.org/soap/envelope/")
+    );
+    ptn_exception_set_soap_fault_property(exception, "faultactor", argc >= 3 ? args[2] : ptn_null());
+    ptn_exception_set_soap_fault_property(exception, "detail", argc >= 4 ? args[3] : ptn_null());
+    ptn_exception_set_soap_fault_property(exception, "_name", argc >= 5 ? args[4] : ptn_null());
+}
+
 static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3649,6 +3689,7 @@ static PTN_UNUSED PtnValue ptn_exception_reconstruct(
     ptn_value_destroy(&exception->previous);
     exception->previous = previous;
     ptn_exception_set_soap_fault_headerfault(exception, argc, args);
+    ptn_exception_set_soap_fault_properties(exception, argc, args);
     return ptn_null();
 }
 

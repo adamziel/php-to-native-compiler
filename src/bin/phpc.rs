@@ -1142,7 +1142,7 @@ fn compile_and_run(
     let session_save_handler_warning = session_save_handler_startup_warning(&ini);
     let session_startup_deprecations = session_startup_deprecations(&ini);
     let assert_startup_deprecations = assert_startup_deprecations(&ini);
-    let source_options = CompileSourceOptions {
+    let mut source_options = CompileSourceOptions {
         zend_multibyte: ini.zend_multibyte.as_deref().is_some_and(ini_scalar_truthy),
         script_encoding: ini
             .zend_script_encoding
@@ -1170,9 +1170,17 @@ fn compile_and_run(
             .is_some_and(|handler| !handler.trim().is_empty()),
     };
     let native = TempPath::new("ptn-phpc-native", "bin");
+    let archive_wrapper = phar_archive_main_wrapper(script)?;
+    if archive_wrapper.is_some() {
+        source_options.force_internal_function_dispatch = true;
+    }
+    let compile_script = archive_wrapper
+        .as_ref()
+        .map(|wrapper| wrapper.path())
+        .unwrap_or(script);
     let preload_files = opcache_preload_files(&ini, script);
     compile_file_with_preloads_and_source_options(
-        script,
+        compile_script,
         native.path(),
         CompileOptions { emit_c: false },
         &preload_files,
@@ -1443,6 +1451,37 @@ fn compile_and_run(
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
+}
+
+fn phar_archive_main_wrapper(script: &Path) -> Result<Option<TempPath>, PhpcError> {
+    if !script_looks_like_binary_phar_archive(script)? {
+        return Ok(None);
+    }
+    let wrapper = TempPath::new("ptn-phpc-phar-main", "php");
+    fs::write(
+        wrapper.path(),
+        "<?php\nextension_loaded('Phar');\ninclude $_SERVER['SCRIPT_FILENAME'];\n",
+    )
+    .map_err(|error| {
+        PhpcError::Message(format!(
+            "failed to write PHAR archive wrapper for {}: {error}",
+            script.display()
+        ))
+    })?;
+    Ok(Some(wrapper))
+}
+
+fn script_looks_like_binary_phar_archive(script: &Path) -> Result<bool, PhpcError> {
+    let bytes = fs::read(script).map_err(|error| {
+        PhpcError::Message(format!("failed to read {}: {error}", script.display()))
+    })?;
+    if bytes.starts_with(b"PK\x03\x04") {
+        return Ok(true);
+    }
+    if bytes.len() >= 262 && &bytes[257..262] == b"ustar" {
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 struct TempPath {

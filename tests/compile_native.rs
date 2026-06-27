@@ -30620,6 +30620,129 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_standard_mail_dns_and_closelog_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-mail-dns-closelog");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-mail-dns-closelog.php");
+    let output = root.join("standard-mail-dns-closelog-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    var_dump(mail("user@example.com", "", "", ["RandomHeader" => "Value", 5 => "invalid key"]));
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+var_dump(function_exists("mail"), function_exists("dns_get_record"), closelog());
+var_dump(STREAM_SERVER_BIND, STREAM_SERVER_LISTEN, STREAM_CLIENT_CONNECT, DNS_A, DNS_ALL);
+
+try {
+    dns_get_record("php.net", 15263480);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $auth = ["old"];
+    $additional = ["old"];
+    dns_get_record("php.net", 0, $auth, $additional, true);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $auth = ["old"];
+    $additional = ["old"];
+    dns_get_record("php.net", 15263480, $auth, $additional, true);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$auth = ["old"];
+$additional = ["old"];
+var_dump(dns_get_record("example.invalid", DNS_A, $auth, $additional));
+var_dump($auth, $additional);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TypeError: Header name cannot be numeric, 5 given\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+int(4)\n\
+int(8)\n\
+int(4)\n\
+int(1)\n\
+int(251721779)\n\
+dns_get_record(): Argument #2 ($type) must be a DNS_* constant\n\
+dns_get_record(): Argument #2 ($type) must be between 1 and 65535 when argument #5 ($raw) is true\n\
+dns_get_record(): Argument #2 ($type) must be between 1 and 65535 when argument #5 ($raw) is true\n\
+bool(false)\n\
+array(0) {\n\
+}\n\
+array(0) {\n\
+}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_mail"));
+    assert!(c_source.contains("ptn_internal_dns_get_record"));
+    assert!(c_source.contains("ptn_internal_closelog"));
+    assert!(c_source.contains("PTN_STREAM_SERVER_BIND"));
+}
+
+#[test]
+fn compile_unix_datagram_stream_socket_loopback_to_native_binary() {
+    let root = temp_dir("ptn-native-unix-datagram-stream-socket");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unix-datagram-stream-socket.php");
+    let output = root.join("unix-datagram-stream-socket-bin");
+    let socket_path = root.join("datagram.sock");
+    let php = format!(
+        "<?php\n\
+$sock = '{}';\n\
+@unlink($sock);\n\
+$server = stream_socket_server('udg://' . $sock, $errno, $errstr, STREAM_SERVER_BIND);\n\
+var_dump(is_resource($server), $errno, $errstr);\n\
+$client = stream_socket_client('udg://' . $sock);\n\
+var_dump(is_resource($client));\n\
+fwrite($client, \"ABCdef123\\n\");\n\
+var_dump(fread($server, 10));\n\
+fclose($client);\n\
+fclose($server);\n\
+@unlink($sock);\n",
+        socket_path.display()
+    );
+    fs::write(&input, php).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+int(0)\n\
+string(0) \"\"\n\
+bool(true)\n\
+string(10) \"ABCdef123\n\
+\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("SOCK_DGRAM"));
+    assert!(c_source.contains("STREAM_SERVER_BIND"));
+}
+
+#[test]
 fn compile_stream_select_null_microseconds_validation_to_native_binary() {
     let root = temp_dir("ptn-native-stream-select-null-usec");
     fs::create_dir_all(&root).unwrap();
@@ -53108,6 +53231,115 @@ try {
 }
 
 #[test]
+fn compile_dom_modern_node_document_residual_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-modern-node-document-residual-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-modern-node-document-residual-semantics.php");
+    let output = root.join("dom-modern-node-document-residual-semantics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = Dom\XMLDocument::createEmpty();
+$root = $xml->appendChild($xml->createElement('root'));
+$attr = $xml->createAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:p');
+$root->setAttributeNodeNS($attr);
+var_dump($root->attributes->length);
+var_dump($attr->namespaceURI);
+var_dump($attr->prefix);
+
+$html = Dom\HTMLDocument::createEmpty();
+try {
+    $html->createCDATASection('foo');
+} catch (DOMException $e) {
+    var_dump($e->getCode());
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $xml->createCDATASection(']]>');
+} catch (DOMException $e) {
+    var_dump($e->getCode());
+    echo $e->getMessage(), "\n";
+}
+
+$legacy = new DOMDocument();
+try {
+    $legacy->nodeValue = [];
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $legacy->nodeType += 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $legacy->xmlEncoding = null;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+$entity = new DOMEntity();
+foreach (['actualEncoding', 'encoding', 'version'] as $property) {
+    try {
+        $entity->{$property} = null;
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$document = new DOMDocument();
+$xpath = new DOMXPath($document);
+$xpath->registerNamespace('my', 'my.ns');
+$xpath->registerPHPFunctionNS('my.ns', 'include', function(): DOMElement {
+    $includedDocument = new DOMDocument();
+    $includedDocument->loadXML('<root><uaf/><node/><uaf/></root>');
+    return $includedDocument->documentElement;
+});
+$nodes = $xpath->query('my:include()/uaf');
+var_dump($nodes->length);
+var_dump($nodes->item(0)->ownerDocument->saveXML($nodes->item(0)));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "string(29) \"http://www.w3.org/2000/xmlns/\"\n",
+            "string(5) \"xmlns\"\n",
+            "int(9)\n",
+            "This operation is not supported for HTML documents\n",
+            "int(5)\n",
+            "Invalid character sequence \"]]>\" in CDATA section\n",
+            "Cannot assign array to property DOMNode::$nodeValue of type ?string\n",
+            "Cannot modify private(set) property DOMNode::$nodeType from global scope\n",
+            "Cannot modify private(set) property DOMDocument::$xmlEncoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$actualEncoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$encoding from global scope\n",
+            "Cannot modify private(set) property DOMEntity::$version from global scope\n",
+            "int(2)\n",
+            "string(6) \"<uaf/>\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_xpath_register_php_function_ns_method"));
+    assert!(c_source.contains("PTN_DOM_NOT_SUPPORTED_ERR"));
+    assert!(c_source.contains("Cannot assign array to property DOMNode::$nodeValue"));
+}
+
+#[test]
 fn compile_dom_node_document_current_red_pack_to_native_binary() {
     let root = temp_dir("ptn-native-dom-node-document-current-red-pack");
     fs::create_dir_all(&root).unwrap();
@@ -55515,6 +55747,135 @@ echo "ok\n";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_soap_emit_exception_fault_response"));
     assert!(c_source.contains("ptn_try_frame_push"));
+}
+
+#[test]
+fn compile_soap_wsdl_rpc_encoded_multipart_fault_detail_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-rpc-encoded-multipart-fault");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-rpc-encoded-multipart-fault.php");
+    let output = root.join("soap-wsdl-rpc-encoded-multipart-fault-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/rpc-multipart-fault.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="RpcFault"
+  targetNamespace="urn:rpc-wsdl"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="urn:rpc-wsdl"
+  xmlns:t="urn:rpc-types">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:rpc-types">
+      <complexType name="Struct">
+        <all>
+          <element name="varString" type="xsd:string"/>
+          <element name="varInt" type="xsd:int"/>
+        </all>
+      </complexType>
+    </schema>
+  </types>
+  <message name="echoMultiRequest">
+    <part name="whichFault" type="xsd:int"/>
+    <part name="payload" type="t:Struct"/>
+    <part name="label" type="xsd:string"/>
+  </message>
+  <message name="echoMultiResponse"/>
+  <message name="StructFaultMessage">
+    <part name="detailPart" type="t:Struct"/>
+  </message>
+  <portType name="RpcFaultPortType">
+    <operation name="echoMulti" parameterOrder="whichFault payload label">
+      <input message="tns:echoMultiRequest"/>
+      <output message="tns:echoMultiResponse"/>
+      <fault name="StructFault" message="tns:StructFaultMessage"/>
+    </operation>
+  </portType>
+  <binding name="RpcFaultBinding" type="tns:RpcFaultPortType">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="rpc"/>
+    <operation name="echoMulti">
+      <input><soap:body use="encoded" namespace="urn:rpc-wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="urn:rpc-wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+      <fault name="StructFault"><soap:fault name="StructFault" use="encoded" namespace="urn:rpc-wsdl" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></fault>
+      <soap:operation soapAction="urn:rpc-wsdl#echoMulti"/>
+    </operation>
+  </binding>
+  <service name="RpcFaultService">
+    <port name="RpcFaultPort" binding="tns:RpcFaultBinding"><soap:address location="test://rpc"/></port>
+  </service>
+</definitions>
+WSDL);
+
+class RpcService {
+    function echoMulti($whichFault, $payload, $label) {
+        return new SoapFault(
+            "Server",
+            "boom:$whichFault:$label:$payload->varString:$payload->varInt",
+            null,
+            $payload,
+            "StructFault"
+        );
+    }
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl);
+        $this->server->setClass(RpcService::class);
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        echo $request;
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_clean();
+        echo $response;
+        return $response;
+    }
+}
+
+$payload = (object)["varString" => "alpha", "varInt" => 42];
+$client = new LocalSoapClient($wsdl, ["trace" => 1, "exceptions" => 0]);
+$client->echoMulti(7, $payload, "tail");
+echo "done\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<whichFault xsi:type=\"xsd:int\">7</whichFault><payload xsi:type=\"ns2:Struct\"><varString xsi:type=\"xsd:string\">alpha</varString><varInt xsi:type=\"xsd:int\">42</varInt></payload><label xsi:type=\"xsd:string\">tail</label>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<faultstring>boom:7:tail:alpha:42</faultstring>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<detail><ns2:detailPart xsi:type=\"ns1:Struct\"><varString xsi:type=\"xsd:string\">alpha</varString><varInt xsi:type=\"xsd:int\">42</varInt></ns2:detailPart></detail>"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("done\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_build_rpc_encoded_request"));
+    assert!(c_source.contains("ptn_soap_build_fault_detail_xml"));
 }
 
 #[test]

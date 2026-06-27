@@ -3331,6 +3331,86 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_SHUT_RDWR);
         return 1;
     }
+    if (strcmp(name, "STREAM_CLIENT_PERSISTENT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_PERSISTENT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CLIENT_ASYNC_CONNECT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_ASYNC_CONNECT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_CLIENT_CONNECT") == 0) {
+        *out = ptn_int(PTN_STREAM_CLIENT_CONNECT);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_SERVER_BIND") == 0) {
+        *out = ptn_int(PTN_STREAM_SERVER_BIND);
+        return 1;
+    }
+    if (strcmp(name, "STREAM_SERVER_LISTEN") == 0) {
+        *out = ptn_int(PTN_STREAM_SERVER_LISTEN);
+        return 1;
+    }
+    if (strcmp(name, "DNS_A") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "DNS_NS") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "DNS_CNAME") == 0) {
+        *out = ptn_int(16);
+        return 1;
+    }
+    if (strcmp(name, "DNS_SOA") == 0) {
+        *out = ptn_int(32);
+        return 1;
+    }
+    if (strcmp(name, "DNS_PTR") == 0) {
+        *out = ptn_int(2048);
+        return 1;
+    }
+    if (strcmp(name, "DNS_HINFO") == 0) {
+        *out = ptn_int(4096);
+        return 1;
+    }
+    if (strcmp(name, "DNS_CAA") == 0) {
+        *out = ptn_int(8192);
+        return 1;
+    }
+    if (strcmp(name, "DNS_MX") == 0) {
+        *out = ptn_int(16384);
+        return 1;
+    }
+    if (strcmp(name, "DNS_TXT") == 0) {
+        *out = ptn_int(32768);
+        return 1;
+    }
+    if (strcmp(name, "DNS_A6") == 0) {
+        *out = ptn_int(16777216);
+        return 1;
+    }
+    if (strcmp(name, "DNS_SRV") == 0) {
+        *out = ptn_int(33554432);
+        return 1;
+    }
+    if (strcmp(name, "DNS_NAPTR") == 0) {
+        *out = ptn_int(67108864);
+        return 1;
+    }
+    if (strcmp(name, "DNS_AAAA") == 0) {
+        *out = ptn_int(134217728);
+        return 1;
+    }
+    if (strcmp(name, "DNS_ANY") == 0) {
+        *out = ptn_int(268435456);
+        return 1;
+    }
+    if (strcmp(name, "DNS_ALL") == 0) {
+        *out = ptn_int(251721779);
+        return 1;
+    }
     if (strcmp(name, "STDIN") == 0) {
         *out = ptn_standard_stream_resource_value(1);
         return 1;

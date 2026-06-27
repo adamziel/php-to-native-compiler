@@ -2440,6 +2440,26 @@ ptn_phpt_first_unsupported_phar_archive_surface() {
     return "${ptn_status[1]}"
 }
 
+ptn_phpt_supported_phar_archive_residual_row() {
+    case "$1" in
+        ext/phar/tests/zip/frontcontroller20.phar.phpt|\
+        ext/phar/tests/tar/phar_stub_error.phpt|\
+        ext/phar/tests/zip/rmdir.phpt|\
+        ext/phar/tests/zip/phar_oo_compressallgz.phpt|\
+        ext/phar/tests/tar/phar_convert_phar4.phpt|\
+        ext/phar/tests/zip/rename.phpt|\
+        ext/phar/tests/tar/rmdir.phpt|\
+        ext/phar/tests/tar/tar_nohash.phpt|\
+        ext/phar/tests/tar/phar_setdefaultstub.phpt|\
+        ext/phar/tests/tar/links3.phpt|\
+        ext/phar/tests/zip/phar_stub_error.phpt|\
+        ext/phar/tests/tar/delete_in_phar_b.phpt)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 ptn_phpt_first_unsupported_zip_archive_surface() {
     local rel=$1
     local path=$2
@@ -2626,6 +2646,11 @@ ptn_phpt_classify_row() {
 
     if ptn_phpt_has_resource_limit_expectation "$path"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
+        return 0
+    fi
+
+    if ptn_phpt_supported_phar_archive_residual_row "$rel"; then
+        printf 'runnable\timplemented PHAR tar/zip archive residual row pack\n'
         return 0
     fi
 
