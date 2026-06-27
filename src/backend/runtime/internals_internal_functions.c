@@ -5556,6 +5556,8 @@ static PTN_UNUSED PtnValue ptn_call_function_named(PtnRuntime *runtime, const ch
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_callable_named(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, const char *const *arg_names, size_t line, int from_call_user_func);
 static PTN_UNUSED PtnValue ptn_call_method(PtnRuntime *runtime, PtnValue receiver, const char *name, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);
+static PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len);
 static PtnFunctionMetadata ptn_find_function_metadata(const char *name);
 static void ptn_throw_internal_argument_count_error(PtnRuntime *runtime, const char *name, const char *mode, size_t expected, size_t actual, size_t line, const PtnValue *args);
 static void ptn_throw_internal_argument_count_error_with_actual(PtnRuntime *runtime, const char *name, const char *mode, size_t expected, size_t actual, size_t trace_argc, size_t line, const PtnValue *args);
@@ -20612,6 +20614,20 @@ static PtnValue ptn_filter_apply_scalar(
     if (filter_id == PTN_FILTER_CALLBACK) {
         if (!options->has_callback || !ptn_callable_is_valid(runtime, options->callback, 0)) {
             ptn_throw_exception(runtime, "TypeError", "filter_var(): Option must be a valid callback");
+            return ptn_null();
+        }
+        if (ptn_callable_argument_by_ref(runtime, options->callback, 0) == 1) {
+            char parameter_fallback[64];
+            const char *parameter_name = ptn_callable_argument_parameter_name(
+                runtime,
+                options->callback,
+                0,
+                parameter_fallback,
+                sizeof(parameter_fallback)
+            );
+            char *callable_name = ptn_callable_output_name(options->callback);
+            ptn_emit_by_reference_argument_warning(runtime, callable_name, 1, parameter_name, line);
+            free(callable_name);
             return ptn_null();
         }
         PtnValue callback_arg = ptn_value_clone_deref(value);
