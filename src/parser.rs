@@ -9022,6 +9022,9 @@ impl Parser<'_> {
                     self.parse_interpolation_expr_fragment(&expr, span)?,
                 )))
             }
+            TokenStringPart::ComplexExpression(expr) => Ok(StringPart::ComplexExpression(
+                Box::new(self.parse_interpolation_expr_fragment(&expr, span)?),
+            )),
             TokenStringPart::PropertyFetch { variable, property } => {
                 Ok(StringPart::PropertyFetch { variable, property })
             }
@@ -12816,7 +12819,8 @@ fn collect_arrow_captures_from_string_part(
             );
         }
         StringPart::LegacyDollarBraceExpression(expr)
-        | StringPart::DynamicVariableExpression(expr) => {
+        | StringPart::DynamicVariableExpression(expr)
+        | StringPart::ComplexExpression(expr) => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
         StringPart::PropertyFetch { variable, .. } | StringPart::PropertyChain { variable, .. } => {
@@ -24190,10 +24194,13 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "intltz_get_equivalent_id"
             | "intltz_get_offset"
             | "intltz_get_unknown"
+            | "intltz_get_region"
+            | "intltz_get_tz_data_version"
             | "intltz_to_date_time_zone"
             | "locale_accept_from_http"
             | "locale_compose"
             | "locale_lookup"
+            | "locale_parse"
             | "msgfmt_create"
             | "msgfmt_format"
             | "msgfmt_format_message"
@@ -28621,9 +28628,8 @@ fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> 
                     .is_some_and(|property| property == property_name)
         }
         StringPart::LegacyDollarBraceExpression(expr)
-        | StringPart::DynamicVariableExpression(expr) => {
-            expr_uses_this_property(expr, property_name)
-        }
+        | StringPart::DynamicVariableExpression(expr)
+        | StringPart::ComplexExpression(expr) => expr_uses_this_property(expr, property_name),
         _ => false,
     })
 }

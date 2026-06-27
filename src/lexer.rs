@@ -222,6 +222,7 @@ pub enum StringPart {
     LegacyDollarBraceVariable(String),
     LegacyDollarBraceExpression(String),
     DynamicVariableExpression(String),
+    ComplexExpression(String),
     PropertyFetch {
         variable: String,
         property: String,
@@ -1103,6 +1104,7 @@ impl<'a> Lexer<'a> {
         let start = self.current_span(1);
         self.bump_char();
         debug_assert_eq!(self.peek_char(), Some('$'));
+        let expr_start = self.cursor;
         self.bump_char();
         if matches!(self.peek_char(), Some('{')) {
             self.bump_char();
@@ -1135,18 +1137,12 @@ impl<'a> Lexer<'a> {
                         self.bump_char();
                         self.skip_interpolation_whitespace();
                         if !matches!(self.peek_char(), Some(')')) {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_char_span()),
-                            ));
+                            return self.lex_complex_braced_interpolation_part(expr_start, start);
                         }
                         self.bump_char();
                         self.skip_interpolation_whitespace();
                         if !matches!(self.peek_char(), Some('}')) {
-                            return Err(Diagnostic::new(
-                                "complex string interpolation is unsupported",
-                                Some(self.current_char_span()),
-                            ));
+                            return self.lex_complex_braced_interpolation_part(expr_start, start);
                         }
                         self.bump_char();
                         return Ok(StringPart::MethodCall {
@@ -1166,10 +1162,7 @@ impl<'a> Lexer<'a> {
                     }
                     self.skip_interpolation_whitespace();
                     if !matches!(self.peek_char(), Some('}')) {
-                        return Err(Diagnostic::new(
-                            "complex string interpolation is unsupported",
-                            Some(self.current_char_span()),
-                        ));
+                        return self.lex_complex_braced_interpolation_part(expr_start, start);
                     }
                     self.bump_char();
                     if properties.len() == 1 {
@@ -1229,6 +1222,16 @@ impl<'a> Lexer<'a> {
         } else {
             Ok(StringPart::ArrayAccess { array, indices })
         }
+    }
+
+    fn lex_complex_braced_interpolation_part(
+        &mut self,
+        expr_start: usize,
+        span: SourceSpan,
+    ) -> Result<StringPart> {
+        self.cursor = expr_start;
+        let expr = self.read_balanced_interpolation_expression(span)?;
+        Ok(StringPart::ComplexExpression(expr))
     }
 
     fn lex_unbraced_interpolation_indices(&mut self) -> Result<Vec<StringInterpolationIndex>> {

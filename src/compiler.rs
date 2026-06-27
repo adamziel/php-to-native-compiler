@@ -2117,7 +2117,8 @@ fn bounded_interpolated_string_templates(
             | StringPart::MethodCall { .. }
             | StringPart::ArrayAccess { .. }
             | StringPart::LegacyDollarBraceExpression(_)
-            | StringPart::DynamicVariableExpression(_) => return None,
+            | StringPart::DynamicVariableExpression(_)
+            | StringPart::ComplexExpression(_) => return None,
         }
     }
     Some(templates)
@@ -2322,7 +2323,8 @@ fn bounded_interpolated_string_paths(
             | StringPart::MethodCall { .. }
             | StringPart::ArrayAccess { .. }
             | StringPart::LegacyDollarBraceExpression(_)
-            | StringPart::DynamicVariableExpression(_) => return None,
+            | StringPart::DynamicVariableExpression(_)
+            | StringPart::ComplexExpression(_) => return None,
         }
     }
     Some(paths)

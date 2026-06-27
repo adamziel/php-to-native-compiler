@@ -2569,6 +2569,197 @@ static PTN_UNUSED void ptn_compact_intl_append_number(
     }
 }
 
+static PTN_UNUSED int ptn_compact_intl_default_fraction_precision(double number) {
+    if (!isfinite(number)) {
+        return 0;
+    }
+    double magnitude = fabs(number);
+    double fraction = magnitude - floor(magnitude);
+    if (fraction <= 0.000000001) {
+        return 0;
+    }
+    double scale = 10.0;
+    for (int precision = 1; precision <= 3; precision++) {
+        double scaled = fraction * scale;
+        if (fabs(scaled - floor(scaled + 0.5)) <= 0.0000001) {
+            return precision;
+        }
+        scale *= 10.0;
+    }
+    return 3;
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_grouped_int(PtnStringBuffer *output, int64_t value) {
+    uint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + 1u : (uint64_t)value;
+    char digits[32];
+    int written = snprintf(digits, sizeof(digits), "%llu", (unsigned long long)magnitude);
+    if (written < 0 || (size_t)written >= sizeof(digits)) {
+        ptn_abort_out_of_memory();
+    }
+    if (value < 0) {
+        ptn_string_buffer_append_char(output, '-');
+    }
+    ptn_compact_intl_append_grouped_digits(output, digits, ",");
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_word(PtnStringBuffer *output, const char *word, int *emitted) {
+    if (*emitted) {
+        ptn_string_buffer_append_char(output, ' ');
+    }
+    ptn_string_buffer_append(output, word);
+    *emitted = 1;
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_under_1000_words(PtnStringBuffer *output, int number, int *emitted) {
+    static const char *const small[] = {
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen"
+    };
+    static const char *const tens[] = {
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"
+    };
+    if (number >= 100) {
+        ptn_compact_intl_append_word(output, small[number / 100], emitted);
+        ptn_compact_intl_append_word(output, "hundred", emitted);
+        number %= 100;
+    }
+    if (number >= 20) {
+        int ten = number / 10;
+        int one = number % 10;
+        if (one == 0) {
+            ptn_compact_intl_append_word(output, tens[ten], emitted);
+        } else {
+            char compound[32];
+            int written = snprintf(compound, sizeof(compound), "%s-%s", tens[ten], small[one]);
+            if (written < 0 || (size_t)written >= sizeof(compound)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_compact_intl_append_word(output, compound, emitted);
+        }
+    } else if (number > 0 || !*emitted) {
+        ptn_compact_intl_append_word(output, small[number], emitted);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_spellout(PtnStringBuffer *output, double number) {
+    static const int64_t scales[] = { 1000000000LL, 1000000LL, 1000LL };
+    static const char *const scale_names[] = { "billion", "million", "thousand" };
+    if (number < 0) {
+        ptn_string_buffer_append(output, "minus ");
+        number = -number;
+    }
+    int64_t whole = (int64_t)floor(number);
+    int emitted = 0;
+    for (size_t i = 0; i < sizeof(scales) / sizeof(scales[0]); i++) {
+        if (whole >= scales[i]) {
+            int chunk = (int)(whole / scales[i]);
+            ptn_compact_intl_append_under_1000_words(output, chunk, &emitted);
+            ptn_compact_intl_append_word(output, scale_names[i], &emitted);
+            whole %= scales[i];
+        }
+    }
+    if (whole > 0 || !emitted) {
+        ptn_compact_intl_append_under_1000_words(output, (int)whole, &emitted);
+    }
+    double fraction = fabs(number) - floor(fabs(number));
+    int first_digit = (int)floor(fraction * 10.0 + 0.5);
+    if (first_digit > 0 && first_digit < 10) {
+        int fraction_emitted = 0;
+        ptn_string_buffer_append(output, " point ");
+        ptn_compact_intl_append_under_1000_words(output, first_digit, &fraction_emitted);
+    }
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_ordinal(PtnStringBuffer *output, double number) {
+    int64_t rounded = (int64_t)floor(number + 0.5);
+    ptn_compact_intl_append_grouped_int(output, rounded);
+    int64_t mod100 = llabs(rounded) % 100;
+    int64_t mod10 = llabs(rounded) % 10;
+    const char *suffix = "th";
+    if (mod100 < 11 || mod100 > 13) {
+        if (mod10 == 1) suffix = "st";
+        else if (mod10 == 2) suffix = "nd";
+        else if (mod10 == 3) suffix = "rd";
+    }
+    ptn_string_buffer_append(output, suffix);
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_duration(PtnStringBuffer *output, double number) {
+    int64_t total = (int64_t)floor(number + 0.5);
+    int64_t hours = total / 3600;
+    int64_t minutes = (total / 60) % 60;
+    int64_t seconds = total % 60;
+    ptn_compact_intl_append_grouped_int(output, hours);
+    ptn_string_buffer_append_format(output, ":%02lld:%02lld", (long long)minutes, (long long)seconds);
+}
+
+static PTN_UNUSED const char *ptn_compact_intl_month_name(int month) {
+    static const char *const names[] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    if (month < 1 || month > 12) {
+        month = 1;
+    }
+    return names[month - 1];
+}
+
+static PTN_UNUSED void ptn_compact_intl_append_date_or_time(
+    PtnStringBuffer *output,
+    double number,
+    const char *type,
+    const char *style
+) {
+    int64_t millis = (int64_t)floor(number * 1000.0 + 0.5);
+    time_t seconds_value = (time_t)(millis / 1000);
+    int millisecond = (int)(millis % 1000);
+    if (millisecond < 0) {
+        millisecond += 1000;
+        seconds_value -= 1;
+    }
+    struct tm *parts = gmtime(&seconds_value);
+    if (parts == NULL) {
+        return;
+    }
+    int year = parts->tm_year + 1900;
+    int month = parts->tm_mon + 1;
+    int day = parts->tm_mday;
+    int hour = parts->tm_hour;
+    int minute = parts->tm_min;
+    int second = parts->tm_sec;
+    if (style != NULL && strstr(style, "yyyy-MM-dd") != NULL) {
+        ptn_string_buffer_append_format(
+            output,
+            "%04d-%02d-%02d AD at %02d:%02d:%02d.%03d GMT",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            millisecond
+        );
+        return;
+    }
+    if (ptn_ascii_case_equal(type, "date")) {
+        ptn_string_buffer_append_format(output, "%s %d, %d", ptn_compact_intl_month_name(month), day, year);
+        return;
+    }
+    int display_hour = hour % 12;
+    if (display_hour == 0) {
+        display_hour = 12;
+    }
+    ptn_string_buffer_append_format(
+        output,
+        "%d:%02d:%02d\xE2\x80\xAF%s",
+        display_hour,
+        minute,
+        second,
+        hour >= 12 ? "PM" : "AM"
+    );
+}
+
 static PTN_UNUSED void ptn_compact_intl_append_placeholder(
     PtnRuntime *runtime,
     PtnStringBuffer *output,
@@ -2613,10 +2804,28 @@ static PTN_UNUSED void ptn_compact_intl_append_placeholder(
     if (ptn_ascii_case_equal(type, "number")) {
         if (style != NULL && ptn_ascii_case_equal(style, "integer")) {
             ptn_compact_intl_append_number(output, floor(number), 0, locale);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "currency")) {
+            ptn_string_buffer_append_char(output, '$');
+            ptn_compact_intl_append_number(output, number, 2, locale);
+        } else if (style != NULL && ptn_ascii_case_equal(style, "percent")) {
+            ptn_compact_intl_append_number(output, number * 100.0, 0, locale);
+            ptn_string_buffer_append_char(output, '%');
         } else {
-            int precision = fabs(number - floor(number)) > 0.0000001 ? 3 : 0;
-            ptn_compact_intl_append_number(output, number, precision, locale);
+            ptn_compact_intl_append_number(
+                output,
+                number,
+                ptn_compact_intl_default_fraction_precision(number),
+                locale
+            );
         }
+    } else if (ptn_ascii_case_equal(type, "date") || ptn_ascii_case_equal(type, "time")) {
+        ptn_compact_intl_append_date_or_time(output, number, type, style);
+    } else if (ptn_ascii_case_equal(type, "spellout")) {
+        ptn_compact_intl_append_spellout(output, number);
+    } else if (ptn_ascii_case_equal(type, "ordinal")) {
+        ptn_compact_intl_append_ordinal(output, number);
+    } else if (ptn_ascii_case_equal(type, "duration")) {
+        ptn_compact_intl_append_duration(output, number);
     } else {
         ptn_compact_intl_append_string_value(runtime, output, value, line);
     }
