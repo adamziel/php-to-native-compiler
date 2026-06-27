@@ -1129,6 +1129,14 @@ ptn_phpt_unsupported_ini_blocker() {
 ptn_phpt_has_external_service_harness() {
     local path=$1
 
+    if grep -Eiq 'stream_socket_server[[:space:]]*\(.*tcp://127\.0\.0\.1:' "$path" &&
+        grep -Eiq '(fsockopen|stream_socket_client)[[:space:]]*\(.*tcp://127\.0\.0\.1:' "$path" &&
+        ! grep -Eiq \
+            'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|::1' \
+            "$path"; then
+        return 1
+    fi
+
     grep -Eiq \
         'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
         "$path"
@@ -2347,8 +2355,8 @@ ptn_phpt_first_unsupported_internal_surface() {
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])(stream_wrapper_(register|unregister|restore)|stream_register_wrapper|stream_filter_register)[[:space:]]*\(/) {
-                print "unsupported-internal\trequires user stream wrapper registration and stream callback dispatch, outside PTN modeled stream/resource runtime"
+            if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(unregister|restore)[[:space:]]*\(/) {
+                print "unsupported-internal\trequires user stream wrapper lifecycle restore/unregister semantics beyond PTN modeled stream/resource runtime"
                 found = 1
                 exit
             }

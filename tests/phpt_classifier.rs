@@ -737,18 +737,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "unsupported-internal-call-binding\t",
             "requires named-argument binding for modeled array internal calls",
         ),
-        (
-            "user stream wrapper alias",
-            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
-        (
-            "user stream filter",
-            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
-            "unsupported-internal\t",
-            "requires user stream wrapper registration and stream callback dispatch",
-        ),
     ];
 
     for (name, phpt, category, reason) in cases {
@@ -762,6 +750,25 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_selects_user_stream_wrapper_and_filter_registration() {
+    let wrapper = classify(
+        "--TEST--\nstream wrapper\n--FILE--\n<?php\nclass TestWrapper { public $context; function stream_open($path, $mode, $options, &$opened_path) { return true; } }\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+    );
+    assert_eq!(
+        wrapper.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let filter = classify(
+        "--TEST--\nstream filter\n--FILE--\n<?php\nclass SampleFilter extends php_user_filter { public function filter($in, $out, &$consumed, bool $closing): int { return PSFS_PASS_ON; } }\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+    );
+    assert_eq!(
+        filter.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]
@@ -2517,6 +2524,15 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     assert!(
         pdo_mysql_service.starts_with("external-service\t"),
         "{pdo_mysql_service:?}"
+    );
+
+    let loopback_socket = classify_at_relative_path(
+        "--TEST--\nself contained loopback socket\n--FILE--\n<?php\n$port = 12345;\n$server = stream_socket_server(\"tcp://127.0.0.1:$port\");\n$client = fsockopen(\"tcp://127.0.0.1:$port\");\n--EXPECT--\n",
+        "ext/standard/tests/streams/loopback_socket.phpt",
+    );
+    assert_eq!(
+        loopback_socket.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 
     let zip_archive_runtime = classify_at_relative_path(
