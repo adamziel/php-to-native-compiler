@@ -47800,10 +47800,12 @@ var_dump(Locale::getDisplayLanguage('uk-ua', 'fr'));\n\
 var_dump(locale_get_display_language('sr-Cyrl-RS', 'en'));\n\
 var_dump(Locale::getRegion('zh-Hans-CN'));\n\
 var_dump(locale_get_region('sr_Cyrl_RS'));\n\
+var_dump(Locale::getRegion('zh-min'));\n\
 var_dump(Locale::filterMatches('sl_IT_nedis-a-kirti-x-xyz', 'sl_IT_Nedis', true));\n\
 var_dump(locale_filter_matches('art-lojban', 'jbo', true));\n\
 var_dump(Locale::lookup($tags, 'de-de', false, 'en_US'));\n\
 var_dump(locale_lookup($tags, 'de-de', true, 'en_US'));\n\
+var_dump(locale_lookup($tags, 'sl_IT_Nedis', true, 'en_US'));\n\
 echo new ReflectionFunction('locale_get_display_language');\n",
     )
     .unwrap();
@@ -47820,10 +47822,12 @@ echo new ReflectionFunction('locale_get_display_language');\n",
         "string(7) \"Serbian\"\n",
         "string(2) \"CN\"\n",
         "string(2) \"RS\"\n",
+        "string(0) \"\"\n",
         "bool(true)\n",
         "bool(true)\n",
         "string(5) \"de-DE\"\n",
         "string(5) \"de_de\"\n",
+        "string(5) \"sl_it\"\n",
     )));
     assert!(stdout.contains("Function [ <internal:intl> function locale_get_display_language ]"));
     assert!(stdout.contains("Parameter #0 [ <required> string $locale ]"));

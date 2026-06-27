@@ -74713,13 +74713,35 @@ static PtnValue ptn_internal_locale_lookup_named(
     ptn_string_operand_free(locale);
     for (size_t want = range.len; want > 0; want--) {
         for (size_t i = 0; i < array->len; i++) {
-            char *candidate = ptn_intl_value_string_copy(array->entries[i].value);
+            PtnStringOperand candidate_operand = ptn_value_to_string_operand(array->entries[i].value);
+            if (ptn_internal_locale_reject_null_byte(
+                    runtime,
+                    function_name,
+                    2,
+                    "locale",
+                    candidate_operand
+                )) {
+                ptn_string_operand_free(candidate_operand);
+                ptn_intl_locale_parts_free(&range);
+                if (has_default) {
+                    ptn_string_operand_free(default_locale);
+                }
+                return ptn_null();
+            }
+            char *candidate = ptn_duplicate_string_len(candidate_operand.data, candidate_operand.len);
             char *candidate_source = canonicalize
-                ? ptn_intl_locale_canonicalize_bytes(candidate, strlen(candidate))
-                : ptn_duplicate_string(candidate);
+                ? ptn_intl_locale_canonicalize_bytes(candidate_operand.data, candidate_operand.len)
+                : ptn_duplicate_string_len(candidate_operand.data, candidate_operand.len);
+            ptn_string_operand_free(candidate_operand);
+            int candidate_has_extension = canonicalize && strchr(candidate_source, '@') != NULL;
             PtnIntlLocaleParts candidate_parts = ptn_intl_locale_parts_from_string(candidate_source);
             free(candidate_source);
             if (ptn_intl_locale_parts_equal_prefix(&candidate_parts, &range, want)) {
+                if (candidate_has_extension && want == candidate_parts.len && want > 2) {
+                    ptn_intl_locale_parts_free(&candidate_parts);
+                    free(candidate);
+                    continue;
+                }
                 char *canonical_result = canonicalize
                     ? ptn_intl_locale_join_prefix(&range, want)
                     : NULL;
@@ -74919,6 +74941,15 @@ static char *ptn_intl_locale_region_copy(PtnStringOperand locale) {
         i++;
     }
     size_t token_len = i - start;
+    if (token_len == 3 && ptn_intl_locale_token_is_alpha(locale.data + start, token_len)) {
+        size_t next = i;
+        while (next < len && (locale.data[next] == '-' || locale.data[next] == '_')) {
+            next++;
+        }
+        if (next >= len || locale.data[next] == '@' || locale.data[next] == '.') {
+            return ptn_duplicate_string("");
+        }
+    }
     if (token_len == 4 && ptn_intl_locale_token_is_alpha(locale.data + start, token_len)) {
         while (i < len && (locale.data[i] == '-' || locale.data[i] == '_')) {
             i++;
