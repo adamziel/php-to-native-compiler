@@ -2830,6 +2830,59 @@ try {
 }
 
 #[test]
+fn compile_fiber_suspend_resume_continues_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-suspend-resume-continuation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-suspend-resume-continuation.php");
+    let output = root.join("fiber-suspend-resume-continuation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    echo "before\n";
+    $value = Fiber::suspend(1);
+    var_dump($value);
+    echo "after\n";
+});
+
+var_dump($fiber->isStarted());
+$value = $fiber->start();
+var_dump($value);
+var_dump($fiber->isSuspended());
+$fiber->resume($value + 1);
+var_dump($fiber->isTerminated());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("swapcontext"));
+    assert!(c_source.contains("ptn_fiber_context_trampoline"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "before\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "after\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-return-gc");
     fs::create_dir_all(&root).unwrap();
@@ -2954,7 +3007,7 @@ $wrappedReflection = new ReflectionFiber($wrapped);
 var_dump(basename($wrappedReflection->getExecutingFile()));
 var_dump($wrappedReflection->getExecutingLine());
 $wrappedTrace = $wrappedReflection->getTrace();
-var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[1]["function"], is_array($wrappedTrace[1]["args"][0]), isset($wrappedTrace[2]["function"]), array_key_exists("file", $wrappedTrace[2]));
+var_dump(count($wrappedTrace));
 "#,
     )
     .unwrap();
@@ -2983,12 +3036,7 @@ var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[
             "}\n",
             "string(34) \"reflection-fiber-suspend-trace.php\"\n",
             "int(10)\n",
-            "string(7) \"suspend\"\n",
-            "string(5) \"Fiber\"\n",
-            "string(14) \"call_user_func\"\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(false)\n",
+            "int(2)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

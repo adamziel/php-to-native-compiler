@@ -45,6 +45,7 @@
 #include <sys/un.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <ucontext.h>
 #include <utime.h>
 #include <unistd.h>
 #endif
