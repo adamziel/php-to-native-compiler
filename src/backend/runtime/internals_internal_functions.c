@@ -29429,6 +29429,54 @@ static PtnValue ptn_internal_headers_sent(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(headers_sent);
 }
 
+static PtnValue ptn_internal_headers_list(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_internal_connection_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_error_get_last(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || !root->last_error_set) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("type"), ptn_int(root->last_error_type));
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("message"),
+        ptn_owned_string(ptn_duplicate_string(root->last_error_message == NULL ? "" : root->last_error_message))
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("file"),
+        ptn_owned_string(ptn_duplicate_string(root->last_error_file == NULL ? "" : root->last_error_file))
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("line"), ptn_int((int64_t)root->last_error_line));
+    return result;
+}
+
+static PtnValue ptn_internal_error_clear_last(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_runtime_clear_last_error(runtime);
+    return ptn_null();
+}
+
 /* PTN_URI_INTERNAL_HELPERS_START */
 typedef struct {
     char *scheme;
@@ -105668,8 +105716,8 @@ static PtnValue ptn_internal_uniqid(PtnRuntime *runtime, size_t argc, const PtnV
         int entropy_written = snprintf(
             entropy,
             sizeof(entropy),
-            ".%010llu",
-            (unsigned long long)(ptn_uniqid_counter % 10000000000ull)
+            ".%09llu",
+            (unsigned long long)(ptn_uniqid_counter % 1000000000ull)
         );
         if (entropy_written < 0 || (size_t)entropy_written >= sizeof(entropy)) {
             ptn_abort_out_of_memory();
@@ -106660,6 +106708,17 @@ static PtnValue ptn_internal_header(PtnRuntime *runtime, size_t argc, const PtnV
     }
     if (argc >= 3) {
         (void)ptn_internal_expect_integer_arg(runtime, "header", 3, "response_code", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->output_has_started) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "Cannot modify header information - headers already sent by (output started at ptn:0)",
+            line
+        );
     }
     return ptn_null();
 }
@@ -158908,6 +158967,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
         { "collator_sort_with_sort_keys", 2, 2, ptn_internal_collator_sort_with_sort_keys },
         { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
+        { "connection_status", 0, 0, ptn_internal_connection_status },
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
@@ -158997,6 +159057,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "enum_exists", 1, 2, ptn_internal_enum_exists },
         { "end", 1, 1, ptn_internal_end },
         { "error_log", 1, 4, ptn_internal_error_log },
+        { "error_clear_last", 0, 0, ptn_internal_error_clear_last },
+        { "error_get_last", 0, 0, ptn_internal_error_get_last },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
         { "escapeshellcmd", 1, 1, ptn_internal_escapeshellcmd },
@@ -159176,6 +159238,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
         { "header", 1, 3, ptn_internal_header },
         { "header_register_callback", 1, 1, ptn_internal_header_register_callback },
+        { "headers_list", 0, 0, ptn_internal_headers_list },
         { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "headers_sent", 0, 2, ptn_internal_headers_sent },
         { "hypot", 2, 2, ptn_internal_hypot },

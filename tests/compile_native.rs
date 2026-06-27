@@ -98320,6 +98320,126 @@ var_dump(new C() instanceof C);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_standard_connection_header_and_last_error_state_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-output-error-config");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-output-error-config.php");
+    let output = root.join("standard-output-error-config-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(connection_status() == CONNECTION_NORMAL);
+var_dump(headers_list());
+var_dump(header("HTTP 1.0", true, 200));
+var_dump(error_get_last());
+error_clear_last();
+var_dump(error_get_last());
+@$a = $b;
+var_dump(error_get_last());
+error_clear_last();
+var_dump(error_get_last());
+echo "Done\n";
+var_dump(header(""));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.starts_with("bool(true)\narray(0) {\n}\n\nWarning: "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Cannot modify header information - headers already sent by (output started at ptn:0)"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(84) \"Cannot modify header information - headers already sent by (output started at ptn:0)\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("}\nNULL\narray(4) {\n"), "{stdout}");
+    assert!(
+        stdout.contains("string(21) \"Undefined variable $b\""),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Done\n\nWarning: Cannot modify header information - headers already sent by (output started at ptn:0) in ptn on line 13\nNULL\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uniqid_more_entropy_uses_php_width_to_native_binary() {
+    let root = temp_dir("ptn-native-uniqid-more-entropy-width");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uniqid-more-entropy-width.php");
+    let output = root.join("uniqid-more-entropy-width-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(strlen(uniqid('', true))); var_dump(strlen(uniqid('99999', true)));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(23)\nint(28)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_compact_var_export_preserves_integral_float_spelling_to_native_binary() {
+    let root = temp_dir("ptn-native-compact-var-export-integral-floats");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-var-export-integral-floats.php");
+    let output = root.join("compact-var-export-integral-floats-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_export(1.0);
+echo PHP_EOL;
+var_export(123.0);
+echo PHP_EOL;
+var_export(-1.0);
+echo PHP_EOL;
+var_export(-123.0);
+echo PHP_EOL;
+var_export(0.0);
+echo PHP_EOL;
+var_export(-0.0);
+echo PHP_EOL;
+var_export(10000000000000000.0);
+echo PHP_EOL;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1.0\n123.0\n-1.0\n-123.0\n0.0\n-0.0\n10000000000000000.0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

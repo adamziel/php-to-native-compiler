@@ -1830,6 +1830,11 @@ struct PtnRuntime {
     size_t strtok_len;
     size_t strtok_offset;
     int strtok_has_state;
+    int last_error_set;
+    int64_t last_error_type;
+    char *last_error_message;
+    char *last_error_file;
+    size_t last_error_line;
     int json_last_error;
     size_t json_last_error_line;
     size_t json_last_error_column;
@@ -3804,12 +3809,19 @@ static PTN_UNUSED void ptn_format_runtime_var_export_float(
     char *buffer,
     size_t buffer_size
 ) {
-    ptn_format_scalar_float_with_precision(
-        value,
-        ptn_runtime_serialize_precision(runtime),
-        buffer,
-        buffer_size
-    );
+    if (isfinite(value) && trunc(value) == value && fabs(value) < 1.0e17) {
+        int written = snprintf(buffer, buffer_size, "%.0f", value);
+        if (written < 0 || (size_t)written >= buffer_size) {
+            ptn_abort_out_of_memory();
+        }
+    } else {
+        ptn_format_scalar_float_with_precision(
+            value,
+            ptn_runtime_serialize_precision(runtime),
+            buffer,
+            buffer_size
+        );
+    }
     if (isfinite(value) && !ptn_formatted_float_has_decimal_or_exponent(buffer)) {
         size_t len = strlen(buffer);
         if (buffer_size < 3 || len > buffer_size - 3) {

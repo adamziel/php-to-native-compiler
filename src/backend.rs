@@ -1830,7 +1830,7 @@ static PTN_UNUSED void ptn_compact_append_var_export(
             return;
         case PTN_FLOAT: {
             char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
-            ptn_format_runtime_scalar_float(runtime, value.as.floating, buffer, sizeof(buffer));
+            ptn_format_runtime_var_export_float(runtime, value.as.floating, buffer, sizeof(buffer));
             ptn_string_buffer_append(output, buffer);
             return;
         }

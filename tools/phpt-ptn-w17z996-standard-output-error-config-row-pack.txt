@@ -1,0 +1,12 @@
+ext/standard/tests/general_functions/ob_get_flush_error.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic1.phpt
+ext/standard/tests/general_functions/connection_status.phpt
+ext/standard/tests/general_functions/error_clear_last.phpt
+ext/standard/tests/general_functions/var_export_bug66179.phpt
+ext/standard/tests/general_functions/head.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic3.phpt
+ext/standard/tests/general_functions/get_cfg_var_variation8.phpt
+ext/standard/tests/general_functions/parse_ini_basic.phpt
+ext/standard/tests/general_functions/url_rewriting_basic1.phpt
+ext/standard/tests/strings/bug68996.phpt
+ext/standard/tests/general_functions/uniqid_basic.phpt

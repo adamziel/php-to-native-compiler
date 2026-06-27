@@ -340,6 +340,11 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->strtok_len = 0;
     runtime->strtok_offset = 0;
     runtime->strtok_has_state = 0;
+    runtime->last_error_set = 0;
+    runtime->last_error_type = 0;
+    runtime->last_error_message = NULL;
+    runtime->last_error_file = NULL;
+    runtime->last_error_line = 0;
     runtime->json_last_error = caller_runtime->json_last_error;
     runtime->json_last_error_line = caller_runtime->json_last_error_line;
     runtime->json_last_error_column = caller_runtime->json_last_error_column;
@@ -1165,6 +1170,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->strtok_len = 0;
         runtime->strtok_offset = 0;
         runtime->strtok_has_state = 0;
+        free(runtime->last_error_message);
+        runtime->last_error_message = NULL;
+        free(runtime->last_error_file);
+        runtime->last_error_file = NULL;
+        runtime->last_error_set = 0;
+        runtime->last_error_type = 0;
+        runtime->last_error_line = 0;
         free(runtime->intl_last_error_message);
         runtime->intl_last_error_message = NULL;
     }
