@@ -983,6 +983,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->pcre_recursion_limit = NULL;
         free(runtime->pcre_jit);
         runtime->pcre_jit = NULL;
+        free(runtime->fiber_stack_size);
+        runtime->fiber_stack_size = NULL;
         free(runtime->opcache_blacklist_filename);
         runtime->opcache_blacklist_filename = NULL;
         free(runtime->opcache_enable);

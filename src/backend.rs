@@ -49530,6 +49530,12 @@ impl ValueEmitter {
         );
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    } else if (ptn_ascii_case_equal(");
+        out.push_str(class_name_expr);
+        out.push_str(", \"FiberError\")) {\n");
+        out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"The \\\"FiberError\\\" class is reserved for internal use and cannot be manually instantiated\", runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         if !self.full_internal_dispatch {
             out.push_str("#ifdef PTN_HAS_LIGHTWEIGHT_CLOSURE_REFLECTION\n");
             out.push_str("    } else if (ptn_ascii_case_equal(");

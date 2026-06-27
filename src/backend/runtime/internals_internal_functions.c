@@ -97643,6 +97643,14 @@ static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime) {
     return root->pcre_jit;
 }
 
+static const char *ptn_runtime_fiber_stack_size(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->fiber_stack_size == NULL) {
+        return "1048576";
+    }
+    return root->fiber_stack_size;
+}
+
 static void ptn_runtime_set_ini_string(char **slot, const char *value);
 
 static const char *ptn_opcache_ini_default(const char *name) {
@@ -98822,6 +98830,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
+        return 1;
+    }
     if (ptn_runtime_opcache_ini_value_operand(runtime, option, out)) {
         return 1;
     }
@@ -99031,6 +99043,11 @@ static void ptn_runtime_set_pcre_recursion_limit(PtnRuntime *runtime, const char
 static void ptn_runtime_set_pcre_jit(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->pcre_jit, value);
+}
+
+static void ptn_runtime_set_fiber_stack_size(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->fiber_stack_size, value);
 }
 
 static void ptn_runtime_set_phar_readonly(PtnRuntime *runtime, const char *value) {
@@ -99249,6 +99266,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.jit")) {
         ptn_runtime_set_pcre_jit(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        ptn_runtime_set_fiber_stack_size(runtime, "1048576");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -99648,6 +99670,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_pcre_jit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "fiber.stack_size")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_fiber_stack_size(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_fiber_stack_size(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -151836,6 +151868,28 @@ static PTN_UNUSED PtnValue ptn_fiber_new(
     return object;
 }
 
+static int ptn_fiber_stack_size_is_valid(PtnRuntime *runtime, size_t line) {
+    const int64_t minimum_stack_size = 8192;
+    PtnStringOperand configured =
+        ptn_string_operand_borrowed(ptn_runtime_fiber_stack_size(runtime));
+    int64_t stack_size = ptn_parse_ini_quantity_operand(runtime, configured, line);
+    if (stack_size >= minimum_stack_size) {
+        return 1;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Fiber stack size is too small, it needs to be at least %lld bytes",
+        (long long)minimum_stack_size
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+    return 0;
+}
+
 static PtnValue ptn_fiber_start(
     PtnRuntime *runtime,
     PtnFiberData *data,
@@ -151843,13 +151897,21 @@ static PtnValue ptn_fiber_start(
     const PtnValue *args,
     size_t line
 ) {
+    if (!ptn_fiber_stack_size_is_valid(runtime, line)) {
+        return ptn_null();
+    }
     if (data->started) {
-        ptn_throw_exception_at(
+        ptn_throw_exception_owned_message_at_with_trace_frame(
             runtime,
             "FiberError",
-            "Cannot start a fiber that has already been started",
+            ptn_duplicate_string("Cannot start a fiber that has already been started"),
             runtime->source_path,
-            line
+            line,
+            "Fiber->start",
+            runtime->source_path,
+            line,
+            argc,
+            args
         );
         return ptn_null();
     }
@@ -170160,6 +170222,23 @@ static PtnValue ptn_reflection_class_instantiate(
         );
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(class_name, "FiberError")) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "Error",
+            ptn_duplicate_string(
+                "The \"FiberError\" class is reserved for internal use and cannot be manually instantiated"
+            ),
+            runtime->source_path,
+            line,
+            "ReflectionClass->newInstance",
+            runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        return ptn_null();
+    }
     if (ptn_declared_class_exists(class_name)) {
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
@@ -185171,6 +185250,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_ignore_args");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_string_param_max_len");
+        ptn_extension_ini_set_entry(runtime, result, "fiber.stack_size");
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "date")) {

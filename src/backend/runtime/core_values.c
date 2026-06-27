@@ -1758,6 +1758,7 @@ struct PtnRuntime {
     char *pcre_backtrack_limit;
     char *pcre_recursion_limit;
     char *pcre_jit;
+    char *fiber_stack_size;
     char *opcache_blacklist_filename;
     char *opcache_enable;
     char *opcache_enable_cli;

@@ -1,0 +1,15 @@
+# Focused Zend Fiber error/lifecycle row pack for ptn-w17z.1053.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T190544Z.tsv
+# bucket: zend-fibers-error-lifecycle rows=12
+Zend/tests/fibers/double-start.phpt
+Zend/tests/fibers/failing-fiber.phpt
+Zend/tests/fibers/failing-nested-fiber.phpt
+Zend/tests/fibers/fatal-error-with-multiple-fibers.phpt
+Zend/tests/fibers/fiber-error-construct.phpt
+Zend/tests/fibers/fiber-in-shutdown-function.phpt
+Zend/tests/fibers/get-return.phpt
+Zend/tests/fibers/gh10249.phpt
+Zend/tests/fibers/gh10340-003.phpt
+Zend/tests/fibers/gh10437.phpt
+Zend/tests/fibers/gh15108-002.phpt
+Zend/tests/fibers/gh15108-004.phpt

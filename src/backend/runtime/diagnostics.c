@@ -1966,6 +1966,11 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
     }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        root->current_fiber = NULL;
+    }
+    runtime->current_fiber = NULL;
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
@@ -1993,6 +1998,11 @@ static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
         fprintf(stream, "%zu", line);
         fputc('\n', stream);
     }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL) {
+        root->current_fiber = NULL;
+    }
+    runtime->current_fiber = NULL;
     ptn_runtime_shutdown_before_exit(runtime);
     exit(255);
 }
@@ -2748,6 +2758,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_recursion_limit = getenv("PTN_PCRE_RECURSION_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
+    const char *configured_fiber_stack_size = getenv("PTN_FIBER_STACK_SIZE");
     const char *configured_opcache_blacklist_filename =
         getenv("PTN_OPCACHE_BLACKLIST_FILENAME");
     const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
@@ -2840,6 +2851,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->pcre_jit = ptn_duplicate_string(
         configured_pcre_jit == NULL ? "1" : configured_pcre_jit
+    );
+    runtime->fiber_stack_size = ptn_duplicate_string(
+        configured_fiber_stack_size == NULL ? "1048576" : configured_fiber_stack_size
     );
     runtime->opcache_blacklist_filename = ptn_duplicate_string(
         configured_opcache_blacklist_filename == NULL ? "" : configured_opcache_blacklist_filename
