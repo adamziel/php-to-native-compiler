@@ -158938,6 +158938,26 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         { "seconds", "int", "?int", 1, 1, 0, 0, 1, NULL, NULL, NULL },
         { "microseconds", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_STREAM_SOCKET_CLIENT_PARAMETERS[] = {
+        { "address", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+        { "error_code", "int", "?int", 1, 1, 1, 0, 0, "null", NULL, NULL },
+        { "error_message", "string", "?string", 1, 1, 1, 0, 0, "null", NULL, NULL },
+        { "timeout", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+        { "flags", "int", "int", 0, 1, 0, 0, 1, "STREAM_CLIENT_CONNECT", "STREAM_CLIENT_CONNECT", NULL },
+        { "context", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_STREAM_SOCKET_SERVER_PARAMETERS[] = {
+        { "address", "string", "string", 0, 1, 0, 0, 1, NULL, NULL, NULL },
+        { "error_code", "int", "?int", 1, 1, 1, 0, 0, "null", NULL, NULL },
+        { "error_message", "string", "?string", 1, 1, 1, 0, 0, "null", NULL, NULL },
+        { "flags", "int", "int", 0, 1, 0, 0, 1, "STREAM_SERVER_BIND | STREAM_SERVER_LISTEN", NULL, NULL },
+        { "context", NULL, NULL, 1, 0, 0, 0, 1, "null", NULL, NULL },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_STREAM_SOCKET_ACCEPT_PARAMETERS[] = {
+        { "socket", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL, NULL },
+        { "timeout", "float", "?float", 1, 1, 0, 0, 1, "null", NULL, NULL },
+        { "peer_name", "string", "?string", 1, 1, 1, 0, 0, "null", NULL, NULL },
+    };
     static const PtnParameterMetadata PTN_INTERNAL_ITERATOR_TO_ARRAY_PARAMETERS[] = {
         { "iterator", "Traversable", "Traversable|array", 0, 0, 0, 0, 1, NULL, NULL, NULL },
         { "preserve_keys", "bool", "bool", 0, 1, 0, 0, 1, "true", NULL, NULL },
@@ -159052,6 +159072,54 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "int|false",
             "int|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "stream_socket_client")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_STREAM_SOCKET_CLIENT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_STREAM_SOCKET_CLIENT_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_STREAM_SOCKET_CLIENT_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "stream_socket_server")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_STREAM_SOCKET_SERVER_PARAMETERS) /
+                sizeof(PTN_INTERNAL_STREAM_SOCKET_SERVER_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_STREAM_SOCKET_SERVER_PARAMETERS,
+            0,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "stream_socket_accept")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_STREAM_SOCKET_ACCEPT_PARAMETERS) /
+                sizeof(PTN_INTERNAL_STREAM_SOCKET_ACCEPT_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_STREAM_SOCKET_ACCEPT_PARAMETERS,
+            0,
+            NULL,
+            NULL,
             0,
             0
         );
