@@ -1150,7 +1150,8 @@ pub fn lower_with_source_and_includes(
     }
     let includes = include_sources
         .iter()
-        .map(|include| context.lower_include_source(include))
+        .zip(include_function_indices.iter())
+        .map(|(include, function_indices)| context.lower_include_source(include, function_indices))
         .collect();
     let instructions = context.lower_statements(&program.statements);
     Module {
@@ -1624,7 +1625,11 @@ impl<'a> LoweringContext<'a> {
             })
     }
 
-    fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
+    fn lower_include_source(
+        &mut self,
+        include: &IncludeSource,
+        function_indices: &[usize],
+    ) -> IncludeFile {
         let previous_source_file =
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
@@ -1643,13 +1648,14 @@ impl<'a> LoweringContext<'a> {
         let previous_constant_values =
             std::mem::replace(&mut self.constant_values, include_constant_values);
         let mut instructions = Vec::new();
-        for function in include
+        for (offset, _function) in include
             .program
             .functions
             .iter()
-            .filter(|function| !function.is_conditionally_declared)
+            .enumerate()
+            .filter(|(_, function)| !function.is_conditionally_declared)
         {
-            if let Some(function_index) = self.function_index_by_name(&function.name) {
+            if let Some(function_index) = function_indices.get(offset).copied() {
                 instructions.push(Instruction::DeclareFunction { function_index });
             }
         }
