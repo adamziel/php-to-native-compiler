@@ -61720,6 +61720,43 @@ fn compile_append_method_call_arguments_use_declared_parameter_modes_to_native_b
 }
 
 #[test]
+fn compile_method_receiver_survives_argument_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-method-receiver-argument-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("method-receiver-argument-assignment.php");
+    let output = root.join("method-receiver-argument-assignment-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function change(array $config) {
+        $config['keys'] = array_keys($config['a']);
+        echo \"method\\n\";
+    }
+}
+
+$a = new A();
+$a->change($a = array('a' => range(1, 5)));
+echo \"ok\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "method\nok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_this_method_call_keeps_virtual_by_ref_override_to_native_binary() {
     let root = temp_dir("ptn-native-this-method-virtual-by-ref-override");
     fs::create_dir_all(&root).unwrap();
@@ -98502,6 +98539,47 @@ $obj->prop3++;
     assert!(prop3_deprecated < prop3_undefined, "{stdout}");
     assert!(y_deprecated < y_undefined, "{stdout}");
     assert!(y_undefined < array_to_string, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_property_variable_name_uses_rhs_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-property-rhs-name-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-property-rhs-name-assignment.php");
+    let output = root.join("dynamic-property-rhs-name-assignment-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo() {
+    $obj = new stdClass;
+    $obj->$b = ~$b = $a = '##';
+    $obj->$a++;
+}
+foo();
+echo \"DONE\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Increment on non-numeric string is deprecated"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("Undefined variable $b"), "{stdout}");
+    assert!(!stdout.contains("Undefined property"), "{stdout}");
+    assert!(stdout.ends_with("DONE\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

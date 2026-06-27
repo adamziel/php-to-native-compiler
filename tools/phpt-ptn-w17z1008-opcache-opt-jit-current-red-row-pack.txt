@@ -1,0 +1,21 @@
+# Focused PHPT row pack for ptn-w17z.1008.
+#
+# Source artifact:
+#   /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T034035Z.tsv
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1008-opcache-opt-jit-current-red-row-pack.txt
+#
+# bucket: opcache-opt-jit-current-red rows=12
+ext/opcache/tests/opt/sccp_038.phpt
+ext/opcache/tests/jit/bug81051.phpt
+ext/opcache/tests/opt/sccp_008.phpt
+ext/opcache/tests/jit/gh16499.phpt
+ext/opcache/tests/opt/dce_005.phpt
+ext/opcache/tests/opt/jmp_001.phpt
+ext/opcache/tests/jit/fetch_dim_func_args_001.phpt
+ext/opcache/tests/opt/sccp_003.phpt
+ext/opcache/tests/jit/gh8461-004.phpt
+ext/opcache/tests/jit/bool_not_002.phpt
+ext/opcache/tests/jit/gh18898_2.phpt
+ext/opcache/tests/jit/closure_001.phpt

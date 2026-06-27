@@ -8519,6 +8519,10 @@ fn value_expr_is_compile_time_array_dynamic_property_name(value: &ValueExpr) -> 
     matches!(value, ValueExpr::Array(_)) && value_expr_is_shareable_property_default(value)
 }
 
+fn dynamic_property_name_uses_deferred_variable_lookup(value: &ValueExpr) -> bool {
+    matches!(value, ValueExpr::Load { .. })
+}
+
 fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[ClassDecl]) {
     for class in classes {
         for property in &class.properties {
@@ -42231,9 +42235,14 @@ impl ValueEmitter {
             } else {
                 self.emit_materialized_indirect_write_receiver(out, receiver)
             };
+            let defer_name_lookup = dynamic_property_name_uses_deferred_variable_lookup(name);
+            let mut value_temp = None;
+            if defer_name_lookup {
+                value_temp = Some(self.emit_materialized_value(out, value));
+            }
             let (name_temp, name_len_temp) =
                 self.emit_dynamic_property_name_for_write(out, name, *line);
-            let value_temp = self.emit_materialized_value(out, value);
+            let value_temp = value_temp.unwrap_or_else(|| self.emit_materialized_value(out, value));
             let result_temp = if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -53743,6 +53752,18 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_owned_method_receiver(&mut self, out: &mut String, receiver: &ValueExpr) -> String {
+        let raw_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&receiver_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&raw_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &raw_temp);
+        receiver_temp
+    }
+
     fn emit_raw_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         if matches!(
             value,
@@ -58427,7 +58448,7 @@ impl ValueEmitter {
                 );
             }
         }
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_owned_method_receiver(out, receiver);
         let receiver_temp =
             self.emit_generator_resume_receiver_if_needed(out, receiver, name, receiver_temp);
         let result_temp = self.next_temp();
@@ -58664,7 +58685,7 @@ impl ValueEmitter {
                 };
             }
         }
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_owned_method_receiver(out, receiver);
         let result_temp = self.next_temp();
         let declared_signature =
             self.declared_instance_method_signature_for_receiver(receiver, name);
@@ -58883,7 +58904,7 @@ impl ValueEmitter {
                 };
             }
         }
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_owned_method_receiver(out, receiver);
         let result_temp = self.next_temp();
         let declared_signature =
             self.declared_instance_method_signature_for_receiver(receiver, name);
@@ -59074,7 +59095,7 @@ impl ValueEmitter {
         line: usize,
         discarded: bool,
     ) -> String {
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_owned_method_receiver(out, receiver);
         let name_temp = self.emit_materialized_value(out, name);
         let method_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
