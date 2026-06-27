@@ -121788,109 +121788,6 @@ static PtnValue ptn_internal_date_sun_event(
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
-static void ptn_date_sun_info_set_event(
-    PtnValue result,
-    const char *name,
-    int year,
-    int month,
-    int day,
-    double longitude,
-    double latitude,
-    double altitude,
-    int upper_limb,
-    int want_set
-) {
-    double hour_rise = 0.0;
-    double hour_set = 0.0;
-    time_t timestamp_rise = 0;
-    time_t timestamp_set = 0;
-    int status = ptn_astro_rise_set_altitude(
-        year,
-        month,
-        day,
-        longitude,
-        latitude,
-        altitude,
-        upper_limb,
-        &hour_rise,
-        &hour_set,
-        &timestamp_rise,
-        &timestamp_set
-    );
-    if (status != 0) {
-        ptn_array_set_entry(result.as.array, ptn_array_string_key(name), ptn_bool(0));
-        return;
-    }
-    time_t event = want_set ? timestamp_set : timestamp_rise;
-    ptn_array_set_entry(result.as.array, ptn_array_string_key(name), ptn_int((int64_t)event));
-}
-
-static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    int64_t timestamp = ptn_internal_expect_integer_arg(runtime, "date_sun_info", 1, "timestamp", args[0], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    double latitude = ptn_internal_expect_float_arg(runtime, "date_sun_info", 2, "latitude", args[1], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-    double longitude = ptn_internal_expect_float_arg(runtime, "date_sun_info", 3, "longitude", args[2], line);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
-
-    time_t timestamp_time = (time_t)timestamp;
-    struct tm parts_storage;
-    struct tm *parts = gmtime(&timestamp_time);
-    if (parts == NULL) {
-        return ptn_bool(0);
-    }
-    parts_storage = *parts;
-
-    int year = parts_storage.tm_year + 1900;
-    int month = parts_storage.tm_mon + 1;
-    int day = parts_storage.tm_mday;
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    ptn_date_sun_info_set_event(result, "sunrise", year, month, day, longitude, latitude, -35.0 / 60.0, 1, 0);
-    ptn_date_sun_info_set_event(result, "sunset", year, month, day, longitude, latitude, -35.0 / 60.0, 1, 1);
-
-    double hour_rise = 0.0;
-    double hour_set = 0.0;
-    time_t timestamp_rise = 0;
-    time_t timestamp_set = 0;
-    int status = ptn_astro_rise_set_altitude(
-        year,
-        month,
-        day,
-        longitude,
-        latitude,
-        -35.0 / 60.0,
-        1,
-        &hour_rise,
-        &hour_set,
-        &timestamp_rise,
-        &timestamp_set
-    );
-    if (status == 0) {
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_string_key("transit"),
-            ptn_int((int64_t)(timestamp_rise + (time_t)((timestamp_set - timestamp_rise) / 2)))
-        );
-    } else {
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("transit"), ptn_bool(0));
-    }
-
-    ptn_date_sun_info_set_event(result, "civil_twilight_begin", year, month, day, longitude, latitude, -6.0, 0, 0);
-    ptn_date_sun_info_set_event(result, "civil_twilight_end", year, month, day, longitude, latitude, -6.0, 0, 1);
-    ptn_date_sun_info_set_event(result, "nautical_twilight_begin", year, month, day, longitude, latitude, -12.0, 0, 0);
-    ptn_date_sun_info_set_event(result, "nautical_twilight_end", year, month, day, longitude, latitude, -12.0, 0, 1);
-    ptn_date_sun_info_set_event(result, "astronomical_twilight_begin", year, month, day, longitude, latitude, -18.0, 0, 0);
-    ptn_date_sun_info_set_event(result, "astronomical_twilight_end", year, month, day, longitude, latitude, -18.0, 0, 1);
-    return result;
-}
-
 static PtnValue ptn_internal_date_sunrise(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_date_sun_event(runtime, 0, argc, args, line);
 }
@@ -173484,7 +173381,6 @@ static PtnValue ptn_internal_date_modify(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_date_parse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
-static PtnValue ptn_internal_date_sun_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sunrise(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_sunset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_timestamp_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -174019,7 +173915,6 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_parse", 1, 1, ptn_internal_date_parse },
         { "date_sun_info", 3, 3, ptn_internal_date_sun_info },
         { "date_sub", 2, 2, ptn_internal_date_sub },
-        { "date_sun_info", 3, 3, ptn_internal_date_sun_info },
         { "date_sunrise", 1, 6, ptn_internal_date_sunrise },
         { "date_sunset", 1, 6, ptn_internal_date_sunset },
         { "date_timestamp_get", 1, 1, ptn_internal_date_timestamp_get },
