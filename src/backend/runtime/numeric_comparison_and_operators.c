@@ -262,6 +262,12 @@ static int ptn_compare_datetimezone_objects_order(
     size_t line,
     int *compared
 );
+static int ptn_compare_dateinterval_objects_warn(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+);
 
 static PTN_UNUSED int ptn_compare_objects_equal(
     PtnRuntime *runtime,
@@ -292,6 +298,9 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     int timezone_compared = PTN_COMPARE_UNORDERED;
     if (ptn_compare_datetimezone_objects_order(runtime, left, right, line, &timezone_compared)) {
         return timezone_compared == PTN_COMPARE_EQUAL;
+    }
+    if (ptn_compare_dateinterval_objects_warn(runtime, left, right, line)) {
+        return 0;
     }
     if (strcmp(left->class_name, right->class_name) != 0) {
         return 0;
@@ -327,6 +336,24 @@ static int ptn_compare_object_is_datetime(PtnObject *object) {
 static int ptn_compare_object_is_datetimezone(PtnObject *object) {
     return object != NULL &&
         ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeZone");
+}
+
+static int ptn_compare_object_is_dateinterval(PtnObject *object) {
+    return object != NULL &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval");
+}
+
+static int ptn_compare_dateinterval_objects_warn(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+) {
+    if (!ptn_compare_object_is_dateinterval(left) || !ptn_compare_object_is_dateinterval(right)) {
+        return 0;
+    }
+    ptn_emit_warning(&runtime->diagnostics, "Cannot compare DateInterval objects", line);
+    return 1;
 }
 
 static PtnArrayEntry *ptn_compare_object_string_property_entry(PtnObject *object, const char *name) {
@@ -646,6 +673,9 @@ static PTN_UNUSED int ptn_compare_objects_order(
     int timezone_compared = PTN_COMPARE_UNORDERED;
     if (ptn_compare_datetimezone_objects_order(runtime, left, right, line, &timezone_compared)) {
         return timezone_compared;
+    }
+    if (ptn_compare_dateinterval_objects_warn(runtime, left, right, line)) {
+        return PTN_COMPARE_UNORDERED;
     }
     if (left->enum_case_name != NULL || right->enum_case_name != NULL) {
         if (
