@@ -7881,6 +7881,17 @@ static int ptn_spl_heap_unserialize_apply(
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH 3
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_PRIORITY 2
 #define PTN_SPL_PRIORITY_QUEUE_EXTR_DATA 1
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_FILEINFO 0
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_SELF 16
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME 32
+#define PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK 240
+#define PTN_FILESYSTEM_ITERATOR_KEY_AS_PATHNAME 0
+#define PTN_FILESYSTEM_ITERATOR_KEY_AS_FILENAME 256
+#define PTN_FILESYSTEM_ITERATOR_FOLLOW_SYMLINKS 512
+#define PTN_FILESYSTEM_ITERATOR_KEY_MODE_MASK 3840
+#define PTN_FILESYSTEM_ITERATOR_NEW_CURRENT_AND_KEY 256
+#define PTN_FILESYSTEM_ITERATOR_SKIP_DOTS 4096
+#define PTN_FILESYSTEM_ITERATOR_UNIX_PATHS 8192
 
 typedef struct {
     PtnValue storage;
@@ -7919,6 +7930,7 @@ typedef struct {
     size_t glob_index;
     char *current_name;
     int64_t key;
+    int64_t current_mode;
     int valid;
     int skip_dots;
 } PtnDirectoryIteratorData;
@@ -167734,6 +167746,7 @@ static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_iterator_apply(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -167864,6 +167877,117 @@ static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, 
 static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
+static PtnValue ptn_internal_iterator_apply(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue source = ptn_value_deref(args[0]);
+    if (!(source.type == PTN_OBJECT && ptn_value_is_unpack_traversable(source))) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "iterator_apply(): Argument #1 ($iterator) must be of type Traversable, %s given",
+            ptn_offset_container_type_name(source)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "iterator_apply",
+        2,
+        "callback",
+        args[1]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    size_t callback_argc = 0;
+    PtnValue *callback_args = NULL;
+    if (argc >= 3) {
+        PtnValue callback_args_value = ptn_value_deref(args[2]);
+        if (callback_args_value.type == PTN_NULL) {
+            goto ptn_iterator_apply_args_ready;
+        }
+        if (callback_args_value.type != PTN_ARRAY) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "iterator_apply(): Argument #3 ($args) must be of type ?array, %s given",
+                ptn_count_operand_type_name(callback_args_value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_value_destroy(&callback);
+                ptn_abort_out_of_memory();
+            }
+            ptn_value_destroy(&callback);
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        callback_argc = callback_args_value.as.array->len;
+        if (callback_argc > 0) {
+            callback_args = calloc(callback_argc, sizeof(PtnValue));
+            if (callback_args == NULL) {
+                ptn_value_destroy(&callback);
+                ptn_abort_out_of_memory();
+            }
+            for (size_t i = 0; i < callback_argc; i++) {
+                callback_args[i] = ptn_value_clone_deref(callback_args_value.as.array->entries[i].value);
+            }
+        }
+    }
+
+ptn_iterator_apply_args_ready:
+    int64_t applied = 0;
+    PtnArrayIterator iterator = ptn_array_iterator_from_value(
+        runtime,
+        source,
+        NULL,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    while (iterator.valid) {
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+        PtnValue result =
+            ptn_call_callable(runtime, callback, callback_argc, callback_args, line, 0);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            break;
+        }
+        int keep_going = ptn_is_truthy(result);
+        ptn_value_destroy(&result);
+        if (!keep_going) {
+            break;
+        }
+        if (applied == INT64_MAX) {
+            ptn_array_iterator_destroy(&iterator);
+            for (size_t i = 0; i < callback_argc; i++) {
+                ptn_value_destroy(&callback_args[i]);
+            }
+            free(callback_args);
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        applied++;
+        ptn_array_iterator_advance(&iterator);
+    }
+    ptn_array_iterator_destroy(&iterator);
+    for (size_t i = 0; i < callback_argc; i++) {
+        ptn_value_destroy(&callback_args[i]);
+    }
+    free(callback_args);
+    ptn_value_destroy(&callback);
+    return runtime != NULL && runtime->exceptions->active_exception != NULL
+        ? ptn_null()
+        : ptn_int(applied);
+}
 
 static PtnValue ptn_internal_iterator_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -168417,6 +168541,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intltz_get_unknown", 0, 0, ptn_internal_intltz_get_unknown },
         { "intltz_to_date_time_zone", 1, 1, ptn_internal_intltz_to_date_time_zone },
         { "intltz_get_windows_id", 1, 1, ptn_internal_intltz_get_windows_id },
+        { "iterator_apply", 2, 3, ptn_internal_iterator_apply },
         { "iterator_count", 1, 1, ptn_internal_iterator_count },
         { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
         { "is_array", 1, 1, ptn_internal_is_array },
@@ -172232,6 +172357,9 @@ static int ptn_iterator_iterator_method_exists(const char *method_name) {
 
 static int ptn_recursive_iterator_iterator_method_exists(const char *method_name) {
     return ptn_iterator_iterator_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "getDepth")
+        || ptn_ascii_case_equal(method_name, "getMaxDepth")
+        || ptn_ascii_case_equal(method_name, "setMaxDepth")
         || ptn_ascii_case_equal(method_name, "getSubIterator");
 }
 
@@ -182713,7 +182841,17 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         return;
     }
     if (ptn_internal_class_name_is_directory_iterator(class_name)) {
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DOTS"), ptn_int(4096));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_PATHNAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_FILEINFO"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_FILEINFO));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_AS_SELF"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_AS_SELF));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CURRENT_MODE_MASK"), ptn_int(PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_AS_PATHNAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_AS_PATHNAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_AS_FILENAME"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_AS_FILENAME));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("FOLLOW_SYMLINKS"), ptn_int(PTN_FILESYSTEM_ITERATOR_FOLLOW_SYMLINKS));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_MODE_MASK"), ptn_int(PTN_FILESYSTEM_ITERATOR_KEY_MODE_MASK));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("NEW_CURRENT_AND_KEY"), ptn_int(PTN_FILESYSTEM_ITERATOR_NEW_CURRENT_AND_KEY));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DOTS"), ptn_int(PTN_FILESYSTEM_ITERATOR_SKIP_DOTS));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("UNIX_PATHS"), ptn_int(PTN_FILESYSTEM_ITERATOR_UNIX_PATHS));
         return;
     }
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
@@ -187302,6 +187440,8 @@ typedef struct {
     int valid;
     int mode;
     int initialized;
+    int has_max_depth;
+    int64_t max_depth;
 } PtnRecursiveIteratorIteratorData;
 
 typedef struct {
@@ -201621,7 +201761,8 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_new_for_class(
     data->current_name = NULL;
     data->key = 0;
     data->valid = 0;
-    data->skip_dots = (flags & 4096) != 0;
+    data->current_mode = flags & PTN_FILESYSTEM_ITERATOR_CURRENT_MODE_MASK;
+    data->skip_dots = (flags & PTN_FILESYSTEM_ITERATOR_SKIP_DOTS) != 0;
     ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
 
 #if defined(_WIN32)
@@ -201731,9 +201872,13 @@ static PTN_UNUSED PtnValue ptn_directory_iterator_call_method(
     }
     if (ptn_ascii_case_equal(name, "current")) {
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_value_clone_deref(receiver);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->current_mode == PTN_FILESYSTEM_ITERATOR_CURRENT_AS_PATHNAME) {
+            return ptn_owned_string(ptn_duplicate_string(data->info.path == NULL ? "" : data->info.path));
+        }
+        return ptn_value_clone_deref(receiver);
     }
     if (ptn_ascii_case_equal(name, "key")) {
         ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
@@ -203976,6 +204121,15 @@ static void ptn_recursive_iterator_iterator_advance_to_next(
             return;
         }
 
+        if (has_children && data->has_max_depth &&
+            data->frame_count > 0 &&
+            (int64_t)(data->frame_count - 1) >= data->max_depth) {
+            frame->pending_advance = 1;
+            ptn_value_destroy(&current);
+            ptn_value_destroy(&key);
+            continue;
+        }
+
         if (!has_children) {
             ptn_recursive_iterator_iterator_set_current(data, key, current);
             frame->pending_advance = 1;
@@ -204056,6 +204210,8 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
     data->valid = 0;
     data->mode = mode;
     data->initialized = 0;
+    data->has_max_depth = 0;
+    data->max_depth = -1;
 
     PtnValue object = ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
     object.as.object->native_data = data;
@@ -207963,6 +208119,57 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
             return ptn_value_clone_deref(data->inner);
         }
         return ptn_value_clone_deref(data->frames[data->frame_count - 1].iterator);
+    }
+    if (ptn_ascii_case_equal(name, "getDepth")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_recursive_iterator_iterator_ensure_initialized(runtime, data, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_int(data->frame_count == 0 ? 0 : (int64_t)(data->frame_count - 1));
+    }
+    if (ptn_ascii_case_equal(name, "getMaxDepth")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return data->has_max_depth ? ptn_int(data->max_depth) : ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "setMaxDepth")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "RecursiveIteratorIterator::setMaxDepth() expects at most 1 argument");
+            return ptn_null();
+        }
+        if (argc == 0) {
+            data->has_max_depth = 0;
+            data->max_depth = -1;
+            return ptn_null();
+        }
+        int64_t max_depth = ptn_internal_expect_integer_arg(
+            runtime,
+            "RecursiveIteratorIterator::setMaxDepth",
+            1,
+            "maxDepth",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (max_depth < -1) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "RecursiveIteratorIterator::setMaxDepth(): Argument #1 ($maxDepth) must be greater than or equal to -1"
+            );
+            return ptn_null();
+        }
+        data->has_max_depth = max_depth >= 0;
+        data->max_depth = max_depth;
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "rewind")) {
         ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
@@ -211982,6 +212189,21 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
         : ptn_internal_expect_nullable_callback_arg(runtime, "spl_autoload_register", 1, "callback", args[0]);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    PtnValue resolved_callback = ptn_value_deref(callback);
+    if (resolved_callback.type == PTN_STRING) {
+        char *callback_name = ptn_value_to_string(resolved_callback);
+        int is_autoload_call = ptn_ascii_case_equal(callback_name, "spl_autoload_call");
+        free(callback_name);
+        if (is_autoload_call) {
+            ptn_value_destroy(&callback);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "spl_autoload_register(): Argument #1 ($callback) must not be the spl_autoload_call() function"
+            );
+            return ptn_null();
+        }
     }
     callback = ptn_spl_autoload_normalize_callback(runtime, callback);
 

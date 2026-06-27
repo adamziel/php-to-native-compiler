@@ -1,0 +1,16 @@
+# ptn-w17z.1070 focused SPL iterator/FileObject/autoload current-red row pack.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T210634Z.tsv
+# Paths are relative to PHP_SRC_PHPT.
+# bucket: spl-iterator-fileobject-autoload-current-red rows=12
+ext/spl/tests/bug63680.phpt
+ext/spl/tests/SplFileObject/bug52573.phpt
+ext/spl/tests/bug72684.phpt
+ext/spl/tests/iterator_count_exception.phpt
+ext/spl/tests/iterator_048.phpt
+ext/spl/tests/SplTempFileObject_constructor_memory_lt1_variation.phpt
+ext/spl/tests/iterator_028.phpt
+ext/spl/tests/spl_007.phpt
+ext/spl/tests/bug47534.phpt
+ext/spl/tests/gh9883-extra.phpt
+ext/spl/tests/autoloading/spl_autoload_throw_with_spl_autoloader_call_as_autoloader.phpt
+ext/spl/tests/bug70852.phpt
