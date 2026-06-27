@@ -505,6 +505,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "clone")) {
             return "object";
         }
+        if (ptn_ascii_case_equal(name, "dl")) {
+            return "extension_filename";
+        }
         if (ptn_ascii_case_equal(name, "array_multisort") ||
             ptn_internal_function_first_parameter_is_array_reference(name)) {
             return "array";
@@ -158307,6 +158310,68 @@ static PtnValue ptn_internal_clone(PtnRuntime *runtime, size_t argc, const PtnVa
         : ptn_clone_value(runtime, args[0], line);
 }
 
+static PtnValue ptn_internal_connection_aborted(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
+static int ptn_dl_filename_contains_path_separator(PtnStringOperand filename) {
+    const char *data = filename.data == NULL ? "" : filename.data;
+    for (size_t i = 0; i < filename.len; i++) {
+        if (data[i] == '/' || data[i] == '\\') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_dl(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand filename =
+        ptn_internal_expect_string_arg(runtime, "dl", 1, "extension_filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(filename);
+        return ptn_null();
+    }
+
+    if (filename.len > PTN_PHP_MAXPATHLEN) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "dl(): Filename exceeds the maximum allowed length of %d characters",
+            (int)PTN_PHP_MAXPATHLEN
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        ptn_string_operand_free(filename);
+        return ptn_bool(0);
+    }
+
+    if (ptn_dl_filename_contains_path_separator(filename)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "dl(): Temporary module name should contain only filename",
+            line
+        );
+        ptn_string_operand_free(filename);
+        return ptn_bool(0);
+    }
+
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "dl(): Dynamic loading is not supported by this build",
+        line
+    );
+    ptn_string_operand_free(filename);
+    return ptn_bool(0);
+}
+
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "_ptn_cow_debug_assert_balanced", 0, 0, ptn_internal__ptn_cow_debug_assert_balanced },
@@ -158448,6 +158513,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "collator_sort", 2, 3, ptn_internal_collator_sort },
         { "collator_sort_with_sort_keys", 2, 2, ptn_internal_collator_sort_with_sort_keys },
         { "compact", 1, PTN_VARIADIC_ARGS, ptn_internal_compact },
+        { "connection_aborted", 0, 0, ptn_internal_connection_aborted },
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
@@ -158528,6 +158594,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "die", 0, 1, ptn_internal_die },
         { "dir", 1, 2, ptn_internal_dir },
         { "dirname", 1, 2, ptn_internal_dirname },
+        { "dl", 1, 1, ptn_internal_dl },
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },

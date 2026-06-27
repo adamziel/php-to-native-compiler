@@ -1,0 +1,17 @@
+# ptn-w17z.997 exact current-red streams/file/process/dl/PHAR row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T021011Z.tsv
+# All rows were FAIL in that artifact.
+# bucket: ptn-w17z997 rows=12
+ext/standard/tests/streams/stream_socket_recvfrom.phpt
+ext/phar/tests/bug45218_SLOWTEST.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_basic.phpt
+ext/standard/tests/streams/stream_socket_get_name.phpt
+ext/standard/tests/file/fread_socket_variation1.phpt
+ext/phar/tests/bug73764.phpt
+ext/standard/tests/streams/gh15908.phpt
+ext/phar/tests/zip/corrupt_003.phpt
+ext/standard/tests/general_functions/connection_aborted.phpt
+ext/standard/tests/general_functions/proc_open_multiplex.phpt
+ext/standard/tests/general_functions/dl-cve-2007-4887.phpt
+ext/standard/tests/general_functions/dl-full-path-not-supported.phpt

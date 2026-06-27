@@ -54917,6 +54917,46 @@ var_dump(function_exists('zend_version'), function_exists('ini_get'), function_e
 }
 
 #[test]
+fn compile_connection_and_dl_boundary_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-connection-dl-boundary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("connection-dl-boundary.php");
+    let output = root.join("connection-dl-boundary-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('connection_aborted'), connection_aborted());\n\
+var_dump(function_exists('dl'));\n\
+var_dump(dl('/path/to/module'));\n\
+var_dump(dl(str_repeat('a', PHP_MAXPATHLEN + 1)));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("bool(true)\nint(0)\nbool(true)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: dl(): Temporary module name should contain only filename in ptn on line 4"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: dl(): Filename exceeds the maximum allowed length of "),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(stdout.matches("bool(false)").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_uname_rejects_invalid_modes_to_native_binary() {
     let root = temp_dir("ptn-native-php-uname-invalid-modes");
     fs::create_dir_all(&root).unwrap();
