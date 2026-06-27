@@ -53743,20 +53743,61 @@ static int ptn_object_has_declared_method(PtnRuntime *runtime, PtnValue object, 
     return runtime->declared_method_metadata(object.as.object->class_name, method_name).found;
 }
 
+static PtnResource *ptn_default_stream_context_ensure(void);
+
+static int ptn_user_stream_assign_context(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnResource *context,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(object);
+    if (resolved.type != PTN_OBJECT || resolved.as.object == NULL) {
+        return 1;
+    }
+    PtnObject *object_ptr = resolved.as.object;
+    PtnResource *effective_context = context == NULL ? ptn_default_stream_context_ensure() : context;
+    if (effective_context == NULL) {
+        return 1;
+    }
+    ptn_resource_retain(effective_context);
+    PtnValue context_value = ptn_resource(effective_context);
+    if (ptn_object_property_metadata(object_ptr, "context") != NULL) {
+        PtnValue written = ptn_object_write_property(
+            runtime,
+            object,
+            "context",
+            object_ptr->class_name,
+            context_value,
+            line
+        );
+        ptn_value_destroy(&written);
+        ptn_value_destroy(&context_value);
+        return runtime == NULL || runtime->exceptions->active_exception == NULL;
+    }
+    ptn_array_set_entry(
+        object_ptr->properties,
+        ptn_array_string_key("context"),
+        context_value
+    );
+    return 1;
+}
+
 static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     (void)resource;
     PtnUserStreamResourceData *data = (PtnUserStreamResourceData *)raw;
     if (data == NULL || data->runtime == NULL) {
         return;
     }
+    const char *method_name = data->is_directory ? "dir_closedir" : "stream_close";
     if (data->runtime->method_dispatch == NULL ||
-        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_close")) {
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, method_name)) {
         return;
     }
     PtnValue result = data->runtime->method_dispatch(
         data->runtime,
         data->wrapper_object,
-        "stream_close",
+        method_name,
         0,
         NULL,
         data->line
@@ -53769,6 +53810,14 @@ static PtnUserStreamResourceData *ptn_user_stream_resource_data(PtnResource *res
         return NULL;
     }
     return (PtnUserStreamResourceData *)resource->close_hook_data;
+}
+
+static PtnUserStreamResourceData *ptn_user_directory_resource_data(PtnResource *resource) {
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL || !data->is_directory || resource->closed) {
+        return NULL;
+    }
+    return data;
 }
 
 static size_t ptn_user_stream_read_buffer_available(PtnUserStreamResourceData *data) {
@@ -54422,14 +54471,11 @@ static int ptn_try_open_user_stream_wrapper(
         *out = ptn_bool(0);
         return 1;
     }
-    PtnObject *object_ptr = ptn_value_deref(object).as.object;
-    if (context != NULL) {
-        ptn_resource_retain(context);
-        ptn_array_set_entry(
-            object_ptr->properties,
-            ptn_array_string_key("context"),
-            ptn_resource(context)
-        );
+    PtnResource *effective_context = context == NULL ? ptn_default_stream_context_ensure() : context;
+    if (!ptn_user_stream_assign_context(runtime, object, effective_context, line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
     }
 
     PtnValue opened_path = ptn_reference_value(ptn_reference_new_owned(ptn_string("")));
@@ -54466,11 +54512,11 @@ static int ptn_try_open_user_stream_wrapper(
         1,
         ptn_ascii_case_equal(mode == NULL ? "" : mode, "a") || (mode != NULL && mode[0] == 'a')
     );
-    if (context != NULL) {
+    if (effective_context != NULL) {
         ptn_value_destroy(&resource->context_options);
-        resource->context_options = ptn_stream_context_options_snapshot_value(context->context_options, 0);
+        resource->context_options = ptn_stream_context_options_snapshot_value(effective_context->context_options, 0);
         ptn_value_destroy(&resource->context_params);
-        resource->context_params = ptn_stream_context_options_snapshot_value(context->context_params, 0);
+        resource->context_params = ptn_stream_context_options_snapshot_value(effective_context->context_params, 0);
     }
     PtnUserStreamResourceData *resource_data = malloc(sizeof(PtnUserStreamResourceData));
     if (resource_data == NULL) {
@@ -54485,6 +54531,7 @@ static int ptn_try_open_user_stream_wrapper(
     resource_data->read_buffer = NULL;
     resource_data->read_buffer_len = 0;
     resource_data->read_buffer_offset = 0;
+    resource_data->is_directory = 0;
     resource->close_hook = ptn_user_stream_close_hook;
     resource->close_hook_data = resource_data;
     resource->close_hook_data_free = ptn_user_stream_resource_data_free;
@@ -54770,7 +54817,8 @@ static PtnResource *ptn_runtime_last_directory(PtnRuntime *runtime) {
     if (root == NULL || root->last_opened_directory == NULL) {
         return NULL;
     }
-    if (root->last_opened_directory->directory == NULL) {
+    if (root->last_opened_directory->directory == NULL &&
+        ptn_user_directory_resource_data(root->last_opened_directory) == NULL) {
         PtnResource *stale = root->last_opened_directory;
         root->last_opened_directory = NULL;
         ptn_resource_release(stale);
@@ -54812,8 +54860,92 @@ static PtnValue ptn_phar_directory_resource_value(PtnRuntime *runtime, const cha
     return ptn_resource(directory_resource);
 }
 
+static int ptn_try_open_user_directory_wrapper(
+    PtnRuntime *runtime,
+    const char *path,
+    PtnResource *context,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+
+    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnResource *effective_context = context == NULL ? ptn_default_stream_context_ensure() : context;
+    if (!ptn_user_stream_assign_context(runtime, object, effective_context, line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+
+    PtnValue open_args[2] = {
+        ptn_string(path),
+        ptn_int(0)
+    };
+    PtnValue open_result = runtime->method_dispatch(runtime, object, "dir_opendir", 2, open_args, line);
+    ptn_value_destroy(&open_args[0]);
+    ptn_value_destroy(&open_args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&open_result);
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    int opened = ptn_is_truthy(open_result);
+    ptn_value_destroy(&open_result);
+    if (!opened) {
+        ptn_value_destroy(&object);
+        *out = ptn_bool(0);
+        return 1;
+    }
+
+    PtnResource *resource = ptn_resource_new_named("stream");
+    free(resource->stream_uri);
+    resource->stream_uri = ptn_duplicate_string(path);
+    free(resource->stream_mode);
+    resource->stream_mode = ptn_duplicate_string("r");
+    if (effective_context != NULL) {
+        ptn_value_destroy(&resource->context_options);
+        resource->context_options = ptn_stream_context_options_snapshot_value(effective_context->context_options, 0);
+        ptn_value_destroy(&resource->context_params);
+        resource->context_params = ptn_stream_context_options_snapshot_value(effective_context->context_params, 0);
+    }
+    PtnUserStreamResourceData *resource_data = malloc(sizeof(PtnUserStreamResourceData));
+    if (resource_data == NULL) {
+        ptn_value_destroy(&object);
+        ptn_resource_close(resource);
+        ptn_resource_release(resource);
+        ptn_abort_out_of_memory();
+    }
+    resource_data->runtime = runtime;
+    resource_data->wrapper_object = ptn_value_clone(object);
+    resource_data->line = line;
+    resource_data->read_buffer = NULL;
+    resource_data->read_buffer_len = 0;
+    resource_data->read_buffer_offset = 0;
+    resource_data->is_directory = 1;
+    resource->close_hook = ptn_user_stream_close_hook;
+    resource->close_hook_data = resource_data;
+    resource->close_hook_data_free = ptn_user_stream_resource_data_free;
+    ptn_runtime_set_last_directory(runtime, resource);
+    ptn_value_destroy(&object);
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
@@ -54836,6 +54968,13 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
         }
         free(path);
         return resource;
+    }
+
+    PtnResource *context = argc >= 2 ? ptn_fopen_context_arg(args[1]) : NULL;
+    PtnValue user_directory;
+    if (ptn_try_open_user_directory_wrapper(runtime, path, context, line, &user_directory)) {
+        free(path);
+        return user_directory;
     }
 
 #if defined(_WIN32)
@@ -54907,7 +55046,6 @@ static PtnValue ptn_directory_new_uninitialized(PtnRuntime *runtime, size_t line
 }
 
 static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "dir", 1, "directory", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
@@ -54931,6 +55069,18 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
             return ptn_bool(0);
         }
         PtnValue object = ptn_directory_object_from_resource(runtime, handle, path, line);
+        free(path);
+        return object;
+    }
+
+    PtnResource *context = argc >= 2 ? ptn_fopen_context_arg(args[1]) : NULL;
+    PtnValue user_directory;
+    if (ptn_try_open_user_directory_wrapper(runtime, path, context, line, &user_directory)) {
+        if (!ptn_is_truthy(user_directory) || ptn_value_deref(user_directory).type != PTN_RESOURCE) {
+            free(path);
+            return user_directory;
+        }
+        PtnValue object = ptn_directory_object_from_resource(runtime, user_directory, path, line);
         free(path);
         return object;
     }
@@ -54983,7 +55133,8 @@ static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const Pt
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
-    if (value.as.resource->directory == NULL) {
+    if (value.as.resource->directory == NULL &&
+        ptn_user_directory_resource_data(value.as.resource) == NULL) {
         if (value.as.resource->closed) {
             ptn_throw_exception(
                 runtime,
@@ -55112,7 +55263,8 @@ static PtnResource *ptn_internal_expect_open_directory_arg(
         ptn_throw_exception(runtime, "TypeError", message);
         return NULL;
     }
-    if (value.as.resource->directory == NULL) {
+    if (value.as.resource->directory == NULL &&
+        ptn_user_directory_resource_data(value.as.resource) == NULL) {
         char message[128];
         int written = snprintf(
             message,
@@ -192260,7 +192412,10 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
             return ptn_null();
         }
         PtnValue value = ptn_value_deref(handle.value);
-        if (value.type == PTN_RESOURCE && value.as.resource->closed && value.as.resource->directory == NULL) {
+        if (value.type == PTN_RESOURCE &&
+            value.as.resource->closed &&
+            value.as.resource->directory == NULL &&
+            ptn_user_directory_resource_data(value.as.resource) == NULL) {
             char message[96];
             int written = snprintf(
                 message,
@@ -192275,7 +192430,9 @@ static PTN_UNUSED PtnValue ptn_directory_call_method(
             ptn_throw_exception(runtime, "TypeError", message);
             return ptn_null();
         }
-        if (value.type != PTN_RESOURCE || value.as.resource->directory == NULL) {
+        if (value.type != PTN_RESOURCE ||
+            (value.as.resource->directory == NULL &&
+             ptn_user_directory_resource_data(value.as.resource) == NULL)) {
             ptn_value_destroy(&handle.value);
             ptn_throw_exception(runtime, "Error", "Internal directory stream has been altered");
             return ptn_null();
