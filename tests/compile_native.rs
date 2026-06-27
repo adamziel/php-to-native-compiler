@@ -32243,6 +32243,140 @@ var_dump(mb_strimwidth('some string', 1, -2, '...', 'ASCII'));\n",
 }
 
 #[test]
+fn phpc_mbstring_encoding_mail_trim_row_pack_edges() {
+    let root = temp_dir("ptn-phpc-mbstring-encoding-mail-trim-row-pack");
+    fs::create_dir_all(&root).unwrap();
+    let startup_input = root.join("mbstring-startup.php");
+    fs::write(&startup_input, "<?php echo \"startup-ok\\n\";\n").unwrap();
+
+    let startup = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("mbstring.detect_order=DETECT_ORDER")
+        .arg("-d")
+        .arg("mbstring.http_input=HTTP_INPUT")
+        .arg("-d")
+        .arg("mbstring.http_output=HTTP_OUTPUT")
+        .arg("-d")
+        .arg("mbstring.internal_encoding=UNKNOWN_ENCODING")
+        .arg("-d")
+        .arg("mbstring.language=UNKNOWN_LANGUAGE")
+        .arg("-f")
+        .arg(&startup_input)
+        .output()
+        .unwrap();
+    assert!(startup.status.success());
+    assert_eq!(
+        String::from_utf8(startup.stdout).unwrap(),
+        concat!(
+            "Warning: PHP Startup: INI setting contains invalid encoding \"DETECT_ORDER\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_input is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: INI setting contains invalid encoding \"HTTP_INPUT\" in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.http_output is deprecated in Unknown on line 0\n",
+            "\n",
+            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0\n",
+            "\n",
+            "Warning: PHP Startup: Unknown encoding \"UNKNOWN_ENCODING\" in ini setting in Unknown on line 0\n",
+            "startup-ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(startup.stderr).unwrap(), "");
+
+    let input = root.join("mbstring-row-pack.php");
+    let mail = root.join("mail.eml");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_exception(callable $callback): void {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo bin2hex(mb_strtoupper(hex2bin('f09090b8e2b0b0d4a5'), 'UTF-8')), \"\\n\";\n\
+echo mb_convert_case(\"'haddocks'\", MB_CASE_TITLE, 'UTF-8'), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e38080e38182e38184e38186e38188e3818ae38182e3818ae38080'), hex2bin('e38080e38182'), 'UTF-8')), \"\\n\";\n\
+echo bin2hex(mb_trim(hex2bin('e3808061c2a0'))), \"\\n\";\n\
+$hz = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hz)), ']', \"\\n\";\n\
+mb_substitute_character('entity');\n\
+$hzEntity = mb_str_split(mb_convert_encoding('ελληνικά', 'HZ', 'UTF-8'), 2, 'HZ');\n\
+echo '[', implode(', ', array_map('bin2hex', $hzEntity)), ']', \"\\n\";\n\
+$text = 'abc';\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $text));\n\
+echo $text, \"\\n\";\n\
+$recursive = [1];\n\
+$recursive[] = &$recursive;\n\
+var_dump(mb_convert_variables('ASCII', ['UTF-8', 'UTF-16'], $recursive));\n\
+dump_exception(fn() => mb_encode_mimeheader('abc', 'UTF7-IMAP', 'Q'));\n\
+$folded = mb_encode_mimeheader('Subject: Dies ist ein langer Test mit unterschiedlichen Worten und weiteren Worten', 'UTF-8', 'Q');\n\
+echo str_replace(\"\\r\\n\", '<CRLF>', $folded), \"\\n\";\n\
+dump_exception(fn() => mb_send_mail(\"a\\0b\", 'subject', 'test'));\n\
+var_dump(mb_send_mail('bug@example.com', 'subject', 'test', \"MIME-Version: 2.0\"));\n\
+readfile(getenv('MAIL_CAPTURE_PATH'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg(format!("sendmail_path=tee {} >/dev/null", mail.display()))
+        .arg("-f")
+        .arg(&input)
+        .env("MAIL_CAPTURE_PATH", &mail)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("f0909090e2b080d4a4\n"), "{stdout}");
+    assert!(stdout.contains("'Haddocks'\n"), "{stdout}");
+    assert!(
+        stdout.contains("e38184e38186e38188e3818ae38182e3818a\n61\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d3f]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[7e7b2645264b7e7d, 7e7b264b26477e7d, 7e7b264d26497e7d, 7e7b264a7e7d26, 2378, 3341, 433b]\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(5) \"UTF-8\"\nabc\n"), "{stdout}");
+    assert!(
+        stdout.contains("mb_convert_variables(): Cannot convert recursively referenced values"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)\n"), "{stdout}");
+    assert!(stdout.contains("ValueError: mb_encode_mimeheader(): Argument #2 ($charset) \"UTF7-IMAP\" cannot be used for MIME header encoding\n"), "{stdout}");
+    assert!(stdout.contains("<CRLF>"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "ValueError: mb_send_mail(): Argument #1 ($to) must not contain any null bytes\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("To: bug@example.com\nSubject: subject\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("MIME-Version: 2.0\n"), "{stdout}");
+    assert!(
+        stdout.contains("Content-Type: text/plain; charset=UTF-8\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Content-Transfer-Encoding: BASE64\n\n"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("dGVzdA==\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iconv_encoding_state_to_native_binary() {
     let root = temp_dir("ptn-native-iconv-encoding-state");
     fs::create_dir_all(&root).unwrap();
