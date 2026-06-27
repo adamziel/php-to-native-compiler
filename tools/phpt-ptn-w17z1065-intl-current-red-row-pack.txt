@@ -1,0 +1,20 @@
+# ptn-w17z.1065 focused intl ICU locale/resourcebundle current-red row pack.
+# Selected from partial-statuses-20260627T194602Z.tsv after excluding active
+# intl row packs ptn-w17z.1042 and ptn-w17z.1024.
+#
+# Evidence:
+#   PTN_PHPT_TEST_TIMEOUT=120 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1065-intl-current-red-row-pack.txt
+
+# bucket: ext/intl rows=12
+ext/intl/tests/locale_filter_matches_icu70.phpt
+ext/intl/tests/spoofchecker_003.phpt
+ext/intl/tests/formatter_clone_bad_obj.phpt
+ext/intl/tests/locale_get_display_language2.phpt
+ext/intl/tests/gh21998.phpt
+ext/intl/tests/resourcebundle_get_errors.phpt
+ext/intl/tests/locale_get_region.phpt
+ext/intl/tests/locale_lookup_variant3.phpt
+ext/intl/tests/bug62083.phpt
+ext/intl/tests/msgfmt_format_error3.phpt
+ext/intl/tests/locale/bug74993.phpt
+ext/intl/tests/transliterator_transliterate_error.phpt
