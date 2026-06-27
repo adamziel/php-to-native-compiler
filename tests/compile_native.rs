@@ -55464,6 +55464,110 @@ echo $result->a['x'], '/', $result->a['y'], "\n";
 }
 
 #[test]
+fn compile_soap_wsdl_builtin_scalar_request_uses_xsd_type_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-builtin-scalar-request");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-builtin-scalar-request.php");
+    let output = root.join("soap-wsdl-builtin-scalar-request-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/builtin-scalar.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions name="InteropTest"
+  targetNamespace="http://soapinterop.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://soapinterop.org/">
+  <message name="echoDecimalRequest"><part name="inputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDecimalResponse"><part name="outputDecimal" type="xsd:decimal"/></message>
+  <message name="echoDateTimeRequest"><part name="inputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoDateTimeResponse"><part name="outputDateTime" type="xsd:dateTime"/></message>
+  <message name="echoStringRequest"><part name="inputString" type="xsd:string"/></message>
+  <message name="echoStringResponse"><part name="outputString" type="xsd:string"/></message>
+  <portType name="InteropTestPortType">
+    <operation name="echoDecimal"><input message="tns:echoDecimalRequest"/><output message="tns:echoDecimalResponse"/></operation>
+    <operation name="echoDateTime"><input message="tns:echoDateTimeRequest"/><output message="tns:echoDateTimeResponse"/></operation>
+    <operation name="echoString"><input message="tns:echoStringRequest"/><output message="tns:echoStringResponse"/></operation>
+  </portType>
+  <binding name="InteropTestBinding" type="tns:InteropTestPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="echoDecimal">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoDateTime">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+    <operation name="echoString">
+      <soap:operation soapAction="http://soapinterop.org/"/>
+      <input><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></input>
+      <output><soap:body use="encoded" namespace="http://soapinterop.org/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/></output>
+    </operation>
+  </binding>
+  <service name="InteropTestService">
+    <port name="InteropTestPort" binding="tns:InteropTestBinding"><soap:address location="http://localhost/interop"/></port>
+  </service>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl, ['trace' => 1, 'exceptions' => 0]);
+$client->echoDecimal('12345.67890');
+echo $client->__getLastRequest();
+$client->echoDateTime('2001-02-03T04:05:06Z');
+echo $client->__getLastRequest();
+$client->echoString(null);
+echo $client->__getLastRequest();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<inputDecimal xsi:type=\"xsd:decimal\">12345.67890</inputDecimal>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDecimal xsi:type=\"ns1:decimal\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputDateTime xsi:type=\"xsd:dateTime\">2001-02-03T04:05:06Z</inputDateTime>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputDateTime xsi:type=\"ns1:dateTime\">"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<inputString xsi:nil=\"true\"/>"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("<inputString xsi:type=\"xsd:string\"></inputString>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_encoded_part_xsi_type_prefix"));
+}
+
+#[test]
 fn compile_soap_round2_encoded_arrays_and_wsdl_scalar_outputs_to_native_binary() {
     let root = temp_dir("ptn-native-soap-round2-encoded-arrays-scalars");
     fs::create_dir_all(&root).unwrap();
