@@ -47809,6 +47809,46 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_dns_check_record_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-dns-check-record-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dns-check-record-validation.php");
+    let output = root.join("dns-check-record-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('dns_check_record'), function_exists('checkdnsrr'));\n\
+var_dump(DNS_A, DNS_NS, DNS_MX, DNS_AAAA, DNS_ALL, DNS_ANY);\n\
+try { dns_check_record(''); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { dns_check_record('php.net', 15263480); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { checkdnsrr('', 'A'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+int(1)\n\
+int(2)\n\
+int(16384)\n\
+int(134217728)\n\
+int(251721779)\n\
+int(268435456)\n\
+dns_check_record(): Argument #1 ($hostname) must not be empty\n\
+dns_check_record(): Argument #2 ($type) must be a valid DNS record type\n\
+checkdnsrr(): Argument #1 ($hostname) must not be empty\n\
+done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_binary_and_gethostbyname_to_native_binary() {
     let root = temp_dir("ptn-native-php-binary-gethostbyname");
     fs::create_dir_all(&root).unwrap();

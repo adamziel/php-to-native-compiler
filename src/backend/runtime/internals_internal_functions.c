@@ -64815,6 +64815,179 @@ static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, con
     return ptn_owned_string(input);
 }
 
+#define PTN_DNS_QUERY_CLASS_IN 1
+#define PTN_DNS_QUERY_A 1
+#define PTN_DNS_QUERY_NS 2
+#define PTN_DNS_QUERY_CNAME 5
+#define PTN_DNS_QUERY_SOA 6
+#define PTN_DNS_QUERY_PTR 12
+#define PTN_DNS_QUERY_MX 15
+#define PTN_DNS_QUERY_TXT 16
+#define PTN_DNS_QUERY_AAAA 28
+#define PTN_DNS_QUERY_SRV 33
+#define PTN_DNS_QUERY_NAPTR 35
+#define PTN_DNS_QUERY_A6 38
+#define PTN_DNS_QUERY_CAA 257
+#define PTN_DNS_QUERY_ANY 255
+
+static int ptn_dns_check_record_type_name_equals(PtnStringOperand value, const char *literal) {
+    size_t len = strlen(literal);
+    if (value.len != len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char left = (unsigned char)value.data[i];
+        unsigned char right = (unsigned char)literal[i];
+        if (tolower(left) != tolower(right)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_dns_check_record_parse_type(
+    PtnStringOperand value,
+    int *query_type
+) {
+    if (ptn_dns_check_record_type_name_equals(value, "A")) {
+        *query_type = PTN_DNS_QUERY_A;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "NS")) {
+        *query_type = PTN_DNS_QUERY_NS;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "MX")) {
+        *query_type = PTN_DNS_QUERY_MX;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "PTR")) {
+        *query_type = PTN_DNS_QUERY_PTR;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "ANY")) {
+        *query_type = PTN_DNS_QUERY_ANY;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "SOA")) {
+        *query_type = PTN_DNS_QUERY_SOA;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "CAA")) {
+        *query_type = PTN_DNS_QUERY_CAA;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "TXT")) {
+        *query_type = PTN_DNS_QUERY_TXT;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "CNAME")) {
+        *query_type = PTN_DNS_QUERY_CNAME;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "AAAA")) {
+        *query_type = PTN_DNS_QUERY_AAAA;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "SRV")) {
+        *query_type = PTN_DNS_QUERY_SRV;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "NAPTR")) {
+        *query_type = PTN_DNS_QUERY_NAPTR;
+        return 1;
+    }
+    if (ptn_dns_check_record_type_name_equals(value, "A6")) {
+        *query_type = PTN_DNS_QUERY_A6;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_dns_check_record_answer_has_records(const unsigned char *answer, int answer_len) {
+    if (answer_len < 8) {
+        return 0;
+    }
+    unsigned int answer_count = ((unsigned int)answer[6] << 8) | (unsigned int)answer[7];
+    return answer_count != 0;
+}
+
+static PtnValue ptn_internal_dns_check_record_named(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, function_name, 1, "hostname", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+    if (hostname.len == 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($hostname) must not be empty",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        ptn_string_operand_free(hostname);
+        return ptn_null();
+    }
+
+    int query_type = PTN_DNS_QUERY_MX;
+    if (argc >= 2) {
+        PtnStringOperand type = ptn_internal_expect_string_arg(runtime, function_name, 2, "type", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(hostname);
+            ptn_string_operand_free(type);
+            return ptn_null();
+        }
+        if (!ptn_dns_check_record_parse_type(type, &query_type)) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #2 ($type) must be a valid DNS record type",
+                function_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ValueError", message);
+            ptn_string_operand_free(type);
+            ptn_string_operand_free(hostname);
+            return ptn_null();
+        }
+        ptn_string_operand_free(type);
+    }
+
+#if !defined(_WIN32)
+    unsigned char answer[4096];
+    char *host = ptn_duplicate_string_len(hostname.data, hostname.len);
+    int answer_len = res_search(host, PTN_DNS_QUERY_CLASS_IN, query_type, answer, sizeof(answer));
+    free(host);
+    ptn_string_operand_free(hostname);
+    return ptn_bool(ptn_dns_check_record_answer_has_records(answer, answer_len));
+#endif
+
+    ptn_string_operand_free(hostname);
+    return ptn_bool(0);
+}
+
+static PtnValue ptn_internal_dns_check_record(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_dns_check_record_named(runtime, "dns_check_record", argc, args, line);
+}
+
+static PtnValue ptn_internal_checkdnsrr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_dns_check_record_named(runtime, "checkdnsrr", argc, args, line);
+}
+
 static PtnValue ptn_internal_getprotobyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "getprotobyname", 1, "protocol", args[0], line);
@@ -104297,6 +104470,21 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+    ptn_get_defined_constants_add_int(table, "DNS_A", PTN_DNS_A);
+    ptn_get_defined_constants_add_int(table, "DNS_NS", PTN_DNS_NS);
+    ptn_get_defined_constants_add_int(table, "DNS_CNAME", PTN_DNS_CNAME);
+    ptn_get_defined_constants_add_int(table, "DNS_SOA", PTN_DNS_SOA);
+    ptn_get_defined_constants_add_int(table, "DNS_PTR", PTN_DNS_PTR);
+    ptn_get_defined_constants_add_int(table, "DNS_HINFO", PTN_DNS_HINFO);
+    ptn_get_defined_constants_add_int(table, "DNS_CAA", PTN_DNS_CAA);
+    ptn_get_defined_constants_add_int(table, "DNS_MX", PTN_DNS_MX);
+    ptn_get_defined_constants_add_int(table, "DNS_TXT", PTN_DNS_TXT);
+    ptn_get_defined_constants_add_int(table, "DNS_A6", PTN_DNS_A6);
+    ptn_get_defined_constants_add_int(table, "DNS_SRV", PTN_DNS_SRV);
+    ptn_get_defined_constants_add_int(table, "DNS_NAPTR", PTN_DNS_NAPTR);
+    ptn_get_defined_constants_add_int(table, "DNS_AAAA", PTN_DNS_AAAA);
+    ptn_get_defined_constants_add_int(table, "DNS_ALL", PTN_DNS_ALL);
+    ptn_get_defined_constants_add_int(table, "DNS_ANY", PTN_DNS_ANY);
     ptn_get_defined_constants_add_int(table, "PSFS_ERR_FATAL", PTN_PSFS_ERR_FATAL);
     ptn_get_defined_constants_add_int(table, "PSFS_FEED_ME", PTN_PSFS_FEED_ME);
     ptn_get_defined_constants_add_int(table, "PSFS_PASS_ON", PTN_PSFS_PASS_ON);
@@ -104831,6 +105019,21 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_READ",
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
+        "DNS_A",
+        "DNS_NS",
+        "DNS_CNAME",
+        "DNS_SOA",
+        "DNS_PTR",
+        "DNS_HINFO",
+        "DNS_CAA",
+        "DNS_MX",
+        "DNS_TXT",
+        "DNS_A6",
+        "DNS_SRV",
+        "DNS_NAPTR",
+        "DNS_AAAA",
+        "DNS_ALL",
+        "DNS_ANY",
         "PSFS_ERR_FATAL",
         "PSFS_FEED_ME",
         "PSFS_PASS_ON",
@@ -162747,6 +162950,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
         { "checkdate", 3, 3, ptn_internal_checkdate },
+        { "checkdnsrr", 1, 2, ptn_internal_checkdnsrr },
         { "chgrp", 2, 2, ptn_internal_chgrp },
         { "chmod", 2, 2, ptn_internal_chmod },
         { "chown", 2, 2, ptn_internal_chown },
@@ -162861,6 +163065,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
+        { "dns_check_record", 1, 2, ptn_internal_dns_check_record },
         { "deflate_add", 2, 3, ptn_internal_deflate_add },
         { "deflate_init", 1, 2, ptn_internal_deflate_init },
         { "doubleval", 1, 1, ptn_internal_floatval },
