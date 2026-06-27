@@ -1721,6 +1721,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_string(ptn_libxml_version_info_load()->loaded);
         return 1;
     }
+    if (strcmp(name, "LIBXML_RECOVER") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     if (strcmp(name, "LIBXML_NOENT") == 0) {
         *out = ptn_int(2);
         return 1;

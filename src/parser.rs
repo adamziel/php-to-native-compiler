@@ -24293,6 +24293,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "LIBXML_DOTTED_VERSION"
             | "LIBXML_VERSION"
             | "LIBXML_LOADED_VERSION"
+            | "LIBXML_RECOVER"
             | "LIBXML_NOENT"
             | "LIBXML_DTDLOAD"
             | "LIBXML_DTDATTR"

@@ -103902,6 +103902,7 @@ static void ptn_defined_constants_add_libxml(PtnValue table) {
     ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string(version->dotted));
     ptn_get_defined_constants_add_int(table, "LIBXML_VERSION", version->version);
     ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_LOADED_VERSION"), ptn_string(version->loaded));
+    ptn_get_defined_constants_add_int(table, "LIBXML_RECOVER", PTN_LIBXML_RECOVER);
     ptn_get_defined_constants_add_int(table, "LIBXML_NOENT", PTN_LIBXML_NOENT);
     ptn_get_defined_constants_add_int(table, "LIBXML_DTDLOAD", PTN_LIBXML_DTDLOAD);
     ptn_get_defined_constants_add_int(table, "LIBXML_DTDATTR", PTN_LIBXML_DTDATTR);
@@ -104582,6 +104583,7 @@ static int ptn_reflection_constant_is_libxml(const char *name) {
         "LIBXML_DOTTED_VERSION",
         "LIBXML_VERSION",
         "LIBXML_LOADED_VERSION",
+        "LIBXML_RECOVER",
         "LIBXML_NOENT",
         "LIBXML_DTDLOAD",
         "LIBXML_DTDATTR",
@@ -128013,7 +128015,14 @@ static int ptn_xml_html_void_element_name(const char *name) {
         ptn_ascii_case_equal(name, "wbr");
 }
 
-static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len, int html_mode) {
+static int ptn_xml_parse_document_into_mode_with_recover(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    const char *data,
+    size_t len,
+    int html_mode,
+    int recover
+) {
     (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_DOM_TREE));
     PtnXmlLineMap line_map;
     ptn_xml_line_map_init(&line_map, data, len);
@@ -128259,7 +128268,7 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
             ptn_xml_node_array_push(&stack, &stack_len, &stack_capacity, element);
         }
     }
-    int complete = (html_mode ? 1 : stack_len <= 1) && well_formed;
+    int complete = (html_mode ? 1 : (recover ? stack_len >= 1 : stack_len <= 1)) && well_formed;
     if (html_mode) {
         ptn_dom_html_normalize_root_whitespace(document);
         ptn_dom_html_normalize_body_misnested_wrappers(document);
@@ -128268,6 +128277,10 @@ static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *doc
     ptn_xml_parser_dtd_state_free(&dtd_parser);
     ptn_xml_line_map_free(&line_map);
     return complete;
+}
+
+static int ptn_xml_parse_document_into_mode(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len, int html_mode) {
+    return ptn_xml_parse_document_into_mode_with_recover(runtime, document, data, len, html_mode, 0);
 }
 
 static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len) {
@@ -128487,14 +128500,16 @@ static PtnValue ptn_dom_construct_entity_reference(PtnRuntime *runtime, size_t a
 }
 
 static PtnValue ptn_dom_construct_character(PtnRuntime *runtime, const char *class_name, int type, size_t argc, const PtnValue *args, size_t line) {
-    if (argc < 1 || argc > 1) {
+    int data_is_optional = ptn_ascii_case_equal(class_name, "DOMText") ||
+        ptn_ascii_case_equal(class_name, "DOMComment");
+    if ((!data_is_optional && argc != 1) || (data_is_optional && argc > 1)) {
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
             "%s::__construct() expects %s, %zu given",
             class_name,
-            argc < 1 ? "exactly 1 argument" : "at most 1 argument",
+            data_is_optional ? "at most 1 argument" : "exactly 1 argument",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -128503,7 +128518,9 @@ static PtnValue ptn_dom_construct_character(PtnRuntime *runtime, const char *cla
         ptn_throw_exception(runtime, "TypeError", message);
         return ptn_null();
     }
-    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "__construct", 1, "data", args[0], line);
+    PtnStringOperand data = argc >= 1
+        ? ptn_internal_expect_string_arg(runtime, "__construct", 1, "data", args[0], line)
+        : ptn_string_operand_borrowed("");
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
@@ -132336,7 +132353,14 @@ static PtnValue ptn_dom_load_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     int previous_parser_substitute_entities = document->parser_substitute_entities;
     document->parser_substitute_entities =
         !ptn_libxml_entity_loader_disabled && ((options & PTN_LIBXML_NOENT) != 0);
-    int ok = ptn_xml_parse_document_into(runtime, document, source.data, source.len);
+    int ok = ptn_xml_parse_document_into_mode_with_recover(
+        runtime,
+        document,
+        source.data,
+        source.len,
+        0,
+        (options & PTN_LIBXML_RECOVER) != 0
+    );
     if (ok) {
         ptn_xml_document_mark_duplicate_xml_ids(runtime, document);
     }
@@ -132505,10 +132529,11 @@ static int ptn_dom_html_document_validate_options(PtnRuntime *runtime, const cha
 
 static PtnValue ptn_dom_document_create_empty(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {
     int html_document = ptn_dom_class_name_is_html_document(class_name);
-    size_t max_args = html_document ? 1 : 0;
+    int xml_document = ptn_ascii_case_equal(class_name, "Dom\\XMLDocument");
+    size_t max_args = (html_document || xml_document) ? 1 : 0;
     if (argc > max_args) {
         char message[160];
-        int written = html_document
+        int written = (html_document || xml_document)
             ? snprintf(message, sizeof(message), "%s::createEmpty() expects at most 1 argument, %zu given", class_name, argc)
             : snprintf(message, sizeof(message), "%s::createEmpty() expects exactly 0 arguments, %zu given", class_name, argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -132550,6 +132575,25 @@ static PtnValue ptn_dom_document_create_empty(PtnRuntime *runtime, const char *c
         PtnXmlNode *document = ptn_xml_node_data(document_value);
         free(document->encoding);
         document->encoding = canonical;
+    }
+    if (xml_document && argc >= 1) {
+        PtnStringOperand version = ptn_internal_expect_string_arg(
+            runtime,
+            "Dom\\XMLDocument::createEmpty",
+            1,
+            "version",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(version);
+            ptn_value_destroy(&document_value);
+            return ptn_null();
+        }
+        PtnXmlNode *document = ptn_xml_node_data(document_value);
+        free(document->version);
+        document->version = ptn_duplicate_string_len(version.data, version.len);
+        ptn_string_operand_free(version);
     }
     return document_value;
 }
@@ -132695,7 +132739,33 @@ static PtnValue ptn_dom_document_create_from_string(PtnRuntime *runtime, const c
         parse_data = ptn_dom_html_prepare_source_for_parse(document, source.data, source.len, sniff_charset, &parse_len);
         parse_source = parse_data;
     }
-    int ok = ptn_xml_parse_document_into_mode(runtime, document, parse_source, parse_len, html_document);
+    if (!html_document && (options & PTN_LIBXML_RECOVER) != 0 &&
+        !ptn_dom_libxml_accepts_document_source(
+            runtime,
+            method_name,
+            parse_source,
+            parse_len,
+            NULL,
+            (int)options,
+            line
+        )) {
+        free(parse_data);
+        ptn_dom_xml_parse_warning_function_name = previous_warning_function_name;
+        ptn_dom_xml_parse_suppress_warnings = previous_suppress_warnings;
+        ptn_dom_xml_parse_warning_php_line = previous_warning_php_line;
+        ptn_string_operand_free(source);
+        ptn_value_destroy(&document_value);
+        ptn_throw_exception(runtime, "ValueError", "Failed to parse document source");
+        return ptn_null();
+    }
+    int ok = ptn_xml_parse_document_into_mode_with_recover(
+        runtime,
+        document,
+        parse_source,
+        parse_len,
+        html_document,
+        !html_document && ((options & PTN_LIBXML_RECOVER) != 0)
+    );
     free(parse_data);
     if (ok && !html_document) {
         ptn_xml_document_mark_duplicate_xml_ids(runtime, document);

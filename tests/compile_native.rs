@@ -50298,6 +50298,105 @@ echo '/n:foo/n:bar=', count($xpath->query('/n:foo/n:bar')), "\n";
 }
 
 #[test]
+fn compile_libxml_recover_dom_xml_parse_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-recover-dom-xml-parse");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("libxml-recover-dom-xml-parse.php");
+    let output = root.join("libxml-recover-dom-xml-parse-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(defined('LIBXML_RECOVER'), LIBXML_RECOVER, get_defined_constants(true)['libxml']['LIBXML_RECOVER']);
+$legacy = new DOMDocument();
+var_dump($legacy->loadXML('<root><child/>', LIBXML_RECOVER));
+echo $legacy->saveXML();
+$modern = Dom\\XMLDocument::createFromString('<root><child/>', LIBXML_RECOVER);
+echo $modern->saveXML();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nint(1)\nint(1)\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: DOMDocument::loadXML():"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(true)\n<?xml version=\"1.0\"?>\n<root><child/></root>\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: Dom\\XMLDocument::createFromString():"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root><child/></root>"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_LIBXML_RECOVER"));
+}
+
+#[test]
+fn compile_dom_empty_text_and_xml_document_version_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-empty-text-xml-document-version");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-empty-text-xml-document-version.php");
+    let output = root.join("dom-empty-text-xml-document-version-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$text = new DOMText();
+foreach ([
+    fn() => $text->substringData(1, 0),
+    fn() => $text->insertData(1, ""),
+    fn() => $text->deleteData(1, 1),
+    fn() => $text->replaceData(1, 1, ""),
+] as $operation) {
+    try {
+        var_dump($operation());
+    } catch (DOMException $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+$comment = new DOMComment();
+var_dump(strlen($comment->data));
+$dom = Dom\XMLDocument::createEmpty("1.1");
+var_dump($dom->xmlVersion, $dom->xmlEncoding);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Index Size Error\n",
+            "Index Size Error\n",
+            "Index Size Error\n",
+            "Index Size Error\n",
+            "int(0)\n",
+            "string(3) \"1.1\"\n",
+            "string(5) \"UTF-8\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Dom\\\\XMLDocument::createEmpty"));
+}
+
+#[test]
 fn compile_dom_namespace_mutation_reuses_ancestor_bindings() {
     let root = temp_dir("ptn-native-dom-namespace-mutation-bindings");
     fs::create_dir_all(&root).unwrap();
