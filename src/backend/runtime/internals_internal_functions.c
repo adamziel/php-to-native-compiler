@@ -13850,6 +13850,27 @@ static char *ptn_unserialize_internal_unserialize_trace_name(PtnValue receiver) 
     return trace_name;
 }
 
+static char *ptn_unserialize_magic_trace_name(PtnValue receiver, const char *method_name) {
+    receiver = ptn_value_deref(receiver);
+    const char *class_name = receiver.type == PTN_OBJECT && receiver.as.object != NULL
+        ? receiver.as.object->class_name
+        : "Object";
+    int needed = snprintf(NULL, 0, "%s->%s", class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *trace_name = malloc((size_t)needed + 1);
+    if (trace_name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(trace_name, (size_t)needed + 1, "%s->%s", class_name, method_name);
+    if (written < 0 || written != needed) {
+        free(trace_name);
+        ptn_abort_out_of_memory();
+    }
+    return trace_name;
+}
+
 static PtnValue ptn_unserialize_call_internal_custom_payload_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -14512,6 +14533,17 @@ static void ptn_unserialize_call_magic_method(
     runtime->active_unserialize_state = NULL;
     PtnValue result = ptn_null();
     int caught_exception = 0;
+    char *trace_name = ptn_unserialize_magic_trace_name(object, method_name);
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        trace_name,
+        NULL,
+        0,
+        argc,
+        argc == 0 ? NULL : args
+    );
     PtnTryFrame magic_frame;
     ptn_try_frame_push(runtime, &magic_frame);
     if (setjmp(magic_frame.jump) != 0) {
@@ -14529,6 +14561,8 @@ static void ptn_unserialize_call_magic_method(
         );
     }
     ptn_try_frame_pop(runtime, &magic_frame);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    free(trace_name);
     runtime->active_unserialize_state = saved_active_unserialize_state;
     if (caught_exception) {
         ptn_value_destroy(&result);
@@ -110210,6 +110244,58 @@ static void ptn_date_throw_uninitialized_object_error(PtnRuntime *runtime, PtnVa
     ptn_throw_exception(runtime, "DateObjectError", message);
 }
 
+static void ptn_date_throw_uninitialized_object_error_at_with_trace_frame(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *ancestor,
+    size_t line,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    PtnValue object = ptn_value_deref(value);
+    const char *source_class = object.type == PTN_OBJECT && object.as.object != NULL
+        ? object.as.object->class_name
+        : ancestor;
+    int needed = snprintf(
+        NULL,
+        0,
+        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+        source_class,
+        ancestor
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Object of type %s (inheriting %s) has not been correctly initialized by calling parent::__construct() in its constructor",
+        source_class,
+        ancestor
+    );
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "DateObjectError",
+        message,
+        runtime->source_path,
+        line,
+        function_name,
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
+}
+
 static void ptn_date_throw_uninitialized_named_object_error(PtnRuntime *runtime, const char *class_name) {
     char message[192];
     int written = snprintf(
@@ -113631,7 +113717,17 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         }
         PtnDateTimeData *data = ptn_datetime_data_from_value(receiver);
         if (data == NULL) {
-            ptn_date_throw_uninitialized_object_error(runtime, receiver, ptn_date_datetime_ancestor_for_value(receiver));
+            char trace_name[32];
+            snprintf(trace_name, sizeof(trace_name), "%s->format", class_name);
+            ptn_date_throw_uninitialized_object_error_at_with_trace_frame(
+                runtime,
+                receiver,
+                ptn_date_datetime_ancestor_for_value(receiver),
+                line,
+                trace_name,
+                argc,
+                args
+            );
             return ptn_null();
         }
         PtnStringOperand format = ptn_internal_expect_string_arg(runtime, immutable ? "DateTimeImmutable::format" : "DateTime::format", 1, "format", args[0], line);
