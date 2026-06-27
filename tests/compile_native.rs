@@ -28900,6 +28900,94 @@ SILENT mode AUTO: has error\n"
 }
 
 #[test]
+fn compile_stream_context_filter_socket_zlib_regressions_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-filter-socket-zlib");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-filter-socket-zlib.php");
+    let output = root.join("stream-context-filter-socket-zlib-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$context = stream_context_create();
+var_dump(stream_context_set_option($context, 'http', 'method', 'POST'));
+var_dump(stream_context_set_option($context, ['http' => ['user_agent' => 'PTN Agent']]));
+var_dump(stream_context_get_options($context));
+
+try {
+    stream_context_get_default([0 => ['A' => 0]]);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+var_dump(file(urldecode('php://filter/convert.quoted-printable-encode/resource=data://,%bfAAAA%ff')));
+
+$sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+var_dump(stream_set_timeout($sockets[1], 1));
+fwrite($sockets[0], 'foo');
+var_dump(stream_get_contents($sockets[1], 3));
+
+$badMode = __DIR__ . '/bad-mode.gz';
+var_dump(gzopen($badMode, 'c'));
+var_dump(file_exists($badMode));
+unlink($badMode);
+
+$gz = __DIR__ . '/seek.gz';
+$h = gzopen($gz, 'w');
+gzwrite($h, '0123456789abcdef');
+gzclose($h);
+$h = gzopen($gz, 'r');
+gzread($h, 4);
+var_dump(gzseek($h, 0, SEEK_END));
+echo 'tell=';
+var_dump(gztell($h));
+var_dump(gzread($h, 3));
+gzclose($h);
+unlink($gz);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Calling stream_context_set_option() with 2 arguments is deprecated"));
+    assert!(stdout.contains("Warning: gzopen(): gzopen failed"));
+    assert!(stdout.contains("Warning: gzseek(): SEEK_END is not supported"));
+    let stdout_without_warnings = stdout
+        .lines()
+        .filter(|line| {
+            !line.is_empty() && !line.contains("Warning: ") && !line.contains("Deprecated: ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert_eq!(
+        stdout_without_warnings,
+        "bool(true)\n\
+bool(true)\n\
+array(1) {\n  [\"http\"]=>\n  array(2) {\n    [\"method\"]=>\n    string(4) \"POST\"\n    [\"user_agent\"]=>\n    string(9) \"PTN Agent\"\n  }\n}\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+array(1) {\n  [0]=>\n  string(10) \"=BFAAAA=FF\"\n}\n\
+bool(true)\n\
+string(3) \"foo\"\n\
+bool(false)\n\
+bool(true)\n\
+int(-1)\n\
+tell=int(4)\n\
+string(3) \"456\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_set_option"));
+    assert!(c_source.contains("ptn_internal_stream_set_timeout"));
+    assert!(c_source.contains("ptn_try_read_php_filter_url_bytes"));
+    assert!(c_source.contains("ptn_gzopen_mode_is_supported"));
+}
+
+#[test]
 fn compile_file_get_contents_uri_parser_context_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
     fs::create_dir_all(&root).unwrap();

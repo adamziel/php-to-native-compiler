@@ -1,0 +1,16 @@
+# ptn-w17z.991 exact current-red PHAR/zlib/filter/stream-context row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T011956Z.tsv
+# Rows were selected as FAIL in that artifact after filtering recent ptn-w17z.899-.990 assignments.
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+ext/zlib/tests/gzseek_variation6.phpt
+ext/phar/tests/tar/bug71504.phpt
+ext/standard/tests/streams/bug61019.phpt
+ext/standard/tests/streams/stream_context_set_option_basic.phpt
+ext/phar/tests/bug64931/bug64931.phpt
+ext/standard/tests/filters/bug77231.phpt
+ext/standard/tests/filters/object_init_failure_2.phpt
+ext/standard/tests/filters/bug73586.phpt
+ext/standard/tests/streams/bug71884.phpt
+ext/standard/tests/streams/stream_get_contents_002.phpt
+ext/standard/tests/filters/bug77069.phpt
+ext/zlib/tests/bug61139.phpt
