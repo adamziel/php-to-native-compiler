@@ -33,6 +33,7 @@
 #include <langinfo.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <pwd.h>
 #include <regex.h>
 #include <sys/file.h>
@@ -1216,7 +1217,8 @@ typedef enum {
     PTN_STREAM_BACKEND_TEMP,
     PTN_STREAM_BACKEND_OUTPUT,
     PTN_STREAM_BACKEND_RFC2397,
-    PTN_STREAM_BACKEND_ZLIB
+    PTN_STREAM_BACKEND_ZLIB,
+    PTN_STREAM_BACKEND_SOCKET
 } PtnStreamBackend;
 
 typedef struct {

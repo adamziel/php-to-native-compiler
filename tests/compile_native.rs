@@ -29415,6 +29415,117 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_stream_row_pack_socket_data_transport_regressions_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-row-pack-regressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-row-pack-regressions.php");
+    let output = root.join("stream-row-pack-regressions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filename = tempnam(__DIR__, 'phpbug');\n\
+$stream = fopen($filename, 'w');\n\
+var_dump(stream_get_contents($stream, 1, 1));\n\
+fclose($stream);\n\
+unlink($filename);\n\
+\n\
+$meta = stream_get_meta_data(fopen('data:text/plain;z=y;uri=eviluri;mediatype=wut?;mediatype2=hello,somedata', 'r'));\n\
+var_dump($meta['mediatype']);\n\
+var_dump($meta['z']);\n\
+var_dump($meta['uri']);\n\
+var_dump($meta['mediatype2']);\n\
+var_dump($meta['base64']);\n\
+var_dump($meta['wrapper_type']);\n\
+var_dump($meta['stream_type']);\n\
+var_dump($meta['mode']);\n\
+var_dump($meta['unread_bytes']);\n\
+var_dump($meta['seekable']);\n\
+\n\
+$transports = stream_get_transports();\n\
+var_dump(is_array($transports));\n\
+var_dump(in_array('tcp', $transports, true));\n\
+\n\
+[$sock1, $sock2] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);\n\
+stream_set_blocking($sock1, false);\n\
+$str = str_repeat('a', 1000000);\n\
+var_dump(is_int(fwrite($sock1, $str)));\n\
+var_dump(is_int(fwrite($sock1, $str)));\n\
+fclose($sock1);\n\
+fclose($sock2);\n\
+\n\
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);\n\
+foreach ([NAN, -NAN, INF, -INF] as $value) {\n\
+    try {\n\
+        stream_socket_accept($server, $value);\n\
+    } catch (ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+fclose($server);\n\
+\n\
+foreach ([NAN, -NAN, INF, -INF] as $value) {\n\
+    try {\n\
+        stream_socket_client('tcp://0.0.0.0:14781', timeout: $value);\n\
+    } catch (ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Notice: stream_get_contents(): Read of 8192 bytes failed with errno=9 Bad file"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("string(0) \"\"\n"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "string(10) \"text/plain\"\n\
+string(1) \"y\"\n\
+string(72) \"data:text/plain;z=y;uri=eviluri;mediatype=wut?;mediatype2=hello,somedata\"\n\
+string(5) \"hello\"\n\
+bool(false)\n\
+string(7) \"RFC2397\"\n\
+string(7) \"RFC2397\"\n\
+string(1) \"r\"\n\
+int(0)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("stream_socket_accept(): Argument #2 ($timeout) must be a finite value")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    assert_eq!(
+        stdout
+            .matches("stream_socket_client(): Argument #4 ($timeout) must be a finite value")
+            .count(),
+        4,
+        "{stdout}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_get_transports"));
+    assert!(c_source.contains("ptn_internal_stream_socket_accept"));
+}
+
+#[test]
 fn compile_stream_convert_filters_and_dechunk_to_native_binary() {
     let root = temp_dir("ptn-native-stream-convert-filters-dechunk");
     fs::create_dir_all(&root).unwrap();

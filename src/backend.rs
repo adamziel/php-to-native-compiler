@@ -5925,6 +5925,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("stream_socket_server") && argument_index == 2 {
         return Some("error_message");
     }
+    if name.eq_ignore_ascii_case("stream_socket_accept") && argument_index == 2 {
+        return Some("peer_name");
+    }
     if name.eq_ignore_ascii_case("similar_text") && argument_index == 2 {
         return Some("percent");
     }
