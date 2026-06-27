@@ -26673,6 +26673,43 @@ foreach ([[$dt, $bad], [$bad, $dt], [$dti, $bad], [$bad, $dti]] as $pair) {\n\
 }
 
 #[test]
+fn compile_dateinterval_comparison_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-dateinterval-comparison-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dateinterval-comparison-warnings.php");
+    let output = root.join("dateinterval-comparison-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$i1 = new DateInterval('P1D');\n\
+$i2 = new DateInterval('PT1H');\n\
+var_dump($i1 == $i2);\n\
+var_dump($i1 < $i2);\n\
+var_dump($i1 > $i2);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Cannot compare DateInterval objects")
+            .count(),
+        3
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 3);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();
@@ -27043,6 +27080,57 @@ echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e')
     assert!(c_source.contains("ptn_internal_date_offset_get"));
     assert!(c_source.contains("ptn_internal_strtotime"));
     assert!(c_source.contains("ptn_internal_date_parse"));
+}
+
+#[test]
+fn compile_datetime_noon_and_fractional_interval_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-noon-fractional-interval");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-noon-fractional-interval.php");
+    let output = root.join("datetime-noon-fractional-interval-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+echo date(DATE_ISO8601, strtotime('2005-12-22 noon')), \"\\n\";\n\
+$dt = new DateTimeImmutable('2016-10-03 12:47:18.081921');\n\
+echo $dt->modify('yesterday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+echo $dt->modify('noon')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+echo $dt->modify('10 weekday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+$actual = new DateTimeImmutable('2022-07-21 15:00:10');\n\
+$delta = new DateInterval('PT0S');\n\
+$delta->f = -0.9;\n\
+$lower = $actual->sub($delta);\n\
+$upper = $actual->add($delta);\n\
+echo $lower->format('H:i:s.u U'), \"\\n\";\n\
+echo $upper->format('H:i:s.u U'), \"\\n\";\n\
+var_dump($actual < $lower, $actual > $upper);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2005-12-22T12:00:00+0000\n",
+            "2016-10-02 00:00:00.000000\n",
+            "2016-10-03 12:00:00.000000\n",
+            "2016-10-17 12:47:18.081921\n",
+            "15:00:10.900000 1658415610\n",
+            "15:00:09.100000 1658415609\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

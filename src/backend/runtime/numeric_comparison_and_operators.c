@@ -262,6 +262,12 @@ static int ptn_compare_datetimezone_objects_order(
     size_t line,
     int *compared
 );
+static int ptn_compare_dateinterval_objects_warn(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+);
 
 static PTN_UNUSED int ptn_compare_objects_equal(
     PtnRuntime *runtime,
@@ -281,6 +287,9 @@ static PTN_UNUSED int ptn_compare_objects_equal(
         if (!ptn_lazy_object_initialize(runtime, value, line)) {
             return 0;
         }
+    }
+    if (ptn_compare_dateinterval_objects_warn(runtime, left, right, line)) {
+        return 0;
     }
     if (left == right) {
         return 1;
@@ -327,6 +336,24 @@ static int ptn_compare_object_is_datetime(PtnObject *object) {
 static int ptn_compare_object_is_datetimezone(PtnObject *object) {
     return object != NULL &&
         ptn_declared_class_is_same_or_descendant(object->class_name, "DateTimeZone");
+}
+
+static int ptn_compare_object_is_dateinterval(PtnObject *object) {
+    return object != NULL &&
+        ptn_declared_class_is_same_or_descendant(object->class_name, "DateInterval");
+}
+
+static int ptn_compare_dateinterval_objects_warn(
+    PtnRuntime *runtime,
+    PtnObject *left,
+    PtnObject *right,
+    size_t line
+) {
+    if (!ptn_compare_object_is_dateinterval(left) || !ptn_compare_object_is_dateinterval(right)) {
+        return 0;
+    }
+    ptn_emit_warning(&runtime->diagnostics, "Cannot compare DateInterval objects", line);
+    return 1;
 }
 
 static PtnArrayEntry *ptn_compare_object_string_property_entry(PtnObject *object, const char *name) {
@@ -635,6 +662,9 @@ static PTN_UNUSED int ptn_compare_objects_order(
         if (!ptn_lazy_object_initialize(runtime, value, line)) {
             return PTN_COMPARE_UNORDERED;
         }
+    }
+    if (ptn_compare_dateinterval_objects_warn(runtime, left, right, line)) {
+        return PTN_COMPARE_UNORDERED;
     }
     if (left == right) {
         return PTN_COMPARE_EQUAL;
