@@ -1,0 +1,18 @@
+# ptn-w17z.987 exact Zend/DOM/intl/random/hash reference/copy current-red row pack.
+#
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T010951Z.tsv
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z987-zend-reference-copy-row-pack.txt
+
+Zend/tests/list/list_reference_001.phpt
+Zend/tests/enum/no-implement-serializable-indirect.phpt
+Zend/tests/foreach/foreach.phpt
+ext/dom/tests/entity_reference_stale_02.phpt
+Zend/tests/foreach/bug67633.phpt
+Zend/tests/list/list_reference_009.phpt
+ext/dom/tests/DOMEntityReference_predefined_free.phpt
+Zend/tests/list/list_reference_004.phpt
+ext/random/tests/03_randomizer/methods/__serialize_indirects.phpt
+ext/dom/tests/modern/common/serialize_entity_reference_in_attribute.phpt
+ext/hash/tests/hash_copy_001.phpt
+ext/intl/tests/intltz_get_offset_references.phpt

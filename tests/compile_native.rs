@@ -50709,6 +50709,65 @@ try {{
 }
 
 #[test]
+fn compile_dom_legacy_empty_prefix_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-legacy-empty-prefix-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-legacy-empty-prefix-reads.php");
+    let output = root.join("dom-legacy-empty-prefix-reads-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$root = $doc->appendChild($doc->createElement("root"));
+$attr = $doc->createAttribute("plain");
+$root->appendChild($attr);
+$ref = new DOMEntityReference("amp");
+$text = $doc->createTextNode("x");
+
+foreach ([$doc, $root, $attr, $ref, $text] as $node) {
+    var_dump($node->prefix);
+}
+
+ob_start();
+var_dump($ref);
+$dump = ob_get_clean();
+echo strpos($dump, "[\"prefix\"]=>\n  string(0) \"\"\n") === false ? $dump : "entity-prefix-ok\n";
+
+$modern = Dom\XMLDocument::createFromString("<root/>");
+var_dump($modern->prefix, $modern->documentElement->prefix);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "entity-prefix-ok\n",
+            "NULL\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("node->modern_dom ? ptn_null() : ptn_string(\"\")"));
+}
+
+#[test]
 fn compile_dom_entity_reference_stale_child_nodes_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-dom-entity-reference-stale-childnodes");
     fs::create_dir_all(&root).unwrap();

@@ -133484,7 +133484,8 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             }
             return 1;
         }
-        if (node->type == PTN_XML_NODE_ATTRIBUTE &&
+        if (node->modern_dom &&
+            node->type == PTN_XML_NODE_ATTRIBUTE &&
             (node->namespace_uri == NULL || node->namespace_uri[0] == '\0')) {
             *value_out = ptn_null();
             return 1;
@@ -133492,7 +133493,7 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         char *prefix = ptn_xml_prefix_dup(node->name);
         if (prefix[0] == '\0') {
             free(prefix);
-            *value_out = ptn_null();
+            *value_out = node->modern_dom ? ptn_null() : ptn_string("");
         } else {
             *value_out = ptn_owned_string(prefix);
         }
