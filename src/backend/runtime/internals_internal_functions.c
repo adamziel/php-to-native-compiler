@@ -53970,6 +53970,54 @@ static PtnValue ptn_phar_directory_resource_value(PtnRuntime *runtime, const cha
     return ptn_resource(directory_resource);
 }
 
+static int ptn_try_open_user_directory_wrapper(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    size_t line,
+    PtnValue *out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        return 0;
+    }
+    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    if (!ptn_user_stream_assign_context(runtime, object, ptn_default_stream_context_ensure(), line)) {
+        ptn_value_destroy(&object);
+        *out = ptn_null();
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, object, "dir_opendir")) {
+        ptn_value_destroy(&object);
+        ptn_emit_directory_open_warning(runtime, function_name, path, "not implemented", line);
+        *out = ptn_bool(0);
+        return 1;
+    }
+    PtnValue open_args[2] = {
+        ptn_string(path),
+        ptn_int(0)
+    };
+    PtnValue open_result = runtime->method_dispatch(runtime, object, "dir_opendir", 2, open_args, line);
+    ptn_value_destroy(&open_args[0]);
+    ptn_value_destroy(&open_args[1]);
+    ptn_value_destroy(&object);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&open_result);
+        *out = ptn_null();
+        return 1;
+    }
+    int opened = ptn_is_truthy(open_result);
+    ptn_value_destroy(&open_result);
+    *out = ptn_bool(opened);
+    return 1;
+}
+
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "opendir", 1, "directory", args[0], line);
@@ -53994,6 +54042,11 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
         }
         free(path);
         return resource;
+    }
+    PtnValue user_directory = ptn_null();
+    if (ptn_try_open_user_directory_wrapper(runtime, "opendir", path, line, &user_directory)) {
+        free(path);
+        return user_directory;
     }
 
 #if defined(_WIN32)
@@ -54091,6 +54144,11 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
         PtnValue object = ptn_directory_object_from_resource(runtime, handle, path, line);
         free(path);
         return object;
+    }
+    PtnValue user_directory = ptn_null();
+    if (ptn_try_open_user_directory_wrapper(runtime, "dir", path, line, &user_directory)) {
+        free(path);
+        return user_directory;
     }
 
 #if defined(_WIN32)
@@ -56363,6 +56421,61 @@ static int ptn_stream_write_failure_is_silent(PtnResource *resource) {
         !resource->memory_stream->writable;
 }
 
+static int ptn_user_stream_write_bytes(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    const char *data,
+    size_t length,
+    size_t line,
+    size_t *written_out
+) {
+    *written_out = 0;
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    if (user_data == NULL ||
+        runtime == NULL ||
+        runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, user_data->wrapper_object, "stream_write")) {
+        return 0;
+    }
+    size_t chunk_size = user_data->chunk_size == 0 ? 8192 : user_data->chunk_size;
+    size_t offset = 0;
+    while (offset < length) {
+        size_t chunk_len = length - offset;
+        if (chunk_len > chunk_size) {
+            chunk_len = chunk_size;
+        }
+        PtnValue chunk_arg = ptn_owned_string_len(
+            ptn_duplicate_string_len(data + offset, chunk_len),
+            chunk_len
+        );
+        PtnValue write_result = runtime->method_dispatch(
+            runtime,
+            user_data->wrapper_object,
+            "stream_write",
+            1,
+            &chunk_arg,
+            line
+        );
+        ptn_value_destroy(&chunk_arg);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&write_result);
+            return 1;
+        }
+        int64_t consumed = ptn_value_to_integer(write_result);
+        ptn_value_destroy(&write_result);
+        if (consumed <= 0) {
+            break;
+        }
+        size_t consumed_size = (uint64_t)consumed > chunk_len ? chunk_len : (size_t)consumed;
+        offset += consumed_size;
+        *written_out += consumed_size;
+        if (consumed_size < chunk_len) {
+            break;
+        }
+    }
+    return 1;
+}
+
 static PtnValue ptn_internal_fwrite_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -56385,6 +56498,18 @@ static PtnValue ptn_internal_fwrite_named(
         if ((uint64_t)requested < length) {
             length = (size_t)requested;
         }
+    }
+
+    size_t user_written = 0;
+    if (ptn_user_stream_write_bytes(runtime, resource, data.data, length, line, &user_written)) {
+        ptn_string_operand_free(data);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (user_written > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)user_written);
     }
 
     int64_t append_position = -1;
@@ -61992,6 +62117,67 @@ static PtnValue ptn_internal_clearstatcache(PtnRuntime *runtime, size_t argc, co
     return ptn_null();
 }
 
+static int ptn_user_stream_call_metadata(
+    PtnRuntime *runtime,
+    const char *path,
+    int64_t option,
+    PtnValue metadata_value,
+    size_t line,
+    PtnValue *result_out
+) {
+    PtnUserStreamWrapper *wrapper = ptn_user_stream_wrapper_find_path(path);
+    if (wrapper == NULL) {
+        ptn_value_destroy(&metadata_value);
+        return 0;
+    }
+    PtnValue object = ptn_new_object(runtime, wrapper->class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        ptn_value_destroy(&object);
+        ptn_value_destroy(&metadata_value);
+        *result_out = ptn_null();
+        return 1;
+    }
+    if (runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, object, "stream_metadata")) {
+        ptn_value_destroy(&object);
+        ptn_value_destroy(&metadata_value);
+        *result_out = ptn_bool(0);
+        return 1;
+    }
+    if (!ptn_user_stream_assign_context(runtime, object, ptn_default_stream_context_ensure(), line)) {
+        ptn_value_destroy(&object);
+        ptn_value_destroy(&metadata_value);
+        *result_out = ptn_null();
+        return 1;
+    }
+    PtnValue metadata_args[3] = {
+        ptn_string(path),
+        ptn_int(option),
+        metadata_value
+    };
+    PtnValue metadata_result = runtime->method_dispatch(
+        runtime,
+        object,
+        "stream_metadata",
+        3,
+        metadata_args,
+        line
+    );
+    ptn_value_destroy(&metadata_args[0]);
+    ptn_value_destroy(&metadata_args[1]);
+    ptn_value_destroy(&metadata_args[2]);
+    ptn_value_destroy(&object);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&metadata_result);
+        *result_out = ptn_null();
+        return 1;
+    }
+    int ok = ptn_is_truthy(metadata_result);
+    ptn_value_destroy(&metadata_result);
+    *result_out = ptn_bool(ok);
+    return 1;
+}
+
 static PtnValue ptn_internal_chmod(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
@@ -62006,6 +62192,11 @@ static PtnValue ptn_internal_chmod(PtnRuntime *runtime, size_t argc, const PtnVa
     if (runtime->exceptions->active_exception != NULL) {
         free(path);
         return ptn_bool(0);
+    }
+    PtnValue metadata_result = ptn_null();
+    if (ptn_user_stream_call_metadata(runtime, path, 6, ptn_int(permissions), line, &metadata_result)) {
+        free(path);
+        return metadata_result;
     }
     if (strncmp(path, "phar://", 7) == 0) {
         int ok = ptn_phar_uri_chmod(path, permissions);
@@ -62133,6 +62324,20 @@ static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(0);
     }
 
+    PtnValue chown_value = ptn_value_deref(args[1]);
+    PtnValue metadata_result = ptn_null();
+    if (ptn_user_stream_call_metadata(
+            runtime,
+            path,
+            chown_value.type == PTN_INT ? 3 : 2,
+            ptn_value_clone(chown_value),
+            line,
+            &metadata_result
+        )) {
+        free(path);
+        return metadata_result;
+    }
+
 #if defined(_WIN32)
     ptn_emit_function_warning(runtime, "chown", "Operation not supported", line);
     free(path);
@@ -62161,6 +62366,20 @@ static PtnValue ptn_internal_chgrp(PtnRuntime *runtime, size_t argc, const PtnVa
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "chgrp(): Filename contains null byte", line);
         return ptn_bool(0);
+    }
+
+    PtnValue chgrp_value = ptn_value_deref(args[1]);
+    PtnValue metadata_result = ptn_null();
+    if (ptn_user_stream_call_metadata(
+            runtime,
+            path,
+            chgrp_value.type == PTN_INT ? 5 : 4,
+            ptn_value_clone(chgrp_value),
+            line,
+            &metadata_result
+        )) {
+        free(path);
+        return metadata_result;
     }
 
 #if defined(_WIN32)
@@ -62227,6 +62446,17 @@ static PtnValue ptn_internal_touch(PtnRuntime *runtime, size_t argc, const PtnVa
     int64_t atime_value = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL
         ? ptn_internal_expect_integer_arg(runtime, "touch", 3, "atime", args[2], line)
         : mtime_value;
+
+    PtnValue touch_value = ptn_array_from_literal_entries(0, NULL);
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        ptn_array_set_entry(touch_value.as.array, ptn_array_int_key(0), ptn_int(mtime_value));
+        ptn_array_set_entry(touch_value.as.array, ptn_array_int_key(1), ptn_int(atime_value));
+    }
+    PtnValue metadata_result = ptn_null();
+    if (ptn_user_stream_call_metadata(runtime, path, 1, touch_value, line, &metadata_result)) {
+        free(path);
+        return metadata_result;
+    }
 
     if (ptn_path_exists_c(path)) {
         if (ptn_platform_touch_times(path, atime_value, mtime_value)) {
@@ -104592,6 +104822,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+    ptn_get_defined_constants_add_int(table, "STREAM_IS_URL", PTN_STREAM_IS_URL);
+    ptn_get_defined_constants_add_int(table, "STREAM_REPORT_ERRORS", PTN_STREAM_REPORT_ERRORS);
     ptn_get_defined_constants_add_int(table, "PSFS_ERR_FATAL", PTN_PSFS_ERR_FATAL);
     ptn_get_defined_constants_add_int(table, "PSFS_FEED_ME", PTN_PSFS_FEED_ME);
     ptn_get_defined_constants_add_int(table, "PSFS_PASS_ON", PTN_PSFS_PASS_ON);
@@ -105126,6 +105358,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_READ",
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
+        "STREAM_IS_URL",
+        "STREAM_REPORT_ERRORS",
         "PSFS_ERR_FATAL",
         "PSFS_FEED_ME",
         "PSFS_PASS_ON",
@@ -141882,6 +142116,74 @@ static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t arg
 #endif
 }
 
+static PtnValue ptn_internal_stream_set_write_buffer(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_write_buffer", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t size = ptn_internal_expect_integer_arg(runtime, "stream_set_write_buffer", 2, "size", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    if (user_data != NULL) {
+        if (runtime->method_dispatch == NULL ||
+            !ptn_object_has_declared_method(runtime, user_data->wrapper_object, "stream_set_option")) {
+            return ptn_int(-1);
+        }
+        PtnValue option_args[3] = {
+            ptn_int(3),
+            ptn_int(2),
+            ptn_int(size)
+        };
+        PtnValue option_result = runtime->method_dispatch(
+            runtime,
+            user_data->wrapper_object,
+            "stream_set_option",
+            3,
+            option_args,
+            line
+        );
+        ptn_value_destroy(&option_args[0]);
+        ptn_value_destroy(&option_args[1]);
+        ptn_value_destroy(&option_args[2]);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&option_result);
+            return ptn_null();
+        }
+        int ok = ptn_is_truthy(option_result);
+        ptn_value_destroy(&option_result);
+        return ptn_int(ok ? 0 : -1);
+    }
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_stream_set_chunk_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_chunk_size", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t size = ptn_internal_expect_integer_arg(runtime, "stream_set_chunk_size", 2, "size", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (size <= 0) {
+        ptn_throw_exception(runtime, "ValueError", "stream_set_chunk_size(): Argument #2 ($size) must be greater than 0");
+        return ptn_null();
+    }
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    size_t previous = user_data == NULL ? 8192 : user_data->chunk_size;
+    if (user_data != NULL) {
+        user_data->chunk_size = (uint64_t)size > SIZE_MAX ? SIZE_MAX : (size_t)size;
+    }
+    if (previous > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)previous);
+}
+
 static int ptn_stream_select_arg_array(
     PtnRuntime *runtime,
     const char *function_name,
@@ -141919,6 +142221,156 @@ static int ptn_stream_select_arg_array(
     return 1;
 }
 
+static void ptn_stream_select_emit_user_cast_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *message,
+    size_t line
+) {
+    char warning[256];
+    int written = snprintf(warning, sizeof(warning), "%s(): %s", function_name, message);
+    if (written < 0 || (size_t)written >= sizeof(warning)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+}
+
+static void ptn_stream_select_emit_user_cast_method_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *class_name,
+    const char *detail,
+    size_t line
+) {
+    char warning[256];
+    int written = snprintf(
+        warning,
+        sizeof(warning),
+        "%s::stream_cast %s",
+        class_name,
+        detail
+    );
+    if (written < 0 || (size_t)written >= sizeof(warning)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_stream_select_emit_user_cast_warning(runtime, function_name, warning, line);
+}
+
+static int ptn_stream_select_cast_user_stream(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t line,
+    size_t depth,
+    PtnResource **resource_out
+) {
+    PtnUserStreamResourceData *user_data = ptn_user_stream_resource_data(resource);
+    if (user_data == NULL) {
+        *resource_out = resource;
+        return resource != NULL && resource->stream != NULL;
+    }
+    const char *class_name = ptn_user_stream_object_class_name(user_data->wrapper_object);
+    if (depth > 16 ||
+        runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(runtime, user_data->wrapper_object, "stream_cast")) {
+        ptn_stream_select_emit_user_cast_method_warning(
+            runtime,
+            function_name,
+            class_name,
+            "is not implemented!",
+            line
+        );
+        ptn_stream_select_emit_user_cast_warning(
+            runtime,
+            function_name,
+            "Cannot represent a stream of type user-space as a select()able descriptor",
+            line
+        );
+        return 0;
+    }
+    PtnValue cast_arg = ptn_int(3);
+    PtnValue cast_result = runtime->method_dispatch(
+        runtime,
+        user_data->wrapper_object,
+        "stream_cast",
+        1,
+        &cast_arg,
+        line
+    );
+    ptn_value_destroy(&cast_arg);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&cast_result);
+        return -1;
+    }
+    PtnValue cast_value = ptn_value_deref(cast_result);
+    if (cast_value.type == PTN_BOOL && !cast_value.as.boolean) {
+        ptn_value_destroy(&cast_result);
+        ptn_stream_select_emit_user_cast_warning(
+            runtime,
+            function_name,
+            "Cannot represent a stream of type user-space as a select()able descriptor",
+            line
+        );
+        return 0;
+    }
+    if (cast_value.type != PTN_RESOURCE || !ptn_stream_resource_is_open(cast_value.as.resource)) {
+        ptn_stream_select_emit_user_cast_method_warning(
+            runtime,
+            function_name,
+            class_name,
+            "must return a stream resource",
+            line
+        );
+        ptn_value_destroy(&cast_result);
+        ptn_stream_select_emit_user_cast_warning(
+            runtime,
+            function_name,
+            "Cannot represent a stream of type user-space as a select()able descriptor",
+            line
+        );
+        return 0;
+    }
+    if (cast_value.as.resource == resource) {
+        ptn_stream_select_emit_user_cast_method_warning(
+            runtime,
+            function_name,
+            class_name,
+            "must not return itself",
+            line
+        );
+        ptn_value_destroy(&cast_result);
+        ptn_stream_select_emit_user_cast_warning(
+            runtime,
+            function_name,
+            "Cannot represent a stream of type user-space as a select()able descriptor",
+            line
+        );
+        return 0;
+    }
+    PtnResource *cast_resource = cast_value.as.resource;
+    int ok = ptn_stream_select_cast_user_stream(
+        runtime,
+        function_name,
+        cast_resource,
+        line,
+        depth + 1,
+        resource_out
+    );
+    ptn_value_destroy(&cast_result);
+    if (ok <= 0) {
+        if (ok == 0) {
+            ptn_stream_select_emit_user_cast_warning(
+                runtime,
+                function_name,
+                "Cannot represent a stream of type user-space as a select()able descriptor",
+                line
+            );
+        }
+        return ok;
+    }
+    return 1;
+}
+
 static int ptn_stream_select_add_array(
     PtnRuntime *runtime,
     const char *function_name,
@@ -141927,6 +142379,7 @@ static int ptn_stream_select_add_array(
     int *max_fd,
     int read_interest,
     int *preselected,
+    int *user_streams_skipped,
     size_t line
 ) {
     if (array == NULL) {
@@ -141948,17 +142401,35 @@ static int ptn_stream_select_add_array(
             ptn_emit_warning(&runtime->diagnostics, message, line);
             return 0;
         }
-        if (read_interest && value.as.resource->memory_stream != NULL) {
-            if (value.as.resource->memory_stream->position < value.as.resource->memory_stream->len) {
+        PtnResource *select_resource = value.as.resource;
+        if (ptn_user_stream_resource_data(select_resource) != NULL) {
+            int cast_result = ptn_stream_select_cast_user_stream(
+                runtime,
+                function_name,
+                select_resource,
+                line,
+                0,
+                &select_resource
+            );
+            if (cast_result < 0) {
+                return 0;
+            }
+            if (cast_result == 0) {
+                (*user_streams_skipped)++;
+                continue;
+            }
+        }
+        if (read_interest && select_resource->memory_stream != NULL) {
+            if (select_resource->memory_stream->position < select_resource->memory_stream->len) {
                 (*preselected)++;
             }
             continue;
         }
-        if (value.as.resource->stream == NULL) {
+        if (select_resource->stream == NULL) {
             ptn_emit_warning(&runtime->diagnostics, "stream_select(): supplied stream file descriptor cannot be selected", line);
             return 0;
         }
-        int fd = fileno(value.as.resource->stream);
+        int fd = fileno(select_resource->stream);
         if (fd < 0 || fd >= FD_SETSIZE) {
             ptn_emit_warning(&runtime->diagnostics, "stream_select(): supplied stream file descriptor cannot be selected", line);
             return 0;
@@ -142041,12 +142512,17 @@ static PtnValue ptn_internal_stream_select(PtnRuntime *runtime, size_t argc, con
     FD_ZERO(&except_set);
     int max_fd = -1;
     int preselected = 0;
-    if (!ptn_stream_select_add_array(runtime, "stream_select", read_array, &read_set, &max_fd, 1, &preselected, line) ||
-        !ptn_stream_select_add_array(runtime, "stream_select", write_array, &write_set, &max_fd, 0, &preselected, line) ||
-        !ptn_stream_select_add_array(runtime, "stream_select", except_array, &except_set, &max_fd, 0, &preselected, line)) {
+    int user_streams_skipped = 0;
+    if (!ptn_stream_select_add_array(runtime, "stream_select", read_array, &read_set, &max_fd, 1, &preselected, &user_streams_skipped, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", write_array, &write_set, &max_fd, 0, &preselected, &user_streams_skipped, line) ||
+        !ptn_stream_select_add_array(runtime, "stream_select", except_array, &except_set, &max_fd, 0, &preselected, &user_streams_skipped, line)) {
         return ptn_bool(0);
     }
     if (max_fd < 0 && preselected == 0) {
+        if (user_streams_skipped > 0) {
+            ptn_throw_exception(runtime, "ValueError", "No stream arrays were passed");
+            return ptn_null();
+        }
         ptn_emit_warning(&runtime->diagnostics, "stream_select(): no stream arrays were passed", line);
         return ptn_bool(0);
     }
@@ -163835,6 +164311,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_supports_lock", 1, 1, ptn_internal_stream_supports_lock },
         { "stream_select", 4, 6, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
+        { "stream_set_chunk_size", 2, 2, ptn_internal_stream_set_chunk_size },
+        { "stream_set_write_buffer", 2, 2, ptn_internal_stream_set_write_buffer },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
