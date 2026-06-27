@@ -148,6 +148,9 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_callable_dispatch {
         runtime_requirements.named_call_helpers = true;
+        if !runtime_requirements.internal_function_dispatch {
+            runtime_requirements.direct_internal_helpers = true;
+        }
     }
     let needs_lightweight_closure_reflection = !runtime_requirements.internal_function_dispatch
         && (runtime_requirements.closure_reflection_dispatch || needs_method_dispatch);
@@ -30660,6 +30663,16 @@ fn emit_try(
         );
         out.push_str("            } else {\n");
     }
+    let catch_binding_failed_label =
+        (!catches.is_empty()).then(|| values.next_label("ptn_try_catch_binding_failed"));
+    let catch_cleanup_failed_temp = (catch_active_temp.is_some()
+        && catches.iter().any(|catch| catch.variable.is_none()))
+    .then(|| values.next_temp());
+    if let Some(catch_cleanup_failed_temp) = &catch_cleanup_failed_temp {
+        out.push_str("                int ");
+        out.push_str(catch_cleanup_failed_temp);
+        out.push_str(" = 0;\n");
+    }
     if let Some(catch_active_temp) = &catch_active_temp {
         if catches.iter().any(|catch| catch.variable.is_none()) {
             out.push_str("                if (");
@@ -30680,7 +30693,34 @@ fn emit_try(
             out.push_str(catch_active_temp);
             out.push_str(" = 1;\n");
             out.push_str("                }\n");
+            out.push_str("                PtnException *ptn_catch_cleanup_exception = runtime.exceptions->active_exception;\n");
+            out.push_str("                if (ptn_catch_cleanup_exception != NULL) {\n");
+            out.push_str(
+                "                    ptn_exception_retain(ptn_catch_cleanup_exception);\n",
+            );
+            out.push_str("                }\n");
             out.push_str("                ptn_runtime_clear_temporary_roots(&runtime);\n");
+            out.push_str("                if (ptn_catch_cleanup_exception != NULL) {\n");
+            out.push_str("                    if (runtime.exceptions->active_exception != ptn_catch_cleanup_exception) {\n");
+            out.push_str(
+                "                        if (runtime.exceptions->active_exception != NULL) {\n",
+            );
+            out.push_str("                            PtnValue ptn_catch_cleanup_previous = ptn_value_deref(runtime.exceptions->active_exception->previous);\n");
+            out.push_str("                            if (ptn_catch_cleanup_previous.type == PTN_EXCEPTION && ptn_catch_cleanup_previous.as.exception == ptn_catch_cleanup_exception) {\n");
+            out.push_str("                                ptn_value_destroy(&runtime.exceptions->active_exception->previous);\n");
+            out.push_str("                                runtime.exceptions->active_exception->previous = ptn_null();\n");
+            out.push_str("                            }\n");
+            out.push_str("                        }\n");
+            out.push_str("                        ");
+            out.push_str(
+                catch_cleanup_failed_temp
+                    .as_ref()
+                    .expect("catch cleanup failure temp exists"),
+            );
+            out.push_str(" = 1;\n");
+            out.push_str("                    }\n");
+            out.push_str("                    ptn_exception_free(ptn_catch_cleanup_exception);\n");
+            out.push_str("                }\n");
             out.push_str("                ");
             out.push_str(catch_active_temp);
             out.push_str(" = 0;\n");
@@ -30710,6 +30750,19 @@ fn emit_try(
     out.push_str("            ");
     out.push_str(&caught_temp);
     out.push_str(" = 0;\n");
+    if let Some(catch_cleanup_failed_temp) = &catch_cleanup_failed_temp {
+        out.push_str("            if (");
+        out.push_str(catch_cleanup_failed_temp);
+        out.push_str(") {\n");
+        out.push_str("                goto ");
+        out.push_str(
+            catch_binding_failed_label
+                .as_ref()
+                .expect("catch binding failure label exists"),
+        );
+        out.push_str(";\n");
+        out.push_str("            }\n");
+    }
     if let Some(entry_target_temp) = &entry_target_temp {
         if !catch_entry_labels.is_empty() {
             out.push_str("            if (");
@@ -30741,8 +30794,6 @@ fn emit_try(
             out.push_str("            }\n");
         }
     }
-    let catch_binding_failed_label =
-        (!catches.is_empty()).then(|| values.next_label("ptn_try_catch_binding_failed"));
     for catch in catches {
         let catch_body_label = values.next_label("ptn_try_catch_body");
         let catch_after_label = values.next_label("ptn_try_catch_after");
