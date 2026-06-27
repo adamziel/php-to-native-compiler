@@ -47785,6 +47785,58 @@ string(66) \"locale_get_display_name(): name too long: U_ILLEGAL_ARGUMENT_ERROR\
 }
 
 #[test]
+fn compile_intl_locale_static_aliases_and_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-intl-locale-static-aliases-and-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-locale-static-aliases-and-metadata.php");
+    let output = root.join("intl-locale-static-aliases-and-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$tags = ['de-DE', 'sl_IT', 'art-lojban', 'jbo'];\n\
+var_dump(Locale::canonicalize('art-lojban'));\n\
+var_dump(locale_canonicalize('uk-ua'));\n\
+var_dump(Locale::getDisplayLanguage('uk-ua', 'fr'));\n\
+var_dump(locale_get_display_language('sr-Cyrl-RS', 'en'));\n\
+var_dump(Locale::getRegion('zh-Hans-CN'));\n\
+var_dump(locale_get_region('sr_Cyrl_RS'));\n\
+var_dump(Locale::filterMatches('sl_IT_nedis-a-kirti-x-xyz', 'sl_IT_Nedis', true));\n\
+var_dump(locale_filter_matches('art-lojban', 'jbo', true));\n\
+var_dump(Locale::lookup($tags, 'de-de', false, 'en_US'));\n\
+var_dump(locale_lookup($tags, 'de-de', true, 'en_US'));\n\
+echo new ReflectionFunction('locale_get_display_language');\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(concat!(
+        "string(3) \"jbo\"\n",
+        "string(5) \"uk_UA\"\n",
+        "string(9) \"ukrainien\"\n",
+        "string(7) \"Serbian\"\n",
+        "string(2) \"CN\"\n",
+        "string(2) \"RS\"\n",
+        "bool(true)\n",
+        "bool(true)\n",
+        "string(5) \"de-DE\"\n",
+        "string(5) \"de_de\"\n",
+    )));
+    assert!(stdout.contains("Function [ <internal:intl> function locale_get_display_language ]"));
+    assert!(stdout.contains("Parameter #0 [ <required> string $locale ]"));
+    assert!(stdout.contains("Parameter #1 [ <optional> ?string $displayLocale = null ]"));
+    assert!(stdout.contains("- Return [ string|false ]"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_locale_static_canonicalize"));
+    assert!(c_source.contains("PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS"));
+}
+
+#[test]
 fn compile_intl_list_formatter_and_date_pattern_generator_to_native_binary() {
     let root = temp_dir("ptn-native-intl-list-formatter-date-pattern-generator");
     fs::create_dir_all(&root).unwrap();

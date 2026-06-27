@@ -161177,6 +161177,97 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             1
         );
     }
+    if (ptn_ascii_case_equal(function->name, "Locale::canonicalize") ||
+        ptn_ascii_case_equal(function->name, "locale_canonicalize")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            1,
+            1,
+            0,
+            PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS,
+            0,
+            "?string",
+            "?string",
+            1,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Locale::filterMatches") ||
+        ptn_ascii_case_equal(function->name, "locale_filter_matches")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS) /
+                sizeof(PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_FILTER_MATCHES_PARAMETERS,
+            0,
+            "?bool",
+            "?bool",
+            1,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Locale::lookup") ||
+        ptn_ascii_case_equal(function->name, "locale_lookup")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS) /
+                sizeof(PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS[0]),
+            2,
+            0,
+            PTN_INTERNAL_LOCALE_LOOKUP_PARAMETERS,
+            0,
+            "?string",
+            "?string",
+            1,
+            1
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Locale::getDisplayLanguage") ||
+        ptn_ascii_case_equal(function->name, "Locale::getDisplayName") ||
+        ptn_ascii_case_equal(function->name, "Locale::getDisplayRegion") ||
+        ptn_ascii_case_equal(function->name, "Locale::getDisplayScript") ||
+        ptn_ascii_case_equal(function->name, "Locale::getDisplayVariant") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_language") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_name") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_region") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_script") ||
+        ptn_ascii_case_equal(function->name, "locale_get_display_variant")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS) /
+                sizeof(PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS,
+            0,
+            "string|false",
+            "string|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Locale::getRegion") ||
+        ptn_ascii_case_equal(function->name, "locale_get_region")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            1,
+            1,
+            0,
+            PTN_INTERNAL_LOCALE_DISPLAY_PARAMETERS,
+            0,
+            "?string",
+            "?string",
+            1,
+            1
+        );
+    }
     if (ptn_ascii_case_equal(function->name, "DateTimeZone::listIdentifiers") ||
         ptn_ascii_case_equal(function->name, "timezone_identifiers_list")) {
         PtnFunctionMetadata metadata = ptn_function_metadata_found(
