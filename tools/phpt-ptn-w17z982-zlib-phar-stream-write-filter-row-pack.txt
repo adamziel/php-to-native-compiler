@@ -1,0 +1,16 @@
+# ptn-w17z.982 exact zlib/PHAR stream write filter current-red row pack.
+# Source artifact: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T004947Z.tsv
+# Rows were selected as FAIL in that artifact.
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+ext/zlib/tests/gzwrite_variation1.phpt
+ext/zlib/tests/gzdeflate_basic1.phpt
+ext/phar/tests/zip/open_for_write_newfile.phpt
+ext/phar/tests/phar_buildfromiterator1.phpt
+ext/phar/tests/bug48377.phpt
+ext/zlib/tests/bug48725_2.phpt
+ext/phar/tests/tar/phar_buildfromiterator6.phpt
+ext/phar/tests/openssl_sign_invalid_polyfill_return_value.phpt
+ext/standard/tests/streams/stream_get_meta_data_socket_variation3.phpt
+ext/standard/tests/filters/stream_filter_register_filter_always_feed.phpt
+ext/zlib/tests/deflate_init_strategy_type_error.phpt
+ext/standard/tests/streams/glob-wrapper.phpt

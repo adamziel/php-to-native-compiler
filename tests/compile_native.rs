@@ -28226,6 +28226,7 @@ fn compile_zlib_functions_filters_and_constants_to_native_binary() {
     fs::write(
         &input,
         r#"<?php
+class A {}
 $data = "alpha beta gamma";
 $path = __DIR__ . "/zlib-surface.gz";
 $filtered = __DIR__ . "/zlib-filter.gz";
@@ -28249,6 +28250,12 @@ var_dump(gzwrite($h, "ignored", 0));
 var_dump(gzwrite($h, "ignored", -1));
 var_dump(gzwrite($h, $data));
 gzclose($h);
+
+$read_only = gzopen($path, "r");
+var_dump(gzwrite($read_only, "Here is the string to be written. "));
+var_dump(gzread($read_only, 10));
+var_dump(gzwrite($read_only, "Here is the string to be written. ", 10));
+gzclose($read_only);
 
 $write_only = gzopen(__DIR__ . "/zlib-write-only.gz", "w");
 var_dump(gzread($write_only, 1));
@@ -28320,6 +28327,11 @@ try { inflate_init(42); } catch (ValueError $e) { echo "inflate-error\n"; }
 try { inflate_init(ZLIB_ENCODING_DEFLATE, ["window" => []]); } catch (TypeError $e) { echo "window-option\n"; }
 try { gzdeflate("x", 99); } catch (ValueError $e) { echo "level-error\n"; }
 try { deflate_init(ZLIB_ENCODING_DEFLATE, ["level" => "bad"]); } catch (TypeError $e) { echo "option-error\n"; }
+$fp = fopen("php://memory", "r");
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["memory" => []]); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["window" => new A()]); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { deflate_init(ZLIB_ENCODING_DEFLATE, ["strategy" => $fp]); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+fclose($fp);
 
 @unlink($path);
 @unlink($filtered);
@@ -28361,6 +28373,9 @@ max-error\n\
 int(0)\n\
 int(0)\n\
 int(16)\n\
+int(0)\n\
+string(10) \"alpha beta\"\n\
+int(0)\n\
 bool(false)\n\
 string(5) \"alpha\"\n\
 int(0)\n\
@@ -28381,7 +28396,10 @@ reset-status:0\n\
 inflate-error\n\
 window-option\n\
 level-error\n\
-option-error\n"
+option-error\n\
+deflate_init(): Argument #2 ($options) the value for option \"memory\" must be of type int, array given\n\
+deflate_init(): Argument #2 ($options) the value for option \"window\" must be of type int, A given\n\
+deflate_init(): Argument #2 ($options) the value for option \"strategy\" must be of type int, resource given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

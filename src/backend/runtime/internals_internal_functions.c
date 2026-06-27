@@ -139748,6 +139748,20 @@ static int ptn_zlib_option_value(PtnValue options, const char *name, PtnValue *v
     return 0;
 }
 
+static const char *ptn_zlib_option_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION && value.as.exception != NULL) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
 static int ptn_zlib_option_int(
     PtnRuntime *runtime,
     const char *function_name,
@@ -139771,7 +139785,7 @@ static int ptn_zlib_option_int(
             "%s(): Argument #2 ($options) the value for option \"%s\" must be of type int, %s given",
             function_name,
             option_name,
-            ptn_offset_container_type_name(resolved)
+            ptn_zlib_option_type_name(resolved)
         );
         ptn_value_destroy(&option);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -139941,6 +139955,27 @@ static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, cons
         if (found_level) {
             level_value = level;
         }
+        int found_memory = 0;
+        int64_t memory = 0;
+        if (!ptn_zlib_option_int(runtime, "deflate_init", "memory", args[1], &memory, &found_memory)) {
+            return ptn_null();
+        }
+        int found_window = 0;
+        int64_t window = 0;
+        if (!ptn_zlib_option_int(runtime, "deflate_init", "window", args[1], &window, &found_window)) {
+            return ptn_null();
+        }
+        int found_strategy = 0;
+        int64_t strategy = 0;
+        if (!ptn_zlib_option_int(runtime, "deflate_init", "strategy", args[1], &strategy, &found_strategy)) {
+            return ptn_null();
+        }
+        (void)found_memory;
+        (void)memory;
+        (void)found_window;
+        (void)window;
+        (void)found_strategy;
+        (void)strategy;
     }
     unsigned char *dictionary = NULL;
     size_t dictionary_len = 0;
@@ -140719,6 +140754,10 @@ static PtnValue ptn_internal_gzwrite(PtnRuntime *runtime, size_t argc, const Ptn
         if ((uint64_t)requested < length) {
             length = (size_t)requested;
         }
+    }
+    if (!ptn_phar_stream_mode_can_write(resource->stream_mode)) {
+        ptn_string_operand_free(data);
+        return ptn_int(0);
     }
     size_t written = ptn_stream_write_filtered(runtime, "gzwrite", resource, data.data, length, line);
     ptn_string_operand_free(data);
