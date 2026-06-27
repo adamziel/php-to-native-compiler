@@ -23024,6 +23024,41 @@ try {
 }
 
 #[test]
+fn compile_generator_next_preserves_completed_return_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-next-return-after-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-next-return-after-finally.php");
+    let output = root.join("generator-next-return-after-finally-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$generator = (function($value) {
+    try {
+        return $value + 1;
+    } finally {
+        var_dump($value + 2);
+    }
+    yield;
+})(1);
+
+$generator->next();
+var_dump($generator->getReturn());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_finally_exception_replacement_to_native_binary() {
     let root = temp_dir("ptn-native-nested-finally-exception-replacement");
     fs::create_dir_all(&root).unwrap();

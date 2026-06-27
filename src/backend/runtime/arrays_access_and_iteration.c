@@ -14002,7 +14002,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         yield_from_frame_active = 1;
         if (setjmp(yield_from_frame.jump) != 0) {
             ptn_try_frame_pop(runtime, &yield_from_frame);
-            ptn_array_iterator_destroy_with_runtime_scope_at(&iterator, runtime, line);
+            ptn_array_iterator_destroy(&iterator);
             ptn_rethrow_exception(runtime);
             return ptn_null();
         }
