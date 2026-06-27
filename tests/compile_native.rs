@@ -28983,6 +28983,88 @@ SILENT mode AUTO: has error\n"
 }
 
 #[test]
+fn compile_stream_context_set_option_and_socket_shutdown_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-set-option-shutdown-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-set-option-shutdown-modes.php");
+    let output = root.join("stream-context-set-option-shutdown-modes-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$ctx = stream_context_create();
+try {
+    stream_context_set_option($ctx, [], "x");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    stream_context_set_option($ctx, [], null, "x");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    stream_context_set_option($ctx, "x");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    stream_context_set_option($ctx, "x", "y");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(stream_context_set_option($ctx, "http", "method", "POST"));
+print_r(stream_context_get_options($ctx));
+var_dump(STREAM_SHUT_RD, STREAM_SHUT_WR, STREAM_SHUT_RDWR);
+$sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+fwrite($sockets[0], "a");
+stream_socket_shutdown($sockets[0], STREAM_SHUT_RDWR);
+while (!feof($sockets[1])) {
+    $line = stream_get_line($sockets[1], 99, "\n");
+    var_dump($line);
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{}{}",
+            concat!(
+                "stream_context_set_option(): Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array\n",
+                "stream_context_set_option(): Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array\n",
+            ),
+            "\nDeprecated: Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead in ptn on line 14\n"
+        ) + concat!(
+            "stream_context_set_option(): Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string\n",
+            "stream_context_set_option(): Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string\n",
+            "bool(true)\n",
+            "Array\n",
+            "(\n",
+            "    [http] => Array\n",
+            "        (\n",
+            "            [method] => POST\n",
+            "        )\n",
+            "\n",
+            ")\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "string(1) \"a\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_stream_context_set_option"));
+    assert!(c_source.contains("PTN_STREAM_SHUT_RDWR"));
+}
+
+#[test]
 fn compile_file_get_contents_uri_parser_context_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-uri-parser-context");
     fs::create_dir_all(&root).unwrap();
@@ -53028,6 +53110,112 @@ var_dump($sf->headerfault);
     assert!(c_source.contains("ptn_soap_call_method"));
     assert!(c_source.contains("ptn_internal_socket_strerror"));
     assert!(c_source.contains("ptn_zip_archive_call_method"));
+}
+
+#[test]
+fn compile_phar_map_phar_static_method_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-map-phar-static-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-map-phar-static-method.php");
+    let output = root.join("phar-map-phar-static-method-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(method_exists('Phar', 'mapPhar'));
+var_dump(Phar::mapPhar());
+var_dump(Phar::mapPhar(null, 0));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_map_phar"));
+}
+
+#[test]
+fn compile_phar_map_phar_alias_include_from_tar_named_directory_to_native_binary() {
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let root = temp_dir("ptn-native-phar-map-phar-alias-tar-directory");
+    let phar_dir = root.join("files").join("bug67761.tar");
+    fs::create_dir_all(&phar_dir).unwrap();
+    let input = root.join("phar-map-phar-alias-tar-directory.php");
+    let output = root.join("phar-map-phar-alias-tar-directory-bin");
+    let phar_path = phar_dir.join("bug67761.phar");
+
+    fs::write(
+        &input,
+        "<?php
+echo \"main\\n\";
+include __DIR__ . '/files/bug67761.tar/bug67761.phar';
+",
+    )
+    .unwrap();
+
+    let entry = b"<?php echo \"alias-entry\\n\";\n";
+    let mut manifest = Vec::new();
+    push_u32(&mut manifest, 1);
+    push_u16(&mut manifest, 0x0011);
+    push_u32(&mut manifest, 0x00010000);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 8);
+    manifest.extend_from_slice(b"test.php");
+    push_u32(&mut manifest, entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, entry.len() as u32);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+    push_u32(&mut manifest, 0);
+
+    let mut phar = Vec::new();
+    phar.extend_from_slice(
+        b"#!/usr/bin/env php\n\
+<?php\n\
+Phar::mapPhar('test.phar');\n\
+require 'phar://test.phar/test.php';\n\
+__HALT_COMPILER(); ?>\r\n",
+    );
+    push_u32(&mut phar, manifest.len() as u32);
+    phar.extend_from_slice(&manifest);
+    phar.extend_from_slice(entry);
+    fs::write(&phar_path, phar).unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "main\nalias-entry\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_map_phar"));
+    assert!(c_source.contains("ptn_dynamic_read_file"));
+    assert!(c_source.contains("ptn_phar_uri_read_entry"));
 }
 
 #[test]

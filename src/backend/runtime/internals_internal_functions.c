@@ -8864,6 +8864,11 @@ static const PtnParameterMetadata PTN_INTERNAL_PHAR_RUNNING_PARAMETERS[] = {
     { "returnPhar", "bool", "bool", 0, 1, 0, 0, 1, "true", NULL, NULL },
 };
 
+static const PtnParameterMetadata PTN_INTERNAL_PHAR_MAP_PHAR_PARAMETERS[] = {
+    { "alias", "string", "?string", 1, 1, 0, 0, 1, "null", NULL, NULL },
+    { "offset", "int", "int", 0, 1, 0, 0, 1, "0", NULL, NULL },
+};
+
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
     if (!metadata.is_internal || metadata.name == NULL) {
         return NULL;
@@ -57437,6 +57442,131 @@ static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, siz
     return ptn_bool(1);
 }
 
+static void ptn_stream_context_set_option_throw(PtnRuntime *runtime, const char *message) {
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static void ptn_stream_context_set_single_option(
+    PtnResource *context,
+    PtnStringOperand wrapper,
+    PtnStringOperand option,
+    PtnValue value
+) {
+    PtnValue options = ptn_value_deref(context->context_options);
+    if (options.type != PTN_ARRAY) {
+        ptn_value_destroy(&context->context_options);
+        context->context_options = ptn_array_from_literal_entries(0, NULL);
+        options = context->context_options;
+    }
+
+    PtnArrayKey wrapper_key = ptn_array_string_key_len(wrapper.data, wrapper.len);
+    PtnArrayEntry *wrapper_entry = ptn_array_entry_for_key(options.as.array, wrapper_key);
+    if (wrapper_entry != NULL && ptn_value_deref(wrapper_entry->value).type == PTN_ARRAY) {
+        PtnValue existing = ptn_value_deref(wrapper_entry->value);
+        ptn_array_key_free(wrapper_key);
+        ptn_array_set_entry(
+            existing.as.array,
+            ptn_array_string_key_len(option.data, option.len),
+            ptn_value_clone(value)
+        );
+        return;
+    }
+
+    PtnValue wrapper_options = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        wrapper_options.as.array,
+        ptn_array_string_key_len(option.data, option.len),
+        ptn_value_clone(value)
+    );
+    ptn_array_set_entry(options.as.array, wrapper_key, wrapper_options);
+}
+
+static PtnValue ptn_internal_stream_context_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *context = NULL;
+    if (!ptn_internal_expect_stream_context_arg(runtime, "stream_context_set_option", args[0], line, &context)) {
+        return ptn_null();
+    }
+
+    PtnValue wrapper_or_options = ptn_value_deref(args[1]);
+    if (wrapper_or_options.type == PTN_ARRAY) {
+        if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+            ptn_stream_context_set_option_throw(
+                runtime,
+                "stream_context_set_option(): Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array"
+            );
+            return ptn_null();
+        }
+        if (argc >= 4) {
+            ptn_stream_context_set_option_throw(
+                runtime,
+                "stream_context_set_option(): Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array"
+            );
+            return ptn_null();
+        }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead",
+            line
+        );
+        if (!ptn_stream_context_assign_options(runtime, context, wrapper_or_options, line)) {
+            return ptn_null();
+        }
+        return ptn_bool(1);
+    }
+
+    if (argc == 2) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead",
+            line
+        );
+        ptn_stream_context_set_option_throw(
+            runtime,
+            "stream_context_set_option(): Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string"
+        );
+        return ptn_null();
+    }
+
+    PtnStringOperand wrapper =
+        ptn_internal_expect_string_arg(runtime, "stream_context_set_option", 2, "wrapper_or_options", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(wrapper);
+        return ptn_null();
+    }
+
+    if (ptn_value_deref(args[2]).type == PTN_NULL) {
+        ptn_string_operand_free(wrapper);
+        ptn_stream_context_set_option_throw(
+            runtime,
+            "stream_context_set_option(): Argument #3 ($option_name) cannot be null when argument #2 ($wrapper_or_options) is a string"
+        );
+        return ptn_null();
+    }
+
+    PtnStringOperand option =
+        ptn_internal_expect_string_arg(runtime, "stream_context_set_option", 3, "option_name", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(wrapper);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+
+    if (argc < 4) {
+        ptn_string_operand_free(wrapper);
+        ptn_string_operand_free(option);
+        ptn_stream_context_set_option_throw(
+            runtime,
+            "stream_context_set_option(): Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string"
+        );
+        return ptn_null();
+    }
+
+    ptn_stream_context_set_single_option(context, wrapper, option, args[3]);
+    ptn_string_operand_free(wrapper);
+    ptn_string_operand_free(option);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -103313,7 +103443,9 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_PF_UNIX", PTN_STREAM_PF_UNIX);
     ptn_get_defined_constants_add_int(table, "STREAM_SOCK_STREAM", PTN_STREAM_SOCK_STREAM);
     ptn_get_defined_constants_add_int(table, "STREAM_IPPROTO_IP", PTN_STREAM_IPPROTO_IP);
+    ptn_get_defined_constants_add_int(table, "STREAM_SHUT_RD", PTN_STREAM_SHUT_RD);
     ptn_get_defined_constants_add_int(table, "STREAM_SHUT_WR", PTN_STREAM_SHUT_WR);
+    ptn_get_defined_constants_add_int(table, "STREAM_SHUT_RDWR", PTN_STREAM_SHUT_RDWR);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_UNKNOWN", PTN_IMAGE_FILETYPE_UNKNOWN);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_GIF", PTN_IMAGE_FILETYPE_GIF);
     ptn_get_defined_constants_add_int(table, "IMAGETYPE_JPEG", PTN_IMAGE_FILETYPE_JPEG);
@@ -103841,7 +103973,9 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_PF_UNIX",
         "STREAM_SOCK_STREAM",
         "STREAM_IPPROTO_IP",
+        "STREAM_SHUT_RD",
         "STREAM_SHUT_WR",
+        "STREAM_SHUT_RDWR",
         "IMAGETYPE_UNKNOWN",
         "IMAGETYPE_GIF",
         "IMAGETYPE_JPEG",
@@ -145853,6 +145987,18 @@ static int ptn_phar_uri_archive_and_entry_mode(
             continue;
         }
         PtnPharArchiveState *archive = ptn_phar_archive_find_path_len(body, i);
+        if (archive == NULL) {
+            for (PtnPharArchiveState *candidate = ptn_phar_archives; candidate != NULL; candidate = candidate->next) {
+                if (candidate->alias == NULL) {
+                    continue;
+                }
+                size_t alias_len = strlen(candidate->alias);
+                if (alias_len == i && strncmp(candidate->alias, body, i) == 0) {
+                    archive = candidate;
+                    break;
+                }
+            }
+        }
         char *archive_path = NULL;
         if (archive == NULL) {
             archive_path = ptn_duplicate_string_len(body, i);
@@ -146968,9 +147114,9 @@ static PtnValue ptn_internal_phar_load_phar(PtnRuntime *runtime, size_t argc, co
 }
 
 static PtnValue ptn_internal_phar_map_phar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    if (argc > 1) {
+    if (argc > 2) {
         char message[128];
-        int written = snprintf(message, sizeof(message), "Phar::mapPhar() expects at most 1 argument, %zu given", argc);
+        int written = snprintf(message, sizeof(message), "Phar::mapPhar() expects at most 2 arguments, %zu given", argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
@@ -146983,7 +147129,7 @@ static PtnValue ptn_internal_phar_map_phar(PtnRuntime *runtime, size_t argc, con
         return ptn_null();
     }
     char *alias = NULL;
-    if (argc == 1) {
+    if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
         PtnStringOperand alias_operand =
             ptn_internal_expect_string_arg(runtime, "Phar::mapPhar", 1, "alias", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
@@ -146992,6 +147138,13 @@ static PtnValue ptn_internal_phar_map_phar(PtnRuntime *runtime, size_t argc, con
         }
         alias = ptn_duplicate_string_len(alias_operand.data, alias_operand.len);
         ptn_string_operand_free(alias_operand);
+    }
+    if (argc >= 2) {
+        (void)ptn_internal_expect_integer_arg(runtime, "Phar::mapPhar", 2, "offset", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(alias);
+            return ptn_null();
+        }
     }
     PtnPharArchiveState *archive = ptn_phar_archive_for_path(path);
     if (archive != NULL && archive->load_error != NULL) {
@@ -159284,6 +159437,7 @@ static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_stream_context_get_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_get_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_default(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_context_set_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_copy_to_stream(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -160090,7 +160244,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Phar::getSupportedSignatures", 0, 0, ptn_internal_phar_get_supported_signatures },
         { "Phar::isValidPharFilename", 1, 2, ptn_internal_phar_is_valid_phar_filename },
         { "Phar::loadPhar", 1, 2, ptn_internal_phar_load_phar },
-        { "Phar::mapPhar", 0, 1, ptn_internal_phar_map_phar },
+        { "Phar::mapPhar", 0, 2, ptn_internal_phar_map_phar },
         { "Phar::mount", 2, 2, ptn_internal_phar_mount },
         { "Phar::mungServer", 1, 1, ptn_internal_phar_mung_server },
         { "Phar::running", 0, 1, ptn_internal_phar_running },
@@ -160241,6 +160395,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_context_get_default", 0, 1, ptn_internal_stream_context_get_default },
         { "stream_context_get_options", 1, 1, ptn_internal_stream_context_get_options },
         { "stream_context_set_default", 1, 1, ptn_internal_stream_context_set_default },
+        { "stream_context_set_option", 2, 4, ptn_internal_stream_context_set_option },
         { "stream_context_set_params", 2, 2, ptn_internal_stream_context_set_params },
         { "stream_context_set_options", 2, 2, ptn_internal_stream_context_set_options },
         { "stream_copy_to_stream", 2, 4, ptn_internal_stream_copy_to_stream },
@@ -161146,6 +161301,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             "string",
             "string",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "Phar::mapPhar")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_PHAR_MAP_PHAR_PARAMETERS) /
+                sizeof(PTN_INTERNAL_PHAR_MAP_PHAR_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_PHAR_MAP_PHAR_PARAMETERS,
+            0,
+            "bool",
+            "bool",
             0,
             0
         );
@@ -202549,6 +202720,29 @@ static int ptn_dynamic_read_file(const char *path, char **contents_out, size_t *
     *len_out = 0;
     if (path == NULL) {
         return 0;
+    }
+    if (strncmp(path, "phar://", 7) == 0) {
+        unsigned char *data = NULL;
+        size_t data_len = 0;
+        if (!ptn_phar_uri_read_entry(path, &data, &data_len)) {
+            free(data);
+            return 0;
+        }
+        if (data_len == SIZE_MAX) {
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        char *contents = malloc(data_len + 1);
+        if (contents == NULL) {
+            free(data);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(contents, data, data_len);
+        contents[data_len] = '\0';
+        free(data);
+        *contents_out = contents;
+        *len_out = data_len;
+        return 1;
     }
     FILE *file = fopen(path, "rb");
     if (file == NULL) {

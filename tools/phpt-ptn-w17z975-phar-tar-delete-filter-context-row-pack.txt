@@ -1,0 +1,15 @@
+# ptn-w17z.975 exact current-red PHAR/zlib/filter/stream tar delete/link/context row pack
+# source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260626T233937Z.tsv
+# rows: 12
+ext/phar/tests/tar/delete.phpt
+ext/phar/tests/tar/bug71317-duplicate-filename.phpt
+ext/standard/tests/filters/read.phpt
+ext/phar/tests/phar_oo_005.phpt
+ext/standard/tests/streams/bug60455_01.phpt
+ext/phar/tests/phar_convert_tar2.phpt
+ext/zlib/tests/gzgetc_basic.phpt
+ext/standard/tests/streams/stream_context_set_option_error.phpt
+ext/phar/tests/tar/links4.phpt
+ext/phar/tests/tar/bug67761.phpt
+ext/phar/tests/phar_stub_write.phpt
+ext/phar/tests/tar/all.phpt

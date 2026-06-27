@@ -353,10 +353,20 @@ typedef struct {
 #else
 #define PTN_STREAM_IPPROTO_IP 0
 #endif
+#if defined(SHUT_RD)
+#define PTN_STREAM_SHUT_RD SHUT_RD
+#else
+#define PTN_STREAM_SHUT_RD 0
+#endif
 #if defined(SHUT_WR)
 #define PTN_STREAM_SHUT_WR SHUT_WR
 #else
 #define PTN_STREAM_SHUT_WR 1
+#endif
+#if defined(SHUT_RDWR)
+#define PTN_STREAM_SHUT_RDWR SHUT_RDWR
+#else
+#define PTN_STREAM_SHUT_RDWR 2
 #endif
 #define PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT 1
 #define PTN_DEBUG_BACKTRACE_IGNORE_ARGS 2
