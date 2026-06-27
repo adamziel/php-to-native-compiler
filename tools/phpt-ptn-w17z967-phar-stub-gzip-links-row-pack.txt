@@ -1,0 +1,15 @@
+# ptn-w17z.967 exact PHAR stub/gzip/link current-red row pack.
+# Source: current-red full-PHPT artifact partial-statuses-20260626T223921Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/phar_setdefaultstub.phpt
+ext/phar/tests/cache_list/frontcontroller20.phpt
+ext/standard/tests/streams/bug70362.phpt
+ext/phar/tests/016b.phpt
+ext/phar/tests/phar_gzip.phpt
+ext/phar/tests/019.phpt
+ext/standard/tests/streams/stream_errors_silent_without_storage.phpt
+ext/phar/tests/zip/phar_magic.phpt
+ext/phar/tests/029.phpt
+ext/phar/tests/009.phpt
+ext/phar/tests/bug46032.phpt
+ext/phar/tests/tar/links2.phpt

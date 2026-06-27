@@ -7877,6 +7877,7 @@ struct PtnPharArchiveState {
     int loading;
     unsigned char *metadata;
     size_t metadata_len;
+    char *load_error;
     char *signature_hash;
     char *signature_type;
     PtnPharArchiveEntry *entries;
@@ -141876,6 +141877,18 @@ static void ptn_phar_archive_set_signature(
     archive->signature_type = ptn_duplicate_string(type == NULL ? "" : type);
 }
 
+static void ptn_phar_archive_set_load_error_owned(
+    PtnPharArchiveState *archive,
+    char *message
+) {
+    if (archive == NULL) {
+        free(message);
+        return;
+    }
+    free(archive->load_error);
+    archive->load_error = message;
+}
+
 static void ptn_phar_archive_entry_clear(PtnPharArchiveEntry *entry) {
     if (entry == NULL) {
         return;
@@ -142601,6 +142614,14 @@ static void ptn_phar_archive_add_parent_dirs(PtnPharArchiveState *archive, const
     }
 }
 
+static char *ptn_phar_tar_link_name(const unsigned char *block) {
+    size_t link_len = ptn_phar_tar_field_len(block + 157, 100);
+    if (link_len == 0) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len((const char *)block + 157, link_len);
+}
+
 static int ptn_phar_path_has_suffix(const char *path, const char *suffix) {
     if (path == NULL || suffix == NULL) {
         return 0;
@@ -142716,6 +142737,44 @@ static void ptn_phar_parse_tar(PtnPharArchiveState *archive, const unsigned char
             } else {
                 ptn_phar_archive_set_entry(archive, name, (const unsigned char *)"", 0);
             }
+        } else if (typeflag == '1') {
+            char *target = ptn_phar_tar_link_name(block);
+            size_t target_index = 0;
+            if (target == NULL ||
+                !ptn_phar_archive_find_entry_index(archive, target, &target_index)) {
+                int needed = snprintf(
+                    NULL,
+                    0,
+                    "phar error: \"%s\" is a corrupted tar file - hard link to non-existent file \"%s\"",
+                    archive->path == NULL ? "" : archive->path,
+                    target == NULL ? "" : target
+                );
+                if (needed < 0) {
+                    free(target);
+                    free(name);
+                    ptn_abort_out_of_memory();
+                }
+                char *message = malloc((size_t)needed + 1);
+                if (message == NULL) {
+                    free(target);
+                    free(name);
+                    ptn_abort_out_of_memory();
+                }
+                snprintf(
+                    message,
+                    (size_t)needed + 1,
+                    "phar error: \"%s\" is a corrupted tar file - hard link to non-existent file \"%s\"",
+                    archive->path == NULL ? "" : archive->path,
+                    target == NULL ? "" : target
+                );
+                ptn_phar_archive_set_load_error_owned(archive, message);
+                free(target);
+                free(name);
+                break;
+            }
+            PtnPharArchiveEntry *linked = &archive->entries[target_index];
+            ptn_phar_archive_set_entry(archive, name, linked->content, linked->content_len);
+            free(target);
         }
         free(name);
         size_t padded_len = ((content_len + 511) / 512) * 512;
@@ -142728,6 +142787,8 @@ static void ptn_phar_parse_tar(PtnPharArchiveState *archive, const unsigned char
 }
 
 static void ptn_phar_archive_load_file(PtnPharArchiveState *archive) {
+    free(archive->load_error);
+    archive->load_error = NULL;
     unsigned char *data = NULL;
     size_t len = 0;
     int read_result = ptn_read_file_bytes(archive->path, &data, &len);
@@ -142795,6 +142856,7 @@ static void ptn_phar_archive_clear_contents(PtnPharArchiveState *archive) {
     free(archive->alias);
     free(archive->stub);
     free(archive->metadata);
+    free(archive->load_error);
     free(archive->signature_hash);
     free(archive->signature_type);
     archive->alias = NULL;
@@ -142802,6 +142864,7 @@ static void ptn_phar_archive_clear_contents(PtnPharArchiveState *archive) {
     archive->stub_len = 0;
     archive->metadata = NULL;
     archive->metadata_len = 0;
+    archive->load_error = NULL;
     archive->signature_hash = NULL;
     archive->signature_type = NULL;
     for (size_t i = 0; i < archive->entry_count; i++) {
@@ -144194,6 +144257,49 @@ static PtnValue ptn_phar_file_info_new(
     return ptn_phar_file_info_new_with_temporary_dir(runtime, archive, entry_name, 0, line);
 }
 
+static int ptn_phar_is_valid_filename_operand(PtnStringOperand filename, int executable);
+
+static void ptn_phar_throw_unrecognized_filename(
+    PtnRuntime *runtime,
+    const char *path,
+    size_t line,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Cannot create phar '%s', file extension (or combination) not recognised or the directory does not exist",
+        path == NULL ? "" : path
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Cannot create phar '%s', file extension (or combination) not recognised or the directory does not exist",
+        path == NULL ? "" : path
+    );
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "UnexpectedValueException",
+        message,
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        function_name,
+        runtime == NULL ? NULL : runtime->source_path,
+        line,
+        argc,
+        args
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_phar_new(
     PtnRuntime *runtime,
     const char *class_name,
@@ -144207,6 +144313,9 @@ static PTN_UNUSED PtnValue ptn_phar_new(
     const char *constructor_name = is_phar_data
         ? "PharData::__construct"
         : "Phar::__construct";
+    const char *constructor_trace_name = is_phar_data
+        ? "PharData->__construct"
+        : "Phar->__construct";
     size_t max_argc = is_phar_data ? 4 : 3;
     if (argc < 1 || argc > max_argc) {
         char message[160];
@@ -144264,6 +144373,14 @@ static PTN_UNUSED PtnValue ptn_phar_new(
             requested_format != PTN_PHAR_FORMAT_ZIP) {
             free(path);
             ptn_throw_exception(runtime, "UnexpectedValueException", "Unknown file format specified");
+            return ptn_null();
+        }
+    }
+    if (is_phar_data) {
+        PtnStringOperand path_operand = ptn_string_operand_borrowed(path);
+        if (!ptn_phar_is_valid_filename_operand(path_operand, 0)) {
+            ptn_phar_throw_unrecognized_filename(runtime, path, line, constructor_trace_name, argc, args);
+            free(path);
             return ptn_null();
         }
     }
@@ -144380,6 +144497,24 @@ static PTN_UNUSED PtnValue ptn_phar_new(
         data->archive->format = (int)requested_format;
     }
     data->info_class = NULL;
+    if (data->archive != NULL && data->archive->load_error != NULL) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "UnexpectedValueException",
+            ptn_duplicate_string(data->archive->load_error),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            constructor_trace_name,
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        free(requested_alias);
+        free(data);
+        free(path);
+        return ptn_null();
+    }
     if (!ptn_phar_archive_apply_constructor_alias(runtime, data->archive, path, requested_alias)) {
         free(requested_alias);
         free(data);
@@ -146734,6 +146869,155 @@ static PtnValue ptn_internal_phar_mount(PtnRuntime *runtime, size_t argc, const 
     return ptn_null();
 }
 
+static int ptn_phar_assign_static_alias(
+    PtnRuntime *runtime,
+    PtnPharArchiveState *archive,
+    const char *path,
+    const char *alias
+) {
+    if (alias == NULL) {
+        return 1;
+    }
+    if (!ptn_phar_alias_is_valid(alias)) {
+        ptn_phar_throw_invalid_alias(runtime, alias, path);
+        return 0;
+    }
+    PtnPharArchiveState *conflict = ptn_phar_archive_find_alias_excluding(alias, archive);
+    if (conflict != NULL) {
+        ptn_phar_throw_alias_overload(runtime, alias, conflict->path, path);
+        return 0;
+    }
+    free(archive->alias);
+    archive->alias = ptn_duplicate_string(alias);
+    return 1;
+}
+
+static PtnValue ptn_internal_phar_load_phar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        char message[160];
+        const char *relation = argc < 1 ? "at least" : "at most";
+        size_t expected = argc < 1 ? 1 : 2;
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Phar::loadPhar() expects %s %zu argument%s, %zu given",
+            relation,
+            expected,
+            expected == 1 ? "" : "s",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand filename =
+        ptn_internal_expect_string_arg(runtime, "Phar::loadPhar", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *path = ptn_path_operand_to_c_string(filename);
+    ptn_string_operand_free(filename);
+    if (path == NULL) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "Phar::loadPhar(): Argument #1 ($filename) must not contain any null bytes"
+        );
+        return ptn_null();
+    }
+    char *alias = NULL;
+    if (argc >= 2) {
+        PtnStringOperand alias_operand =
+            ptn_internal_expect_string_arg(runtime, "Phar::loadPhar", 2, "alias", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(alias_operand);
+            free(path);
+            return ptn_null();
+        }
+        alias = ptn_duplicate_string_len(alias_operand.data, alias_operand.len);
+        ptn_string_operand_free(alias_operand);
+    }
+    PtnPharArchiveState *archive = ptn_phar_archive_for_path(path);
+    if (archive != NULL && archive->load_error != NULL) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "UnexpectedValueException",
+            ptn_duplicate_string(archive->load_error),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            "Phar::loadPhar",
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        free(alias);
+        free(path);
+        return ptn_null();
+    }
+    if (!ptn_phar_assign_static_alias(runtime, archive, path, alias)) {
+        free(alias);
+        free(path);
+        return ptn_null();
+    }
+    free(alias);
+    free(path);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_phar_map_phar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "Phar::mapPhar() expects at most 1 argument, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    const char *path = runtime == NULL ? NULL : runtime->source_path;
+    if (path == NULL || path[0] == '\0') {
+        ptn_throw_exception(runtime, "UnexpectedValueException", "Phar::mapPhar() requires an executing phar path");
+        return ptn_null();
+    }
+    char *alias = NULL;
+    if (argc == 1) {
+        PtnStringOperand alias_operand =
+            ptn_internal_expect_string_arg(runtime, "Phar::mapPhar", 1, "alias", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(alias_operand);
+            return ptn_null();
+        }
+        alias = ptn_duplicate_string_len(alias_operand.data, alias_operand.len);
+        ptn_string_operand_free(alias_operand);
+    }
+    PtnPharArchiveState *archive = ptn_phar_archive_for_path(path);
+    if (archive != NULL && archive->load_error != NULL) {
+        ptn_throw_exception_owned_message_at_with_trace_frame(
+            runtime,
+            "UnexpectedValueException",
+            ptn_duplicate_string(archive->load_error),
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            "Phar::mapPhar",
+            runtime == NULL ? NULL : runtime->source_path,
+            line,
+            argc,
+            args
+        );
+        free(alias);
+        return ptn_null();
+    }
+    if (!ptn_phar_assign_static_alias(runtime, archive, path, alias)) {
+        free(alias);
+        return ptn_null();
+    }
+    free(alias);
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_phar_api_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)args;
     (void)line;
@@ -146813,7 +147097,6 @@ static int ptn_phar_mung_server_variable_is_allowed(PtnStringOperand value) {
 }
 
 static PtnValue ptn_internal_phar_mung_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     if (argc != 1) {
         char message[128];
         int written = snprintf(message, sizeof(message), "Phar::mungServer() expects exactly 1 argument, %zu given", argc);
@@ -146836,14 +147119,25 @@ static PtnValue ptn_internal_phar_mung_server(PtnRuntime *runtime, size_t argc, 
         return ptn_null();
     }
     for (size_t i = 0; i < variables->len; i++) {
-        PtnStringOperand variable = ptn_value_to_string_operand_with_runtime(runtime, variables->entries[i].value, line);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_string_operand_free(variable);
+        PtnValue value = ptn_value_deref(variables->entries[i].value);
+        if (value.type != PTN_STRING) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "PharException",
+                ptn_duplicate_string("Non-string value passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME"),
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                "Phar::mungServer",
+                runtime == NULL ? NULL : runtime->source_path,
+                line,
+                argc,
+                args
+            );
             return ptn_null();
         }
+        PtnStringOperand variable = ptn_string_operand_borrowed_len(value.as.string.data, value.as.string.len);
         int allowed = ptn_phar_mung_server_variable_is_allowed(variable);
         char *variable_name = allowed ? NULL : ptn_duplicate_string_len(variable.data, variable.len);
-        ptn_string_operand_free(variable);
         if (!allowed) {
             int needed = snprintf(
                 NULL,
@@ -148937,6 +149231,12 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         }
         if (ptn_ascii_case_equal(name, "isValidPharFilename")) {
             return ptn_internal_phar_is_valid_phar_filename(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "loadPhar")) {
+            return ptn_internal_phar_load_phar(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "mapPhar")) {
+            return ptn_internal_phar_map_phar(runtime, argc, args, line);
         }
         if (ptn_ascii_case_equal(name, "mount")) {
             return ptn_internal_phar_mount(runtime, argc, args, line);
@@ -159789,6 +160089,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "Phar::getSupportedCompression", 0, 0, ptn_internal_phar_get_supported_compression },
         { "Phar::getSupportedSignatures", 0, 0, ptn_internal_phar_get_supported_signatures },
         { "Phar::isValidPharFilename", 1, 2, ptn_internal_phar_is_valid_phar_filename },
+        { "Phar::loadPhar", 1, 2, ptn_internal_phar_load_phar },
+        { "Phar::mapPhar", 0, 1, ptn_internal_phar_map_phar },
         { "Phar::mount", 2, 2, ptn_internal_phar_mount },
         { "Phar::mungServer", 1, 1, ptn_internal_phar_mung_server },
         { "Phar::running", 0, 1, ptn_internal_phar_running },
@@ -164183,6 +164485,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
+            || ptn_ascii_case_equal(method_name, "loadPhar")
+            || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")
             || ptn_ascii_case_equal(method_name, "mungServer")
             || ptn_ascii_case_equal(method_name, "running");
@@ -164416,6 +164720,8 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename")
+            || ptn_ascii_case_equal(method_name, "loadPhar")
+            || ptn_ascii_case_equal(method_name, "mapPhar")
             || ptn_ascii_case_equal(method_name, "mount")
             || ptn_ascii_case_equal(method_name, "mungServer")
             || ptn_ascii_case_equal(method_name, "running");
@@ -165888,6 +166194,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "isFileFormat");
         ptn_append_method_name(result, &index, "isValidPharFilename");
         ptn_append_method_name(result, &index, "key");
+        ptn_append_method_name(result, &index, "loadPhar");
+        ptn_append_method_name(result, &index, "mapPhar");
         ptn_append_method_name(result, &index, "mount");
         ptn_append_method_name(result, &index, "mungServer");
         ptn_append_method_name(result, &index, "next");

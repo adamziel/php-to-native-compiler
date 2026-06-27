@@ -2729,6 +2729,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "PDOException")) {
         return "PDOException";
     }
+    if (ptn_exception_name_equal(class_name, "PharException")) {
+        return "PharException";
+    }
     if (ptn_exception_name_equal(class_name, "JsonException")) {
         return "JsonException";
     }
@@ -2871,6 +2874,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "SoapFault") ||
+            ptn_exception_name_equal(class_name, "PharException") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
             ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
             ptn_exception_name_equal(class_name, "DateMalformedStringException") ||

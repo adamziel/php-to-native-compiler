@@ -53563,6 +53563,103 @@ try {
 }
 
 #[test]
+fn compile_phar_static_registration_and_archive_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-static-registration-validation");
+    fs::create_dir_all(&root).unwrap();
+    let workdir = root.join("phar_static_semantics");
+    fs::create_dir_all(&workdir).unwrap();
+    let bad_tar = workdir.join("bad-hardlink.tar");
+    let mut tar = vec![0_u8; 512 * 3];
+    tar[..13].copy_from_slice(b"hard-link.txt");
+    tar[124..136].copy_from_slice(b"00000000000\0");
+    tar[156] = b'1';
+    tar[157..174].copy_from_slice(b"internal/file.txt");
+    fs::write(&bad_tar, tar).unwrap();
+
+    let input = root.join("phar-static-registration-validation.php");
+    let output = root.join("phar-static-registration-validation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$workdir = __DIR__ . '/phar_static_semantics';
+$fname = $workdir . '/static-load.phar.php';
+$copy = $workdir . '/static-load-copy.phar.php';
+
+$phar = new Phar($fname);
+$phar->addFromString('a.txt', 'a');
+unset($phar);
+copy($fname, $copy);
+
+var_dump(Phar::loadPhar($fname, 'hio'));
+var_dump(Phar::loadPhar($fname, 'copy'));
+
+try {
+    Phar::loadPhar($copy, 'copy');
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+
+try {
+    Phar::mungServer(['PHP_SELF', 81]);
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+
+try {
+    new PharData($workdir . '/not-a-data-archive');
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+
+try {
+    new PharData($workdir . '/bad-hardlink.tar');
+} catch (Throwable $e) {
+    echo get_class($e), ':', $e->getMessage(), "\n";
+}
+
+var_dump(method_exists('Phar', 'loadPhar'));
+var_dump(method_exists('Phar', 'mungServer'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "bool(true)\n",
+                "bool(true)\n",
+                "UnexpectedValueException:alias \"copy\" is already used for archive \"{}\" cannot be overloaded with \"{}\"\n",
+                "PharException:Non-string value passed to Phar::mungServer(), expecting an array of any of these strings: PHP_SELF, REQUEST_URI, SCRIPT_FILENAME, SCRIPT_NAME\n",
+                "UnexpectedValueException:Cannot create phar '{}', file extension (or combination) not recognised or the directory does not exist\n",
+                "UnexpectedValueException:phar error: \"{}\" is a corrupted tar file - hard link to non-existent file \"internal/file.txt\"\n",
+                "bool(true)\n",
+                "bool(true)\n",
+            ),
+            workdir.join("static-load.phar.php").display(),
+            workdir.join("static-load-copy.phar.php").display(),
+            workdir.join("not-a-data-archive").display(),
+            bad_tar.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_load_phar"));
+    assert!(c_source.contains("ptn_internal_phar_mung_server"));
+    assert!(c_source.contains("ptn_phar_archive_set_load_error_owned"));
+}
+
+#[test]
 fn compile_phar_directory_wrapper_iteration_to_native_binary() {
     let root = temp_dir("ptn-native-phar-directory-wrapper");
     fs::create_dir_all(&root).unwrap();
