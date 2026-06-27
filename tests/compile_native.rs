@@ -30332,7 +30332,8 @@ string(1) \"a\"\n"
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_user_stream_materialize_reads"));
+    assert!(c_source.contains("ptn_user_stream_read_bytes"));
+    assert!(c_source.contains("chunk_size"));
 }
 
 #[test]
