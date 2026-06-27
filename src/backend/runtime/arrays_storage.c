@@ -91,6 +91,11 @@ typedef struct PtnFiberData {
     PtnValue callback;
     PtnValue return_value;
     PtnValue suspension_trace;
+    PtnValue suspend_value;
+    PtnValue resume_value;
+    PtnValue *entry_args;
+    size_t entry_argc;
+    size_t entry_line;
     char *executing_file;
     size_t executing_line;
     int started;
@@ -98,6 +103,22 @@ typedef struct PtnFiberData {
     int completed;
     int threw;
     int resume_credit;
+#if !defined(_WIN32)
+    ucontext_t caller_context;
+    ucontext_t fiber_context;
+    void *fiber_stack;
+    size_t fiber_stack_size;
+    int context_initialized;
+    int context_finished;
+    PtnRuntime *context_runtime;
+    PtnTryFrame *caller_try_frame;
+    PtnTryFrame *suspended_try_frame;
+    PtnTraceFrame *caller_trace_frame;
+    PtnTraceFrame *suspended_trace_frame;
+    PtnObject *caller_fiber;
+    PtnGenerator *caller_generator;
+    PtnGenerator *suspended_generator;
+#endif
 } PtnFiberData;
 
 static PtnException *ptn_exception_previous_exception(PtnException *exception) {
@@ -1563,9 +1584,19 @@ static int ptn_object_native_values_reach_object(PtnObject *object, PtnObject *t
     }
     if (ptn_ascii_case_equal(object->class_name, "Fiber")) {
         PtnFiberData *data = (PtnFiberData *)object->native_data;
-        return ptn_value_reaches_object(data->callback, target, depth + 1) ||
+        if (ptn_value_reaches_object(data->callback, target, depth + 1) ||
             ptn_value_reaches_object(data->return_value, target, depth + 1) ||
-            ptn_value_reaches_object(data->suspension_trace, target, depth + 1);
+            ptn_value_reaches_object(data->suspension_trace, target, depth + 1) ||
+            ptn_value_reaches_object(data->suspend_value, target, depth + 1) ||
+            ptn_value_reaches_object(data->resume_value, target, depth + 1)) {
+            return 1;
+        }
+        for (size_t i = 0; i < data->entry_argc; i++) {
+            if (ptn_value_reaches_object(data->entry_args[i], target, depth + 1)) {
+                return 1;
+            }
+        }
+        return 0;
     }
     return 0;
 }

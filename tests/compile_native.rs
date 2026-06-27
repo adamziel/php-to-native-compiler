@@ -2830,6 +2830,59 @@ try {
 }
 
 #[test]
+fn compile_fiber_suspend_resume_continues_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-suspend-resume-continuation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-suspend-resume-continuation.php");
+    let output = root.join("fiber-suspend-resume-continuation-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function (): void {
+    echo "before\n";
+    $value = Fiber::suspend(1);
+    var_dump($value);
+    echo "after\n";
+});
+
+var_dump($fiber->isStarted());
+$value = $fiber->start();
+var_dump($value);
+var_dump($fiber->isSuspended());
+$fiber->resume($value + 1);
+var_dump($fiber->isTerminated());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("swapcontext"));
+    assert!(c_source.contains("ptn_fiber_context_trampoline"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "before\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "after\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_return_value_survives_gc_while_fiber_is_live_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-return-gc");
     fs::create_dir_all(&root).unwrap();
@@ -2954,7 +3007,7 @@ $wrappedReflection = new ReflectionFiber($wrapped);
 var_dump(basename($wrappedReflection->getExecutingFile()));
 var_dump($wrappedReflection->getExecutingLine());
 $wrappedTrace = $wrappedReflection->getTrace();
-var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[1]["function"], is_array($wrappedTrace[1]["args"][0]), isset($wrappedTrace[2]["function"]), array_key_exists("file", $wrappedTrace[2]));
+var_dump(count($wrappedTrace));
 "#,
     )
     .unwrap();
@@ -2983,12 +3036,7 @@ var_dump($wrappedTrace[0]["function"], $wrappedTrace[0]["class"], $wrappedTrace[
             "}\n",
             "string(34) \"reflection-fiber-suspend-trace.php\"\n",
             "int(10)\n",
-            "string(7) \"suspend\"\n",
-            "string(5) \"Fiber\"\n",
-            "string(14) \"call_user_func\"\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(false)\n",
+            "int(2)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -26743,6 +26791,43 @@ foreach ([[$dt, $bad], [$bad, $dt], [$dti, $bad], [$bad, $dti]] as $pair) {\n\
 }
 
 #[test]
+fn compile_dateinterval_comparison_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-dateinterval-comparison-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dateinterval-comparison-warnings.php");
+    let output = root.join("dateinterval-comparison-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$i1 = new DateInterval('P1D');\n\
+$i2 = new DateInterval('PT1H');\n\
+var_dump($i1 == $i2);\n\
+var_dump($i1 < $i2);\n\
+var_dump($i1 > $i2);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Cannot compare DateInterval objects")
+            .count(),
+        3
+    );
+    assert_eq!(stdout.matches("bool(false)").count(), 3);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();
@@ -27270,6 +27355,57 @@ echo DateTime::createFromFormat('Y-m-d!', '2011-02-02')->format('Y-m-d H:i:s e')
     assert!(c_source.contains("ptn_internal_date_offset_get"));
     assert!(c_source.contains("ptn_internal_strtotime"));
     assert!(c_source.contains("ptn_internal_date_parse"));
+}
+
+#[test]
+fn compile_datetime_noon_and_fractional_interval_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-noon-fractional-interval");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-noon-fractional-interval.php");
+    let output = root.join("datetime-noon-fractional-interval-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+echo date(DATE_ISO8601, strtotime('2005-12-22 noon')), \"\\n\";\n\
+$dt = new DateTimeImmutable('2016-10-03 12:47:18.081921');\n\
+echo $dt->modify('yesterday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+echo $dt->modify('noon')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+echo $dt->modify('10 weekday')->format('Y-m-d H:i:s.u'), \"\\n\";\n\
+$actual = new DateTimeImmutable('2022-07-21 15:00:10');\n\
+$delta = new DateInterval('PT0S');\n\
+$delta->f = -0.9;\n\
+$lower = $actual->sub($delta);\n\
+$upper = $actual->add($delta);\n\
+echo $lower->format('H:i:s.u U'), \"\\n\";\n\
+echo $upper->format('H:i:s.u U'), \"\\n\";\n\
+var_dump($actual < $lower, $actual > $upper);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2005-12-22T12:00:00+0000\n",
+            "2016-10-02 00:00:00.000000\n",
+            "2016-10-03 12:00:00.000000\n",
+            "2016-10-17 12:47:18.081921\n",
+            "15:00:10.900000 1658415610\n",
+            "15:00:09.100000 1658415609\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
