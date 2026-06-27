@@ -56000,6 +56000,26 @@ impl ValueEmitter {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
             }
+            let trace_args_temp = self.next_temp();
+            let trace_frame_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&trace_args_temp);
+            out.push_str("[] = { ptn_value_share(");
+            out.push_str(&callable_temp);
+            out.push_str(") };\n");
+            emit_push_owned_call_argument_roots(out, "    ", &trace_args_temp, 1);
+            out.push_str("    PtnTraceFrame ");
+            out.push_str(&trace_frame_temp);
+            out.push_str(";\n");
+            out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
+            out.push_str(&line.to_string());
+            out.push_str("), ");
+            out.push_str(&line.to_string());
+            out.push_str(", 1, ");
+            out.push_str(&trace_args_temp);
+            out.push_str(");\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -56007,12 +56027,17 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(", 1);\n");
+            out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&trace_frame_temp);
+            out.push_str(");\n");
             out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
             out.push_str(&previous_warn_by_ref_temp);
             out.push_str(";\n");
             out.push_str("    runtime.call_site_line = ");
             out.push_str(&previous_call_site_line_temp);
             out.push_str(";\n");
+            emit_pop_owned_call_argument_roots(out, "    ", 1);
+            emit_value_cleanup(out, "    ", &format!("{trace_args_temp}[0]"));
             emit_value_cleanup(out, "    ", &callable_temp);
             return result_temp;
         }
@@ -56050,6 +56075,34 @@ impl ValueEmitter {
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &callable_temp, line);
         }
+        let trace_args_temp = self.next_temp();
+        let trace_frame_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&trace_args_temp);
+        out.push_str("[] = { ptn_value_share(");
+        out.push_str(&callable_temp);
+        out.push(')');
+        for temp in &temps {
+            out.push_str(", ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        emit_push_owned_call_argument_roots(out, "    ", &trace_args_temp, arguments.len());
+        out.push_str("    PtnTraceFrame ");
+        out.push_str(&trace_frame_temp);
+        out.push_str(";\n");
+        out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(", \"call_user_func\", ptn_runtime_internal_trace_file(&runtime, ");
+        out.push_str(&line.to_string());
+        out.push_str("), ");
+        out.push_str(&line.to_string());
+        out.push_str(", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&trace_args_temp);
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
@@ -56061,6 +56114,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", 1);\n");
+        out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+        out.push_str(&trace_frame_temp);
+        out.push_str(");\n");
         out.push_str("    runtime.warn_by_ref_argument_mismatch = ");
         out.push_str(&previous_warn_by_ref_temp);
         out.push_str(";\n");
@@ -56069,6 +56125,10 @@ impl ValueEmitter {
         out.push_str(";\n");
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
+        }
+        emit_pop_owned_call_argument_roots(out, "    ", arguments.len());
+        for index in 0..arguments.len() {
+            emit_value_cleanup(out, "    ", &format!("{trace_args_temp}[{index}]"));
         }
         emit_pop_owned_call_argument_roots(out, "    ", temps.len());
         for index in 0..temps.len() {

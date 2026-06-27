@@ -9678,13 +9678,21 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
         }
         const char *file = frame->file;
         size_t frame_line = frame->line;
-        if ((file == NULL || frame_line == 0) && runtime != NULL && runtime->source_path != NULL && runtime->call_site_line != 0) {
+        if (
+            (file == NULL || frame_line == 0) &&
+            runtime != NULL &&
+            frame->runtime == runtime &&
+            runtime->source_path != NULL &&
+            runtime->call_site_line != 0
+        ) {
             file = runtime->source_path;
             frame_line = runtime->call_site_line;
         }
         ptn_string_buffer_append_format(&buffer, "#%zu ", index);
         if (file != NULL && frame_line != 0) {
             ptn_string_buffer_append_format(&buffer, "%s(%zu): ", file, frame_line);
+        } else {
+            ptn_string_buffer_append(&buffer, "[internal function]: ");
         }
         ptn_exception_append_display_function(&buffer, frame->function_name);
         ptn_string_buffer_append_char(&buffer, '(');
@@ -155915,12 +155923,17 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
                 return ptn_null();
             }
             if (runtime->current_fiber == NULL) {
-                ptn_throw_exception_at(
+                ptn_throw_exception_owned_message_at_with_trace_frame(
                     runtime,
                     "FiberError",
-                    "Cannot suspend outside of a fiber",
+                    ptn_duplicate_string("Cannot suspend outside of a fiber"),
                     runtime->source_path,
-                    line
+                    line,
+                    "Fiber::suspend",
+                    runtime->source_path,
+                    line,
+                    argc,
+                    args
                 );
                 return ptn_null();
             }
@@ -156032,7 +156045,9 @@ static void ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, const
     int direct_user_suspend =
         runtime->trace_frame != NULL &&
         runtime->trace_frame->function_name != NULL &&
-        !ptn_ascii_case_equal(runtime->trace_frame->function_name, "call_user_func");
+        !ptn_ascii_case_equal(runtime->trace_frame->function_name, "call_user_func") &&
+        !ptn_ascii_case_equal(runtime->trace_frame->function_name, "Fiber->start") &&
+        !ptn_ascii_case_equal(runtime->trace_frame->function_name, "Fiber->resume");
     PtnTraceFrame suspend_frame;
     suspend_frame.runtime = runtime;
     suspend_frame.function_name = "Fiber::suspend";
@@ -156060,6 +156075,12 @@ static void ptn_fiber_capture_suspension(PtnRuntime *runtime, size_t argc, const
     );
     for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
         if (frame->function_name == NULL) {
+            continue;
+        }
+        if (
+            ptn_ascii_case_equal(frame->function_name, "Fiber->start") ||
+            ptn_ascii_case_equal(frame->function_name, "Fiber->resume")
+        ) {
             continue;
         }
         if (frame->file != NULL && frame->line != 0 && data->executing_file == NULL) {
@@ -156109,9 +156130,26 @@ static int ptn_fiber_init_object(
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
     if (!ptn_fiber_check_exact_arguments(runtime, "__construct", argc, 1)) {
         return 0;
+    }
+    if (object->native_data != NULL) {
+        PtnFiberData *existing = (PtnFiberData *)object->native_data;
+        if (existing->started) {
+            ptn_throw_exception_owned_message_at_with_trace_frame(
+                runtime,
+                "FiberError",
+                ptn_duplicate_string("Cannot call constructor twice"),
+                runtime->source_path,
+                line,
+                "Fiber->__construct",
+                runtime->source_path,
+                line,
+                argc,
+                args
+            );
+            return 0;
+        }
     }
     if (!ptn_callable_is_valid(runtime, args[0], 0)) {
         ptn_throw_exception(
@@ -156182,6 +156220,18 @@ static PtnValue ptn_fiber_start(
     runtime->current_fiber = data->object;
     data->running = 1;
     PtnValue result = ptn_null();
+    PtnTraceFrame start_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &start_frame,
+        "Fiber->start",
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
+    start_frame.has_receiver = 1;
+    start_frame.receiver = ptn_object(data->object);
     int callback_succeeded = ptn_internal_call_callback_capturing_exception_impl(
         runtime,
         data->callback,
@@ -156193,6 +156243,7 @@ static PtnValue ptn_fiber_start(
         0,
         &result
     );
+    ptn_runtime_pop_trace_frame(runtime, &start_frame);
     data->running = 0;
     runtime->current_fiber = previous_fiber;
     if (!callback_succeeded || runtime->exceptions->active_exception != NULL) {
