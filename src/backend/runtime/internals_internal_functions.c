@@ -140034,7 +140034,7 @@ static PtnValue ptn_zlib_transform_string_value_limited(
         decompress,
         encoding,
         level,
-        decompress && max_length > 0 && data.len > 0,
+        0,
         &transformed,
         &transformed_len
     );

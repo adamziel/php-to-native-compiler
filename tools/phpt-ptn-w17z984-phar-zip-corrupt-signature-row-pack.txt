@@ -1,0 +1,17 @@
+# ptn-w17z.984 exact current-red PHAR/zlib/filter/stream row pack.
+# Source artifact:
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T004947Z.tsv
+# All rows were FAIL in that artifact.
+# bucket: ptn-w17z984 rows=12
+ext/phar/tests/zip/corrupt_001.phpt
+ext/standard/tests/streams/bug60455_03.phpt
+ext/phar/tests/phar_oo_007.phpt
+ext/standard/tests/streams/gh14506.phpt
+ext/zlib/tests/006.phpt
+ext/phar/tests/031.phpt
+ext/phar/tests/zip/phar_begin_setstub_commit.phpt
+ext/phar/tests/zip/open_for_write_existing_c.phpt
+ext/phar/tests/tar/links6.phpt
+ext/phar/tests/zip/phar_setsignaturealgo2.phpt
+ext/phar/tests/bug79082.phpt
+ext/phar/tests/bug69958.phpt

@@ -28397,6 +28397,7 @@ var_dump(gzuncompress($packed, 3));
 $deflated = gzdeflate("aaaaaaaaaaaaaaa");
 var_dump(gzinflate($deflated, 150));
 var_dump(gzinflate($deflated, 1));
+var_dump(gzinflate("asfwe", 1000));
 
 $path = __DIR__ . "/lines.gz";
 $h = gzopen($path, "w");
@@ -28463,6 +28464,7 @@ var_dump(ZLIB_VERSION, ZLIB_VERNUM >= 0x1240);
     let stdout = String::from_utf8(execution.stdout).unwrap();
     assert!(stdout.contains("Warning: gzuncompress(): insufficient memory"));
     assert!(stdout.contains("Warning: gzinflate(): insufficient memory"));
+    assert!(stdout.contains("Warning: gzinflate(): data error"));
     let stdout_without_warnings = stdout
         .lines()
         .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
@@ -28474,6 +28476,7 @@ var_dump(ZLIB_VERSION, ZLIB_VERNUM >= 0x1240);
         "bool(true)\n\
 bool(false)\n\
 string(15) \"aaaaaaaaaaaaaaa\"\n\
+bool(false)\n\
 bool(false)\n\
 string(6) \"first\n\
 \"\n\
