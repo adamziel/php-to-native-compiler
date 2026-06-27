@@ -54103,6 +54103,48 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_dynamic_generated_phar_stub_include_maps_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-generated-phar-stub");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-generated-phar-stub.php");
+    let output = root.join("dynamic-generated-phar-stub-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$archive = __DIR__ . '/dynamic-map.phar.php';
+@unlink($archive);
+$entry = "<?php echo \"entry\n\"; ?>";
+$manifest = pack('VnVV', 1, 0x1000, 0, 3) . 'dyn' . pack('V', 0);
+$manifest .= pack('V', 9) . 'entry.php';
+$manifest .= pack('VVVVVV', strlen($entry), 0, strlen($entry), crc32($entry), 0, 0);
+$file = "<?php\nPhar::mapPhar('dyn');\n__HALT_COMPILER(); ?>";
+$file .= pack('V', strlen($manifest)) . $manifest . $entry;
+file_put_contents($archive, $file);
+include $archive;
+include 'phar://dyn/entry.php';
+@unlink($archive);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "entry\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_execute_static_call_statement"));
+    assert!(c_source.contains("ptn_dynamic_execute_halt_compiler_statement"));
+}
+
+#[test]
 fn compile_soap_extension_constant_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-soap-extension-constant-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -54827,6 +54869,52 @@ foreach ($subclass as $entry) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_phar_uri_open_directory"));
     assert!(c_source.contains("ptn_phar_directory_next"));
+}
+
+#[test]
+fn compile_phar_directory_rename_moves_descendants_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-directory-rename");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-directory-rename.php");
+    let output = root.join("phar-directory-rename-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/rename-dir.phar.php';
+@unlink($fname);
+$phar = new Phar($fname);
+$phar['a/x'] = 'a';
+$phar['a/y/z'] = 'z';
+$uri = 'phar://' . $fname;
+
+echo file_get_contents($uri . '/a/x'), "\n";
+var_dump(rename($uri . '/a', $uri . '/b'));
+echo file_get_contents($uri . '/b/x'), "\n";
+echo file_get_contents($uri . '/b/y/z'), "\n";
+var_dump(file_exists($uri . '/a/x'));
+@unlink($fname);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a\nbool(true)\na\nz\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_rename_directory_entries"));
+    assert!(c_source.contains("ptn_phar_uri_rename_entry"));
 }
 
 #[test]

@@ -144153,6 +144153,170 @@ static int ptn_phar_serialize_metadata_value(
 }
 
 static int ptn_phar_archive_delete_entry(PtnPharArchiveState *archive, const char *name);
+static void ptn_phar_archive_set_manifest_entry(
+    PtnPharArchiveState *archive,
+    const char *name,
+    const unsigned char *content,
+    size_t content_len,
+    const unsigned char *metadata,
+    size_t metadata_len,
+    uint32_t flags,
+    int64_t timestamp
+);
+
+static char *ptn_phar_archive_rename_directory_prefix(const char *name) {
+    if (name == NULL) {
+        return ptn_duplicate_string("");
+    }
+    size_t len = strlen(name);
+    while (len > 0 && (name[len - 1] == '/' || name[len - 1] == '\\')) {
+        len--;
+    }
+    if (len == 0) {
+        return ptn_duplicate_string("");
+    }
+    char *prefix = malloc(len + 2);
+    if (prefix == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(prefix, name, len);
+    prefix[len] = '/';
+    prefix[len + 1] = '\0';
+    return prefix;
+}
+
+static int ptn_phar_archive_entry_matches_rename_directory(
+    const char *entry_name,
+    const char *source_name,
+    const char *source_prefix
+) {
+    if (entry_name == NULL || source_prefix == NULL || source_prefix[0] == '\0') {
+        return 0;
+    }
+    if (source_name != NULL && strcmp(entry_name, source_name) == 0) {
+        return 1;
+    }
+    size_t prefix_len = strlen(source_prefix);
+    return strncmp(entry_name, source_prefix, prefix_len) == 0;
+}
+
+static char *ptn_phar_archive_renamed_directory_entry_name(
+    const char *entry_name,
+    const char *source_name,
+    const char *source_prefix,
+    const char *dest_name,
+    const char *dest_prefix
+) {
+    if (source_name != NULL && strcmp(entry_name, source_name) == 0) {
+        size_t entry_len = strlen(entry_name);
+        if (entry_len > 0 && (entry_name[entry_len - 1] == '/' || entry_name[entry_len - 1] == '\\')) {
+            return ptn_duplicate_string(dest_prefix == NULL ? "" : dest_prefix);
+        }
+        return ptn_duplicate_string(dest_name == NULL ? "" : dest_name);
+    }
+    size_t source_prefix_len = strlen(source_prefix);
+    const char *suffix = entry_name + source_prefix_len;
+    size_t dest_prefix_len = strlen(dest_prefix);
+    size_t suffix_len = strlen(suffix);
+    if (dest_prefix_len > SIZE_MAX - suffix_len) {
+        ptn_abort_out_of_memory();
+    }
+    char *renamed = malloc(dest_prefix_len + suffix_len + 1);
+    if (renamed == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(renamed, dest_prefix, dest_prefix_len);
+    memcpy(renamed + dest_prefix_len, suffix, suffix_len);
+    renamed[dest_prefix_len + suffix_len] = '\0';
+    return renamed;
+}
+
+static int ptn_phar_archive_rename_directory_entries(
+    PtnPharArchiveState *source_archive,
+    const char *source_name,
+    PtnPharArchiveState *dest_archive,
+    const char *dest_name,
+    const char *source_prefix,
+    const char *dest_prefix
+) {
+    size_t matched_count = 0;
+    for (size_t i = 0; i < source_archive->entry_count; i++) {
+        if (ptn_phar_archive_entry_matches_rename_directory(
+                source_archive->entries[i].name,
+                source_name,
+                source_prefix
+            )) {
+            matched_count++;
+        }
+    }
+    if (matched_count == 0) {
+        return 0;
+    }
+    char **old_names = calloc(matched_count, sizeof(char *));
+    char **new_names = calloc(matched_count, sizeof(char *));
+    if (old_names == NULL || new_names == NULL) {
+        free(old_names);
+        free(new_names);
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    for (size_t i = 0; i < source_archive->entry_count; i++) {
+        const char *entry_name = source_archive->entries[i].name;
+        if (!ptn_phar_archive_entry_matches_rename_directory(entry_name, source_name, source_prefix)) {
+            continue;
+        }
+        old_names[out] = ptn_duplicate_string(entry_name);
+        new_names[out] = ptn_phar_archive_renamed_directory_entry_name(
+            entry_name,
+            source_name,
+            source_prefix,
+            dest_name,
+            dest_prefix
+        );
+        out++;
+    }
+    if (source_archive == dest_archive) {
+        for (size_t i = 0; i < matched_count; i++) {
+            size_t index = 0;
+            if (!ptn_phar_archive_find_entry_index(source_archive, old_names[i], &index)) {
+                continue;
+            }
+            free(source_archive->entries[index].name);
+            source_archive->entries[index].name = new_names[i];
+            new_names[i] = NULL;
+        }
+        ptn_phar_archive_mark_modified(source_archive);
+    } else {
+        for (size_t i = 0; i < matched_count; i++) {
+            size_t index = 0;
+            if (!ptn_phar_archive_find_entry_index(source_archive, old_names[i], &index)) {
+                continue;
+            }
+            PtnPharArchiveEntry *entry = &source_archive->entries[index];
+            ptn_phar_archive_set_manifest_entry(
+                dest_archive,
+                new_names[i],
+                entry->content,
+                entry->content_len,
+                entry->metadata,
+                entry->metadata_len,
+                entry->flags,
+                entry->timestamp
+            );
+        }
+        for (size_t i = 0; i < matched_count; i++) {
+            ptn_phar_archive_delete_entry(source_archive, old_names[i]);
+        }
+        ptn_phar_archive_mark_modified(dest_archive);
+    }
+    for (size_t i = 0; i < matched_count; i++) {
+        free(old_names[i]);
+        free(new_names[i]);
+    }
+    free(old_names);
+    free(new_names);
+    return 1;
+}
 
 static void ptn_phar_archive_set_manifest_entry(
     PtnPharArchiveState *archive,
@@ -144187,10 +144351,46 @@ static int ptn_phar_archive_rename_entry(
     if (source_archive == NULL ||
         dest_archive == NULL ||
         source_name == NULL ||
-        dest_name == NULL ||
-        !ptn_phar_archive_find_entry_index(source_archive, source_name, &source_index)) {
+        dest_name == NULL) {
         return 0;
     }
+    int has_source_entry = ptn_phar_archive_find_entry_index(source_archive, source_name, &source_index);
+    char *source_prefix = ptn_phar_archive_rename_directory_prefix(source_name);
+    char *dest_prefix = ptn_phar_archive_rename_directory_prefix(dest_name);
+    int has_directory_entries = 0;
+    if (source_prefix[0] != '\0') {
+        for (size_t i = 0; i < source_archive->entry_count; i++) {
+            if (ptn_phar_archive_entry_matches_rename_directory(
+                    source_archive->entries[i].name,
+                    source_name,
+                    source_prefix
+                )) {
+                has_directory_entries = 1;
+                break;
+            }
+        }
+    }
+    if (!has_source_entry && !has_directory_entries) {
+        free(source_prefix);
+        free(dest_prefix);
+        return 0;
+    }
+    if (has_directory_entries &&
+        (!has_source_entry || ptn_phar_archive_entry_is_dir(&source_archive->entries[source_index]))) {
+        int renamed = ptn_phar_archive_rename_directory_entries(
+            source_archive,
+            source_name,
+            dest_archive,
+            dest_name,
+            source_prefix,
+            dest_prefix
+        );
+        free(source_prefix);
+        free(dest_prefix);
+        return renamed;
+    }
+    free(source_prefix);
+    free(dest_prefix);
     PtnPharArchiveEntry *source = &source_archive->entries[source_index];
     if (source_archive == dest_archive) {
         size_t dest_index = 0;
@@ -205781,6 +205981,134 @@ static int ptn_eval_parse_call_name(
     return 1;
 }
 
+static int ptn_dynamic_execute_static_call_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor < len && code[cursor] == '\\') {
+        cursor++;
+    }
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    size_t class_start = cursor;
+    while (cursor < len &&
+        (ptn_eval_identifier_part((unsigned char)code[cursor]) || code[cursor] == '\\')) {
+        cursor++;
+    }
+    char *class_name = ptn_duplicate_string_len(code + class_start, cursor - class_start);
+    if (!ptn_eval_consume_double_colon(code, len, &cursor)) {
+        free(class_name);
+        return 0;
+    }
+    char *method_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &method_name)) {
+        free(class_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '(')) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+
+    PtnValue *args = NULL;
+    size_t argc = 0;
+    size_t capacity = 0;
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    if (code[cursor] != ')') {
+        while (cursor < len) {
+            if (argc == capacity) {
+                size_t new_capacity = capacity == 0 ? 2 : capacity * 2;
+                if (new_capacity < capacity) {
+                    ptn_abort_out_of_memory();
+                }
+                PtnValue *new_args = realloc(args, new_capacity * sizeof(PtnValue));
+                if (new_args == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                args = new_args;
+                capacity = new_capacity;
+            }
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
+                goto fail;
+            }
+            argc++;
+            cursor = ptn_eval_skip_ws(code, len, cursor);
+            if (cursor < len && code[cursor] == ',') {
+                cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+                if (cursor < len && code[cursor] == ')') {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')') ||
+        !ptn_eval_consume_char(code, len, &cursor, ';')) {
+        goto fail;
+    }
+
+    const char *resolved = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    PtnValue result = ptn_internal_class_static_call_method(runtime, resolved, method_name, argc, args, line);
+    ptn_value_destroy(&result);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(method_name);
+    free(class_name);
+    *pos = cursor;
+    return 1;
+
+fail:
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(method_name);
+    free(class_name);
+    return 0;
+}
+
+static int ptn_dynamic_execute_halt_compiler_statement(
+    const char *code,
+    size_t len,
+    size_t *pos
+) {
+    static const char marker[] = "__HALT_COMPILER";
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    size_t marker_len = sizeof(marker) - 1;
+    if (cursor + marker_len > len || memcmp(code + cursor, marker, marker_len) != 0) {
+        return 0;
+    }
+    cursor += marker_len;
+    if (!ptn_eval_consume_char(code, len, &cursor, '(') ||
+        !ptn_eval_consume_char(code, len, &cursor, ')')) {
+        return 0;
+    }
+    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor + 2 <= len && code[cursor] == '?' && code[cursor + 1] == '>') {
+        cursor += 2;
+    }
+    *pos = len;
+    return 1;
+}
+
 static int ptn_eval_execute_array_mutator_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -206565,8 +206893,13 @@ static int ptn_dynamic_execute_statements_range(
             continue;
         }
         *pos = statement_pos;
+        if (ptn_dynamic_execute_halt_compiler_statement(code, end, pos)) {
+            return 1;
+        }
+        *pos = statement_pos;
         if (ptn_dynamic_execute_echo_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_var_dump_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_static_call_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line)) {
