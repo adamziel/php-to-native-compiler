@@ -27097,6 +27097,7 @@ $s = serialize($i);
 echo str_replace(chr(0), '!', $s), "\n";
 var_dump($i->__serialize()['interval']->__serialize());
 $u = unserialize($s);
+echo implode('|', array_map(fn($key) => str_replace(chr(0), '!', $key), array_keys((array) $u))), "\n";
 $u->dumpFields();
 "#,
     )
@@ -27138,6 +27139,7 @@ $u->dumpFields();
             "  [\"from_string\"]=>\n",
             "  bool(false)\n",
             "}\n",
+            "!I!var1|!I!var2|!*!var3|!*!var4|start|current|end|interval|recurrences|include_start_date|include_end_date\n",
             "int(1)\n",
             "int(2)\n",
             "int(3)\n",

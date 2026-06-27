@@ -115966,54 +115966,34 @@ static void ptn_date_period_reorder_extra_properties_before_internal(PtnObject *
     }
 
     size_t out = 0;
-    for (size_t pass = 0; pass < 2; pass++) {
-        for (size_t i = 0; i < properties->len; i++) {
-            int is_internal = ptn_date_period_key_is_internal(properties->entries[i].key);
-            if ((pass == 0 && !is_internal) || (pass == 1 && is_internal)) {
-                ordered_entries[out++] = properties->entries[i];
-            }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        const PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+        if (entry != NULL && !ptn_date_period_key_is_internal(entry->key)) {
+            ordered_entries[out++] = *entry;
+        }
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        if (ptn_date_period_key_is_internal(entry->key)) {
+            continue;
+        }
+        if (entry->key.type == PTN_ARRAY_KEY_STRING &&
+            ptn_object_property_metadata(object, entry->key.as.string) != NULL) {
+            continue;
+        }
+        ordered_entries[out++] = *entry;
+    }
+    for (size_t i = 0; i < properties->len; i++) {
+        PtnArrayEntry *entry = &properties->entries[i];
+        if (ptn_date_period_key_is_internal(entry->key)) {
+            ordered_entries[out++] = *entry;
         }
     }
     memcpy(properties->entries, ordered_entries, sizeof(PtnArrayEntry) * properties->len);
     free(ordered_entries);
     properties->current_index = 0;
     ptn_array_rebuild_index(properties);
-
-    if (object->property_metadata == NULL || object->property_metadata_len < 2) {
-        return;
-    }
-    PtnObjectPropertyMetadata *ordered_metadata =
-        malloc(sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
-    unsigned char *used = calloc(object->property_metadata_len, sizeof(unsigned char));
-    if (ordered_metadata == NULL || used == NULL) {
-        free(ordered_metadata);
-        free(used);
-        ptn_abort_out_of_memory();
-    }
-
-    out = 0;
-    for (size_t i = 0; i < properties->len; i++) {
-        PtnArrayEntry *entry = &properties->entries[i];
-        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
-            continue;
-        }
-        for (size_t j = 0; j < object->property_metadata_len; j++) {
-            if (!used[j] && strcmp(object->property_metadata[j].storage_name, entry->key.as.string) == 0) {
-                ordered_metadata[out++] = object->property_metadata[j];
-                used[j] = 1;
-                break;
-            }
-        }
-    }
-    for (size_t j = 0; j < object->property_metadata_len; j++) {
-        if (!used[j]) {
-            ordered_metadata[out++] = object->property_metadata[j];
-        }
-    }
-
-    memcpy(object->property_metadata, ordered_metadata, sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
-    free(ordered_metadata);
-    free(used);
 }
 
 static PtnValue ptn_date_period_create_object(
