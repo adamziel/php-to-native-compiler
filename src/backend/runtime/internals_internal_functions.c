@@ -205018,6 +205018,134 @@ static int ptn_eval_parse_call_name(
     return 1;
 }
 
+static int ptn_dynamic_execute_static_call_statement(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t len,
+    size_t *pos,
+    size_t line
+) {
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    if (cursor < len && code[cursor] == '\\') {
+        cursor++;
+    }
+    if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+        return 0;
+    }
+    size_t class_start = cursor;
+    while (cursor < len &&
+        (ptn_eval_identifier_part((unsigned char)code[cursor]) || code[cursor] == '\\')) {
+        cursor++;
+    }
+    char *class_name = ptn_duplicate_string_len(code + class_start, cursor - class_start);
+    if (!ptn_eval_consume_double_colon(code, len, &cursor)) {
+        free(class_name);
+        return 0;
+    }
+    char *method_name = NULL;
+    if (!ptn_eval_parse_identifier_name(code, len, &cursor, &method_name)) {
+        free(class_name);
+        return 0;
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, '(')) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+
+    PtnValue *args = NULL;
+    size_t argc = 0;
+    size_t capacity = 0;
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor >= len) {
+        free(method_name);
+        free(class_name);
+        return 0;
+    }
+    if (code[cursor] != ')') {
+        while (cursor < len) {
+            if (argc == capacity) {
+                size_t new_capacity = capacity == 0 ? 2 : capacity * 2;
+                if (new_capacity < capacity) {
+                    ptn_abort_out_of_memory();
+                }
+                PtnValue *new_args = realloc(args, new_capacity * sizeof(PtnValue));
+                if (new_args == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                args = new_args;
+                capacity = new_capacity;
+            }
+            if (!ptn_eval_parse_expression(runtime, code, len, &cursor, line, &args[argc])) {
+                goto fail;
+            }
+            argc++;
+            cursor = ptn_eval_skip_ws(code, len, cursor);
+            if (cursor < len && code[cursor] == ',') {
+                cursor = ptn_eval_skip_ws(code, len, cursor + 1);
+                if (cursor < len && code[cursor] == ')') {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+    }
+    if (!ptn_eval_consume_char(code, len, &cursor, ')') ||
+        !ptn_eval_consume_char(code, len, &cursor, ';')) {
+        goto fail;
+    }
+
+    const char *resolved = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    PtnValue result = ptn_internal_class_static_call_method(runtime, resolved, method_name, argc, args, line);
+    ptn_value_destroy(&result);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(method_name);
+    free(class_name);
+    *pos = cursor;
+    return 1;
+
+fail:
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    free(args);
+    free(method_name);
+    free(class_name);
+    return 0;
+}
+
+static int ptn_dynamic_execute_halt_compiler_statement(
+    const char *code,
+    size_t len,
+    size_t *pos
+) {
+    static const char marker[] = "__HALT_COMPILER";
+    size_t cursor = ptn_eval_skip_ws(code, len, *pos);
+    size_t marker_len = sizeof(marker) - 1;
+    if (cursor + marker_len > len || memcmp(code + cursor, marker, marker_len) != 0) {
+        return 0;
+    }
+    cursor += marker_len;
+    if (!ptn_eval_consume_char(code, len, &cursor, '(') ||
+        !ptn_eval_consume_char(code, len, &cursor, ')')) {
+        return 0;
+    }
+    (void)ptn_eval_consume_char(code, len, &cursor, ';');
+    cursor = ptn_eval_skip_ws(code, len, cursor);
+    if (cursor + 2 <= len && code[cursor] == '?' && code[cursor + 1] == '>') {
+        cursor += 2;
+    }
+    *pos = len;
+    return 1;
+}
+
 static int ptn_eval_execute_array_mutator_statement(
     PtnRuntime *runtime,
     const char *code,
@@ -205802,8 +205930,13 @@ static int ptn_dynamic_execute_statements_range(
             continue;
         }
         *pos = statement_pos;
+        if (ptn_dynamic_execute_halt_compiler_statement(code, end, pos)) {
+            return 1;
+        }
+        *pos = statement_pos;
         if (ptn_dynamic_execute_echo_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_var_dump_statement(runtime, code, end, pos, line) ||
+            ptn_dynamic_execute_static_call_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_const_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_assignment_statement(runtime, code, end, pos, line) ||
             ptn_dynamic_execute_unset_statement(runtime, code, end, pos, line)) {
