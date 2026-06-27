@@ -1,0 +1,15 @@
+# ptn-w17z.1052 focused PHAR archive runtime current-red row pack.
+# Source: full-PHPT dashboard artifact partial-statuses-20260627T172514Z.tsv.
+# Paths are relative to PHP_SRC_PHPT.
+ext/phar/tests/002.phpt
+ext/phar/tests/004.phpt
+ext/phar/tests/005.phpt
+ext/phar/tests/006.phpt
+ext/phar/tests/007.phpt
+ext/phar/tests/009.phpt
+ext/phar/tests/010.phpt
+ext/phar/tests/011.phpt
+ext/phar/tests/012.phpt
+ext/phar/tests/014.phpt
+ext/phar/tests/015.phpt
+ext/phar/tests/016.phpt
