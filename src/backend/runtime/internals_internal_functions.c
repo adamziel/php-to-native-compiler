@@ -153883,6 +153883,7 @@ typedef struct {
     char *name;
     char *type;
     char *namespace_uri;
+    char *default_value;
     int is_attribute;
     int is_qualified;
     int is_optional;
@@ -153981,6 +153982,7 @@ static void ptn_soap_type_free(PtnSoapType *type) {
         free(type->fields[i].name);
         free(type->fields[i].type);
         free(type->fields[i].namespace_uri);
+        free(type->fields[i].default_value);
     }
     free(type->fields);
 }
@@ -154229,6 +154231,7 @@ static void ptn_soap_type_add_field_ex(
     const char *name,
     const char *xml_type,
     const char *namespace_uri,
+    const char *default_value,
     int is_attribute,
     int is_qualified,
     int is_optional,
@@ -154246,6 +154249,7 @@ static void ptn_soap_type_add_field_ex(
     type->fields[type->field_count].name = ptn_duplicate_string(name == NULL ? "" : name);
     type->fields[type->field_count].type = ptn_soap_local_name_dup(xml_type == NULL ? "string" : xml_type);
     type->fields[type->field_count].namespace_uri = ptn_duplicate_string(namespace_uri == NULL ? "" : namespace_uri);
+    type->fields[type->field_count].default_value = default_value == NULL ? NULL : ptn_duplicate_string(default_value);
     type->fields[type->field_count].is_attribute = is_attribute;
     type->fields[type->field_count].is_qualified = is_qualified;
     type->fields[type->field_count].is_optional = is_optional;
@@ -154254,7 +154258,7 @@ static void ptn_soap_type_add_field_ex(
 }
 
 static void ptn_soap_type_add_field(PtnSoapType *type, const char *name, const char *xml_type) {
-    ptn_soap_type_add_field_ex(type, name, xml_type, "", 0, 0, 0, 0);
+    ptn_soap_type_add_field_ex(type, name, xml_type, "", NULL, 0, 0, 0, 0);
 }
 
 static void ptn_soap_type_copy_fields(PtnSoapType *target, const PtnSoapType *source) {
@@ -154267,6 +154271,7 @@ static void ptn_soap_type_copy_fields(PtnSoapType *target, const PtnSoapType *so
             source->fields[i].name,
             source->fields[i].type,
             source->fields[i].namespace_uri,
+            source->fields[i].default_value,
             source->fields[i].is_attribute,
             source->fields[i].is_qualified,
             source->fields[i].is_optional,
@@ -154319,7 +154324,43 @@ static PtnSoapType *ptn_soap_type_list_find(PtnSoapType *types, size_t count, co
     return found;
 }
 
+static char *ptn_soap_global_schema_named_attr_dup(
+    const char *start,
+    const char *end,
+    const char *tag_name,
+    const char *ref,
+    const char *attr_name
+) {
+    char *local = ptn_soap_local_name_dup(ref == NULL ? "" : ref);
+    const char *cursor = start;
+    while (cursor < end) {
+        const char *tag = memchr(cursor, '<', (size_t)(end - cursor));
+        if (tag == NULL) {
+            break;
+        }
+        const char *tag_end = ptn_soap_tag_end(tag, end);
+        if (tag_end == NULL) {
+            break;
+        }
+        if (ptn_soap_tag_is_opening_name(tag, tag_end, tag_name)) {
+            char *name = ptn_soap_attr_dup(tag, tag_end, "name");
+            int matches = name != NULL && ptn_ascii_case_equal(name, local);
+            free(name);
+            if (matches) {
+                char *value = ptn_soap_attr_dup(tag, tag_end, attr_name);
+                free(local);
+                return value;
+            }
+        }
+        cursor = tag_end;
+    }
+    free(local);
+    return NULL;
+}
+
 static void ptn_soap_parse_fields_in_range(
+    const char *document_start,
+    const char *document_end,
     const char *start,
     const char *end,
     PtnSoapType *type,
@@ -154372,9 +154413,33 @@ static void ptn_soap_parse_fields_in_range(
             int is_attribute = ptn_soap_tag_is_opening_name(tag, tag_end, "attribute");
             char *field_name = ptn_soap_attr_dup(tag, tag_end, "name");
             char *field_type = ptn_soap_attr_dup(tag, tag_end, "type");
+            char *field_default = ptn_soap_attr_dup(tag, tag_end, "default");
+            char *ref = ptn_soap_attr_dup(tag, tag_end, "ref");
             char *form = ptn_soap_attr_dup(tag, tag_end, "form");
             char *min_occurs = ptn_soap_attr_dup(tag, tag_end, "minOccurs");
             char *max_occurs = ptn_soap_attr_dup(tag, tag_end, "maxOccurs");
+            if (field_name == NULL && ref != NULL) {
+                field_name = ptn_soap_local_name_dup(ref);
+                const char *schema_tag = is_attribute ? "attribute" : "element";
+                if (field_type == NULL) {
+                    field_type = ptn_soap_global_schema_named_attr_dup(
+                        document_start,
+                        document_end,
+                        schema_tag,
+                        ref,
+                        "type"
+                    );
+                }
+                if (field_default == NULL) {
+                    field_default = ptn_soap_global_schema_named_attr_dup(
+                        document_start,
+                        document_end,
+                        schema_tag,
+                        ref,
+                        "default"
+                    );
+                }
+            }
             if (field_name != NULL) {
                 int is_qualified = form != NULL
                     ? ptn_ascii_case_equal(form, "qualified")
@@ -154384,6 +154449,7 @@ static void ptn_soap_parse_fields_in_range(
                     field_name,
                     field_type == NULL ? "string" : field_type,
                     is_qualified ? schema_namespace_uri : "",
+                    field_default,
                     is_attribute,
                     is_qualified,
                     min_occurs != NULL && atoi(min_occurs) == 0,
@@ -154394,6 +154460,8 @@ static void ptn_soap_parse_fields_in_range(
             }
             free(field_name);
             free(field_type);
+            free(field_default);
+            free(ref);
             free(form);
             free(min_occurs);
             free(max_occurs);
@@ -154628,6 +154696,8 @@ static void ptn_soap_parse_simple_type_in_range(
 }
 
 static void ptn_soap_parse_complex_type_in_range(
+    const char *document_start,
+    const char *document_end,
     const char *start,
     const char *end,
     PtnSoapType *type,
@@ -154720,6 +154790,8 @@ static void ptn_soap_parse_complex_type_in_range(
         type->has_simple_content = 1;
         ptn_soap_type_set_base_type(type, simple_base == NULL ? "string" : simple_base);
         ptn_soap_parse_fields_in_range(
+            document_start,
+            document_end,
             start,
             end,
             type,
@@ -154742,6 +154814,8 @@ static void ptn_soap_parse_complex_type_in_range(
         free(extension_base);
     }
     ptn_soap_parse_fields_in_range(
+        document_start,
+        document_end,
         start,
         end,
         type,
@@ -154844,6 +154918,8 @@ static void ptn_soap_parse_wsdl_types_from_source(
                     free(group->namespace_uri);
                     group->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_fields_in_range(
+                        start,
+                        end,
                         tag_end,
                         close,
                         group,
@@ -154917,6 +154993,8 @@ static void ptn_soap_parse_wsdl_types_from_source(
                     free(type->namespace_uri);
                     type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_complex_type_in_range(
+                        start,
+                        end,
                         tag_end,
                         close,
                         type,
@@ -154960,6 +155038,8 @@ static void ptn_soap_parse_wsdl_types_from_source(
                     free(type->namespace_uri);
                     type->namespace_uri = ptn_duplicate_string(schema_namespace);
                     ptn_soap_parse_complex_type_in_range(
+                        start,
+                        end,
                         tag_end,
                         scan_end,
                         type,
@@ -157675,6 +157755,19 @@ static int ptn_soap_attribute_is_metadata(PtnXmlNode *attr) {
         ptn_ascii_case_equal(local, "arrayType");
 }
 
+static int ptn_soap_node_has_user_attribute(PtnXmlNode *node, const char *name) {
+    for (size_t i = 0; node != NULL && i < node->attribute_count; i++) {
+        PtnXmlNode *attr = node->attributes[i];
+        if (ptn_soap_attribute_is_metadata(attr)) {
+            continue;
+        }
+        if (ptn_ascii_case_equal(ptn_xml_local_name(attr == NULL ? "" : attr->name), name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static const PtnSoapField *ptn_soap_type_attribute_field(const PtnSoapType *type, const char *name) {
     for (size_t i = 0; type != NULL && i < type->field_count; i++) {
         if (type->fields[i].is_attribute && ptn_ascii_case_equal(type->fields[i].name, name)) {
@@ -157987,6 +158080,36 @@ static PtnValue ptn_soap_decode_default_arg(
             runtime,
             object,
             name,
+            "stdClass",
+            decoded,
+            line
+        );
+        ptn_value_destroy(&written);
+        ptn_value_destroy(&decoded);
+        if (runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    for (size_t i = 0; schema_type != NULL && i < schema_type->field_count; i++) {
+        const PtnSoapField *field = &schema_type->fields[i];
+        if (!field->is_attribute ||
+            field->default_value == NULL ||
+            ptn_soap_node_has_user_attribute(node, field->name)) {
+            continue;
+        }
+        size_t len = strlen(field->default_value);
+        char *copy = ptn_soap_duplicate_len(field->default_value, len);
+        PtnValue decoded = ptn_soap_decode_text_as_type(
+            types,
+            type_count,
+            field->type,
+            copy,
+            len
+        );
+        PtnValue written = ptn_object_write_property(
+            runtime,
+            object,
+            field->name,
             "stdClass",
             decoded,
             line
