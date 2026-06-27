@@ -2944,6 +2944,62 @@ var_dump("DONE");
 }
 
 #[test]
+fn compile_fiber_suspended_frame_locals_survive_gc_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-suspended-frame-gc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-suspended-frame-gc.php");
+    let output = root.join("fiber-suspended-frame-gc-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class C {
+    public function __destruct() {
+        echo __METHOD__, "\n";
+    }
+}
+
+function f($a, $b) {
+}
+
+function g() {
+    Fiber::suspend();
+}
+
+$fiber = new Fiber(function () {
+    $c = new C();
+    f(Fiber::getCurrent(), g());
+});
+
+print "1\n";
+$fiber->start();
+gc_collect_cycles();
+print "2\n";
+$fiber = null;
+gc_collect_cycles();
+print "3\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_gc_mark_trace_frame_runtime_roots"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1\n2\nC::__destruct\n3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_fiber_get_current_tracks_active_fiber_to_native_binary() {
     let root = temp_dir("ptn-native-fiber-get-current");
     fs::create_dir_all(&root).unwrap();

@@ -93912,6 +93912,36 @@ static void ptn_gc_mark_symbol_table(PtnGcMarkStack *stack, PtnSymbolTable *symb
     }
 }
 
+static void ptn_gc_mark_runtime_frame_roots(PtnGcMarkStack *stack, PtnRuntime *runtime) {
+    if (stack == NULL || runtime == NULL) {
+        return;
+    }
+    ptn_gc_mark_symbol_table(stack, &runtime->symbols);
+    if (runtime->call_frame != NULL) {
+        for (size_t i = 0; i < runtime->call_frame->argc; i++) {
+            ptn_gc_mark_stack_push(stack, runtime->call_frame->args[i]);
+        }
+        if (runtime->call_frame->has_current_closure) {
+            ptn_gc_mark_stack_push(stack, runtime->call_frame->current_closure);
+        }
+    }
+    for (size_t i = 0; i < runtime->temporary_roots_len; i++) {
+        ptn_gc_mark_stack_push(stack, runtime->temporary_roots[i]);
+    }
+}
+
+static void ptn_gc_mark_trace_frame_runtime_roots(PtnGcMarkStack *stack, PtnTraceFrame *frame) {
+    for (PtnTraceFrame *cursor = frame; cursor != NULL; cursor = cursor->previous) {
+        if (cursor->has_receiver) {
+            ptn_gc_mark_stack_push(stack, cursor->receiver);
+        }
+        for (size_t i = 0; i < cursor->argc; i++) {
+            ptn_gc_mark_stack_push(stack, cursor->args[i]);
+        }
+        ptn_gc_mark_runtime_frame_roots(stack, cursor->runtime);
+    }
+}
+
 static void ptn_gc_mark_static_locals(PtnGcMarkStack *stack, PtnRuntime *root) {
     if (root == NULL) {
         return;
@@ -93967,6 +93997,14 @@ static void ptn_gc_mark_object_native_values(PtnGcMarkStack *stack, PtnObject *o
         ptn_gc_mark_stack_push(stack, data->callback);
         ptn_gc_mark_stack_push(stack, data->return_value);
         ptn_gc_mark_stack_push(stack, data->suspension_trace);
+        ptn_gc_mark_stack_push(stack, data->suspend_value);
+        ptn_gc_mark_stack_push(stack, data->resume_value);
+        for (size_t i = 0; i < data->entry_argc; i++) {
+            ptn_gc_mark_stack_push(stack, data->entry_args[i]);
+        }
+#if !defined(_WIN32)
+        ptn_gc_mark_trace_frame_runtime_roots(stack, data->suspended_trace_frame);
+#endif
         return;
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") ||
@@ -156881,6 +156919,48 @@ static int ptn_fiber_enter_context(PtnRuntime *runtime, PtnFiberData *data, size
     ptn_fiber_restore_caller_runtime(runtime, data);
     return 1;
 }
+
+static int ptn_fiber_suspended_runtime_seen_before(
+    PtnFiberData *data,
+    PtnTraceFrame *stop,
+    PtnRuntime *runtime
+) {
+    if (data == NULL || runtime == NULL) {
+        return 1;
+    }
+    for (PtnTraceFrame *cursor = data->suspended_trace_frame;
+         cursor != NULL && cursor != stop;
+         cursor = cursor->previous) {
+        if (cursor->runtime == runtime) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_fiber_release_suspended_runtimes(PtnFiberData *data) {
+    if (data == NULL) {
+        return;
+    }
+    for (PtnTraceFrame *cursor = data->suspended_trace_frame;
+         cursor != NULL;
+         cursor = cursor->previous) {
+        PtnRuntime *runtime = cursor->runtime;
+        if (
+            runtime == NULL ||
+            runtime->lifecycle_root == runtime ||
+            runtime->current_fiber != data->object ||
+            ptn_fiber_suspended_runtime_seen_before(data, cursor, runtime)
+        ) {
+            continue;
+        }
+        ptn_runtime_drop_call_frame_arguments(runtime);
+        ptn_runtime_free(runtime);
+    }
+    data->suspended_try_frame = NULL;
+    data->suspended_trace_frame = NULL;
+    data->suspended_generator = NULL;
+}
 #endif
 
 static void ptn_fiber_data_free(void *opaque) {
@@ -156888,6 +156968,9 @@ static void ptn_fiber_data_free(void *opaque) {
     if (data == NULL) {
         return;
     }
+#if !defined(_WIN32)
+    ptn_fiber_release_suspended_runtimes(data);
+#endif
     ptn_value_destroy(&data->callback);
     ptn_value_destroy(&data->return_value);
     ptn_value_destroy(&data->suspension_trace);
