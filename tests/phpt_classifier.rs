@@ -2688,6 +2688,7 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
         "Zend/tests/enum/ast-dumper.phpt",
         "Zend/tests/enum/backed-int-const-invalid-expr.phpt",
         "Zend/tests/enum/comparison.phpt",
+        "Zend/tests/enum/enum-in-var-export.phpt",
         "Zend/tests/enum/enum_in_stack_trace.phpt",
         "Zend/tests/enum/enum_exists.phpt",
         "Zend/tests/enum/extending-user-error.phpt",

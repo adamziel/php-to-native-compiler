@@ -52496,6 +52496,9 @@ typedef struct {
     PtnRuntime *runtime;
     PtnValue wrapper_object;
     size_t line;
+    char *read_buffer;
+    size_t read_buffer_len;
+    size_t read_buffer_offset;
 } PtnUserStreamResourceData;
 
 typedef struct {
@@ -53837,6 +53840,7 @@ static void ptn_user_stream_resource_data_free(void *raw) {
         return;
     }
     ptn_value_destroy(&data->wrapper_object);
+    free(data->read_buffer);
     free(data);
 }
 
@@ -53873,61 +53877,290 @@ static void ptn_user_stream_close_hook(PtnResource *resource, void *raw) {
     ptn_value_destroy(&result);
 }
 
-static void ptn_user_stream_materialize_reads(
-    PtnRuntime *runtime,
-    PtnValue object,
-    PtnResource *resource,
-    size_t line
-) {
-    if (runtime == NULL ||
-        runtime->method_dispatch == NULL ||
-        resource == NULL ||
-        resource->memory_stream == NULL ||
-        !ptn_object_has_declared_method(runtime, object, "stream_read")) {
+static PtnUserStreamResourceData *ptn_user_stream_resource_data(PtnResource *resource) {
+    if (resource == NULL || resource->close_hook != ptn_user_stream_close_hook) {
+        return NULL;
+    }
+    return (PtnUserStreamResourceData *)resource->close_hook_data;
+}
+
+static size_t ptn_user_stream_read_buffer_available(PtnUserStreamResourceData *data) {
+    if (data == NULL || data->read_buffer_len < data->read_buffer_offset) {
+        return 0;
+    }
+    return data->read_buffer_len - data->read_buffer_offset;
+}
+
+static void ptn_user_stream_read_buffer_clear(PtnUserStreamResourceData *data) {
+    if (data == NULL) {
         return;
     }
+    free(data->read_buffer);
+    data->read_buffer = NULL;
+    data->read_buffer_len = 0;
+    data->read_buffer_offset = 0;
+}
 
-    for (size_t reads = 0; reads < 1024; reads++) {
-        PtnValue read_arg = ptn_int(8192);
-        PtnValue read_result = runtime->method_dispatch(runtime, object, "stream_read", 1, &read_arg, line);
-        ptn_value_destroy(&read_arg);
-        if (runtime->exceptions->active_exception != NULL) {
-            ptn_value_destroy(&read_result);
-            return;
+static void ptn_user_stream_read_buffer_append(PtnUserStreamResourceData *data, const char *bytes, size_t len) {
+    if (data == NULL || len == 0) {
+        return;
+    }
+    size_t available = ptn_user_stream_read_buffer_available(data);
+    if (available == 0) {
+        ptn_user_stream_read_buffer_clear(data);
+    } else if (data->read_buffer_offset != 0) {
+        memmove(data->read_buffer, data->read_buffer + data->read_buffer_offset, available);
+        data->read_buffer[available] = '\0';
+        data->read_buffer_len = available;
+        data->read_buffer_offset = 0;
+    }
+    if (len > SIZE_MAX - data->read_buffer_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = realloc(data->read_buffer, data->read_buffer_len + len + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(buffer + data->read_buffer_len, bytes, len);
+    data->read_buffer_len += len;
+    buffer[data->read_buffer_len] = '\0';
+    data->read_buffer = buffer;
+}
+
+static size_t ptn_user_stream_read_buffer_take(PtnUserStreamResourceData *data, char *dest, size_t len) {
+    size_t available = ptn_user_stream_read_buffer_available(data);
+    size_t take = len < available ? len : available;
+    if (take == 0) {
+        return 0;
+    }
+    memcpy(dest, data->read_buffer + data->read_buffer_offset, take);
+    data->read_buffer_offset += take;
+    if (data->read_buffer_offset == data->read_buffer_len) {
+        ptn_user_stream_read_buffer_clear(data);
+    }
+    return take;
+}
+
+static char *ptn_user_stream_invalid_read_message(
+    const char *class_name,
+    size_t excess,
+    size_t actual,
+    size_t max
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s::stream_read - read %zu bytes more data than requested (%zu read, %zu max) - excess data will be lost",
+        class_name == NULL ? "stream" : class_name,
+        excess,
+        actual,
+        max
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s::stream_read - read %zu bytes more data than requested (%zu read, %zu max) - excess data will be lost",
+        class_name == NULL ? "stream" : class_name,
+        excess,
+        actual,
+        max
+    );
+    return message;
+}
+
+static void ptn_stream_report_resource_error(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    const char *function_name,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    int terminating,
+    int replace_last,
+    size_t line
+);
+
+static size_t ptn_user_stream_read_bytes(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    void *buffer,
+    size_t len,
+    size_t line,
+    int *failed
+) {
+    *failed = 0;
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL || len == 0) {
+        return 0;
+    }
+    size_t copied = ptn_user_stream_read_buffer_take(data, (char *)buffer, len);
+    if (copied == len) {
+        return copied;
+    }
+    if (data->runtime == NULL ||
+        data->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_read")) {
+        return copied;
+    }
+
+    size_t chunk_size = resource->chunk_size == 0 ? 8192 : resource->chunk_size;
+    size_t requested = chunk_size == 1 ? len - copied : chunk_size;
+    if (requested > (size_t)INT64_MAX) {
+        requested = (size_t)INT64_MAX;
+    }
+    PtnValue read_arg = ptn_int((int64_t)requested);
+    PtnValue read_result = data->runtime->method_dispatch(
+        data->runtime,
+        data->wrapper_object,
+        "stream_read",
+        1,
+        &read_arg,
+        line
+    );
+    ptn_value_destroy(&read_arg);
+    if (data->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&read_result);
+        *failed = 1;
+        return copied;
+    }
+    PtnValue resolved = ptn_value_deref(read_result);
+    if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+        if (resource->memory_stream != NULL) {
+            resource->memory_stream->error = 1;
         }
-        PtnStringOperand bytes = ptn_value_to_string_operand_with_runtime(runtime, read_result, line);
-        if (bytes.len != 0) {
-            size_t written = ptn_stream_write_bytes(resource, bytes.data, bytes.len);
-            if (written != bytes.len) {
-                ptn_abort_out_of_memory();
-            }
-        }
-        size_t byte_len = bytes.len;
+        errno = EIO;
+        ptn_value_destroy(&read_result);
+        *failed = 1;
+        return copied;
+    }
+
+    PtnStringOperand bytes = ptn_value_to_string_operand_with_runtime(data->runtime, read_result, line);
+    if (data->runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(bytes);
         ptn_value_destroy(&read_result);
-        if (runtime->exceptions->active_exception != NULL) {
-            return;
-        }
+        *failed = 1;
+        return copied;
+    }
+    size_t byte_len = bytes.len;
+    size_t usable_len = byte_len;
+    if (byte_len > requested) {
+        char *message = ptn_user_stream_invalid_read_message(
+            ptn_value_deref(data->wrapper_object).type == PTN_OBJECT
+                ? ptn_value_deref(data->wrapper_object).as.object->class_name
+                : NULL,
+            byte_len - requested,
+            byte_len,
+            requested
+        );
+        ptn_stream_report_resource_error(
+            runtime,
+            resource,
+            function_name,
+            message,
+            "user-space",
+            "UserspaceInvalidReturn",
+            0,
+            1,
+            line
+        );
+        free(message);
+        usable_len = requested;
+    }
+    size_t remaining_request = len - copied;
+    size_t direct = usable_len < remaining_request ? usable_len : remaining_request;
+    if (direct != 0) {
+        memcpy((char *)buffer + copied, bytes.data, direct);
+        copied += direct;
+    }
+    if (usable_len > direct && chunk_size != 1) {
+        ptn_user_stream_read_buffer_append(data, bytes.data + direct, usable_len - direct);
+    }
+    if (byte_len == 0 && resource->memory_stream != NULL) {
+        resource->memory_stream->eof = 1;
+    }
+    ptn_string_operand_free(bytes);
+    ptn_value_destroy(&read_result);
+    return copied;
+}
 
-        int eof = byte_len == 0;
-        if (ptn_object_has_declared_method(runtime, object, "stream_eof")) {
-            PtnValue eof_result = runtime->method_dispatch(runtime, object, "stream_eof", 0, NULL, line);
-            if (runtime->exceptions->active_exception != NULL) {
-                ptn_value_destroy(&eof_result);
-                return;
-            }
-            eof = ptn_is_truthy(eof_result);
-            ptn_value_destroy(&eof_result);
+static size_t ptn_user_stream_write_bytes(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    const char *data_bytes,
+    size_t len,
+    size_t line,
+    int *failed
+) {
+    *failed = 0;
+    PtnUserStreamResourceData *data = ptn_user_stream_resource_data(resource);
+    if (data == NULL) {
+        return 0;
+    }
+    if (data->runtime == NULL ||
+        data->runtime->method_dispatch == NULL ||
+        !ptn_object_has_declared_method(data->runtime, data->wrapper_object, "stream_write")) {
+        return 0;
+    }
+    size_t total = 0;
+    size_t chunk_size = resource->chunk_size == 0 ? 8192 : resource->chunk_size;
+    while (total < len) {
+        size_t remaining = len - total;
+        size_t chunk_len = remaining < chunk_size ? remaining : chunk_size;
+        PtnValue chunk = ptn_owned_string_len(
+            ptn_duplicate_string_len(data_bytes + total, chunk_len),
+            chunk_len
+        );
+        PtnValue result = data->runtime->method_dispatch(
+            data->runtime,
+            data->wrapper_object,
+            "stream_write",
+            1,
+            &chunk,
+            line
+        );
+        ptn_value_destroy(&chunk);
+        if (data->runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            *failed = 1;
+            return total;
         }
-        if (eof || byte_len == 0) {
+        PtnValue resolved = ptn_value_deref(result);
+        if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+            if (resource->memory_stream != NULL) {
+                resource->memory_stream->error = 1;
+            }
+            errno = EIO;
+            ptn_value_destroy(&result);
+            *failed = 1;
+            return total;
+        }
+        int64_t accepted = ptn_value_to_integer(result);
+        ptn_value_destroy(&result);
+        if (accepted <= 0) {
+            break;
+        }
+        size_t accepted_size = (uint64_t)accepted > (uint64_t)chunk_len ? chunk_len : (size_t)accepted;
+        total += accepted_size;
+        if (accepted_size < chunk_len) {
             break;
         }
     }
-    (void)ptn_stream_seek(resource, 0, SEEK_SET);
-    resource->memory_stream->writable = strchr(resource->stream_mode == NULL ? "" : resource->stream_mode, '+') != NULL;
+    if (resource->memory_stream != NULL) {
+        resource->memory_stream->error = 0;
+    }
+    return total;
 }
 
 static PtnArrayEntry *ptn_array_entry_for_literal_string_key(PtnArray *array, const char *key);
+static PtnValue ptn_stream_context_options_snapshot_value(PtnValue value, size_t depth);
 
 static PtnResource *ptn_fopen_context_arg(PtnValue value) {
     value = ptn_value_deref(value);
@@ -54011,6 +54244,34 @@ static void ptn_stream_store_single_error(
     ptn_stream_last_errors[0].param = param == NULL ? NULL : ptn_duplicate_string(param);
     ptn_stream_last_errors[0].severity = severity;
     ptn_stream_last_errors[0].terminating = terminating;
+}
+
+static void ptn_stream_append_last_error(
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    const char *param,
+    int severity,
+    int terminating
+) {
+    if (ptn_stream_last_error_count == SIZE_MAX / sizeof(PtnStoredStreamError)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnStoredStreamError *errors = realloc(
+        ptn_stream_last_errors,
+        (ptn_stream_last_error_count + 1) * sizeof(PtnStoredStreamError)
+    );
+    if (errors == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_stream_last_errors = errors;
+    PtnStoredStreamError *stored = &ptn_stream_last_errors[ptn_stream_last_error_count++];
+    stored->message = ptn_duplicate_string(message == NULL ? "" : message);
+    stored->wrapper_name = ptn_duplicate_string(wrapper_name == NULL ? "stream" : wrapper_name);
+    stored->code_name = ptn_duplicate_string(code_name == NULL ? "Generic" : code_name);
+    stored->param = param == NULL ? NULL : ptn_duplicate_string(param);
+    stored->severity = severity;
+    stored->terminating = terminating;
 }
 
 static const char *ptn_stream_context_enum_case_name(PtnValue value, const char *class_name) {
@@ -54171,6 +54432,85 @@ static PtnValue ptn_stream_open_failure_result(
     return ptn_bool(0);
 }
 
+static int ptn_stream_resource_error_mode(PtnRuntime *runtime, PtnResource *resource, size_t line) {
+    return ptn_stream_context_error_mode(runtime, resource, line);
+}
+
+static PtnStreamErrorStore ptn_stream_resource_error_store(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    int error_mode,
+    size_t line
+) {
+    return ptn_stream_context_error_store(runtime, resource, error_mode, line);
+}
+
+static void ptn_stream_emit_operation_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *message,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "%s(): %s", function_name, message == NULL ? "" : message);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *warning = malloc((size_t)needed + 1);
+    if (warning == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(warning, (size_t)needed + 1, "%s(): %s", function_name, message == NULL ? "" : message);
+    ptn_emit_warning(&runtime->diagnostics, warning, line);
+    free(warning);
+}
+
+static void ptn_stream_report_resource_error(
+    PtnRuntime *runtime,
+    PtnResource *resource,
+    const char *function_name,
+    const char *message,
+    const char *wrapper_name,
+    const char *code_name,
+    int terminating,
+    int replace_existing,
+    size_t line
+) {
+    int error_mode = ptn_stream_resource_error_mode(runtime, resource, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+    PtnStreamErrorStore store = ptn_stream_resource_error_store(runtime, resource, error_mode, line);
+    if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+    if (ptn_stream_error_store_keeps(store, terminating)) {
+        if (replace_existing) {
+            ptn_stream_clear_last_errors();
+        }
+        ptn_stream_append_last_error(
+            message,
+            wrapper_name,
+            code_name,
+            NULL,
+            PTN_E_WARNING,
+            terminating
+        );
+    }
+    if (error_mode == PTN_STREAM_ERROR_MODE_EXCEPTION && terminating) {
+        ptn_throw_exception_at(
+            runtime,
+            "StreamException",
+            message == NULL ? "" : message,
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return;
+    }
+    if (error_mode == PTN_STREAM_ERROR_MODE_ERROR) {
+        ptn_stream_emit_operation_warning(runtime, function_name, message, line);
+    }
+}
+
 static int ptn_try_open_user_stream_wrapper(
     PtnRuntime *runtime,
     const char *path,
@@ -54239,13 +54579,11 @@ static int ptn_try_open_user_stream_wrapper(
         1,
         ptn_ascii_case_equal(mode == NULL ? "" : mode, "a") || (mode != NULL && mode[0] == 'a')
     );
-    ptn_user_stream_materialize_reads(runtime, object, resource, line);
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&object);
-        ptn_resource_close(resource);
-        ptn_resource_release(resource);
-        *out = ptn_null();
-        return 1;
+    if (context != NULL) {
+        ptn_value_destroy(&resource->context_options);
+        resource->context_options = ptn_stream_context_options_snapshot_value(context->context_options, 0);
+        ptn_value_destroy(&resource->context_params);
+        resource->context_params = ptn_stream_context_options_snapshot_value(context->context_params, 0);
     }
     PtnUserStreamResourceData *resource_data = malloc(sizeof(PtnUserStreamResourceData));
     if (resource_data == NULL) {
@@ -54257,6 +54595,9 @@ static int ptn_try_open_user_stream_wrapper(
     resource_data->runtime = runtime;
     resource_data->wrapper_object = ptn_value_clone(object);
     resource_data->line = line;
+    resource_data->read_buffer = NULL;
+    resource_data->read_buffer_len = 0;
+    resource_data->read_buffer_offset = 0;
     resource->close_hook = ptn_user_stream_close_hook;
     resource->close_hook_data = resource_data;
     resource->close_hook_data_free = ptn_user_stream_resource_data_free;
@@ -55738,6 +56079,36 @@ static void ptn_stream_filter_emit_unprocessed_buckets_warning(
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
+static void ptn_throw_stream_filter_invalid_callback_error(PtnRuntime *runtime, char *message, size_t line) {
+    char *secondary_message = ptn_duplicate_string(message == NULL ? "" : message);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "Error",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        free(secondary_message);
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    if (runtime->diagnostics.display_errors) {
+        FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+        fprintf(stream, "\nFatal error: %s in Unknown on line 0\n", secondary_message);
+    }
+    free(secondary_message);
+    ptn_runtime_shutdown_before_exit(runtime);
+    exit(255);
+}
+
 static char *ptn_stream_apply_user_filter_alloc(
     PtnRuntime *runtime,
     const char *function_name,
@@ -55753,6 +56124,57 @@ static char *ptn_stream_apply_user_filter_alloc(
     *out_len = 0;
     if (filter == NULL || !filter->has_user_filter_object || runtime == NULL || runtime->method_dispatch == NULL) {
         return ptn_duplicate_string_len(data, len);
+    }
+
+    PtnValue filter_object = ptn_value_deref(filter->user_filter_object);
+    const char *filter_class_name = filter_object.type == PTN_OBJECT && filter_object.as.object != NULL
+        ? filter_object.as.object->class_name
+        : NULL;
+    char *invalid_filter_reason = filter_class_name == NULL
+        ? ptn_duplicate_string("no array or string given")
+        : ptn_inaccessible_declared_method_callback_reason(runtime, filter_class_name, "filter");
+    if (
+        invalid_filter_reason == NULL &&
+        filter_class_name != NULL &&
+        !ptn_declared_class_method_is_callable(
+            filter_class_name,
+            "filter",
+            runtime == NULL ? NULL : runtime->current_class_name
+        ) &&
+        !ptn_declared_class_has_call_magic(filter_class_name) &&
+        !ptn_internal_class_method_exists(filter_class_name, "filter")
+    ) {
+        invalid_filter_reason = ptn_format_missing_method_callback_reason(filter_class_name, "filter");
+    }
+    if (invalid_filter_reason != NULL) {
+        ptn_stream_filter_emit_unprocessed_buckets_warning(runtime, function_name, line);
+        int needed = snprintf(
+            NULL,
+            0,
+            "Invalid callback %s::filter, %s",
+            filter_class_name == NULL ? "stream_filter" : filter_class_name,
+            invalid_filter_reason
+        );
+        if (needed < 0) {
+            free(invalid_filter_reason);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(invalid_filter_reason);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Invalid callback %s::filter, %s",
+            filter_class_name == NULL ? "stream_filter" : filter_class_name,
+            invalid_filter_reason
+        );
+        free(invalid_filter_reason);
+        ptn_throw_stream_filter_invalid_callback_error(runtime, message, line);
+        *ok = 0;
+        return NULL;
     }
 
     PtnResource *input_resource = ptn_stream_bucket_brigade_new(data, len);
@@ -56382,14 +56804,29 @@ static size_t ptn_stream_filtered_read_pending_take(PtnResource *resource, char 
     return take;
 }
 
-static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_t raw_want) {
+static size_t ptn_stream_filtered_read_fill_pending(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnResource *resource,
+    size_t raw_want,
+    size_t line,
+    int *ok
+) {
     if (ptn_stream_filter_chain_has_zlib(resource->read_filters)) {
         PtnStringBuffer raw;
         ptn_string_buffer_init(&raw);
         unsigned char chunk[8192];
         size_t total = 0;
         for (;;) {
-            size_t read_len = ptn_stream_read_bytes(resource, chunk, sizeof(chunk));
+            int failed = 0;
+            size_t read_len = ptn_user_stream_resource_data(resource) != NULL
+                ? ptn_user_stream_read_bytes(runtime, function_name, resource, chunk, sizeof(chunk), line, &failed)
+                : ptn_stream_read_bytes(resource, chunk, sizeof(chunk));
+            if (failed) {
+                *ok = 0;
+                free(raw.data);
+                return total;
+            }
             if (read_len != 0) {
                 ptn_string_buffer_append_len(&raw, (const char *)chunk, read_len);
                 if (read_len > SIZE_MAX - total) {
@@ -56424,7 +56861,14 @@ static size_t ptn_stream_filtered_read_fill_pending(PtnResource *resource, size_
 
     unsigned char chunk[8192];
     size_t want = raw_want == 0 || raw_want > sizeof(chunk) ? sizeof(chunk) : raw_want;
-    size_t read_len = ptn_stream_read_bytes(resource, chunk, want);
+    int failed = 0;
+    size_t read_len = ptn_user_stream_resource_data(resource) != NULL
+        ? ptn_user_stream_read_bytes(runtime, function_name, resource, chunk, want, line, &failed)
+        : ptn_stream_read_bytes(resource, chunk, want);
+    if (failed) {
+        *ok = 0;
+        return read_len;
+    }
     if (read_len == 0) {
         return 0;
     }
@@ -56463,7 +56907,16 @@ static char *ptn_stream_read_filtered_bytes(
             ptn_abort_out_of_memory();
         }
         errno = 0;
-        size_t read_len = ptn_stream_read_bytes(resource, buffer, length);
+        int failed = 0;
+        size_t read_len = ptn_user_stream_resource_data(resource) != NULL
+            ? ptn_user_stream_read_bytes(runtime, function_name, resource, buffer, length, line, &failed)
+            : ptn_stream_read_bytes(resource, buffer, length);
+        if (failed) {
+            ptn_stream_clear_error(resource);
+            free(buffer);
+            *ok = 0;
+            return NULL;
+        }
         if (read_len == 0 && ptn_stream_error(resource)) {
             ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
             ptn_stream_clear_error(resource);
@@ -56478,7 +56931,23 @@ static char *ptn_stream_read_filtered_bytes(
 
     while (ptn_stream_filtered_read_pending_available(resource) < length) {
         errno = 0;
-        size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        int fill_ok = 1;
+        size_t fill_size = resource->chunk_size == 0 ? 8192 : resource->chunk_size;
+        if (fill_size == 1) {
+            fill_size = length;
+        }
+        size_t read_len = ptn_stream_filtered_read_fill_pending(
+            runtime,
+            function_name,
+            resource,
+            fill_size,
+            line,
+            &fill_ok
+        );
+        if (!fill_ok) {
+            *ok = 0;
+            return NULL;
+        }
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
@@ -56497,7 +56966,7 @@ static char *ptn_stream_read_filtered_bytes(
             }
             break;
         }
-        if (read_len < 8192) {
+        if (read_len < fill_size) {
             if (ptn_stream_error(resource) &&
                 ptn_stream_filtered_read_pending_available(resource) == 0) {
                 ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
@@ -56610,9 +57079,23 @@ static void ptn_stream_filter_probe_prebuffered_zlib(
 }
 
 static int ptn_stream_getc_filtered(PtnResource *resource) {
-    if (resource->read_filters != NULL || ptn_stream_filtered_read_pending_available(resource) != 0) {
+    PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(resource);
+    if (resource->read_filters != NULL ||
+        user_stream != NULL ||
+        ptn_stream_filtered_read_pending_available(resource) != 0) {
         while (ptn_stream_filtered_read_pending_available(resource) == 0) {
-            size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+            int ok = 1;
+            size_t read_len = ptn_stream_filtered_read_fill_pending(
+                user_stream == NULL ? NULL : user_stream->runtime,
+                "fread",
+                resource,
+                resource->chunk_size == 0 ? 8192 : resource->chunk_size,
+                user_stream == NULL ? 0 : user_stream->line,
+                &ok
+            );
+            if (!ok) {
+                return EOF;
+            }
             if (read_len == 0) {
                 return EOF;
             }
@@ -56657,12 +57140,15 @@ static size_t ptn_stream_write_filtered(
     }
     int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->write_filters);
     const char *invalid_filter = ptn_stream_filter_chain_take_quoted_printable_invalid_sequence(resource->write_filters);
-    size_t written = ptn_stream_write_bytes(resource, output, output_len);
+    int user_write_failed = 0;
+    size_t written = ptn_user_stream_resource_data(resource) != NULL
+        ? ptn_user_stream_write_bytes(runtime, resource, output, output_len, line, &user_write_failed)
+        : ptn_stream_write_bytes(resource, output, output_len);
     free(output);
     if (invalid_filter != NULL) {
         ptn_emit_stream_filter_invalid_sequence_warning(runtime, function_name, invalid_filter, line);
     }
-    if (filter_error) {
+    if (filter_error || user_write_failed) {
         return 0;
     }
     if (output_len == 0 && len != 0 && ptn_stream_filter_chain_has_user(resource->write_filters)) {
@@ -56967,6 +57453,9 @@ static void ptn_emit_stream_write_notice(
 }
 
 static int ptn_stream_write_failure_is_silent(PtnResource *resource) {
+    if (ptn_user_stream_resource_data(resource) != NULL) {
+        return 1;
+    }
     return resource != NULL &&
         resource->memory_stream != NULL &&
         (
@@ -58301,7 +58790,23 @@ static PtnValue ptn_stream_read_remaining(
             free(pending);
         }
         errno = 0;
-        size_t read_len = ptn_stream_filtered_read_fill_pending(resource, 8192);
+        int fill_ok = 1;
+        size_t fill_size = resource->chunk_size == 0 ? 8192 : resource->chunk_size;
+        if (fill_size == 1) {
+            fill_size = 8192;
+        }
+        size_t read_len = ptn_stream_filtered_read_fill_pending(
+            runtime,
+            function_name,
+            resource,
+            fill_size,
+            line,
+            &fill_ok
+        );
+        if (!fill_ok) {
+            free(buffer.data);
+            return ptn_bool(0);
+        }
         int filter_error = ptn_stream_filter_chain_take_zlib_error(resource->read_filters);
         if (filter_error) {
             ptn_emit_zlib_data_notice(runtime, function_name, line);
@@ -58315,8 +58820,8 @@ static PtnValue ptn_stream_read_remaining(
             }
             break;
         }
-        if (read_len < 8192 && ptn_stream_error(resource)) {
-            ptn_emit_stream_read_notice(runtime, function_name, 8192, line);
+        if (read_len < fill_size && ptn_stream_error(resource)) {
+            ptn_emit_stream_read_notice(runtime, function_name, fill_size, line);
             ptn_stream_clear_error(resource);
             free(buffer.data);
             return ptn_bool(0);
@@ -58930,7 +59435,11 @@ static PtnValue ptn_internal_stream_context_set_options(PtnRuntime *runtime, siz
         return ptn_null();
     }
     if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
-        ptn_throw_exception(runtime, "TypeError", "Invalid stream/context parameter");
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "stream_context_set_options(): Argument #1 ($context) must be a valid stream/context"
+        );
         return ptn_null();
     }
     PtnValue options = ptn_value_deref(args[1]);
@@ -59086,11 +59595,15 @@ static PtnValue ptn_internal_stream_last_errors(PtnRuntime *runtime, size_t argc
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < ptn_stream_last_error_count; i++) {
         PtnStoredStreamError *stored = &ptn_stream_last_errors[i];
+        const char *code_name = ptn_stream_error_code_case_name(stored->code_name == NULL ? "Generic" : stored->code_name);
+        if (code_name == NULL) {
+            code_name = "Generic";
+        }
         PtnValue error = ptn_object_new_shell(runtime, "StreamError");
         ptn_array_set_entry(
             error.as.object->properties,
             ptn_array_string_key("code"),
-            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", stored->code_name == NULL ? "Generic" : stored->code_name)
+            ptn_builtin_enum_case_singleton(runtime, "StreamErrorCode", code_name)
         );
         ptn_array_set_entry(
             error.as.object->properties,
@@ -114615,6 +115128,7 @@ typedef struct {
     char *live_dom_token_list_current_token;
     int live_dom_token_list_has_current;
     int clone_datetime_current;
+    int rewind_forbidden;
 } PtnInternalIteratorData;
 
 typedef struct {
@@ -120079,6 +120593,7 @@ static PtnValue ptn_internal_iterator_from_values(PtnRuntime *runtime, PtnValue 
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
+    data->rewind_forbidden = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -120109,6 +120624,7 @@ static PtnValue ptn_internal_iterator_from_dom_token_list(PtnRuntime *runtime, P
     data->live_dom_token_list_current_token = NULL;
     data->live_dom_token_list_has_current = 0;
     data->clone_datetime_current = 0;
+    data->rewind_forbidden = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "InternalIterator");
     object.as.object->native_data = data;
@@ -120148,7 +120664,6 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     size_t line
 ) {
     (void)args;
-    (void)line;
     receiver = ptn_value_deref(receiver);
     PtnInternalIteratorData *data = receiver.type == PTN_OBJECT
         ? (PtnInternalIteratorData *)receiver.as.object->native_data
@@ -120163,6 +120678,16 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     PtnArray *array = ptn_internal_iterator_values(data);
     size_t count = ptn_internal_iterator_entry_count(data);
     if (ptn_ascii_case_equal(name, "rewind")) {
+        if (data->rewind_forbidden) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Iterator does not support rewinding",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
         data->index = 0;
         PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
         data->live_dom_token_list_seen_version = ptn_dom_token_list_mutation_version(token_list);
@@ -120187,6 +120712,7 @@ static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
         return ptn_internal_iterator_key_value(array->entries[data->index].key);
     }
     if (ptn_ascii_case_equal(name, "next")) {
+        data->rewind_forbidden = 1;
         PtnDomTokenListData *token_list = ptn_internal_iterator_live_dom_token_list(data);
         if (token_list != NULL) {
             uint64_t version = ptn_dom_token_list_mutation_version(token_list);
@@ -122986,6 +123512,7 @@ typedef struct {
     int filter_elements;
     int filter_namespace;
     int attributes;
+    int rewind_forbidden;
 } PtnXmlNodeListData;
 
 typedef struct PtnDomTokenListData {
@@ -124948,6 +125475,7 @@ static PtnValue ptn_xml_node_list_object(PtnRuntime *runtime, PtnXmlNode *parent
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     const char *class_name = ptn_xml_node_list_class_name_for_parent(parent);
     PtnValue object = ptn_object_new_shell(runtime, class_name);
     object.as.object->native_data = data;
@@ -124992,6 +125520,7 @@ static PtnValue ptn_xml_named_node_map_object(PtnRuntime *runtime, PtnXmlNode *e
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 1;
+    data->rewind_forbidden = 0;
     const char *class_name = element != NULL && ptn_xml_document_for_node(element) != NULL && ptn_xml_document_for_node(element)->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
@@ -125020,6 +125549,7 @@ static PtnValue ptn_xml_named_node_map_snapshot_object(PtnRuntime *runtime, PtnX
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     const char *class_name = owner != NULL && owner->modern_dom
         ? "Dom\\NamedNodeMap"
         : "DOMNamedNodeMap";
@@ -125045,6 +125575,7 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     data->filter_elements = 0;
     data->filter_namespace = 0;
     data->attributes = 0;
+    data->rewind_forbidden = 0;
     size_t length = ptn_xml_node_list_length(source);
     for (size_t i = 0; i < length; i++) {
         ptn_xml_node_list_push(data, ptn_xml_node_list_item(source, i));
@@ -125053,6 +125584,25 @@ static PtnValue ptn_xml_node_list_snapshot_object(PtnRuntime *runtime, PtnXmlNod
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_node_list_data_free;
     return object;
+}
+
+static PtnValue ptn_xml_node_list_internal_iterator(PtnRuntime *runtime, PtnXmlNodeListData *list, size_t line) {
+    PtnValue values = ptn_array_from_literal_entries(0, NULL);
+    size_t length = ptn_xml_node_list_length(list);
+    for (size_t i = 0; i < length; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_value_destroy(&values);
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            values.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_xml_node_value_for_runtime(runtime, ptn_xml_node_list_item(list, i))
+        );
+    }
+    PtnValue iterator = ptn_internal_iterator_from_values(runtime, values, line);
+    ptn_value_destroy(&values);
+    return iterator;
 }
 
 static void ptn_dom_token_list_data_free(void *data) {
@@ -139764,7 +140314,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             if (argc != 0) {
                 return ptn_dom_throw_count(runtime, "DOMNodeList::getIterator", "exactly 0 arguments", argc);
             }
-            return ptn_xml_node_list_snapshot_object(runtime, list, object_class_name);
+            return ptn_xml_node_list_internal_iterator(runtime, list, line);
         }
         if (ptn_ascii_case_equal(class_name, "DOMNodeList") && ptn_ascii_case_equal(name, "namedItem")) {
             if (argc != 1) {
@@ -139818,6 +140368,16 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_xml_node_value_for_runtime(runtime, ptn_xml_node_list_item(list, (size_t)index));
         }
         if (ptn_ascii_case_equal(name, "rewind")) {
+            if (list->rewind_forbidden) {
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Iterator does not support rewinding",
+                    runtime->source_path,
+                    line
+                );
+                return ptn_null();
+            }
             list->position = 0;
             return ptn_null();
         }
@@ -139837,6 +140397,7 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             return ptn_int((int64_t)list->position);
         }
         if (ptn_ascii_case_equal(name, "next")) {
+            list->rewind_forbidden = 1;
             if (list->position == SIZE_MAX) {
                 list->position = 0;
             } else if (list->position < ptn_xml_node_list_length(list)) {
@@ -146761,6 +147322,31 @@ static PtnValue ptn_internal_stream_set_blocking(PtnRuntime *runtime, size_t arg
 #endif
 }
 
+static PtnValue ptn_internal_stream_set_chunk_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "stream_set_chunk_size", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t size = ptn_internal_positive_length_arg(
+        runtime,
+        "stream_set_chunk_size",
+        2,
+        "size",
+        args[1],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    size_t previous = resource->chunk_size == 0 ? 8192 : resource->chunk_size;
+    resource->chunk_size = (size_t)size;
+    if (previous > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)previous);
+}
+
 static int ptn_stream_select_arg_array(
     PtnRuntime *runtime,
     const char *function_name,
@@ -146828,6 +147414,49 @@ static int ptn_stream_select_add_array(
             return 0;
         }
         if (read_interest && value.as.resource->memory_stream != NULL) {
+            PtnUserStreamResourceData *user_stream = ptn_user_stream_resource_data(value.as.resource);
+            if (user_stream != NULL) {
+                PtnValue wrapper_object = ptn_value_deref(user_stream->wrapper_object);
+                const char *class_name = wrapper_object.type == PTN_OBJECT && wrapper_object.as.object != NULL
+                    ? wrapper_object.as.object->class_name
+                    : "user-space";
+                char not_implemented[192];
+                int written = snprintf(
+                    not_implemented,
+                    sizeof(not_implemented),
+                    "%s::stream_cast is not implemented!",
+                    class_name == NULL ? "user-space" : class_name
+                );
+                if (written < 0 || (size_t)written >= sizeof(not_implemented)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_stream_report_resource_error(
+                    runtime,
+                    value.as.resource,
+                    function_name,
+                    not_implemented,
+                    "user-space",
+                    "NotImplemented",
+                    1,
+                    1,
+                    line
+                );
+                if (runtime->exceptions->active_exception != NULL) {
+                    return 0;
+                }
+                ptn_stream_report_resource_error(
+                    runtime,
+                    value.as.resource,
+                    function_name,
+                    "Cannot represent a stream of type user-space as a select()able descriptor",
+                    "user-space",
+                    "CastNotSupported",
+                    1,
+                    0,
+                    line
+                );
+                return 0;
+            }
             if (value.as.resource->memory_stream->position < value.as.resource->memory_stream->len) {
                 (*preselected)++;
             }
@@ -170697,6 +171326,7 @@ static PtnValue ptn_internal_stream_supports_lock(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_stream_socket_recvfrom(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_socket_server(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_wrapper_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_stream_set_chunk_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_syslog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_zlib_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -171724,6 +172354,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_supports_lock", 1, 1, ptn_internal_stream_supports_lock },
         { "stream_select", 4, 6, ptn_internal_stream_select },
         { "stream_set_blocking", 2, 2, ptn_internal_stream_set_blocking },
+        { "stream_set_chunk_size", 2, 2, ptn_internal_stream_set_chunk_size },
         { "stream_socket_client", 1, 6, ptn_internal_stream_socket_client },
         { "stream_socket_get_name", 2, 2, ptn_internal_stream_socket_get_name },
         { "stream_socket_pair", 3, 3, ptn_internal_stream_socket_pair },
@@ -206147,6 +206778,19 @@ static PtnValue ptn_iterator_iterator_resolve_inner(
     size_t line
 ) {
     candidate = ptn_value_deref(candidate);
+    if (candidate.type == PTN_OBJECT &&
+        ptn_object_is_dom_node_list_instance(candidate.as.object) &&
+        runtime->method_dispatch != NULL) {
+        PtnValue iterator = runtime->method_dispatch(runtime, candidate, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&iterator);
+            return ptn_null();
+        }
+        if (ptn_value_is_iterator_object(iterator)) {
+            return iterator;
+        }
+        ptn_value_destroy(&iterator);
+    }
     if (ptn_value_is_iterator_object(candidate)) {
         return ptn_value_clone_deref(candidate);
     }
@@ -209917,7 +210561,33 @@ static PtnValue ptn_iterator_inner_call(
         ptn_throw_exception(runtime, "Error", "Iterator method dispatch is unavailable");
         return ptn_null();
     }
-    return runtime->method_dispatch(runtime, inner, name, argc, args, line);
+    PtnValue resolved_inner = ptn_value_deref(inner);
+    PtnTraceFrame trace_frame;
+    char trace_name[192];
+    int pushed_trace_frame = 0;
+    if (resolved_inner.type == PTN_OBJECT &&
+        resolved_inner.as.object != NULL &&
+        resolved_inner.as.object->class_name != NULL &&
+        ptn_ascii_case_equal(resolved_inner.as.object->class_name, "InternalIterator") &&
+        ptn_ascii_case_equal(name, "rewind")) {
+        int written = snprintf(
+            trace_name,
+            sizeof(trace_name),
+            "%s->%s",
+            resolved_inner.as.object->class_name,
+            name
+        );
+        if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_runtime_push_trace_frame(runtime, &trace_frame, trace_name, NULL, 0, argc, args);
+        pushed_trace_frame = 1;
+    }
+    PtnValue result = runtime->method_dispatch(runtime, inner, name, argc, args, line);
+    if (pushed_trace_frame) {
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    }
+    return result;
 }
 
 static PtnValue ptn_iterator_inner_call_no_args(
@@ -210832,6 +211502,22 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     }
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->has_cached_valid = 0;
+        PtnTraceFrame trace_frame;
+        char trace_name[192];
+        int written = snprintf(
+            trace_name,
+            sizeof(trace_name),
+            "%s->%s",
+            receiver_class_name,
+            name
+        );
+        if (written < 0 || (size_t)written >= sizeof(trace_name)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_runtime_push_trace_frame(runtime, &trace_frame, trace_name, NULL, 0, argc, args);
+        PtnValue rewind = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        return rewind;
     }
     if (ptn_ascii_case_equal(name, "current")) {
         PtnValue current = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
@@ -210868,7 +211554,6 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         return result;
     }
     if (
-        ptn_ascii_case_equal(name, "rewind") ||
         ptn_ascii_case_equal(name, "valid") ||
         ptn_ascii_case_equal(name, "key") ||
         ptn_ascii_case_equal(name, "next") ||

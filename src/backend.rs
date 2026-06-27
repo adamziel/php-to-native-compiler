@@ -1931,6 +1931,14 @@ static PTN_UNUSED void ptn_compact_append_var_export_depth(
             return;
         }
         case PTN_OBJECT:
+            if (value.as.object != NULL && value.as.object->enum_case_name != NULL) {
+                ptn_string_buffer_append_char(output, '\\');
+                ptn_string_buffer_append(output, value.as.object->class_name);
+                ptn_string_buffer_append(output, "::");
+                ptn_string_buffer_append(output, value.as.object->enum_case_name);
+                return;
+            }
+            break;
         case PTN_CLOSURE:
         case PTN_EXCEPTION:
         case PTN_RESOURCE:
