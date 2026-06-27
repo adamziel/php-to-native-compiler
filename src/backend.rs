@@ -37270,6 +37270,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("forward_static_call")
         || name.eq_ignore_ascii_case("header_register_callback")
+        || name.eq_ignore_ascii_case("iterator_apply")
         || name.eq_ignore_ascii_case("ob_start")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")
