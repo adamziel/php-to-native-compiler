@@ -118474,6 +118474,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_DOM_WRONG_DOCUMENT_ERR 4
 #define PTN_DOM_INVALID_CHARACTER_ERR 5
 #define PTN_DOM_NO_MODIFICATION_ALLOWED_ERR 7
+#define PTN_DOM_NOT_SUPPORTED_ERR 9
 #define PTN_DOM_SYNTAX_ERR 12
 #define PTN_DOM_NAMESPACE_ERR 14
 
@@ -118560,6 +118561,7 @@ typedef struct PtnDomTokenListData {
 
 typedef struct {
     char *name;
+    char *namespace_uri;
     PtnValue callback;
 } PtnDomXPathCallback;
 
@@ -120392,6 +120394,9 @@ static int ptn_xml_namespace_declaration_visible_in_named_map(PtnXmlNode *elemen
     PtnXmlNode *document = ptn_xml_document_for_node(element);
     if (document == NULL || !document->modern_dom) {
         return 0;
+    }
+    if (!attr->synthetic_namespace_declaration) {
+        return 1;
     }
     const char *element_name = element->name == NULL ? "" : element->name;
     const char *colon = strchr(element_name, ':');
@@ -129219,6 +129224,7 @@ static void ptn_dom_xpath_data_clear_callbacks(PtnDomXPathData *data) {
     }
     for (size_t i = 0; i < data->callback_count; i++) {
         free(data->callbacks[i].name);
+        free(data->callbacks[i].namespace_uri);
         ptn_value_destroy(&data->callbacks[i].callback);
     }
     data->callback_count = 0;
@@ -129287,29 +129293,44 @@ static int ptn_dom_xpath_valid_callback_name(const char *name, size_t len) {
     return name != NULL && len > 0 && memchr(name, '\0', len) == NULL && memchr(name, '@', len) == NULL;
 }
 
-static int ptn_dom_xpath_callback_index(PtnDomXPathData *data, const char *name) {
+static int ptn_dom_xpath_callback_index(PtnDomXPathData *data, const char *namespace_uri, const char *name) {
     if (data == NULL || name == NULL) {
         return -1;
     }
+    namespace_uri = namespace_uri == NULL ? "" : namespace_uri;
     for (size_t i = 0; i < data->callback_count; i++) {
-        if (strcmp(data->callbacks[i].name, name) == 0) {
+        const char *entry_namespace_uri = data->callbacks[i].namespace_uri == NULL ? "" : data->callbacks[i].namespace_uri;
+        if (strcmp(entry_namespace_uri, namespace_uri) == 0 &&
+            strcmp(data->callbacks[i].name, name) == 0) {
             return (int)i;
         }
     }
     return -1;
 }
 
-static void ptn_dom_xpath_register_callback(PtnDomXPathData *data, const char *name, size_t len, PtnValue callback) {
+static void ptn_dom_xpath_register_callback(
+    PtnDomXPathData *data,
+    const char *namespace_uri,
+    size_t namespace_uri_len,
+    const char *name,
+    size_t len,
+    PtnValue callback
+) {
     if (data == NULL) {
         return;
     }
     char *owned_name = ptn_duplicate_string_len(name, len);
-    int existing = ptn_dom_xpath_callback_index(data, owned_name);
+    char *owned_namespace_uri = namespace_uri == NULL
+        ? NULL
+        : ptn_duplicate_string_len(namespace_uri, namespace_uri_len);
+    int existing = ptn_dom_xpath_callback_index(data, owned_namespace_uri, owned_name);
     if (existing >= 0) {
         PtnDomXPathCallback *entry = &data->callbacks[(size_t)existing];
         free(entry->name);
+        free(entry->namespace_uri);
         ptn_value_destroy(&entry->callback);
         entry->name = owned_name;
+        entry->namespace_uri = owned_namespace_uri;
         entry->callback = ptn_value_clone_deref(callback);
         return;
     }
@@ -129326,6 +129347,7 @@ static void ptn_dom_xpath_register_callback(PtnDomXPathData *data, const char *n
         data->callback_capacity = new_capacity;
     }
     data->callbacks[data->callback_count].name = owned_name;
+    data->callbacks[data->callback_count].namespace_uri = owned_namespace_uri;
     data->callbacks[data->callback_count].callback = ptn_value_clone_deref(callback);
     data->callback_count++;
 }
@@ -129556,7 +129578,7 @@ static PtnValue ptn_dom_xpath_register_php_functions_method(
             ptn_dom_xpath_register_invalid_string(runtime, restrict_value);
             return ptn_null();
         }
-        ptn_dom_xpath_register_callback(data, name.data, name.len, restrict_value);
+        ptn_dom_xpath_register_callback(data, NULL, 0, name.data, name.len, restrict_value);
         ptn_string_operand_free(name);
         data->functions_registered = 1;
         data->allow_all_functions = 0;
@@ -129596,7 +129618,7 @@ static PtnValue ptn_dom_xpath_register_php_functions_method(
             ptn_dom_xpath_register_invalid_array_callback(runtime, entry->value);
             return ptn_null();
         }
-        ptn_dom_xpath_register_callback(data, name.data, name.len, entry->value);
+        ptn_dom_xpath_register_callback(data, NULL, 0, name.data, name.len, entry->value);
         ptn_string_operand_free(name);
     }
     data->functions_registered = 1;
@@ -129631,20 +129653,109 @@ static char *ptn_dom_xpath_extract_function_name(const char *expr) {
     return ptn_duplicate_string_len(start, (size_t)(cursor - start));
 }
 
-static int ptn_dom_xpath_callback_for_name(PtnDomXPathData *data, const char *name, PtnValue *callback_out) {
+static const char *ptn_dom_xpath_php_function_name_error(const char *expr) {
+    const char *marker = strstr(expr == NULL ? "" : expr, "php:function");
+    if (marker == NULL) {
+        return NULL;
+    }
+    const char *cursor = strchr(marker, '(');
+    if (cursor == NULL) {
+        return "Function name must be passed as the first argument";
+    }
+    cursor++;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == ')') {
+        return "Function name must be passed as the first argument";
+    }
+    if (*cursor != '\'' && *cursor != '"') {
+        return "Handler name must be a string";
+    }
+    return NULL;
+}
+
+static PtnValue ptn_dom_xpath_register_php_function_ns_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 3) {
+        ptn_dom_xpath_throw_count(runtime, "DOMXPath::registerPHPFunctionNS", "exactly 3 arguments", argc);
+        return ptn_null();
+    }
+    PtnDomXPathData *data = ptn_dom_xpath_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid State Error");
+        return ptn_null();
+    }
+    PtnStringOperand namespace_uri = ptn_internal_expect_string_arg(runtime, "DOMXPath::registerPHPFunctionNS", 1, "namespaceURI", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "DOMXPath::registerPHPFunctionNS", 2, "name", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(namespace_uri);
+        return ptn_null();
+    }
+    if (!ptn_dom_xpath_valid_callback_name(name.data, name.len)) {
+        ptn_string_operand_free(namespace_uri);
+        ptn_string_operand_free(name);
+        ptn_throw_exception(runtime, "ValueError", "Function name must be a non-empty string");
+        return ptn_null();
+    }
+    PtnValue callback = ptn_value_deref(args[2]);
+    if (!ptn_callable_is_valid(runtime, callback, 0)) {
+        ptn_string_operand_free(namespace_uri);
+        ptn_string_operand_free(name);
+        char *reason = ptn_invalid_callback_reason(runtime, callback);
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "DOMXPath::registerPHPFunctionNS(): Argument #3 ($callback) must be a valid callback, %s",
+            reason == NULL ? "" : reason
+        );
+        free(reason);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    ptn_dom_xpath_register_callback(data, namespace_uri.data, namespace_uri.len, name.data, name.len, callback);
+    ptn_string_operand_free(namespace_uri);
+    ptn_string_operand_free(name);
+    data->functions_registered = 1;
+    data->allow_all_functions = 0;
+    return ptn_null();
+}
+
+static int ptn_dom_xpath_callback_for_namespace_and_name(
+    PtnDomXPathData *data,
+    const char *namespace_uri,
+    const char *name,
+    PtnValue *callback_out
+) {
     if (data == NULL || name == NULL || !data->functions_registered) {
         return 0;
     }
-    if (data->allow_all_functions) {
+    if ((namespace_uri == NULL || namespace_uri[0] == '\0') && data->allow_all_functions) {
         *callback_out = ptn_owned_string(ptn_duplicate_string(name));
         return 1;
     }
-    int index = ptn_dom_xpath_callback_index(data, name);
+    int index = ptn_dom_xpath_callback_index(data, namespace_uri, name);
     if (index < 0) {
         return 0;
     }
     *callback_out = ptn_value_clone_deref(data->callbacks[(size_t)index].callback);
     return 1;
+}
+
+static int ptn_dom_xpath_callback_for_name(PtnDomXPathData *data, const char *name, PtnValue *callback_out) {
+    return ptn_dom_xpath_callback_for_namespace_and_name(data, NULL, name, callback_out);
 }
 
 static PtnXmlNode *ptn_dom_xpath_document(PtnDomXPathData *data) {
@@ -129791,6 +129902,12 @@ static PtnValue ptn_dom_xpath_evaluate_method(PtnRuntime *runtime, PtnValue rece
     }
     char *function_name = ptn_dom_xpath_extract_function_name(expr);
     if (function_name == NULL) {
+        const char *function_name_error = ptn_dom_xpath_php_function_name_error(expr);
+        if (function_name_error != NULL) {
+            free(expr);
+            ptn_throw_exception(runtime, "TypeError", function_name_error);
+            return ptn_null();
+        }
         free(expr);
         return ptn_null();
     }
@@ -130095,6 +130212,127 @@ static size_t ptn_dom_xpath_count_simple_path(PtnDomXPathData *data, PtnXmlNode 
     return ptn_dom_xpath_count_path_children(data, root, path, 0);
 }
 
+static int ptn_dom_xpath_prefixed_function_call_parse(
+    const char *expr,
+    char **prefix_out,
+    char **name_out,
+    char **path_out
+) {
+    if (prefix_out == NULL || name_out == NULL || path_out == NULL) {
+        return 0;
+    }
+    *prefix_out = NULL;
+    *name_out = NULL;
+    *path_out = NULL;
+    const char *cursor = expr == NULL ? "" : expr;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    const char *prefix_start = cursor;
+    while (*cursor != '\0' && *cursor != ':' && ptn_dom_xpath_simple_name_byte((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (cursor == prefix_start || *cursor != ':') {
+        return 0;
+    }
+    const char *prefix_end = cursor++;
+    const char *name_start = cursor;
+    while (*cursor != '\0' && *cursor != '(' && ptn_dom_xpath_simple_name_byte((unsigned char)*cursor) && *cursor != ':') {
+        cursor++;
+    }
+    if (cursor == name_start || *cursor != '(') {
+        return 0;
+    }
+    const char *name_end = cursor++;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor != ')') {
+        return 0;
+    }
+    cursor++;
+    while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == '/') {
+        cursor++;
+    } else if (*cursor != '\0') {
+        return 0;
+    }
+    const char *path_start = cursor;
+    const char *path_end = expr + strlen(expr);
+    while (path_end > path_start && isspace((unsigned char)*(path_end - 1))) {
+        path_end--;
+    }
+    *prefix_out = ptn_duplicate_string_len(prefix_start, (size_t)(prefix_end - prefix_start));
+    *name_out = ptn_duplicate_string_len(name_start, (size_t)(name_end - name_start));
+    *path_out = ptn_duplicate_string_len(path_start, (size_t)(path_end - path_start));
+    return 1;
+}
+
+static int ptn_dom_xpath_query_prefixed_function_call(
+    PtnRuntime *runtime,
+    PtnDomXPathData *data,
+    const char *expr,
+    size_t line,
+    PtnValue *list_out
+) {
+    char *prefix = NULL;
+    char *name = NULL;
+    char *path_expr = NULL;
+    if (!ptn_dom_xpath_prefixed_function_call_parse(expr, &prefix, &name, &path_expr)) {
+        return 0;
+    }
+    const char *namespace_uri = ptn_dom_xpath_registered_namespace_uri(data, prefix, strlen(prefix));
+    if (namespace_uri == NULL) {
+        free(prefix);
+        free(name);
+        free(path_expr);
+        return 0;
+    }
+    PtnValue callback = ptn_null();
+    if (!ptn_dom_xpath_callback_for_namespace_and_name(data, namespace_uri, name, &callback)) {
+        char message[256];
+        int written = snprintf(message, sizeof(message), "No callback handler \"%s\" registered", name);
+        free(prefix);
+        free(name);
+        free(path_expr);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return 1;
+    }
+    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 0, NULL, line);
+    ptn_value_destroy(&callback);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback_result);
+        free(prefix);
+        free(name);
+        free(path_expr);
+        return 1;
+    }
+    PtnXmlNode *root = ptn_xml_node_data(callback_result);
+    PtnValue list = ptn_xml_node_list_object(runtime, root);
+    PtnXmlNodeListData *list_data = ptn_xml_node_list_data(list);
+    ptn_xml_node_list_make_snapshot(list_data);
+    if (root != NULL && path_expr[0] == '\0') {
+        ptn_xml_node_list_push(list_data, root);
+    } else if (root != NULL) {
+        PtnDomXPathSimplePath path;
+        if (ptn_dom_xpath_simple_path_parse(path_expr, &path)) {
+            ptn_dom_xpath_collect_simple_path(data, list_data, root, &path);
+            ptn_dom_xpath_simple_path_clear(&path);
+        }
+    }
+    ptn_value_destroy(&callback_result);
+    free(prefix);
+    free(name);
+    free(path_expr);
+    *list_out = list;
+    return 1;
+}
+
 static PtnValue ptn_dom_xpath_query_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         ptn_dom_xpath_throw_count(runtime, "DOMXPath::query", argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
@@ -130111,6 +130349,11 @@ static PtnValue ptn_dom_xpath_query_method(PtnRuntime *runtime, PtnValue receive
     }
     char *expr = ptn_duplicate_string_len(expression.data, expression.len);
     ptn_string_operand_free(expression);
+    PtnValue function_list = ptn_null();
+    if (ptn_dom_xpath_query_prefixed_function_call(runtime, data, expr, line, &function_list)) {
+        free(expr);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : function_list;
+    }
     if (strstr(expr, "php:function") != NULL) {
         PtnValue eval_expr = ptn_owned_string(ptn_duplicate_string(expr));
         PtnValue eval_args[2] = { eval_expr, ptn_null() };
@@ -131704,11 +131947,36 @@ static PtnValue ptn_dom_create_character_method(PtnRuntime *runtime, PtnValue re
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    PtnXmlNode *document = ptn_xml_document_for_node(ptn_xml_node_data(receiver));
+    if (type == PTN_XML_NODE_CDATA && document != NULL && document->html_document) {
+        ptn_string_operand_free(data);
+        ptn_dom_throw_exception_code(
+            runtime,
+            "This operation is not supported for HTML documents",
+            PTN_DOM_NOT_SUPPORTED_ERR,
+            line
+        );
+        return ptn_null();
+    }
+    if (type == PTN_XML_NODE_CDATA && data.len >= 3) {
+        for (size_t i = 0; i + 2 < data.len; i++) {
+            if (data.data[i] == ']' && data.data[i + 1] == ']' && data.data[i + 2] == '>') {
+                ptn_string_operand_free(data);
+                ptn_dom_throw_exception_code(
+                    runtime,
+                    "Invalid character sequence \"]]>\" in CDATA section",
+                    PTN_DOM_INVALID_CHARACTER_ERR,
+                    line
+                );
+                return ptn_null();
+            }
+        }
+    }
     PtnXmlNode *node = ptn_xml_node_alloc(type, NULL, "");
     free(node->value);
     node->value = ptn_duplicate_string_len(data.data, data.len);
     node->value_len = data.len;
-    ptn_xml_set_owner_document_recursive(node, ptn_xml_document_for_node(ptn_xml_node_data(receiver)));
+    ptn_xml_set_owner_document_recursive(node, document);
     ptn_string_operand_free(data);
     return ptn_xml_node_value_for_runtime(runtime, node);
 }
@@ -131777,6 +132045,15 @@ static PtnValue ptn_dom_create_attribute_method(PtnRuntime *runtime, PtnValue re
     PtnStringOperand name = ptn_internal_expect_string_arg(runtime, method_name, name_index + 1, "qualifiedName", args[name_index], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(namespace_uri);
+        return ptn_null();
+    }
+    if (name_index == 1 &&
+        namespace_uri.len == strlen(ptn_dom_xmlns_namespace_uri()) &&
+        memcmp(namespace_uri.data, ptn_dom_xmlns_namespace_uri(), namespace_uri.len) == 0 &&
+        name.len == 0) {
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(namespace_uri);
+        ptn_dom_throw_exception_code(runtime, "Namespace Error", PTN_DOM_NAMESPACE_ERR, line);
         return ptn_null();
     }
     if (!ptn_xml_qname_is_valid_span(name.data, name.len)) {
@@ -134241,6 +134518,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (ptn_ascii_case_equal(name, "registerPhpFunctions")) {
             return ptn_dom_xpath_register_php_functions_method(runtime, receiver, argc, args, line);
         }
+        if (ptn_ascii_case_equal(name, "registerPHPFunctionNS")) {
+            return ptn_dom_xpath_register_php_function_ns_method(runtime, receiver, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "evaluate")) {
             return ptn_dom_xpath_evaluate_method(runtime, receiver, argc, args, line);
         }
@@ -135162,6 +135442,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "title") ||
         ptn_ascii_case_equal(property, "URL") ||
         ptn_ascii_case_equal(property, "documentURI") ||
+        ptn_ascii_case_equal(property, "xmlEncoding") ||
         ptn_ascii_case_equal(property, "doctype") ||
         ptn_ascii_case_equal(property, "implementation") ||
         ptn_ascii_case_equal(property, "entities") ||
@@ -135170,7 +135451,7 @@ static int ptn_xml_dom_known_property(const char *property) {
         ptn_ascii_case_equal(property, "internalSubset") ||
         ptn_ascii_case_equal(property, "publicId") ||
         ptn_ascii_case_equal(property, "systemId") ||
-        ptn_ascii_case_equal(property, "xmlEncoding") ||
+        ptn_ascii_case_equal(property, "actualEncoding") ||
         ptn_ascii_case_equal(property, "xmlStandalone") ||
         ptn_ascii_case_equal(property, "xmlVersion") ||
         ptn_ascii_case_equal(property, "inputEncoding") ||
@@ -135553,6 +135834,10 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
             *value_out = ptn_owned_string(ptn_duplicate_string(default_uri));
             return 1;
         }
+        if (ptn_ascii_case_equal(property, "xmlEncoding")) {
+            *value_out = ptn_null();
+            return 1;
+        }
         if (ptn_ascii_case_equal(property, "doctype")) {
             for (size_t i = 0; i < node->child_count; i++) {
                 if (node->children[i]->type == PTN_XML_NODE_DOCUMENT_TYPE) {
@@ -135623,14 +135908,21 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     if (ptn_ascii_case_equal(dom_class_name, "DOMEntity")) {
         if (ptn_ascii_case_equal(property, "publicId") ||
             ptn_ascii_case_equal(property, "systemId") ||
-            ptn_ascii_case_equal(property, "notationName")) {
+            ptn_ascii_case_equal(property, "notationName") ||
+            ptn_ascii_case_equal(property, "actualEncoding") ||
+            ptn_ascii_case_equal(property, "encoding") ||
+            ptn_ascii_case_equal(property, "version")) {
             const char *value = NULL;
             if (ptn_ascii_case_equal(property, "publicId")) {
                 value = node->public_id;
             } else if (ptn_ascii_case_equal(property, "systemId")) {
                 value = node->system_id;
-            } else {
+            } else if (ptn_ascii_case_equal(property, "notationName")) {
                 value = node->notation_name;
+            } else if (ptn_ascii_case_equal(property, "version")) {
+                value = node->version;
+            } else {
+                value = node->encoding;
             }
             *value_out = value == NULL
                 ? ptn_null()
@@ -135664,7 +135956,11 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     if (ptn_ascii_case_equal(property, "prefix")) {
         if (ptn_xml_attribute_is_namespace_declaration(node)) {
             const char *declared_prefix = ptn_dom_namespace_declaration_prefix(node);
-            if (!node->modern_dom && declared_prefix != NULL && declared_prefix[0] == '\0') {
+            if (node->modern_dom) {
+                *value_out = declared_prefix == NULL || declared_prefix[0] == '\0'
+                    ? ptn_null()
+                    : ptn_string("xmlns");
+            } else if (declared_prefix != NULL && declared_prefix[0] == '\0') {
                 *value_out = ptn_string("");
             } else {
                 *value_out = declared_prefix == NULL || declared_prefix[0] == '\0'
@@ -135691,8 +135987,10 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     }
     if (ptn_ascii_case_equal(property, "namespaceURI")) {
         if (ptn_xml_attribute_is_namespace_declaration(node)) {
-            const char *declared_uri = node->value == NULL ? "" : node->value;
-            *value_out = ptn_owned_string(ptn_duplicate_string(declared_uri));
+            const char *uri = node->modern_dom
+                ? (node->namespace_uri == NULL ? ptn_dom_xmlns_namespace_uri() : node->namespace_uri)
+                : (node->value == NULL ? "" : node->value);
+            *value_out = ptn_owned_string(ptn_duplicate_string(uri));
             return 1;
         }
         *value_out = node->namespace_uri == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(node->namespace_uri));
@@ -136018,6 +136316,24 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
     if (!ptn_dom_effective_class_is_modeled(dom_class_name)) {
         return 0;
     }
+    if (ptn_ascii_case_equal(dom_class_name, "DOMEntity") &&
+        (ptn_ascii_case_equal(property, "actualEncoding") ||
+            ptn_ascii_case_equal(property, "encoding") ||
+            ptn_ascii_case_equal(property, "version"))) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot modify private(set) property DOMEntity::$%s from global scope",
+            property
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        *value_out = ptn_null();
+        return 1;
+    }
     PtnXmlNode *node = ptn_xml_node_data(receiver);
     if (node == NULL) {
         return 0;
@@ -136178,6 +136494,12 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
         ptn_ascii_case_equal(property, "value") ||
         ptn_ascii_case_equal(property, "nodeValue") ||
         ptn_ascii_case_equal(property, "textContent")) {
+        if (ptn_ascii_case_equal(property, "nodeValue") &&
+            ptn_value_deref(value).type == PTN_ARRAY) {
+            ptn_throw_exception(runtime, "TypeError", "Cannot assign array to property DOMNode::$nodeValue of type ?string");
+            *value_out = ptn_null();
+            return 1;
+        }
         if (ptn_ascii_case_equal(property, "textContent") &&
             node->modern_dom &&
             node->type == PTN_XML_NODE_DOCUMENT) {
@@ -136220,6 +136542,34 @@ static PTN_UNUSED int ptn_internal_xml_property_write(
         }
         ptn_string_operand_free(string);
         *value_out = ptn_value_clone_deref(value);
+        return 1;
+    }
+    const char *private_set_class = NULL;
+    if (ptn_ascii_case_equal(property, "nodeType")) {
+        private_set_class = "DOMNode";
+    } else if (ptn_ascii_case_equal(dom_class_name, "DOMDocument") &&
+        ptn_ascii_case_equal(property, "xmlEncoding")) {
+        private_set_class = "DOMDocument";
+    } else if (ptn_ascii_case_equal(dom_class_name, "DOMEntity") &&
+        (ptn_ascii_case_equal(property, "actualEncoding") ||
+            ptn_ascii_case_equal(property, "encoding") ||
+            ptn_ascii_case_equal(property, "version"))) {
+        private_set_class = "DOMEntity";
+    }
+    if (private_set_class != NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot modify private(set) property %s::$%s from global scope",
+            private_set_class,
+            property
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        *value_out = ptn_null();
         return 1;
     }
     if (ptn_ascii_case_equal(property, "prefix")) {
@@ -136409,6 +136759,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "registerNamespace")
             || ptn_ascii_case_equal(method_name, "registerPhpFunctions")
+            || ptn_ascii_case_equal(method_name, "registerPHPFunctionNS")
             || ptn_ascii_case_equal(method_name, "evaluate")
             || ptn_ascii_case_equal(method_name, "query");
     }
