@@ -1,0 +1,21 @@
+# Focused PHPT row pack for ptn-w17z.1046.
+#
+# Source artifact:
+#   /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T163458Z.tsv
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z1046-opcache-preload-jit-current-red-row-pack.txt
+#
+# bucket: opcache-preload-jit-current-red rows=12
+ext/opcache/tests/jit/shift_right_004.phpt
+ext/opcache/tests/opt/sccp_021.phpt
+ext/opcache/tests/preload_trait_multiple_fixup.phpt
+ext/opcache/tests/preload_002.phpt
+ext/opcache/tests/parent_type_not_interned.phpt
+ext/opcache/tests/bug78185.phpt
+ext/opcache/tests/bug78175.phpt
+ext/opcache/tests/bug74596.phpt
+ext/opcache/tests/jit/bug80634.phpt
+ext/opcache/tests/preload_error_handler.phpt
+ext/opcache/tests/issue0149.phpt
+ext/opcache/tests/opt/type_inference_class_consts3.phpt
