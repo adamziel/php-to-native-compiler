@@ -11288,6 +11288,10 @@ static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValu
         );
         return ptn_null();
     }
+    if (runtime != NULL && runtime->current_generator == generator) {
+        generator->executing = 0;
+        runtime->current_generator = NULL;
+    }
     return ptn_value_clone_deref(generator->return_value);
 }
 

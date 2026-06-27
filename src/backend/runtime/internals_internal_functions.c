@@ -258,7 +258,8 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     if (
         runtime != NULL &&
         runtime->current_generator != NULL &&
-        runtime->current_generator->pending_output.data != NULL
+        runtime->current_generator->executing &&
+        !runtime->current_generator->completed
     ) {
         ptn_string_buffer_append_len(&runtime->current_generator->pending_output, data, len);
         return;
