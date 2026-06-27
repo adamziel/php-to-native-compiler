@@ -2199,6 +2199,25 @@ fn phpt_classifier_splits_remaining_magic_method_metadata_blockers() {
 }
 
 #[test]
+fn phpt_classifier_keeps_modeled_wakeup_arity_diagnostic_runnable() {
+    let phpt = "--TEST--\n__wakeup cannot take arguments\n--FILE--\n<?php\nclass Foo {\n    public function __wakeup(string $name) {}\n}\n?>\n--EXPECTF--\nFatal error: Method Foo::__wakeup() cannot take arguments in %s on line %d\n";
+
+    let classification =
+        classify_at_relative_path(phpt, "Zend/tests/magic_methods/magic_methods_wakeup.phpt");
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let generic_classification =
+        classify_at_relative_path(phpt, "Zend/tests/magic_methods/other_wakeup.phpt");
+    assert!(
+        generic_classification.starts_with("unsupported-magic-method-metadata\t"),
+        "{generic_classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_magic_property_and_debug_rows_runnable() {
     for source in [
         "--TEST--\nmagic get\n--FILE--\n<?php\nclass Box { public function __get($name) { return 1; } }\necho (new Box)->x;\n--EXPECT--\n1\n",

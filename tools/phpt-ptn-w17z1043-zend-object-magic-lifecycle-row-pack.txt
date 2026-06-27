@@ -1,0 +1,14 @@
+# Exact Zend object/magic lifecycle current-red row pack for ptn-w17z.1043.
+# Source: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T155451Z.tsv
+Zend/tests/magic_methods/bug38146.phpt
+Zend/tests/magic_methods/magic_methods_wakeup.phpt
+Zend/tests/magic_methods/magic_methods_014.phpt
+Zend/tests/magic_methods/magic_methods_004.phpt
+Zend/tests/objects/objects_011.phpt
+Zend/tests/magic_methods/bug29368.phpt
+Zend/tests/magic_methods/bug29368_3.phpt
+Zend/tests/magic_methods/bug38234.phpt
+Zend/tests/magic_methods/bug52484_2.phpt
+Zend/tests/magic_methods/magic_methods_006.phpt
+Zend/tests/magic_methods/magic_methods_016.phpt
+Zend/tests/magic_methods/bug43175.phpt

@@ -3248,6 +3248,66 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_STREAM_FILTER_ALL);
         return 1;
     }
+    if (strcmp(name, "DNS_A") == 0) {
+        *out = ptn_int(PTN_DNS_A);
+        return 1;
+    }
+    if (strcmp(name, "DNS_NS") == 0) {
+        *out = ptn_int(PTN_DNS_NS);
+        return 1;
+    }
+    if (strcmp(name, "DNS_CNAME") == 0) {
+        *out = ptn_int(PTN_DNS_CNAME);
+        return 1;
+    }
+    if (strcmp(name, "DNS_SOA") == 0) {
+        *out = ptn_int(PTN_DNS_SOA);
+        return 1;
+    }
+    if (strcmp(name, "DNS_PTR") == 0) {
+        *out = ptn_int(PTN_DNS_PTR);
+        return 1;
+    }
+    if (strcmp(name, "DNS_HINFO") == 0) {
+        *out = ptn_int(PTN_DNS_HINFO);
+        return 1;
+    }
+    if (strcmp(name, "DNS_CAA") == 0) {
+        *out = ptn_int(PTN_DNS_CAA);
+        return 1;
+    }
+    if (strcmp(name, "DNS_MX") == 0) {
+        *out = ptn_int(PTN_DNS_MX);
+        return 1;
+    }
+    if (strcmp(name, "DNS_TXT") == 0) {
+        *out = ptn_int(PTN_DNS_TXT);
+        return 1;
+    }
+    if (strcmp(name, "DNS_A6") == 0) {
+        *out = ptn_int(PTN_DNS_A6);
+        return 1;
+    }
+    if (strcmp(name, "DNS_SRV") == 0) {
+        *out = ptn_int(PTN_DNS_SRV);
+        return 1;
+    }
+    if (strcmp(name, "DNS_NAPTR") == 0) {
+        *out = ptn_int(PTN_DNS_NAPTR);
+        return 1;
+    }
+    if (strcmp(name, "DNS_AAAA") == 0) {
+        *out = ptn_int(PTN_DNS_AAAA);
+        return 1;
+    }
+    if (strcmp(name, "DNS_ALL") == 0) {
+        *out = ptn_int(PTN_DNS_ALL);
+        return 1;
+    }
+    if (strcmp(name, "DNS_ANY") == 0) {
+        *out = ptn_int(PTN_DNS_ANY);
+        return 1;
+    }
     if (strcmp(name, "PSFS_ERR_FATAL") == 0) {
         *out = ptn_int(PTN_PSFS_ERR_FATAL);
         return 1;

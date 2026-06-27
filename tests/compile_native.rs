@@ -47932,6 +47932,46 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_dns_check_record_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-dns-check-record-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dns-check-record-validation.php");
+    let output = root.join("dns-check-record-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('dns_check_record'), function_exists('checkdnsrr'));\n\
+var_dump(DNS_A, DNS_NS, DNS_MX, DNS_AAAA, DNS_ALL, DNS_ANY);\n\
+try { dns_check_record(''); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { dns_check_record('php.net', 15263480); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { checkdnsrr('', 'A'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+int(1)\n\
+int(2)\n\
+int(16384)\n\
+int(134217728)\n\
+int(251721779)\n\
+int(268435456)\n\
+dns_check_record(): Argument #1 ($hostname) must not be empty\n\
+dns_check_record(): Argument #2 ($type) must be a valid DNS record type\n\
+checkdnsrr(): Argument #1 ($hostname) must not be empty\n\
+done\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_php_binary_and_gethostbyname_to_native_binary() {
     let root = temp_dir("ptn-native-php-binary-gethostbyname");
     fs::create_dir_all(&root).unwrap();
@@ -49788,7 +49828,7 @@ echo append_nodes($legacy), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
-            "0a2020202048656c6c6f20576f726c640a0a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
+            "0a2020202048656c6c6f20576f726c640a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
             "0a2020202048656c6c6f20576f726c640a636f6e74656e742031636f6e74656e742032636f6e74656e742033\n",
         )
     );
@@ -54399,6 +54439,48 @@ __HALT_COMPILER(); ?>\r\n",
 }
 
 #[test]
+fn compile_dynamic_generated_phar_stub_include_maps_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-generated-phar-stub");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-generated-phar-stub.php");
+    let output = root.join("dynamic-generated-phar-stub-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$archive = __DIR__ . '/dynamic-map.phar.php';
+@unlink($archive);
+$entry = "<?php echo \"entry\n\"; ?>";
+$manifest = pack('VnVV', 1, 0x1000, 0, 3) . 'dyn' . pack('V', 0);
+$manifest .= pack('V', 9) . 'entry.php';
+$manifest .= pack('VVVVVV', strlen($entry), 0, strlen($entry), crc32($entry), 0, 0);
+$file = "<?php\nPhar::mapPhar('dyn');\n__HALT_COMPILER(); ?>";
+$file .= pack('V', strlen($manifest)) . $manifest . $entry;
+file_put_contents($archive, $file);
+include $archive;
+include 'phar://dyn/entry.php';
+@unlink($archive);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "entry\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_execute_static_call_statement"));
+    assert!(c_source.contains("ptn_dynamic_execute_halt_compiler_statement"));
+}
+
+#[test]
 fn compile_soap_extension_constant_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-soap-extension-constant-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -55123,6 +55205,52 @@ foreach ($subclass as $entry) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_phar_uri_open_directory"));
     assert!(c_source.contains("ptn_phar_directory_next"));
+}
+
+#[test]
+fn compile_phar_directory_rename_moves_descendants_to_native_binary() {
+    let root = temp_dir("ptn-native-phar-directory-rename");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-directory-rename.php");
+    let output = root.join("phar-directory-rename-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fname = __DIR__ . '/rename-dir.phar.php';
+@unlink($fname);
+$phar = new Phar($fname);
+$phar['a/x'] = 'a';
+$phar['a/y/z'] = 'z';
+$uri = 'phar://' . $fname;
+
+echo file_get_contents($uri . '/a/x'), "\n";
+var_dump(rename($uri . '/a', $uri . '/b'));
+echo file_get_contents($uri . '/b/x'), "\n";
+echo file_get_contents($uri . '/b/y/z'), "\n";
+var_dump(file_exists($uri . '/a/x'));
+@unlink($fname);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a\nbool(true)\na\nz\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_phar_archive_rename_directory_entries"));
+    assert!(c_source.contains("ptn_phar_uri_rename_entry"));
 }
 
 #[test]
@@ -56440,6 +56568,365 @@ $server->handle($request);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("class_ctor_args"));
+}
+
+#[test]
+fn compile_soap_server_get_functions_and_soap12_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-server-get-functions-soap12");
+    fs::create_dir_all(&root).unwrap();
+
+    let get_functions_input = root.join("soap-server-get-functions.php");
+    let get_functions_output = root.join("soap-server-get-functions-bin");
+    fs::write(
+        &get_functions_input,
+        r#"<?php
+class Service {
+    public function hello($name) { return $name; }
+    protected function hidden() {}
+    private function localOnly() {}
+    public function __construct() {}
+}
+
+$server = new SoapServer(null, ['uri' => 'test://']);
+$server->setClass(Service::class);
+var_dump($server->getFunctions());
+var_dump(method_exists($server, 'getFunctions'), method_exists($server, 'fault'));
+"#,
+    )
+    .unwrap();
+    compile_file(
+        &get_functions_input,
+        &get_functions_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let execution = Command::new(&get_functions_output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(5) \"hello\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let header_input = root.join("soap12-header-next.php");
+    let header_output = root.join("soap12-header-next-bin");
+    fs::write(
+        &header_input,
+        r#"<?php
+class Soap12Service {
+    public function echoOk($input) { return $input; }
+}
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope" xmlns:ns1="http://example.org">
+  <env:Header>
+    <ns1:echoOk env:role="http://www.w3.org/2003/05/soap-envelope/role/next" env:mustUnderstand="1">foo</ns1:echoOk>
+  </env:Header>
+  <env:Body/>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://example.org', 'soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+"#,
+    )
+    .unwrap();
+    compile_file(
+        &header_input,
+        &header_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+    let execution = Command::new(&header_output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("<env:Header><ns1:responseOk>foo</ns1:responseOk></env:Header>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("<env:Body/>"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let dtd_input = root.join("soap12-dtd-fault.php");
+    let dtd_output = root.join("soap12-dtd-fault-bin");
+    fs::write(
+        &dtd_input,
+        r#"<?php
+class Soap12Service {
+    public function echoOk($input) { return $input; }
+}
+
+$request = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+  <!ELEMENT root ANY>
+]>
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+  <env:Body/>
+</env:Envelope>
+XML;
+
+$server = new SoapServer(null, ['uri' => 'http://example.org', 'soap_version' => SOAP_1_2]);
+$server->setClass(Soap12Service::class);
+$server->handle($request);
+echo "after\n";
+"#,
+    )
+    .unwrap();
+    compile_file(&dtd_input, &dtd_output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&dtd_output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("DTD are not supported by SOAP"), "{stdout}");
+    assert!(!stdout.contains("after"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_soap_client_get_functions_filters_soap_bindings_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-get-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-client-get-functions.php");
+    let output = root.join("soap-client-get-functions-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$wsdl = __DIR__ . '/client-functions.wsdl';
+file_put_contents($wsdl, <<<'WSDL'
+<?xml version="1.0"?>
+<definitions xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+  xmlns:s0="http://tempuri.org/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:s="http://www.w3.org/2001/XMLSchema"
+  xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+  name="test"
+  targetNamespace="http://tempuri.org/"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+  <types>
+    <s:schema elementFormDefault="qualified" targetNamespace="http://tempuri.org/">
+      <s:element name="HelloWorld"><s:complexType /></s:element>
+      <s:element name="HelloWorldResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HelloWorldResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="string" type="s:string" />
+    </s:schema>
+  </types>
+  <message name="HelloWorldSoapIn"><part name="parameters" element="s0:HelloWorld" /></message>
+  <message name="HelloWorldSoapOut"><part name="parameters" element="s0:HelloWorldResponse" /></message>
+  <message name="HelloWorldHttpGetIn" />
+  <message name="HelloWorldHttpGetOut"><part name="Body" element="s0:string" /></message>
+  <message name="HelloWorldHttpPostIn" />
+  <message name="HelloWorldHttpPostOut"><part name="Body" element="s0:string" /></message>
+  <portType name="testSoap">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldSoapIn" />
+      <output message="s0:HelloWorldSoapOut" />
+    </operation>
+  </portType>
+  <portType name="testHttpGet">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldHttpGetIn" />
+      <output message="s0:HelloWorldHttpGetOut" />
+    </operation>
+  </portType>
+  <portType name="testHttpPost">
+    <operation name="HelloWorld">
+      <input message="s0:HelloWorldHttpPostIn" />
+      <output message="s0:HelloWorldHttpPostOut" />
+    </operation>
+  </portType>
+  <binding name="testSoap" type="s0:testSoap">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http" />
+    <operation name="HelloWorld">
+      <soap:operation soapAction="http://tempuri.org/HelloWorld" style="document" />
+      <input><soap:body use="literal" /></input>
+      <output><soap:body use="literal" /></output>
+    </operation>
+  </binding>
+  <binding name="testHttpGet" type="s0:testHttpGet">
+    <http:binding verb="GET" />
+    <operation name="HelloWorld"><http:operation location="/HelloWorld" /></operation>
+  </binding>
+  <binding name="testHttpPost" type="s0:testHttpPost">
+    <http:binding verb="POST" />
+    <operation name="HelloWorld"><http:operation location="/HelloWorld" /></operation>
+  </binding>
+</definitions>
+WSDL);
+
+$client = new SoapClient($wsdl);
+var_dump($client->__getFunctions());
+var_dump(method_exists($client, '__getFunctions'));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(53) \"HelloWorldResponse HelloWorld(HelloWorld $parameters)\"\n",
+            "}\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_soap_client_get_functions"));
+}
+
+#[test]
+fn compile_soap_wsdl_schema_property_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-wsdl-schema-property-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soap-wsdl-schema-property-defaults.php");
+    let output = root.join("soap-wsdl-schema-property-defaults-bin");
+    fs::write(
+        &input,
+        r##"<?php
+class Foo {
+    public $a = 'a';
+    private $b = 'b';
+    protected $c = 'c';
+}
+
+$seen = null;
+function test($input) {
+    global $seen;
+    $seen = $input;
+    return $input;
+}
+
+class LocalSoapClient extends SoapClient {
+    private $server;
+
+    function __construct($wsdl, $options) {
+        parent::__construct($wsdl, $options);
+        $this->server = new SoapServer($wsdl, $options);
+        $this->server->addFunction('test');
+    }
+
+    function __doRequest($request, $location, $action, $version, $one_way = false, ?string $uriParserClass = null): string {
+        ob_start();
+        $this->server->handle($request);
+        $response = ob_get_contents();
+        ob_end_clean();
+        return $response;
+    }
+}
+
+$wsdl = <<<'WSDL'
+<definitions name="InteropTest"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
+    xmlns:tns="http://test-uri/"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+    xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+    xmlns="http://schemas.xmlsoap.org/wsdl/"
+    targetNamespace="http://test-uri/">
+  <types>
+    <schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://test-uri/">
+      <complexType name="testType">
+        <sequence>
+          <element name="a" type="string"/>
+          <element name="b" type="string"/>
+        </sequence>
+        <attribute name="c" type="string"/>
+        <attribute ref="tns:d"/>
+      </complexType>
+      <attribute name="d" type="int" default="5"/>
+    </schema>
+  </types>
+  <message name="testMessage">
+    <part name="testParam" type="tns:testType"/>
+  </message>
+  <portType name="testPortType">
+    <operation name="test">
+      <input message="testMessage"/>
+    </operation>
+  </portType>
+  <binding name="testBinding" type="testPortType">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="test">
+      <soap:operation soapAction="#test" style="rpc"/>
+      <input>
+        <soap:body use="encoded" namespace="http://test-uri/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/>
+      </input>
+    </operation>
+  </binding>
+  <service name="testService">
+    <port name="testPort" binding="tns:testBinding">
+      <soap:address location="test://" />
+    </port>
+  </service>
+</definitions>
+WSDL;
+
+$path = __DIR__ . '/schema-property-defaults.wsdl';
+file_put_contents($path, $wsdl);
+$client = new LocalSoapClient($path, ['trace' => 1, 'exceptions' => 0]);
+$roundTrip = $client->test(new Foo());
+$request = $client->__getLastRequest();
+echo $request;
+var_dump($seen);
+var_dump($roundTrip);
+"##,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(" c=\"c\""), "{stdout}");
+    assert!(
+        stdout.contains("<a xsi:type=\"xsd:string\">a</a>"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("<b xsi:type=\"xsd:string\">b</b>"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("[\"d\"]=>\n  int(5)"), "{stdout}");
+    assert!(
+        stdout.matches("[\"c\"]=>\n  string(1) \"c\"").count() >= 2,
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("default_value"));
+    assert!(c_source.contains("ptn_soap_object_property"));
 }
 
 #[test]
