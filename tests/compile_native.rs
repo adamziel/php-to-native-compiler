@@ -2355,6 +2355,10 @@ var_dump(class_exists("CachingIterator"), $cache instanceof Iterator, $cache ins
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -26552,7 +26556,7 @@ var_dump(str_contains($privateSerialized, 's:7:\"!*!var4\";i:4;'));\n\
 var_dump(strpos($privateSerialized, '!NativeDatePeriodPrivateState!var1') < strpos($privateSerialized, '!NativeDatePeriodPrivateState!var2') && strpos($privateSerialized, '!NativeDatePeriodPrivateState!var2') < strpos($privateSerialized, '!*!var3') && strpos($privateSerialized, '!*!var3') < strpos($privateSerialized, '!*!var4'));\n\
 $privateRestored = unserialize(serialize($privatePeriod));\n\
 $privateRestoredSerialized = str_replace(chr(0), '!', serialize($privateRestored));\n\
-var_dump(str_contains($privateRestoredSerialized, 's:34:\"!NativeDatePeriodPrivateState!var2\";i:2;'));\n",
+var_dump(str_contains($privateRestoredSerialized, 's:34:\"!NativeDatePeriodPrivateState!var2\";i:2;'));\n\
 var_dump(strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var1') < strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var2') && strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var2') < strpos($privateRestoredSerialized, '!*!var3') && strpos($privateRestoredSerialized, '!*!var3') < strpos($privateRestoredSerialized, '!*!var4'));\n",
     )
     .unwrap();
@@ -26611,6 +26615,8 @@ var_dump(strpos($privateRestoredSerialized, '!NativeDatePeriodPrivateState!var1'
             "  bool(false)\n",
             "}\n",
             "1 0\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
