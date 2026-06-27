@@ -1619,6 +1619,8 @@ static PTN_UNUSED PtnValue ptn_get_class_value(PtnRuntime *runtime, PtnValue val
         class_name = value.as.exception->class_name;
     } else if (value.type == PTN_CLOSURE) {
         class_name = "Closure";
+    } else if (value.type == PTN_RESOURCE) {
+        class_name = ptn_resource_object_class_name(value.as.resource);
     }
     if (class_name != NULL) {
         return ptn_runtime_class_name_string(class_name);
@@ -3574,12 +3576,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *object_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (object_class_name != NULL) {
                 ptn_direct_dump_printf(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    object_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_value_var_dump_indent(runtime, indent);
@@ -5287,12 +5289,12 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             ptn_direct_var_dump_exception_indented(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *object_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (object_class_name != NULL) {
                 ptn_direct_var_dump_writef(
                     runtime,
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    object_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_direct_var_dump_indent(runtime, indent);
@@ -9269,11 +9271,11 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *object_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (object_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) {\n",
-                    curl_class_name,
+                    object_class_name,
                     ptn_resource_object_id(value.as.resource)
                 );
                 ptn_var_dump_indent(indent);
@@ -9489,11 +9491,11 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE: {
-            const char *curl_class_name = ptn_resource_curl_class_name(value.as.resource);
-            if (curl_class_name != NULL) {
+            const char *object_class_name = ptn_resource_object_class_name(value.as.resource);
+            if (object_class_name != NULL) {
                 printf(
                     "object(%s)#%zu (0) refcount(%zu){\n",
-                    curl_class_name,
+                    object_class_name,
                     ptn_resource_object_id(value.as.resource),
                     value.as.resource->refcount
                 );
@@ -53079,6 +53081,30 @@ static PtnValue *ptn_stream_context_option(PtnResource *context, const char *wra
     return option_entry == NULL ? NULL : &option_entry->value;
 }
 
+static int ptn_stream_context_enum_option_state(
+    PtnResource *context,
+    const char *wrapper_name,
+    const char *option_name,
+    const char *class_name,
+    const char **case_name_out
+) {
+    if (case_name_out != NULL) {
+        *case_name_out = NULL;
+    }
+    PtnValue *option = ptn_stream_context_option(context, wrapper_name, option_name);
+    if (option == NULL) {
+        return 0;
+    }
+    const char *case_name = ptn_stream_context_enum_case_name(*option, class_name);
+    if (case_name == NULL) {
+        return -1;
+    }
+    if (case_name_out != NULL) {
+        *case_name_out = case_name;
+    }
+    return 1;
+}
+
 static int64_t ptn_stream_context_zlib_level(PtnResource *context) {
     PtnValue *option = ptn_stream_context_option(context, "zlib", "level");
     if (option == NULL) {
@@ -53088,13 +53114,29 @@ static int64_t ptn_stream_context_zlib_level(PtnResource *context) {
     return level >= -1 && level <= 9 ? level : -1;
 }
 
+static int ptn_stream_error_mode_from_case_name(const char *case_name) {
+    if (case_name != NULL && strcmp(case_name, "Exception") == 0) {
+        return PTN_STREAM_ERROR_MODE_EXCEPTION;
+    }
+    if (case_name != NULL && strcmp(case_name, "Silent") == 0) {
+        return PTN_STREAM_ERROR_MODE_SILENT;
+    }
+    return PTN_STREAM_ERROR_MODE_ERROR;
+}
+
 static int ptn_stream_context_error_mode(PtnRuntime *runtime, PtnResource *context, size_t line) {
-    PtnValue *option = ptn_stream_context_option(context, "stream", "error_mode");
-    if (option == NULL) {
+    const char *case_name = NULL;
+    int state = ptn_stream_context_enum_option_state(
+        context,
+        "stream",
+        "error_mode",
+        "StreamErrorMode",
+        &case_name
+    );
+    if (state == 0) {
         return PTN_STREAM_ERROR_MODE_ERROR;
     }
-    const char *case_name = ptn_stream_context_enum_case_name(*option, "StreamErrorMode");
-    if (case_name == NULL) {
+    if (state < 0) {
         ptn_throw_exception_at(
             runtime,
             "TypeError",
@@ -53104,13 +53146,7 @@ static int ptn_stream_context_error_mode(PtnRuntime *runtime, PtnResource *conte
         );
         return PTN_STREAM_ERROR_MODE_ERROR;
     }
-    if (strcmp(case_name, "Exception") == 0) {
-        return PTN_STREAM_ERROR_MODE_EXCEPTION;
-    }
-    if (strcmp(case_name, "Silent") == 0) {
-        return PTN_STREAM_ERROR_MODE_SILENT;
-    }
-    return PTN_STREAM_ERROR_MODE_ERROR;
+    return ptn_stream_error_mode_from_case_name(case_name);
 }
 
 static PtnStreamErrorStore ptn_stream_context_auto_store_mode(int error_mode) {
@@ -53131,12 +53167,18 @@ static PtnStreamErrorStore ptn_stream_context_error_store(
     int error_mode,
     size_t line
 ) {
-    PtnValue *option = ptn_stream_context_option(context, "stream", "error_store");
-    if (option == NULL) {
+    const char *case_name = NULL;
+    int state = ptn_stream_context_enum_option_state(
+        context,
+        "stream",
+        "error_store",
+        "StreamErrorStore",
+        &case_name
+    );
+    if (state == 0) {
         return ptn_stream_context_auto_store_mode(error_mode);
     }
-    const char *case_name = ptn_stream_context_enum_case_name(*option, "StreamErrorStore");
-    if (case_name == NULL) {
+    if (state < 0) {
         ptn_throw_exception_at(
             runtime,
             "TypeError",
@@ -53177,6 +53219,36 @@ static PtnValue ptn_stream_open_failure_result(
     int terminating,
     size_t line
 ) {
+    const char *error_mode_case_name = NULL;
+    int error_mode_state = ptn_stream_context_enum_option_state(
+        context,
+        "stream",
+        "error_mode",
+        "StreamErrorMode",
+        &error_mode_case_name
+    );
+    int fallback_error_mode = error_mode_state > 0
+        ? ptn_stream_error_mode_from_case_name(error_mode_case_name)
+        : PTN_STREAM_ERROR_MODE_ERROR;
+    int error_store_state = ptn_stream_context_enum_option_state(
+        context,
+        "stream",
+        "error_store",
+        "StreamErrorStore",
+        NULL
+    );
+    if (error_mode_state < 0 || error_store_state < 0) {
+        ptn_stream_clear_last_errors();
+        if (fallback_error_mode == PTN_STREAM_ERROR_MODE_ERROR) {
+            ptn_emit_file_warning(runtime, "fopen", path, detail, line);
+        }
+        if (error_mode_state < 0) {
+            (void)ptn_stream_context_error_mode(runtime, context, line);
+        } else {
+            (void)ptn_stream_context_error_store(runtime, context, fallback_error_mode, line);
+        }
+        return ptn_bool(0);
+    }
     int error_mode = ptn_stream_context_error_mode(runtime, context, line);
     if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
         return ptn_bool(0);
@@ -63294,8 +63366,8 @@ static PtnValue ptn_internal_get_debug_type(PtnRuntime *runtime, size_t argc, co
         case PTN_EXCEPTION:
             return ptn_runtime_debug_class_name_string(value.as.exception->class_name);
         case PTN_RESOURCE:
-            if (ptn_resource_curl_class_name(value.as.resource) != NULL) {
-                return ptn_string(ptn_resource_curl_class_name(value.as.resource));
+            if (ptn_resource_object_class_name(value.as.resource) != NULL) {
+                return ptn_string(ptn_resource_object_class_name(value.as.resource));
             }
             if (ptn_resource_is_open(value.as.resource)) {
                 int needed = snprintf(NULL, 0, "resource (%s)", value.as.resource->type_name);
@@ -63994,7 +64066,11 @@ static PtnValue ptn_internal_is_resource(PtnRuntime *runtime, size_t argc, const
     (void)argc;
     (void)line;
     PtnValue value = ptn_value_deref(args[0]);
-    return ptn_bool(value.type == PTN_RESOURCE && ptn_resource_is_open(value.as.resource));
+    return ptn_bool(
+        value.type == PTN_RESOURCE &&
+        ptn_resource_is_open(value.as.resource) &&
+        !ptn_resource_is_object_handle(value.as.resource)
+    );
 }
 
 static PtnValue ptn_dom_throw_count(PtnRuntime *runtime, const char *name, const char *phrase, size_t argc);
@@ -139883,6 +139959,7 @@ static int ptn_zlib_resolve_dictionary_option(
 }
 
 static PtnValue ptn_zlib_context_resource(
+    PtnRuntime *runtime,
     int64_t encoding,
     int64_t level,
     unsigned char *dictionary,
@@ -139915,7 +139992,7 @@ static PtnValue ptn_internal_inflate_init(PtnRuntime *runtime, size_t argc, cons
         !ptn_zlib_resolve_dictionary_option(runtime, "inflate_init", args[1], &dictionary, &dictionary_len, line)) {
         return ptn_null();
     }
-    return ptn_zlib_context_resource(encoding, -1, dictionary, dictionary_len, "zlib inflate");
+    return ptn_zlib_context_resource(runtime, encoding, -1, dictionary, dictionary_len, "zlib inflate");
 }
 
 static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -139948,7 +140025,7 @@ static PtnValue ptn_internal_deflate_init(PtnRuntime *runtime, size_t argc, cons
         !ptn_zlib_resolve_dictionary_option(runtime, "deflate_init", args[1], &dictionary, &dictionary_len, line)) {
         return ptn_null();
     }
-    return ptn_zlib_context_resource(encoding, level_value, dictionary, dictionary_len, "zlib deflate");
+    return ptn_zlib_context_resource(runtime, encoding, level_value, dictionary, dictionary_len, "zlib deflate");
 }
 
 typedef struct {
@@ -140012,6 +140089,7 @@ static void ptn_zlib_context_append_input(PtnZlibContext *context, const unsigne
 }
 
 static PtnValue ptn_zlib_context_resource(
+    PtnRuntime *runtime,
     int64_t encoding,
     int64_t level,
     unsigned char *dictionary,
@@ -140034,6 +140112,7 @@ static PtnValue ptn_zlib_context_resource(
     context->output_len = 0;
     context->status = PTN_ZLIB_OK;
     PtnResource *resource = ptn_resource_new_named(type_name);
+    ptn_resource_assign_object_id(runtime, resource);
     resource->close_hook_data = context;
     resource->close_hook_data_free = ptn_zlib_context_data_free;
     return ptn_resource(resource);
@@ -148601,7 +148680,7 @@ static PtnObject *ptn_weak_map_live_object(PtnWeakMapData *map, PtnObject *candi
 static int ptn_weak_map_resource_is_live(PtnResource *resource, size_t object_id) {
     return resource != NULL &&
         resource->refcount != 0 &&
-        ptn_resource_is_curl_handle(resource) &&
+        ptn_resource_is_object_handle(resource) &&
         ptn_resource_object_id(resource) == object_id;
 }
 
@@ -148790,7 +148869,7 @@ static int ptn_weak_map_key(
         *object_out = key.as.object;
         return 1;
     }
-    if (key.type == PTN_RESOURCE && ptn_resource_is_curl_handle(key.as.resource)) {
+    if (key.type == PTN_RESOURCE && ptn_resource_is_object_handle(key.as.resource)) {
         *resource_out = key.as.resource;
         return 1;
     }
@@ -148802,7 +148881,7 @@ static void ptn_weak_map_throw_not_contained(PtnRuntime *runtime, PtnObject *obj
     const char *class_name = "Object";
     size_t object_id = 0;
     if (resource != NULL) {
-        class_name = ptn_resource_curl_class_name(resource);
+        class_name = ptn_resource_object_class_name(resource);
         if (class_name == NULL) {
             class_name = "Object";
         }
@@ -159973,6 +160052,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_
     return ptn_ascii_case_equal(class_name, "HashContext");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_zlib_context(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "DeflateContext") ||
+        ptn_ascii_case_equal(class_name, "InflateContext");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_session_handler(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "SessionHandler");
 }
@@ -160260,6 +160344,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_soap_var(class_name)
         || ptn_internal_class_name_is_soap_param(class_name)
         || ptn_internal_class_name_is_hash_context(class_name)
+        || ptn_internal_class_name_is_zlib_context(class_name)
         || ptn_internal_class_name_is_session_handler(class_name)
         || ptn_internal_class_name_is_php_token(class_name)
         || ptn_internal_class_name_is_intl_break_iterator(class_name)
@@ -171660,6 +171745,9 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     }
     if (ptn_internal_class_name_is_hash_context(class_name)) {
         return "hash";
+    }
+    if (ptn_internal_class_name_is_zlib_context(class_name)) {
+        return "zlib";
     }
     if (ptn_internal_class_name_is_session_handler(class_name) ||
         ptn_ascii_case_equal(class_name, "SessionHandlerInterface") ||
@@ -201312,6 +201400,11 @@ static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const P
             return ptn_string("Closure");
         case PTN_EXCEPTION:
             return ptn_runtime_class_name_string(value.as.exception->class_name);
+        case PTN_RESOURCE:
+            if (ptn_resource_object_class_name(value.as.resource) != NULL) {
+                return ptn_string(ptn_resource_object_class_name(value.as.resource));
+            }
+            break;
         default:
             break;
     }

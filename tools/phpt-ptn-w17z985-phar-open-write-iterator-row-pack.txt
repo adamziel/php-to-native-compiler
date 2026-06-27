@@ -1,0 +1,14 @@
+# ptn-w17z.985 exact current-red row pack from
+# /home/claude/.local/state/ptn-full-phpt-dashboard-loop/partial-statuses-20260627T005951Z.tsv
+ext/phar/tests/bug70091.phpt
+ext/phar/tests/open_for_write_newfile.phpt
+ext/phar/tests/021.phpt
+ext/phar/tests/zip/create_new_phar_b.phpt
+ext/zlib/tests/gh17745.phpt
+ext/phar/tests/011.phpt
+ext/standard/tests/streams/stream_errors_invalid_types.phpt
+ext/phar/tests/badparameters.phpt
+ext/phar/tests/tar/phar_commitwrite.phpt
+ext/phar/tests/buildFromIterator_user_overrides/getPathname_exception.phpt
+ext/standard/tests/streams/bug64433.phpt
+ext/phar/tests/open_for_write_existing_b.phpt

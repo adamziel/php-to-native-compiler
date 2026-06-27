@@ -28397,6 +28397,56 @@ option-error\n"
 }
 
 #[test]
+fn compile_zlib_contexts_are_object_handles_to_native_binary() {
+    let root = temp_dir("ptn-native-zlib-context-object-handles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zlib-context-object-handles.php");
+    let output = root.join("zlib-context-object-handles-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$options = new stdClass();
+$options->level = 3;
+$deflate = deflate_init(ZLIB_ENCODING_RAW, $options);
+var_dump($deflate);
+var_dump(gettype($deflate), is_object($deflate), is_resource($deflate), get_debug_type($deflate), get_class($deflate));
+
+$inflate = inflate_init(ZLIB_ENCODING_RAW);
+var_dump($inflate);
+var_dump(gettype($inflate), is_object($inflate), is_resource($inflate), get_debug_type($inflate), get_class($inflate));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(DeflateContext)#2 (0) {\n\
+}\n\
+string(6) \"object\"\n\
+bool(true)\n\
+bool(false)\n\
+string(14) \"DeflateContext\"\n\
+string(14) \"DeflateContext\"\n\
+object(InflateContext)#3 (0) {\n\
+}\n\
+string(6) \"object\"\n\
+bool(true)\n\
+bool(false)\n\
+string(14) \"InflateContext\"\n\
+string(14) \"InflateContext\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_resource_zlib_context_class_name"));
+    assert!(c_source.contains("ptn_resource_assign_object_id"));
+}
+
+#[test]
 fn compile_zlib_row_pack_frontier_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-zlib-row-pack-frontier");
     fs::create_dir_all(&root).unwrap();
@@ -28724,6 +28774,60 @@ SILENT mode AUTO: has error\n"
     assert!(c_source.contains("ptn_internal_stream_last_errors"));
     assert!(c_source.contains("StreamErrorMode"));
     assert!(c_source.contains("StreamErrorStore"));
+}
+
+#[test]
+fn compile_stream_context_invalid_enum_open_failure_warns_before_typeerror_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-invalid-enum-open-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-invalid-enum-open-failure.php");
+    let output = root.join("stream-context-invalid-enum-open-failure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    $context = stream_context_create([
+        'stream' => [
+            'error_mode' => 'invalid',
+        ],
+    ]);
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (TypeError $e) {
+    echo "caught error_mode\n";
+}
+
+try {
+    $context = stream_context_create([
+        'stream' => [
+            'error_store' => 123,
+        ],
+    ]);
+    fopen('php://nonexistent', 'r', false, $context);
+} catch (TypeError $e) {
+    echo "caught error_store\n";
+}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Warning: fopen(php://nonexistent): Failed to open stream: operation failed in ")
+            .count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.contains("caught error_mode\n"), "{stdout}");
+    assert!(stdout.contains("caught error_store\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_stream_context_enum_option_state"));
 }
 
 #[test]
