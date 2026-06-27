@@ -35899,6 +35899,16 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             name: "callback",
             default: None,
         }];
+    static INI_GET_ALL_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "extension",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "details",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
     static HEADER_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "header",
@@ -36441,6 +36451,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&HEADER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("header_register_callback") {
         Some(&HEADER_REGISTER_CALLBACK_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("ini_get_all") {
+        Some(&INI_GET_ALL_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr") {
         Some(&SUBSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr_count") {

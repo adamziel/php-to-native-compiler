@@ -10670,6 +10670,54 @@ trigger_error('delta');
 }
 
 #[test]
+fn compile_error_get_last_tracks_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-error-get-last");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-get-last.php");
+    let output = root.join("error-get-last-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(error_get_last());
+try {
+    var_dump(error_get_last(true));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump(error_get_last());
+$a = $b;
+$last = error_get_last();
+var_dump($last['type'], $last['message'], basename($last['file']), $last['line']);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "NULL\n",
+                "error_get_last() expects exactly 0 arguments, 1 given\n",
+                "NULL\n",
+                "\nWarning: Undefined variable $b in ",
+                "{}",
+                " on line 9\n",
+                "int(2)\n",
+                "string(21) \"Undefined variable $b\"\n",
+                "string(18) \"error-get-last.php\"\n",
+                "int(9)\n",
+            ),
+            input.to_string_lossy(),
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_trigger_error_user_error_emits_deprecated_then_direct_fatal() {
     let root = temp_dir("ptn-native-trigger-error-user-error");
     fs::create_dir_all(&root).unwrap();
@@ -14665,6 +14713,40 @@ array (\n  0 => 3.0,\n  1 => 1.0E+8,\n)\n"
 }
 
 #[test]
+fn compile_ini_get_all_reports_global_local_and_builtin_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-ini-get-all-defaults");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ini-get-all-defaults.php");
+    let output = root.join("ini-get-all-defaults-bin");
+    fs::write(
+        &input,
+        "<?php
+$all = ini_get_all(null, true);
+echo $all['precision']['global_value'], '/', $all['precision']['local_value'], '/', $all['precision']['builtin_default_value'], \"\\n\";
+ini_set('precision', '3');
+$all = ini_get_all(null, true);
+echo $all['precision']['global_value'], '/', $all['precision']['local_value'], '/', $all['precision']['builtin_default_value'], \"\\n\";
+echo ini_get_all(null, false)['precision'], \"\\n\";
+var_dump(function_exists('ini_get_all'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PHP_PRECISION", "8")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "8/8/14\n8/3/14\n3\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_register_tick_function_noop_to_native_binary() {
     let root = temp_dir("ptn-native-register-tick-function-noop");
     fs::create_dir_all(&root).unwrap();
@@ -15741,6 +15823,33 @@ echo 'M';
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_register_header_callback"));
     assert!(c_source.contains("ptn_runtime_run_header_callback"));
+}
+
+#[test]
+fn compile_header_callback_shutdown_registration_is_not_current_shutdown_to_native_binary() {
+    let root = temp_dir("ptn-native-header-callback-shutdown-registration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("header-callback-shutdown-registration.php");
+    let output = root.join("header-callback-shutdown-registration-bin");
+    fs::write(
+        &input,
+        "<?php
+header_register_callback(function () {
+    echo 'header';
+    register_shutdown_function(function () {
+        echo 'shutdown';
+    });
+});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "header");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -45622,6 +45731,9 @@ $value = 0;
 var_dump(settype($value, \"bool\"), gettype($value), $value);
 $value = [1, 2];
 var_dump(settype($value, \"string\"), gettype($value), $value);
+$value = new stdClass;
+try { var_dump(settype($value, \"string\")); } catch (Error $e) { echo \"Error: \", $e->getMessage(), \"\\n\"; }
+var_dump($value);
 $value = 12;
 try { var_dump(settype($value, \"resource\")); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }
 var_dump(function_exists(\"settype\"));",
@@ -45648,6 +45760,8 @@ var_dump(function_exists(\"settype\"));",
             "bool(true)\n",
             "string(6) \"string\"\n",
             "string(5) \"Array\"\n",
+            "Error: Object of class stdClass could not be converted to string\n",
+            "string(0) \"\"\n",
             "Cannot convert to resource type\n",
             "bool(true)\n",
         )
@@ -68776,6 +68890,33 @@ echo var_export($std, true), \"\\n\";",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_var_export"));
     assert!(c_source.contains("__set_state"));
+}
+
+#[test]
+fn compile_var_export_array_object_preserves_numeric_storage_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-array-object-storage-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-array-object-storage-keys.php");
+    let output = root.join("var-export-array-object-storage-keys-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new ArrayObject([2 => 'foo', 'bar' => 'baz']);
+var_export($object);
+echo \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\\ArrayObject::__set_state(array(\n   2 => 'foo',\n   'bar' => 'baz',\n))\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

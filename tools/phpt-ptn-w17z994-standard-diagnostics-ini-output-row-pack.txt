@@ -1,0 +1,12 @@
+ext/standard/tests/array/GHSA-h96m-rvf9-jgm2.phpt
+ext/standard/tests/general_functions/error_get_last.phpt
+ext/standard/tests/general_functions/type.phpt
+ext/standard/tests/general_functions/ini_get_all_builtin_default_value_null.phpt
+ext/standard/tests/general_functions/debug_zval_dump_refs.phpt
+ext/standard/tests/strings/wordwrap_memory_limit.phpt
+ext/standard/tests/general_functions/bug35229.phpt
+ext/standard/tests/general_functions/bug71891.phpt
+ext/standard/tests/general_functions/ini_get_all_builtin_default_value.phpt
+ext/standard/tests/general_functions/output_add_rewrite_var_basic4.phpt
+ext/standard/tests/general_functions/bug47027.phpt
+ext/standard/tests/strings/chunk_split_variation3.phpt
