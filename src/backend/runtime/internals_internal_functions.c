@@ -162545,6 +162545,9 @@ static const char *ptn_soap_xsd_type_name(const char *type) {
     if (ptn_soap_type_name_is(type, "decimal")) {
         return "decimal";
     }
+    if (ptn_soap_type_name_is(type, "dateTime")) {
+        return "dateTime";
+    }
     if (ptn_soap_type_name_is(type, "base64Binary")) {
         return "base64Binary";
     }
@@ -162582,11 +162585,16 @@ static int ptn_soap_type_is_builtin_scalar(const char *type) {
         ptn_soap_type_name_is(type, "float") ||
         ptn_soap_type_name_is(type, "double") ||
         ptn_soap_type_name_is(type, "decimal") ||
+        ptn_soap_type_name_is(type, "dateTime") ||
         ptn_soap_type_name_is(type, "boolean") ||
         ptn_soap_type_name_is(type, "base64Binary") ||
         ptn_soap_type_name_is(type, "hexBinary") ||
         ptn_soap_type_name_is(type, "any") ||
         ptn_soap_type_name_is(type, "NMTOKENS");
+}
+
+static const char *ptn_soap_encoded_part_xsi_type_prefix(PtnSoapType *type, const char *part_type_local) {
+    return type == NULL && ptn_soap_type_is_builtin_scalar(part_type_local) ? "xsd" : "ns1";
 }
 
 static char *ptn_soap_resolved_scalar_type_dup(
@@ -164303,6 +164311,9 @@ static void ptn_soap_append_rpc_encoded_part(
         } else {
             ptn_string_buffer_append_char(body, '>');
         }
+    } else if (ptn_value_deref(value).type == PTN_NULL) {
+        ptn_string_buffer_append(body, " xsi:nil=\"true\"/>");
+        open_part = 0;
     } else {
         ptn_string_buffer_append_format(body, " xsi:type=\"xsd:%s\">", ptn_soap_xsd_type_name(part_type_local));
     }
@@ -164736,8 +164747,17 @@ static int ptn_soap_build_request(
         } else {
             ptn_string_buffer_append_char(&body, '>');
         }
+    } else if (!literal && argc > 0 && ptn_value_deref(args[0]).type == PTN_NULL) {
+        ptn_string_buffer_append(&body, " xsi:nil=\"true\"/>");
+        open_part = 0;
     } else if (!literal) {
-        ptn_string_buffer_append_format(&body, " xsi:type=\"ns1:%s\">", part_type_local);
+        const char *xsi_prefix = ptn_soap_encoded_part_xsi_type_prefix(type, part_type_local);
+        ptn_string_buffer_append_format(
+            &body,
+            " xsi:type=\"%s:%s\">",
+            xsi_prefix,
+            strcmp(xsi_prefix, "xsd") == 0 ? ptn_soap_xsd_type_name(part_type_local) : part_type_local
+        );
     } else if (document && type != NULL && !type->is_simple &&
                !type->has_simple_content &&
                !ptn_soap_type_has_attribute_fields(type) &&
@@ -167148,6 +167168,10 @@ static void ptn_soap_append_response_value_xml(
     }
     ptn_string_buffer_append_char(buffer, '<');
     ptn_string_buffer_append(buffer, name == NULL ? "return" : name);
+    if (value.type == PTN_NULL) {
+        ptn_string_buffer_append(buffer, " xsi:nil=\"true\"/>");
+        return;
+    }
     if (value.type == PTN_OBJECT) {
         const char *type_name = ptn_soap_response_object_has_property(value, "varStruct")
             ? "SOAPStructStruct"
@@ -167809,12 +167833,15 @@ static void ptn_soap_emit_response(
         }
         ptn_string_buffer_append(&buffer, "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:ns1=\"");
         ptn_xml_append_escaped_ex(&buffer, namespace_uri == NULL ? "" : namespace_uri, 1, 0);
-        ptn_string_buffer_append(&buffer, "\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:");
+        ptn_string_buffer_append(&buffer, "\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:SOAP-ENC=\"http://schemas.xmlsoap.org/soap/encoding/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><SOAP-ENV:Body><ns1:");
         ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
-        ptn_string_buffer_append(&buffer, "Response/></SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
+        ptn_string_buffer_append(&buffer, "Response><");
+        ptn_string_buffer_append(&buffer, return_name == NULL ? "return" : return_name);
+        ptn_string_buffer_append(&buffer, " xsi:nil=\"true\"/></ns1:");
+        ptn_string_buffer_append(&buffer, method_name == NULL ? "" : method_name);
+        ptn_string_buffer_append(&buffer, "Response></SOAP-ENV:Body></SOAP-ENV:Envelope>\n");
         ptn_output_write(runtime, buffer.data, buffer.len);
         free(buffer.data);
-        (void)return_name;
         (void)line;
         return;
     }
