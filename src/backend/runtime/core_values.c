@@ -26,6 +26,7 @@
 #include <sys/utime.h>
 #else
 #include <dirent.h>
+#include <arpa/inet.h>
 #include <dlfcn.h>
 #include <fnmatch.h>
 #include <grp.h>

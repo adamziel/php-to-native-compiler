@@ -34738,6 +34738,10 @@ fn collect_call_runtime_requirements(
     {
         requirements.request_context = true;
     }
+    if name.eq_ignore_ascii_case("filter_input") || name.eq_ignore_ascii_case("filter_input_array")
+    {
+        requirements.request_context = true;
+    }
     if name.eq_ignore_ascii_case("file_get_contents")
         && (arguments.len() >= 3
             || argument_names.iter().any(|name| {
@@ -37864,7 +37868,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             zlib_config.as_ref(),
         );
     }
-    let mut command = Command::new("cc");
+    let mut command = toolchain_command("cc", "CC");
     command.arg("-std=c11");
     add_pcre2_default_library_define(&mut command);
     if let Some(config) = openssl_config.as_ref() {
@@ -37925,7 +37929,7 @@ fn compile_c_with_ada_url(
     let c_object = output.with_extension("ptn-c.o");
     let ada_object = output.with_extension("ptn-ada-url.o");
 
-    let mut c_command = Command::new("cc");
+    let mut c_command = toolchain_command("cc", "CC");
     c_command.arg("-std=c11");
     add_pcre2_default_library_define(&mut c_command);
     if let Some(config) = openssl_config {
@@ -37960,7 +37964,7 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let mut ada_command = Command::new("c++");
+    let mut ada_command = toolchain_command("c++", "CXX");
     ada_command
         .arg("-std=c++20")
         .arg("-DADA_INCLUDE_URL_PATTERN=0");
@@ -37988,7 +37992,7 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let mut link_command = Command::new("c++");
+    let mut link_command = toolchain_command("c++", "CXX");
     link_command
         .arg(&c_object)
         .arg(&ada_object)
@@ -38021,6 +38025,44 @@ fn compile_c_with_ada_url(
             None,
         ))
     }
+}
+
+fn toolchain_command(program: &str, env_var: &str) -> Command {
+    Command::new(resolve_toolchain_binary(program, env_var))
+}
+
+fn resolve_toolchain_binary(program: &str, env_var: &str) -> PathBuf {
+    if let Some(value) = env::var_os(env_var) {
+        if !value.as_os_str().is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    if let Some(path) = find_program_on_path(program) {
+        return path;
+    }
+    for dir in [
+        "/run/current-system/sw/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ] {
+        let candidate = Path::new(dir).join(program);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from(program)
+}
+
+fn find_program_on_path(program: &str) -> Option<PathBuf> {
+    let paths = env::var_os("PATH")?;
+    for dir in env::split_paths(&paths) {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 #[derive(Debug)]

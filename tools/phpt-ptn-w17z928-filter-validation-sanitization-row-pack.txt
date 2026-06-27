@@ -1,0 +1,18 @@
+# Focused PHPT row pack for ptn-w17z.928.
+#
+# Run with:
+#   tools/run-bounded-phpt.sh tools/phpt-ptn-w17z928-filter-validation-sanitization-row-pack.txt
+#
+# bucket: filter-validation-sanitization rows=12
+ext/filter/tests/bug77221.phpt
+ext/filter/tests/bug71063.phpt
+ext/filter/tests/018.phpt
+ext/filter/tests/033.phpt
+ext/filter/tests/bug61700.phpt
+ext/filter/tests/bug53150.phpt
+ext/filter/tests/ghsa-w8qr-v226-r27w.phpt
+ext/filter/tests/bug46973.phpt
+ext/filter/tests/055.phpt
+ext/filter/tests/015.phpt
+ext/filter/tests/filter_input_array_001.phpt
+ext/filter/tests/030.phpt
