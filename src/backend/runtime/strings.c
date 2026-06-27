@@ -1657,6 +1657,138 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "LOG_EMERG") == 0) {
+        *out = ptn_int(PTN_LOG_EMERG);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ALERT") == 0) {
+        *out = ptn_int(PTN_LOG_ALERT);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CRIT") == 0) {
+        *out = ptn_int(PTN_LOG_CRIT);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ERR") == 0) {
+        *out = ptn_int(PTN_LOG_ERR);
+        return 1;
+    }
+    if (strcmp(name, "LOG_WARNING") == 0) {
+        *out = ptn_int(PTN_LOG_WARNING);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NOTICE") == 0) {
+        *out = ptn_int(PTN_LOG_NOTICE);
+        return 1;
+    }
+    if (strcmp(name, "LOG_INFO") == 0) {
+        *out = ptn_int(PTN_LOG_INFO);
+        return 1;
+    }
+    if (strcmp(name, "LOG_DEBUG") == 0) {
+        *out = ptn_int(PTN_LOG_DEBUG);
+        return 1;
+    }
+    if (strcmp(name, "LOG_KERN") == 0) {
+        *out = ptn_int(PTN_LOG_KERN);
+        return 1;
+    }
+    if (strcmp(name, "LOG_USER") == 0) {
+        *out = ptn_int(PTN_LOG_USER);
+        return 1;
+    }
+    if (strcmp(name, "LOG_MAIL") == 0) {
+        *out = ptn_int(PTN_LOG_MAIL);
+        return 1;
+    }
+    if (strcmp(name, "LOG_DAEMON") == 0) {
+        *out = ptn_int(PTN_LOG_DAEMON);
+        return 1;
+    }
+    if (strcmp(name, "LOG_AUTH") == 0) {
+        *out = ptn_int(PTN_LOG_AUTH);
+        return 1;
+    }
+    if (strcmp(name, "LOG_SYSLOG") == 0) {
+        *out = ptn_int(PTN_LOG_SYSLOG);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LPR") == 0) {
+        *out = ptn_int(PTN_LOG_LPR);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NEWS") == 0) {
+        *out = ptn_int(PTN_LOG_NEWS);
+        return 1;
+    }
+    if (strcmp(name, "LOG_UUCP") == 0) {
+        *out = ptn_int(PTN_LOG_UUCP);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CRON") == 0) {
+        *out = ptn_int(PTN_LOG_CRON);
+        return 1;
+    }
+    if (strcmp(name, "LOG_AUTHPRIV") == 0) {
+        *out = ptn_int(PTN_LOG_AUTHPRIV);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL0") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL0);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL1") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL1);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL2") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL2);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL3") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL3);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL4") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL4);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL5") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL5);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL6") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL6);
+        return 1;
+    }
+    if (strcmp(name, "LOG_LOCAL7") == 0) {
+        *out = ptn_int(PTN_LOG_LOCAL7);
+        return 1;
+    }
+    if (strcmp(name, "LOG_PID") == 0) {
+        *out = ptn_int(PTN_LOG_PID);
+        return 1;
+    }
+    if (strcmp(name, "LOG_CONS") == 0) {
+        *out = ptn_int(PTN_LOG_CONS);
+        return 1;
+    }
+    if (strcmp(name, "LOG_ODELAY") == 0) {
+        *out = ptn_int(PTN_LOG_ODELAY);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NDELAY") == 0) {
+        *out = ptn_int(PTN_LOG_NDELAY);
+        return 1;
+    }
+    if (strcmp(name, "LOG_NOWAIT") == 0) {
+        *out = ptn_int(PTN_LOG_NOWAIT);
+        return 1;
+    }
+    if (strcmp(name, "LOG_PERROR") == 0) {
+        *out = ptn_int(PTN_LOG_PERROR);
+        return 1;
+    }
     if (strcmp(name, "OPENSSL_VERSION_NUMBER") == 0) {
         *out = ptn_int(PTN_OPENSSL_VERSION_NUMBER);
         return 1;

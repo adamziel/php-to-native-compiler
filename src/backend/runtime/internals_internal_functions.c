@@ -38534,6 +38534,39 @@ static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(len);
 }
 
+static PtnValue ptn_internal_openlog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand ident = ptn_internal_expect_string_arg(runtime, "openlog", 1, "prefix", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(ident);
+        return ptn_null();
+    }
+    ptn_string_operand_free(ident);
+    (void)ptn_value_to_integer(args[1]);
+    (void)ptn_value_to_integer(args[2]);
+    (void)argc;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_syslog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_value_to_integer(args[0]);
+    PtnStringOperand message = ptn_internal_expect_string_arg(runtime, "syslog", 2, "message", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    ptn_string_operand_free(message);
+    (void)argc;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_closelog(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(1);
+}
+
 static int ptn_stream_mode_is_append(PtnResource *resource);
 static size_t ptn_stream_write_filtered(
     PtnRuntime *runtime,
@@ -104208,6 +104241,39 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CONNECTION_NORMAL", 0);
     ptn_get_defined_constants_add_int(table, "CONNECTION_ABORTED", 1);
     ptn_get_defined_constants_add_int(table, "CONNECTION_TIMEOUT", 2);
+    ptn_get_defined_constants_add_int(table, "LOG_EMERG", PTN_LOG_EMERG);
+    ptn_get_defined_constants_add_int(table, "LOG_ALERT", PTN_LOG_ALERT);
+    ptn_get_defined_constants_add_int(table, "LOG_CRIT", PTN_LOG_CRIT);
+    ptn_get_defined_constants_add_int(table, "LOG_ERR", PTN_LOG_ERR);
+    ptn_get_defined_constants_add_int(table, "LOG_WARNING", PTN_LOG_WARNING);
+    ptn_get_defined_constants_add_int(table, "LOG_NOTICE", PTN_LOG_NOTICE);
+    ptn_get_defined_constants_add_int(table, "LOG_INFO", PTN_LOG_INFO);
+    ptn_get_defined_constants_add_int(table, "LOG_DEBUG", PTN_LOG_DEBUG);
+    ptn_get_defined_constants_add_int(table, "LOG_KERN", PTN_LOG_KERN);
+    ptn_get_defined_constants_add_int(table, "LOG_USER", PTN_LOG_USER);
+    ptn_get_defined_constants_add_int(table, "LOG_MAIL", PTN_LOG_MAIL);
+    ptn_get_defined_constants_add_int(table, "LOG_DAEMON", PTN_LOG_DAEMON);
+    ptn_get_defined_constants_add_int(table, "LOG_AUTH", PTN_LOG_AUTH);
+    ptn_get_defined_constants_add_int(table, "LOG_SYSLOG", PTN_LOG_SYSLOG);
+    ptn_get_defined_constants_add_int(table, "LOG_LPR", PTN_LOG_LPR);
+    ptn_get_defined_constants_add_int(table, "LOG_NEWS", PTN_LOG_NEWS);
+    ptn_get_defined_constants_add_int(table, "LOG_UUCP", PTN_LOG_UUCP);
+    ptn_get_defined_constants_add_int(table, "LOG_CRON", PTN_LOG_CRON);
+    ptn_get_defined_constants_add_int(table, "LOG_AUTHPRIV", PTN_LOG_AUTHPRIV);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL0", PTN_LOG_LOCAL0);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL1", PTN_LOG_LOCAL1);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL2", PTN_LOG_LOCAL2);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL3", PTN_LOG_LOCAL3);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL4", PTN_LOG_LOCAL4);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL5", PTN_LOG_LOCAL5);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL6", PTN_LOG_LOCAL6);
+    ptn_get_defined_constants_add_int(table, "LOG_LOCAL7", PTN_LOG_LOCAL7);
+    ptn_get_defined_constants_add_int(table, "LOG_PID", PTN_LOG_PID);
+    ptn_get_defined_constants_add_int(table, "LOG_CONS", PTN_LOG_CONS);
+    ptn_get_defined_constants_add_int(table, "LOG_ODELAY", PTN_LOG_ODELAY);
+    ptn_get_defined_constants_add_int(table, "LOG_NDELAY", PTN_LOG_NDELAY);
+    ptn_get_defined_constants_add_int(table, "LOG_NOWAIT", PTN_LOG_NOWAIT);
+    ptn_get_defined_constants_add_int(table, "LOG_PERROR", PTN_LOG_PERROR);
     ptn_get_defined_constants_add_int(table, "CASE_LOWER", 0);
     ptn_get_defined_constants_add_int(table, "CASE_UPPER", 1);
     ptn_get_defined_constants_add_int(table, "MT_RAND_MT19937", PTN_MT_RAND_MT19937);
@@ -104746,6 +104812,39 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "CONNECTION_NORMAL",
         "CONNECTION_ABORTED",
         "CONNECTION_TIMEOUT",
+        "LOG_EMERG",
+        "LOG_ALERT",
+        "LOG_CRIT",
+        "LOG_ERR",
+        "LOG_WARNING",
+        "LOG_NOTICE",
+        "LOG_INFO",
+        "LOG_DEBUG",
+        "LOG_KERN",
+        "LOG_USER",
+        "LOG_MAIL",
+        "LOG_DAEMON",
+        "LOG_AUTH",
+        "LOG_SYSLOG",
+        "LOG_LPR",
+        "LOG_NEWS",
+        "LOG_UUCP",
+        "LOG_CRON",
+        "LOG_AUTHPRIV",
+        "LOG_LOCAL0",
+        "LOG_LOCAL1",
+        "LOG_LOCAL2",
+        "LOG_LOCAL3",
+        "LOG_LOCAL4",
+        "LOG_LOCAL5",
+        "LOG_LOCAL6",
+        "LOG_LOCAL7",
+        "LOG_PID",
+        "LOG_CONS",
+        "LOG_ODELAY",
+        "LOG_NDELAY",
+        "LOG_NOWAIT",
+        "LOG_PERROR",
         "CASE_LOWER",
         "CASE_UPPER",
         "MT_RAND_MT19937",
@@ -162762,6 +162861,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "clone", 1, 2, ptn_internal_clone },
         { "closedir", 0, 1, ptn_internal_closedir },
+        { "closelog", 0, 0, ptn_internal_closelog },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
         { "Closure::getCurrent", 0, 0, ptn_internal_closure_get_current },
@@ -163328,6 +163428,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "opcache_jit_blacklist", 1, 1, ptn_internal_opcache_jit_blacklist },
         { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
+        { "openlog", 3, 3, ptn_internal_openlog },
         { "openssl_cipher_key_length", 1, 1, ptn_internal_openssl_cipher_key_length },
         { "openssl_cms_decrypt", 2, 5, ptn_internal_openssl_cms_decrypt },
         { "openssl_cms_encrypt", 4, 7, ptn_internal_openssl_cms_encrypt },
@@ -163579,6 +163680,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
         { "symlink", 2, 2, ptn_internal_symlink },
         { "sys_get_temp_dir", 0, 0, ptn_internal_sys_get_temp_dir },
+        { "syslog", 2, 2, ptn_internal_syslog },
         { "system", 1, 2, ptn_internal_system },
         { "tan", 1, 1, ptn_internal_tan },
         { "tanh", 1, 1, ptn_internal_tanh },

@@ -70175,6 +70175,50 @@ echo md5(var_export($explodeShape, true)), \"\\n\";\n",
 }
 
 #[test]
+fn compile_standard_syslog_constants_and_noop_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-standard-syslog");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standard-syslog.php");
+    let output = root.join("standard-syslog-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(LOG_NDELAY, LOG_PID, LOG_USER, LOG_WARNING);\n\
+var_dump(openlog('ptn', LOG_NDELAY | LOG_PID, LOG_USER));\n\
+var_dump(syslog(LOG_WARNING, 'message'));\n\
+var_dump(closelog());\n\
+var_dump(function_exists('openlog'), function_exists('syslog'), function_exists('closelog'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(8)\n",
+            "int(1)\n",
+            "int(8)\n",
+            "int(4)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_openlog"));
+    assert!(c_source.contains("ptn_internal_syslog"));
+    assert!(c_source.contains("ptn_internal_closelog"));
+}
+
+#[test]
 fn compile_var_export_recursive_values_warn_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-recursive-values");
     fs::create_dir_all(&root).unwrap();
