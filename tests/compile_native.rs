@@ -50215,6 +50215,89 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_dom_attribute_qname_and_default_namespace_materialization_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-attribute-qname-default-ns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-attribute-qname-default-ns.php");
+    let output = root.join("dom-attribute-qname-default-ns-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$doc = new DOMDocument();
+$doc->loadXML('<root/>');
+$root = $doc->documentElement;
+
+foreach ([
+    fn() => new DOMAttr('@acb', '123'),
+    fn() => $root->setAttribute('@def', '456'),
+    fn() => $root->setAttributeNS(null, '@ghi', '789'),
+    fn() => $root->setAttributeNS('urn::test', 'a:g@hi', '789'),
+] as $callback) {
+    try {
+        $callback();
+    } catch (DOMException $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+echo $doc->saveXML($root), "\n";
+
+$element = new DOMElement('b', null, 'a');
+var_dump($element->getAttributeNames());
+$legacy = new DOMDocument();
+$legacy->appendChild($element);
+echo $legacy->saveXML();
+
+$modern = Dom\XMLDocument::createEmpty();
+$modern
+    ->appendChild($modern->createElementNS('some:namespace', 'foo'))
+    ->appendChild($modern->createElement('bar'));
+echo $modern->saveXml(), "\n";
+$xpath = new Dom\XPath($modern);
+$xpath->registerNamespace('n', 'some:namespace');
+echo '/n:foo/bar=', count($xpath->query('/n:foo/bar')), "\n";
+echo '/n:foo/n:bar=', count($xpath->query('/n:foo/n:bar')), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Invalid Character Error\n",
+            "Invalid Character Error\n",
+            "Invalid Character Error\n",
+            "Namespace Error\n",
+            "<root/>\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(5) \"xmlns\"\n",
+            "}\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<b xmlns=\"a\"/>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<foo xmlns=\"some:namespace\"><bar xmlns=\"\"/></foo>\n",
+            "/n:foo/bar=1\n",
+            "/n:foo/n:bar=0\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_validate_attribute_qname"));
+    assert!(c_source.contains("ptn_dom_materialize_empty_default_namespace"));
+    assert!(c_source.contains("ptn_dom_xpath_registered_namespace_uri"));
+}
+
+#[test]
 fn compile_dom_namespace_mutation_reuses_ancestor_bindings() {
     let root = temp_dir("ptn-native-dom-namespace-mutation-bindings");
     fs::create_dir_all(&root).unwrap();
